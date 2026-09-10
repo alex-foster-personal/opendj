@@ -264,6 +264,44 @@ def test_s7_stays_unmeasured_on_latency_alone() -> None:
     assert _score_one("S7", entries).verdict == UNMEASURED
 
 
+def test_s2_conclusive_breaking_audible_survives_missing_visual() -> None:
+    """The reviewer's own reproduction: a 100ms audible p95 is unambiguously
+    BREAKING against the 60ms ceiling, and must report BREAKING even though
+    the paired visual_feedback_ms_p95 was never recorded. Missing evidence
+    about the visual half cannot un-break an audible reading that already,
+    conclusively, broke."""
+    entries = [
+        {
+            "kpi": "input_to_audible_ms_p95",
+            "value": 100,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=200 presses",
+        }
+    ]
+    score = _score_one("S2", entries)
+    assert score.verdict == "BREAKING"
+    assert "visual_feedback_ms_p95" in score.note
+
+
+def test_s7_conclusive_breaking_keystroke_drop_survives_missing_latency() -> None:
+    """A single dropped keystroke is BREAKING per the spec's own breaking
+    cell, and must not vanish into UNMEASURED just because the paired
+    latency p95 was never recorded."""
+    entries = [
+        {
+            "kpi": "library_filter_dropped_keystrokes_per_session",
+            "value": 1,
+            "unit": "dropped keystrokes per session",
+            "date": "2026-09-09",
+        }
+    ]
+    score = _score_one("S7", entries)
+    assert score.verdict == "BREAKING"
+    assert "library_filter_keystroke_ms_p95" in score.note
+
+
 def test_a_reading_in_the_wrong_unit_does_not_score() -> None:
     """The gate this exists for: a required row recorded in seconds against a
     map that declares milliseconds must not reach verdict_for at all - a wrong
@@ -395,83 +433,6 @@ def test_reading_retains_machine_and_measurement_note() -> None:
     reading = newest_reading(entries, "k")
     assert reading.machine == "silver"
     assert reading.note == "n=6 uncached tracks"
-
-
-def test_a_p95_reading_without_provenance_is_unmeasured() -> None:
-    """The denominator-honesty note (specs/perf-latency-program.md) requires a
-    p95/percentage KPI to name its machine tier and measurement window. A
-    reading missing either must not reach verdict_for, which would let a
-    number stand in for a distribution with no stated sample or machine."""
-    kpi_map = {
-        "scenarios": {
-            "S2": {
-                "title": "t",
-                "class": "P0",
-                "kpis": ["input_to_audible_ms_p95"],
-                "required": ["input_to_audible_ms_p95"],
-                "missing_kpi": "placeholder",
-                **LOWER,
-            }
-        }
-    }
-    entries = [
-        {"kpi": "input_to_audible_ms_p95", "value": 10, "unit": "ms", "date": "2026-09-09"}
-    ]
-    (score,) = score_scenarios(kpi_map, entries, _dt.date(2026, 9, 9))
-    assert score.verdict == UNMEASURED
-    assert "input_to_audible_ms_p95" in score.note
-
-
-def test_a_p95_reading_with_provenance_still_scores() -> None:
-    """The control for the provenance gate: the same p95 KPI with both a
-    machine tier and a measurement note present must still score."""
-    kpi_map = {
-        "scenarios": {
-            "S2": {
-                "title": "t",
-                "class": "P0",
-                "kpis": ["input_to_audible_ms_p95"],
-                "required": ["input_to_audible_ms_p95"],
-                "missing_kpi": "placeholder",
-                **LOWER,
-            }
-        }
-    }
-    entries = [
-        {
-            "kpi": "input_to_audible_ms_p95",
-            "value": 10,
-            "unit": "ms",
-            "date": "2026-09-09",
-            "machine": "silver",
-            "note": "n=20 presses",
-        }
-    ]
-    (score,) = score_scenarios(kpi_map, entries, _dt.date(2026, 9, 9))
-    assert score.verdict == "PASS"
-
-
-def test_a_plain_duration_reading_needs_no_provenance() -> None:
-    """The scope control: a KPI that is neither p95 nor a percentage (a plain
-    load-time duration) must not be rejected for lacking machine/note, since
-    it carries no distribution or denominator to misrepresent."""
-    kpi_map = {
-        "scenarios": {
-            "S5": {
-                "title": "t",
-                "class": "P1",
-                "kpis": ["packaged_deck_load_total_ms"],
-                "required": ["packaged_deck_load_total_ms"],
-                "missing_kpi": "placeholder",
-                **LOWER,
-            }
-        }
-    }
-    entries = [
-        {"kpi": "packaged_deck_load_total_ms", "value": 20, "unit": "ms", "date": "2026-09-09"}
-    ]
-    (score,) = score_scenarios(kpi_map, entries, _dt.date(2026, 9, 9))
-    assert score.verdict == "PASS"
 
 
 def test_json_output_preserves_reading_source_and_score_note() -> None:

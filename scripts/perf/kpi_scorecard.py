@@ -39,7 +39,13 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from scripts.perf.kpi_map_drift import budget_drift, drift, spec_scenario_ids, threshold_drift
+from scripts.perf.kpi_map_drift import (
+    budget_drift,
+    drift,
+    resolve_required,
+    spec_scenario_ids,
+    threshold_drift,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SPEC = _REPO_ROOT / "specs" / "perf-latency-program.md"
@@ -190,47 +196,21 @@ def age_in_days(date_str: str | None, today: _dt.date) -> int | None:
     return (today - measured).days
 
 
-def _resolve_required(cfg: dict) -> list[dict]:
-    """Normalize each required KPI into its own name/unit/threshold set.
-
-    A plain KPI name (the common shape: one required KPI) inherits the
-    scenario's single budget/acceptable/breaking/unit. A dict entry carries
-    its own, for a scenario whose required KPIs do not share one threshold -
-    S2's visual-feedback KPI budgets at 16ms while its audible KPI budgets at
-    30ms, and scoring the visual reading against the audible band is the same
-    invented-threshold defect as picking a threshold out of thin air.
-    """
-    resolved = []
-    for entry in cfg.get("required", []):
-        if isinstance(entry, str):
-            resolved.append(
-                {
-                    "kpi": entry,
-                    "unit": cfg.get("unit", ""),
-                    "budget": cfg.get("budget"),
-                    "acceptable": cfg.get("acceptable"),
-                    "breaking": cfg.get("breaking"),
-                    "lower_is_better": cfg.get("lower_is_better", True),
-                }
-            )
-        else:
-            resolved.append(entry)
-    return resolved
-
-
 def _needs_provenance(name: str, unit: str) -> bool:
-    """Is `name` a p95 or percentage KPI, which the spec's own denominator-
-    honesty note (specs/perf-latency-program.md, 'Denominator honesty') requires
-    to name its window and machine tier?
+    """Is `name` a p95, percentage, or rate KPI, which the spec's own
+    denominator-honesty note (specs/perf-latency-program.md, 'Denominator
+    honesty') requires to name its window and machine tier?
 
-    Scoped to p95/percentage KPIs specifically, matching the note's own
+    Scoped to p95/percentage/rate KPIs specifically, matching the note's own
     examples (dropped frames, xruns/hour, p95s) rather than every KPI: a plain
     duration or count (deck load seconds, dropped-keystroke count) has no
-    window or sample size to misrepresent the same way a percentile or a rate
-    does.
+    window or sample size to misrepresent the same way a percentile, a rate,
+    or a percentage does. "hour" catches S1's xruns/hour and silent-while-
+    playing rate KPIs, the note's own rate example, without matching a plain
+    duration.
     """
     haystack = f"{name} {unit}".lower()
-    return "p95" in haystack or "%" in haystack or "pct" in haystack
+    return "p95" in haystack or "%" in haystack or "pct" in haystack or "hour" in haystack
 
 
 def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list[Score]:
@@ -250,10 +230,20 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
     unit produced a false verdict outright, and a bad date produced a real
     verdict with no age, which let `--max-stale-days` exit 0 on evidence it
     never actually checked.
+
+    A confirmed BREAKING verdict among the scoreable required KPIs is
+    reported as BREAKING even when another required KPI is still missing or
+    rejected, rather than collapsing to UNMEASURED. Missing evidence
+    elsewhere cannot un-break a KPI that has already, conclusively, broken:
+    S7's dropped-keystroke count reading BREAKING must not vanish just
+    because the paired latency p95 has not been recorded yet. This does not
+    extend to OVER or ACCEPTABLE, which are directional judgments a still-
+    missing companion KPI could plausibly change the overall picture around;
+    only BREAKING is unconditionally the floor.
     """
     scores: list[Score] = []
     for sid, cfg in kpi_map["scenarios"].items():
-        required = _resolve_required(cfg)
+        required = resolve_required(cfg)
         readings = tuple(newest_reading(entries, name) for name in cfg.get("kpis", []))
         by_name = {r.kpi: r for r in readings}
 
@@ -288,7 +278,10 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
                 continue
             scoreable.append((req, reading.value, age))
 
-        if not required or missing or rejected:
+        verdicts = [verdict_for(value, req) for req, value, _ in scoreable]
+        conclusive_breaking = "BREAKING" in verdicts
+
+        if not required or (not conclusive_breaking and (missing or rejected)):
             note = str(cfg.get("missing_kpi", "")) or "no KPI is bound to this scenario"
             reasons = []
             if missing:
@@ -302,12 +295,22 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
             )
             continue
 
-        verdicts = [verdict_for(value, req) for req, value, _ in scoreable]
         worst = next(
             (level for level in ("BREAKING", "OVER", "ACCEPTABLE") if level in verdicts),
             "PASS",
         )
         ages = [age for _, _, age in scoreable]
+        if missing or rejected:
+            reasons = []
+            if missing:
+                reasons.append(f"required KPI not recorded: {', '.join(missing)}")
+            if rejected:
+                reasons.append(f"required KPI rejected: {'; '.join(rejected)}")
+            note = "BREAKING confirmed despite incomplete evidence elsewhere: " + "; ".join(
+                reasons
+            )
+        else:
+            note = str(cfg.get("caveat", ""))
         scores.append(
             Score(
                 sid,
@@ -316,7 +319,7 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
                 worst,
                 readings,
                 max(ages) if ages else None,
-                str(cfg.get("caveat", "")),
+                note,
             )
         )
     return scores
