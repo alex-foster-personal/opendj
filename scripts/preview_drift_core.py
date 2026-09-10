@@ -253,14 +253,22 @@ def evaluate(
         carrying, merge_trusted_paths = _resolution_carrying_merges(cwd, main_ref, merges)
         if carrying:
             described_merges = _describe(cwd, carrying)
-            report.preview_only.extend(
+            carrying_commits = [
                 PreviewOnlyCommit(
                     sha=sha,
                     committed_at=described_merges[sha][0],
                     subject=described_merges[sha][1],
                 )
                 for sha in carrying
-            )
+            ]
+            # `_mark_superseded_commits` already ran, above, over the commits
+            # `git cherry` could see -- these carrying merges are invisible
+            # to `git cherry` and only exist from here on, so supersession
+            # must be applied to them separately or a later revert/overwrite
+            # of a merge's own hand-resolved content ages into false DRIFT
+            # forever (r3974660152).
+            _mark_superseded_commits(cwd, preview_ref, carrying_commits)
+            report.preview_only.extend(carrying_commits)
             report.reasons.append(
                 f"{len(carrying)} merge commit(s) carry a conflict resolution "
                 f"that is on no ordinary commit, so git cherry cannot see it; "
