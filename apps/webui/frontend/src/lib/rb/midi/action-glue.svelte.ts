@@ -123,9 +123,10 @@ function _cmdPressCue(deck: DeckId, pressT0Ms?: number): void {
 
 /** REBASE ADAPTER: hot-cue pad command (jump to slot's in point). Slot-
  * addressed, not a raw ms (#884): hot_cue_trigger, unlike a plain seek, can
- * honour BeatSyncMax and arm for the deck's own next downbeat. */
-function _cmdHotCue(deck: DeckId, slot: HotCueSlot): void {
-	void dispatchPerformanceCommand({ type: 'hot_cue_trigger', deck, slot });
+ * honour BeatSyncMax and arm for the deck's own next downbeat. pressT0Ms is
+ * the MIDI receipt stamp, same contract as _cmdPlayToggle/_cmdPressCue. */
+function _cmdHotCue(deck: DeckId, slot: HotCueSlot, pressT0Ms?: number): void {
+	void dispatchPerformanceCommand({ type: 'hot_cue_trigger', deck, slot }, pressT0Ms);
 }
 
 /** REBASE ADAPTER: engage an auto/beat loop from the current position. */
@@ -170,7 +171,7 @@ export function handleMidiAction(
 				pushToast(`Deck ${action.deck}: no hot cue in slot ${action.slot}`, 'info');
 				return;
 			}
-			_cmdHotCue(action.deck, action.slot);
+			_cmdHotCue(action.deck, action.slot, pressT0Ms);
 			return;
 		}
 		case 'deck_beat_loop': {

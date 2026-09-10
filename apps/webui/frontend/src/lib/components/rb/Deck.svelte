@@ -110,9 +110,10 @@
 
 	/** #884: a populated hot-cue pad, unlike a plain waveform seek, may need to
 	 * honour BeatSyncMax - routed through hot_cue_trigger, not seekTo, so it
-	 * can arm for the deck's own next downbeat instead of jumping immediately. */
-	async function triggerHotCue(slot: HotCueSlot): Promise<void> {
-		await runPerformanceCommandFromUi({ type: 'hot_cue_trigger', deck: deckId, slot });
+	 * can arm for the deck's own next downbeat instead of jumping immediately.
+	 * Q1: see `playPause` for the `pressT0Ms` contract. */
+	async function triggerHotCue(slot: HotCueSlot, pressT0Ms?: number): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'hot_cue_trigger', deck: deckId, slot }, pressT0Ms);
 	}
 
 	/**

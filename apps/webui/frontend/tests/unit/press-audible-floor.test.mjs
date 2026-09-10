@@ -386,6 +386,79 @@ test('every P0 press path threads the DOM event stamp, none re-takes the clock',
 		hotkeys.includes("{ type: 'play', deck, playing: !st.playing }, pressT0Ms"),
 		'the keydown stamp must reach the command'
 	);
+
+	// Hot-cue: a Class A transport control budgeted like play/cue, but with
+	// TWO independent entry points (a populated pad's UI click, a controller's
+	// MIDI note) into the SAME hot_cue_trigger command - both must carry the
+	// stamp, or the deck buttons/Space check above passes while this one
+	// silently does not.
+	const bank = readSource('src/lib/components/rb/deck/HotCueBank.svelte');
+	assert.ok(
+		bank.includes('onJump: (slot: HotCueSlot, pressT0Ms?: number) => Promise<void>;'),
+		'HotCueBank must declare its onJump callback wide enough to carry a stamp'
+	);
+	assert.ok(
+		bank.includes('onclick={(e) => onSlotClick(entry, e.timeStamp)}'),
+		'and the pad click must hand on its own event stamp'
+	);
+	assert.ok(
+		/await onJump\(entry\.slot, pressT0Ms\);/.test(bank),
+		'onSlotClick must forward the stamp into onJump, or the parameter is decorative'
+	);
+
+	assert.ok(
+		deck.includes(
+			'async function triggerHotCue(slot: HotCueSlot, pressT0Ms?: number): Promise<void> {'
+		),
+		'Deck.svelte must accept the stamp rather than dropping it on the floor'
+	);
+	assert.ok(
+		deck.includes("{ type: 'hot_cue_trigger', deck: deckId, slot }, pressT0Ms"),
+		'and forward it into the command'
+	);
+
+	const glue = readSource('src/lib/rb/midi/action-glue.svelte.ts');
+	assert.ok(
+		glue.includes('function _cmdHotCue(deck: DeckId, slot: HotCueSlot, pressT0Ms?: number): void {'),
+		'the MIDI hot-cue adapter must accept the receipt stamp like _cmdPlayToggle/_cmdPressCue do'
+	);
+	assert.ok(
+		glue.includes("{ type: 'hot_cue_trigger', deck, slot }, pressT0Ms"),
+		'and forward it into the command'
+	);
+	assert.ok(
+		glue.includes('_cmdHotCue(action.deck, action.slot, pressT0Ms);'),
+		'the deck_hot_cue case must pass its own already-available pressT0Ms, not drop it'
+	);
+
+	// The command still has to reach the audio clock: performance-ipc's
+	// hot_cue_trigger executor forwards its OWN pressT0Ms parameter into both
+	// branches of the jump/arm driver, and the engine's quantizedSeek /
+	// armHotCueTrigger both carry it into _scheduleDeck - otherwise every
+	// layer above this one is decorative.
+	const ipc = readSource('src/lib/rb/performance-ipc.svelte.ts');
+	assert.ok(
+		/await _hotCueDriver\.jump\(command\.deck, cue\.in_ms, pressT0Ms\);/.test(ipc),
+		'the immediate-jump branch must forward pressT0Ms into the driver'
+	);
+	assert.ok(
+		/_hotCueDriver\.arm\(\s*command\.deck,\s*cue\.in_ms,\s*plan\.armAtPositionSec,\s*pressT0Ms\s*\);/.test(ipc),
+		'the arm-for-downbeat branch must forward pressT0Ms into the driver'
+	);
+
+	const engine = readSource('src/lib/rb/audio-engine.svelte.ts');
+	assert.ok(
+		/async quantizedSeek\(\s*deck: DeckId,\s*ms: number,\s*skipGridQuantize = false,\s*pressT0Ms\?: number\s*\): Promise<void> \{/.test(
+			engine
+		),
+		'quantizedSeek must accept the stamp rather than dropping it on the floor'
+	);
+	assert.ok(
+		/async armHotCueTrigger\(\s*deck: DeckId,\s*targetPositionMs: number,\s*armAtPositionSec: number,\s*pressT0Ms\?: number\s*\): Promise<number> \{/.test(
+			engine
+		),
+		'armHotCueTrigger must accept the stamp rather than dropping it on the floor'
+	);
 });
 
 test('NEGATIVE CONTROL: a press on an empty deck dispatches nothing at all', () => {

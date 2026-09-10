@@ -496,11 +496,13 @@ export interface PerformanceHotCueDriver {
 		positionSec: number;
 		beats: readonly AnlzBeat[];
 	};
-	/** Immediate jump - the same path an unquantized click always took. */
-	jump(deck: DeckId, positionMs: number): Promise<void>;
+	/** Immediate jump - the same path an unquantized click always took.
+	 * pressT0Ms is Q1's operator-felt press stamp. */
+	jump(deck: DeckId, positionMs: number, pressT0Ms?: number): Promise<void>;
 	/** Defer the jump to the deck's own next downbeat; returns the absolute
-	 * AudioContext time the schedule lands at. */
-	arm(deck: DeckId, positionMs: number, armAtPositionSec: number): Promise<number>;
+	 * AudioContext time the schedule lands at. pressT0Ms is Q1's
+	 * operator-felt press stamp. */
+	arm(deck: DeckId, positionMs: number, armAtPositionSec: number, pressT0Ms?: number): Promise<number>;
 	contextTimeNowSec(): number;
 }
 
@@ -518,8 +520,9 @@ const _defaultHotCueDriver: PerformanceHotCueDriver = {
 			beats: state.anlz?.beatgrid.beats ?? []
 		};
 	},
-	jump: (deck, positionMs) => engine.quantizedSeek(deck, positionMs),
-	arm: (deck, positionMs, armAtPositionSec) => engine.armHotCueTrigger(deck, positionMs, armAtPositionSec),
+	jump: (deck, positionMs, pressT0Ms) => engine.quantizedSeek(deck, positionMs, undefined, pressT0Ms),
+	arm: (deck, positionMs, armAtPositionSec, pressT0Ms) =>
+		engine.armHotCueTrigger(deck, positionMs, armAtPositionSec, pressT0Ms),
 	contextTimeNowSec: () => engine.contextTimeNowSec()
 };
 let _hotCueDriver: PerformanceHotCueDriver = _defaultHotCueDriver;
@@ -1587,9 +1590,14 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		const plan = planHotCueTrigger(uiPrefs.beat_sync_max, playing, loopEngaged, positionSec, beats);
 		if (plan.kind === 'immediate') {
 			hotCueArmed[command.deck] = null;
-			await _hotCueDriver.jump(command.deck, cue.in_ms);
+			await _hotCueDriver.jump(command.deck, cue.in_ms, pressT0Ms);
 		} else {
-			const targetContextTime = await _hotCueDriver.arm(command.deck, cue.in_ms, plan.armAtPositionSec);
+			const targetContextTime = await _hotCueDriver.arm(
+				command.deck,
+				cue.in_ms,
+				plan.armAtPositionSec,
+				pressT0Ms
+			);
 			hotCueArmed[command.deck] = {
 				slot: command.slot,
 				target_position_ms: cue.in_ms,

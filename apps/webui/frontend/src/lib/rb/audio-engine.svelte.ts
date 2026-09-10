@@ -3166,7 +3166,7 @@ class RbAudioEngine implements AudioEngine {
 		await this.quantizedSeek(deck, ms);
 	}
 
-	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false): Promise<void> {
+	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'cueJump');
 		const durMs = _durationSec(deck) * 1000;
 		if (!Number.isFinite(ms) || ms < 0 || ms > durMs) {
@@ -3237,7 +3237,9 @@ class RbAudioEngine implements AudioEngine {
 					rt.desiredActive,
 					undefined,
 					undefined,
-					scheduleLoop
+					scheduleLoop,
+					undefined,
+					pressT0Ms
 				);
 			}
 		} else {
@@ -3247,10 +3249,8 @@ class RbAudioEngine implements AudioEngine {
 
 	/** The physical CUE button. Playing: return to the cue point and pause.
 	 * Paused with a cue set: jump the playhead to it. Paused with no cue:
-	 * set the cue at the current position.
-	 *
-	 * Q1: see `play` for the stamp. Only the playing branch schedules; the paused
-	 * branches are pure state writes, and the seek branch is Q1's follow-up. */
+	 * set the cue at the current position. Q1: see `play` for the stamp; the
+	 * seek branch also carries it through `quantizedSeek`. */
 	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {
 		const { st } = _requireLoaded(deck, 'pressCue');
 		if (st.playing) {
@@ -3266,7 +3266,7 @@ class RbAudioEngine implements AudioEngine {
 					? quantizedPositionMs(cueBeats, st.position_ms, true, _quantizeGridBeats(st))
 					: st.position_ms;
 		} else {
-			await this.quantizedSeek(deck, st.cue_ms);
+			await this.quantizedSeek(deck, st.cue_ms, undefined, pressT0Ms);
 		}
 	}
 
@@ -3282,7 +3282,7 @@ class RbAudioEngine implements AudioEngine {
 	 * does not additionally re-plan cross-deck follower phase (#884 scope -
 	 * that is the other, unrelated meaning of BeatSyncMax, for seek).
 	 */
-	async armHotCueTrigger(deck: DeckId, targetPositionMs: number, armAtPositionSec: number): Promise<number> {
+	async armHotCueTrigger(deck: DeckId, targetPositionMs: number, armAtPositionSec: number, pressT0Ms?: number): Promise<number> {
 		const { rt } = _requireLoaded(deck, 'armHotCueTrigger');
 		if (_ctx === null) throw new Error('armHotCueTrigger: audio graph not initialised');
 		const nowPositionSec = _projectPositionAt(deck, _ctx.currentTime);
@@ -3293,7 +3293,7 @@ class RbAudioEngine implements AudioEngine {
 		}
 		const deltaContextSec = (armAtPositionSec - nowPositionSec) / rt.controlTempoRatio;
 		const targetContextTime = Math.max(_futureScheduleTime(deck), _ctx.currentTime + deltaContextSec);
-		await _scheduleDeck(deck, targetContextTime, targetPositionMs / 1000, rt.desiredActive);
+		await _schedulePress(deck, targetContextTime, targetPositionMs / 1000, rt.desiredActive, pressT0Ms);
 		return targetContextTime;
 	}
 
