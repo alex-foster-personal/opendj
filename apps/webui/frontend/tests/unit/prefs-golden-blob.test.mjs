@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { before, describe, it } from 'node:test';
 
-import { loadTypeScriptModule } from './load-typescript.mjs';
+import { bundleTypeScriptModule, loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
  * CAPTURED PREFS BLOBS LOAD: a blob a PREVIOUS build persisted must load
@@ -81,13 +81,16 @@ function verifiedCapture(manifest, name) {
  *
  * A child process, because real `localStorage` needs flags the unit runner does
  * not set. Each call gets its own storage file, so no test can observe
- * another's writes.
+ * another's writes. `bundlePath` is compiled once by the caller and reused
+ * across every capture - the module under test does not vary between them,
+ * only the seeded storage does, so recompiling it per capture would be
+ * three identical esbuild runs for one answer.
  */
-function loadThroughRealStorage(storageKey, blob) {
+function loadThroughRealStorage(storageKey, blob, bundlePath) {
 	const store = join(mkdtempSync(join(tmpdir(), 'mdt-prefs-')), 'localstorage.db');
 	const proc = spawnSync(
 		process.execPath,
-		['--experimental-webstorage', `--localstorage-file=${store}`, PROBE, storageKey, blob],
+		['--experimental-webstorage', `--localstorage-file=${store}`, PROBE, storageKey, blob, bundlePath],
 		{ encoding: 'utf8', timeout: 120000 }
 	);
 	assert.equal(proc.status, 0, `probe failed:\n${proc.stderr}`);
@@ -107,7 +110,12 @@ const loaded = new Map();
 
 before(async () => {
 	autoPlay = await loadTypeScriptModule('src/lib/rb/auto-play.ts');
-	for (const c of CAPTURES) loaded.set(c.name, loadThroughRealStorage(STORAGE_KEY, c.text));
+	const bundled = await bundleTypeScriptModule('src/lib/rb/prefs.svelte.ts');
+	const bundlePath = join(mkdtempSync(join(tmpdir(), 'mdt-prefs-bundle-')), 'prefs.mjs');
+	writeFileSync(bundlePath, bundled);
+	for (const c of CAPTURES) {
+		loaded.set(c.name, loadThroughRealStorage(STORAGE_KEY, c.text, bundlePath));
+	}
 });
 
 describe('captured prefs blobs load in the current build', () => {
