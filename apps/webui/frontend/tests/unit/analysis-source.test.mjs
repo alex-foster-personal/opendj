@@ -99,6 +99,13 @@ function _openSharedBus() {
 	return busSocket;
 }
 
+/** Every URL the real fixture server has served so far, oldest first - the
+ * server's own access log, not a spy on the client's fetch. */
+async function requestLog() {
+	const res = await fetch(`${apiBase}/test/requests`);
+	return res.json();
+}
+
 /** Flip the DAEMON's selection without going through the module under test, so
  * the module sees it exactly as it would see an agent's direct PUT. */
 async function daemonSelect(toggle) {
@@ -563,6 +570,98 @@ test('a mirror that drifted does NOT buy a refresh the decks do not need', async
 	assert.deepEqual(analysisSource.analysisSourceState.features, { beatgrid: 'rekordbox' });
 });
 
+// ---------------------------------------- stale-source prefetch eviction
+
+test('a switch with no loaded deck to disagree still evicts a stale prefetched cache entry (discussion_r3973991969 P1 BLOCKING)', async () => {
+	// beforeEach resets deckFeatures to {}, so THIS module's next adopt is a
+	// genuine "first sighting" (`held === undefined` in _decksDisagreeWith) -
+	// with nothing loaded on any deck, that reads as no disagreement whatever
+	// the daemon answers, and the fast (no-refresh) path in _adopt is the only
+	// one that ever runs. This models an agent flipping the daemon directly
+	// between an independent prefetch (library hover, never loaded onto a
+	// deck) and this client's very first GET: neither watermark nor any
+	// loaded deck can see that race, only the cache entry's own stamp can.
+	analysisSource.invalidateAnlzCacheEntry('real-track-a-own-grid');
+
+	// Prefetch under whatever the daemon holds BEFORE this module ever adopts
+	// anything - independent of any deck, the way library browsing's
+	// ensureAnlz runs.
+	await daemonSelect('rbx');
+	analysisSource.ensureAnlz('real-track-a-own-grid');
+	const deadline = Date.now() + 5000;
+	while (analysisSource.getAnlzEntry('real-track-a-own-grid')?.status !== 'ready') {
+		if (Date.now() > deadline) throw new Error('prefetch never became ready');
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+	assert.equal(
+		analysisSource.getAnlzEntry('real-track-a-own-grid').data.beatgrid_source,
+		'rekordbox',
+		'the prefetch must be seeded under the pre-switch source, or this test proves nothing'
+	);
+
+	// An agent flips the daemon before this module's own first GET ever
+	// lands - this is the FIRST adopt this module instance has ever run.
+	await daemonSelect('own');
+	const before_ = await requestLog();
+	await analysisSource.loadAnalysisSource();
+
+	assert.deepEqual(
+		runnerLog,
+		[],
+		'nothing is loaded on any deck, so this must be the fast no-refresh path, not the ' +
+			'serialized full refresh - proving the eviction below cannot be riding on that instead'
+	);
+	assert.equal(
+		analysisSource.getAnlzEntry('real-track-a-own-grid'),
+		undefined,
+		'the prefetched rekordbox-source entry must be evicted, or a deck that later loads this ' +
+			'track gets a cache HIT on stale pre-switch bytes even though the toggle already reports own'
+	);
+
+	// Prove the eviction is REAL, not merely a local flag: a re-prefetch must
+	// reach the real server again, and come back stamped with the new source.
+	analysisSource.ensureAnlz('real-track-a-own-grid');
+	const deadline2 = Date.now() + 5000;
+	while (analysisSource.getAnlzEntry('real-track-a-own-grid')?.status !== 'ready') {
+		if (Date.now() > deadline2) throw new Error('re-prefetch never became ready');
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+	const refetches = (await requestLog())
+		.slice(before_.length)
+		.filter((url) => url.includes('/anlz?'));
+	assert.equal(refetches.length, 1, 'the eviction must force a real second network request');
+	assert.equal(
+		analysisSource.getAnlzEntry('real-track-a-own-grid').data.beatgrid_source,
+		'own',
+		'the re-fetched entry must carry the new source'
+	);
+});
+
+test('a switch with no loaded deck leaves an already-agreeing prefetched entry untouched', async () => {
+	analysisSource.invalidateAnlzCacheEntry('real-track-b-own-grid');
+	await daemonSelect('own');
+	await analysisSource.loadAnalysisSource();
+
+	analysisSource.ensureAnlz('real-track-b-own-grid');
+	const deadline = Date.now() + 5000;
+	while (analysisSource.getAnlzEntry('real-track-b-own-grid')?.status !== 'ready') {
+		if (Date.now() > deadline) throw new Error('prefetch never became ready');
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+	const cachedEntry = analysisSource.getAnlzEntry('real-track-b-own-grid');
+	assert.equal(cachedEntry.data.beatgrid_source, 'own');
+
+	// Re-adopting the SAME source (a redundant poll answer, or a genuine
+	// no-op switch) must not evict an entry that already agrees.
+	await analysisSource.loadAnalysisSource();
+
+	assert.equal(
+		analysisSource.getAnlzEntry('real-track-b-own-grid'),
+		cachedEntry,
+		'an entry already on the effective source must survive a re-adoption of that same source'
+	);
+});
+
 test('a switch whose deck refresh fails puts the DAEMON back where it found it', async () => {
 	await daemonSelect('rbx');
 	await analysisSource.loadAnalysisSource();
@@ -674,4 +773,44 @@ test('a failed switch never clobbers a concurrent agent-driven HTTP change durin
 		analysisSource.deckStates[1].anlz = null;
 	}
 });
+
+test(
+	'a failed switch restores what its OWN put displaced, not a stale earlier ' +
+		'observation (discussion_r3974235454)',
+	async () => {
+		// A prior GET/PUT this module saw can be stale by the time it issues its
+		// NEXT put: an agent's own direct write can land in between, unseen by
+		// this module's poll. If the rollback restored that stale earlier
+		// observation instead of the value the switch's OWN put actually
+		// displaced, it would put the daemon back somewhere it never was.
+		await daemonSelect('rbx');
+		await analysisSource.loadAnalysisSource();
+
+		// A concurrent agent write, NOT going through setAnalysisSource, lands
+		// after this module's last observation but before its next switch - the
+		// exact window `body.previous_toggle` exists to close, since a
+		// client-side cache captured before this point cannot see it. 'unset' is
+		// distinct from both the earlier observation ('rbx') and the switch
+		// below's own attempted value ('own'), so the three cannot be confused.
+		await daemonSelect('unset');
+
+		analysisSource.deckStates[1].stable_id = 'slow-absent-track';
+		analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: 1, beats: [] } };
+		try {
+			await assert.rejects(() => analysisSource.setAnalysisSource('beatgrid', 'own'));
+
+			const daemon = await (await fetch(`${apiBase}/api/v1/analysis/source`)).json();
+			assert.equal(
+				daemon.lanes.beatgrid.toggle,
+				'unset',
+				'the rollback must restore what this put actually displaced (unset, the ' +
+					"concurrent agent's write), not this module's stale earlier " +
+					"observation (rbx) from before that write landed"
+			);
+		} finally {
+			analysisSource.deckStates[1].stable_id = null;
+			analysisSource.deckStates[1].anlz = null;
+		}
+	}
+);
 

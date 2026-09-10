@@ -277,7 +277,7 @@ def _own_beatgrid_beats(db_path: Path, stable_id: str) -> tuple[list[dict] | Non
     return beats, None
 
 
-def _resolve_beatgrid_source(request: Request, stable_id: str, payload: dict) -> None:
+def _resolve_beatgrid_source(source: str, db_path: Path, stable_id: str, payload: dict) -> None:
     """Mutate ``payload`` per the PARITY-02 rbx-vs-own selection (in place).
 
     A value-only swap, never a schema branch: ``"own"`` replaces
@@ -287,13 +287,20 @@ def _resolve_beatgrid_source(request: Request, stable_id: str, payload: dict) ->
     the grid goes explicitly empty carrying that lane's stated reason -- it is
     never silently served the rekordbox grid, nor a legacy non-own grid, while
     still claiming ``"own"``.
+
+    ``source`` is a SNAPSHOT the caller already took, not re-read here: the
+    caller decides between two branches (the ANALYSIS_NOT_FOUND rescue below,
+    and this function's own own-vs-rekordbox branch) off what must be the
+    SAME read, or an agent's PUT landing between two independent
+    `_current_beatgrid_source` calls can rescue a 404 into an empty payload
+    stamped `rekordbox`, a permanent lying 200 stable under its own ETag
+    (discussion_r3974235458 P2 BLOCKING).
     """
-    source = _current_beatgrid_source(request)
     payload["beatgrid_source"] = source
     if source == "rekordbox":
         payload["beatgrid_own_unavailable_reason"] = None
         return
-    beats, reason = _own_beatgrid_beats(analysis_routes._analysis_db_path(request), stable_id)
+    beats, reason = _own_beatgrid_beats(db_path, stable_id)
     if beats is None:
         payload["beatgrid"] = {"beat_count": 0, "beats": []}
         payload["beatgrid_own_unavailable_reason"] = reason
@@ -331,6 +338,13 @@ def get_track_anlz(
     from data/state/vocal-cache, merged when PVDI is absent), and
     ``not_analyzed`` (NEITHER source exists).
     """
+    # Read ONCE and thread the snapshot through both decisions below: the
+    # ANALYSIS_NOT_FOUND rescue and _resolve_beatgrid_source's own branch
+    # must agree on the same selection, or an agent's PUT landing between
+    # two independent reads can rescue a 404 into an empty payload this
+    # function then stamps with the OTHER, newer source
+    # (discussion_r3974235458 P2 BLOCKING).
+    beatgrid_source = _current_beatgrid_source(request)
     try:
         content = rb_vendor.resolve_content(stable_id)
         payload = rb_vendor.build_anlz_payload(content, points)
@@ -348,7 +362,7 @@ def get_track_anlz(
             # listener's lane is drawn from the rung they actually hear.
             share = getattr(request.state, "share_audience", "local") == "share"
             payload = rb_vendor.local_anlz_payload(stable_id, points, share=share)
-        elif code == "ANALYSIS_NOT_FOUND" and _current_beatgrid_source(request) == "own":
+        elif code == "ANALYSIS_NOT_FOUND" and beatgrid_source == "own":
             # The track IS rekordbox-mapped, but its ANLZ directory is
             # missing, unsafe, or wholly unparseable -- ordinarily a hard
             # 404. OWN is selected, though, and an own-rolled apps.analysis
@@ -362,7 +376,9 @@ def get_track_anlz(
             payload = empty_anlz_payload(stable_id, points)
         else:
             raise
-    _resolve_beatgrid_source(request, stable_id, payload)
+    _resolve_beatgrid_source(
+        beatgrid_source, analysis_routes._analysis_db_path(request), stable_id, payload
+    )
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
     if retryable:

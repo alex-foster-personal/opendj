@@ -182,11 +182,22 @@ def get_toggle(lane: str) -> ToggleState:
 
 
 def set_toggle(lane: str, state: str) -> ToggleState:
+    """Set `lane`'s toggle unconditionally. Returns the value it DISPLACED.
+
+    Read and written under the SAME lock acquisition, so the returned value
+    is authoritative for "what this call actually overwrote" - a caller's own
+    separate `get_toggle` beforehand can be stale by the time this runs (an
+    agent's concurrent PUT can land in between), and a compensating rollback
+    keyed off that stale client-side read restores the wrong prior value
+    (discussion_r3974235454 P1 BLOCKING). The caller already knows the value
+    it just set, so the previous one is the only useful thing to hand back.
+    """
     _check_lane(lane)
     check_toggle_state(state)
     with _TOGGLE_LOCK:
+        previous = _TOGGLE[lane]
         _TOGGLE[lane] = state  # type: ignore[assignment]
-    return state  # type: ignore[return-value]
+    return previous
 
 
 def compare_and_set_toggle(lane: str, expected: str, new: str) -> bool:

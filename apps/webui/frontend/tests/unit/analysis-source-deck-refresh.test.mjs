@@ -70,6 +70,9 @@ const SID_NO_OWN = 'real-track-c-no-own-analysis';
 // suspension SID_SLOW uses. The delay is load-bearing - see the all-or-nothing
 // test for why a FAST 404 lets a partial-write implementation pass by luck.
 const SID_ABSENT = 'slow-absent-track';
+// RBX-lane bpm sourced from MIK, not rekordbox, and no own analysis record -
+// a legitimate RBX-lane track whose tag writer merely isn't rekordbox.
+const SID_MIK_BPM = 'real-track-mik-bpm-no-own-analysis';
 
 let audio;
 /** A SECOND, independent instance of the cache module (the loader bundles a
@@ -479,6 +482,24 @@ test('the refresh REPORTS the source the server actually served, not the one ask
 	} finally {
 		// A failed assertion above must not leave the shared daemon on rbx and
 		// silently retune every later test in this file.
+		await daemonSelect('own');
+	}
+});
+
+test('a non-rekordbox RBX-lane bpm writer (MIK) is not mistaken for own, so the pairing guard does not false-positive (discussion_r3974235445 P1 BLOCKING)', async () => {
+	const decks = resetCacheDecks();
+	decks[1].stable_id = SID_MIK_BPM;
+
+	try {
+		await daemonSelect('rbx');
+		// Before the fix, `bpmOnOwn` read "not literally rekordbox" as "own",
+		// disagreed with the real rekordbox-selected grid, and this threw the
+		// mid-refresh pairing-guard error even though nothing raced at all -
+		// the tag was always mik and the grid was always rekordbox, both
+		// honestly reported for the SAME, single, unchanging selection.
+		const served = await cache.refreshAnalysisSourceDecks(DECK_KEYS, decks);
+		assert.equal(served, 'rekordbox', 'the rbx-selected grid must still be served');
+	} finally {
 		await daemonSelect('own');
 	}
 });

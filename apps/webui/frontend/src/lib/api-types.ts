@@ -3261,6 +3261,11 @@ export interface components {
             lanes: {
                 [key: string]: components["schemas"]["LaneSourceOut"];
             };
+            /**
+             * Previous Toggle
+             * @description The toggle value this PUT's `toggle` just displaced for `lane`, read and overwritten under the same lock acquisition. Null for a GET, or a PUT that did not set `toggle`. A client's own prior GET/PUT response can be stale by the time it issues a later PUT (a concurrent agent's write can land in between), so a compensating rollback must restore THIS value, not one read earlier over a separate round trip.
+             */
+            previous_toggle?: string | null;
         };
         /**
          * AnalysisSourcePut

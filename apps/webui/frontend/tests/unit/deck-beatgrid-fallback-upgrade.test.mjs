@@ -515,6 +515,32 @@ test('publish revalidates staleness at the moment it actually runs, not when onS
 	assert.equal(st.anlz, newTrackAnlz, "the old track's fallback grid must never overwrite the new track that already won the race");
 });
 
+test('publish revalidates the effective source at the moment it actually runs, not when settle() was first called (discussion_r3973991956 P1 BLOCKING)', async () => {
+	// Same deferred-publish window as the staleness test above, but the race
+	// is a source switch rather than a replacement load: the live check just
+	// before settle(true, publish) confirms 'own', but publish() itself is
+	// queued behind onSettled's scoped command slot and can run only after a
+	// switch back to rekordbox has already happened underneath it. Neither
+	// isStale() (tracks loadToken, unaffected by a source switch) nor the
+	// earlier live check (already evaluated) can catch this - only a re-check
+	// inside the deferred thunk itself can.
+	stubDaemon({ vendor: 'local' });
+	const st = { anlz: emptyAnlz(), anlz_error: null };
+
+	await upgrade.upgradeDeckBeatgrid(1, SID, st, () => false, (deck, landed, publish) => {
+		// Simulate a switch to rekordbox winning the race while this deferred
+		// publish sat queued behind the scoped command slot.
+		upgrade.analysisSourceState.features.beatgrid = 'rekordbox';
+		publish();
+	});
+
+	assert.deepEqual(
+		st.anlz.beatgrid.beats,
+		[],
+		'the own-derived fallback grid must never land once the effective source switched to rekordbox, even if that switch happened after settle() was already called'
+	);
+});
+
 test("PR #765 'Merge the fallback grid into the latest ANLZ payload': a hot-cue refresh that lands during the queue wait keeps its cues", async () => {
 	// Same deferred-publish window as the test above, but the deck is NOT
 	// stale: a refreshHotCues for this very track won the scoped queue first

@@ -19,3 +19,11 @@ export * from '$lib/rb/analysis-source.svelte';
 // in the SAME audio-engine instance analysis-source.svelte.ts calls into.
 export { deckStates } from '$lib/rb/audio-engine.svelte';
 export { connect as connectEventsBus } from '$lib/api/events-bus';
+// Same one-bundle argument again: a prefetched-cache eviction test needs to
+// drive `ensureAnlz`/`getAnlzEntry` against the exact cache instance
+// analysis-source.svelte.ts's `_adopt` evicts from, not an independent one.
+export {
+	ensureAnlz,
+	getAnlzEntry,
+	invalidateAnlzCacheEntry
+} from '$lib/components/rb/wave/anlz-cache.svelte';

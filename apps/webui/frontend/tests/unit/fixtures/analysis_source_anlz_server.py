@@ -68,6 +68,13 @@ SID_SLOW = "real-track-slow-own-grid"
 #: concurrently-succeeding track's own continuation, so a partial-write
 #: implementation passes by luck rather than by being correct.
 SID_SLOW_ABSENT = "slow-absent-track"
+#: RBX-lane bpm sourced from MIK, not rekordbox, and no own analysis record.
+#: Proves the OWN grid/tempo pairing guard (discussion_r3972264411) does not
+#: mistake "provenance is not literally rekordbox" for "provenance is own" -
+#: a non-rekordbox track_fields writer (MIK, djay, manual, ...) is still a
+#: legitimate RBX-lane source, not an own one (discussion_r3974235445 P1
+#: BLOCKING).
+SID_MIK_BPM = "real-track-mik-bpm-no-own-analysis"
 
 _DB_PATH = Path(__file__).resolve().parent / f".analysis-source-anlz-server-{os.getpid()}.tmp.db"
 
@@ -145,14 +152,21 @@ def _seed_db(db_path: Path) -> None:
     for offset, stable_id in enumerate((SID_TRACK_A, SID_TRACK_B, SID_SLOW, SID_NO_OWN_ANALYSIS)):
         _add_unmapped_track(db_path, stable_id, row_bpm=90.0 + offset)
     # SID_NO_OWN_ANALYSIS is intentionally never written: real "no record" case.
+    _add_unmapped_track(db_path, SID_MIK_BPM, row_bpm=128.0, bpm_source="mik")
 
 
-def _add_unmapped_track(db_path: Path, stable_id: str, row_bpm: float) -> None:
-    """Seed the track row AND its rekordbox tag BPM in ``track_fields``.
+def _add_unmapped_track(
+    db_path: Path, stable_id: str, row_bpm: float, bpm_source: str = "rekordbox"
+) -> None:
+    """Seed the track row AND its tag BPM in ``track_fields``.
 
     The BPM is what ``GET /tracks/{stable_id}`` answers with, through the real
     ``SqliteBackend`` read model, so a JS test can prove a deck re-read the row
     on a source switch rather than kept the value it captured at load().
+
+    ``bpm_source`` defaults to ``rekordbox`` like every other seeded track;
+    ``SID_MIK_BPM`` is the one caller that overrides it, to prove the RBX
+    lane accepts a non-rekordbox tag writer.
     """
     ROW_BPM[stable_id] = row_bpm
     conn = sqlite3.connect(db_path)
@@ -171,11 +185,14 @@ def _add_unmapped_track(db_path: Path, stable_id: str, row_bpm: float) -> None:
                 None,
             ),
         )
-        for field_name, value_json in (("bpm", str(row_bpm)), ("key", '"8A"')):
+        for field_name, value_json, source in (
+            ("bpm", str(row_bpm), bpm_source),
+            ("key", '"8A"', "rekordbox"),
+        ):
             conn.execute(
                 "INSERT INTO track_fields (stable_id, field_name, value_json, source, "
                 "confidence, modified_at) VALUES (?,?,?,?,?,?)",
-                (stable_id, field_name, value_json, "rekordbox", None, "2026-09-01T00:00:00Z"),
+                (stable_id, field_name, value_json, source, None, "2026-09-01T00:00:00Z"),
             )
         conn.commit()
     finally:

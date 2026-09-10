@@ -16,7 +16,7 @@
  * pays for the /rb-meta probe, and the merge itself refuses to overwrite one.
  */
 import { fetchAnlz, fetchRbMeta, RbApiError } from '$lib/rb/api-rb';
-import { analysisSourceState } from '$lib/rb/analysis-source.svelte';
+import { analysisSourceState } from '$lib/rb/analysis-source-state.svelte';
 import { fetchBeatgridFallback } from '$lib/rb/beatgrid-fallback-api';
 import {
 	hasAnlzBeatgrid,
@@ -171,7 +171,22 @@ export async function upgradeDeckBeatgrid(
 		// and withFallbackBeatgrid throws rather than demote a real grid.
 		const current = st.anlz;
 		if (current === null || hasAnlzBeatgrid(current)) return;
-		await settle(true, publishGrid(withFallbackBeatgrid(current, fallback)));
+		const fallbackAnlz = withFallbackBeatgrid(current, fallback);
+		// publish itself can run much later than this point (see publishGrid's
+		// own comment above): onSettled queues it behind whatever else already
+		// holds the deck's scoped command slot, and a source switch back to
+		// rekordbox can land in that window too, same as the live check just
+		// above at deferral time - re-check it again at the moment of the
+		// actual write, or a switch that arrives between deferral and
+		// publication still lands the OWN fallback grid it raced against
+		// (discussion_r3973991956 P1 BLOCKING). Only this fallback-derived
+		// publish needs the source check: settleFromAnlzRefetch's own
+		// publishGrid call above wants ANLZ's real grid whichever source is
+		// effective, since a vendor mapping landing is not source-dependent.
+		await settle(true, () => {
+			if (analysisSourceState.features.beatgrid !== 'own') return;
+			publishGrid(fallbackAnlz)();
+		});
 	} catch (error) {
 		if (isStale()) return;
 		if (error instanceof RbApiError && error.code === 'BEATGRID_FALLBACK_NOT_FOUND') {

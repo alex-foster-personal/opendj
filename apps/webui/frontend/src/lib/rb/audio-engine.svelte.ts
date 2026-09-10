@@ -119,6 +119,7 @@ import {
 } from '$lib/rb/api-rb';
 import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
 import {
+	currentAnlzFetchGeneration,
 	fetchAnlzForDeckLoad,
 	getAnlzEntry,
 	installAuthoritativeAnlzGridSink,
@@ -3055,13 +3056,30 @@ class RbAudioEngine implements AudioEngine {
 		const { st } = _requireLoaded(deck, 'refreshHotCues');
 		const stableId = st.stable_id;
 		if (stableId === null) throw new Error('refreshHotCues: deck has no stable_id');
-		const [fresh, slots] = await Promise.all([
+		let generation = currentAnlzFetchGeneration();
+		const [initialFresh, slots] = await Promise.all([
 			fetchAnlzBypassingHttpCache(stableId),
 			fetchHotCueSlots(stableId)
 		]).catch((err: unknown) => {
 			invalidateAnlzCacheEntry(stableId);
 			throw err;
 		});
+		let fresh = initialFresh;
+		// A source switch (PARITY-02) mid-flight bumps the generation and wipes
+		// the shared cache (anlz-fetch-generation.ts); every other /anlz
+		// publisher (_fetchAndPublish, fetchAnlzForDeckLoad) already re-checks
+		// this before writing, but this one never did, so it could repopulate
+		// the just-wiped cache entry AND this deck with pre-switch bytes while
+		// analysisSourceState already recorded the new source - a permanent
+		// split invisible to `_decksDisagreeWith`'s own-vs-own comparison
+		// (discussion_r3973991964 P1 BLOCKING). Re-fetch /anlz until the
+		// answer belongs to the CURRENT generation, same retry-until-current
+		// shape as fetchAnlzForDeckLoad; the hot-cue slots are not
+		// source-dependent, so the one already fetched is still good.
+		while (generation !== currentAnlzFetchGeneration()) {
+			generation = currentAnlzFetchGeneration();
+			fresh = await fetchAnlzBypassingHttpCache(stableId);
+		}
 		if (st.stable_id !== stableId) return; // deck was swapped mid-request
 		refreshAnlzCacheEntry(stableId, fresh);
 		st.anlz = fresh;

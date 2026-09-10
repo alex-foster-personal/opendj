@@ -52,6 +52,18 @@ class LaneSourceOut(BaseModel):
 
 class AnalysisSourceOut(BaseModel):
     lanes: dict[str, LaneSourceOut]
+    previous_toggle: str | None = Field(
+        default=None,
+        description=(
+            "The toggle value this PUT's `toggle` just displaced for `lane`, "
+            "read and overwritten under the same lock acquisition. Null for a "
+            "GET, or a PUT that did not set `toggle`. A client's own prior "
+            "GET/PUT response can be stale by the time it issues a later PUT "
+            "(a concurrent agent's write can land in between), so a "
+            "compensating rollback must restore THIS value, not one read "
+            "earlier over a separate round trip."
+        ),
+    )
 
 
 class AnalysisSourcePut(BaseModel):
@@ -148,16 +160,19 @@ def _require_persistent_backend(request: Request) -> None:
         )
 
 
-def _apply_toggle(lane: str, toggle: str, expected_toggle: str | None) -> None:
+def _apply_toggle(lane: str, toggle: str, expected_toggle: str | None) -> str:
     """The `toggle` half of a PUT: a plain set, or a CAS against `expected_toggle`.
 
     Split out of `put_analysis_source` so that function's own branching stays
     under the mccabe ceiling; this is the one place that decides between an
     unconditional `set_toggle` and the compare-and-set rollback path needs.
+
+    Returns the toggle value this call displaced, so the response can report
+    it (`AnalysisSourceOut.previous_toggle`, discussion_r3974235454 P1
+    BLOCKING).
     """
     if expected_toggle is None:
-        sel.set_toggle(lane, toggle)
-        return
+        return sel.set_toggle(lane, toggle)
     if not sel.compare_and_set_toggle(lane, expected_toggle, toggle):
         raise HTTPException(
             status_code=409,
@@ -171,6 +186,9 @@ def _apply_toggle(lane: str, toggle: str, expected_toggle: str | None) -> None:
                 ),
             },
         )
+    # compare_and_set_toggle only succeeds when the lane's current value WAS
+    # expected_toggle, so that is exactly what it displaced.
+    return expected_toggle
 
 
 @router.get("/source", response_model=AnalysisSourceOut)
@@ -238,12 +256,25 @@ def put_analysis_source(
     # (Codex P2, PR #1549). Only a persisted default earns a writable open.
     conn = _open(request) if body.default is not None else _open_ro(request)
     try:
+        # The CAS must run BEFORE the default commit. A stale
+        # `expected_toggle` raising 409 is a client-visible "nothing
+        # happened" - if the default's commit ran first, the durable
+        # default would already have taken effect (surviving a relaunch)
+        # while the response reported a conflict, the same shape of bug
+        # this route's docstring above already fixed once for the
+        # validate-everything-before-mutating-anything case (Codex P2,
+        # PR #1010, discussion_r3974235466).
+        previous_toggle = (
+            _apply_toggle(body.lane, body.toggle, body.expected_toggle)
+            if body.toggle is not None
+            else None
+        )
         if body.default is not None:
             sel.set_default(conn, body.lane, body.default)
             conn.commit()
-        if body.toggle is not None:
-            _apply_toggle(body.lane, body.toggle, body.expected_toggle)
-        return AnalysisSourceOut(**sel.source_state(conn))
+        return AnalysisSourceOut(
+            previous_toggle=previous_toggle, **sel.source_state(conn)
+        )
     finally:
         conn.close()
 

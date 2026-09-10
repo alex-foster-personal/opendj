@@ -57,6 +57,7 @@ from apps.analysis.store import upsert_record
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.routes.analysis import router as analysis_router
+from apps.webui.server.routes.rb_assets import _resolve_beatgrid_source
 from tests.analysis_contract.conftest import beatgrid_payload, own_record
 
 DURATION_S = 60.0
@@ -229,9 +230,38 @@ def _set_source(client: TestClient, source: str) -> None:
     assert r.status_code == 200, r.text
 
 
+def test_resolve_beatgrid_source_takes_its_source_as_a_plain_argument_not_a_second_read(
+    analysis_db: Path,
+) -> None:
+    """discussion_r3974235458 P2 BLOCKING: `_resolve_beatgrid_source` used to
+    take `request` and re-derive the selection itself, a SECOND read
+    independent of the caller's own `_current_beatgrid_source` call for the
+    ANALYSIS_NOT_FOUND rescue branch - an agent's PUT landing between the two
+    reads could pair a rescue built for one source with a stamp for the
+    other, e.g. a permanent lying `beatgrid_source: "rekordbox"` 200 for a
+    track whose rekordbox ANLZ was genuinely missing.
+
+    Now it takes `source: str` directly, so the caller's single snapshot is
+    the only source of truth by construction - there is no `request` left to
+    re-read from. This calls it directly with each source against the SAME
+    real db and stable_id, proving the answer is a deterministic function of
+    the argument alone, never of some independent live read.
+    """
+    payload_own: dict = {}
+    _resolve_beatgrid_source("own", analysis_db, SID_WITH_OWN, payload_own)
+    assert payload_own["beatgrid_source"] == "own"
+    assert payload_own["beatgrid"]["beat_count"] > 0
+
+    payload_rekordbox: dict = {}
+    _resolve_beatgrid_source("rekordbox", analysis_db, SID_WITH_OWN, payload_rekordbox)
+    assert payload_rekordbox["beatgrid_source"] == "rekordbox"
+    assert payload_rekordbox["beatgrid_own_unavailable_reason"] is None
+
+
 @pytest.mark.requirement("PARITY-02")
 def test_rekordbox_source_leaves_payload_beatgrid_untouched(anlz_client: TestClient) -> None:
-    """[if] the rekordbox lane is selected [then] the served beatgrid is left untouched, [else stop]."""
+    """[if] the rekordbox lane is selected [then] the served beatgrid is left
+    untouched, [else stop]."""
     r = anlz_client.get(f"/api/v1/tracks/{SID_WITH_OWN}/anlz")
     assert r.status_code == 200, r.text
     body = r.json()
@@ -247,7 +277,9 @@ def test_rekordbox_source_leaves_payload_beatgrid_untouched(anlz_client: TestCli
 def test_own_source_swaps_in_the_analysis_grid_in_exact_anlz_shape(
     anlz_client: TestClient,
 ) -> None:
-    """[if] the own lane is selected and a real analysis record exists [then] the beatgrid swaps to that record's grid in exact ANLZ shape, [else stop]."""
+    """[if] the own lane is selected and a real analysis record exists [then]
+    the beatgrid swaps to that record's grid in exact ANLZ shape, [else
+    stop]."""
     _set_source(anlz_client, "own")
     r = anlz_client.get(f"/api/v1/tracks/{SID_WITH_OWN}/anlz")
     assert r.status_code == 200, r.text
@@ -270,7 +302,8 @@ def test_own_source_swaps_in_the_analysis_grid_in_exact_anlz_shape(
 def test_own_source_serves_the_same_record_the_projection_derives_bpm_from(
     anlz_state_db: Path, anlz_client: TestClient,
 ) -> None:
-    """[if] /anlz's own grid and analysis_projection's bpm come from different records [then] fail, [else stop]."""
+    """[if] /anlz's own grid and analysis_projection's bpm come from
+    different records [then] fail, [else stop]."""
     _set_source(anlz_client, "own")
     grid = anlz_client.get(f"/api/v1/tracks/{SID_WITH_OWN}/anlz").json()["beatgrid"]
     conn = sqlite3.connect(anlz_state_db)
@@ -286,14 +319,17 @@ def test_own_source_serves_the_same_record_the_projection_derives_bpm_from(
     # lane is on own (analysis_overlay.lane_owned_fields). A grid whose beats
     # disagree with it is a read model reporting a tempo and a grid that were
     # never measured together.
-    assert sorted({beat["bpm"] for beat in grid["beats"]}) == [pytest.approx(projected[0], abs=0.01)]
+    assert sorted({beat["bpm"] for beat in grid["beats"]}) == [
+        pytest.approx(projected[0], abs=0.01)
+    ]
 
 
 @pytest.mark.requirement("PARITY-02")
 def test_own_source_with_no_analysis_record_goes_explicitly_empty_never_rekordbox(
     anlz_client: TestClient,
 ) -> None:
-    """[if] the own lane is selected and no analysis record exists [then] the beatgrid goes explicitly empty with a named reason, [else stop]."""
+    """[if] the own lane is selected and no analysis record exists [then] the
+    beatgrid goes explicitly empty with a named reason, [else stop]."""
     _set_source(anlz_client, "own")
     r = anlz_client.get(f"/api/v1/tracks/{SID_UNANALYZED}/anlz")
     assert r.status_code == 200, r.text
@@ -307,7 +343,8 @@ def test_own_source_with_no_analysis_record_goes_explicitly_empty_never_rekordbo
 def test_own_source_with_a_failed_beatgrid_lane_names_that_lanes_reason(
     anlz_client: TestClient,
 ) -> None:
-    """[if] the own lane is selected and its beatgrid lane failed [then] the beatgrid goes empty carrying that lane's own reason, [else stop]."""
+    """[if] the own lane is selected and its beatgrid lane failed [then] the
+    beatgrid goes empty carrying that lane's own reason, [else stop]."""
     _set_source(anlz_client, "own")
     r = anlz_client.get(f"/api/v1/tracks/{SID_OWN_LANE_FAILED}/anlz")
     assert r.status_code == 200, r.text

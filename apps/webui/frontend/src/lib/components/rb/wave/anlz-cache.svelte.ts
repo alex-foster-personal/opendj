@@ -23,11 +23,29 @@ export {
 	createBeatgridResyncTracking
 } from '$lib/player/beatgrid-resync-guards';
 export type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync-guards';
+// Re-exported so a caller that already imports this module for the cache
+// itself (audio-engine.svelte.ts) can read the fetch generation through the
+// same edge, rather than adding a second one to anlz-fetch-generation.ts.
+export { currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
 
 export type AnlzEntry =
 	| { status: 'loading' }
 	| { status: 'ready'; data: AnlzData; retryAfter?: number }
 	| { status: 'error'; code: string };
+
+// Mirrors apps/analysis/lane_enums.py OWN_BACKEND_PREFIX and
+// apps/analysis/selection.py OWN_ANALYSIS_SOURCE: `track_fields.source` (and
+// therefore a field's `provenance.<field>.source`) is drawn from the wide
+// Source domain (rekordbox, mik, djay, serato, traktor, open-dj-tool,
+// manual, inferred, webui), not a binary rbx/own one, so "not literally
+// rekordbox" is NOT the same claim as "own" - an RBX-lane field can
+// legitimately be sourced from MIK, djay or another non-rekordbox writer
+// (discussion_r3974235445 P1 BLOCKING).
+const _OWN_BACKEND_PREFIX = 'own_';
+const _OWN_ANALYSIS_SOURCE = 'own-analysis';
+function _isOwnProvenanceSource(source: string): boolean {
+	return source === _OWN_ANALYSIS_SOURCE || source.startsWith(_OWN_BACKEND_PREFIX);
+}
 
 const _cache = $state<Record<string, AnlzEntry>>({});
 
@@ -440,6 +458,31 @@ export function invalidateAllAnlzCacheEntries(): void {
 	for (const stable_id of Object.keys(_cache)) delete _cache[stable_id];
 }
 
+/** Evicts every READY entry whose stamped `beatgrid_source` disagrees with
+ * `wantedSource`, leaving one that already agrees (or is still loading/error)
+ * untouched. Returns whether anything was evicted.
+ *
+ * `refreshAnalysisSourceDecks` only runs when a LOADED deck disagrees with
+ * the new source (`_decksDisagreeWith`, analysis-source.svelte.ts) - a track
+ * merely prefetched by library browsing (`ensureAnlz`, never loaded onto a
+ * deck) is invisible to that check, so a switch with no loaded deck to
+ * disagree left such an entry cached under the OLD source indefinitely. The
+ * next deck that loads that track then gets an `isAnlzEntryUsable` cache HIT
+ * on stale bytes even though the toggle already reports the new source
+ * (discussion_r3973991969 P1 BLOCKING). */
+export function evictAnlzCacheEntriesServingOtherSource(
+	wantedSource: 'rekordbox' | 'own'
+): boolean {
+	let evictedAny = false;
+	for (const [stable_id, entry] of Object.entries(_cache)) {
+		if (entry.status === 'ready' && entry.data.beatgrid_source !== wantedSource) {
+			delete _cache[stable_id];
+			evictedAny = true;
+		}
+	}
+	return evictedAny;
+}
+
 type DeckId = 1 | 2 | 3 | 4;
 
 export interface AnalysisSourceRefreshDeck {
@@ -533,7 +576,7 @@ export async function refreshAnalysisSourceDecks(
 	for (const { stableId, fresh, track } of staged) {
 		const bpmProvenance = track.provenance?.bpm;
 		if (bpmProvenance === undefined || bpmProvenance.status !== 'ok') continue;
-		const bpmOnOwn = bpmProvenance.source !== 'rekordbox';
+		const bpmOnOwn = _isOwnProvenanceSource(bpmProvenance.source);
 		const gridOnOwn = fresh.beatgrid_source !== 'rekordbox';
 		if (bpmOnOwn !== gridOnOwn) {
 			throw new Error(

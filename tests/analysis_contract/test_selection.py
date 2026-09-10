@@ -235,6 +235,26 @@ def test_put_with_a_stale_expected_toggle_is_refused_with_409_and_does_not_apply
     assert client.get("/api/v1/analysis/source").json()["lanes"]["waveform"]["toggle"] == "own"
 
 
+def test_a_stale_cas_refuses_the_whole_put_and_leaves_the_default_unpersisted(client) -> None:
+    """discussion_r3974235466: a combined default+toggle PUT whose CAS is
+    stale must not commit the default before raising 409, or the durable
+    default takes effect after relaunch while the caller reads a conflict."""
+    client.put("/api/v1/analysis/source", json={"lane": "waveform", "toggle": "own"})
+    resp = client.put(
+        "/api/v1/analysis/source",
+        json={
+            "lane": "waveform",
+            "default": "own",
+            "toggle": "rbx",
+            "expected_toggle": "unset",
+        },
+    )
+    assert resp.status_code == 409, resp.text
+    got = client.get("/api/v1/analysis/source").json()["lanes"]["waveform"]
+    assert got["default"] == "rbx", "the default must not have committed alongside a refused CAS"
+    assert got["toggle"] == "own"
+
+
 def test_put_with_neither_half_is_refused(client) -> None:
     resp = client.put("/api/v1/analysis/source", json={"lane": "key"})
     assert resp.status_code == 422

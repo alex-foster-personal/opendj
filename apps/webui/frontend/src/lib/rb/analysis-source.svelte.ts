@@ -23,16 +23,25 @@
 import { api, unwrap } from '../api';
 import { ApiError } from '../api/client';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
-import { refreshAnalysisSourceDecks } from '$lib/components/rb/wave/anlz-cache.svelte';
+import {
+	evictAnlzCacheEntriesServingOtherSource,
+	refreshAnalysisSourceDecks
+} from '$lib/components/rb/wave/anlz-cache.svelte';
+import { bumpAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
+import {
+	ANALYSIS_SOURCE_FEATURES,
+	analysisSourceState,
+	type AnalysisSource,
+	type AnalysisSourceFeature
+} from '$lib/rb/analysis-source-state.svelte';
 import { DECK_IDS, deckStates } from './audio-engine.svelte';
 
-export type AnalysisSource = 'rekordbox' | 'own';
-
-/** Features with a genuine own-rolled counterpart to A/B against rekordbox.
- * Mirrors the one lane apps.analysis.lanes' 5 lanes that this UI exposes --
- * widen only once another lane grows a real own-rolled counterpart. */
-export const ANALYSIS_SOURCE_FEATURES = ['beatgrid'] as const;
-export type AnalysisSourceFeature = (typeof ANALYSIS_SOURCE_FEATURES)[number];
+// Re-exported for every existing consumer of this module: the state itself
+// lives in analysis-source-state.svelte.ts (no audio-engine.svelte.ts
+// dependency) so beatgrid-upgrade.ts can read it without importing this
+// module and closing an import cycle back through audio-engine.svelte.ts.
+export { ANALYSIS_SOURCE_FEATURES, analysisSourceState };
+export type { AnalysisSource, AnalysisSourceFeature };
 
 // This UI's feature id doubles as the backend's lane name (both "beatgrid"),
 // but the two vocabularies are declared independently on purpose: the wire
@@ -41,21 +50,6 @@ const _LANE_OF_FEATURE: Record<AnalysisSourceFeature, string> = { beatgrid: 'bea
 
 const _UI_SOURCE_OF_EFFECTIVE: Record<string, AnalysisSource> = { rbx: 'rekordbox', own: 'own' };
 const _TOGGLE_OF_UI_SOURCE: Record<AnalysisSource, 'rbx' | 'own'> = { rekordbox: 'rbx', own: 'own' };
-
-interface AnalysisSourceState {
-	/** What the DAEMON last told us it has selected. Drives the visible control. */
-	features: Record<string, AnalysisSource>;
-	/** What the loaded DECKS are actually holding. See `_recordDeckSources`.
-	 * Published rather than kept module-private because the two can legitimately
-	 * disagree for a poll interval, and an operator or agent asking "why is this
-	 * deck on the other grid" needs to read both halves, not infer one. */
-	deckFeatures: Record<string, AnalysisSource>;
-}
-
-export const analysisSourceState = $state<AnalysisSourceState>({
-	features: {},
-	deckFeatures: {}
-});
 
 // A poll may begin before a local PUT and settle after it. The daemon then
 // correctly answers the PUT with the new source, but the older GET must never
@@ -91,12 +85,6 @@ let _latestPollAdopted = 0;
  * rune (`analysisSourceState.deckFeatures`) rather than in a module-private
  * map so it resets with the rest of the state and is readable by anyone
  * diagnosing a split. */
-
-/** The daemon's per-lane TOGGLE as of the last answer we saw, kept so a failed
- * switch can put back exactly what it displaced (see `_rollBackFailedSwitch`).
- * The UI reads `effective`, which cannot express `unset`, so the toggle is
- * captured verbatim rather than derived from the mirror. */
-const _lastToggles: Record<string, string> = {};
 
 /** A record-change refresh that failed and has nobody else to retry it. This
  * path never writes `analysisSourceState.features`, so the next poll compares
@@ -201,6 +189,17 @@ async function _adopt(
 ): Promise<void> {
 	if (isSuperseded()) return;
 	if (!_decksDisagreeWith(features)) {
+		// No LOADED deck disagrees, but a track merely prefetched (library
+		// browsing's ensureAnlz, never loaded onto a deck) is invisible to that
+		// check and would otherwise keep serving pre-switch bytes to whichever
+		// deck loads it next (discussion_r3973991969 P1 BLOCKING). Bump the
+		// generation only when something was actually evicted: an unrelated
+		// switch (or a re-adoption of the same source) must not force every
+		// in-flight fetch elsewhere to re-check itself for nothing.
+		const beatgrid = features.beatgrid;
+		if (beatgrid !== undefined && evictAnlzCacheEntriesServingOtherSource(beatgrid)) {
+			bumpAnlzFetchGeneration();
+		}
 		_recordDeckSources(features, null);
 		if (isSuperseded()) return;
 		analysisSourceState.features = features;
@@ -238,9 +237,7 @@ export async function loadAnalysisSource(): Promise<void> {
 	await _drainPendingRecordRefresh();
 }
 
-/** The UI feature map, plus the per-lane toggle capture, from one wire body.
- * Both readers need both halves, and reading the toggle only here keeps
- * `_lastToggles` in step with every answer the daemon has actually given. */
+/** The UI feature map from one wire body. */
 function _featuresOf(body: {
 	lanes: Record<string, { effective: string; toggle: string }>;
 }): Record<string, AnalysisSource> {
@@ -249,7 +246,6 @@ function _featuresOf(body: {
 		const lane = body.lanes[_LANE_OF_FEATURE[feature]];
 		if (lane === undefined) continue;
 		features[feature] = _UI_SOURCE_OF_EFFECTIVE[lane.effective];
-		_lastToggles[_LANE_OF_FEATURE[feature]] = lane.toggle;
 	}
 	return features;
 }
@@ -265,9 +261,6 @@ export async function setAnalysisSource(
 	source: AnalysisSource
 ): Promise<void> {
 	const lane = _LANE_OF_FEATURE[feature];
-	// Captured BEFORE the PUT: this is the value the PUT is about to displace,
-	// and the PUT's own response can only report the new one.
-	const displacedToggle = _lastToggles[lane];
 	const attemptedToggle = _TOGGLE_OF_UI_SOURCE[source];
 	const mutation = ++_latestMutation;
 	const body = await unwrap(
@@ -275,6 +268,13 @@ export async function setAnalysisSource(
 			body: { lane, toggle: attemptedToggle }
 		})
 	);
+	// The server's own account of what this PUT just displaced, read and
+	// overwritten under the same lock acquisition as the write. A client-side
+	// cache of an earlier GET/PUT answer can be stale by the time THIS PUT
+	// lands if a concurrent agent's own PUT landed in between, so a rollback
+	// keyed off that cache would restore the wrong prior value
+	// (discussion_r3974235454 P1 BLOCKING).
+	const displacedToggle = body.previous_toggle ?? undefined;
 	const features = _featuresOf(body);
 	try {
 		// `serialize: false`: the ONLY caller is the `analysis_source` performance
@@ -337,20 +337,14 @@ async function _rollBackFailedSwitch(
 	}
 	_latestMutation++;
 	try {
-		// The compensating PUT's own answer is ADOPTED, not discarded. The failed
-		// switch's PUT already moved `_lastToggles[lane]` to the toggle it was
-		// attempting, so leaving that in place would make a retry before the next
-		// 5s poll capture the FAILED toggle as the thing to displace - and a
-		// second failure would then "restore" the daemon to the source the decks
-		// never reached, which is the exact split this function exists to undo
-		// (discussion_r3970967286 P1 BLOCKING). Running the response through
-		// `_featuresOf` is what keeps the capture in step with the daemon.
-		_featuresOf(
-			await unwrap(
-				api.PUT('/api/v1/analysis/source', {
-					body: { lane, toggle: displacedToggle, expected_toggle: attemptedToggle }
-				})
-			)
+		// The compensating PUT's own answer needs no further capture: the value
+		// it restores was the server's own `previous_toggle` from the failed
+		// switch's PUT, not a client-side cache that would otherwise need
+		// re-syncing here (discussion_r3970967286 P1 BLOCKING, discussion_r3974235454).
+		await unwrap(
+			api.PUT('/api/v1/analysis/source', {
+				body: { lane, toggle: displacedToggle, expected_toggle: attemptedToggle }
+			})
 		);
 	} catch (exc) {
 		if (exc instanceof ApiError && exc.status === 409) {
