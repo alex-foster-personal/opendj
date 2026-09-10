@@ -47,6 +47,17 @@ def _paths_ever_together_on_main(
     regardless of history length. ``--full-history`` is required rather than
     the default history simplification, which can skip a merge commit that
     changed a path relative to only one of its parents.
+
+    Deliberately NOT extended to a candidate's own parent (the state right
+    before a path was first added, where it was implicitly absent):
+    ``test_a_merge_resolution_deletion_already_landed_on_main_is_not_flagged``
+    requires main to make the SAME deletion as an explicit commit before a
+    resolution's deletion counts as landed, specifically so that "absence"
+    only coexists via a deliberate main commit, never via the trivial fact
+    that every path main ever added also has a pre-addition ancestor lacking
+    it. Counting that pre-addition state would make ANY preview deletion of
+    an ever-added path coexist by construction, defeating containment for
+    deletions entirely; see r3974239193 for the rejected alternative and why.
     """
     candidates = _git(
         cwd, "log", main_ref, "--full-history", "--format=%H", "--", *sorted(paths)
@@ -209,10 +220,17 @@ def _mark_superseded_commits(
     edit that happens to land back where it started. Scoped to exactly the
     paths that commit changed: if the preview's CURRENT tree already matches
     what came right before that commit at those paths, nothing of it remains.
+
+    An EMPTY diff (an ``--allow-empty`` commit, or any commit whose net
+    effect is a no-op) is the degenerate case of "nothing of it remains": it
+    never served any content to begin with, so it is vacuously superseded.
+    ``paths`` being empty must not fall through to the "" pathspec of
+    ``_trees_identical``, which compares the ENTIRE tree rather than nothing
+    -- the wrong, much broader question.
     """
     for commit in commits:
         paths = _diff_paths(cwd, f"{commit.sha}~1", commit.sha)
-        if paths and _trees_identical(cwd, f"{commit.sha}~1", preview_ref, *paths):
+        if not paths or _trees_identical(cwd, f"{commit.sha}~1", preview_ref, *paths):
             commit.superseded = True
 
 
