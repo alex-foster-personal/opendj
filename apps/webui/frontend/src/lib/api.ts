@@ -21,6 +21,7 @@
  */
 import type { components, paths } from './api-types';
 import { ApiError, api, requireBody, unwrap } from './api/client';
+import { subscribeKind, subscribeResync } from './api/events-bus';
 import { BOOT_COALESCE_TTL_MS, requestCoalescer } from './api/request-coalescer';
 import type { RuleAst } from './smartlists/rule-form';
 
@@ -420,6 +421,18 @@ export async function updateSmartlist(
 /** The coalescer key for the health body read. One string, one endpoint. */
 const HEALTH_KEY = 'GET /api/v1/health';
 
+/**
+ * A cached health read must not outlive the question it answered: a track
+ * import (or any change to `state_db.tracks`) inside the coalescer's TTL
+ * would otherwise be invisible to the next `getHealth()` caller for up to
+ * BOOT_COALESCE_TTL_MS, which is exactly the window BrowserPanel reads
+ * `allTracksCount` from to decide whether the boot pane has anything to
+ * show (PR #1656 review thread on this line). A resync (seq gap) also
+ * invalidates: a gap means something was missed and health may be one of
+ * the things that changed, so serving the pre-gap body is the same bug.
+ */
+subscribeKind('tracks', () => requestCoalescer.invalidate(HEALTH_KEY));
+subscribeResync(() => requestCoalescer.invalidate(HEALTH_KEY));
 
 /**
  * The daemon's health body, shared with any other caller asking inside the

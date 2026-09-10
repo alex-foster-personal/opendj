@@ -23,6 +23,24 @@
  *    read it just replaced
  *  - if two keys share one entry then a caller gets another endpoint's body
  *    typed as its own
+ *
+ * WHY A HAND-DRIVEN CLOCK AND FAKE REQUESTS HERE, rather than the real HTTP
+ * path. This module is a pure coordination primitive: it takes a `now()` and
+ * a request FUNCTION as arguments and knows nothing about fetch, endpoints,
+ * or JSON. Driving it with a controllable clock and a controllable promise is
+ * the same convention `tests/unit/library-refresh-coalesce.test.mjs` already
+ * uses for `src/lib/rb/coalesce.ts`, the sibling coalescer this module's own
+ * TTL logic sits beside: both are exercised at the seam they actually own,
+ * with no fetch, no JSON and no endpoint to fake, because there isn't one at
+ * this layer. The two properties under test (TTL sharing, TTL expiry) need
+ * millisecond-precise control over "now" that a real clock cannot give
+ * without a flaky sleep.
+ *
+ * `getHealth()`'s actual use of this coalescer -- fetch swapped for a real
+ * Response, real HTTP-shaped concurrency, real invalidation from the WS bus
+ * -- is exercised separately in
+ * `tests/unit/health-coalesce-invalidation.test.mjs`, which is the
+ * real-HTTP-path evidence for the claim this module exists to back.
  */
 import assert from 'node:assert/strict';
 import { before, beforeEach, test } from 'node:test';

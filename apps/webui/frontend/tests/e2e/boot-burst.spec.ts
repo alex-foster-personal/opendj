@@ -314,6 +314,18 @@ test('a deck load fired at boot, measured over repeated cold page loads', async 
 
 	expect(samples.length).toBeGreaterThanOrEqual(5);
 
+	// PR #1656 review thread (src/lib/api/request-coalescer.ts:86): this bench
+	// recorded healthCallsAtBoot/uiPrefsCallsAtBoot without ever asserting on
+	// them, so a coalescing regression here would ship silently. -1 is the
+	// "the app never made one of these requests" sentinel (see inBootWindow
+	// above); a per-sample check that it never appears is what makes the
+	// median below trustworthy rather than an average with an unmeasured run
+	// silently mixed in.
+	for (const sample of samples) {
+		expect(sample.healthCallsAtBoot, 'healthCallsAtBoot must be measured, never -1').toBeGreaterThanOrEqual(0);
+		expect(sample.uiPrefsCallsAtBoot, 'uiPrefsCallsAtBoot must be measured, never -1').toBeGreaterThanOrEqual(0);
+	}
+
 	const report = {
 		origin: BOOT_BURST_ORIGIN,
 		emulatedLatencyMs: LATENCY_MS,
@@ -332,4 +344,13 @@ test('a deck load fired at boot, measured over repeated cold page loads', async 
 
 	// eslint-disable-next-line no-console
 	console.log(`[boot-burst] MEDIANS ${JSON.stringify(report.median)} -> ${OUT_PATH}`);
+
+	// The claim this PR actually ships (title and body, post-scope-reduction):
+	// health 4 -> 3, ui-prefs untouched at 2. Health-only is coalesced; see
+	// request-coalescer.ts's "WHAT SHIPPED IS SMALLER THAN WHAT WAS TRIED" for
+	// why ui-prefs is queued rather than forced. Asserting BOTH numbers means a
+	// health regression is caught AND a future ui-prefs change that forgets to
+	// update this claim is caught, instead of only ever checking one direction.
+	expect(report.median.healthCallsAtBoot, 'health@boot must not regress past the coalesced count').toBeLessThanOrEqual(3);
+	expect(report.median.uiPrefsCallsAtBoot, 'ui-prefs@boot is NOT coalesced by this PR; 2 is the unchanged baseline').toBe(2);
 });
