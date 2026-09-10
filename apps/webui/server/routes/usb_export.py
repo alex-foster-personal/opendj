@@ -108,6 +108,7 @@ def _disabled_response(refusal: FlagRefusal | None) -> JSONResponse:
     actually-sandboxed runtime, in which case the response must not blame
     Apple's sandbox for a decision this machine made on its own.
     """
+    detail: dict[str, str | None]
     if refusal is not None:
         detail = {
             "code": refusal.code,

@@ -197,13 +197,13 @@ def _someone_watching() -> bool:
 
 def _scan_volumes(
     *,
+    discovery: UsbDiscovery,
     force: bool = False,
-    discovery: UsbDiscovery | None = None,
     include_simulated: bool = False,
 ) -> list[UsbVolume]:
     """Rescan /Volumes when watched and interval elapsed; else return cache."""
     global _last_scan_mono, _cached
-    resolved_discovery = discovery or _system_discovery()
+    resolved_discovery = discovery
     now = time.monotonic()
     if (
         not force
