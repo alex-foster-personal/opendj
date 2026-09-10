@@ -195,6 +195,34 @@ def test_no_since_labels_the_cohort_as_all_time(tmp_path: Path) -> None:
     assert "Cohort: all-time" in out
 
 
+def test_since_excludes_an_issue_whose_earlier_tier_predates_the_boundary(tmp_path: Path) -> None:
+    """Reviewer finding (PR #1635 new thread, tier-scorecard.py:297): a naive
+    per-ATTEMPT --since filter drops the old attempt but keeps the issue, so an
+    issue with a pre-boundary sonnet attempt and a post-boundary deepseek retry
+    reads as a fresh single-tier deepseek issue and pulls its pre-existing merge
+    into the new cohort. The boundary must be drawn on the issue's EARLIEST
+    attempt across all tiers, so this issue is excluded from deepseek's cohort
+    entirely - not credited to deepseek at all."""
+    jobs = tmp_path / "jobs"
+    boundary = "2026-09-09T21:00:00Z"
+    pre = "2026-09-01T10:00:00Z"
+    post = "2026-09-10T02:00:00Z"
+    _write_log(jobs, "1200",
+               f"{_attempt('sonnet', start=pre, sid='sid-a')}\nEXIT=0 ended_by=self turns=30\n"
+               f"{_attempt('deepseek', start=post, sid='sid-b')}\nEXIT=0 ended_by=self turns=10\n")
+    _write_log(jobs, "1201", f"{_attempt('deepseek', start=post)}\nEXIT=0 ended_by=self turns=5\n")
+    prs = _prs(jobs, [
+        _pr(91200, "af--issue-1200--straddles", state="MERGED"),
+        _pr(91201, "af--issue-1201--clean-new", state="MERGED"),
+    ])
+    out = _run(jobs, prs, cli_args=["--since", boundary]).stdout
+    ds = next(ln for ln in out.splitlines() if ln.startswith("deepseek"))
+    f = ds.split()
+    assert f[2] == "1", f"#1200 straddles the boundary and must not count as single-tier: {ds}"
+    assert f[3] == "1" and f[4] == "1", \
+        f"only #1201 (clean, entirely post-boundary) belongs to the cohort: {ds}"
+
+
 #---------------------------------------------------------------- PR read cap
 def test_pr_read_at_the_cap_is_fatal_not_a_silent_truncation(tmp_path: Path) -> None:
     """Past the gh pr list read cap, older outcomes vanish into noPR for every
@@ -247,3 +275,24 @@ def test_branch_digits_attach_to_the_whole_number_not_a_prefix(tmp_path: Path) -
     assert ds.split()[3] == "0", f"#114 must not claim issue-1140's branch: {ds}"
     assert sn.split()[3] == "1" and sn.split()[4] == "1", \
         f"#1140 must be credited the branch that names it: {sn}"
+
+
+def test_branch_owner_only_a_slug_naming_a_second_issue_is_not_double_indexed(
+    tmp_path: Path,
+) -> None:
+    """Reviewer finding (PR #1635 new thread, tier-scorecard.py:71): an unanchored
+    search matches every 'issue-N' substring, so a branch like
+    af--issue-123--follow-up-issue-456 gets indexed under BOTH issues and a PR it
+    did not produce lands in #456's denominator. Only the leading af--issue-<N>
+    owner segment may match."""
+    jobs = tmp_path / "jobs"
+    _write_log(jobs, "123", f"{_attempt('deepseek')}\nEXIT=0 ended_by=self turns=5\n")
+    _write_log(jobs, "456", f"{_attempt('advisor')}\nEXIT=0 ended_by=self turns=5\n")
+    prs = _prs(jobs, [_pr(90123, "af--issue-123--follow-up-issue-456", state="MERGED")])
+    out = _run(jobs, prs).stdout
+    ds = next(ln for ln in out.splitlines() if ln.startswith("deepseek"))
+    adv = next(ln for ln in out.splitlines() if ln.startswith("advisor"))
+    assert ds.split()[3] == "1" and ds.split()[4] == "1", \
+        f"#123 (the owner) must be credited the PR: {ds}"
+    assert adv.split()[3] == "0", \
+        f"#456 (named only in the slug) must not also claim this PR: {adv}"
