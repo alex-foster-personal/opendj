@@ -35,20 +35,16 @@
  *
  * These are the audio-liveness kinds: each one means "the operator may be
  * hearing nothing, or seeing nothing move", and each is worth a round trip.
+ * `audio-output-rebind-failed` joined them Wed 9 Sep 2026: the output-rebind
+ * path was wired at `info` severity, so a failed re-bind - the operator
+ * hearing nothing, recovery failed - stayed inside the browser.
  *
- * `audio-output-rebind-failed` joined them Wed 9 Sep 2026. The output-rebind
- * path was wired at `info` severity throughout, so the row that says the device
- * re-bind did NOT work - the operator is hearing nothing and the recovery
- * failed - stayed inside the browser. The 17:44:43Z Bluetooth flap that killed
- * audio on the Air left no line at all in `webui-client-errors-2026-09-09.log`.
- *
- * `audio-output-dead` and `audio-output-dead-persistent` joined them Thu 10 Sep
- * 2026 (issue #1641). Both are recorded at ERROR by audio-output-liveness.ts,
- * and `audio-output-dead` is the app's ONLY device-level "no sound is leaving
- * this machine" verdict, so leaving them out closed the observability hole for
- * one row out of four. That drift is now CHECKED rather than merely corrected:
- * escalated-kinds-superset.test.mjs reds if any module records a kind at
- * `error` severity that is absent from this set.
+ * `audio-output-dead` and `audio-output-dead-persistent` joined them Thu 10
+ * Sep 2026 (issue #1641): the app's only device-level "no sound is leaving
+ * this machine" verdict, recorded at ERROR by audio-output-liveness.ts.
+ * `escalated-kinds-superset.test.mjs` reds if any module records a kind at
+ * `error` severity that is absent from this set, so this drift is CHECKED,
+ * not just corrected.
  */
 const ESCALATED_KINDS: ReadonlySet<string> = new Set([
 	'xrun',
@@ -80,18 +76,15 @@ const _lastEscalationAtMs = new Map<string, number>();
  * Where an escalated row goes, injected at client boot.
  *
  * THIS MODULE HAS NO IMPORTS, AND THAT IS A HARD PROPERTY, not a style
- * preference. It began as a pure module and a static import of
- * `reportClientError` was added here on Wed 2 Sep 2026 (the import statement is
- * deliberately not written out anywhere in this file: the quality gate's
- * dependency graph is built by scanning module TEXT, so a realistic import line
- * inside a comment is read as a real edge and reports a false cycle - which it
- * duly did). That import reaches `$lib/api/client.ts`, which evaluates
- * `import.meta.env.VITE_API_BASE` at module scope - and Playwright loads spec
- * files under plain Node, where `import.meta.env` is undefined. Every
+ * preference (the import statement that would prove it is deliberately not
+ * written out here: the quality gate's dependency graph scans module TEXT, so
+ * even a realistic import line inside a comment reads as a real edge). A
+ * static import of `reportClientError` was tried Wed 2 Sep 2026; it reaches
+ * `$lib/api/client.ts`, which evaluates `import.meta.env.VITE_API_BASE` at
+ * module scope, undefined under Playwright's plain-Node spec loader - every
  * Playwright config whose specs reach this module transitively died at CONFIG
- * LOAD with `TypeError: Cannot read properties of undefined` followed by
- * `Error: No tests found`, i.e. the gate reported zero tests rather than a
- * failure. A sink injected at boot keeps the escalation and keeps the purity.
+ * LOAD, reporting zero tests rather than a failure. A sink injected at boot
+ * keeps the escalation and keeps the purity.
  *
  * `null` is a legitimate state, not an error: unit tests, Playwright's Node
  * loader and any pre-boot code all run without a sink, and a row must never
@@ -169,7 +162,6 @@ export interface DeckStateBaseline {
 /**
  * Per-kind budgets. The ring is still bounded at the sum of these, so the
  * flushed JSON cannot grow; what changed is WHO pays for a burst.
- *
  * deck-load covers `deck-load sid=...` and `deck-load-fail`, i.e. the load KPI
  * __mdtLastLoads() reads. 16 rows is four full 4-deck loads.
  * transport-schedule is the latency instrument, and the noisy one: 16 rows is
@@ -187,13 +179,12 @@ const TRANSPORT_SCHEDULE_BUDGET = 16;
 const DECK_STATE_BUDGET = 8;
 const OTHER_BUDGET = 8;
 /**
- * Q1: press rows, kept out of the pitch fader's way.
- *
- * PitchFader drives `_scheduleDeck` from an unthrottled pointermove, so one
- * drag is ~40 rows against 16. A DJ starts a track and then reaches for the
- * fader to beatmatch it - the standard gesture, not an edge case - so the
- * press row carrying `input_to_audible_ms` was evicted by the operator's very
- * next move. 8 is two full four-deck press flurries, which is all a press
+ * Q1: press rows, kept out of the pitch fader's way. PitchFader drives
+ * `_scheduleDeck` from an unthrottled pointermove, so one drag is ~40 rows
+ * against 16. A DJ starts a track and then reaches for the fader to
+ * beatmatch it - the standard gesture, not an edge case - so the press row
+ * carrying `input_to_audible_ms` was evicted by the operator's very next
+ * move. 8 is two full four-deck press flurries, which is all a press
  * comparison needs: a press is a discrete gesture, never a per-frame stream.
  */
 const TRANSPORT_PRESS_BUDGET = 8;
