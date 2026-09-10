@@ -1645,7 +1645,13 @@
               "window-error",
               "unhandled-rejection",
               "sveltekit",
-              "ui-error"
+              "ui-error",
+              "console-error",
+              "console-warn",
+              "resource-error",
+              "csp-violation",
+              "webview-console",
+              "webview-navigation"
             ],
             "title": "Kind",
             "type": "string"

@@ -36,7 +36,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// The payload directory inside the bundle, relative to Contents/Resources.
@@ -56,6 +56,8 @@ pub const BOOT_TIMEOUT: Duration = Duration::from_secs(30);
 const HEALTH_PATH: &str = "/api/v1/health";
 const POLL_INTERVAL: Duration = Duration::from_millis(150);
 const SOCKET_TIMEOUT: Duration = Duration::from_millis(750);
+
+static SHELL_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 /// Environment the shell strips before spawning the engine.
 ///
@@ -461,7 +463,7 @@ impl LogSink {
     /// Record why the pump stopped. The first reason wins: whichever stream
     /// failed first is the cause, and the second is usually its consequence.
     fn record_failure(&self, detail: String) {
-        eprintln!("[ERROR] {detail}");
+        append_shell_log("ERROR", &detail);
         let mut slot = self.failure.lock().expect("engine log failure mutex poisoned");
         if slot.is_none() {
             *slot = Some(detail);
@@ -593,6 +595,49 @@ fn rotate_log_if_needed(log_path: &Path, max_bytes: u64) -> std::io::Result<()> 
         }
     }
     std::fs::rename(log_path, rotation_path(log_path, 1))
+}
+
+/// Append one shell-owned line to the shared engine log.
+pub fn append_shell_log(level: &str, message: &str) {
+    let Some(path) = SHELL_LOG_PATH.get() else {
+        eprintln!("[{level}] {message}");
+        return;
+    };
+    let line = format!("[shell {level}] {message}\n");
+    if let Err(err) = append_rotated(path, line.as_bytes()) {
+        eprintln!("[shell log failed] {err}: [{level}] {message}");
+    }
+}
+
+/// Route shell stderr and panics into the same engine log the child uses.
+pub fn install_shell_logging(log_path: &Path) -> Result<(), EngineError> {
+    if let Some(parent) = log_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| {
+            EngineError::new(
+                "Open DJ could not create its log folder.",
+                format!("{}: {err}", parent.display()),
+            )
+        })?;
+    }
+    verify_log_writable(log_path)?;
+    let _ = SHELL_LOG_PATH.set(log_path.to_path_buf());
+    std::panic::set_hook(Box::new(|info| {
+        let payload = if let Some(message) = info.payload().downcast_ref::<&str>() {
+            (*message).to_string()
+        } else if let Some(message) = info.payload().downcast_ref::<String>() {
+            message.clone()
+        } else {
+            "panic".into()
+        };
+        let location = info
+            .location()
+            .map(|loc| format!("{}:{}", loc.file(), loc.line()))
+            .unwrap_or_else(|| "unknown".into());
+        let detail = format!("panic at {location}: {payload}");
+        append_shell_log("panic", &detail);
+        eprintln!("[PANIC] {detail}");
+    }));
+    Ok(())
 }
 
 /// The tail of the engine log, for an error dialog that says something.
@@ -838,6 +883,19 @@ mod tests {
         assert!(failure.headline.contains("lost the engine log"), "{failure}");
         assert!(failure.detail.contains("disk full"), "{failure}");
         engine.shutdown();
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn shell_logging_appends_prefixed_lines() {
+        let directory = scratch_dir("shell-log");
+        let log_path = directory.join("engine.log");
+        install_shell_logging(&log_path).unwrap();
+        append_shell_log("WARN", "monitor scale factor 0");
+        assert_eq!(
+            std::fs::read_to_string(&log_path).unwrap(),
+            "[shell WARN] monitor scale factor 0\n"
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
 
