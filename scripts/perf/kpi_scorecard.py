@@ -309,6 +309,18 @@ def _classify_required_reading(
     return _ReadingCheck(ok=(reading.value, age))
 
 
+def _normalize_capture_id(raw: object) -> str | None:
+    """A ledger row's `capture_id` reduced to `None` (absent, blank, or not a
+    string) or the stripped string itself. Closes two reviewer-found gaps: a
+    blank string used to count as one NAMED cohort (the set held one member,
+    not `None`); a non-string JSON value (an array or object) reached a
+    bare `{...}` set literal and crashed with `TypeError: unhashable type`.
+    """
+    if not isinstance(raw, str):
+        return None
+    return raw.strip() or None
+
+
 def _cohort_mismatch_reason(
     scoreable: list[tuple[dict, float, int]], by_name: dict[str, Reading]
 ) -> str | None:
@@ -319,7 +331,9 @@ def _cohort_mismatch_reason(
     under the file's complexity ceiling; see that function's own docstring
     for why an unnamed capture id does not excuse a reading from this check.
     """
-    capture_ids = {by_name[req["kpi"]].capture_id for req, _, _ in scoreable}
+    capture_ids = {
+        _normalize_capture_id(by_name[req["kpi"]].capture_id) for req, _, _ in scoreable
+    }
     if len(capture_ids) == 1 and None not in capture_ids:
         return None
     return "required KPIs do not share one evidence cohort (capture_id): " + ", ".join(
@@ -370,21 +384,17 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
     only BREAKING is unconditionally the floor.
 
     A scenario requiring more than one KPI (S2's audible+visual, S4's frame
-    delta+dropped frames, S7's latency+drop count, S6's duration+blockage)
-    must not combine them into one non-BREAKING verdict unless the evidence
-    says they were captured together: each required KPI's newest reading is
-    picked independently, so nothing before this stopped an audible p99 from
-    one press-testing session pairing with a visual p95 from an unrelated
-    one, reporting a combined experience nobody actually measured happening
-    at once. A ledger entry names the single measurement session it came
-    from via `capture_id`; two or more required readings are scoreable and
-    combine ONLY when every one of them names the SAME non-null capture id.
-    An unnamed capture id on any side is rejected exactly like a differing
-    one: absence cannot prove a shared session, only fail to disprove one,
-    and "cannot disprove" is not evidence a verdict may be built on. As with
-    the BREAKING carve-out above, a KPI that is independently, conclusively
-    BREAKING needs no cohort at all: it stands on its own regardless of what
-    else was or was not measured alongside it.
+    delta+dropped frames+max, S7's latency+drop count, S6's
+    duration+blockage) must not combine them into one non-BREAKING verdict
+    unless the evidence says they were captured together: each required
+    KPI's newest reading is picked independently, so nothing before this
+    stopped an audible p99 from one press-testing session pairing with a
+    visual p95 from an unrelated one. A ledger entry names its measurement
+    session via `capture_id`; readings combine ONLY when every one of them
+    names the SAME non-null, non-blank capture id - missing, blank, or
+    differing all reject the same way, since none of those can prove a
+    shared session. As with the BREAKING carve-out above, a KPI that is
+    independently, conclusively BREAKING needs no cohort at all.
     """
     scores: list[Score] = []
     for sid, cfg in kpi_map["scenarios"].items():
