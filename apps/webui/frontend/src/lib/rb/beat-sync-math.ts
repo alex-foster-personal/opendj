@@ -15,7 +15,8 @@
  * Tempo ratios use beat INTERVALS (60/dt), never the PQTZ bpm field alone -
  * that field can disagree with .t (Proper Education: field 124.72 vs dt→125).
  */
-import type { AnlzBeat } from '$lib/rb/anlz-types';
+import type { AnlzBeat, AnlzCue } from '$lib/rb/anlz-types';
+import type { LoopState } from '$lib/rb/deck-state-types';
 
 // -------------------------------------------------------------- contracts
 
@@ -113,6 +114,19 @@ export function pqtzLoopBeatCount(
 	const endIndex = beats.findIndex((beat) => Math.abs(beat.t - endSec) < 1e-9);
 	const count = endIndex - startIndex;
 	return startIndex >= 0 && endIndex > startIndex ? count : null;
+}
+
+/** Display-only stored loop (COMPONENT-MAP 1.3: loop chips are display at
+ * v1): the rekordbox active loop when one exists, engaged: false. */
+export function displayLoopFrom(cues: AnlzCue[], beats: readonly AnlzBeat[]): LoopState | null {
+	const active = cues.find((c) => c.active_loop && c.out_ms !== null);
+	if (active === undefined || active.out_ms === null) return null;
+	return {
+		in_ms: active.in_ms,
+		out_ms: active.out_ms,
+		engaged: false,
+		beat_length: pqtzLoopBeatCount(beats, active.in_ms, active.out_ms)
+	};
 }
 
 function _enclosingBeatIndex(

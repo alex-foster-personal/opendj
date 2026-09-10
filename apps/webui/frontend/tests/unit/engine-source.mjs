@@ -69,7 +69,9 @@ export function readFrontendSource(relativePath) {
 export const ENGINE_SOURCE_PATHS = [
   "lib/rb/audio-engine.svelte.ts",
   "lib/rb/audio-context-instrumentation.ts",
+  "lib/rb/beat-sync-math.ts",
   "lib/rb/press-stamp.ts",
+  "lib/player/beatgrid-resync-guards.ts",
   "lib/player/constants.ts",
   "lib/player/headphones.ts",
   "lib/player/key/camelot.ts",

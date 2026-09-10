@@ -43,6 +43,52 @@ _HAS_FPCALC: bool = shutil.which("fpcalc") is not None
 # assert what a MISSING ffmpeg produces run everywhere; only the ones that
 # need a real decode are gated here.
 _HAS_FFMPEG: bool = shutil.which("ffmpeg") is not None
+
+
+def _ffmpeg_can_resample() -> bool:
+    """True when this host's ffmpeg can actually run the pinned soxr chain."""
+    try:
+        from apps.analysis.pcm_fingerprint import (
+            FingerprintUnavailable,
+            require_resampler,
+        )
+    except ImportError:
+        # apps.analysis.pcm_fingerprint pulls in numpy through
+        # apps.analysis_waveform.decode. Some CI lanes (e.g. the frontend
+        # typing gate) run pytest against a deliberately minimal, isolated
+        # env with none of that installed, and this conftest is the root one
+        # every pytest invocation in the repo collects. A host missing the
+        # stack this probe needs genuinely cannot run the canonical soxr
+        # decode either, so that is the correct, honest answer here -- not a
+        # collection-time crash for suites nowhere near this lane.
+        return False
+
+    try:
+        require_resampler()
+    except FingerprintUnavailable:
+        return False
+    return True
+
+
+# soxr is a BUILD option of ffmpeg, not a runtime flag: every build accepts
+# `resampler=soxr` as an option value and a build without libsoxr then fails
+# at filter-configure time. decode_fingerprint is defined over that
+# resampler, so the probe RUNS the filter chain rather than reading a
+# version string (Homebrew ffmpeg 9.0.1 on macOS passes the first check and
+# fails the second, measured Wed 9 Sep 2026).
+#
+# Called UNCONDITIONALLY, not gated behind `_HAS_FFMPEG`: that gate is a bare
+# PATH lookup, but `_ffmpeg_can_resample` resolves through the production
+# `resolve_ffmpeg` (MDT_FFMPEG override first, else PATH) via
+# `require_resampler`. Gating this call behind `_HAS_FFMPEG` meant a host with
+# ffmpeg available ONLY through `MDT_FFMPEG` - as a packaged or GUI-launched
+# app without Homebrew on PATH is expected to be - never ran the probe at
+# all, so `_HAS_SOXR` stayed False and every `requires_soxr` test was skipped
+# despite the capability being present (Codex P2 BLOCKING, PR #1587).
+# `_ffmpeg_can_resample` already catches an absent/broken ffmpeg (ImportError,
+# `FingerprintUnavailable`) and returns False, so calling it with no ffmpeg at
+# all anywhere is safe.
+_HAS_SOXR: bool = _ffmpeg_can_resample()
 # madmom is not installable from PyPI on Python 3.10+ (0.16.1 imports the
 # long-removed collections.MutableSequence), so requirements.txt pulls the
 # git HEAD with --no-build-isolation and no pyproject extra can supply it.
@@ -146,6 +192,11 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     )
     skip_fpcalc = pytest.mark.skip(reason="needs chromaprint's fpcalc on PATH")
     skip_ffmpeg = pytest.mark.skip(reason="needs ffmpeg on PATH")
+    skip_soxr = pytest.mark.skip(
+        reason="UNAVAILABLE: this host's ffmpeg has no libsoxr, so the "
+               "canonical decode fingerprint is unmeasured here. This is a "
+               "capability report, not a pass."
+    )
     for item in items:
         if sys.platform != "darwin" and "requires_darwin" in item.keywords:
             item.add_marker(skip_darwin)
@@ -161,3 +212,5 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip_fpcalc)
         if not _HAS_FFMPEG and "requires_ffmpeg" in item.keywords:
             item.add_marker(skip_ffmpeg)
+        if not _HAS_SOXR and "requires_soxr" in item.keywords:
+            item.add_marker(skip_soxr)
