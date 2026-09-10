@@ -213,28 +213,51 @@ def get_track_anlz(
         payload = rb_vendor.build_anlz_payload(content, points, state_db_path)
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, dict) else {}
-        if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
+        code = detail.get("code")
+        if code == "VENDOR_MAPPING_NOT_FOUND":
+            # Locally imported track (no rekordbox analysis). Everything rekordbox
+            # owns stays empty, but the waveform is decodable from the audio
+            # itself, so serve OUR peaks (ffmpeg, cached under
+            # data/state/local-waveform-cache) and say so in ``local_waveform``.
+            # A decode that has not and cannot run yields empty bands plus the
+            # reason - never a synthesised shape.
+            # Same audience GET /audio resolves for this request, so a Share
+            # listener's lane is drawn from the rung they actually hear.
+            share = getattr(request.state, "share_audience", "local") == "share"
+            payload = rb_vendor.local_anlz_payload(stable_id, points, share=share)
+            # The own-beatgrid overlay again, on THIS branch too. `build_anlz_payload`
+            # applies it on the mapped branch, but a locally imported file never goes
+            # through that function, so a track with a canonical own record was still
+            # served an empty rekordbox-labelled grid under `beatgrid=own` - and a
+            # local import is exactly the track most likely to have no rekordbox
+            # analysis and most likely to depend on ours (Codex P1 BLOCKING,
+            # PR #1587). Applied here rather than inside `local_anlz_payload`, which
+            # belongs to the waveform lane; this route already owns choosing between
+            # the two branches.
+            payload = own_beatgrid_overlay.apply_own_beatgrid(payload, stable_id, state_db_path)
+        elif code == "ANALYSIS_NOT_FOUND":
+            # A MAPPED track whose vendor ANLZ files are missing, unsafe, or
+            # wholly unparseable. `build_anlz_payload` raised before the own
+            # overlay ever ran, so a track with the beatgrid lane promoted to
+            # own and a valid canonical own record could not be served at all
+            # (Codex P1 BLOCKING, PR #1587) even though the own lane has a
+            # real, honest answer independent of the vendor's broken file.
+            #
+            # Cues live in djmdCue, not the ANLZ files, so they are still real
+            # data for this track and are fetched for real rather than reused
+            # from `empty_anlz_payload`'s local-import stub.
+            payload = rb_vendor.empty_anlz_payload(stable_id, points)
+            payload["cues"] = rb_vendor.fetch_cues(content.vendor_id)
+            payload = own_beatgrid_overlay.apply_own_beatgrid(payload, stable_id, state_db_path)
+            if payload["beatgrid"]["source"] != own_beatgrid_overlay.SOURCE_OWN:
+                # The beatgrid lane is not on own, so there is nothing real to
+                # show: the rekordbox stub in `payload` would be
+                # indistinguishable from a genuinely silent, healthy track
+                # (GUARD-01 H10). Keep failing loud rather than paint over a
+                # dead vendor source.
+                raise
+        else:
             raise
-        # Locally imported track (no rekordbox analysis). Everything rekordbox
-        # owns stays empty, but the waveform is decodable from the audio
-        # itself, so serve OUR peaks (ffmpeg, cached under
-        # data/state/local-waveform-cache) and say so in ``local_waveform``.
-        # A decode that has not and cannot run yields empty bands plus the
-        # reason - never a synthesised shape.
-        # Same audience GET /audio resolves for this request, so a Share
-        # listener's lane is drawn from the rung they actually hear.
-        share = getattr(request.state, "share_audience", "local") == "share"
-        payload = rb_vendor.local_anlz_payload(stable_id, points, share=share)
-        # The own-beatgrid overlay again, on THIS branch too. `build_anlz_payload`
-        # applies it on the mapped branch, but a locally imported file never goes
-        # through that function, so a track with a canonical own record was still
-        # served an empty rekordbox-labelled grid under `beatgrid=own` - and a
-        # local import is exactly the track most likely to have no rekordbox
-        # analysis and most likely to depend on ours (Codex P1 BLOCKING,
-        # PR #1587). Applied here rather than inside `local_anlz_payload`, which
-        # belongs to the waveform lane; this route already owns choosing between
-        # the two branches.
-        payload = own_beatgrid_overlay.apply_own_beatgrid(payload, stable_id, state_db_path)
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
     # An own-sourced beatgrid is NOT publicly cacheable for an hour. This
