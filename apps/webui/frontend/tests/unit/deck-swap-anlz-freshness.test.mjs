@@ -25,6 +25,14 @@ import { readFrontendSource } from './engine-source.mjs';
  * deck-beatgrid-fallback-upgrade.test.mjs and deck-lazy-stems.test.mjs), so
  * this guard reads the engine as text instead of executing the race.
  *
+ * Fifth round (Codex P2 BLOCKING, PR #1587, discussion on line 3065): the same
+ * freshness check landed `st.anlz`/`st.anlz_error` but left `st.bpm` set from
+ * the pre-revalidation `candidateTrack.bpm` a few lines above. The deck's
+ * separately-tracked public BPM (header, IPC, recommendations, autoplay) then
+ * disagreed with the grid Beat Sync had just adopted - an own-sourced
+ * revalidation carries its own projected bpm, and an authoritative error must
+ * clear the field rather than leave the old source's tempo on display.
+ *
  * MUTATION CHECK (re-measure at your SHA, do not trust this comment's count):
  *   - the swap goes back to `st.anlz = candidateAnlz;` unconditionally -> fails
  *   - `st.loop` is derived from `candidateAnlz` instead of the freshness-
@@ -33,6 +41,9 @@ import { readFrontendSource } from './engine-source.mjs';
  *     could race the SAME fetch it is meant to be at least as fresh as) -> fails
  *   - the error branch is dropped, or `st.anlz_error` goes back to an
  *     unconditional `null`                                              -> fails
+ *   - `st.bpm` goes back to `candidateTrack.bpm ?? null` unconditionally,
+ *     ignoring the freshness-checked grid's own projected bpm             -> fails
+ *   - `st.bpm` is not cleared to `null` on the authoritative-error branch -> fails
  */
 
 const source = readFrontendSource('src/lib/rb/audio-engine.svelte.ts');
@@ -53,6 +64,10 @@ test('load() publishes the freshest usable anlz cache entry at swap time, not th
 	const anlzAssignIndex = body.indexOf('st.anlz = publishedAnlz;');
 	const anlzErrorAssignIndex = body.indexOf('st.anlz_error = publishedAnlzError;');
 	const loopAssignIndex = body.indexOf('_displayLoopFrom(publishedAnlz.cues, publishedAnlz.beatgrid.beats)');
+	const bpmDeclareIndex = body.indexOf('let publishedBpm: number | null;');
+	const usableBpmIndex = body.indexOf('publishedBpm = publishedAnlz.beatgrid.bpm ?? candidateTrack.bpm ?? null;');
+	const errorBpmIndex = body.indexOf('publishedBpm = null;');
+	const bpmAssignIndex = body.indexOf('st.bpm = publishedBpm;');
 
 	assert.ok(freshnessIndex > 0, 'the swap must re-read the shared anlz cache for this stable_id before publishing');
 	assert.ok(declareIndex > freshnessIndex, 'publishedAnlz must be derived from the freshly re-read cache entry');
@@ -82,6 +97,26 @@ test('load() publishes the freshest usable anlz cache entry at swap time, not th
 		!/st\.anlz_error = null;\n(\s*st\.processor_error)/.test(body),
 		'st.anlz_error must not be unconditionally cleared right after the swap - an authoritative revalidation ' +
 			'failure caught in the same race must survive onto the published deck'
+	);
+
+	assert.ok(bpmDeclareIndex > declareIndex, 'publishedBpm must be derived alongside publishedAnlz, not separately');
+	assert.ok(
+		usableBpmIndex > usableIndex,
+		"the usable branch must project the deck's public BPM from the freshness-checked grid, falling back to " +
+			'the candidate track only when the grid carries none of its own'
+	);
+	assert.ok(
+		errorBpmIndex > errorBranchIndex,
+		'an authoritative error must clear the public BPM rather than leave the pre-revalidation tempo on display'
+	);
+	assert.ok(
+		bpmAssignIndex > anlzErrorAssignIndex,
+		'st.bpm must be assigned from the same freshness-checked decision as st.anlz/st.anlz_error, not earlier ' +
+			'from the raw candidateTrack'
+	);
+	assert.ok(
+		!/st\.bpm = candidateTrack\.bpm \?\? null;/.test(body),
+		'st.bpm must not go back to being set unconditionally from the pre-revalidation candidate track'
 	);
 
 	// candidateAnlz is captured before load()'s awaits (see the const above rt.processor.dispose()

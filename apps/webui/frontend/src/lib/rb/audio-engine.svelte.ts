@@ -3034,7 +3034,6 @@ class RbAudioEngine implements AudioEngine {
 			st.title = candidateTrack.title ?? null;
 			st.artist = candidateTrack.artist ?? null;
 			st.rating = candidateTrack.rating ?? null;
-			st.bpm = candidateTrack.bpm ?? null;
 			st.key = candidateTrack.key ?? null;
 			// The decoded buffer is the audio actually scheduled. Metadata can
 			// differ, so it must not define waveform bounds or transport truth.
@@ -3061,21 +3060,32 @@ class RbAudioEngine implements AudioEngine {
 			const latestAnlzEntry = getAnlzEntry(stable_id);
 			let publishedAnlz: AnlzData;
 			let publishedAnlzError: string | null;
+			let publishedBpm: number | null;
 			if (isAnlzEntryUsable(latestAnlzEntry)) {
 				publishedAnlz = latestAnlzEntry.data as AnlzWithVocals;
 				publishedAnlzError = null;
+				publishedBpm = publishedAnlz.beatgrid.bpm ?? candidateTrack.bpm ?? null;
 			} else if (latestAnlzEntry?.status === 'error') {
 				publishedAnlz = {
 					...candidateAnlz,
 					beatgrid: { source: candidateAnlz.beatgrid.source, beat_count: 0, beats: [] }
 				};
 				publishedAnlzError = latestAnlzEntry.code;
+				publishedBpm = null;
 			} else {
 				publishedAnlz = candidateAnlz;
 				publishedAnlzError = null;
+				publishedBpm = publishedAnlz.beatgrid.bpm ?? candidateTrack.bpm ?? null;
 			}
 			st.anlz = publishedAnlz;
 			st.anlz_error = publishedAnlzError;
+			// The deck's separately-tracked public BPM (header, IPC, recommendations,
+			// autoplay) must not disagree with the grid Beat Sync just adopted above:
+			// an own-sourced revalidation that settled in this same swap race carries
+			// its own projected bpm, and an authoritative error must clear the field
+			// rather than leave the pre-revalidation source's tempo on display (Codex
+			// P2 BLOCKING, PR #1587, fifth round).
+			st.bpm = publishedBpm;
 			st.processor_error = null;
 			st.sync_error = null;
 			st.stems = candidateStemState;
