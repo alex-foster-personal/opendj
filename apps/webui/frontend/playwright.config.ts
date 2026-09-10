@@ -79,6 +79,7 @@ export default defineConfig({
 		// budget too -- Sol P2 BLOCKING on #1463, thread 3961468764. Runs only
 		// under playwright.rekordbox-gate.config.ts (60s timeout) instead.
 		'**/artwork-reader-unavailable.spec.ts', // playwright.rekordbox-gate.config.ts (30s root timeout too tight, #1463 thread 3961468764)
+		'**/missing-tracks-folder.spec.ts', // playwright.rekordbox-gate.config.ts
 		'**/boot-burst.spec.ts', // playwright.boot-burst.config.ts (real library benchmark)
 		'**/comment-hotkey-browser.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
 		'**/performance-*.spec.ts', // playwright.performance.config.ts (real library)
