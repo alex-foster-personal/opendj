@@ -48,7 +48,19 @@ export interface BeatgridFallbackGate {
  *    unmapped tracks").
  *
  * A rekordbox-mapped track with no PQTZ is rekordbox's own answer and is
- * left alone, and an unknown vendor is never guessed at. */
+ * left alone, and an unknown vendor is never guessed at.
+ *
+ * An empty OWN block (source: 'own', status: 'missing' or 'failed') is also
+ * left alone, never patched over by this fallback: /beatgrid-fallback reads
+ * the LEGACY librosa/MIK analysis row (own_% rows are explicitly excluded
+ * server-side, apps/webui/server/routes/analysis.py's `_load_latest_record`)
+ * but always labels its response `source: "own"` regardless, so accepting
+ * it here would silently replace an own lane's authoritative terminal
+ * answer - missing (the backfill queue has not reached this track) or
+ * failed (the analyzer ran and could not measure) - with a legacy grid
+ * dressed up as if own had produced it, re-enabling quantize and Beat Sync
+ * against a measurement own already rejected or has not reached (Codex P1
+ * BLOCKING, PR #1587). */
 export function shouldUseBeatgridFallback(gate: BeatgridFallbackGate): boolean {
 	// PARITY-02: an empty grid from a rekordbox-selected lane means "no grid
 	// FROM REKORDBOX", not "no grid at all, so show whatever we have" - a DJ
@@ -59,6 +71,7 @@ export function shouldUseBeatgridFallback(gate: BeatgridFallbackGate): boolean {
 	if (gate.anlzErrorCode !== null) return false; // another lane's failure
 	if (gate.anlz === null) return false; // /anlz has not answered yet
 	if (hasAnlzBeatgrid(gate.anlz)) return false; // real grid always wins
+	if (gate.anlz.beatgrid.source === 'own') return false; // own's own terminal answer
 	return gate.vendor === 'local';
 }
 

@@ -27,7 +27,10 @@ export type { AnalysisSourceRefreshDeck };
 export { upgradeDeckBeatgrid } from '$lib/player/beatgrid-lazy';
 export {
 	createBeatgridResyncGuards,
-	createBeatgridResyncTracking
+	createBeatgridResyncTracking,
+	reconcileLoopForAuthoritativeGrid,
+	requireBeatGrid,
+	resolvePublishedAnlz
 } from '$lib/player/beatgrid-resync-guards';
 export type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync-guards';
 // Re-exported so a caller that already imports this module for the cache
@@ -264,6 +267,51 @@ export function anlzMatchesConfirmedSource(data: AnlzData): boolean {
 	return !_disagreesWithConfirmedSource(data);
 }
 
+/** True when `data` is a grid answer the engine must adopt, INCLUDING an
+ * authoritative absence.
+ *
+ * `hasAnlzBeatgrid` alone gates on beats existing, which is right for the
+ * ambient retry (a still-loading or retryable payload must not wipe a deck's
+ * working grid) and wrong for a settled own-sourced answer of `missing` or
+ * `failed`. In that case the effective source genuinely has no grid, and a
+ * deck left holding the pre-promotion rekordbox beats keeps quantize and Beat
+ * Sync running on a grid the app is no longer serving (Codex P1 BLOCKING,
+ * PR #1587). The revalidation path made that reachable: it is the one caller
+ * that can turn a populated grid into an empty one for a track already
+ * loaded.
+ *
+ * The distinction is TERMINAL-AND-OWN, not empty: a rekordbox payload with no
+ * beats is the ordinary un-analyzed state and says nothing authoritative, and
+ * a retryable payload is not an answer at all - checked FIRST, so a decoder
+ * momentarily saturated never reads as an authoritative absence and wipes a
+ * deck's working grid mid-retry.
+ *
+ * `previous` is the cache's OWN prior entry for this stable_id (read by the
+ * caller before this write lands), used ONLY to widen the empty-rekordbox
+ * case to a genuine SOURCE TRANSITION: a loaded deck holding a successful own
+ * grid, revalidated after a `PUT /analysis/source` demotion, gets back a
+ * terminal `{source: 'rekordbox', beats: []}` for a track with no PQTZ - that
+ * answer must reach the engine too, or it keeps running quantize/Beat Sync on
+ * the now-superseded own beats (Codex P1 BLOCKING, PR #1587, a further
+ * round). An ORDINARY same-source retry (no previous entry, i.e. the common
+ * never-analyzed baseline, or a previous entry that was itself already this
+ * un-analyzed rekordbox state) must NOT re-trigger adoption - an
+ * unconditional "empty means authoritative" would fire the sink for every
+ * ordinary never-analyzed fetch, reintroducing the retry-storm bug the
+ * retryable check above exists to avoid. */
+function _isAuthoritativeGridAnswer(data: AnlzData, previous: AnlzData | null = null): boolean {
+	if (hasAnlzBeatgrid(data)) return true;
+	if (isRetryableAnlzData(data)) return false;
+	const grid = data.beatgrid;
+	if (grid.source === 'own' && (grid.status === 'missing' || grid.status === 'failed')) return true;
+	return (
+		grid.source === 'rekordbox' &&
+		previous !== null &&
+		previous.beatgrid.source !== grid.source &&
+		_isAuthoritativeGridAnswer(previous)
+	);
+}
+
 /**
  * `alreadyScoped` means "this payload's source is already trusted", not just
  * "reconcile inline". The one `true` caller, `refreshAnalysisSourceDecks`, is
@@ -293,6 +341,14 @@ function _publishAnlzResult(stable_id: string, data: AnlzData, alreadyScoped = f
 		clearTimeout(existingTimer);
 		_retryTimers.delete(stable_id);
 	}
+	// Read BEFORE this write lands, so `_isAuthoritativeGridAnswer` can tell a
+	// genuine source transition from an ordinary same-source retry. Callers
+	// that blank the entry to `{status: 'loading'}` first (`_fetchAndPublish`)
+	// read `previous` as null here by construction - `revalidateAnlz` is the
+	// one caller that keeps the prior entry intact, which is exactly the path
+	// this distinction exists for.
+	const previousEntry = _cache[stable_id];
+	const previous = previousEntry !== undefined && previousEntry.status === 'ready' ? previousEntry.data : null;
 	// `resolveDisplayedAnlz` below already prefers a cache-entry grid over the
 	// deck's own, but that is only the DISPLAY projection: quantize, beat
 	// loops, _synchronizeFollowers and the master-grid read all take the
@@ -306,8 +362,14 @@ function _publishAnlzResult(stable_id: string, data: AnlzData, alreadyScoped = f
 	// is actually holding a different one.
 	// Passed through, never awaited: only refreshAnalysisSourceDecks awaits
 	// this (discussion_r3970967293); _fetchAndPublish stays fire-and-forget.
+	// The firing condition is _isAuthoritativeGridAnswer, not hasAnlzBeatgrid,
+	// so a settled own-sourced absence (missing/failed) or a genuine
+	// rekordbox-vs-own source transition also reaches the sink (Codex P1
+	// BLOCKING, PR #1587) instead of firing only when a populated grid lands.
 	const sinkSettlement =
-		_authoritativeGridSink !== null && hasAnlzBeatgrid(data) ? _authoritativeGridSink(stable_id, data, true, alreadyScoped) : undefined;
+		_authoritativeGridSink !== null && _isAuthoritativeGridAnswer(data, previous)
+			? _authoritativeGridSink(stable_id, data, hasAnlzBeatgrid(data), alreadyScoped)
+			: undefined;
 	if (!isRetryableAnlzData(data)) {
 		_cache[stable_id] = { status: 'ready', data };
 		return sinkSettlement;
@@ -365,6 +427,33 @@ export function notifyGridlessSettlement(
 ): void | Promise<void> {
 	if (_authoritativeGridSink === null) return;
 	return _authoritativeGridSink(stable_id, data, false, alreadyScoped);
+}
+
+/** Notified when `revalidateAnlz` learns an explicit `RbApiError` for a
+ * track's SELECTED source - never for a network/shape failure, which is the
+ * absence of new information rather than a real answer (see `revalidateAnlz`'s
+ * own docstring) and must leave an already-loaded deck alone. Mirrors
+ * `AuthoritativeAnlzGridSink`'s install-once contract: this module is a
+ * display-layer cache and must not reach into audio-engine.svelte.ts. */
+export type AuthoritativeAnlzErrorSink = (stable_id: string, code: string) => void;
+let _authoritativeErrorSink: AuthoritativeAnlzErrorSink | null = null;
+
+export function installAuthoritativeAnlzErrorSink(sink: AuthoritativeAnlzErrorSink): void {
+	if (_authoritativeErrorSink !== null) {
+		throw new Error('an authoritative anlz error sink is already installed');
+	}
+	_authoritativeErrorSink = sink;
+}
+
+/** Records an authoritative `RbApiError` for `stable_id` AND notifies any
+ * deck currently loaded with it, so a source failure that settles after a
+ * deck has already swapped in still invalidates that deck's grid instead of
+ * leaving quantize/Beat Sync running against a source now known to have
+ * failed (Codex P1 BLOCKING, PR #1587, third round: "a failure settling
+ * after the swap still never invalidates the loaded deck"). */
+function _publishAnlzError(stable_id: string, code: string): void {
+	_cache[stable_id] = { status: 'error', code };
+	if (_authoritativeErrorSink !== null) _authoritativeErrorSink(stable_id, code);
 }
 
 /** True when a loaded deck's own `$effect` (WaveRow.svelte) should call
@@ -493,6 +582,61 @@ export function ensureAnlz(stable_id: string): void {
 	const existing = _cache[stable_id];
 	if (existing !== undefined && !_dueForEnsureRefetch(existing)) return;
 	_fetchAndPublish(stable_id);
+}
+
+/** Re-fetches /anlz for a track whose cached entry may have gone stale, WITHOUT
+ * dropping the entry it already holds.
+ *
+ * A ready entry is a session-long hit: `isAnlzEntryUsable` asks only whether
+ * the payload is terminal, so once a track is cached the deck reuses it and
+ * never asks the server again. Two things can change underneath it that the
+ * entry cannot see - a `PUT /analysis/source` switch, and a backfill
+ * promoting an own record to canonical - so the deck would keep playing the
+ * pre-promotion grid for the rest of the session (Codex P1 BLOCKING,
+ * PR #1587). The server side of that is closed by revalidation and an ETag on
+ * the route; this is the half no HTTP header can reach, because the stale copy
+ * is in this module's own state.
+ *
+ * Deliberately NOT `_fetchAndPublish`: that writes `{status: 'loading'}`
+ * first, which would blank a waveform that is currently painted fine every
+ * time a deck loads. This keeps the existing entry visible until a real
+ * answer arrives, and `_publishAnlzResult` then fires the authoritative grid
+ * sink, so a loaded deck adopts a grid that actually changed.
+ *
+ * A revalidation that fails to even REACH the server (a network/shape
+ * failure) leaves the good entry in place: that is the same failure as never
+ * having revalidated, which is the state this call is trying to improve on,
+ * so it must not be worse than the status quo. An explicit `RbApiError`
+ * response is different in kind, not degree: revalidation was triggered
+ * specifically because the SELECTED source may have changed, so a backend
+ * answer naming a real failure of that source (e.g. a corrupt canonical
+ * record) is evidence the cached payload's source can no longer be trusted,
+ * not an absence of new information. Silently keeping the stale entry there
+ * would convert an explicit source failure into exactly the forbidden silent
+ * fallback (Codex P1 BLOCKING, PR #1587) - the entry is marked `error`
+ * instead, matching how `_fetchAndPublish` already treats the same
+ * `RbApiError` class on an ordinary fetch. */
+export function revalidateAnlz(stable_id: string): void {
+	const startedAt = performance.now();
+	void fetchAnlz(stable_id).then(
+		(data: AnlzData) => {
+			_publishAnlzResult(stable_id, data);
+			recordAnlzPrefetchSampled(performance.now() - startedAt, 'ready');
+		},
+		(err: unknown) => {
+			recordAnlzPrefetchSampled(performance.now() - startedAt, 'error');
+			if (err instanceof RbApiError) {
+				// The selected source explicitly failed to revalidate: the cached
+				// entry's freshness can no longer be established, so it must not
+				// keep being served as if it were still good. `_publishAnlzError`
+				// also notifies any deck already loaded with this track, not just
+				// the shared cache entry.
+				_publishAnlzError(stable_id, err.code);
+				return;
+			}
+			throw err; // loud: network/shape failures must not vanish
+		}
+	);
 }
 
 /** Pure read; undefined = never requested for this stable_id. */

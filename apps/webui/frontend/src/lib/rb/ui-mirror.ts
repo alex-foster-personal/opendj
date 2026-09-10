@@ -1,7 +1,7 @@
 /** Push a human-readable projection of the live performance screen to engine. */
 import { toasts } from '$lib/stores.svelte';
 import { audioContextState } from './audio-engine.svelte';
-import { masterSilenceState } from './master-silence-report';
+import { masterSilenceState, outputDeviceLivenessState } from './master-silence-report';
 import { readAutoPlayStall } from './autoplay-stall.svelte';
 import { queryPerformanceState } from './performance-ipc.svelte';
 import { installAgentOrderPoll } from './agent-orders';
@@ -47,17 +47,31 @@ function _position(deck: ReturnType<typeof queryPerformanceState>['decks'][1]): 
 export function buildUiMirror(): Record<string, unknown> {
 	const state = queryPerformanceState();
 	const silence = masterSilenceState();
+	// Two distinct claims (#1642): the mixer being quiet (silence.verdict) and
+	// the room hearing nothing despite a fine mixer (deviceLiveness.verdict).
+	// Both gate `audible`, and both get their own toast id, so a device-level
+	// outage never collapses into "the mixer is quiet" in the UI mirror.
+	const deviceLiveness = outputDeviceLivenessState();
 	return {
 		client_open: true,
+		// The elected master, and so the deck a Duration times against when
+		// no clock is named. Without it an agent cannot resolve its own
+		// beat-relative order against the grid the page will use (#1739).
+		master_deck: state.master_deck,
 		context_state: audioContextState(),
 		master: { ...state.master, level: state.mixer.master, rms: silence.rms },
 		xrun_sentinel: readXrunSessionCounter(),
 		mixer: state.mixer,
 		decks: Object.fromEntries(
 			Object.entries(state.decks).map(([id, deck]) => [id, {
+				// stable_id rides with title because title alone cannot answer WHICH
+				// track landed: a load onto an already-loaded deck leaves a title
+				// present either way, so an agent confirming a load off title
+				// confirms the PREVIOUS track (#1739).
+				stable_id: deck.stable_id,
 				title: deck.title, artist: deck.artist, key: deck.key, bpm: deck.bpm,
 				effective_bpm: deck.effective_bpm, position: _position(deck), playing: deck.playing,
-				audible: deck.audible && silence.verdict !== 'silent-while-playing',
+				audible: deck.audible && silence.verdict !== 'silent-while-playing' && deviceLiveness.verdict !== 'device-unreachable',
 				presentation_clock: { trust: deck.transport_clock.source === 'audio_output' && deck.transport_clock.desired_revision === deck.transport_clock.presented_revision ? 'trusted' : 'untrusted', ...deck.transport_clock },
 				loop: deck.loop, hot_cues: deck.hot_cue_slots, pitch: deck.pitch,
 				sync: { mode: deck.sync_mode, enabled: deck.beat_sync_enabled }, stems: deck.stems,
@@ -67,7 +81,8 @@ export function buildUiMirror(): Record<string, unknown> {
 		browser: { playlist: state.browser.active_playlist, search: null, sort: null, selected_row: null, visible_rows_count: document.querySelectorAll('.track-row, [role="row"]').length },
 		toasts: [
 			...toasts.map((toast) => ({ id: toast.logId, kind: toast.kind, message: toast.message })),
-			...(silence.verdict === 'silent-while-playing' ? [{ id: 'silent-while-playing' }] : [])
+			...(silence.verdict === 'silent-while-playing' ? [{ id: 'silent-while-playing' }] : []),
+			...(deviceLiveness.verdict === 'device-unreachable' ? [{ id: 'output-device-unreachable' }] : [])
 		],
 		// PLAY-08: agent-native parity for the stall banner. An agent driving a
 		// set reads why AutoPlay stopped from the same object a person reads

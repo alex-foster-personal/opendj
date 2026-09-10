@@ -16,11 +16,19 @@ Regression lines:
   - if the trailing command does not run once the ports are clear, or runs
     when they are not, then broken
   - if no port is given then the script must fail rather than reap nothing
+  - if a holder without CI provenance releases during the foreign-holder
+    wait and the step still fails then broken (issue #1613)
+  - if a port-ownership registry marker exists but is never surfaced in the
+    no-CI-provenance message then broken (issue #1613)
+  - if a cross-uid holder whose pid `ss` cannot report is failed instead of
+    waited for, or fails the step after releasing during that wait, then
+    broken (issue #1613)
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import signal
 import socket
 import subprocess
@@ -66,13 +74,43 @@ def _serve(port: int, cwd: Path, *, ignore_term: bool = False) -> subprocess.Pop
     raise AssertionError(f"server never bound {port}")
 
 
-def _run(*args: str, live_re: str, release_wait_s: str = "30") -> subprocess.CompletedProcess:
+def _invisible_owner_ss(tmp_path: Path) -> Path:
+    """A real ``ss`` with the per-socket owner list removed.
+
+    Unprivileged ``ss -p`` prints a listener owned by ANOTHER uid without its
+    pid, which is the shape of the collision in issue #1613. One uid cannot
+    create that shape, so this wrapper reproduces the visibility restriction
+    over a genuinely held port while leaving everything else (the port, the
+    holder, the wait) real.
+    """
+    real_ss = shutil.which("ss")
+    assert real_ss, "ss is required for this suite"
+    wrapper = tmp_path / "ss-no-owner"
+    wrapper.write_text(
+        f"#!/usr/bin/env bash\nexec {real_ss} \"$@\" | sed 's/ users:(.*//'\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    return wrapper
+
+
+def _run(
+    *args: str,
+    live_re: str,
+    release_wait_s: str = "30",
+    foreign_wait_s: str = "1",
+    registry_dir: Path | None = None,
+    ss_bin: Path | None = None,
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         [str(SCRIPT), *args],
         env={
             **os.environ,
             "MDT_CI_LIVE_ANCESTOR_RE": live_re,
             "MDT_CI_REAP_RELEASE_WAIT_S": release_wait_s,
+            "MDT_CI_REAP_FOREIGN_WAIT_S": foreign_wait_s,
+            "MDT_CI_PORT_OWNER_REGISTRY_DIR": str(registry_dir) if registry_dir else "/nonexistent",
+            **({"MDT_CI_REAP_SS": str(ss_bin)} if ss_bin else {}),
         },
         capture_output=True,
         text=True,
@@ -239,6 +277,184 @@ def test_a_holder_that_vanishes_before_its_identity_is_read_does_not_abort(
         result = _run(str(port), "--", "echo", "suite-ran", live_re=ORPHAN, release_wait_s="10")
         assert result.returncode == 0, result.stdout + result.stderr
         assert result.stdout.rstrip().endswith("suite-ran"), result.stdout
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_a_foreign_holder_that_releases_during_the_wait_still_runs_the_command(
+    tmp_path: Path,
+) -> None:
+    """if a holder without CI provenance releases during the foreign-holder
+    wait and the step still fails then broken (issue #1613)"""
+    port = _free_port()
+    proc = _serve(port, tmp_path)  # no CI provenance, and no live-job ancestor
+    try:
+        import threading
+
+        threading.Timer(1.0, proc.kill).start()
+        result = _run(
+            str(port), "--", "echo", "suite-ran", live_re=ORPHAN, foreign_wait_s="10"
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.stdout.rstrip().endswith("suite-ran"), result.stdout
+        assert "[ERROR]" not in result.stderr, result.stderr
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_a_registry_ownership_marker_is_named_in_the_no_ci_provenance_message(
+    tmp_path: Path,
+) -> None:
+    """if a port-ownership registry marker exists but is never surfaced in the
+    no-CI-provenance message then broken (issue #1613)"""
+    port = _free_port()
+    proc = _serve(port, tmp_path)
+    registry_dir = tmp_path / "registry"
+    registry_dir.mkdir()
+    marker = registry_dir / f"{port}-{os.getuid()}.owner"
+    marker.write_text(
+        "worktree=/home/dev/code/music-dj-tools-wt-demo-1613\n"
+        "claimed_at=2026-09-10T00:00:00+00:00\n"
+    )
+    try:
+        result = _run(
+            str(port), live_re=ORPHAN, foreign_wait_s="1", registry_dir=registry_dir
+        )
+        assert result.returncode == 1
+        assert "music-dj-tools-wt-demo-1613" in result.stdout, result.stdout
+        assert "music-dj-tools-wt-demo-1613" in result.stderr, result.stderr
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_a_cross_uid_holder_is_waited_for_before_the_step_fails(tmp_path: Path) -> None:
+    """CONTROL: if a holder whose pid `ss` cannot report fails the step the
+    moment it is seen, instead of after the bounded foreign-holder wait, then
+    the retry path of issue #1613 is unreachable for the collision it exists
+    for."""
+    port = _free_port()
+    proc = _serve(port, tmp_path)  # real holder; only its pid is hidden
+    try:
+        result = _run(
+            str(port),
+            live_re=ORPHAN,
+            foreign_wait_s="1",
+            ss_bin=_invisible_owner_ss(tmp_path),
+        )
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "cannot see" in result.stderr, result.stderr
+        assert "waiting up to" in result.stdout, result.stdout
+        assert proc.poll() is None
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_a_foreign_holder_is_waited_for_only_once(tmp_path: Path) -> None:
+    """if a foreign holder that never releases is waited for in the first pass
+    AND again in the final pass then broken -- the verdict is already a
+    failure, so the second full wait only holds the host lock longer to reach
+    the same answer (issue #1613)"""
+    port = _free_port()
+    proc = _serve(port, tmp_path)
+    try:
+        result = _run(
+            str(port),
+            live_re=ORPHAN,
+            foreign_wait_s="1",
+            ss_bin=_invisible_owner_ss(tmp_path),
+        )
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert result.stdout.count("waiting up to") == 1, result.stdout
+        assert "after the foreign-holder wait" in result.stderr, result.stderr
+        assert proc.poll() is None
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_the_cross_uid_path_runs_under_a_real_second_uid_when_one_is_available(
+    tmp_path: Path,
+) -> None:
+    """if this box can run the reaper as a second uid, the port must be seen
+    and waited for across the real uid boundary (issue #1613).
+
+    SKIPPED, never passed, where that capability is absent: the collision this
+    exercises needs two uids, and a same-uid substitute is not evidence about
+    the boundary. unprivileged `ss` already omits another uid's pid, and
+    unprivileged /proc and the marker directory's ownership are what the
+    change is for.
+    """
+    if not shutil.which("setpriv"):
+        pytest.skip("capability unavailable: setpriv is not installed")
+    if os.geteuid() != 0:
+        pytest.skip(
+            "capability unavailable: reaching a second uid needs root (this test "
+            f"runs as uid {os.geteuid()}), so the cross-uid boundary is not exercised here"
+        )
+    port = _free_port()
+    proc = _serve(port, tmp_path)
+    try:
+        import threading
+
+        threading.Timer(1.0, proc.kill).start()
+        result = subprocess.run(
+            [
+                "setpriv",
+                "--reuid=65534",
+                "--regid=65534",
+                "--clear-groups",
+                str(SCRIPT),
+                str(port),
+                "--",
+                "echo",
+                "suite-ran",
+            ],
+            env={
+                **os.environ,
+                "MDT_CI_LIVE_ANCESTOR_RE": ORPHAN,
+                "MDT_CI_REAP_RELEASE_WAIT_S": "30",
+                "MDT_CI_REAP_FOREIGN_WAIT_S": "10",
+                "MDT_CI_PORT_OWNER_REGISTRY_DIR": str(tmp_path / "owners"),
+            },
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.stdout.rstrip().endswith("suite-ran"), result.stdout
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_a_cross_uid_holder_that_releases_during_the_wait_runs_the_command(
+    tmp_path: Path,
+) -> None:
+    """if a cross-uid holder whose pid `ss` cannot report releases during the
+    foreign-holder wait and the step still fails then broken (issue #1613)"""
+    port = _free_port()
+    proc = _serve(port, tmp_path)
+    try:
+        import threading
+
+        threading.Timer(1.0, proc.kill).start()
+        result = _run(
+            str(port),
+            "--",
+            "echo",
+            "suite-ran",
+            live_re=ORPHAN,
+            foreign_wait_s="10",
+            ss_bin=_invisible_owner_ss(tmp_path),
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.stdout.rstrip().endswith("suite-ran"), result.stdout
+        assert "[ERROR]" not in result.stderr, result.stderr
     finally:
         proc.kill()
         proc.wait(timeout=10)

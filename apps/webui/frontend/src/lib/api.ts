@@ -21,6 +21,8 @@
  */
 import type { components, paths } from './api-types';
 import { ApiError, api, requireBody, unwrap } from './api/client';
+import { subscribeKind, subscribeResync } from './api/events-bus';
+import { BOOT_COALESCE_TTL_MS, requestCoalescer } from './api/request-coalescer';
 import type { RuleAst } from './smartlists/rule-form';
 
 export { API_BASE } from './api/client';
@@ -417,8 +419,91 @@ export async function updateSmartlist(
 	return { smartlist: data, etag: nextEtag };
 }
 
-export async function getHealth(): Promise<{ health: HealthOut; bindWarning: string | null }> {
-	const { data, response } = requireBody(await api.GET('/api/v1/health'));
+/** The coalescer key for the health body read. One string, one endpoint. */
+const HEALTH_KEY = 'GET /api/v1/health';
+
+/**
+ * A cached health read must not outlive the question it answered: a track
+ * import (or any change to `state_db.tracks`) inside the coalescer's TTL
+ * would otherwise be invisible to the next `getHealth()` caller for up to
+ * BOOT_COALESCE_TTL_MS, which is exactly the window BrowserPanel reads
+ * `allTracksCount` from to decide whether the boot pane has anything to
+ * show (PR #1656 review thread on this line). A resync (seq gap) also
+ * invalidates: a gap means something was missed and health may be one of
+ * the things that changed, so serving the pre-gap body is the same bug.
+ *
+ * `subscribeResync` alone used to miss the bus's very first successful
+ * connection, which needed a second, explicit `subscribeConnectionState`
+ * invalidation here to cover (PR #1656 review round 4). That gap is now
+ * closed at the source: events-bus.ts fires a resync (reason
+ * `'initial-connect'`) on the first open too, not just a reconnect, so this
+ * one subscription now covers both cases and the extra listener was removed.
+ *
+ * `forceInFlight: false` for that one reason only (review round 5): nothing
+ * about SERVER state changed just because the bus connected for the first
+ * time, unlike a real 'tracks' change or a seq gap, so an entry already in
+ * flight is not stale against it and does not need to be force-reissued --
+ * doing so anyway bought no correctness and cost an intermittent fifth
+ * request racing the one already in flight (`request-coalescer.test.mjs`
+ * covers this directly).
+ */
+subscribeKind('tracks', () => requestCoalescer.invalidate(HEALTH_KEY));
+subscribeResync((reason) =>
+	requestCoalescer.invalidate(HEALTH_KEY, { forceInFlight: reason !== 'initial-connect' })
+);
+
+/**
+ * How long the coalesced health fetch may run before it is abandoned.
+ *
+ * PR #1656 review thread on `request-coalescer.ts:158`: the coalescer joins
+ * an in-flight request for as long as it stays in flight, with no bound, so
+ * a health fetch that never settles (a stalled connection) would otherwise
+ * wedge every caller inside the TTL forever, and the coalescer has no clock
+ * of its own to recover from that -- it only drops an entry on REJECTION.
+ * Bounding the fetch itself, the same way `pingHealth`'s `CONN_PING_TIMEOUT_MS`
+ * already does for the liveness dot, turns a stall into an ordinary rejection
+ * the coalescer already handles correctly (see "a rejected call is dropped"
+ * in request-coalescer.test.mjs). The largest real fetchWall this module's
+ * docstring ever measured, for an 8000-row library, was ~3579ms; this sits
+ * roughly 3x above that, comfortably clear of realistic load while still
+ * bounding how long a genuine stall can hold the boot pane blank.
+ */
+const HEALTH_FETCH_TIMEOUT_MS = 10_000;
+
+function _fetchHealthBody() {
+	const { signal, clear } = timeoutSignal(HEALTH_FETCH_TIMEOUT_MS);
+	return api.GET('/api/v1/health', { signal }).finally(clear);
+}
+
+/**
+ * The daemon's health body, shared with any other caller asking inside the
+ * boot window (see `src/lib/api/request-coalescer.ts` for the measurement
+ * that motivated this and the TTL derivation).
+ *
+ * Pass `fresh: true` when the caller is reacting to a CHANGE and needs the
+ * value it is refreshing to, rather than the value the page already has.
+ * `_refreshLibraryRowsOnce` in BrowserPanel is the case: it runs off library
+ * invalidation events, so serving it a body from before the change it is
+ * reacting to would paint a stale track count and leave it there until the
+ * next event. Correctness beats one request.
+ */
+export async function getHealth(
+	options: { fresh?: boolean } = {}
+): Promise<{ health: HealthOut; bindWarning: string | null }> {
+	// NOT shared with the capability probe, deliberately: that probe reads the
+	// raw bytes to tell a legacy daemon from an engine one, and carries its own
+	// memoization with its own rules. A 2s TTL underneath it would change what
+	// "the daemon is legacy" means, since a daemon whose identity changed inside
+	// the window would keep reporting the identity it had at the start of it.
+	// Joining it was tried and reverted; daemon-capabilities.test.mjs refuses it.
+	const call =
+		options.fresh === true
+			? _fetchHealthBody()
+			: requestCoalescer.share(HEALTH_KEY, BOOT_COALESCE_TTL_MS, _fetchHealthBody);
+	// A joined caller reads HEADERS off a shared Response whose body stream
+	// the client has already parsed into `data`. Headers are re-readable;
+	// the stream is not, and nothing here touches it.
+	const { data, response } = requireBody(await call);
 	return { health: data, bindWarning: response.headers.get('x-bind-warning') };
 }
 

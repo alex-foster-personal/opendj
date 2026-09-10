@@ -270,8 +270,11 @@ def test_rekordbox_source_leaves_payload_beatgrid_untouched(anlz_client: TestCli
     assert body["beatgrid_own_unavailable_reason"] is None
     # No rekordbox mapping exists for this track, so the rekordbox-owned
     # beatgrid is genuinely empty -- same shape empty_anlz_payload always
-    # produces, left untouched by the source swap.
-    assert body["beatgrid"] == {"beat_count": 0, "beats": []}
+    # produces, left untouched by the source swap. `source: "rekordbox"` is
+    # the REQUIRED wire discriminator every beatgrid block now carries
+    # (own_beatgrid_overlay.py's `_beatgrid_payload`/PR #1587), not something
+    # this route's own source swap adds.
+    assert body["beatgrid"] == {"source": "rekordbox", "beat_count": 0, "beats": []}
 
 
 @pytest.mark.requirement("PARITY-02")
@@ -338,8 +341,14 @@ def test_own_source_with_no_analysis_record_goes_explicitly_empty_never_rekordbo
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["beatgrid_source"] == "own"
-    assert body["beatgrid"] == {"beat_count": 0, "beats": []}
-    assert body["beatgrid_own_unavailable_reason"] == "no own analysis for this track"
+    assert body["beatgrid"] == {
+        "source": "own",
+        "status": "missing",
+        "reason": "no own beatgrid record for this track yet",
+        "beat_count": 0,
+        "beats": [],
+    }
+    assert body["beatgrid_own_unavailable_reason"] == "no own beatgrid record for this track yet"
 
 
 @pytest.mark.requirement("PARITY-02")
@@ -354,7 +363,13 @@ def test_own_source_with_a_failed_beatgrid_lane_names_that_lanes_reason(
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["beatgrid_source"] == "own"
-    assert body["beatgrid"] == {"beat_count": 0, "beats": []}
+    assert body["beatgrid"] == {
+        "source": "own",
+        "status": "failed",
+        "reason": "no_trackable_pulse",
+        "beat_count": 0,
+        "beats": [],
+    }
     # The LANE's own reason travels through verbatim, not a reason this route
     # invents: the same string analysis_projection carries for the failed
     # field, so the grid and the read model explain the gap identically.

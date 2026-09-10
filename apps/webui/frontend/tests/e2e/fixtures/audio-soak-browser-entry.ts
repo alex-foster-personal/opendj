@@ -34,6 +34,38 @@
  *   which is where #1619's defect lived. Anything downstream of that point is
  *   UNAVAILABLE to this suite and is reported as unavailable, never as green.
  *
+ *   REAL, NOT MODELLED (#1642, corrected after a P1 BLOCKING review on PR
+ *   #1693): `getOutputTimestamp()` is read through the shipped
+ *   `readOutputTimestamp` - the exact call `audio-engine.svelte.ts` makes -
+ *   fed through the real, unmodified `observePresentedTransportTimeline`.
+ *   An earlier version of this harness fabricated `contextTime` by freezing
+ *   it from the SAME `deviceGate`/`stranded`/`deviceGone` variables that
+ *   model the output device, so its assertions could only prove the
+ *   fabricated clock agreed with the fabricated gate - never that a real
+ *   stall correlates with a real device loss, which is the whole
+ *   uncertainty #1642 exists to resolve (`.claude/rules/verification.md`:
+ *   a control that shares the defect under test is not a control; AGENTS.md
+ *   "No mocks and locked real fixtures" bans fabricated application state
+ *   in tests outright).
+ *
+ *   THE CONSEQUENCE, same shape as the paragraph above: this harness's real
+ *   `AudioContext` never actually loses ITS device - Playwright cannot
+ *   unpair a Bluetooth headset here any more than it can for `deviceGate` -
+ *   so `ctx.getOutputTimestamp()` never stalls no matter what `deviceGate`
+ *   does, and `ctx.outputLatency` never reads 0 either. Both
+ *   `foldDeviceLivenessSample` inputs - `deviceClockStalled` AND
+ *   `outputLatencyDead`, the P1-review corroborator that a clock stall alone
+ *   cannot distinguish a dead device from a benign timestamp glitch (PR
+ *   #1693) - are therefore UNAVAILABLE in this environment:
+ *   `deviceUnreachableVerdicts` and `longestDeviceUnreachableMs` stay at 0
+ *   for the whole run, asserted as such rather than left to look like an
+ *   unexercised gap. The fold's DECISION logic is proven in
+ *   `output-device-watchdog.test.mjs` against real inputs a live browser
+ *   cannot supply here. What THIS harness proves instead: real telemetry
+ *   reaches the shipped fold end-to-end, and it never false-positives
+ *   `device-unreachable` while a genuinely advancing presentation clock runs
+ *   through the same hostile schedule that flaps `deviceGate`.
+ *
  * WHY THE PROBE IS DOWNSTREAM OF THE GATE, which is a finding in itself. The
  * app already has a master-bus silence watchdog (`master-silence-report.ts`)
  * and a master level meter (#1575), and NEITHER can see this class of failure:
@@ -59,6 +91,8 @@ import {
 	REBIND_DEBOUNCE_MS
 } from '$lib/rb/audio-output-rebind';
 import { SILENCE_RMS_FLOOR } from '$lib/rb/silence-watchdog';
+import { foldDeviceLivenessSample } from '$lib/rb/output-device-watchdog';
+import { readOutputTimestamp } from '$lib/rb/presentation-clock-report';
 import {
 	attachMeterTaps,
 	createMasterMeterSource,
@@ -66,6 +100,10 @@ import {
 	releaseMasterMeterTap,
 	teardownMeterTaps
 } from '$lib/rb/meter-tap';
+import {
+	createPresentedTransportTimeline,
+	observePresentedTransportTimeline
+} from '$lib/player/transport/presentation';
 
 
 export interface SoakProgress {
@@ -91,6 +129,19 @@ export interface SoakProgress {
 	perf: { kind: string; message: string; severity: string }[];
 	/** Highest RMS ever seen. A run that never rose above the floor measured nothing. */
 	peakRms: number;
+	/**
+	 * Highest RMS seen UPSTREAM of the modelled device (at `masterGain`), the
+	 * same tap point `master-silence-report.ts` uses. Proves the #1642 claim
+	 * that the graph kept producing signal even while `peakRms` (downstream)
+	 * went quiet during a flap.
+	 */
+	peakUpstreamRms: number;
+	/** Longest run where the mixer had signal but the modelled device's HAL clock had stalled. */
+	longestDeviceUnreachableMs: number;
+	deviceUnreachableStartedAtMs: number;
+	deviceUnreachableSinceMs: number | null;
+	/** How many times the shipped `foldDeviceLivenessSample` actually reported the edge. */
+	deviceUnreachableVerdicts: number;
 	done: boolean;
 	error: string | null;
 }
@@ -168,6 +219,11 @@ function install(): void {
 		toasts: [],
 		perf: [],
 		peakRms: 0,
+		peakUpstreamRms: 0,
+		longestDeviceUnreachableMs: 0,
+		deviceUnreachableStartedAtMs: -1,
+		deviceUnreachableSinceMs: null,
+		deviceUnreachableVerdicts: 0,
 		done: false,
 		error: null
 	};
@@ -202,12 +258,23 @@ function install(): void {
 		const deviceGate = ctx.createGain();
 		const analyser = ctx.createAnalyser();
 		analyser.fftSize = 2048;
+		/**
+		 * UPSTREAM of `deviceGate`, at the same tap point `master-silence-report.ts`
+		 * uses: measures "is the graph producing signal", which #1642's new claim
+		 * needs kept SEPARATE from `analyser` above ("did sound reach the modelled
+		 * speaker"). Reusing `analyser` for both would make the new instrument
+		 * agree with the old one by construction, proving nothing distinct.
+		 */
+		const masterAnalyser = ctx.createAnalyser();
+		masterAnalyser.fftSize = 2048;
 		const silentSink = ctx.createGain();
 		silentSink.gain.value = 0;
 		source.connect(masterGain);
 		masterGain.connect(deviceGate);
+		masterGain.connect(masterAnalyser);
 		deviceGate.connect(analyser);
 		analyser.connect(silentSink);
+		masterAnalyser.connect(silentSink);
 		silentSink.connect(ctx.destination);
 		source.start();
 
@@ -248,6 +315,14 @@ function install(): void {
 			deviceGate.gain.value = !stranded && boundDevice === currentDevice ? 1 : 0;
 		};
 		applyGate();
+
+		// No schedule is ever pushed onto this timeline: the soak harness does no
+		// deck scheduling, and the stall detection this file needs runs before
+		// `observePresentedTransportTimeline` ever looks at `schedules`. The
+		// duration argument is therefore inert; kept positive-and-large only to
+		// satisfy the shipped function's own validation.
+		const presentationTimeline = createPresentedTransportTimeline(0);
+		let deviceLivenessState: ReturnType<typeof foldDeviceLivenessSample> | undefined;
 
 		let playing = true;
 		const note = (text: string): void => {
@@ -525,6 +600,7 @@ function install(): void {
 
 		// ---- the probe -------------------------------------------------------
 		const scratch = new Float32Array(analyser.fftSize);
+		const masterScratch = new Float32Array(masterAnalyser.fftSize);
 		const sampler = setInterval(() => {
 			analyser.getFloatTimeDomainData(scratch);
 			let sum = 0;
@@ -547,13 +623,58 @@ function install(): void {
 			// the shipped silence watchdog applies.
 			if (!playing || (Number.isFinite(rms) && rms >= SILENCE_RMS_FLOOR)) {
 				progress.silentSinceMs = null;
+			} else {
+				if (progress.silentSinceMs === null) progress.silentSinceMs = tMs;
+				const runMs = tMs - progress.silentSinceMs;
+				if (runMs > progress.longestSilentWhilePlayingMs) {
+					progress.longestSilentWhilePlayingMs = runMs;
+					progress.longestSilentStartedAtMs = progress.silentSinceMs;
+				}
+			}
+
+			// ---- device-level liveness (#1642), the SHIPPED decision fold -----
+			masterAnalyser.getFloatTimeDomainData(masterScratch);
+			let masterSum = 0;
+			for (let i = 0; i < masterScratch.length; i += 1) masterSum += masterScratch[i] * masterScratch[i];
+			const masterRmsRaw = Math.sqrt(masterSum / masterScratch.length);
+			const masterRms = Number.isFinite(masterRmsRaw) ? masterRmsRaw : 0;
+			if (masterRms > progress.peakUpstreamRms) progress.peakUpstreamRms = masterRms;
+			// REAL, not modelled (see module docstring): the shipped call this
+			// harness's `deviceGate` cannot make stall, because Playwright cannot
+			// take away the browser's actual output device.
+			const outputTimestamp = readOutputTimestamp(ctx);
+			const observation = observePresentedTransportTimeline(
+				presentationTimeline,
+				outputTimestamp,
+				600,
+				ctx.currentTime
+			);
+			const deviceClockStalled = observation.clock_stalled === true;
+			// Also REAL, not modelled: the same `outputLatency` figure
+			// `audio-output-liveness.ts` reads. Playwright cannot make the
+			// browser's actual output device report 0 any more than it can make
+			// the presentation clock stall, so this stays a live, non-triggering
+			// reading for the same reason `deviceClockStalled` does.
+			const outputLatencyDead = ctx.outputLatency === 0;
+			deviceLivenessState = foldDeviceLivenessSample(deviceLivenessState, {
+				playing,
+				masterRms,
+				deviceClockStalled,
+				outputLatencyDead,
+				tMs
+			});
+			if (deviceLivenessState.verdict === 'device-unreachable') progress.deviceUnreachableVerdicts += 1;
+			const deviceUnreachableNow =
+				playing && deviceClockStalled && outputLatencyDead && masterRms >= SILENCE_RMS_FLOOR;
+			if (!deviceUnreachableNow) {
+				progress.deviceUnreachableSinceMs = null;
 				return;
 			}
-			if (progress.silentSinceMs === null) progress.silentSinceMs = tMs;
-			const runMs = tMs - progress.silentSinceMs;
-			if (runMs > progress.longestSilentWhilePlayingMs) {
-				progress.longestSilentWhilePlayingMs = runMs;
-				progress.longestSilentStartedAtMs = progress.silentSinceMs;
+			if (progress.deviceUnreachableSinceMs === null) progress.deviceUnreachableSinceMs = tMs;
+			const unreachableRunMs = tMs - progress.deviceUnreachableSinceMs;
+			if (unreachableRunMs > progress.longestDeviceUnreachableMs) {
+				progress.longestDeviceUnreachableMs = unreachableRunMs;
+				progress.deviceUnreachableStartedAtMs = progress.deviceUnreachableSinceMs;
 			}
 		}, samplePeriodMs);
 

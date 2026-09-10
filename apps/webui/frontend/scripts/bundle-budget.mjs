@@ -100,6 +100,16 @@ import { join, dirname, normalize, relative } from 'node:path';
 //              environments, not with new dead weight. Ratcheting on CI's
 //              own number since that is what the gate actually runs
 //              against: 216,952, +5% ceil-to-KiB => 228,352 (223 KiB).
+//              ALSO RAISED Thu 10 Sep 2026 (PR #1587, merged into main
+//              independently): CI (`frontend unit + check + build`, run
+//              34458533006, job 102810569554) measured 216,124 on main's
+//              tip alone, 60 bytes over the prior 216,064 ceiling, from
+//              unrelated feature work plus the same local-vs-CI build gap
+//              documented above. That PR's own ratchet, 227,328 (222 KiB),
+//              is superseded here by this merge because PR #1010's ceiling
+//              (228,352) is the larger of the two and covers both diffs'
+//              combined weight; re-measure on the merged head before
+//              tightening either number back down.
 // other-lazy   measured 60,160, same +5% ceil-to-KiB rule => 63,488 (62 KiB).
 //              RAISED Mon 1 Sep 2026: the CloudSync config route (/cloudsync
 //              policy matrix, machines, pins, overview + api-cloudsync client)
@@ -121,6 +131,10 @@ const BUDGETS = [
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
   // (PR #1010, discussion_r3975326238). CI measured 216,952 on this diff.
+  // Merge note: PR #1587 (main) independently measured 216,124 with its own
+  // unrelated changes and a smaller ratchet (227,328); PR #1010's larger
+  // ceiling is kept since it is the wider of the two and both diffs are now
+  // present on this branch. Re-measure on the merged head before tightening.
   { name: 'performance', limit: 228352, measured: 216952, note: '/performance and children' },
   { name: 'other-lazy', limit: 67584, measured: 64328, note: 'all other routes plus deferred shell' },
 ];

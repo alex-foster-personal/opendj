@@ -91,8 +91,18 @@ class FallbackBeatOut(BaseModel):
 
 
 class FallbackBeatgridOut(BaseModel):
-    """Identical shape to the ``beatgrid`` object served by /anlz."""
+    """Identical shape to the ``beatgrid`` object served by /anlz.
 
+    ``source`` is fixed at ``"own"``: every grid this endpoint can serve came
+    from an ``apps.analysis`` record (an unmapped track has no rekordbox PQTZ
+    to read), and the ANLZ contract this shape mirrors makes the field
+    REQUIRED (``AnlzBeatgridSource`` in ``anlz-types.ts``). Omitting it here
+    left the frontend type assertion in ``beatgrid-fallback-api.ts`` hiding a
+    real mismatch: a fail-closed, source-aware reader would reject this grid
+    outright (Codex P2 BLOCKING, PR #1587).
+    """
+
+    source: Literal["own"]
     beat_count: int
     beats: List[FallbackBeatOut]
 
@@ -398,7 +408,7 @@ def get_beatgrid_fallback(
         bpm=record.bpm,
         bpm_confidence=record.bpm_confidence,
         anlz_available=anlz_ok,
-        beatgrid=FallbackBeatgridOut(beat_count=len(beats), beats=beats),
+        beatgrid=FallbackBeatgridOut(source="own", beat_count=len(beats), beats=beats),
     )
 
 
