@@ -148,6 +148,31 @@ def _require_persistent_backend(request: Request) -> None:
         )
 
 
+def _apply_toggle(lane: str, toggle: str, expected_toggle: str | None) -> None:
+    """The `toggle` half of a PUT: a plain set, or a CAS against `expected_toggle`.
+
+    Split out of `put_analysis_source` so that function's own branching stays
+    under the mccabe ceiling; this is the one place that decides between an
+    unconditional `set_toggle` and the compare-and-set rollback path needs.
+    """
+    if expected_toggle is None:
+        sel.set_toggle(lane, toggle)
+        return
+    if not sel.compare_and_set_toggle(lane, expected_toggle, toggle):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "toggle_changed",
+                "message": (
+                    f"lane {lane!r}'s toggle no longer holds "
+                    f"{expected_toggle!r}; someone else changed "
+                    "it since, so this compare-and-set was refused "
+                    "rather than overwriting a newer value"
+                ),
+            },
+        )
+
+
 @router.get("/source", response_model=AnalysisSourceOut)
 def get_analysis_source(request: Request) -> AnalysisSourceOut:
     conn = _open_ro(request)
@@ -217,24 +242,7 @@ def put_analysis_source(
             sel.set_default(conn, body.lane, body.default)
             conn.commit()
         if body.toggle is not None:
-            if body.expected_toggle is not None:
-                if not sel.compare_and_set_toggle(
-                    body.lane, body.expected_toggle, body.toggle
-                ):
-                    raise HTTPException(
-                        status_code=409,
-                        detail={
-                            "code": "toggle_changed",
-                            "message": (
-                                f"lane {body.lane!r}'s toggle no longer holds "
-                                f"{body.expected_toggle!r}; someone else changed "
-                                "it since, so this compare-and-set was refused "
-                                "rather than overwriting a newer value"
-                            ),
-                        },
-                    )
-            else:
-                sel.set_toggle(body.lane, body.toggle)
+            _apply_toggle(body.lane, body.toggle, body.expected_toggle)
         return AnalysisSourceOut(**sel.source_state(conn))
     finally:
         conn.close()
