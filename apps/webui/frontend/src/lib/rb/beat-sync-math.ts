@@ -8,8 +8,10 @@
  *     [if] a position is equidistant between beats [then] return the earlier t
  *   ✔︎ ✅ 🎯 Plan follower phase and local tempo at one future context time.
  *     [if] no raw, half-time, or double-time ratio fits [then ⛔️]
- *   ✔︎ ✅ 🎯 Require an explicit sync mode and preserve raw cadence in BAR mode.
- *     [if] BAR needs half/double normalization [then ⛔️] select BEAT instead
+ *   ✔︎ ✅ 🎯 Require an explicit sync mode; BAR prefers raw cadence and folds
+ *     only when nothing else locks (pin 9bf12adccb45, AGENTS.md).
+ *     [if] an exact BAR anchor exists but a fold is returned [then ⛔️]
+ *     [if] a fold is the only lock and BAR refuses it [then ⛔️]
  *
  * No DOM, Web Audio objects, nominal track BPM, or synthetic grid fallback.
  * Tempo ratios use beat INTERVALS (60/dt), never the PQTZ bpm field alone -
