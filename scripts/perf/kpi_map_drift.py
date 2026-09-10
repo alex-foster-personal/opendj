@@ -99,6 +99,40 @@ def budget_drift(kpi_map: dict, spec_text: str) -> list[str]:
     return problems
 
 
+def resolve_required(cfg: dict) -> list[dict]:
+    """Normalize each required KPI into its own name/unit/threshold set.
+
+    A plain KPI name (the common shape: one required KPI) inherits the
+    scenario's single budget/acceptable/breaking/unit. A dict entry carries
+    its own, for a scenario whose required KPIs do not share one threshold -
+    S2's visual-feedback KPI budgets at 16ms while its audible KPI budgets at
+    30ms, and scoring the visual reading against the audible band is the same
+    invented-threshold defect as picking a threshold out of thin air.
+    """
+    resolved = []
+    for entry in cfg.get("required", []):
+        if isinstance(entry, str):
+            resolved.append(
+                {
+                    "kpi": entry,
+                    "unit": cfg.get("unit", ""),
+                    "budget": cfg.get("budget"),
+                    "acceptable": cfg.get("acceptable"),
+                    "breaking": cfg.get("breaking"),
+                    "lower_is_better": cfg.get("lower_is_better", True),
+                }
+            )
+        else:
+            resolved.append(entry)
+    return resolved
+
+
+def _unit_wants(unit: str) -> tuple[bool, bool]:
+    """(wants_ms, wants_pct) parsed from a KPI's declared unit string."""
+    lowered = unit.lower()
+    return "ms" in lowered, ("%" in unit or "pct" in lowered)
+
+
 def _threshold_matches_cell(threshold: float, unit: str, cell: str) -> bool | None:
     """Does the FIRST number in `cell` assert `threshold` (recorded in `unit`)?
 
@@ -110,27 +144,113 @@ def _threshold_matches_cell(threshold: float, unit: str, cell: str) -> bool | No
     and matching against whichever number happens to convert would let that
     window size stand in for a threshold it was never meant to describe.
 
-    A leading percentile label (p95, p50, ...) is stripped first so a KPI's
-    own percentile marker is never read as its threshold value.
+    ms and plain seconds convert into each other in both directions (a
+    seconds-based scenario scored against a spec cell stated in milliseconds
+    must still be checked, not silently skipped for the unit not matching
+    literally). A leading percentile label (p95, p50, ...) is stripped first
+    so a KPI's own percentile marker is never read as its threshold value.
     """
+    wants_ms, wants_pct = _unit_wants(unit)
     stripped = _PERCENTILE_LABEL.sub("", cell)
     match = _CELL_NUMBER.search(stripped)
     if match is None:
         return None
     value = float(match.group(1))
     cell_unit = match.group(2)
-    wants_ms = "ms" in unit.lower()
-    wants_pct = "%" in unit or "pct" in unit.lower()
-    if cell_unit == "ms" and not wants_ms:
-        return None
-    if cell_unit == "s":
+    if cell_unit == "ms":
+        if wants_pct:
+            return None
+        if not wants_ms:
+            value /= 1000
+    elif cell_unit == "s":
+        if wants_pct:
+            return None
         if wants_ms:
             value *= 1000
-        elif wants_pct:
-            return None
-    if cell_unit == "%" and not wants_pct:
+    elif cell_unit == "%" and not wants_pct:
         return None
     return math.isclose(value, threshold, rel_tol=1e-9, abs_tol=1e-9)
+
+
+def _per_kpi_family(unit: str) -> str:
+    wants_ms, wants_pct = _unit_wants(unit)
+    if wants_pct:
+        return "pct"
+    if wants_ms:
+        return "ms"
+    if unit.strip().lower() == "s":
+        return "s"
+    return "bare"
+
+
+_FAMILY_TAG = {"ms": "ms", "s": "s", "pct": "%", "bare": None}
+
+
+def _strict_family_candidates(cell: str, family: str) -> list[float]:
+    """Numbers in `cell` whose OWN unit tag literally matches `family`, with
+    no cross-unit conversion - "ms" only for a `ms`-tagged number, "pct" only
+    for `%`, "bare" only for an untagged number, and so on.
+
+    Conversion is deliberately excluded here, unlike `_threshold_matches_cell`
+    above: two required KPIs often share one cell, and the OTHER one's number
+    routinely carries a convertible unit that has nothing to do with this KPI
+    (S4's acceptable cell states a dropped-frame percentage AND a "10s window"
+    duration; converting that window into milliseconds would make it collide
+    with the frame-delta KPI's own ms-typed threshold and validate against a
+    sample window instead). Restricting a family to its own literal tag keeps
+    every match referring to a number that could plausibly BE that KPI's own
+    threshold, at the cost of leaving a real edit undetected when the cell
+    states its bound in prose with no attached digit at all (S7's
+    dropped-keystroke breaking is exactly this: "or dropped keystrokes"
+    asserts a zero threshold with no literal 0 in the text - the same class
+    of gap as a target cell with no number in it at all).
+    """
+    stripped = _PERCENTILE_LABEL.sub("", cell)
+    wants_tag = _FAMILY_TAG[family]
+    return [
+        float(raw)
+        for raw, cell_unit in _CELL_NUMBER.findall(stripped)
+        if (cell_unit or None) == wants_tag
+    ]
+
+
+def _per_kpi_drift(sid: str, cfg: dict, cells: dict[str, str]) -> list[str]:
+    """Each required KPI's OWN resolved budget/acceptable/breaking - the
+    numbers `_resolve_required` hands to `verdict_for` - must match the spec
+    cell it is scored against, not just the scenario's headline field.
+
+    A plain (single-KPI) scenario's resolved entry IS the scenario's headline
+    field, so this duplicates the scalar check above for it; the case this
+    exists for is S2/S4/S7, each of which requires a SECOND KPI carrying its
+    own numbers in the SAME shared cell text as the first, which nothing
+    validated before. Numbers are matched by rank within same-family KPIs, in
+    `required` order: the Nth ms-typed required KPI is checked against the
+    Nth ms-tagged number the cell states, and a KPI with fewer same-family
+    numbers available than its rank is left unchecked rather than guessed at.
+    """
+    problems: list[str] = []
+    family_rank: dict[str, int] = {}
+    for req in resolve_required(cfg):
+        family = _per_kpi_family(str(req.get("unit", "")))
+        rank = family_rank.get(family, 0) + 1
+        family_rank[family] = rank
+        for column, value in (
+            ("target", req.get("budget")),
+            ("acceptable", req.get("acceptable")),
+            ("breaking", req.get("breaking")),
+        ):
+            if value is None:
+                continue
+            cell = str(cells.get(column, ""))
+            candidates = _strict_family_candidates(cell, family)
+            if rank > len(candidates):
+                continue
+            if not math.isclose(candidates[rank - 1], float(value), rel_tol=1e-9, abs_tol=1e-9):
+                problems.append(
+                    f"{sid} {req['kpi']} {column}: map records {value!r}, "
+                    f"not found in spec cell {cell!r}"
+                )
+    return problems
 
 
 def threshold_drift(kpi_map: dict) -> list[str]:
@@ -138,24 +258,22 @@ def threshold_drift(kpi_map: dict) -> list[str]:
     score against, not just its prose (budget_drift's job above).
 
     budget_drift catches the spec's cell TEXT changing under the map. It
-    cannot catch the reverse: a numeric `budget`/`acceptable`/`breaking`
-    edited (typo, stale copy) while the cell text it was derived from stays
-    untouched, which leaves no textual signal for budget_drift to see and
-    still ships a PASS against a threshold the owning spec no longer states.
-
-    Scoped to scenario-level fields only: a per-KPI `required` override
-    (S2/S4/S7's secondary KPI) shares its one spec_cells column with the
-    scenario's own primary threshold, so no per-column text can say which of
-    the two numbers in that cell belongs to it - checking it would mean
-    guessing, not verifying. `acceptable`/`breaking` equal to `budget` is a
-    self-consistency shorthand, not an independent claim, so it is skipped
-    rather than double-counted.
+    cannot catch the reverse: a numeric threshold edited (typo, stale copy)
+    while the cell text it was derived from stays untouched, which leaves no
+    textual signal for budget_drift to see and still ships a verdict against
+    a threshold the owning spec no longer states.
 
     A column whose cell asserts nothing this map's unit can compare against
-    is skipped, not flagged - S4's own target cell ("p95 frame delta <=
-    display refresh interval") names no number by design, per its
-    `missing_kpi` note: the 16.7/33.3ms bands are provisional stand-ins for a
-    refresh-relative bound that has no fixed figure to check against yet.
+    is silently left unchecked, not flagged - S4's own target cell ("p95
+    frame delta <= display refresh interval") names no number by design, per
+    its `missing_kpi` note: the 16.7/33.3ms bands are provisional stand-ins
+    for a refresh-relative bound that has no fixed figure to check against
+    yet. There is deliberately no separate "acceptable/breaking equal to
+    budget" shorthand: that equality is itself no longer trusted as a signal
+    that the column has nothing to check, since an accidental edit can
+    produce the same equality by coincidence and must still be checked
+    against the cell like any other value - "no comparable number in the
+    cell" is the only condition that skips a column.
     """
     problems: list[str] = []
     for sid, cfg in kpi_map["scenarios"].items():
@@ -163,21 +281,17 @@ def threshold_drift(kpi_map: dict) -> list[str]:
         if not cells:
             continue
         unit = str(cfg.get("unit", ""))
-        budget = cfg.get("budget")
-        acceptable = cfg.get("acceptable")
-        breaking = cfg.get("breaking")
         for column, value in (
-            ("target", budget),
-            ("acceptable", acceptable),
-            ("breaking", breaking),
+            ("target", cfg.get("budget")),
+            ("acceptable", cfg.get("acceptable")),
+            ("breaking", cfg.get("breaking")),
         ):
             if value is None:
-                continue
-            if column != "target" and value == budget:
                 continue
             cell = str(cells.get(column, ""))
             if _threshold_matches_cell(float(value), unit, cell) is False:
                 problems.append(
                     f"{sid} {column}: map records {value!r}, not found in spec cell {cell!r}"
                 )
+        problems.extend(_per_kpi_drift(sid, cfg, cells))
     return problems
