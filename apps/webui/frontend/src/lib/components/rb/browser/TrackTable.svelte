@@ -744,6 +744,15 @@
 		return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 	}
 
+	function orderCellTitle(order: number): string {
+		return `Playlist position ${order}`;
+	}
+
+	function timeCellTitle(ms: number | null): string {
+		if (ms === null) return 'Duration unknown';
+		return `Duration ${_fmtTime(ms)} (mm:ss)`;
+	}
+
 	function _fmtBpm(bpm: number | null): string {
 		// Screenshot truncates to '132.' - one decimal is the sanctioned improvement.
 		return bpm === null ? '' : String(Math.round(bpm));
@@ -1292,7 +1301,7 @@
 								<span class="missing" title="audio file missing on disk (broken link)">!</span>
 							{/if}
 						</td>
-						<td class="c-order">
+						<td class="c-order" title={orderCellTitle(row.order)}>
 							{#if reorderable}
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
 								<span
@@ -1451,7 +1460,7 @@
 								{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
 							{/each}
 						</td>
-						<td class="c-time">{_fmtTime(row.duration_ms)}</td>
+						<td class="c-time" title={timeCellTitle(row.duration_ms)}>{_fmtTime(row.duration_ms)}</td>
 						<td class="c-quality">
 							<QualityBadge quality={row.quality} compact showContainer={false} />
 						</td>

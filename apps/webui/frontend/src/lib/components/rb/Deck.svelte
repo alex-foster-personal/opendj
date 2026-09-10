@@ -5,8 +5,8 @@
 	// Q, BEAT SYNC, MASTER, MT, KEY SYNC, key nudge, SLIP, jog readouts +
 	// position tick, pitch fader + 8/16/WIDE range switcher. Stems are live
 	// only for validated real Demucs artifacts.
-	// INERT (tooltip 'not implemented - see PARITY-TODO'): HOT CUE dropdown,
-	// grid-adjust stacks, AU, MA.
+	// INERT (plannedTitle per control): HOT CUE dropdown, grid-adjust stacks,
+	// AU, MA.
 	//
 	// ALL live state comes from the audio-engine accessor: the engine unit
 	// owns DeckState (types.ts) via the rune module audio-engine.svelte.ts.
@@ -57,6 +57,7 @@
 	import StemRow from './deck/StemRow.svelte';
 	import StripWaveform from './deck/StripWaveform.svelte';
 	import TransportCluster from './deck/TransportCluster.svelte';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 
 	let { deckId }: { deckId: DeckId } = $props();
 
@@ -97,7 +98,6 @@
 		)
 	);
 
-	const INERT_TIP = 'not implemented - see PARITY-TODO';
 	const hotCueActions = createDeckHotCueActions(() => deckId, () => deck);
 
 	// ------------------------------------------------- engine call plumbing
@@ -350,10 +350,10 @@
 	<div class="main-row">
 		<!-- Left edge: 2 grid-adjust icon stacks (inert, COMPONENT-MAP 1.3). -->
 		<div class="grid-adjust">
-			<button class="rb-lit-button rb-inert" disabled title={INERT_TIP} aria-label={`grid adjust deck ${deckId}`} data-testid={`grid-adjust-deck-${deckId}`}>
+			<button class="rb-lit-button rb-inert" disabled title={plannedTitle('grid-adjust')} aria-label={`grid adjust deck ${deckId}`} data-testid={`grid-adjust-deck-${deckId}`}>
 				<span class="ticks">&#9475;&#9475;&#9475;</span>
 			</button>
-			<button class="rb-lit-button rb-inert" disabled title={INERT_TIP} aria-label={`grid shift deck ${deckId}`} data-testid={`grid-shift-deck-${deckId}`}>
+			<button class="rb-lit-button rb-inert" disabled title={plannedTitle('grid-shift')} aria-label={`grid shift deck ${deckId}`} data-testid={`grid-shift-deck-${deckId}`}>
 				<span class="ticks">&#9478;&#9478;&#9478;</span>
 			</button>
 		</div>
@@ -369,13 +369,12 @@
 				onRename={hotCueActions.renameHotCueAt}
 				onDelete={hotCueActions.clearHotCueAt}
 				onRestore={hotCueActions.restoreHotCueAt}
-				inertTip={INERT_TIP}
 			/>
 		</div>
 
 		<!-- Keep the compact transport modifiers together, outside the cue bank. -->
 		<div class="loop-col">
-			<LoopCluster {deck} {deckId} {pending} onEngage={engageBeatLoop} onDisengage={disengageLoop} onSafetySave={saveSafetyLoop} onSafetyArm={armSafetyLoop} onSafetyClear={clearSafetyLoop} onIntervalMode={setLoopIntervalMode} onIntervalBase={setLoopIntervalBase} inertTip={INERT_TIP} />
+			<LoopCluster {deck} {deckId} {pending} onEngage={engageBeatLoop} onDisengage={disengageLoop} onSafetySave={saveSafetyLoop} onSafetyArm={armSafetyLoop} onSafetyClear={clearSafetyLoop} onIntervalMode={setLoopIntervalMode} onIntervalBase={setLoopIntervalBase} />
 			<BeatJump {deck} {pending} onJump={beatJump} />
 		</div>
 
@@ -389,7 +388,6 @@
 			onQuantizeGrid={setQuantizeGrid}
 			onMasterTempo={toggleMasterTempo}
 			onSlip={toggleSlip}
-			inertTip={INERT_TIP}
 		/>
 
 		<PitchFader

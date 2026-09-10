@@ -121,7 +121,9 @@
 			type="button"
 			class="deck-layout-btn"
 			class:active={!deckLayoutLess}
-			title="Show all 4 decks (Cmd/Ctrl+4)"
+			title={deckLayoutLess
+				? 'MORE - switch to all 4 decks (Cmd/Ctrl+4). Current layout is LESS (2 decks, more library space).'
+				: 'MORE - currently showing all 4 decks. Click LESS for 2 decks and more library space (Cmd/Ctrl+2).'}
 			onclick={() => setDeckLayoutMode('more')}
 		>
 			MORE
@@ -130,7 +132,9 @@
 			type="button"
 			class="deck-layout-btn"
 			class:active={deckLayoutLess}
-			title="Show 2 decks, more library space (Cmd/Ctrl+2)"
+			title={deckLayoutLess
+				? 'LESS - currently showing 2 decks, more library space. Click MORE for all 4 decks (Cmd/Ctrl+4).'
+				: 'LESS - switch to 2 decks and more library space (Cmd/Ctrl+2). Current layout is MORE (all 4 decks).'}
 			onclick={() => setDeckLayoutMode('less')}
 		>
 			LESS

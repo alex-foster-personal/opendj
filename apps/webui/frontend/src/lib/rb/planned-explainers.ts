@@ -46,7 +46,28 @@ export const PLANNED_CONTROLS: Record<string, string> = {
 	pad: 'PAD - labels the performance-pad row: hot cues, beat loops, beat jump and sampler banks for the focused deck.',
 	information: 'Track information - opens the full record for the focused deck - every tag, the analysis provenance, play history and the file path.',
 	'free-badge': 'Free plan - is the licence tier this copy runs on. Everything on this screen is included; the badge marks where paid tiers will differ once there are any.',
-	'autoplay-two-track': 'Two-track AutoPlay - will match and mix a second automatic track alongside the primary handoff, with its own evolving selection rules.'
+	'autoplay-two-track': 'Two-track AutoPlay - will match and mix a second automatic track alongside the primary handoff, with its own evolving selection rules.',
+	'grid-adjust': 'Grid adjust - nudges the beatgrid later or earlier on this deck so downbeats line up with the kick, without changing tempo.',
+	'grid-shift': 'Grid shift - slides the whole beatgrid by whole beats so bar 1 lands on the phrase start you hear.',
+	'auto-cue': 'Auto cue - jumps back to the loaded cue when the track ends, so the next play starts from that cue instead of 0:00.',
+	'manual-source': 'Manual tempo source - ignores the analyzed BPM tag and lets you tap or type the tempo this deck should run at.',
+	'loop-source': 'Loop source - picks whether loop lengths come from the beatgrid (INT), a stored hot-cue loop, or the active memory cue.',
+	'hot-cue-menu': 'Hot cue bank menu - switches this pad bank between hot cues, beat loops, beat jump, and sampler, the way a performance-pad mode selector does.',
+	'collection-bookmarks': 'Collection bookmarks - filters the library to tracks you have starred or tagged as favorites, without opening a playlist.',
+	'explorer-grid': 'Explorer - browses the collection as folders on disk instead of playlists, so you can load from the file tree.',
+	'itunes-library': 'iTunes library - shows playlists imported from Apple Music / iTunes as a source next to the rekordbox collection.',
+	'file-browser': 'File browser - opens loose audio files that are not yet in the collection, for a one-off load onto a deck.',
+	'beatport': 'Beatport - browses purchased or streaming Beatport tracks as a library source, with purchase links when a row is streaming-only.',
+	'video-output': 'Video output - sends the master or a chosen deck to a second display or projector for visuals, separate from the headphone cue.',
+	'usb-export': 'USB export - writes the current playlist to a FAT32 stick in rekordbox export layout so a CDJ can play it.',
+	'cloud-lock': 'Cloud library lock - marks this collection as the rekordbox Cloud / private copy so another laptop cannot write it at the same time.',
+	'play-history': 'Play history - lists tracks played this session and previous nights, with the same columns as the collection table.',
+	'master-dropdown': 'Master playlist - pins which playlist the NEXT / compatible filter treats as the master source, independent of which deck is MASTER.',
+	'single-column-layout': 'Single-column library - hides the playlist tree and gives the track table the full browser width.',
+	'split-column-layout': 'Split-column library - stacks two track tables side by side so two playlists can be compared without switching panes.',
+	'export-eject': 'Export / eject - flushes a USB export and safely ejects the stick from the bottom bar, the same action as the USB panel.',
+	'pane-prev-track': 'Previous track in pane - moves the table selection up one row and, when a deck is focused, prepares that row as the next load.',
+	'pane-next-track': 'Next track in pane - moves the table selection down one row and, when a deck is focused, prepares that row as the next load.'
 };
 
 /** The tooltip for a planned control. Throws on an unknown id: an empty
