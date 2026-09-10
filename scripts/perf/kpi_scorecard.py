@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import math
 import re
 import sys
 from dataclasses import dataclass
@@ -60,6 +61,8 @@ class Reading:
     date: str | None
     source: str | None
     superseded: bool
+    machine: str | None = None
+    note: str | None = None
 
     @property
     def measured(self) -> bool:
@@ -117,6 +120,8 @@ def newest_reading(entries: list[dict], kpi: str) -> Reading:
             newest.get("date"),
             str(newest.get("source", "")),
             True,
+            machine=newest.get("machine"),
+            note=newest.get("note"),
         )
     if live:
         newest = live[-1]
@@ -127,15 +132,30 @@ def newest_reading(entries: list[dict], kpi: str) -> Reading:
         newest.get("date"),
         str(newest.get("source", "")),
         superseded=False,
+        machine=newest.get("machine"),
+        note=newest.get("note"),
     )
 
 
 def _as_float(value: object) -> float | None:
+    """A probed value, or None when it is not a trustworthy measurement.
+
+    Per docs/perf/learnings/_INDEX.md L-line convention, a probe returns -1
+    (never 0) when its subject never appeared, so a legitimate zero-valued
+    measurement (e.g. zero dropped keystrokes) must stay distinct from an
+    absent one. Rejecting any negative number therefore catches the sentinel
+    without touching a real reading, since every KPI this scores is a count,
+    duration, or rate that cannot go negative. NaN and +/-inf are rejected the
+    same way: neither is a value verdict_for can compare against a threshold.
+    """
     if isinstance(value, bool):
         return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    return None
+    if not isinstance(value, (int, float)):
+        return None
+    result = float(value)
+    if not math.isfinite(result) or result < 0:
+        return None
+    return result
 
 
 # ---------------------------------------------------------------- scoring
@@ -365,7 +385,12 @@ def render(scores: list[Score], max_stale_days: int | None) -> list[str]:
         lines.append(f"{s.scenario:4} {s.ux_class:5} {s.verdict:11} {age:>5}  {s.title}{stale}")
         for r in s.readings:
             if r.measured:
-                lines.append(f"       {r.kpi} = {r.value} {r.unit}  ({r.date}, {r.source})")
+                lines.append(
+                    f"       {r.kpi} = {r.value} {r.unit}  "
+                    f"({r.date}, {r.machine}, {r.source})"
+                )
+                if r.note:
+                    lines.append(f"         note: {r.note}")
             elif r.superseded:
                 lines.append(f"       {r.kpi} = SUPERSEDED, not scored")
             else:
@@ -438,6 +463,8 @@ def main(argv: list[str] | None = None) -> int:
                                 "unit": r.unit,
                                 "date": r.date,
                                 "source": r.source,
+                                "machine": r.machine,
+                                "note": r.note,
                                 "superseded": r.superseded,
                             }
                             for r in s.readings

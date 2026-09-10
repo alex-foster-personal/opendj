@@ -424,6 +424,54 @@ def test_a_future_dated_reading_fails_closed() -> None:
     assert score.verdict == UNMEASURED
 
 
+def test_negative_sentinel_reading_is_unmeasured() -> None:
+    """The probe convention (docs/perf/learnings/_INDEX.md) returns -1, never
+    0, when a subject never appeared. Accepting -1 as a value let every
+    lower-is-better KPI report PASS (-1 <= budget) from a probe that measured
+    nothing."""
+    entries = [{"kpi": "k", "value": -1, "unit": "ms", "date": "2026-09-09"}]
+    reading = newest_reading(entries, "k")
+    assert reading.value is None
+    assert reading.measured is False
+
+
+def test_non_finite_reading_is_unmeasured() -> None:
+    """NaN and +/-inf must not reach verdict_for, which would produce an
+    arbitrary OVER/BREAKING result from a value that measured nothing."""
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        entries = [{"kpi": "k", "value": bad, "unit": "ms", "date": "2026-09-09"}]
+        reading = newest_reading(entries, "k")
+        assert reading.value is None, f"{bad!r} must not read as a measurement"
+
+
+def test_zero_is_a_real_measurement_not_a_sentinel() -> None:
+    """The control for the sentinel gate: 0 is a legitimate reading (e.g. zero
+    dropped keystrokes) and must still score, unlike the -1 sentinel."""
+    entries = [{"kpi": "k", "value": 0, "unit": "ms", "date": "2026-09-09"}]
+    reading = newest_reading(entries, "k")
+    assert reading.value == 0.0
+    assert reading.measured is True
+
+
+def test_reading_retains_machine_and_measurement_note() -> None:
+    """The gap this closes: `machine` (tier) and per-row `note` (sampling
+    window/denominator) were read off the ledger row and then discarded, so a
+    verdict shipped with no way to show which machine or window supports it."""
+    entries = [
+        {
+            "kpi": "k",
+            "value": 12,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=6 uncached tracks",
+        }
+    ]
+    reading = newest_reading(entries, "k")
+    assert reading.machine == "silver"
+    assert reading.note == "n=6 uncached tracks"
+
+
 def test_json_output_preserves_reading_source_and_score_note() -> None:
     """The `--json` escape: a reader consuming the machine format must see the
     same provenance and caveats the text renderer prints, or a verdict like
@@ -447,3 +495,6 @@ def test_json_output_preserves_reading_source_and_score_note() -> None:
     measured_readings = [r for r in s5["readings"] if r["value"] is not None]
     assert measured_readings, "S5 fixture expected at least one measured reading"
     assert all(r["source"] for r in measured_readings)
+    assert all(r["machine"] for r in measured_readings), (
+        "measured readings must carry the machine tier that supports the verdict"
+    )
