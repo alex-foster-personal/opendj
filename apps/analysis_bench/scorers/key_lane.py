@@ -309,11 +309,39 @@ def load_bundle(bundle: Path) -> tuple[dict[str, Any], _ReferenceMap, _Reference
         raise ValueError(f"{bundle}/manifest.json declares no reads.truth for the key lane")
     truth = json.loads((bundle / truth_name).read_text(encoding="utf-8"))["keys"]
     stable_ids = [row["stable_id"] for row in manifest.get("fixtures") or []]
-    rekordbox = {sid: _parse_reference(truth.get(sid, {}).get("rekordbox"), "rekordbox")
+    _refuse_malformed_join(bundle, truth_name, truth, stable_ids)
+    rekordbox = {sid: _parse_reference(truth[sid].get("rekordbox"), "rekordbox")
                  for sid in stable_ids}
-    mik = {sid: _parse_reference(truth.get(sid, {}).get("mik_camelot"), "mik")
+    mik = {sid: _parse_reference(truth[sid].get("mik_camelot"), "mik")
            for sid in stable_ids}
     return manifest, rekordbox, mik
+
+
+def _refuse_malformed_join(
+    bundle: Path, truth_name: str, truth: dict[str, Any], stable_ids: list[str]
+) -> None:
+    """Refuse a bundle whose manifest/truth join is broken, rather than let
+    it score as two ordinary missing references or a silently shrunken
+    denominator (Codex P1 BLOCKING, PR #1620, x2): a stale or failed join
+    can list a `stable_id` the truth file has no row for at all, which
+    `truth.get(sid, {})` used to accept as an explicit per-source null, and
+    can emit the same `stable_id` twice, which the reference-map dict
+    comprehensions used to collapse into one key without saying so.
+    """
+    duplicates = sorted({sid for sid in stable_ids if stable_ids.count(sid) > 1})
+    if duplicates:
+        raise ValueError(
+            f"{bundle}/manifest.json lists {len(duplicates)} duplicate fixture "
+            f"stable_id(s), first {duplicates[0]!r}: a malformed join must not "
+            "silently collapse into a smaller scored set."
+        )
+    missing = sorted(sid for sid in stable_ids if sid not in truth)
+    if missing:
+        raise ValueError(
+            f"{bundle}/{truth_name} has no truth row at all for {len(missing)} "
+            f"fixture(s) the manifest declares, first {missing[0]!r}: a broken "
+            "join must not silently become ordinary missing references."
+        )
 
 
 #-----------------------------------------------------------------------------
