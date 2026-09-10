@@ -1,8 +1,9 @@
 """Measurement orchestration for the preview-branch drift check (DEVOPS-05).
 
 ``evaluate()``, built on top of the git plumbing and model in
-``scripts/preview_drift_git.py`` and the containment checks in
-``scripts/preview_drift_containment.py``. Split three ways out of
+``scripts/preview_drift_git.py``, the containment checks in
+``scripts/preview_drift_containment.py``, and the commit-supersession checks
+in ``scripts/preview_drift_supersession.py``. Split out of
 ``scripts/preview_drift_check.py`` so no file in the set crosses the 600-line
 file-size ratchet. The CLI module owns argument parsing, rendering, and
 ``main()``; everything it needs from here it imports explicitly, so
@@ -16,7 +17,6 @@ from pathlib import Path
 from scripts.preview_drift_containment import (
     _cross_class_never_coexisted,
     _mark_landed_commits,
-    _mark_superseded_commits,
     _merge_commits,
     _patch_equivalent_never_coexisted,
     _resolution_carrying_merges,
@@ -36,6 +36,7 @@ from scripts.preview_drift_git import (
     _worktree_dirty,
     fetch_origin,
 )
+from scripts.preview_drift_supersession import _mark_superseded_commits
 
 __all__ = [
     "DEFAULT_MAX_AGE_HOURS",
