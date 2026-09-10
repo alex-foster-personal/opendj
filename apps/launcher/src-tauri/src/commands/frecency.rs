@@ -232,4 +232,65 @@ mod tests {
         let hits = get_frecent_top_impl(&conn, 1_800_000_000, 10).unwrap();
         assert!(hits.is_empty(), "no drags = no hits");
     }
+
+    /// The wire shape the palette reads, produced by the production serializer.
+    ///
+    /// `FrecentHit` flattens `TrackHit`, so a rename or a dropped `#[serde]`
+    /// attribute on either side changes the JSON the frontend destructures
+    /// while every Rust test above keeps passing: they read struct fields, not
+    /// the serialized form. This asserts the exact key set that
+    /// `apps/launcher/src/types.ts` declares, through `serde_json` and a real
+    /// SQLite row rather than a hand-built struct (Codex P1, PR #1633).
+    #[test]
+    fn frecent_hit_serializes_to_the_shape_the_palette_reads() {
+        let conn = seeded_conn();
+        let now = 1_800_000_000;
+        conn.execute(
+            "INSERT INTO tracks_frecency(stable_id, drags, last_dragged_at) VALUES ('s1', 1, ?1)",
+            params![now],
+        )
+        .unwrap();
+        let hits = get_frecent_top_impl(&conn, now, 10).unwrap();
+        let value = serde_json::to_value(&hits[0]).unwrap();
+        let object = value.as_object().expect("a FrecentHit serializes to an object");
+
+        let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        // Exactly these, in the TypeScript `FrecentHit`. An EXTRA key is a
+        // finding too: it means the frontend type has silently fallen behind.
+        assert_eq!(
+            keys,
+            vec![
+                "album", "artist", "bpm", "drags", "genre", "key", "path", "plays", "score",
+                "stable_id", "title",
+            ],
+        );
+        assert!(object["score"].is_f64(), "score must arrive as a number");
+        assert_eq!(object["plays"], 0);
+        assert_eq!(object["drags"], 1);
+    }
+
+    /// The frontend calls `get_frecent_top` by NAME over IPC, and a name that
+    /// is not in `generate_handler!` fails only at runtime, in a rejected
+    /// promise that looks exactly like an empty library. Nothing else in this
+    /// crate's tests would notice, because they call the impl directly.
+    #[test]
+    fn get_frecent_top_is_registered_with_tauri() {
+        let main_rs = include_str!("../main.rs");
+        let start = main_rs
+            .find("generate_handler![")
+            .expect("main.rs still registers commands with generate_handler!");
+        let end = main_rs[start..].find(']').expect("the handler list is closed");
+        let handlers = &main_rs[start..start + end];
+        assert!(
+            handlers.contains("get_frecent_top"),
+            "get_frecent_top is missing from generate_handler!: {handlers}"
+        );
+        // Negative control: the same probe must be able to say NO, or a
+        // substring search that always succeeds would prove nothing.
+        assert!(
+            !handlers.contains("get_frecent_bottom"),
+            "the probe reports a command that does not exist, so it cannot fail"
+        );
+    }
 }

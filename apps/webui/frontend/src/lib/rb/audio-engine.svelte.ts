@@ -1916,12 +1916,12 @@ function _tempoBounds(deck: DeckId): { min: number; max: number } {
 
 async function _resumeContext(): Promise<AudioContext> {
 	const ctx = _ensureGraph();
-	if (ctx.state === 'suspended') await ctx.resume();
+	// `interrupted` too, not only `suspended`: AUDIOLIVE-06 (P1 3973882771).
+	if (ctx.state === 'suspended' || (ctx.state as string) === 'interrupted') await ctx.resume();
 	if (ctx.state !== 'running') {
 		throw new Error(`AudioContext did not enter running state; current state is ${ctx.state}`);
 	}
-	// Belt for the statechange listener: whichever fires first, the authoritative
-	// device-floor row is emitted exactly once (the helper is idempotent).
+	// Belt for the statechange listener; the device-floor row stays idempotent.
 	stampContextDeviceFloors(ctx);
 	return ctx;
 }

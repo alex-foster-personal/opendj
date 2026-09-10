@@ -98,21 +98,44 @@ def _no_hub_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def hub_dir(tmp_path: Path) -> Path:
+    """The hub's DATA DIR, which does not exist yet.
+
+    Guarantees it is empty and private to this test: no state DB, no
+    ``machine-id`` file, no ``machines`` row. The first ``_open`` or the
+    ``hub`` fixture below creates them, so a test observes the bootstrap
+    rather than inheriting one.
+    """
     return tmp_path / "hub"
 
 
 @pytest.fixture
 def spoke_a(tmp_path: Path) -> Path:
+    """Spoke A's empty data dir. Same guarantees as :func:`hub_dir`.
+
+    Its machine id is minted from this path on first open, so A and B are
+    distinct machines with distinct ``origin_device_id`` values without any
+    test saying so. ``_DEV_A`` / ``_DEV_B`` are the ids fixtures WRITE onto
+    rows; they are deliberately not these machines' ids.
+    """
     return tmp_path / "spoke-a"
 
 
 @pytest.fixture
 def spoke_b(tmp_path: Path) -> Path:
+    """Spoke B's empty data dir. Same guarantees as :func:`spoke_a`."""
     return tmp_path / "spoke-b"
 
 
 @pytest.fixture
 def hub(hub_dir: Path) -> Iterator[_TestClientTransport]:
+    """The real sync router over the real ASGI stack, on an EMPTY hub DB.
+
+    Guarantees: the hub holds no synced rows and no changelog entries until a
+    spoke pushes, its machine name is ``hub``, and every call a test makes
+    goes through the same routing, validation and error handling a network
+    client would hit. Nothing here is a stub of the hub -- only the socket is
+    absent.
+    """
     app = FastAPI()
     app.state.state_db_path = str(client.state_db_path(hub_dir))
     app.state.sync_hub_data_dir = str(hub_dir)

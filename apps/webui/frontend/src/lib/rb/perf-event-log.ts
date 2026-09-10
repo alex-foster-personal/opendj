@@ -41,6 +41,14 @@
  * re-bind did NOT work - the operator is hearing nothing and the recovery
  * failed - stayed inside the browser. The 17:44:43Z Bluetooth flap that killed
  * audio on the Air left no line at all in `webui-client-errors-2026-09-09.log`.
+ *
+ * `audio-output-dead` and `audio-output-dead-persistent` joined them Thu 10 Sep
+ * 2026 (issue #1641). Both are recorded at ERROR by audio-output-liveness.ts,
+ * and `audio-output-dead` is the app's ONLY device-level "no sound is leaving
+ * this machine" verdict, so leaving them out closed the observability hole for
+ * one row out of four. That drift is now CHECKED rather than merely corrected:
+ * escalated-kinds-superset.test.mjs reds if any module records a kind at
+ * `error` severity that is absent from this set.
  */
 const ESCALATED_KINDS: ReadonlySet<string> = new Set([
 	'xrun',
@@ -48,7 +56,9 @@ const ESCALATED_KINDS: ReadonlySet<string> = new Set([
 	'silent-while-playing',
 	'presentation-clock-stalled',
 	'presentation-stalled',
-	'audio-output-rebind-failed'
+	'audio-output-rebind-failed',
+	'audio-output-dead',
+	'audio-output-dead-persistent'
 ]);
 
 /**

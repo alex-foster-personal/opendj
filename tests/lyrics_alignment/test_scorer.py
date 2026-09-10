@@ -51,6 +51,13 @@ def test_threshold_boundaries_are_inclusive_except_catastrophes() -> None:
     assert score.catastrophe_rate == pytest.approx(1 / 3)
 
 
+def test_exact_two_second_error_is_not_a_catastrophe() -> None:
+    """If error is exactly 2.0 s then it does not count toward catastrophe_rate."""
+    score = lyric_align_score([0.0, 1.0, 2.0], [2.0, 1.0, 2.0])
+
+    assert score.catastrophe_rate == pytest.approx(0.0)
+
+
 def test_unplaced_words_are_not_silently_scored_as_accurate() -> None:
     """If an onset is absent then it reduces recall but not the accuracy denominator."""
     score = lyric_align_score([0.0, 1.0, 2.0], [0.1, None, 2.1])
