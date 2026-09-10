@@ -50,11 +50,23 @@
 		justify-items: center;
 		animation: mark-arrive 2.7s ease-out forwards;
 	}
+	/* Anybody 800 at width 150, ALL CAPS: the maintainer's blind pick on Thu 10 Sep 2026 to sit
+	   beside the terracotta mark. A 1.6 KB static instance subset to the wordmark's glyphs,
+	   shipped in static/ so the launch stays offline. Every candidate and round is kept in
+	   docs/brand/wordmark-font/. */
+	@font-face {
+		font-family: 'Anybody Wordmark';
+		src: url('/fonts/anybody-800-w150-wordmark.woff2') format('woff2');
+		font-weight: 800;
+		font-display: block;
+	}
 	.brand-name {
 		color: #fff;
-		font-size: clamp(2rem, 5vw, 3.4rem);
-		font-weight: 700;
+		font-family: 'Anybody Wordmark', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+		font-size: clamp(1.7rem, 4.2vw, 2.9rem);
+		font-weight: 800;
 		letter-spacing: -0.01em;
+		text-transform: uppercase;
 	}
 	/* The end rotation MUST be a multiple of 360deg. The two halves of the mark
 	   carry different shades, so any other terminal angle settles on a mark
