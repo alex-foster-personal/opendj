@@ -521,12 +521,21 @@ def test_a_command_the_mirror_cannot_observe_is_accepted_not_confirmed(
     page.start()
     try:
         assert main(_argv(engine, "slip", "1", "true")) == EXIT_CONFIRMED
+        text = capsys.readouterr().out
+        assert main(_argv(engine, "--json", "slip", "1", "true")) == EXIT_CONFIRMED
+        document = json.loads(capsys.readouterr().out)
+        assert main(_argv(engine, "--json", "play", "1")) == EXIT_CONFIRMED
+        affirmed = json.loads(capsys.readouterr().out)
     finally:
         page.stop()
 
-    captured = capsys.readouterr()
-    assert "verdict: accepted" in captured.out
-    assert "verdict: confirmed" not in captured.out
+    assert "verdict: accepted" in text
+    assert "verdict: confirmed" not in text
+    # Exit 0 covers both verdicts, so the exit code alone cannot tell an agent
+    # which one it got. `verdict` is where that distinction lives, which is why
+    # the exit-code table in apps/opendj_cli/__init__.py points at it.
+    assert document["verdict"] == "accepted"
+    assert affirmed["verdict"] == "confirmed"
 
 
 def test_an_unobservable_command_on_a_lagging_deck_is_still_unconfirmed(

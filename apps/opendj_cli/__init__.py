@@ -11,7 +11,11 @@ Exit codes are the interface (``--json`` carries the same distinction in the
 body as ``error.code``):
 
 ===  ==========================================================================
-0    the order resolved AND the mirror confirmed it (see :mod:`confirm`)
+0    the order resolved and nothing in the mirror contradicts it: either
+     ``confirmed`` (a control the verb names agrees) or ``accepted`` (the
+     mirror names no control this command moves). The printed verdict says
+     which, and ``--json`` carries it as ``verdict``; only ``confirmed``
+     claims the effect was observed. See :mod:`confirm`.
 1    the order ran and failed, or the invocation was rejected before dispatch
 2    the engine is not running; the message names the lock file that was checked
 3    the engine is up and no performance page is open, so nothing can be claimed
