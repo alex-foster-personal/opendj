@@ -14,6 +14,7 @@ import { fetchAnlz, fetchAnlzBypassingHttpCache, RbApiError } from '$lib/rb/api-
 import { hasAnlzBeatgrid } from '$lib/rb/beatgrid-fallback';
 import { recordAnlzPrefetchSampled } from '$lib/rb/library-perf';
 import { currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
+import { analysisSourceState } from '$lib/rb/analysis-source-state.svelte';
 import type { AnlzData } from '$lib/rb/anlz-types';
 import {
 	refreshAnalysisSourceDecks as _refreshAnalysisSourceDecksImpl,
@@ -262,7 +263,43 @@ function _hasActiveConsumer(stable_id: string): boolean {
  * due for refetch, so a consumer returning later (`ensureAnlz` via
  * `_dueForEnsureRefetch`) revives it with no special-casing on either
  * side. */
+/**
+ * `alreadyScoped` carries a SECOND meaning here beyond "reconcile inline"
+ * (its meaning for the sink call below and for `afterBeatgridUpgrade`):
+ * it also means "this payload's source is already trusted". The one `true`
+ * caller, `refreshAnalysisSourceDecks`, is itself what is about to advance
+ * `analysisSourceState.features.beatgrid` to match `data.beatgrid_source`
+ * once it returns - comparing its own payload against the not-yet-updated
+ * mirror would reject the very write that is about to make it current. Every
+ * other caller (the ambient retry timer, `ensureAnlz`, `refreshHotCues`) can
+ * race a source switch that already confirmed a different selection: an
+ * RBX->OWN->RBX round trip inside one poll interval leaves
+ * `currentAnlzFetchGeneration()` looking unchanged to a straggling fetch
+ * issued and settled entirely within that window, so the generation guard
+ * alone lets a since-reverted response reach the shared cache and get served
+ * to the next deck load via `isAnlzEntryUsable` with no later poll able to
+ * detect or undo it (discussion_r3975650988's same class, applied to the
+ * cache rather than an already-loaded deck). `undefined` means no poll has
+ * confirmed a selection yet (cold mount): nothing to disagree with.
+ */
 function _publishAnlzResult(stable_id: string, data: AnlzData, alreadyScoped = false): void | Promise<void> {
+	if (
+		!alreadyScoped &&
+		analysisSourceState.features.beatgrid !== undefined &&
+		analysisSourceState.features.beatgrid !== data.beatgrid_source
+	) {
+		// Discard, do not restart: `analysisSourceState.features.beatgrid` stays
+		// at the OLD value for the whole switch (advanced only once
+		// `refreshAnalysisSourceDecks` itself returns), so restarting here the
+		// way `_discardSuperseded` does for a generation mismatch would just
+		// mismatch again against every straggler until the switch completes -
+		// unlike a generation bump, which is finite, an in-flight switch has no
+		// bound on how long this mismatch stays true. Evicting leaves the id
+		// reading as never-requested; the next `ensureAnlz`/load re-fetches
+		// under whatever source is confirmed by then.
+		delete _cache[stable_id];
+		return;
+	}
 	const existingTimer = _retryTimers.get(stable_id);
 	if (existingTimer !== undefined) {
 		clearTimeout(existingTimer);

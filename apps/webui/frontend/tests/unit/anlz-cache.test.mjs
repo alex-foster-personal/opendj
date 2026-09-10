@@ -609,6 +609,57 @@ test('refreshAnlzCacheEntry overwrites a stale published entry without fetching'
 	}
 });
 
+test('a wrong-source /anlz response is discarded, not cached, when it disagrees with the confirmed selection (thread 2 fix, discussion_r3975650988\'s cache-side twin)', async () => {
+	// Models an RBX->OWN->RBX round trip: the daemon has confirmed 'rekordbox'
+	// (analysisSourceState.features.beatgrid), but this fetch - an ambient
+	// prefetch or ensureAnlz call that raced an in-flight switch and lost -
+	// still resolves with the stale 'own' payload it was issued against.
+	cache.analysisSourceState.features.beatgrid = 'rekordbox';
+	globalThis.fetch = async () =>
+		jsonResponse({
+			...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
+			beatgrid_source: 'own',
+			beatgrid_own_unavailable_reason: null
+		});
+	try {
+		cache.ensureAnlz('mismatched-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(
+			cache.getAnlzEntry('mismatched-track'),
+			undefined,
+			'a payload whose stamped source disagrees with the last CONFIRMED selection must not ' +
+				'reach the shared cache - isAnlzEntryUsable would otherwise serve it to the next deck load'
+		);
+	} finally {
+		globalThis.fetch = originalFetch;
+		delete cache.analysisSourceState.features.beatgrid;
+	}
+});
+
+test('refreshAnalysisSourceDecks own publish (alreadyScoped) is trusted even while it disagrees with the not-yet-updated selection mirror', async () => {
+	// The one `alreadyScoped: true` caller (refreshAnalysisSourceDecks) is
+	// itself what is about to advance analysisSourceState.features.beatgrid
+	// once it returns - comparing its own payload against the stale mirror
+	// here would reject the very write that is about to make it current.
+	cache.analysisSourceState.features.beatgrid = 'rekordbox';
+	try {
+		const payload = {
+			...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
+			beatgrid_source: 'own',
+			beatgrid_own_unavailable_reason: null
+		};
+		cache.refreshAnlzCacheEntry('trusted-track', payload, true);
+		const entry = cache.getAnlzEntry('trusted-track');
+		assert.equal(
+			cache.isAnlzEntryUsable(entry),
+			true,
+			"the switch's own trusted write must not be rejected by its own not-yet-updated mirror"
+		);
+	} finally {
+		delete cache.analysisSourceState.features.beatgrid;
+	}
+});
+
 test('invalidateAnlzCacheEntry evicts a ready entry so a later ensureAnlz refetches it', async () => {
 	globalThis.fetch = async () => jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
 	try {

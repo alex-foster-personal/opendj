@@ -279,6 +279,40 @@ test('a deck swapped to a different track mid-request keeps the new track, not t
 	);
 });
 
+test(
+	'a hot-cue write that lands while the staged fetch is still in flight keeps its newer cues, ' +
+		'not the slower switch\'s stale ones (thread 3 fix)',
+	async () => {
+		const decks = resetCacheDecks();
+		decks[1].stable_id = SID_SLOW; // real server-side delay, same suspension as the mid-request test above
+		decks[1].anlz = { beatgrid: { beat_count: 1, beats: [] }, cues: [{ id: 'pre-existing' }] };
+
+		const refreshPromise = cache.refreshAnalysisSourceDecks(DECK_KEYS, decks);
+		// Models refreshHotCues (audio-engine.svelte.ts:3053-3054) publishing a
+		// newer cue write to this SAME deck while the staged /anlz fetch above
+		// is still in flight against the real server: hot_cue_save/clear/restore
+		// claims `persistence-N`, not the decks-plus-sync scope this refresh
+		// holds, so the two run concurrently and this write settles first.
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const newerCueWrite = { beatgrid: { beat_count: 1, beats: [] }, cues: [{ id: 'freshly-written' }] };
+		decks[1].anlz = newerCueWrite;
+
+		await refreshPromise;
+
+		assert.equal(
+			decks[1].anlz.cues[0].id,
+			'freshly-written',
+			'the slower-settling source-switch fetch must not clobber a faster hot-cue write - ' +
+				'the real seeded track has no cue rows, so an unmerged overwrite would silently drop it'
+		);
+		assert.equal(
+			decks[1].anlz.beatgrid_source,
+			'own',
+			'the deck must still adopt the switch\'s own beatgrid fields, not just keep the pre-switch grid'
+		);
+	}
+);
+
 // --------------------------------------------------- cache-before-deck order
 
 test('the grid sink is notified while every deck still holds its PRE-switch anlz', async () => {

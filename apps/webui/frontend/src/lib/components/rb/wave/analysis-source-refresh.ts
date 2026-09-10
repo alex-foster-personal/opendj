@@ -203,13 +203,47 @@ export async function refreshAnalysisSourceDecks(
 	// could ever detect the split because `deckFeatures` would still read as
 	// the winner's value (discussion_r3975326238 P1 BLOCKING).
 	if (isSuperseded()) return null;
+	// Merge each staged fetch onto whatever payload is CURRENTLY live for its
+	// track, keeping only the fields this switch is actually authoritative
+	// for: `beatgrid`, `beatgrid_source`, `beatgrid_own_unavailable_reason`
+	// (the only fields `_resolve_beatgrid_source` in rb_assets.py ever
+	// mutates - cues/waveform/phrases/performance_hints/local_waveform are
+	// assembled once, upstream of the source branch, and never vary with it).
+	// A concurrent hot-cue write (`refreshHotCues`, audio-engine.svelte.ts:
+	// 3053-3054) can publish newer cues/loop data onto a holder's deck.anlz
+	// and the shared cache WHILE this staged `/anlz` fetch is still in
+	// flight, since hot_cue_save/clear/restore claims `persistence-N`, not
+	// the decks-plus-sync scope this refresh holds. Both requests share the
+	// same post-switch generation and the same, correct beatgrid_source, so
+	// neither the generation guard nor a wrong-source guard catches this -
+	// it is a same-source, different-timing race, not a stale or
+	// cross-source one. Reading the base as late as possible (here, not when
+	// `fresh` was fetched) and overlaying only the source-owned fields mirrors
+	// `adoptAuthoritativeGrid`'s own publish thunk (re-reads `deckAnlz(deck)`
+	// and merges only `beatgrid` onto it, beatgrid-resync-guards.ts:358-366)
+	// instead of letting this call's slower-settling fetch clobber a faster
+	// cue write with `decks[deck].anlz = fresh`.
+	const merged = staged.map(({ stableId, holders, fresh, track }) => {
+		const liveHolder = holders.find((deck) => decks[deck].stable_id === stableId);
+		const base = liveHolder === undefined ? null : decks[liveHolder].anlz;
+		const anlz: AnlzData =
+			base === null
+				? fresh
+				: {
+						...base,
+						beatgrid: fresh.beatgrid,
+						beatgrid_source: fresh.beatgrid_source,
+						beatgrid_own_unavailable_reason: fresh.beatgrid_own_unavailable_reason
+					};
+		return { stableId, holders, anlz, track };
+	});
 	// Collected, not awaited per-iteration (would serialize what the cache
 	// write below deliberately doesn't); only this function's RETURN waits.
 	// `alreadyScoped: true` below: this function already holds the claim,
 	// so the sink reconciles inline, not via a deadlocking nested one (r3972154599).
 	const sinkSettlements: Array<void | Promise<void>> = [];
-	for (const { stableId, fresh } of staged) {
-		sinkSettlements.push(ports.refreshAnlzCacheEntry(stableId, fresh, true));
+	for (const { stableId, anlz } of merged) {
+		sinkSettlements.push(ports.refreshAnlzCacheEntry(stableId, anlz, true));
 		// `refreshAnlzCacheEntry` notifies the sink only for a payload that
 		// HAS a grid, because the ambient prefetch it was built for can only
 		// ever discover one. A deliberate switch can also REMOVE one: OWN with
@@ -219,17 +253,18 @@ export async function refreshAnalysisSourceDecks(
 		// phase-lock going inert mid-set with no `markSettledGridless`, no
 		// follower abandonment and no sync error. `landed: false` is exactly
 		// the settled-gridless case reconcileAfterBeatgridSettled already
-		// handles.
-		if (!hasAnlzBeatgrid(fresh)) {
-			sinkSettlements.push(ports.notifyGridlessSettlement(stableId, fresh, true));
+		// handles. `anlz.beatgrid` is `fresh.beatgrid` unchanged by the merge
+		// above, so this reads identically to checking `fresh` itself.
+		if (!hasAnlzBeatgrid(anlz)) {
+			sinkSettlements.push(ports.notifyGridlessSettlement(stableId, anlz, true));
 		}
 	}
-	for (const { stableId, holders, fresh, track } of staged) {
+	for (const { stableId, holders, anlz, track } of merged) {
 		for (const deck of holders) {
 			// A load() that landed mid-request owns this deck now; its own
 			// fetch already ran under the post-switch generation.
 			if (decks[deck].stable_id !== stableId) continue;
-			decks[deck].anlz = fresh;
+			decks[deck].anlz = anlz;
 			// `?? null` for the same reason load() uses it: TrackOut spells
 			// every nullable field optional, so absent and null both mean
 			// "unknown" to a deck.
