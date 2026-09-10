@@ -46,9 +46,13 @@ Regression lines:
     broken (off at 5, on at 15, and the matching health line flips with it)
   - if a health line that cannot measure reports PASS or a silent zero instead
     of FAIL then broken (missing probe fixture and missing gh fixture controls)
-  - if the 8 data health lines cannot be flipped by their own fixture inputs
+  - if the 9 data health lines cannot be flipped by their own fixture inputs
     then broken (the red-fixture run proves each verdict is driven by the
     input it names, not by ambient machine state)
+  - if a launcher refusal or a provisioning fault counts on the FLEET FATAL line then
+    broken (issue #1670: they have lines of their own, and the fleet line had no
+    reachable green while they shared it). The split's own cases live in
+    tests/scripts/test_ops_fleet_kpi_fatal_classes.py
   - if an untimestamped FATAL line flips the window health check then broken:
     a bare "FATAL: ..." has awk $1 = "FATAL:", and a string compare puts "F"
     above any "2026-..." bound, so the pre-fix filter admitted it forever and
@@ -154,12 +158,32 @@ def _health(out: str) -> dict[str, str]:
 
 
 def _fatal_label(untimestamped: int | str) -> str:
-    """The FATAL health label, which names how many lines the window filter had
-    to exclude for carrying no timestamp to window on."""
+    """The FLEET FATAL health label, which names how many lines the window filter
+    had to exclude for carrying no timestamp to window on. Since issue #1670 this
+    line counts only records that are neither a launcher refusal nor a
+    provisioning fault; those two have lines of their own."""
     return (
-        f"no timestamped FATAL in logs last {HOURS}h "
-        f"(+{untimestamped} untimestamped, excluded: no time to window on)"
+        f"no timestamped fleet FATAL in logs last {HOURS}h "
+        f"(+{untimestamped} untimestamped, excluded: no time to window on; "
+        f"launcher refusals and provisioning faults have their own lines below)"
     )
+
+
+PROVISIONING_LABEL = (
+    f"no timestamped provisioning fault in logs last {HOURS}h "
+    f"(a lane with no usable account or credential: the box is not set up, "
+    f"the fleet is not broken)"
+)
+
+
+def _refusals(out: str) -> str:
+    """The launcher-refusal count off the `refusals` line, as written. A count,
+    never a verdict: see issue #1670."""
+    for line in out.splitlines():
+        if line.startswith("refusals "):
+            return line.split(" ", 2)[1].removeprefix("launcher=")
+    raise AssertionError(f"no refusals line in output:\n{out}")
+
 
 GREEN_LABELS = [
     "queue-watchdog unit active",
@@ -170,6 +194,7 @@ GREEN_LABELS = [
     "workers within cap (4)",
     "actionable PR backlog under builder-freeze threshold 15",
     _fatal_label(0),
+    PROVISIONING_LABEL,
     "token present for launchers",
 ]
 
@@ -370,8 +395,12 @@ def test_prose_that_merely_mentions_fatal_is_not_a_fatal_record(tmp_path):
     assert _health(_run(_env(fixture, home)).stdout)[_fatal_label(0)] == "PASS"
 
     # Same fixture, plus one genuine record: stamp, then FATAL as the next field.
+    # Deliberately a fault the classifier does NOT recognise as a refusal or a
+    # provisioning problem, so it lands on the fleet line (issue #1670). A
+    # "no brief" record would be a refusal and would correctly leave this line
+    # green, which would test the classifier rather than the prose rule.
     (fixture / "jobs" / "logs" / "real-fatal.log").write_text(
-        f"{_iso(NOW - 40)} FATAL: no brief at /home/dev/jobs/briefs/issue-1.md\n"
+        f"{_iso(NOW - 40)} FATAL: redteam trigger failed\n"
     )
     assert _health(_run(_env(fixture, home)).stdout)[_fatal_label(0)] == "FAIL"
 
