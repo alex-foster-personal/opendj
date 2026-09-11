@@ -9,7 +9,7 @@ let api;
 let originalFetch;
 
 before(async () => {
-	api = await loadTypeScriptModule('src/lib/api.ts', { viteApiBase: API_BASE });
+	api = await loadTypeScriptModule('src/lib/smartlists/http.ts', { viteApiBase: API_BASE });
 	originalFetch = globalThis.fetch;
 });
 
@@ -137,4 +137,61 @@ test('smartlist editor preserves stale server state and exposes explicit recover
 	assert.match(source, /Current saved rule:/);
 	assert.match(source, /onclick=\{reloadConflict\}/);
 	assert.match(source, /onclick=\{retryConflict\}/);
+});
+
+test('smartlist create posts name plus starter rule and returns server readback with ETag', async () => {
+	let seen;
+	let sentBody;
+	globalThis.fetch = async (request) => {
+		seen = request;
+		sentBody = await request.clone().json();
+		return Response.json({
+			id: 'smart-new',
+			name: 'Late night',
+			rule: { field: 'rating', op: '>=', value: 0 },
+			order_by: 'added_date desc',
+			referenced_fields: ['rating'],
+			last_evaluated_at: null,
+			created_at: '2026-01-01T00:00:00+00:00',
+			modified_at: '2026-01-01T00:00:00+00:00'
+		}, { status: 201, headers: { ETag: '"revision-new"' } });
+	};
+
+	const created = await api.createSmartlist({
+		name: 'Late night',
+		rule: { field: 'rating', op: '>=', value: 0 }
+	});
+
+	assert.equal(seen.url, `${API_BASE}/api/v1/smartlists`);
+	assert.equal(seen.method, 'POST');
+	assert.deepEqual(sentBody, {
+		rule: { field: 'rating', op: '>=', value: 0 },
+		name: 'Late night',
+		order_by: null
+	});
+	assert.equal(created.smartlist.id, 'smart-new');
+	assert.equal(created.etag, '"revision-new"');
+});
+
+test('smartlist create failures surface the daemon status explicitly', async () => {
+	globalThis.fetch = async () => Response.json({
+		detail: { code: 'SMARTLIST_NAME_CONFLICT', message: "smartlist with name 'Late night' already exists" }
+	}, { status: 409 });
+
+	await assert.rejects(() => api.createSmartlist({
+		name: 'Late night',
+		rule: { field: 'rating', op: '>=', value: 0 }
+	}), /POST smartlist failed: 409/);
+});
+
+test('smartlist list page names a new smartlist, lands in the editor, and drops the CLI placeholder', async () => {
+	const source = await readFile('src/routes/smartlists/+page.svelte', 'utf8');
+
+	assert.doesNotMatch(source, /saving is not wired up yet/);
+	assert.doesNotMatch(source, /python -m apps\.smartlists\.cli\.create/);
+	assert.match(source, /createSmartlist/);
+	assert.match(source, /goto\(`\/smartlists\/\$\{/);
+	assert.match(source, /Create smartlist/);
+	assert.match(source, /field: 'rating'/);
+	assert.match(source, /op: '>='/);
 });

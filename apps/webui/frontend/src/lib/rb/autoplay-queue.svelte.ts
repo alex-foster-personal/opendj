@@ -15,7 +15,8 @@ import {
 export const autoPlayOrder = $state<{
 	chain: readonly string[];
 	rankOf: ReadonlyMap<string, number>;
-}>({ chain: [], rankOf: new Map() });
+	pinRoleOf: ReadonlyMap<string, 'opener' | 'peak' | 'closer'>;
+}>({ chain: [], rankOf: new Map(), pinRoleOf: new Map() });
 
 export const autoPlayQueue = $state<{
 	active: boolean;
@@ -32,7 +33,8 @@ function _publishQueue(chain: readonly string[]): void {
 }
 
 /** Publish a new charted order. An unchanged chain is a no-op, so a 250 ms
- * poll that re-derives the same plan does not churn reactive readers. */
+ * poll that re-derives the same plan does not churn reactive readers. Pin roles
+ * are independent and are not cleared here. */
 export function publishAutoPlayOrder(chain: readonly string[]): void {
 	if (
 		chain.length === autoPlayOrder.chain.length &&
@@ -45,10 +47,18 @@ export function publishAutoPlayOrder(chain: readonly string[]): void {
 	_publishQueue(chain);
 }
 
+/** Publish SET-04 pin roles keyed by stable_id for library arrow labels. */
+export function publishSetGoalPins(
+	roleOf: ReadonlyMap<string, 'opener' | 'peak' | 'closer'>
+): void {
+	autoPlayOrder.pinRoleOf = new Map(roleOf);
+}
+
 /** Clear presentation state without making an arm effect depend on queue writes. */
 export function clearAutoPlayOrder(): void {
 	autoPlayOrder.chain = [];
 	autoPlayOrder.rankOf = new Map();
+	autoPlayOrder.pinRoleOf = new Map();
 	_publishQueue([]);
 }
 

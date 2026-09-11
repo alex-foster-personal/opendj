@@ -105,16 +105,17 @@ const CAPTURES = Object.keys(MANIFEST.files).map((name) => {
 });
 
 let autoPlay;
+let prefsBundlePath;
 /** name -> what the production loader produced from that capture. */
 const loaded = new Map();
 
 before(async () => {
 	autoPlay = await loadTypeScriptModule('src/lib/rb/auto-play.ts');
 	const bundled = await bundleTypeScriptModule('src/lib/rb/prefs.svelte.ts');
-	const bundlePath = join(mkdtempSync(join(tmpdir(), 'mdt-prefs-bundle-')), 'prefs.mjs');
-	writeFileSync(bundlePath, bundled);
+	prefsBundlePath = join(mkdtempSync(join(tmpdir(), 'mdt-prefs-bundle-')), 'prefs.mjs');
+	writeFileSync(prefsBundlePath, bundled);
 	for (const c of CAPTURES) {
-		loaded.set(c.name, loadThroughRealStorage(STORAGE_KEY, c.text, bundlePath));
+		loaded.set(c.name, loadThroughRealStorage(STORAGE_KEY, c.text, prefsBundlePath));
 	}
 });
 
@@ -148,6 +149,23 @@ describe('captured prefs blobs load in the current build', () => {
 			}
 		});
 	}
+
+	it('captures without jog_radial_waveform default it to false', () => {
+		for (const { name } of CAPTURES) {
+			const got = loaded.get(name);
+			assert.equal(
+				got.jog_radial_waveform,
+				false,
+				`${name} must default jog_radial_waveform to false when the key is absent`
+			);
+		}
+		const handBuilt = loadThroughRealStorage(
+			STORAGE_KEY,
+			JSON.stringify({ hide_broken_links: false }),
+			prefsBundlePath
+		);
+		assert.equal(handBuilt.jog_radial_waveform, false);
+	});
 
 	it('a capture written before AutoPlay existed still yields usable AutoPlay prefs', () => {
 		// The failure this guards is not a throw. An 8-key blob that loads but

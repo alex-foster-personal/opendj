@@ -164,17 +164,24 @@ jobs:
     # yet (actions/deploy-pages returns 404 until Settings -> Pages is turned on).
     # Strict mkdocs build above is the CI gate; deploy failing must not block
     # the integration branch.
-    if: github.ref == 'refs/heads/main'
+    #
+    # No job-level `if`: a false job condition reports SKIPPED on pull
+    # requests, and the landing gate treats skipped/neutral as not-a-pass.
+    # Pages publish stays main-only at the step below.
     continue-on-error: true
     environment:
-      name: github-pages
+      name: ${{ github.event_name == 'push' && 'github-pages' || 'pr-docs' }}
       url: ${{ steps.deployment.outputs.page_url }}
     # See the `build` job above for the runner-selection note.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 10
     steps:
       - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main'
         id: deployment
         continue-on-error: true
         # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e  # v4
+      - name: PR builds do not publish Pages
+        if: github.ref != 'refs/heads/main'
+        run: echo "Pages deploy is main-only; mkdocs --strict already gated this PR."

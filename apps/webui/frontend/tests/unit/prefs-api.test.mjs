@@ -466,6 +466,39 @@ test('hydrateConfirmPrefsFromDisk applies level_calibration from disk', async ()
 	});
 });
 
+test('setJogRadialWaveform PUTs jog_radial_waveform to /api/v1/ui-prefs', async () => {
+	let body;
+	let release;
+	const gate = new Promise((resolve) => {
+		release = resolve;
+	});
+	globalThis.fetch = async (request) => {
+		body = await request.clone().json();
+		release();
+		return jsonResponse({ jog_radial_waveform: true });
+	};
+
+	prefs.setJogRadialWaveform(true);
+	await gate;
+
+	assert.deepEqual(body, { jog_radial_waveform: true });
+	assert.equal(prefs.uiPrefs.jog_radial_waveform, true);
+});
+
+test('hydrateConfirmPrefsFromDisk applies jog_radial_waveform from disk', async () => {
+	prefs.uiPrefs.jog_radial_waveform = false;
+
+	globalThis.fetch = async () =>
+		jsonResponse({
+			theme: 'dark',
+			jog_radial_waveform: true
+		});
+
+	await prefs.hydrateConfirmPrefsFromDisk();
+
+	assert.equal(prefs.uiPrefs.jog_radial_waveform, true);
+});
+
 // Real-http-transport write-ordering tests (Codex P2/P1 on #1503, and the
 // cross-setter follow-on from issue #1578) live in
 // prefs-write-ordering.test.mjs - split out once a second such test pushed
