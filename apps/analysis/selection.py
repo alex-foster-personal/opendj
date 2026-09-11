@@ -40,6 +40,7 @@ from typing import Any, Literal
 
 from .canonical import PROJECTION_FIELDS
 from .lanes import LANES, Lane
+from .serving_lanes import SERVING_LANES, register_serving_lane, serving_lanes
 
 Source = Literal["rbx", "own"]
 SOURCES: tuple[Source, ...] = ("rbx", "own")
@@ -60,22 +61,6 @@ _RBX_FIELDS: frozenset[str] = frozenset({"bpm", "key"})
 # The `source` reported for an own lane that has no record yet. A real
 # own value reports its canonical backend name instead.
 OWN_ANALYSIS_SOURCE = "own-analysis"
-
-# Lanes whose own producer has landed and may be selected over HTTP/UI.
-# Each producer package registers itself at import time; consumers read this
-# set through ``source_state`` and refuse ``own`` for anything absent from it.
-SERVING_LANES: set[str] = set()
-
-
-def register_serving_lane(lane: str) -> None:
-    """Record that ``lane`` has a serving own implementation on this process."""
-    check_lane(lane)
-    SERVING_LANES.add(lane)
-
-
-def serving_lanes() -> frozenset[str]:
-    return frozenset(SERVING_LANES)
-
 
 class SelectionError(ValueError):
     """An unknown lane, source, or toggle state."""

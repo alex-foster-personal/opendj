@@ -1,9 +1,5 @@
 """Own key analysis helpers (nav1-key-r0 round 0).
 
-Record writing and `/anlz` projection live in later lanes; this package
-registers the lane as served once imported so PARITY-02 can allow `own`.
+Record writing and `/anlz` projection live in later lanes; PARITY-02 serving
+registration lives in ``serving_lane.py`` (imported from webui only).
 """
-
-from apps.analysis.selection import register_serving_lane
-
-register_serving_lane("key")

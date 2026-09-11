@@ -30,7 +30,7 @@
 import type { PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
-import type { RbMeta, TrackQuality } from '$lib/rb/library-types';
+import type { RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
 import type { SortDir, SortKey } from './browser-sort-ipc';
 export { installBrowserSortIpc } from './browser-sort-ipc';
 export type { SortDir, SortKey } from './browser-sort-ipc';
@@ -41,7 +41,7 @@ export type { SortDir, SortKey } from './browser-sort-ipc';
  * (shared contract points 1 + 4). Owned by the browser unit; lives here
  * (not types.ts, which is a frozen contract between the original build
  * units). */
-export interface BrowserRow {
+export interface BrowserRow extends Pick<TrackRow, 'key_status' | 'key_reason' | 'loudness_status' | 'loudness_reason'> {
 	stable_id: string;
 	/** 1-based membership position within the pane playlist (# column). */
 	order: number;
@@ -56,10 +56,6 @@ export interface BrowserRow {
 	energy_source: 'mik' | null;
 	/** Honest reason shown when energy is null, never a fallback value. */
 	energy_reason: string;
-	key_status?: 'ok' | 'failed' | 'missing';
-	key_reason?: string | null;
-	loudness_status?: 'ok' | 'failed' | 'missing';
-	loudness_reason?: string | null;
 	/** '' for All Tracks rows (listing carries no ETag) - rating edits
 	 * lazily fetch one. Playlist rows carry it inline (contract 4). */
 	etag: string;

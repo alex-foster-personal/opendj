@@ -28,8 +28,8 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-import apps.analysis_beatgrid
-import apps.analysis_key  # noqa: F401 - registers key serving lane
+import apps.analysis_beatgrid.serving_lane  # noqa: F401 - registers beatgrid lane
+import apps.analysis_key.serving_lane  # noqa: F401 - registers key lane
 from apps.analysis import selection as sel
 from apps.analysis import store as analysis_store
 from apps.shared.paths import STATE_DB
