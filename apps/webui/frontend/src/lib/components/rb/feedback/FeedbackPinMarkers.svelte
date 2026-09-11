@@ -11,6 +11,7 @@
 	 */
 	import { isPinUnread, pinStyle, type PinSeen } from '$lib/rb/feedback';
 	import { pinVisualState } from '$lib/rb/feedback-pin-partial';
+	import { API_BASE } from '$lib/api';
 	import type { FeedbackPin } from '$lib/rb/feedback-store.svelte';
 
 	let {
@@ -56,6 +57,15 @@
 			<svg class="fb-mark" width="12" height="11" viewBox="0 0 12 11" aria-hidden="true">
 				<path d="M1.5 1.5 h9 v6 h-4.5 l-2.5 2.4 v-2.4 h-2 z" />
 			</svg>
+		{/if}
+		{#if pin.attachment}
+			<img
+				class="fb-pin-thumb"
+				src={`${API_BASE}${pin.attachment.url}`}
+				alt=""
+				width="28"
+				height="20"
+			/>
 		{/if}
 	</button>
 {/each}
@@ -142,5 +152,15 @@
 		height: 5px;
 		border-radius: 50%;
 		background: var(--rb-accent);
+	}
+	.fb-pin-thumb {
+		display: block;
+		width: 28px;
+		height: 20px;
+		object-fit: cover;
+		border: 1px solid currentColor;
+		border-radius: 1px;
+		margin-top: 2px;
+		pointer-events: none;
 	}
 </style>
