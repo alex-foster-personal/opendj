@@ -163,6 +163,7 @@ def _track_to_out(
         tags=list(track.tags or []),
         notes=track.notes,
         last_played_at=track.last_played_at,
+        tempo_pref=track.tempo_pref,
         file_path=track.file_path,
         created_at=track.created_at,
         updated_at=track.updated_at,
@@ -348,6 +349,10 @@ def patch_track(
         patch_dict["tags_add"] = patch.tags_add
     if patch.tags_remove is not None:
         patch_dict["tags_remove"] = patch.tags_remove
+    if patch.tempo_pref is not None or "tempo_pref" in patch.model_fields_set:
+        patch_dict["tempo_pref"] = (
+            patch.tempo_pref.model_dump() if patch.tempo_pref is not None else None
+        )
     try:
         updated = backend.update_track(
             stable_id, patch_dict, expected_etag=if_match, source="webui"
