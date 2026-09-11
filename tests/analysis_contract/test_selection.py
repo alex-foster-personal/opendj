@@ -280,42 +280,52 @@ def test_put_with_expected_toggle_matching_applies_and_puts_with_none_ignores_it
     is the client-facing surface over `selection.compare_and_set_toggle`."""
     put = client.put(
         "/api/v1/analysis/source",
-        json={"lane": "waveform", "toggle": "own", "expected_toggle": "unset"},
+        json={"lane": "key", "toggle": "own", "expected_toggle": "unset"},
     )
     assert put.status_code == 200, put.text
-    assert put.json()["lanes"]["waveform"]["toggle"] == "own"
+    assert put.json()["lanes"]["key"]["toggle"] == "own"
 
 
 def test_put_with_a_stale_expected_toggle_is_refused_with_409_and_does_not_apply(client) -> None:
-    client.put("/api/v1/analysis/source", json={"lane": "waveform", "toggle": "own"})
+    client.put("/api/v1/analysis/source", json={"lane": "key", "toggle": "own"})
     resp = client.put(
         "/api/v1/analysis/source",
-        json={"lane": "waveform", "toggle": "rbx", "expected_toggle": "unset"},
+        json={"lane": "key", "toggle": "rbx", "expected_toggle": "unset"},
     )
     assert resp.status_code == 409, resp.text
     assert resp.json()["detail"]["code"] == "toggle_changed"
     # The refused CAS must not have applied: still `own`, the value it raced against.
-    assert client.get("/api/v1/analysis/source").json()["lanes"]["waveform"]["toggle"] == "own"
+    assert client.get("/api/v1/analysis/source").json()["lanes"]["key"]["toggle"] == "own"
 
 
 def test_a_stale_cas_refuses_the_whole_put_and_leaves_the_default_unpersisted(client) -> None:
     """discussion_r3974235466: a combined default+toggle PUT whose CAS is
     stale must not commit the default before raising 409, or the durable
     default takes effect after relaunch while the caller reads a conflict."""
-    client.put("/api/v1/analysis/source", json={"lane": "waveform", "toggle": "own"})
+    client.put("/api/v1/analysis/source", json={"lane": "key", "toggle": "own"})
     resp = client.put(
         "/api/v1/analysis/source",
         json={
-            "lane": "waveform",
+            "lane": "key",
             "default": "own",
             "toggle": "rbx",
             "expected_toggle": "unset",
         },
     )
     assert resp.status_code == 409, resp.text
-    got = client.get("/api/v1/analysis/source").json()["lanes"]["waveform"]
+    got = client.get("/api/v1/analysis/source").json()["lanes"]["key"]
     assert got["default"] == "rbx", "the default must not have committed alongside a refused CAS"
     assert got["toggle"] == "own"
+
+
+def test_put_own_on_an_unserved_lane_is_refused_with_409(client) -> None:
+    put = client.put(
+        "/api/v1/analysis/source",
+        json={"lane": "waveform", "toggle": "own"},
+    )
+    assert put.status_code == 409, put.text
+    assert "waveform" in put.json()["detail"]["error"]
+    assert "no serving implementation yet" in put.json()["detail"]["error"]
 
 
 def test_put_with_neither_half_is_refused(client) -> None:
