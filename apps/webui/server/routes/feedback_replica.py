@@ -43,7 +43,14 @@ from typing import Any, Literal
 from apps.shared.state import sync_stamp
 from apps.sync_hub.protocol_common import canonical_bytes, nfc
 
-from .feedback import _COMMENTS_FILE, _COMMENTS_LOCK, CommentOut, _load, _save
+from .feedback import (
+    _COMMENTS_FILE,
+    _COMMENTS_LOCK,
+    CommentOut,
+    _load,
+    _save,
+    keep_unknown_fields,
+)
 from .feedback_attachments import _EXT_BY_CONTENT_TYPE
 from .feedback_pins import _append_to_archive
 
@@ -52,7 +59,9 @@ log = logging.getLogger(__name__)
 FEEDBACK_PINS_TABLE: str = "feedback_pins"
 ARCHIVED: str = "archived"
 
-PinSyncState = Literal["synced", "pending_push", "unreconciled"]
+#: ``harvested``: this machine's bulk harvest took the pin off its own board.
+#: That is local only (ADR-0013): other machines keep the pin.
+PinSyncState = Literal["synced", "pending_push", "unreconciled", "harvested"]
 AttachmentBytes = Literal["none", "present", "missing"]
 
 
@@ -65,13 +74,20 @@ class FeedbackReplicaError(RuntimeError):
 
 @dataclass(frozen=True)
 class PinVersion:
-    """One side's copy of one pin: its doc, LWW key and archive flag."""
+    """One side's copy of one pin: its doc, LWW key and archive flag.
+
+    ``harvested`` marks a local copy that only the bulk harvest
+    (``POST /feedback/archive``) moved into an archive file. It hides the pin
+    on this machine and is never exported: only the per-pin archive route
+    produces a synced tombstone (PR #1978 review, ADR-0013).
+    """
 
     doc: dict[str, Any]
     doc_text: str
     updated_at: str
     origin_device_id: str
     archived: bool
+    harvested: bool = False
 
     def lww_key(self) -> tuple[str, str]:
         return (self.updated_at, self.origin_device_id)
@@ -97,8 +113,14 @@ def canonical_doc_text(doc: dict[str, Any]) -> str:
 
 
 def _normalized(doc: dict[str, Any]) -> dict[str, Any]:
-    """The pin as ``CommentOut`` serializes it, so older pins gain defaults once."""
-    return CommentOut.model_validate(doc).model_dump(mode="json")
+    """The pin as ``CommentOut`` serializes it, keeping every field it does not know.
+
+    Older pins gain this build's defaults once. Fields a NEWER build added are
+    kept verbatim: dropping them would strip them from every machine on the
+    next export, or, on a tie, make this machine re-import the pin forever
+    (PR #1978 review). Both sides of a comparison go through here.
+    """
+    return keep_unknown_fields(doc, CommentOut.model_validate(doc).model_dump(mode="json"))
 
 
 def _edit_stamp(doc: dict[str, Any]) -> str:
@@ -111,14 +133,22 @@ def _edit_stamp(doc: dict[str, Any]) -> str:
     return sync_stamp.to_canonical(raw)
 
 
-def _version(doc: dict[str, Any], origin: str, *, archived: bool) -> PinVersion:
+def _version(
+    doc: dict[str, Any],
+    origin: str,
+    *,
+    archived: bool,
+    harvested: bool = False,
+    updated_at: str | None = None,
+) -> PinVersion:
     normalized = _normalized(doc)
     return PinVersion(
         doc=normalized,
         doc_text=canonical_doc_text(normalized),
-        updated_at=_edit_stamp(normalized),
+        updated_at=_edit_stamp(normalized) if updated_at is None else updated_at,
         origin_device_id=origin,
         archived=archived,
+        harvested=harvested,
     )
 
 
@@ -132,26 +162,40 @@ def _archived_versions(root: Path, machine_id: str) -> dict[str, PinVersion]:
     """Every pin an archive file records, newest copy per id.
 
     A pin archived through ``POST /comments/{id}/archive`` carries
-    ``status: archived`` and its own archive time. One moved by the bulk
-    harvest (``POST /feedback/archive``) keeps whatever status it had, so its
-    archive time is the file's ``archived_at``.
+    ``status: archived`` and its own archive time: that is a tombstone. One
+    moved by the bulk harvest (``POST /feedback/archive``) keeps whatever
+    status it had: that is a local ``harvested`` copy, ordered at the file's
+    ``archived_at``, and it never becomes a tombstone.
     """
     versions: dict[str, PinVersion] = {}
+    for path, comment, archived_at in _archive_entries(root):
+        if comment.get("status") == ARCHIVED:
+            version = _version(comment, machine_id, archived=True)
+        else:
+            version = _version(
+                comment, machine_id, archived=True, harvested=True,
+                updated_at=sync_stamp.to_canonical(_harvest_stamp(path, archived_at)),
+            )
+        versions[version.doc["id"]] = _newer(versions.get(version.doc["id"]), version)
+    return versions
+
+
+def _archive_entries(root: Path) -> list[tuple[Path, dict[str, Any], object]]:
+    """Every pin in every archive file, with its file and that file's ``archived_at``."""
+    entries: list[tuple[Path, dict[str, Any], object]] = []
     for path in sorted(root.glob("archive-*.json")):
         payload = json.loads(path.read_text(encoding="utf-8"))
         comments = payload.get("comments") if isinstance(payload, dict) else None
         if not isinstance(comments, list):
             raise FeedbackReplicaError(f"{path} does not hold a 'comments' list")
-        for comment in comments:
-            stamp = (
-                comment.get("updated_at")
-                if comment.get("status") == ARCHIVED
-                else payload.get("archived_at")
-            )
-            doc = {**comment, "status": ARCHIVED, "updated_at": stamp}
-            version = _version(doc, machine_id, archived=True)
-            versions[version.doc["id"]] = _newer(versions.get(version.doc["id"]), version)
-    return versions
+        entries.extend((path, comment, payload.get("archived_at")) for comment in comments)
+    return entries
+
+
+def _harvest_stamp(path: Path, archived_at: object) -> str:
+    if not isinstance(archived_at, str) or not archived_at:
+        raise FeedbackReplicaError(f"{path} has no archived_at to order its harvest by")
+    return archived_at
 
 
 def local_versions(root: Path, machine_id: str) -> dict[str, PinVersion]:
@@ -182,12 +226,11 @@ def stored_versions(conn: sqlite3.Connection) -> dict[str, PinVersion]:
             raise FeedbackReplicaError(
                 f"{FEEDBACK_PINS_TABLE} row {pin_id!r} does not hold that pin's doc"
             )
-        versions[pin_id] = PinVersion(
-            doc=doc,
-            doc_text=doc_text,
+        # Normalized exactly as the local side is, so a row exported by a
+        # build with other defaults does not read as a different pin forever.
+        versions[pin_id] = _version(
+            doc, origin or "", archived=deleted_at is not None,
             updated_at=sync_stamp.to_canonical(updated_at),
-            origin_device_id=origin or "",
-            archived=deleted_at is not None,
         )
     return versions
 
@@ -227,13 +270,18 @@ def _export(conn: sqlite3.Connection, pin_id: str, local: PinVersion, machine_id
 def _import(root: Path, imports: list[PinVersion], live: list[dict[str, Any]]) -> None:
     """Write winning rows into the live board or the archive."""
     by_id = {comment.get("id"): index for index, comment in enumerate(live)}
+    archived_texts = {
+        canonical_doc_text(_normalized(comment)) for _, comment, _ in _archive_entries(root)
+    }
     removed: set[str] = set()
     for stored in imports:
         pin_id = stored.doc["id"]
         if stored.archived:
             if pin_id in by_id:
                 removed.add(pin_id)
-            _append_to_archive(root, stored.doc)
+            if stored.doc_text not in archived_texts:
+                _append_to_archive(root, stored.doc)
+                archived_texts.add(stored.doc_text)
         elif pin_id in by_id:
             live[by_id[pin_id]] = stored.doc
         else:
@@ -253,31 +301,44 @@ class _ReconcilePlan:
 
 
 def _winning_side(
-    mine: PinVersion | None, theirs: PinVersion | None
+    mine: PinVersion | None, theirs: PinVersion | None, machine_id: str
 ) -> Literal["export", "import", "unchanged"]:
     """The one LWW rule (ADR-0013) for one pin id held by either side.
 
     A side that does not hold the pin never wins by absence being read as
     deletion: absence only means the other side's version is copied over.
+
+    Two refinements from the PR #1978 review:
+
+    * A ``harvested`` local copy is never exported. It keeps the pin off this
+      board until a strictly later version arrives from elsewhere.
+    * An equal edit instant against a row another machine wrote defers to
+      that row. The local origin is always this machine, even for a copy it
+      imported verbatim, so breaking that tie on the local id would re-export
+      someone else's pin under this machine's name, or re-import it forever.
     """
     if theirs is None:
-        return "export"
+        return "unchanged" if mine is not None and mine.harvested else "export"
     if mine is None:
         return "import"
     if _same(mine, theirs):
         return "unchanged"
+    if mine.harvested:
+        return "import" if theirs.updated_at > mine.updated_at else "unchanged"
+    if mine.updated_at == theirs.updated_at and theirs.origin_device_id != machine_id:
+        return "import"
     return "export" if mine.lww_key() > theirs.lww_key() else "import"
 
 
 def _plan_reconcile(
-    local: dict[str, PinVersion], stored: dict[str, PinVersion]
+    local: dict[str, PinVersion], stored: dict[str, PinVersion], machine_id: str
 ) -> _ReconcilePlan:
     exports: list[tuple[str, PinVersion]] = []
     imports: list[PinVersion] = []
     unchanged = 0
     for pin_id in sorted(local.keys() | stored.keys()):
         mine, theirs = local.get(pin_id), stored.get(pin_id)
-        side = _winning_side(mine, theirs)
+        side = _winning_side(mine, theirs, machine_id)
         if side == "export" and mine is not None:
             exports.append((pin_id, mine))
         elif side == "import" and theirs is not None:
@@ -294,7 +355,9 @@ def reconcile(conn: sqlite3.Connection, root: Path) -> ReconcileResult:
     """
     machine_id = sync_stamp.ensure_local_machine(conn)
     with _COMMENTS_LOCK:
-        plan = _plan_reconcile(local_versions(root, machine_id), stored_versions(conn))
+        plan = _plan_reconcile(
+            local_versions(root, machine_id), stored_versions(conn), machine_id
+        )
         with sync_stamp.stamped_transaction(conn):
             for pin_id, mine in plan.exports:
                 _export(conn, pin_id, mine, machine_id)
@@ -358,18 +421,24 @@ def attachment_bytes(root: Path, doc: dict[str, Any]) -> AttachmentBytes:
 def pin_statuses(conn: sqlite3.Connection, root: Path) -> list[PinSyncStatus]:
     """Every pin on either side and where it stands against the hub."""
     machine_id = sync_stamp.ensure_local_machine(conn)
+    # Both sides under the lock, so a reconcile cannot land between the two
+    # reads and make a settled pin look unreconciled.
     with _COMMENTS_LOCK:
         local = local_versions(root, machine_id)
-    stored = stored_versions(conn)
+        stored = stored_versions(conn)
     fence = _push_fence(conn)
     logged = _last_logged_seq(conn)
     statuses: list[PinSyncStatus] = []
     for pin_id in sorted(local.keys() | stored.keys()):
         mine, theirs = local.get(pin_id), stored.get(pin_id)
-        shown = theirs if theirs is not None else mine
+        side = _winning_side(mine, theirs, machine_id)
+        harvested = side == "unchanged" and mine is not None and mine.harvested
+        shown = mine if harvested or theirs is None else theirs
         assert shown is not None  # the id came from one of the two maps
-        if mine is None or theirs is None or not _same(mine, theirs):
+        if side != "unchanged":
             state: PinSyncState = "unreconciled"
+        elif harvested:
+            state = "harvested"
         elif logged.get(sync_stamp.encode_row_pk((pin_id,)), 0) > fence:
             state = "pending_push"
         else:
