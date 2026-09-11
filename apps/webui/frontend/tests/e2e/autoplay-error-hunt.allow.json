@@ -21,11 +21,6 @@
       "reason": "AutoPlay hunt: console.error 401 Unauthorized while mixing"
     },
     {
-      "signature": "console.error:[perf-event] xrun: <n> xrun(s) in <n>ms over <n> audio callbacks; worst gap <n>ms against a <n>ms late-callback threshold (<n> parked gap(s) excluded, clock=date)",
-      "issue": "#1877",
-      "reason": "AutoPlay hunt: audio xruns while AutoPlay and mixing run"
-    },
-    {
       "signature": "stall:autoplay-idle",
       "issue": "#1878",
       "reason": "AutoPlay hunt: AutoPlay stays pressed while both decks are stopped >10s"
