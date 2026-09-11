@@ -409,6 +409,7 @@ class HealthOut(BaseModel):
     waveform_materialization: HealthWaveformMaterialization
     bind_host: str
     version: str
+    google_oauth_configured: bool
 
 
 class PreflightCheckOut(BaseModel):

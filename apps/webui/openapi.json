@@ -4217,6 +4217,10 @@
             "title": "Engine Version",
             "type": "string"
           },
+          "google_oauth_configured": {
+            "title": "Google Oauth Configured",
+            "type": "boolean"
+          },
           "state_db": {
             "$ref": "#/components/schemas/HealthStateDb"
           },
@@ -4249,6 +4253,7 @@
           "waveform_materialization",
           "bind_host",
           "version",
+          "google_oauth_configured",
           "contract_rev",
           "engine_version",
           "boot_id"

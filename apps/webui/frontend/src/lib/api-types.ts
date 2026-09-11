@@ -5696,6 +5696,8 @@ export interface components {
             contract_rev: string;
             /** Engine Version */
             engine_version: string;
+            /** Google Oauth Configured */
+            google_oauth_configured: boolean;
             state_db: components["schemas"]["HealthStateDb"];
             /**
              * Status
