@@ -245,3 +245,41 @@ test('time going backwards is refused rather than folded', () => {
 			'elapsed-silence arithmetic would go negative and the window would never elapse'
 	);
 });
+
+test('audible-only claimed live emits silent-while-playing after the window', () => {
+	const mod = _silence();
+	const { verdicts } = runSamples(
+		heldFor(mod.SILENT_WHILE_PLAYING_MS + 500, { playing: false, audible: true, masterRms: 0 })
+	);
+	assert.equal(verdicts.length, 1);
+	assert.equal(verdicts[0].verdict, 'silent-while-playing');
+	assert.ok(verdicts[0].tMs >= mod.SILENT_WHILE_PLAYING_MS);
+});
+
+test('audible with signal above the floor is never a verdict', () => {
+	const mod = _silence();
+	const { verdicts } = runSamples(
+		heldFor(mod.SILENT_WHILE_PLAYING_MS * 4, {
+			playing: false,
+			audible: true,
+			masterRms: mod.SILENCE_RMS_FLOOR * 2
+		})
+	);
+	assert.equal(verdicts.length, 0);
+});
+
+test('a second audible-only dropout after reset is a second verdict', () => {
+	const mod = _silence();
+	const dropout = heldFor(mod.SILENT_WHILE_PLAYING_MS + 500, {
+		playing: false,
+		audible: true,
+		masterRms: 0
+	});
+	const recovered = heldFor(500, {
+		playing: false,
+		audible: false,
+		masterRms: mod.SILENCE_RMS_FLOOR * 10
+	});
+	const { verdicts } = runSamples([...dropout, ...recovered, ...dropout]);
+	assert.equal(verdicts.length, 2);
+});

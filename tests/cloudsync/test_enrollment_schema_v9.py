@@ -16,6 +16,7 @@ Regression one-liners:
 """
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from pathlib import Path
 
@@ -97,9 +98,9 @@ def _seed_library(conn: sqlite3.Connection) -> None:
     # (Claude review, PR #1648 P3).
     conn.execute(
         "INSERT INTO tracks(stable_id, stable_id_tier, title, artists_json, "
-        "created_at, updated_at, origin_device_id) "
-        "VALUES (?, 'inferred', 'Digest Fixture', '[\"Someone\"]', ?, ?, 'dev')",
-        ("a" * 40, stamp, stamp),
+        "content_hash, created_at, updated_at, origin_device_id) "
+        "VALUES (?, 'inferred', 'Digest Fixture', '[\"Someone\"]', ?, ?, ?, 'dev')",
+        ("a" * 40, hashlib.sha256(("a" * 40).encode("utf-8")).hexdigest(), stamp, stamp),
     )
     conn.execute(
         "INSERT INTO playlists(playlist_id, name, vendor, vendor_pl_id, "

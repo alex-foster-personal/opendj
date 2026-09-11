@@ -1,6 +1,10 @@
 <!--
   Circular account bauble for the top-right of the app shell.
 
+  Sign-in is per browser profile: the session is an httpOnly cookie stored
+  only in this profile's jar, so another Chrome profile or Safari stays
+  signed out until the operator signs in there too.
+
   Signed out: a plain circle with a generic avatar outline. Clicking it
   starts Google sign-in and navigates to the consent screen.
 
@@ -10,7 +14,13 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { auth, logout, refreshUser, startLogin } from '$lib/auth.svelte';
+	import {
+		auth,
+		consumeAuthErrorFromLocation,
+		logout,
+		refreshUser,
+		startLogin
+	} from '$lib/auth.svelte';
 	import { openAccountOverlay } from '$lib/account/overlay.svelte';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import { pushToast } from '$lib/stores.svelte';
@@ -34,6 +44,10 @@
 	);
 
 	onMount(() => {
+		const callbackError = consumeAuthErrorFromLocation();
+		if (callbackError) {
+			pushToast(callbackError, 'error', 12000);
+		}
 		// Deferred out of the boot burst (PERF-R6). The bauble renders its
 		// signed-out face while the answer is outstanding, which is what it
 		// already did for the duration of the request; nobody is waiting on
@@ -106,7 +120,7 @@
 		type="button"
 		class="bauble"
 		class:signed-in={Boolean(auth.user)}
-		disabled={busy || auth.loading}
+		disabled={busy || (Boolean(auth.user) && auth.loading)}
 		aria-haspopup={auth.user ? 'menu' : undefined}
 		aria-expanded={auth.user ? menuOpen : undefined}
 		aria-label={label}

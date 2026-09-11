@@ -32,6 +32,7 @@ def test_score_cli_prints_denominators_and_the_measurement_date() -> None:
     assert "scorer" in out.lower()
     assert "bpm" in out.lower()
     assert "key" in out.lower()
+    assert "phrase" in out.lower()
     assert "at parity" not in out.lower()
     assert "delegated" in out.lower()
     assert "not_scored_this_round" in out or "not scored this round" in out.lower()
@@ -55,3 +56,19 @@ def test_score_cli_round1_cues_lanes() -> None:
     assert "at parity" not in out.lower()
     assert "of 9986" not in out
     assert "of 10479" not in out
+
+
+def test_score_cli_round1_phrase_fixture_exits_zero() -> None:
+    """The round-1 phrase fixture scores through the CLI without claiming parity."""
+    path = Path(__file__).parent / "fixtures" / "round1-phrase.json"
+    done = subprocess.run(
+        [sys.executable, "-m", "apps.parity", "score", "--payload", str(path)],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[2],
+    )
+    assert done.returncode == 0, done.stderr
+    out = done.stdout.lower()
+    assert "phrase" in out
+    assert "at parity" not in out

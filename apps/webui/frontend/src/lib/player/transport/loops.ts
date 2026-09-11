@@ -55,10 +55,10 @@ export function replaceMatchingSafetyLoopSnapshot(
 	};
 }
 
-/** A natural-end safety re-entry is permitted only when it can be rebuilt as
- * an exact PQTZ beat loop. A manual, incomplete, or duration-overrunning slot
- * deliberately falls through to the ordinary natural-end stop. */
-export function phaseLockedSafetyLoopAtTrackEnd(
+/** Rebuild an armed safety slot as an exact PQTZ beat loop. The caller
+ * decides which playback event triggers engagement; this helper only refuses
+ * slots that cannot be reconstructed on-grid or that overrun duration. */
+export function phaseLockedSafetyLoop(
 	beats: readonly AnlzBeat[],
 	safety: SafetyLoopSnapshot,
 	durationMs: number
@@ -72,6 +72,46 @@ export function phaseLockedSafetyLoopAtTrackEnd(
 	} catch {
 		return null;
 	}
+}
+
+/** True when linear playback on the current control segment has reached the
+ * saved safety loop's exclusive out. Uses the control segment, not presented
+ * position_ms, so a seek that starts past out does not count as reaching it. */
+export function playbackReachedSafetyLoopOut(input: {
+	active: boolean;
+	startPositionSec: number;
+	startContextTime: number;
+	tempoRatio: number;
+	atContextTime: number;
+	safety: SafetyLoopSnapshot | null;
+	liveLoop: LoopSnapshot | null;
+}): boolean {
+	const { safety, liveLoop } = input;
+	if (!input.active) return false;
+	if (safety === null || !safety.armed) return false;
+	if (liveLoop !== null && liveLoop.engaged) return false;
+	const outSec = safety.out_ms / 1000;
+	if (!Number.isFinite(outSec) || input.startPositionSec >= outSec) return false;
+	if (
+		!Number.isFinite(input.startPositionSec) ||
+		!Number.isFinite(input.startContextTime) ||
+		!Number.isFinite(input.tempoRatio) ||
+		!Number.isFinite(input.atContextTime)
+	) {
+		throw new RangeError('playbackReachedSafetyLoopOut requires finite segment times and tempo');
+	}
+	const elapsed = Math.max(0, input.atContextTime - input.startContextTime);
+	const linear = input.startPositionSec + elapsed * input.tempoRatio;
+	return linear >= outSec;
+}
+
+/** Explicit loop exit (click-out / MIDI loop exit) disarms SAFE without
+ * clearing the saved endpoints, so the DJ can re-arm later. */
+export function disarmSafetyLoopOnExplicitExit(
+	safety: SafetyLoopSnapshot | null
+): SafetyLoopSnapshot | null {
+	if (safety === null || !safety.armed) return safety;
+	return { ...safety, armed: false };
 }
 
 export function quantizedPositionMs(

@@ -153,6 +153,7 @@
 		PlaylistDragPayload,
 		SortKey
 	} from './browser/pane-contract.svelte';
+	import { clearSelection, pruneSelection } from './browser/pane-row-selection';
 	import PlaylistTree from './browser/PlaylistTree.svelte';
 	import {
 		fetchMissingTrackRows,
@@ -1148,10 +1149,7 @@
 			}
 			_setSearchNow(snap.search);
 			if (snap.selected_id !== null) p.select(snap.selected_id, false);
-			else {
-				p.selected_id = null;
-				p.selected_ids = [];
-			}
+			else clearSelection(p);
 			p.rememberScroll(snap.scroll_top);
 			navEpoch += 1;
 			genreFilterUntil = /^genre:/i.test(snap.search) ? Date.now() + GENRE_WINDOW_MS : 0;
@@ -1318,11 +1316,7 @@
 				p.rows = result.rows;
 				p.truncated = result.truncated;
 				p.etag = result.etag;
-				// A selection pointing at a row the change deleted cannot
-				// survive; everything still present stays selected.
-				const present = new Set(result.rows.map((row) => row.stable_id));
-				p.selected_ids = p.selected_ids.filter((id) => present.has(id));
-				if (p.selected_id !== null && !present.has(p.selected_id)) p.selected_id = null;
+				pruneSelection(p, result.rows);
 			} catch (exc) {
 				console.error(
 					`[library-refresh] pane ${requestedPlaylistId} refresh failed: ${String(exc)}`
@@ -2218,16 +2212,20 @@
 	// event is absent for the column-view lane's plain click (ColumnBrowser
 	// has no multi-select concept) - treated as a non-extending single
 	// select, same as a modifier-less TrackTable click.
-	function selectRow(row: Pick<BrowserRow, 'stable_id'>, event?: MouseEvent): void {
+	function selectRow(
+		row: Pick<BrowserRow, 'stable_id'> & { order?: number },
+		event?: MouseEvent
+	): void {
 		_noteLibraryInteraction();
 		const p = panes[activePane];
 		if (p.selected_id !== row.stable_id) _pushNav();
 		const extend = event !== undefined && (event.metaKey || event.ctrlKey);
 		const range = event !== undefined && event.shiftKey;
-		const orderedIds = range
-			? renderedRows.map((r) => r.stable_id)
-			: [];
-		p.select(row.stable_id, extend, range, orderedIds);
+		const orderedIds = range ? renderedRows.map((r) => r.stable_id) : [];
+		const orderedRows = range
+			? renderedRows.map((r) => ({ stable_id: r.stable_id, order: r.order }))
+			: undefined;
+		p.select(row.stable_id, extend, range, orderedIds, row.order, orderedRows);
 		// Warm /anlz so a subsequent deck load shares the in-flight fetch.
 		// Selecting an unmapped row is the only place OUR ffmpeg decode ever
 		// runs (issue #735); the strip-adoption effect below picks up the
@@ -2363,10 +2361,7 @@
 			}
 			p.setSearch(snap.search);
 			if (snap.selected_id !== null) p.select(snap.selected_id, false);
-			else {
-				p.selected_id = null;
-				p.selected_ids = [];
-			}
+			else clearSelection(p);
 			p.rememberScroll(snap.scroll_top);
 			navEpoch += 1;
 		} finally {
@@ -2776,6 +2771,7 @@
 			bodyOverlay={libraryLoadOverlay}
 			{provider}
 			selectedIds={pane.selected_ids}
+			selectedOrders={pane.selected_orders}
 			{loadedIds}
 			{vocalsById}
 			sortKey={pane.sort_key}
@@ -2860,22 +2856,6 @@
 			</div>
 		</div>
 	</div>
-	<div class="library-health" aria-label="library processing health">
-		{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
-			<button
-				type="button"
-				class:complete={dot.state === 'complete'}
-				class:incomplete={dot.state === 'incomplete'}
-				class:unavailable={dot.state === 'unavailable'}
-				class:error={dot.state === 'error'}
-				class="health-dot"
-				aria-label={`${dot.label}: ${dot.detail}`}
-			>
-				<span aria-hidden="true"></span>
-				<span class="health-popover" role="tooltip"><strong>{dot.label}</strong><br />{dot.detail}</span>
-			</button>
-		{/each}
-	</div>
 	<div class="bottom-bar">
 		<button
 			class="icon-btn rb-inert"
@@ -2891,6 +2871,26 @@
 		     (pin 571f4281ecea, the maintainer, Wed 2 Sep 2026). -->
 		<span class="wordmark">open dj</span>
 		<LibraryJobsChrome />
+		<div class="library-health" aria-label="library processing health">
+			{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
+				<button
+					type="button"
+					class:complete={dot.state === 'complete'}
+					class:incomplete={dot.state === 'incomplete'}
+					class:unavailable={dot.state === 'unavailable'}
+					class:error={dot.state === 'error'}
+					class="health-dot"
+					aria-label={`${dot.label}: ${dot.detail}`}
+				>
+					<span aria-hidden="true"></span>
+				</button>
+			{/each}
+			<div class="health-popover" role="tooltip">
+				{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
+					<p><strong>{dot.label}</strong><br />{dot.detail}</p>
+				{/each}
+			</div>
+		</div>
 		<!-- The build identity lives at the RIGHT end of this tray on
 		     /performance. It used to be position:fixed bottom-left, sitting on
 		     top of the connectivity dots. The root layout mounts it in the app
@@ -3246,11 +3246,11 @@
 		text-overflow: ellipsis;
 	}
 	.library-health {
-		position: absolute;
-		right: 28px;
-		bottom: 22px;
+		position: relative;
 		display: flex;
+		align-items: center;
 		gap: 3px;
+		flex-shrink: 0;
 		z-index: 6;
 	}
 	.health-dot {
@@ -3281,7 +3281,7 @@
 		display: none;
 		position: absolute;
 		right: 0;
-		bottom: 16px;
+		bottom: calc(100% + 4px);
 		min-width: 180px;
 		max-width: 320px;
 		padding: 6px 8px;
@@ -3294,8 +3294,14 @@
 		white-space: normal;
 		box-shadow: 0 3px 10px rgb(0 0 0 / 40%);
 	}
-	.health-dot:hover .health-popover,
-	.health-dot:focus-visible .health-popover { display: block; }
+	.health-popover p {
+		margin: 0 0 4px;
+	}
+	.health-popover p:last-child {
+		margin-bottom: 0;
+	}
+	.library-health:hover .health-popover,
+	.library-health:focus-within .health-popover { display: block; }
 	.wordmark {
 		color: var(--rb-text-dim);
 		font-size: var(--rb-fs-label);
