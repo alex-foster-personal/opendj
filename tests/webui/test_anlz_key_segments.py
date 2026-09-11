@@ -187,6 +187,7 @@ def test_two_own_segments_are_served_on_the_own_payload(state_db: Path) -> None:
     assert block["status"] == "ok"
     assert block["reason"] is None
     assert len(block["segments"]) == 2
+    assert payload["performance_hints"]["dynamic_key"] is True
     assert block["segments"][0]["key_camelot"] == canon.to_camelot(C_MAJOR)
     assert block["segments"][1]["key_camelot"] == canon.to_camelot(A_MINOR)
     assert block["segments"][0]["end_bar"] == block["segments"][1]["start_bar"]
