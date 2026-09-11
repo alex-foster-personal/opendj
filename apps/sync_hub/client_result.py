@@ -10,6 +10,10 @@ rest of this package, so the client imports it and never the other way round.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from apps.sync_hub.sync_timing import SyncTimings
 
 
 @dataclass(frozen=True)
@@ -65,6 +69,8 @@ class SyncResult:
     #: ``None`` means the hub did not report the field (an older build),
     #: which is surfaced as unknown and never coerced to 0.
     hub_quarantined: int | None = None
+    #: Phase timings from :mod:`apps.sync_hub.sync_timing`, when instrumented.
+    timings: SyncTimings | None = None
 
 
 __all__ = ["SyncResult"]

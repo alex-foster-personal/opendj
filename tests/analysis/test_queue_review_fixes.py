@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from apps.analysis import admission, queue_store
+from apps.analysis import queue_batch_lease
 from apps.analysis import queue as queue_api
 from apps.analysis.backends.base import TrackVanished
 from apps.analysis.queue_runner import RunSummary, _RunContext, _settle_one, run_batch
@@ -76,7 +77,9 @@ def test_a_live_runner_refuses_a_second_concurrent_drain(
         ),
     )
     conn.commit()
-    monkeypatch.setattr(queue_store, "pid_is_alive", lambda pid: int(pid) == 999_999)
+    monkeypatch.setattr(
+        queue_batch_lease, "pid_is_alive", lambda pid: int(pid) == 999_999
+    )
     with pytest.raises(queue_api.QueueError, match="already being drained"):
         run_batch(conn, result.batch_id, backend_cls=BeatgridProbeV1)
     conn.close()
