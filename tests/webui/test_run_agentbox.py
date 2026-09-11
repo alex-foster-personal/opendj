@@ -39,6 +39,7 @@ from apps.webui.run_agentbox import (
     ssh_agentbox_argv,
     validate_serve_status,
 )
+from tests.waits import wait_for_external_state
 
 BROKEN_FUNNEL_STATUS_2026_08_22 = {
     "TCP": {"443": {"HTTPS": True}, "80": {"HTTP": True}},
@@ -293,10 +294,17 @@ def test_listener_pids_sees_a_real_loopback_socket() -> None:
             proc.stdin.close()
         proc.kill()
         proc.wait(timeout=5)
-    deadline = time.monotonic() + 3
-    while time.monotonic() < deadline and not can_bind(port):
-        time.sleep(0.05)
-    assert can_bind(port) is True
+    try:
+        wait_for_external_state(
+            lambda: can_bind(port),
+            what=f"port {port} bindable after its listener pid {listener} exited",
+        )
+    except AssertionError as timeout:
+        holders = listener_pids(port)
+        raise AssertionError(
+            f"{timeout}; listener_pids({port}) now reports "
+            + (f"{holders}" if holders else "no holder, so can_bind refuses a free port")
+        ) from timeout
 
 
 def test_proc_cwd_reads_the_real_process_symlink() -> None:
