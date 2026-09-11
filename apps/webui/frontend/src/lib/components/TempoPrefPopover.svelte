@@ -84,8 +84,9 @@
 				max = _fmt(exc.current.tempo_pref?.max);
 				return;
 			}
-			saveError = `Save failed: ${String(exc)}`;
-			pushToast(saveError, 'error');
+			const message = `Save failed: ${String(exc)}`;
+			saveError = message;
+			pushToast(message, 'error');
 		} finally {
 			saving = false;
 		}

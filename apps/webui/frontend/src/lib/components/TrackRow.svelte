@@ -19,9 +19,12 @@
 	}
 </script>
 
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <tr onclick={onclick} class:selected data-stable-id={track.stable_id}>
 	<td>{track.title ?? '(untitled)'}</td>
 	<td>{track.artist ?? ''}</td>
+	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<td
 		class="c-bpm"
 		oncontextmenu={_openTempoPrefEdit}
