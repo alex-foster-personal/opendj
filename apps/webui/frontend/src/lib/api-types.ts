@@ -16506,12 +16506,7 @@ export interface operations {
     get_live_stems_capability_api_v1_stems_live_capability_get: {
         parameters: {
             query?: {
-                /** @description Deck Count */
                 deck_count?: number | null;
-                /**
-                 * @description Bpm
-                 * @default 120
-                 */
                 bpm?: number;
             };
             header?: never;
