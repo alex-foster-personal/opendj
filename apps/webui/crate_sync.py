@@ -38,6 +38,7 @@ from typing import Literal, Optional
 from apps.shared import fs_residency, library_mode, platform_paths
 from apps.shared.crate_index import audit_manifest, ledger_digest
 from apps.shared.platform_paths import PROJECT_ROOT
+from apps.webui.soft_deletes import has_soft_deletes
 from apps.webui.run_agentbox import (
     AGENTBOX_HOSTNAME,
     allowed_ssh_host,
@@ -278,30 +279,46 @@ def _open_ro(path: Path, label: str) -> sqlite3.Connection:
 
 
 def _playlist_stable_ids(state: sqlite3.Connection, name: str) -> tuple[str, ...]:
-    rows = state.execute(
-        "SELECT playlist_id, name FROM playlists "
-        "WHERE name = ? AND deleted_at IS NULL",
-        (name,),
-    ).fetchall()
+    if has_soft_deletes(state, "playlists"):
+        lookup_sql = (
+            "SELECT playlist_id, name FROM playlists "
+            "WHERE name = ? AND deleted_at IS NULL"
+        )
+    else:
+        lookup_sql = (
+            "SELECT playlist_id, name FROM playlists "
+            "WHERE name = ?"
+        )
+    rows = state.execute(lookup_sql, (name,)).fetchall()
     if not rows:
-        known = [
-            r[0]
-            for r in state.execute(
+        if has_soft_deletes(state, "playlists"):
+            known_sql = (
                 "SELECT DISTINCT name FROM playlists "
                 "WHERE deleted_at IS NULL ORDER BY name"
             )
-        ]
+        else:
+            known_sql = (
+                "SELECT DISTINCT name FROM playlists "
+                "ORDER BY name"
+            )
+        known = [r[0] for r in state.execute(known_sql)]
         raise RuntimeError(
             f"unknown playlist {name!r}. Known: {', '.join(known) or '(none)'}"
         )
     ids: list[str] = []
     seen: set[str] = set()
     for playlist_id, _name in rows:
-        for (stable_id,) in state.execute(
-            "SELECT stable_id FROM playlist_memberships "
-            "WHERE playlist_id = ? AND deleted_at IS NULL ORDER BY position",
-            (playlist_id,),
-        ):
+        if has_soft_deletes(state, "playlist_memberships"):
+            members_sql = (
+                "SELECT stable_id FROM playlist_memberships "
+                "WHERE playlist_id = ? AND deleted_at IS NULL ORDER BY position"
+            )
+        else:
+            members_sql = (
+                "SELECT stable_id FROM playlist_memberships "
+                "WHERE playlist_id = ? ORDER BY position"
+            )
+        for (stable_id,) in state.execute(members_sql, (playlist_id,)):
             if stable_id not in seen:
                 seen.add(stable_id)
                 ids.append(stable_id)
@@ -400,17 +417,30 @@ def collect_plan(
             state, playlist=playlist, stable_ids=stable_ids, preload1=preload1
         )
         if wanted is None:
-            rows = state.execute(
-                "SELECT stable_id, file_path FROM tracks "
-                "WHERE deleted_at IS NULL ORDER BY stable_id"
-            ).fetchall()
+            if has_soft_deletes(state, "tracks"):
+                all_tracks_sql = (
+                    "SELECT stable_id, file_path FROM tracks "
+                    "WHERE deleted_at IS NULL ORDER BY stable_id"
+                )
+            else:
+                all_tracks_sql = (
+                    "SELECT stable_id, file_path FROM tracks "
+                    "ORDER BY stable_id"
+                )
+            rows = state.execute(all_tracks_sql).fetchall()
         else:
             marks = ",".join("?" * len(wanted))
-            rows = state.execute(
-                f"SELECT stable_id, file_path FROM tracks WHERE stable_id IN ({marks}) "
-                "AND deleted_at IS NULL ORDER BY stable_id",
-                wanted,
-            ).fetchall()
+            if has_soft_deletes(state, "tracks"):
+                in_list_sql = (
+                    f"SELECT stable_id, file_path FROM tracks WHERE stable_id IN ({marks}) "
+                    "AND deleted_at IS NULL ORDER BY stable_id"
+                )
+            else:
+                in_list_sql = (
+                    f"SELECT stable_id, file_path FROM tracks WHERE stable_id IN ({marks}) "
+                    "ORDER BY stable_id"
+                )
+            rows = state.execute(in_list_sql, wanted).fetchall()
             found = {str(r["stable_id"]) for r in rows}
             missing = [sid for sid in wanted if sid not in found]
             if missing:
@@ -1262,9 +1292,11 @@ def status_report(
     if state_db.is_file():
         state = _open_ro(state_db, "STATE_DB")
         try:
-            rows = state.execute(
-                "SELECT file_path FROM tracks WHERE deleted_at IS NULL"
-            ).fetchall()
+            if has_soft_deletes(state, "tracks"):
+                paths_sql = "SELECT file_path FROM tracks WHERE deleted_at IS NULL"
+            else:
+                paths_sql = "SELECT file_path FROM tracks"
+            rows = state.execute(paths_sql).fetchall()
         finally:
             state.close()
         path_map = platform_paths.PathMap(entries=tuple(user_maps))
