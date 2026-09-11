@@ -1,51 +1,84 @@
-"""Capture performance KPIs from a running engine (S5, S12, S13).
+"""Capture S5, S12, and S13 KPIs against a RUNNING engine.
 
-Usage:
-  python -m scripts.perf.capture_kpis --engine http://127.0.0.1:8686 --scenario S13
-  just perf-capture --engine http://127.0.0.1:8686 --scenario S13
+Drives real HTTP/CLI endpoints only. ``--engine`` is required (no hidden
+port fallback). An unreachable engine, a missing track, or a failed probe
+writes an error (S5/S12) or withheld (S13) row, never a number.
+
+Usage::
+
+    python -m scripts.perf.capture_kpis --engine <base-url> --scenario S5,S12
+    python -m scripts.perf.capture_kpis --engine <base-url> --scenario S13
+    just perf-capture --engine <base-url> --scenario S13
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
+from urllib.error import URLError
 
+from scripts.perf import capture_s5, capture_s12
+from scripts.perf.capture_kpi_ledger import (
+    DEFAULT_LEDGER,
+    HEALTH_TIMEOUT_S,
+    CaptureMeta,
+    append_entries,
+    fetch_url,
+    format_appended,
+    git_sha,
+    has_error_row,
+    required_error_rows,
+    required_numeric_present,
+    session_meta,
+)
 from scripts.perf.capture_s13 import capture_s13
 
-_REPO = Path(__file__).resolve().parents[2]
-_DEFAULT_LEDGER = _REPO / "docs" / "perf" / "kpi-ledger.json"
-_IMPLEMENTED = {"S13"}
-_KNOWN_UNIMPLEMENTED = {"S5", "S12"}
+KNOWN_SCENARIOS = ("S5", "S12", "S13")
+HTTP_SCENARIOS = frozenset({"S5", "S12"})
 
 
-def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Capture performance KPIs from a running engine. "
-            "Implemented scenarios: S13 (login submit-to-library-usable)."
-        ),
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
         "--engine",
         required=True,
-        help="running engine origin, e.g. http://127.0.0.1:8686",
+        help="running engine base URL (no hidden 8686 fallback)",
     )
     parser.add_argument(
         "--scenario",
-        required=True,
-        help="comma-separated scenario ids (S13 implemented; S5/S12 pending #1884)",
+        default="S5,S12",
+        help="comma-separated scenario ids (default S5,S12; S13 is login)",
     )
+    parser.add_argument(
+        "--hub",
+        default=None,
+        help="CloudSync hub URL; required when S12 is selected",
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=None,
+        help="engine data dir holding state/state.db; default from /health",
+    )
+    parser.add_argument(
+        "--ledger",
+        type=Path,
+        default=DEFAULT_LEDGER,
+        help="kpi-ledger.json path (tests pass a temp file)",
+    )
+    parser.add_argument("--track-small", default=None, help="override CFG small id")
+    parser.add_argument("--track-large", default=None, help="override CFG large id")
+    parser.add_argument("--track-stemmed", default=None, help="override CFG stemmed id")
     parser.add_argument(
         "--frontend",
         default=None,
         help="SPA origin when Vite and the API are on different ports (defaults to --engine)",
-    )
-    parser.add_argument(
-        "--ledger",
-        default=str(_DEFAULT_LEDGER),
-        help="append target for KPI ledger rows",
     )
     parser.add_argument(
         "--google-storage-state",
@@ -59,7 +92,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--timeout-s",
         type=int,
         default=90,
-        help="wait for the perf-span POST after bauble click",
+        help="wait for the S13 perf-span POST after bauble click",
     )
     parser.add_argument(
         "--dry-run",
@@ -69,40 +102,155 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = _parse_args(argv)
-    frontend = (args.frontend or args.engine).rstrip("/")
-    engine = args.engine.rstrip("/")
-    ledger_path = Path(args.ledger)
-    scenarios = [part.strip() for part in args.scenario.split(",") if part.strip()]
-    if not scenarios:
-        print("capture_kpis: --scenario must name at least one id", file=sys.stderr)
-        return 2
+def parse_scenarios(raw: str) -> list[str] | None:
+    parts = [item.strip() for item in raw.split(",") if item.strip()]
+    if not parts:
+        print("[ERROR] --scenario is empty", file=sys.stderr)
+        return None
+    unknown = [item for item in parts if item not in KNOWN_SCENARIOS]
+    if unknown:
+        print(
+            f"[ERROR] unknown scenario {', '.join(unknown)}. "
+            f"Known: {', '.join(KNOWN_SCENARIOS)}",
+            file=sys.stderr,
+        )
+        return None
+    # Preserve order, drop duplicates.
+    seen: list[str] = []
+    for item in parts:
+        if item not in seen:
+            seen.append(item)
+    return seen
 
+
+def strip_engine(url: str) -> str:
+    return url.rstrip("/")
+
+
+def resolve_data_dir(cli: Path | None, health: dict[str, Any]) -> Path | None:
+    if cli is not None:
+        return Path(cli)
+    raw = (health.get("state_db") or {}).get("path")
+    if not isinstance(raw, str) or not raw:
+        return None
+    path = Path(raw)
+    if not path.is_absolute():
+        return None
+    if path.name == "state.db" and path.parent.name == "state":
+        return path.parent.parent
+    return None
+
+
+def health_track_count(health: dict[str, Any]) -> int | None:
+    raw = (health.get("state_db") or {}).get("tracks")
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return None
+    return raw
+
+
+def probe_health(engine: str) -> tuple[dict[str, Any] | None, str | None]:
+    url = f"{engine}/api/v1/health"
+    try:
+        status, _headers, body = fetch_url(url, HEALTH_TIMEOUT_S)
+    except URLError as exc:
+        return None, f"engine unreachable: {exc}"
+    except OSError as exc:
+        return None, f"engine unreachable: {exc}"
+    if status != 200:
+        return None, f"engine unreachable: GET /api/v1/health returned HTTP {status}"
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return None, f"engine unreachable: /health was not JSON: {exc}"
+    if not isinstance(payload, dict):
+        return None, "engine unreachable: /health JSON was not an object"
+    if payload.get("status") != "ok":
+        return None, f"engine unreachable: /health status={payload.get('status')!r}"
+    state_db = payload.get("state_db")
+    if not isinstance(state_db, dict):
+        return None, "engine unreachable: /health missing state_db"
+    return payload, None
+
+
+def _finish(ledger: Path, rows: list[dict[str, Any]], dry_run: bool) -> None:
+    if rows and not dry_run:
+        append_entries(ledger, rows)
+    for row in rows:
+        print(format_appended(row))
+
+
+def _run_http_scenarios(
+    scenarios: list[str],
+    args: argparse.Namespace,
+    meta: CaptureMeta,
+    health: dict[str, Any],
+    engine: str,
+) -> list[dict[str, Any]]:
+    data_dir = resolve_data_dir(args.data_dir, health)
+    rows: list[dict[str, Any]] = []
+    if "S5" in scenarios:
+        tracks = capture_s5.resolve_tracks(
+            small=args.track_small,
+            large=args.track_large,
+            stemmed=args.track_stemmed,
+        )
+        rows.extend(
+            capture_s5.capture(
+                engine=engine, meta=meta, tracks=tracks, data_dir=data_dir
+            )
+        )
+    if "S12" in scenarios:
+        rows.extend(
+            capture_s12.capture(
+                hub_url=args.hub,
+                meta=meta,
+                data_dir=data_dir,
+                track_count=health_track_count(health),
+            )
+        )
+    return rows
+
+
+def _run_s5_s12(args: argparse.Namespace, scenarios: list[str], engine: str) -> int:
+    sha = git_sha()
+    meta = session_meta(sha=sha)
+    health, health_err = probe_health(engine)
+    if health_err is not None:
+        _finish(args.ledger, required_error_rows(scenarios, meta, health_err), args.dry_run)
+        return 1
+    if not sha:
+        rows = required_error_rows(scenarios, meta, "git sha cannot be read")
+        _finish(args.ledger, rows, args.dry_run)
+        return 1
+    assert health is not None
+    rows = _run_http_scenarios(scenarios, args, meta, health, engine)
+    _finish(args.ledger, rows, args.dry_run)
+    if has_error_row(rows) or not required_numeric_present(scenarios, rows):
+        return 1
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(list(sys.argv[1:] if argv is None else argv))
+    scenarios = parse_scenarios(args.scenario)
+    if scenarios is None:
+        return 2
+    engine = strip_engine(args.engine)
     exit_code = 0
-    for scenario in scenarios:
-        if scenario in _KNOWN_UNIMPLEMENTED:
-            print(
-                f"capture_kpis: scenario {scenario} is not implemented in this tree "
-                "(see issue #1884)",
-                file=sys.stderr,
-            )
-            exit_code = 1
-            continue
-        if scenario not in _IMPLEMENTED:
-            print(f"capture_kpis: unknown scenario {scenario}", file=sys.stderr)
-            exit_code = 1
-            continue
-        if scenario == "S13":
-            code = capture_s13(
-                engine=engine,
-                frontend=frontend,
-                ledger_path=ledger_path,
-                google_storage_state=args.google_storage_state,
-                timeout_s=args.timeout_s,
-                dry_run=args.dry_run,
-            )
-            exit_code = max(exit_code, code)
+    http_scenarios = [item for item in scenarios if item in HTTP_SCENARIOS]
+    if http_scenarios:
+        exit_code = max(exit_code, _run_s5_s12(args, http_scenarios, engine))
+    if "S13" in scenarios:
+        frontend = (args.frontend or args.engine).rstrip("/")
+        code = capture_s13(
+            engine=engine,
+            frontend=frontend,
+            ledger_path=Path(args.ledger),
+            google_storage_state=args.google_storage_state,
+            timeout_s=args.timeout_s,
+            dry_run=args.dry_run,
+        )
+        exit_code = max(exit_code, code)
     return exit_code
 
 
