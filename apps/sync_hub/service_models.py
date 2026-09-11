@@ -18,6 +18,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from apps.sync_hub import enrollment, service_enroll
+from apps.sync_hub.machine_credentials import CredentialVerdict
 
 
 class MachineModel(BaseModel):
@@ -60,6 +61,15 @@ class HelloResponse(BaseModel):
     hub_machine_id: str
     schema_version: int
     seq: int
+    #: Every machine this hub knows, peers included. NOT withheld from the
+    #: caller, though it hands out other machines' ids (plan X5): a spoke
+    #: holds its peers' ``track_locations``, ``sync_policies`` and
+    #: ``playlist_pins`` rows, which REFERENCE ``machines``, so a spoke
+    #: denied the peer rows would FK-refuse every pulled row that names a
+    #: peer (round 2 finding N4). What changed instead is that a machine id
+    #: stopped being the credential: under ENFORCE this response only reaches
+    #: a caller holding a valid sync credential, and knowing another
+    #: machine's id no longer lets anybody act as it.
     machines: list[MachineModel]
     #: This hub's generation token (round 2 finding N6). It changes when the
     #: hub's DB moves backwards under a data dir that did not -- a restore --
@@ -94,6 +104,13 @@ class HelloResponse(BaseModel):
     #: (the spoke reads the raw JSON), so requiring it costs no mixed-version
     #: compatibility.
     ownership: enrollment.OwnershipState
+    #: How this hub read the caller's sync credential (plan X5): ``valid``,
+    #: ``missing``, ``invalid``, ``revoked`` or ``unowned``. This IS the OBSERVE
+    #: report: a machine learns on every handshake that ENFORCE would refuse
+    #: it, rather than on the day ENFORCE is switched on. Under ENFORCE only
+    #: ``valid`` ever reaches a response; anything else is a 401 first.
+    #: Required, no default, for the reason ``ownership`` gives.
+    credential: CredentialVerdict
 
 
 class EnrollRequest(BaseModel):
@@ -139,6 +156,8 @@ class PushResponse(BaseModel):
 class PullResponse(BaseModel):
     rows: list[RowModel]
     seq: int
+    #: Every machine this hub knows, for the FK reason ``HelloResponse``
+    #: gives; only a credentialed caller reaches it under ENFORCE.
     machines: list[MachineModel]
     #: True when the hub still holds changelog entries above ``seq``. The
     #: client loops on it rather than inferring "done" from an empty page:

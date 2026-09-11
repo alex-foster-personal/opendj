@@ -1,4 +1,4 @@
-"""Curated prose for the migration v9 enrollment tables (ADR 12).
+"""Curated prose for the enrollment tables: v9 ownership, v11 credentials (ADR 12).
 
 Its own module, in the pattern :mod:`apps.database.table_docs` established:
 ``column_docs.py`` sits at 576 lines against the 600-line review gate in
@@ -35,6 +35,14 @@ ENROLLMENT_TABLE_DOCS: dict[str, str] = {
         "POST /api/v1/sync/enroll. Only the sha256 is stored, never the "
         "redeemable value, on the same reasoning as "
         "auth_sessions.session_token_sha256."
+    ),
+    "machine_credentials": (
+        "Per-machine sync credentials (migration v11, the ADR 12 amendment "
+        "for plan X5): the secret a machine_id is not. The hub mints one at "
+        "enroll and returns the raw value exactly once; this table keeps only "
+        "its sha256. Under MDT_SYNC_CREDENTIAL_MODE=enforce every sync "
+        "endpoint except enroll refuses a caller whose bearer does not hash "
+        "to this row. Hub-local and outside the sync set."
     ),
 }
 
@@ -109,6 +117,20 @@ ENROLLMENT_COLUMN_DOCS: dict[str, dict[str, str]] = {
             "record of what happened, and it must survive the machine row being "
             "removed."
         ),
+    },
+    "machine_credentials": {
+        "machine_id": (
+            "Primary key and FK to machines, ON DELETE CASCADE. One live "
+            "credential per machine: re-minting replaces the hash, so the "
+            "previous bearer stops working the moment the new one exists."
+        ),
+        "credential_sha256": (
+            "sha256 of the raw bearer (prefix odjsync_), the only form that "
+            "reaches the database, so a stolen hub DB hands nobody a working "
+            "credential. UNIQUE, so one hash can never authenticate two "
+            "machines. Deleted by revoke."
+        ),
+        "minted_at": "When this credential was minted, canonical UTC.",
     },
 }
 

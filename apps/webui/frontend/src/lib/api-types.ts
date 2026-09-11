@@ -855,6 +855,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cloudsync/fleet/adopt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Adopt Machine
+         * @description Twin of ``adopt``, always adopting to the signed-in user.
+         */
+        post: operations["adopt_machine_api_v1_cloudsync_fleet_adopt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/fleet/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Credentials
+         * @description Twin of ``python -m apps.sync_hub credentials --json``.
+         */
+        get: operations["read_credentials_api_v1_cloudsync_fleet_credentials_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/fleet/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke Machine
+         * @description Twin of ``revoke``, limited to machines the signed-in user owns.
+         */
+        post: operations["revoke_machine_api_v1_cloudsync_fleet_revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cloudsync/machines": {
         parameters: {
             query?: never;
@@ -3798,6 +3858,21 @@ export interface components {
             /** Name */
             name: string | null;
         };
+        /** AdoptOut */
+        AdoptOut: {
+            /** Created */
+            created: boolean;
+            /** Enrolled At */
+            enrolled_at: string;
+            /** Enrolled Via */
+            enrolled_via: string;
+            /** Machine Id */
+            machine_id: string;
+            /** Name */
+            name: string;
+            /** Owner Email */
+            owner_email: string;
+        };
         /** AiApplyIn */
         AiApplyIn: {
             /** Instruction */
@@ -4456,6 +4531,18 @@ export interface components {
              */
             severity: "warning" | "error";
         };
+        /** BlockerOut */
+        BlockerOut: {
+            /** Machine Id */
+            machine_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "unowned" | "foreign" | "no_credential";
+        };
         /** Body_upload_api_v1_ingest_upload_post */
         Body_upload_api_v1_ingest_upload_post: {
             /** Batch */
@@ -5065,6 +5152,38 @@ export interface components {
             /** Unreachable */
             unreachable: number;
         };
+        /** CredentialMachineOut */
+        CredentialMachineOut: {
+            /** Credential Minted At */
+            credential_minted_at: string | null;
+            /** Is This Hub */
+            is_this_hub: boolean;
+            /** Machine Id */
+            machine_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Ownership
+             * @enum {string}
+             */
+            ownership: "owned" | "unowned" | "foreign" | "revoked";
+        };
+        /** CredentialsOut */
+        CredentialsOut: {
+            /** Blockers */
+            blockers: components["schemas"]["BlockerOut"][];
+            /** Enforce Ready */
+            enforce_ready: boolean;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Machines */
+            machines: components["schemas"]["CredentialMachineOut"][];
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "observe" | "enforce";
+        };
         /** DecisionIn */
         DecisionIn: {
             /**
@@ -5287,6 +5406,8 @@ export interface components {
             owner_email: string;
             /** Owner Google Sub */
             owner_google_sub: string;
+            /** Sync Credential */
+            sync_credential: string | null;
         };
         /** EntitlementsOut */
         EntitlementsOut: {
@@ -5509,6 +5630,17 @@ export interface components {
             path: string;
             /** Sandboxed */
             sandboxed: boolean;
+        };
+        /** FleetErrorBody */
+        FleetErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /** FleetErrorResponse */
+        FleetErrorResponse: {
+            detail: components["schemas"]["FleetErrorBody"];
         };
         /**
          * FleetMachineOut
@@ -5771,6 +5903,11 @@ export interface components {
         HelloResponse: {
             /** Capabilities */
             capabilities?: string[];
+            /**
+             * Credential
+             * @enum {string}
+             */
+            credential: "valid" | "missing" | "invalid" | "revoked" | "unowned";
             /** Hub Generation */
             hub_generation: string;
             /** Hub Machine Id */
@@ -6283,6 +6420,11 @@ export interface components {
         LyricsUnavailableOut: {
             /** Detail */
             detail: string;
+        };
+        /** MachineIdIn */
+        MachineIdIn: {
+            /** Machine Id */
+            machine_id: string;
         };
         /**
          * MachineModel
@@ -7834,6 +7976,17 @@ export interface components {
             signals: string[];
             /** Triple Validated */
             triple_validated: boolean;
+        };
+        /** RevokeOut */
+        RevokeOut: {
+            /** Changed */
+            changed: boolean;
+            /** Credential Deleted */
+            credential_deleted: boolean;
+            /** Machine Id */
+            machine_id: string;
+            /** Revoked At */
+            revoked_at: string;
         };
         /**
          * RowModel
@@ -11174,6 +11327,164 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+        };
+    };
+    adopt_machine_api_v1_cloudsync_fleet_adopt_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MachineIdIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdoptOut"];
+                };
+            };
+            /** @description adopt needs a signed-in user. code: AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description No such machine on this hub. code: CLOUDSYNC_UNKNOWN_MACHINE. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description This install is not a hub (CLOUDSYNC_NOT_A_HUB), or the machine is owned by someone else (CLOUDSYNC_OWNER_CONFLICT) or revoked (CLOUDSYNC_REVOKED). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_credentials_api_v1_cloudsync_fleet_credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialsOut"];
+                };
+            };
+            /** @description Not signed in. code: AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description This install is not a hub (CLOUDSYNC_NOT_A_HUB). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+        };
+    };
+    revoke_machine_api_v1_cloudsync_fleet_revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MachineIdIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeOut"];
+                };
+            };
+            /** @description revoke needs a signed-in user. code: AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description The machine is owned by another user. code: CLOUDSYNC_NOT_YOUR_MACHINE. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description This install is not a hub (CLOUDSYNC_NOT_A_HUB), or the machine has no owner row to revoke (CLOUDSYNC_FLEET). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -15251,6 +15562,13 @@ export interface operations {
                     "application/json": components["schemas"]["DigestResponse"];
                 };
             };
+            /** @description digest refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -15259,6 +15577,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description digest refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -15344,6 +15669,13 @@ export interface operations {
                     "application/json": components["schemas"]["HelloResponse"];
                 };
             };
+            /** @description hello refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -15352,6 +15684,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description hello refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -15382,6 +15721,13 @@ export interface operations {
                     "application/json": components["schemas"]["PullResponse"];
                 };
             };
+            /** @description pull refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -15390,6 +15736,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description pull refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -15415,6 +15768,13 @@ export interface operations {
                     "application/json": components["schemas"]["PushResponse"];
                 };
             };
+            /** @description push refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -15423,6 +15783,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description push refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description The hub sqlite database cannot take the write. code: SYNC_HUB_STORAGE. */
             507: {
@@ -15456,6 +15823,13 @@ export interface operations {
                     "application/json": components["schemas"]["StatusResponse"];
                 };
             };
+            /** @description status refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -15464,6 +15838,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description status refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

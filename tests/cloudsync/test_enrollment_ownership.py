@@ -404,6 +404,9 @@ def test_an_omitted_ownership_fails_loudly_instead_of_reading_as_unowned() -> No
         "machines": [],
         "hub_generation": "gen-1",
         "capabilities": [],
+        # Required since plan X5, like ownership; supplied so the refusal
+        # below can still only be about the missing ownership field.
+        "credential": "missing",
     }
     with pytest.raises(pydantic.ValidationError, match="ownership"):
         service.HelloResponse(**common)

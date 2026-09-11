@@ -48,11 +48,24 @@ class HubTransport(Protocol):
 class HttpTransport:
     """stdlib-only JSON transport. Any non-2xx is an error, never a default."""
 
-    def __init__(self, base_url: str, *, timeout_s: float = DEFAULT_TIMEOUT_S) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        timeout_s: float = DEFAULT_TIMEOUT_S,
+        bearer: str | None = None,
+    ) -> None:
+        """``bearer`` is this machine's sync credential
+        (:mod:`apps.sync_hub.spoke_credential`), sent as ``Authorization:
+        Bearer`` on every call. None sends no header, which an OBSERVE hub
+        accepts and reports as ``missing``."""
         if not base_url:
             raise SyncTransportError("hub_url is empty")
         self._base = base_url.rstrip("/")
         self._timeout_s = timeout_s
+        self._auth: dict[str, str] = (
+            {} if bearer is None else {"Authorization": f"Bearer {bearer}"}
+        )
 
     def _url(self, path: str, params: Mapping[str, str] | None = None) -> str:
         url = f"{self._base}{path}"
@@ -80,13 +93,15 @@ class HttpTransport:
         request = urllib.request.Request(
             self._url(path),
             data=json.dumps(dict(payload)).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **self._auth},
             method="POST",
         )
         return self._send(request)
 
     def get(self, path: str, params: Mapping[str, str]) -> dict[str, Any]:
-        request = urllib.request.Request(self._url(path, params), method="GET")
+        request = urllib.request.Request(
+            self._url(path, params), headers=dict(self._auth), method="GET"
+        )
         return self._send(request)
 
 

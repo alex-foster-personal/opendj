@@ -33,8 +33,13 @@ class TestClientTransport:
 
     __test__ = False  # not a pytest test class, despite the name
 
-    def __init__(self, http: TestClient) -> None:
+    def __init__(self, http: TestClient, *, bearer: str | None = None) -> None:
+        """``bearer`` mirrors :class:`apps.sync_hub.transport.HttpTransport`:
+        sent as ``Authorization: Bearer`` on every call, none when None."""
         self._http = http
+        self._headers: dict[str, str] = (
+            {} if bearer is None else {"Authorization": f"Bearer {bearer}"}
+        )
 
     def _decoded(self, response: Any, label: str) -> dict[str, Any]:
         if response.status_code >= 400:
@@ -44,10 +49,12 @@ class TestClientTransport:
         return dict(response.json())
 
     def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
-        return self._decoded(self._http.post(path, json=dict(payload)), f"POST {path}")
+        response = self._http.post(path, json=dict(payload), headers=self._headers)
+        return self._decoded(response, f"POST {path}")
 
     def get(self, path: str, params: Mapping[str, str]) -> dict[str, Any]:
-        return self._decoded(self._http.get(path, params=dict(params)), f"GET {path}")
+        response = self._http.get(path, params=dict(params), headers=self._headers)
+        return self._decoded(response, f"GET {path}")
 
 
 __all__ = ["TestClientTransport"]

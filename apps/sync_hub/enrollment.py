@@ -36,15 +36,15 @@ Three invariants:
    ritual.
 3. **A revocation is never lifted as a side effect.** A revoked row is
    refused by the writer, loudly, rather than being cleared by the next
-   enroll. Nothing writes ``revoked_at`` yet (ADR 12: ``revoke`` is unbuilt),
-   so today only hand-written SQL produces one -- which is exactly the case
-   where silently undoing it would be worst.
+   enroll. :func:`revoke_owner` is the only thing that writes ``revoked_at``
+   (driven by ``python -m apps.sync_hub revoke`` and its HTTP twin), and no
+   command in this build un-revokes.
 
-Nothing here is enforced yet at ``hello``. v9 OBSERVES: it records ownership
-and reports the gaps. Refusing an unowned caller is a separate decision with
-its own gate (ADR 12 section A), and shipping this while calling the hub
-authenticated would be exactly the error ``.claude/rules/verification.md``
-is about.
+:func:`enroll_machine` and :func:`revoke_owner` are the only two writers of
+``machine_owners``, and both live here. Ownership alone authenticates
+nothing: the per-machine sync credential (:mod:`apps.sync_hub.machine_credentials`,
+plan X5) is what the sync endpoints check, and only under
+``MDT_SYNC_CREDENTIAL_MODE=enforce``.
 """
 from __future__ import annotations
 
@@ -263,6 +263,60 @@ def enroll_machine(
     )
 
 
+@dataclass(frozen=True)
+class RevocationResult:
+    """What one :func:`revoke_owner` call left behind. ``changed`` is False
+    when the row was already revoked and the call wrote nothing."""
+
+    machine_id: str
+    google_sub: str
+    revoked_at: str
+    changed: bool
+
+
+def revoke_owner(
+    conn: sqlite3.Connection,
+    machine_id: str,
+    *,
+    require_owner_sub: str | None = None,
+    now: str | None = None,
+) -> RevocationResult:
+    """Write ``revoked_at`` on ``machine_id``'s owner row. Caller owns the txn.
+
+    Refuses a machine with NO owner row rather than inventing one to revoke:
+    an unowned machine holds no sync credential, so ENFORCE already refuses
+    it, and a revocation needs a claim to withdraw. ``require_owner_sub`` is
+    the HTTP path's guard -- a signed-in user may revoke only machines they
+    own -- and the hub-local CLI passes None. Idempotent: an already revoked
+    row is reported with ``changed`` False and its ORIGINAL stamp.
+    """
+    existing = _owner_row(conn, machine_id)
+    if existing is None:
+        raise EnrollmentError(
+            f"machine {machine_id} has no owner row on this hub, so there is "
+            f"no claim to revoke. It holds no sync credential either, so a hub "
+            f"in enforce mode already refuses it."
+        )
+    if require_owner_sub is not None and existing.google_sub != require_owner_sub:
+        raise OwnershipConflictError(
+            f"machine {machine_id} is owned by {existing.google_sub}, not by the "
+            f"signed-in user; only its owner, or the hub-local CLI, can revoke it."
+        )
+    if existing.revoked_at is not None:
+        return RevocationResult(machine_id, existing.google_sub, existing.revoked_at, False)
+    stamp = (
+        sync_stamp.canonical_from(sync_stamp.parse_canonical(now))
+        if now
+        else sync_stamp.canonical_now()
+    )
+    conn.execute(
+        f"UPDATE {OWNERSHIP_TABLE} SET revoked_at = ? "
+        f"WHERE machine_id = ? AND revoked_at IS NULL",
+        (stamp, machine_id),
+    )
+    return RevocationResult(machine_id, existing.google_sub, stamp, True)
+
+
 # ----- readers -------------------------------------------------------------
 
 
@@ -426,9 +480,11 @@ __all__ = [
     "OwnerIdentity",
     "OwnershipConflictError",
     "OwnershipState",
+    "RevocationResult",
     "enroll_machine",
     "fleet_ownership",
     "owner_for",
     "ownership_counts",
     "ownership_state",
+    "revoke_owner",
 ]

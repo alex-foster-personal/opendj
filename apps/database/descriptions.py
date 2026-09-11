@@ -133,6 +133,14 @@ TABLES: dict[str, str] = {
         "hand anybody a redeemable credential. Redeemed rows keep their row "
         "so a replay is refused rather than silently re-enrolled."
     ),
+    "machine_credentials": (
+        "One machine's sync credential, as the hub that minted it at enroll "
+        "recorded it. Only the sha256 is stored; the raw bearer was returned "
+        "once to the enrolling machine, which keeps it in <data-dir>/"
+        "sync-credential at 0600 and sends it on hello, push, pull, status "
+        "and digest. Hub-local and never synced, like machine_owners, so a "
+        "spoke cannot push itself a credential."
+    ),
     # ----- analysis ------------------------------------------------------
     "analysis": (
         "One track's computed audio analysis (BPM, key, beatgrid, loudness). "

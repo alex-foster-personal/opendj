@@ -16,13 +16,19 @@
     uv run python -m apps.sync_hub config show|set --data-dir DIR
                                                 [--enabled|--disabled]
                                                 [--hub URL] [--name N]
+    uv run python -m apps.sync_hub adopt        --data-dir DIR --machine-id ID
+                                                --owner EMAIL
+    uv run python -m apps.sync_hub revoke       --data-dir DIR --machine-id ID
+    uv run python -m apps.sync_hub credentials  --data-dir DIR [--json]
 
 ``config`` (see :mod:`apps.sync_hub.config_cli`) is the CLI twin of
 ``GET/PUT /api/v1/cloudsync/config``: the persisted per-machine config the
 background scheduler (:mod:`apps.sync_hub.scheduler`) reads.
 
 Eight operations, plus ``policy`` (per-machine sync policy, its own module
-:mod:`apps.sync_hub.maintenance_policy`, dry-run by default, exit 0/1/3/4):
+:mod:`apps.sync_hub.maintenance_policy`, dry-run by default, exit 0/1/3/4),
+plus adopt, revoke and credentials, which live in
+:mod:`apps.sync_hub.fleet_admin` (plan X5) and register themselves below:
 
 * **sync** runs one spoke round trip against ``--hub`` (round 3 finding R7).
   Nothing outside pytest called ``run_sync`` before -- the whole spoke
@@ -75,6 +81,7 @@ from apps.sync_hub import (
     config_cli,
     engine,
     enrollment_credentials,
+    fleet_admin,
     generation,
     maintenance_enroll,
     maintenance_policy,
@@ -325,6 +332,7 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print the same readout as JSON (agent parity with the UI)",
     )
+    fleet_admin.add_subcommands(subcommands, common)
     maintenance_policy.add_policy_parser(subcommands, common)
     config_cli.add_config_parser(subcommands, common)
     return parser
@@ -452,6 +460,7 @@ PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
     "enroll": _print_enroll,
     "fleet": _print_fleet,
     "config": config_cli.run_config,
+    **fleet_admin.PRINTING_COMMANDS,
 }
 
 

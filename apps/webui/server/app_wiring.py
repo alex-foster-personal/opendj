@@ -56,6 +56,7 @@ from .routes import client_errors as client_errors_routes
 from .routes import client_events as client_events_routes
 from .routes import cloudsync as cloudsync_routes
 from .routes import cloudsync_config as cloudsync_config_routes
+from .routes import cloudsync_fleet as cloudsync_fleet_routes
 from .routes import cloudsync_ops as cloudsync_ops_routes
 from .routes import cloudsync_policy as cloudsync_policy_routes
 from .routes import cloudsync_status as cloudsync_status_routes
@@ -429,6 +430,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         cloudsync_policy_routes.router,
         cloudsync_status_routes.router,
         cloudsync_config_routes.router,
+        cloudsync_fleet_routes.router,
         spotify_routes.router,
         usb_export_routes.router,
         usb_volumes_routes.router,

@@ -156,6 +156,44 @@
         "title": "AccountUserOut",
         "type": "object"
       },
+      "AdoptOut": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "enrolled_at": {
+            "title": "Enrolled At",
+            "type": "string"
+          },
+          "enrolled_via": {
+            "title": "Enrolled Via",
+            "type": "string"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_email": {
+            "title": "Owner Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "name",
+          "owner_email",
+          "enrolled_at",
+          "enrolled_via",
+          "created"
+        ],
+        "title": "AdoptOut",
+        "type": "object"
+      },
       "AiApplyIn": {
         "properties": {
           "instruction": {
@@ -1612,6 +1650,34 @@
           "disagreement_bpm"
         ],
         "title": "BeatgridIssueOut",
+        "type": "object"
+      },
+      "BlockerOut": {
+        "properties": {
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "unowned",
+              "foreign",
+              "no_credential"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "name",
+          "reason"
+        ],
+        "title": "BlockerOut",
         "type": "object"
       },
       "Body_upload_api_v1_ingest_upload_post": {
@@ -3455,6 +3521,95 @@
         "title": "CoverageOut",
         "type": "object"
       },
+      "CredentialMachineOut": {
+        "properties": {
+          "credential_minted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Minted At"
+          },
+          "is_this_hub": {
+            "title": "Is This Hub",
+            "type": "boolean"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ownership": {
+            "enum": [
+              "owned",
+              "unowned",
+              "foreign",
+              "revoked"
+            ],
+            "title": "Ownership",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "name",
+          "ownership",
+          "credential_minted_at",
+          "is_this_hub"
+        ],
+        "title": "CredentialMachineOut",
+        "type": "object"
+      },
+      "CredentialsOut": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/BlockerOut"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "enforce_ready": {
+            "title": "Enforce Ready",
+            "type": "boolean"
+          },
+          "hub_machine_id": {
+            "title": "Hub Machine Id",
+            "type": "string"
+          },
+          "machines": {
+            "items": {
+              "$ref": "#/components/schemas/CredentialMachineOut"
+            },
+            "title": "Machines",
+            "type": "array"
+          },
+          "mode": {
+            "enum": [
+              "observe",
+              "enforce"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_machine_id",
+          "mode",
+          "enforce_ready",
+          "blockers",
+          "machines"
+        ],
+        "title": "CredentialsOut",
+        "type": "object"
+      },
       "DecisionIn": {
         "additionalProperties": false,
         "properties": {
@@ -3953,6 +4108,17 @@
           "owner_google_sub": {
             "title": "Owner Google Sub",
             "type": "string"
+          },
+          "sync_credential": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Credential"
           }
         },
         "required": [
@@ -3962,7 +4128,8 @@
           "hub_machine_id",
           "enrolled_at",
           "enrolled_via",
-          "created"
+          "created",
+          "sync_credential"
         ],
         "title": "EnrollResponse",
         "type": "object"
@@ -4512,6 +4679,36 @@
           "flags"
         ],
         "title": "FlagsOut",
+        "type": "object"
+      },
+      "FleetErrorBody": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "FleetErrorBody",
+        "type": "object"
+      },
+      "FleetErrorResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/FleetErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "FleetErrorResponse",
         "type": "object"
       },
       "FleetMachineOut": {
@@ -5168,6 +5365,17 @@
             "title": "Capabilities",
             "type": "array"
           },
+          "credential": {
+            "enum": [
+              "valid",
+              "missing",
+              "invalid",
+              "revoked",
+              "unowned"
+            ],
+            "title": "Credential",
+            "type": "string"
+          },
           "hub_generation": {
             "title": "Hub Generation",
             "type": "string"
@@ -5207,7 +5415,8 @@
           "seq",
           "machines",
           "hub_generation",
-          "ownership"
+          "ownership",
+          "credential"
         ],
         "title": "HelloResponse",
         "type": "object"
@@ -6510,6 +6719,20 @@
           "detail"
         ],
         "title": "LyricsUnavailableOut",
+        "type": "object"
+      },
+      "MachineIdIn": {
+        "properties": {
+          "machine_id": {
+            "minLength": 1,
+            "title": "Machine Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id"
+        ],
+        "title": "MachineIdIn",
         "type": "object"
       },
       "MachineModel": {
@@ -10711,6 +10934,34 @@
           "triple_validated"
         ],
         "title": "RelocateCandidateOut",
+        "type": "object"
+      },
+      "RevokeOut": {
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "credential_deleted": {
+            "title": "Credential Deleted",
+            "type": "boolean"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "revoked_at": {
+            "title": "Revoked At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "revoked_at",
+          "changed",
+          "credential_deleted"
+        ],
+        "title": "RevokeOut",
         "type": "object"
       },
       "RowModel": {
@@ -17462,6 +17713,192 @@
         ]
       }
     },
+    "/api/v1/cloudsync/fleet/adopt": {
+      "post": {
+        "description": "Twin of ``adopt``, always adopting to the signed-in user.",
+        "operationId": "adopt_machine_api_v1_cloudsync_fleet_adopt_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MachineIdIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdoptOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "adopt needs a signed-in user. code: AUTH_REQUIRED."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "No such machine on this hub. code: CLOUDSYNC_UNKNOWN_MACHINE."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "This install is not a hub (CLOUDSYNC_NOT_A_HUB), or the machine is owned by someone else (CLOUDSYNC_OWNER_CONFLICT) or revoked (CLOUDSYNC_REVOKED)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Adopt Machine",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/fleet/credentials": {
+      "get": {
+        "description": "Twin of ``python -m apps.sync_hub credentials --json``.",
+        "operationId": "read_credentials_api_v1_cloudsync_fleet_credentials_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "Not signed in. code: AUTH_REQUIRED."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "This install is not a hub (CLOUDSYNC_NOT_A_HUB)."
+          }
+        },
+        "summary": "Read Credentials",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/fleet/revoke": {
+      "post": {
+        "description": "Twin of ``revoke``, limited to machines the signed-in user owns.",
+        "operationId": "revoke_machine_api_v1_cloudsync_fleet_revoke_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MachineIdIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "revoke needs a signed-in user. code: AUTH_REQUIRED."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "The machine is owned by another user. code: CLOUDSYNC_NOT_YOUR_MACHINE."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "This install is not a hub (CLOUDSYNC_NOT_A_HUB), or the machine has no owner row to revoke (CLOUDSYNC_FLEET)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Machine",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
     "/api/v1/cloudsync/machines": {
       "get": {
         "operationId": "list_machines_api_v1_cloudsync_machines_get",
@@ -23190,6 +23627,9 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "description": "digest refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -23199,6 +23639,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "digest refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
           }
         },
         "summary": "Digest",
@@ -23304,6 +23747,9 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "description": "hello refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -23313,6 +23759,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "hello refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
           }
         },
         "summary": "Hello",
@@ -23391,6 +23840,9 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "description": "pull refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -23400,6 +23852,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "pull refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
           }
         },
         "summary": "Pull",
@@ -23433,6 +23888,9 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "description": "push refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -23442,6 +23900,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "push refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
           },
           "507": {
             "content": {
@@ -23489,6 +23950,9 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "description": "status refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -23498,6 +23962,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "status refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
           }
         },
         "summary": "Status",
