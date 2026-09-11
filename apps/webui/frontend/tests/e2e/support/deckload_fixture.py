@@ -72,6 +72,13 @@ shared with playwright.webkit-deckload/preflight-gate/boot-burst/
 hotcue-mapping-gate/comment-hotkey-gate configs, none of which pass this
 flag, so their fixture is byte-for-byte unchanged.
 
+``--seed-autoplay-hunt`` is another SEPARATE opt-in, used only by the
+AutoPlay/mixing error hunt (#1853). It builds a 6-track library (own
+function, own two playlists, own filenames) and is mutually exclusive with
+``--seed-autoplay-chain`` so a caller cannot accidentally enlarge the
+performance suite. Hunt files are new; ``FIXTURE_TRACKS`` and the chain
+audio are unchanged, and ``FIXTURE_REVISION`` is not bumped.
+
 Acceptance tests:
 
 - [if] the ingest writes zero tracks [then] the builder exits non-zero.
@@ -84,6 +91,9 @@ Acceptance tests:
 - [if] --seed-autoplay-chain is set [then] a 3rd track is ingested and all
   three tracks carry the same real, non-null Camelot key, while each keeps its
   own declared BPM (128 / 124 / 128) so the distinct-BPM pair survives.
+- [if] --seed-autoplay-hunt is set [then] 6 tracks are ingested into two
+  playlists (A in declared order, B the reverse), all carrying Camelot key 8A
+  and alternating 128 / 124 BPM, and ``FIXTURE_TRACKS`` stays a 2-track tuple.
 - [if] --manifest is set [then] the written JSON's revision and track rows
   match what was actually ingested, read back from the manifest file itself.
 - [if] ``feedback/`` holds a stale file from a prior (or interrupted) run
@@ -178,6 +188,25 @@ AUTOPLAY_CHAIN_TRACK: FixtureTrack = FixtureTrack(
 AUTOPLAY_CHAIN_CAMELOT_KEY: str = "8A"
 AUTOPLAY_CHAIN_PLAYLIST_ID: str = "e2e-fixture-autoplay-chain"
 AUTOPLAY_CHAIN_PLAYLIST_NAME: str = "E2E AutoPlay Chain"
+
+#: --seed-autoplay-hunt only. Six tracks, own filenames, kept out of
+#: FIXTURE_TRACKS so the 5 other e2e gates sharing this builder never see a
+#: 6-track library. Alternate 128 / 124 BPM so tempo/sync have a ratio
+#: (124 vs 128 is 1.032, inside phase-lock). Same Camelot key as the chain
+#: so AutoPlay compatibility is distance 0.
+HUNT_CAMELOT_KEY: str = "8A"
+HUNT_PLAYLIST_A_ID: str = "e2e-fixture-autoplay-hunt-a"
+HUNT_PLAYLIST_A_NAME: str = "E2E AutoPlay Hunt A"
+HUNT_PLAYLIST_B_ID: str = "e2e-fixture-autoplay-hunt-b"
+HUNT_PLAYLIST_B_NAME: str = "E2E AutoPlay Hunt B"
+HUNT_TRACKS: tuple[FixtureTrack, ...] = (
+    FixtureTrack(filename="webkit-fixture-hunt-01-128bpm.wav", bpm=128.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-hunt-02-124bpm.wav", bpm=124.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-hunt-03-128bpm.wav", bpm=128.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-hunt-04-124bpm.wav", bpm=124.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-hunt-05-128bpm.wav", bpm=128.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-hunt-06-124bpm.wav", bpm=124.0, seconds=60.0),
+)
 
 MANIFEST_FILENAME: str = "fixture-manifest.json"
 
@@ -488,12 +517,107 @@ def build_autoplay_chain(
     return rows
 
 
+def _stable_ids_in_track_order(
+    rows: list[tuple[str, str | None, str | None]],
+    tracks: tuple[FixtureTrack, ...],
+    label: str,
+) -> list[str]:
+    """Line ingested rows up with ``tracks`` by filename, in tuple order."""
+    by_filename: dict[str, str] = {}
+    for stable_id, _title, file_path in rows:
+        if file_path is None:
+            continue
+        by_filename[Path(file_path).name] = stable_id
+    ordered: list[str] = []
+    missing: list[str] = []
+    for track in tracks:
+        stable_id = by_filename.get(track.filename)
+        if stable_id is None:
+            missing.append(track.filename)
+            continue
+        ordered.append(stable_id)
+    if missing or len(ordered) != len(tracks):
+        raise SystemExit(
+            f"[ERROR] {label} could not match every generated file to an ingested row "
+            f"(missing {missing!r})"
+        )
+    return ordered
+
+
+def build_autoplay_hunt(
+    data_dir: Path,
+) -> list[tuple[str, str | None, str | None]]:
+    """Build a 6-track hunt library with two playlists. Does not call ``build()``.
+
+    Own function, own playlist ids: ``build()`` itself, and the 2-track shape
+    it produces, are untouched. Deliberately NOT ``build()`` followed by a
+    second ingest -- once this has run once, the audio dir holds 6 files
+    while ``build()``'s ``ensure_audio()`` only accounts for ``FIXTURE_TRACKS``,
+    so a later plain ``build()`` on this dir would see "6 rows for 2 files".
+    Playwright re-imports its config more than once per run, so this function
+    must tolerate being called repeatedly against its own fully-built output.
+
+    Playlist A is the 6 tracks in declared (HUNT_TRACKS) order; playlist B
+    is the reverse membership of the same 6. Tags land through
+    ``StateWriter.set_field`` with ``source="manual"``.
+    """
+    if len(HUNT_TRACKS) < 6:
+        raise SystemExit("[ERROR] HUNT_TRACKS must contain at least 6 tracks")
+    _discard_stale_revision(data_dir)
+    _reset_feedback_dir(data_dir)
+    audio_dir = data_dir / AUDIO_SUBDIR
+    files = ensure_audio(audio_dir, HUNT_TRACKS)
+    state_db_path = data_dir / "state" / "state.db"
+    rows = _ingest_and_verify(data_dir, audio_dir, files, "autoplay-hunt")
+    _seed_playlists(state_db_path, rows)
+
+    ordered_ids = _stable_ids_in_track_order(rows, HUNT_TRACKS, "autoplay-hunt")
+    bpm_by_stable_id = {
+        stable_id: track.bpm for stable_id, track in zip(ordered_ids, HUNT_TRACKS, strict=True)
+    }
+    now = datetime.now(UTC).isoformat()
+    conn = state_db.open_rw(state_db_path)
+    writer = StateWriter(conn, actor="e2e-deckload-fixture")
+    try:
+        for stable_id in ordered_ids:
+            writer.set_field(
+                stable_id, "bpm", bpm_by_stable_id[stable_id],
+                source="manual", modified_at=now, confidence=1.0,
+            )
+            writer.set_field(
+                stable_id, "key", HUNT_CAMELOT_KEY,
+                source="manual", modified_at=now, confidence=1.0,
+            )
+        writer.insert_playlist(
+            playlist_id=HUNT_PLAYLIST_A_ID,
+            name=HUNT_PLAYLIST_A_NAME,
+            vendor="fixture",
+            vendor_pl_id=HUNT_PLAYLIST_A_ID,
+        )
+        writer.set_playlist_memberships(HUNT_PLAYLIST_A_ID, ordered_ids)
+        writer.insert_playlist(
+            playlist_id=HUNT_PLAYLIST_B_ID,
+            name=HUNT_PLAYLIST_B_NAME,
+            vendor="fixture",
+            vendor_pl_id=HUNT_PLAYLIST_B_ID,
+        )
+        writer.set_playlist_memberships(HUNT_PLAYLIST_B_ID, list(reversed(ordered_ids)))
+    finally:
+        writer.close()
+        conn.close()
+    return rows
+
+
 def write_manifest(
     manifest_path: Path,
     rows: list[tuple[str, str | None, str | None]],
     *,
     autoplay_chain_playlist_id: str | None = None,
     autoplay_chain_playlist_name: str | None = None,
+    autoplay_hunt_playlist_a_id: str | None = None,
+    autoplay_hunt_playlist_a_name: str | None = None,
+    autoplay_hunt_playlist_b_id: str | None = None,
+    autoplay_hunt_playlist_b_name: str | None = None,
 ) -> None:
     """Write the machine-readable sibling of ``main()``'s stdout listing.
 
@@ -509,6 +633,10 @@ def write_manifest(
         "empty_playlist_id": EMPTY_PLAYLIST_ID,
         "autoplay_chain_playlist_id": autoplay_chain_playlist_id,
         "autoplay_chain_playlist_name": autoplay_chain_playlist_name,
+        "autoplay_hunt_playlist_a_id": autoplay_hunt_playlist_a_id,
+        "autoplay_hunt_playlist_a_name": autoplay_hunt_playlist_a_name,
+        "autoplay_hunt_playlist_b_id": autoplay_hunt_playlist_b_id,
+        "autoplay_hunt_playlist_b_name": autoplay_hunt_playlist_b_name,
         "tracks": [
             {"stable_id": stable_id, "title": title, "file_path": file_path}
             for stable_id, title, file_path in rows
@@ -558,18 +686,41 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--seed-autoplay-hunt",
+        action="store_true",
+        help=(
+            "build a 6-track hunt library with two playlists (error-hunt "
+            "suite only; implies --seed-playlists; exclusive with "
+            "--seed-autoplay-chain)"
+        ),
+    )
+    parser.add_argument(
         "--manifest",
         default=None,
         help="absolute path to write a machine-readable JSON manifest",
     )
     args = parser.parse_args(argv)
+    if args.seed_autoplay_chain and args.seed_autoplay_hunt:
+        raise SystemExit(
+            "[ERROR] --seed-autoplay-chain and --seed-autoplay-hunt are mutually exclusive"
+        )
     data_dir = Path(args.data_dir).expanduser()
     if not data_dir.is_absolute():
         raise SystemExit(f"[ERROR] --data-dir must be absolute, got {args.data_dir!r}")
     data_dir.mkdir(parents=True, exist_ok=True)
     autoplay_chain_playlist_id: str | None = None
     autoplay_chain_playlist_name: str | None = None
-    if args.seed_autoplay_chain:
+    autoplay_hunt_playlist_a_id: str | None = None
+    autoplay_hunt_playlist_a_name: str | None = None
+    autoplay_hunt_playlist_b_id: str | None = None
+    autoplay_hunt_playlist_b_name: str | None = None
+    if args.seed_autoplay_hunt:
+        rows = build_autoplay_hunt(data_dir)
+        autoplay_hunt_playlist_a_id = HUNT_PLAYLIST_A_ID
+        autoplay_hunt_playlist_a_name = HUNT_PLAYLIST_A_NAME
+        autoplay_hunt_playlist_b_id = HUNT_PLAYLIST_B_ID
+        autoplay_hunt_playlist_b_name = HUNT_PLAYLIST_B_NAME
+    elif args.seed_autoplay_chain:
         rows = build_autoplay_chain(data_dir)
         autoplay_chain_playlist_id = AUTOPLAY_CHAIN_PLAYLIST_ID
         autoplay_chain_playlist_name = AUTOPLAY_CHAIN_PLAYLIST_NAME
@@ -587,6 +738,10 @@ def main(argv: list[str] | None = None) -> int:
             rows,
             autoplay_chain_playlist_id=autoplay_chain_playlist_id,
             autoplay_chain_playlist_name=autoplay_chain_playlist_name,
+            autoplay_hunt_playlist_a_id=autoplay_hunt_playlist_a_id,
+            autoplay_hunt_playlist_a_name=autoplay_hunt_playlist_a_name,
+            autoplay_hunt_playlist_b_id=autoplay_hunt_playlist_b_id,
+            autoplay_hunt_playlist_b_name=autoplay_hunt_playlist_b_name,
         )
         print(f"[OK] manifest written to {manifest_path}")
     return 0

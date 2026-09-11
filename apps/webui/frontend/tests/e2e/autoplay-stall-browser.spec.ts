@@ -161,8 +161,20 @@ test('a LATER stall starts collapsed and opens on the FIRST click', async ({ pag
 });
 
 test('the banner does not obscure the deck controls beneath it', async ({ page }) => {
-	const deckControl = page.locator('[data-testid="grid-adjust-deck-1"]').first();
-	const before = await deckControl.boundingBox();
+	// Transport, not the disabled planned grid-adjust button: PLAY-08 is about
+	// whether the operator can still HIT play/cue while the expanded list is
+	// up (issue #1659). Play is disabled until a track is loaded, and
+	// click({ trial: true }) fails on disabled, so load first.
+	const play = page.locator('[data-testid="play-deck-1"]');
+	await page.waitForFunction(() => window.musicDjToolsPerformance !== undefined);
+	await page.getByText('All Tracks', { exact: true }).first().click();
+	await expect(page.locator(TRACK_ROW).first()).toBeVisible({ timeout: 30_000 });
+	const [stableId] = await _visibleStableIds(page);
+	expect(stableId, 'the ingested fixture must expose at least one track').toBeTruthy();
+	await _dispatch(page, { type: 'load', deck: 1, stable_id: stableId });
+	await expect(play).toBeEnabled();
+
+	const before = await play.boundingBox();
 	// FAIL, never skip (Codex r3974819407). A null box means the one check that
 	// answers "does the banner cover the decks" could not be MEASURED, and
 	// reporting no failure for an unmeasured acceptance condition is the exact
@@ -171,7 +183,7 @@ test('the banner does not obscure the deck controls beneath it', async ({ page }
 	// not quietly retired.
 	expect(
 		before,
-		'deck 1 grid control has no box at this viewport, so the underlay check could not run'
+		'deck 1 play control has no box at this viewport, so the underlay check could not run'
 	).not.toBeNull();
 
 	await raiseStall(page, 15);
@@ -182,15 +194,16 @@ test('the banner does not obscure the deck controls beneath it', async ({ page }
 	// Still where it was, and still the topmost element at its own centre: the
 	// banner is fixed and outside the grid, so it must not have reflowed the
 	// decks NOR be painted over them.
-	const after = await deckControl.boundingBox();
-	expect(after, 'the deck control vanished when the banner appeared').not.toBeNull();
+	const after = await play.boundingBox();
+	expect(after, 'the deck play control vanished when the banner appeared').not.toBeNull();
 	expect(Math.round(after!.y)).toBe(Math.round(before!.y));
-	const topmostIsDeckControl = await deckControl.evaluate((element) => {
+	await play.click({ trial: true });
+	const topmostIsPlay = await play.evaluate((element) => {
 		const box = element.getBoundingClientRect();
 		const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
 		return element === hit || element.contains(hit);
 	});
-	expect(topmostIsDeckControl, 'the stall list is painted over a deck control').toBe(true);
+	expect(topmostIsPlay, 'the stall list is painted over a deck transport control').toBe(true);
 });
 
 // ----- real exhaustion, end to end ----------------------------------------
@@ -205,7 +218,9 @@ async function _dispatch(page: Page, command: unknown): Promise<unknown> {
 	}, command);
 }
 
-async function _query(page: Page): Promise<{ decks: Record<number, { duration_ms: number | null }> }> {
+async function _query(
+	page: Page
+): Promise<{ decks: Record<number, { duration_ms: number | null; playing: boolean }> }> {
 	return page.evaluate(() => {
 		const ipc = window.musicDjToolsPerformance;
 		if (ipc === undefined) throw new Error('performance IPC is not installed');
@@ -299,6 +314,14 @@ test('a REAL exhaustion, driven end to end, puts the banner on screen', async ({
 		await expect(banner).toBeVisible({ timeout: 60_000 });
 		await expect(banner).toContainText('no next unplayed track in playlist order');
 		await expect(banner).toContainText('Enforce play order');
+
+		// PLAY-08 persistence in the browser (issue #1659): the banner must
+		// stay up after the stalled source itself stops. IPC-pause, not a
+		// wait for natural end: this is the DOM twin of OVERSHOOT CONTROL in
+		// autoplay-stall-persistence.test.mjs.
+		await _dispatch(page, { type: 'play', deck: 1, playing: false });
+		await expect.poll(async () => (await _query(page)).decks[1].playing).toBe(false);
+		await expect(banner).toBeVisible();
 	} finally {
 		const deleted = await page.request.delete(`/api/v1/playlists/${playlist.playlistId}`, {
 			headers: { 'If-Match': playlist.etag }

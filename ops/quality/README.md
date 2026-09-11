@@ -446,3 +446,11 @@ Highest-value targets, in the order they are worth doing:
 preflight` at 41, against a limit of 12. Two files sit at maintainability
    rank C: `apps/webui/crate_sync.py` (MI 5.0) and `apps/vocals/cli.py`
    (MI 6.1), on a scale where anything under 20 is hard to change safely.
+
+## Scored rubric (not this ratchet)
+
+The per-surface code-quality rubric in [`rubric/README.md`](rubric/README.md)
+scores `open-dj`, `apps/open_dj`, `apps/adapters`, and
+`apps/webui/frontend` independently. It catches doc and contract defects that
+lint and tests miss. It does **not** update `baseline.json` and is not part of
+`just quality`.

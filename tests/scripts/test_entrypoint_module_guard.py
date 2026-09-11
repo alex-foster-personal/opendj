@@ -58,6 +58,7 @@ GUARDED_ENTRYPOINTS = [
     "scripts/pr_ci_coverage.py",
     "scripts/provenance_cli.py",
     "scripts/quality_gate.py",
+    "scripts/quality_rubric.py",
     "scripts/redteam_filing.py",
     "scripts/redteam_trigger.py",
     "scripts/review_coverage.py",
@@ -71,7 +72,7 @@ def _module_name(rel_path: str) -> str:
     return rel_path[: -len(".py")].replace("/", ".")
 
 
-@pytest.mark.parametrize("rel_path", ["scripts/pin_mark_merged.py", "scripts/quality_gate.py"])
+@pytest.mark.parametrize("rel_path", ["scripts/pin_mark_merged.py", "scripts/quality_gate.py", "scripts/quality_rubric.py"])
 def test_module_form_help_exits_zero(rel_path: str) -> None:
     result = subprocess.run(
         [sys.executable, "-m", _module_name(rel_path), "--help"],
