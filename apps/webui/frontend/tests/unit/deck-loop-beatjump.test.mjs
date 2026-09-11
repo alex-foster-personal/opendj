@@ -214,30 +214,92 @@ test('resizing the saved engaged beat loop replaces its matching safety snapshot
 	);
 });
 
-test('natural-end safety re-entry reconstructs a whole beat loop from its grid anchor', () => {
-	const reentry = loops.phaseLockedSafetyLoopAtTrackEnd(
-		DRIFTING_GRID,
-		{ in_ms: 135, out_ms: 2040, beat_length: 4, armed: true },
-		4000
-	);
+const DRIFTING_SAFETY = { in_ms: 135, out_ms: 2040, beat_length: 4, armed: true };
+
+test('phaseLockedSafetyLoop reconstructs a whole beat loop from its grid anchor', () => {
+	const reentry = loops.phaseLockedSafetyLoop(DRIFTING_GRID, DRIFTING_SAFETY, 4000);
 	assert.deepEqual(reentry, { in_ms: 135, out_ms: 2040, engaged: true, beat_length: 4 });
 	assert.equal(
-		loops.phaseLockedSafetyLoopAtTrackEnd(
+		loops.phaseLockedSafetyLoop(
 			DRIFTING_GRID,
 			{ in_ms: 135, out_ms: 2040, beat_length: null, armed: true },
 			4000
 		),
 		null,
-		'a safety loop without a beat count must stop at track end rather than re-entering off-grid'
+		'a safety loop without a beat count cannot be reconstructed on-grid'
 	);
 	assert.equal(
-		loops.phaseLockedSafetyLoopAtTrackEnd(
-			[],
-			{ in_ms: 135, out_ms: 2040, beat_length: 4, armed: true },
-			4000
-		),
+		loops.phaseLockedSafetyLoop([], { in_ms: 135, out_ms: 2040, beat_length: 4, armed: true }, 4000),
 		null,
-		'a gridless safety slot must take the normal natural-end stop'
+		'a gridless safety slot cannot be reconstructed on-grid'
+	);
+});
+
+test('playbackReachedSafetyLoopOut fires when linear playhead crosses the saved out', () => {
+	const base = {
+		active: true,
+		startPositionSec: 1.5,
+		startContextTime: 0,
+		tempoRatio: 1,
+		safety: DRIFTING_SAFETY,
+		liveLoop: null
+	};
+	assert.equal(
+		loops.playbackReachedSafetyLoopOut({ ...base, atContextTime: 0.54 }),
+		true,
+		'linear playhead at the saved out crosses the threshold'
+	);
+	assert.equal(
+		loops.playbackReachedSafetyLoopOut({
+			...base,
+			liveLoop: { in_ms: 135, out_ms: 2040, engaged: true, beat_length: 4 }
+		}),
+		false,
+		'an already engaged live loop must not double-fire SAFE'
+	);
+	assert.equal(
+		loops.playbackReachedSafetyLoopOut({
+			...base,
+			safety: { ...DRIFTING_SAFETY, armed: false },
+			atContextTime: 0.54
+		}),
+		false,
+		'a disarmed slot must not engage'
+	);
+	assert.equal(
+		loops.playbackReachedSafetyLoopOut({
+			...base,
+			startPositionSec: 2.1,
+			atContextTime: 20
+		}),
+		false,
+		'a segment that started past the saved out did not reach it by playback'
+	);
+	assert.equal(
+		loops.playbackReachedSafetyLoopOut({
+			...base,
+			startPositionSec: 0,
+			atContextTime: 2.04
+		}),
+		true,
+		'a first pass from before the in-point still reaches the saved out'
+	);
+	assert.equal(
+		loops.playbackReachedSafetyLoopOut({ ...base, active: false, atContextTime: 0.54 }),
+		false,
+		'an inactive segment cannot trigger SAFE'
+	);
+});
+
+test('disarmSafetyLoopOnExplicitExit keeps endpoints but clears armed', () => {
+	assert.deepEqual(loops.disarmSafetyLoopOnExplicitExit(DRIFTING_SAFETY), {
+		...DRIFTING_SAFETY,
+		armed: false
+	});
+	assert.equal(loops.disarmSafetyLoopOnExplicitExit(null), null);
+	assert.deepEqual(
+		loops.disarmSafetyLoopOnExplicitExit({ ...DRIFTING_SAFETY, armed: false }),
+		{ ...DRIFTING_SAFETY, armed: false }
 	);
 });
 
@@ -704,6 +766,22 @@ test('resizedLoopRangeMs throws rather than clipping when a resize does not fit 
 		() => loops.resizedLoopRangeMs(DRIFTING_GRID, { in_ms: 2530, out_ms: 608 }, 2, 'start', 5000),
 		/finite 0 <= in_ms < out_ms/i
 	);
+});
+
+// -------------------------------------------------- SAFE loop-out wiring
+
+test('SAFE engages at loop out via playbackReachedSafetyLoopOut, not at natural end', async () => {
+	const engineSource = await readFile('src/lib/rb/audio-engine.svelte.ts', 'utf8');
+	const naturalEndBlock = engineSource.match(
+		/if \(naturalEndNeedsRevisionedStop[\s\S]*?\n\t\}/
+	)?.[0];
+	assert.ok(naturalEndBlock, 'natural-end block is present');
+	assert.doesNotMatch(naturalEndBlock, /phaseLockedSafetyLoop/);
+	assert.match(engineSource, /playbackReachedSafetyLoopOut\(/);
+	assert.match(engineSource, /st\.safety_loop = disarmSafetyLoopOnExplicitExit\(st\.safety_loop\)/);
+	const seekExitBlock = engineSource.match(/if \(exitLoop\) st\.loop = null;[\s\S]{0,200}/)?.[0];
+	assert.ok(seekExitBlock, 'seek-out loop exit is present');
+	assert.doesNotMatch(seekExitBlock, /disarmSafetyLoopOnExplicitExit/);
 });
 
 // -------------------------------------------------- restart-loop wiring
