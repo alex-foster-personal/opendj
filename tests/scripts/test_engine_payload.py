@@ -22,10 +22,7 @@ Single-line acceptance checks, in the repo's "if X then broken" shape:
 
 from __future__ import annotations
 
-import importlib
-import re
 import subprocess
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -324,20 +321,15 @@ def test_the_lock_is_parsed_with_its_via_edges() -> None:
 @pytest.mark.requirement("INSTALL-12")
 def test_excluding_a_dependency_drops_what_only_it_needed() -> None:
     kept, dropped = prune_excluded(parse_locked_export(LOCK_SAMPLE), "music-dj-tools")
-    assert dropped == [
-        "audioread",
-        "cffi",
-        "pyacoustid",
-        "pycparser",
-        "requests",
-        "standard-aifc",
-    ]
+    assert dropped == ["audioread", "pyacoustid", "requests", "standard-aifc"]
     assert {entry.name for entry in kept} == {
         "fastapi",
         "starlette",
         "idna",
         "anyio",
         "cryptography",
+        "cffi",
+        "pycparser",
     }
 
 
@@ -362,30 +354,6 @@ def test_every_exclusion_states_why_it_is_safe() -> None:
         assert len(reason) > 80, f"{name} has no real justification recorded"
 
 
-def _cffi_import_lines(package: str) -> list[str]:
-    """Every line under an installed package that imports cffi."""
-    root = Path(importlib.import_module(package).__file__).parent
-    pattern = re.compile(r"^\s*(import|from)\s+(cffi|_cffi_backend)\b")
-    return [
-        f"{path.relative_to(root)}:{line}"
-        for path in sorted(root.rglob("*.py"))
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if pattern.match(line)
-    ]
-
-
-@pytest.mark.requirement("INSTALL-12")
-def test_the_cffi_exclusion_claim_holds_for_the_locked_cryptography() -> None:
-    """The cffi exclusion claims cryptography never imports it.
-
-    Absence needs a control: the same scan over cffi itself must FIND its
-    own backend import, or the probe proves nothing.
-    """
-    assert "cffi" in EXCLUDED_DEPENDENCIES
-    assert _cffi_import_lines("cffi"), "the probe finds no cffi import even in cffi"
-    assert _cffi_import_lines("cryptography") == []
-    assert _cffi_import_lines("jwt") == []
-
 
 def _pylib_with(tmp_path: Path, *dist_infos: str) -> Path:
     pylib = tmp_path / "pylib"
@@ -395,8 +363,8 @@ def _pylib_with(tmp_path: Path, *dist_infos: str) -> Path:
 
 
 @pytest.mark.requirement("INSTALL-12")
-def test_installed_distributions_normalizes_names_like_the_lock() -> None:
-    pylib = _pylib_with(Path(tempfile.mkdtemp()), "annotated_doc-0.0.4", "cffi-2.0.0")
+def test_installed_distributions_normalizes_names_like_the_lock(tmp_path: Path) -> None:
+    pylib = _pylib_with(tmp_path, "annotated_doc-0.0.4", "cffi-2.0.0")
     assert installed_distributions(pylib) == {"annotated-doc": "0.0.4", "cffi": "2.0.0"}
 
 
@@ -415,13 +383,22 @@ def test_an_exact_locked_install_passes_even_with_marker_skipped_packages(
 
 
 @pytest.mark.requirement("INSTALL-12")
-def test_a_pruned_package_re_resolved_by_uv_is_a_stray(tmp_path: Path) -> None:
-    """The Fri 11 Sep 2026 failure: cffi pruned, then re-installed at 2.1.1."""
+def test_a_package_uv_resolved_past_the_lock_is_a_stray(tmp_path: Path) -> None:
+    """The Fri 11 Sep 2026 finding: without --no-deps uv installed cffi 2.1.1
+    from cryptography's wheel metadata while the lock pins 2.0.0."""
     pylib = _pylib_with(tmp_path, "cryptography-46.0.7", "cffi-2.1.1")
     kept, _ = prune_excluded(parse_locked_export(LOCK_SAMPLE), "music-dj-tools")
     with pytest.raises(PayloadBuildError) as excinfo:
         assert_installed_is_locked(pylib, kept)
     assert "cffi==2.1.1" in str(excinfo.value)
+
+
+@pytest.mark.requirement("INSTALL-12")
+def test_a_package_the_lock_never_names_is_a_stray(tmp_path: Path) -> None:
+    pylib = _pylib_with(tmp_path, "fastapi-0.136.3", "leftpad-1.0.0")
+    with pytest.raises(PayloadBuildError) as excinfo:
+        assert_installed_is_locked(pylib, parse_locked_export(LOCK_SAMPLE))
+    assert "leftpad==1.0.0" in str(excinfo.value)
 
 
 @pytest.mark.requirement("INSTALL-12")
@@ -549,6 +526,7 @@ def _verify_report(**overrides: object) -> dict[str, object]:
             "native_available": True,
             "native_import_error": None,
         },
+        "crypto": {"has_crypto": True, "rust_bindings_error": None},
     }
     report.update(overrides)
     return report
@@ -569,6 +547,20 @@ def test_a_payload_on_the_numpy_fallback_stops_the_build() -> None:
                     "selected": "python-numpy",
                     "native_available": False,
                     "native_import_error": "ModuleNotFoundError: ...",
+                }
+            )
+        )
+
+
+def test_a_payload_whose_crypto_bindings_do_not_load_stops_the_build() -> None:
+    """Fri 11 Sep 2026: cffi pruned, cryptography's _rust import failed, pyjwt
+    swallowed it, and the route-table boot still passed with RS256 dead."""
+    with pytest.raises(PayloadBuildError, match="has_crypto=False"):
+        assert_verify_report(
+            _verify_report(
+                crypto={
+                    "has_crypto": False,
+                    "rust_bindings_error": "ModuleNotFoundError: No module named '_cffi_backend'",
                 }
             )
         )
