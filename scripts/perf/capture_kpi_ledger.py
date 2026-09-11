@@ -7,14 +7,11 @@ Append-only: never edit or delete an existing entry. A failed probe writes
 from __future__ import annotations
 
 import json
-import os
 import socket
 import subprocess
-import tempfile
 import urllib.error
 import urllib.request
 from collections.abc import Sequence
-from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -184,25 +181,9 @@ def required_error_rows(
 
 
 def append_entries(path: Path, new_entries: Sequence[dict[str, Any]]) -> None:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
-            payload = {"schema_version": 1, "entries": []}
-    else:
-        payload = {"schema_version": 1, "entries": []}
-    payload.setdefault("entries", []).extend(list(new_entries))
-    fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=1)
-            handle.write("\n")
-        os.replace(tmp_name, path)
-    except Exception:
-        with suppress(OSError):
-            os.unlink(tmp_name)
-        raise
+    from scripts.perf.kpi_ledger_append import append_entries as splice_append
+
+    splice_append(Path(path), list(new_entries), validate=False)
 
 
 def format_appended(row: dict[str, Any]) -> str:

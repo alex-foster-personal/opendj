@@ -20,7 +20,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from scripts.perf.kpi_ceiling import CEILING_FACTOR, ceiling_exceeded, trailing_median_ms
+from scripts.perf.capture_kpi_ledger import format_appended
+from scripts.perf.capture_kpis import capture_s5_against_engine
+from scripts.perf.kpi_ceiling import CEILING_FACTOR, ceiling_verdict, trailing_median_ms
 from scripts.perf.kpi_ledger_append import append_entries, load_ledger
 from scripts.perf.perf_kpi_config import REPO_ROOT, PerfKpiConfig, kpi_name
 
@@ -45,6 +47,7 @@ class WarmMedian:
 class NightlyOutcome:
     entries: list[dict[str, Any]]
     breaches: list[dict[str, Any]]
+    unknowns: list[dict[str, Any]]
     exit_code: int
 
 
@@ -149,11 +152,11 @@ def find_ceiling_breaches(
             continue
         name = kpi_name(item.leg, item.profile_key)
         trailing = trailing_median_ms(ledger_entries, kpi=name, today=today)
-        if ceiling_exceeded(
+        if ceiling_verdict(
             warm_median_ms=item.median_ms,
             trailing_median_ms=trailing,
             factor=CEILING_FACTOR,
-        ):
+        ) == "breach":
             breaches.append(
                 {
                     "kpi": name,
@@ -164,6 +167,43 @@ def find_ceiling_breaches(
                 }
             )
     return breaches
+
+
+def find_ceiling_unknowns(
+    ledger_entries: list[dict[str, Any]],
+    measurements: list[WarmMedian],
+    *,
+    today: dt.date,
+) -> list[dict[str, Any]]:
+    unknowns: list[dict[str, Any]] = []
+    for item in measurements:
+        if item.leg != "anlz" or item.median_ms is None:
+            continue
+        name = kpi_name(item.leg, item.profile_key)
+        trailing = trailing_median_ms(ledger_entries, kpi=name, today=today)
+        if ceiling_verdict(
+            warm_median_ms=item.median_ms,
+            trailing_median_ms=trailing,
+            factor=CEILING_FACTOR,
+        ) == "unknown":
+            unknowns.append(
+                {
+                    "kpi": name,
+                    "warm_median_ms": item.median_ms,
+                    "trailing_median_ms": None,
+                    "factor": CEILING_FACTOR,
+                    "profile_key": item.profile_key,
+                    "reason": "no trailing 7-day median",
+                }
+            )
+    return unknowns
+
+
+def _track_stable_id(config: PerfKpiConfig, key: str) -> str | None:
+    for track in config.tracks:
+        if track.key == key:
+            return track.stable_id
+    return None
 
 
 def append_history_row(path: Path, row: dict[str, Any]) -> None:
@@ -408,11 +448,23 @@ def run_nightly(
         measurements=measurements,
     )
     append_entries(config.ledger_path, rows)
+    s5_rows = capture_s5_against_engine(
+        engine=base_url,
+        ledger=config.ledger_path,
+        data_dir=config.data_dir,
+        small=_track_stable_id(config, "small_mp3"),
+        large=_track_stable_id(config, "large_mp3"),
+        stemmed=_track_stable_id(config, "stemmed_mp3"),
+        sha=git_sha,
+    )
+    for s5_row in s5_rows:
+        print(format_appended(s5_row))
     ledger = load_ledger(config.ledger_path)
     breaches = find_ceiling_breaches(ledger["entries"], measurements, today=today)
+    unknowns = find_ceiling_unknowns(ledger["entries"], measurements, today=today)
     exit_code = 0
+    stamp = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     if breaches:
-        stamp = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         append_history_row(
             config.history_log,
             {
@@ -427,4 +479,22 @@ def run_nightly(
         if file_issue:
             file_ceiling_issue(breaches, repository=repository, git_sha=git_sha)
         exit_code = 3
-    return NightlyOutcome(entries=rows, breaches=breaches, exit_code=exit_code)
+    if unknowns:
+        append_history_row(
+            config.history_log,
+            {
+                "ts": stamp,
+                "event": "ceiling_unknown",
+                "machine": config.machine,
+                "status": "ok",
+                "git_sha": git_sha,
+                "reason": "no trailing 7-day median",
+                "unknowns": unknowns,
+            },
+        )
+    return NightlyOutcome(
+        entries=rows,
+        breaches=breaches,
+        unknowns=unknowns,
+        exit_code=exit_code,
+    )
