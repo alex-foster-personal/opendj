@@ -26,20 +26,33 @@ _USAGE = (
 )
 
 
-def run(rest: Sequence[str], *, as_json: bool) -> int:
+def run(
+    rest: Sequence[str],
+    *,
+    as_json: bool,
+    state_db: Path | None = None,
+) -> int:
     if not rest:
         print(_USAGE, file=sys.stderr)
         return 1
     verb, *args = rest
     if verb == KEY_SEGMENTS_VERB:
-        return _key_segments(args, as_json=as_json)
+        return _key_segments(args, as_json=as_json, default_state_db=state_db)
     print(f"unknown track verb: {verb!r}\n{_USAGE}", file=sys.stderr)
     return 1
 
 
-def _key_segments(args: Sequence[str], *, as_json: bool) -> int:
+_RBX_SOURCE_REASON = "key lane source is rekordbox, not own"
+
+
+def _key_segments(
+    args: Sequence[str],
+    *,
+    as_json: bool,
+    default_state_db: Path | None = None,
+) -> int:
     stable_id: str | None = None
-    state_db: Path | None = None
+    state_db = default_state_db
     position = 0
     while position < len(args):
         token = args[position]
@@ -63,9 +76,14 @@ def _key_segments(args: Sequence[str], *, as_json: bool) -> int:
     # command's startup path for a head most invocations never take.
     from apps.webui.server.rb_vendor_pkg.own_key_overlay import apply_own_key_segments
 
-    block = apply_own_key_segments(
-        {}, stable_id, state_db_path=state_db
-    )["key_segments"]
+    overlay = apply_own_key_segments({}, stable_id, state_db_path=state_db)
+    block = overlay.get("key_segments")
+    if block is None:
+        block = {
+            "status": "missing",
+            "reason": _RBX_SOURCE_REASON,
+            "segments": [],
+        }
     if as_json:
         print(json.dumps(block, indent=2, sort_keys=True))
         return 0

@@ -28,6 +28,7 @@ from ..backend import StateBackend
 from ..deps import get_read_state
 from ..models import QualityOut
 from ..rb_vendor_pkg import own_beatgrid_overlay
+from ..rb_vendor_pkg.own_overlays import apply_own_overlays
 from . import analysis as analysis_routes
 from . import analysis_source as analysis_source_routes
 
@@ -426,7 +427,7 @@ def get_track_anlz(
             # PR #1587). Applied here rather than inside `local_anlz_payload`, which
             # belongs to the waveform lane; this route already owns choosing between
             # the two branches.
-            payload = own_beatgrid_overlay.apply_own_beatgrid(payload, stable_id, state_db_path)
+            payload = apply_own_overlays(payload, stable_id, state_db_path)
         elif code == "ANALYSIS_NOT_FOUND":
             # A MAPPED track whose vendor ANLZ files are missing, unsafe, or
             # wholly unparseable -- ordinarily a hard 404. `build_anlz_payload`
@@ -441,7 +442,7 @@ def get_track_anlz(
             # from `empty_anlz_payload`'s local-import stub.
             payload = rb_vendor.empty_anlz_payload(stable_id, points)
             payload["cues"] = rb_vendor.fetch_cues(content.vendor_id)
-            payload = own_beatgrid_overlay.apply_own_beatgrid(payload, stable_id, state_db_path)
+            payload = apply_own_overlays(payload, stable_id, state_db_path)
             if payload["beatgrid"]["source"] != own_beatgrid_overlay.SOURCE_OWN and beatgrid_source != "own":
                 # Neither this DB-level overlay nor the explicit PARITY-02
                 # toggle wants own here, so there is nothing real to show:

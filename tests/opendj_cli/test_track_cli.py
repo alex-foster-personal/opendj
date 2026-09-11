@@ -207,3 +207,29 @@ def test_key_segments_with_no_own_record_reports_missing(state_db: Path) -> None
 def test_track_rejects_an_unknown_verb() -> None:
     done = _run_track_cli(["track"], data_dir=Path("/tmp"))
     assert done.returncode != 0
+
+
+def test_key_segments_with_default_rbx_source_reports_missing(state_db: Path) -> None:
+    done = _run_track_cli(
+        ["track", "key-segments", "sid-rbx", "--json"],
+        data_dir=state_db.parent.parent,
+    )
+    printed = json.loads(done.stdout)
+    assert done.returncode == 0
+    assert printed["status"] == "missing"
+    assert printed["reason"] == "key lane source is rekordbox, not own"
+    assert printed["segments"] == []
+
+
+def test_top_level_state_db_reaches_the_track_parser(state_db: Path) -> None:
+    stable_id = "sid-cli-state-db"
+    _seed_two_segment_record(state_db, stable_id)
+    data_dir = state_db.parent.parent
+    done = _run_track_cli(
+        ["--state-db", str(state_db), "track", "key-segments", stable_id, "--json"],
+        data_dir=data_dir,
+    )
+    printed = json.loads(done.stdout)
+    assert done.returncode == 0
+    assert printed["status"] == "ok"
+    assert len(printed["segments"]) == 2

@@ -167,6 +167,12 @@ def _parser(as_json: bool = False) -> _Parser:
     parser.add_argument(
         "--clock", default=None, help="ramp clock deck: master or 1..4 (default master)"
     )
+    parser.add_argument(
+        "--state-db",
+        type=Path,
+        default=None,
+        help="state.db override for opendj track (read-only analysis surface)",
+    )
     return parser
 
 
@@ -619,7 +625,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if head == _TRACK_COMMAND:
             from apps.opendj_cli import track_cli
 
-            return track_cli.run(rest, as_json=args.json)
+            return track_cli.run(rest, as_json=args.json, state_db=args.state_db)
         orders, over = _plan(args, head, rest)
         return _dispatch(args, resolve_origin(args.lock), orders, over)
     except InvocationError as error:

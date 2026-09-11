@@ -94,7 +94,10 @@ def _key_row_is_stale(
     assert db_row is not None
     current = canonical_beatgrid_record(stable_id, db_path=Path(db_row[2]))
     if current is None:
-        return True
+        # No canonical beatgrid to compare against yet: the row may still win
+        # canonical for scalar projection. Segment staleness is enforced at
+        # read time in the /anlz overlay.
+        return False
     return not beatgrid_dependency_matches(
         depends_on, beatgrid_identity_from_record(current)
     )
@@ -388,7 +391,14 @@ def refresh_for_record(conn: sqlite3.Connection, record: AnalysisRecord) -> None
     parsed = parse_own_backend(record.backend)
     if parsed is None:
         return
-    refresh_lanes(conn, record.stable_id, sorted(set(record.lanes) | {parsed.lane}))
+    lanes = set(record.lanes) | {parsed.lane}
+    if parsed.lane == "beatgrid":
+        # An own beatgrid write can stale every ok key record that names it.
+        # Recompute key canonical + projection in the same transaction so
+        # effective_fields() does not keep serving a scalar from a dependency
+        # the /anlz overlay already treats as stale_dependency.
+        lanes.add("key")
+    refresh_lanes(conn, record.stable_id, sorted(lanes))
 
 
 def refresh_lanes(
