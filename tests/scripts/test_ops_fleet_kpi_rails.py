@@ -308,6 +308,40 @@ def test_a_negative_reading_age_is_never_treated_as_permanently_fresh(tmp_path):
     assert "gate=allow" not in out
 
 
+def _write_seven_day(fixture, account: str, pct: str, stamp: str) -> None:
+    state = fixture / "jobs" / "state"
+    (state / f"{account}-seven-day-pct").write_text(f"{pct}\n")
+    (state / f"{account}-seven-day-measured-at").write_text(f"{stamp}\n")
+
+
+def test_a_spent_weekly_window_denies_a_lane_the_five_hour_meter_would_allow(tmp_path):
+    """If a lane reads gate=allow while its account's fresh seven-day reading is
+    at or above the weekly mark then broken. Fri 11 Sep 2026: account3 read
+    five_hour_pct=0 and seven_day_pct=100, can-spawn.sh's weekly rail refused
+    every one of its lanes, both merge lanes ticked into "hit your weekly
+    limit", and this board printed gate=allow for all of them."""
+    fixture = _copy_fixture(tmp_path)
+    _write_seven_day(fixture, "acct-green", "100", "2026-09-04T18:25:00Z")  # 300 s before NOW
+
+    out = _run(_env(fixture, _home(tmp_path, token_profile=True))).stdout
+    assert (
+        "account lane=frontend-hotspots account=acct-green five_hour_pct=42 age_s=300 "
+        "gate=deny (seven_day_pct=100 >=90: the weekly window is spent" in out
+    )
+    assert "account=acct-green five_hour_pct=42 age_s=300 gate=allow" not in out
+
+
+def test_a_weekly_reading_below_the_mark_or_stale_leaves_allow_standing(tmp_path):
+    """CONTROL for the weekly deny: if a fresh 89 or a stale 100 turns the lane
+    red then broken. The overshoot would refuse every lane whose weekly meter
+    stopped updating, which is the five-hour rail's job to name, not this one's."""
+    for pct, stamp in (("89", "2026-09-04T18:25:00Z"), ("100", "2026-09-04T17:48:20Z")):
+        fixture = _copy_fixture(tmp_path / pct)
+        _write_seven_day(fixture, "acct-green", pct, stamp)
+        out = _run(_env(fixture, _home(tmp_path / pct, token_profile=True))).stdout
+        assert "account lane=frontend-hotspots account=acct-green five_hour_pct=42 age_s=300 gate=allow" in out, (pct, stamp)
+
+
 def test_flip_gate_refuses_when_account_rotation_is_absent_entirely(tmp_path):
     """If the whole rotation file is missing then broken the same way as an empty one."""
     fixture = _copy_fixture(tmp_path)
