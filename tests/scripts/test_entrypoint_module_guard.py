@@ -59,6 +59,7 @@ GUARDED_ENTRYPOINTS = [
     "scripts/provenance_cli.py",
     "scripts/quality_gate.py",
     "scripts/redteam_filing.py",
+    "scripts/redteam_local_api.py",
     "scripts/redteam_trigger.py",
     "scripts/review_coverage.py",
     "scripts/review_thread_triage.py",
