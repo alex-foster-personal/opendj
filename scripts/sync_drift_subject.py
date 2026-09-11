@@ -60,9 +60,9 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from apps.analysis import store as analysis_store
 from apps.analysis import queue_stale as analysis_queue_stale
 from apps.analysis import queue_store as analysis_queue_store
+from apps.analysis import store as analysis_store
 from apps.database import generate_agents_md
 from apps.dedup import schema as dedup_schema
 from apps.engine_core.store import schema as engine_schema
