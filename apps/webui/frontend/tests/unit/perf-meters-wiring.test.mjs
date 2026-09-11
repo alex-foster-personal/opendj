@@ -40,3 +40,9 @@ test('PerfMeters samples with untrack and perfMeterSampleIntervalMs', () => {
 		'the old fixed 2000ms interval must not return'
 	);
 });
+
+test('PerfMeters open panel points at Chrome Task Manager capture', () => {
+	const meters = source('src/lib/components/rb/PerfMeters.svelte');
+	assert.match(meters, /Chrome Task Manager/);
+	assert.match(meters, /Shift\+Esc/);
+});

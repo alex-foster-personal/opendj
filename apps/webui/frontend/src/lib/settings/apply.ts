@@ -17,6 +17,12 @@ import {
 	setHideTodoSettings,
 	setJogRadialWaveform,
 	setLibraryDensity,
+	setLyricsDeckLine,
+	setLyricsGlobal,
+	setLyricsHoverScrub,
+	setLyricsLibraryCol,
+	setLyricsLoadStrategy,
+	setLyricsWaveformOverlay,
 	setNextOnlyFilter,
 	setTechnicallyWorkingAnimate,
 	setTheme,
@@ -25,6 +31,7 @@ import {
 	type DeckLayoutDurationMs,
 	type DeckLayoutMode,
 	type LibraryDensity,
+	type LyricsLoadStrategy,
 	type UiTheme
 } from '$lib/rb/prefs.svelte';
 import {
@@ -43,6 +50,12 @@ export const ALLOWED_SETTING_KEYS = [
 	'auto_play_maximize_reach',
 	'next_only_filter',
 	'hide_todo_settings',
+	'lyrics_global',
+	'lyrics_library_col',
+	'lyrics_hover_scrub',
+	'lyrics_load_strategy',
+	'lyrics_waveform_overlay',
+	'lyrics_deck_line',
 	'technically_working_animate',
 	'jog_radial_waveform',
 	'deck_layout',
@@ -85,6 +98,18 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.next_only_filter;
 		case 'hide_todo_settings':
 			return uiPrefs.hide_todo_settings;
+		case 'lyrics_global':
+			return uiPrefs.lyrics_global;
+		case 'lyrics_library_col':
+			return uiPrefs.lyrics_library_col;
+		case 'lyrics_hover_scrub':
+			return uiPrefs.lyrics_hover_scrub;
+		case 'lyrics_load_strategy':
+			return uiPrefs.lyrics_load_strategy;
+		case 'lyrics_waveform_overlay':
+			return uiPrefs.lyrics_waveform_overlay;
+		case 'lyrics_deck_line':
+			return uiPrefs.lyrics_deck_line;
 		case 'technically_working_animate':
 			return uiPrefs.technically_working_animate;
 		case 'jog_radial_waveform':
@@ -151,6 +176,28 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'hide_todo_settings':
 			setHideTodoSettings(_asBool(value, key));
+			return;
+		case 'lyrics_global':
+			setLyricsGlobal(_asBool(value, key));
+			return;
+		case 'lyrics_library_col':
+			setLyricsLibraryCol(_asBool(value, key));
+			return;
+		case 'lyrics_hover_scrub':
+			setLyricsHoverScrub(_asBool(value, key));
+			return;
+		case 'lyrics_load_strategy': {
+			if (value !== 'in-view' && value !== 'hover' && value !== 'off') {
+				throw new Error(`lyrics_load_strategy must be in-view|hover|off, got ${String(value)}`);
+			}
+			setLyricsLoadStrategy(value as LyricsLoadStrategy);
+			return;
+		}
+		case 'lyrics_waveform_overlay':
+			setLyricsWaveformOverlay(_asBool(value, key));
+			return;
+		case 'lyrics_deck_line':
+			setLyricsDeckLine(_asBool(value, key));
 			return;
 		case 'technically_working_animate':
 			setTechnicallyWorkingAnimate(_asBool(value, key));

@@ -76,6 +76,11 @@
 	let modePickerEl: HTMLDetailsElement | undefined = $state();
 	let modeMenuStyle = $state('');
 
+	const liveAppMode = APP_MODES.find((mode) => mode.id === 'performance');
+	if (liveAppMode === undefined) {
+		throw new Error('APP_MODES is missing the live /performance route');
+	}
+
 	const autoPlayTitle: string = $derived.by(() => {
 		const d = describeAutoPlayMode(uiPrefs);
 		if (d.mode === 'off') return `${d.short} - ${d.detail}`;
@@ -257,8 +262,8 @@
 	<StemsProgress />
 
 	<details class="mode-picker" bind:this={modePickerEl} ontoggle={_placeModeMenu}>
-		<summary class="mode-dd" aria-label="Choose app mode" title="App mode picker - PERFORMANCE is the current mode">
-			PERFORMANCE
+		<summary class="mode-dd" aria-label="Choose app mode" title="App mode picker - Gig is the current mode">
+			{liveAppMode.label.toUpperCase()}
 			<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
 				<path d="M0.5 1 L3.5 4 L6.5 1" fill="none" stroke="currentColor" stroke-width="1.2" />
 			</svg>

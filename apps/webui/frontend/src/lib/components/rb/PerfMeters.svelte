@@ -317,6 +317,13 @@
 					</li>
 				{/each}
 			</ul>
+			<p
+				class="perf-meters-chrome-tm-hint"
+				title="Chromium sessions only. Capture renderer vs GPU vs Browser per docs/perf/performance-register.md. Packaged WKWebView has no Chrome Task Manager."
+			>
+				For Chromium dev sessions, use Chrome Task Manager (Shift+Esc) to capture
+				tab-renderer CPU and memory; see the performance register.
+			</p>
 		</div>
 	{/if}
 </div>
@@ -410,5 +417,11 @@
 	}
 	.perf-breakdown-reset:hover {
 		border-color: var(--rb-text-dim);
+	}
+	.perf-meters-chrome-tm-hint {
+		margin: 8px 0 0;
+		font-size: 10px;
+		color: var(--rb-text-dim);
+		line-height: 1.4;
 	}
 </style>

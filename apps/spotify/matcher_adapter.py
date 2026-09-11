@@ -20,27 +20,30 @@ Accept policy (CONTEXT D2):
 
 See ``apps/sync/matcher.py`` for the local-files equivalent.
 """
+
 from __future__ import annotations
 
 import re
 import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable, Literal
+from typing import Literal
 
 from .client import SpotifyTrack
 
 __all__ = [
+    "ACCEPT_CONFIDENCE",
+    "DURATION_TOLERANCE_MS",
+    "MIN_SIGNALS_FOR_AUTO",
+    "REVIEW_CONFIDENCE",
     "LocalTrack",
     "MatchResult",
     "MatchedPair",
-    "match_spotify_tracks",
-    "normalise_title",
-    "normalise_artist",
     "load_local_tracks",
-    "ACCEPT_CONFIDENCE",
-    "REVIEW_CONFIDENCE",
-    "DURATION_TOLERANCE_MS",
-    "MIN_SIGNALS_FOR_AUTO",
+    "match_spotify_tracks",
+    "normalise_artist",
+    "normalise_title",
+    "score_spotify_candidate",
 ]
 
 
@@ -142,8 +145,7 @@ def normalise_title(title: str) -> str:
             break
         s = new
     s = _PUNCT_RE.sub(" ", s)
-    s = _WS_RE.sub(" ", s).strip().casefold()
-    return s
+    return _WS_RE.sub(" ", s).strip().casefold()
 
 
 def normalise_artist(artist: str) -> str:
@@ -151,8 +153,7 @@ def normalise_artist(artist: str) -> str:
     if not artist:
         return ""
     s = _PUNCT_RE.sub(" ", artist)
-    s = _WS_RE.sub(" ", s).strip().casefold()
-    return s
+    return _WS_RE.sub(" ", s).strip().casefold()
 
 
 def _artist_set(artists: Iterable[str]) -> set[str]:
@@ -183,12 +184,24 @@ def _score_pair(src: SpotifyTrack, tgt: LocalTrack) -> tuple[float, list[str]]:
         score += _W_ARTIST
         signals.append("artist")
 
-    if tgt.duration_ms is not None and src.duration_ms:
-        if abs(src.duration_ms - tgt.duration_ms) <= DURATION_TOLERANCE_MS:
-            score += _W_DURATION
-            signals.append("duration")
+    if (
+        tgt.duration_ms is not None
+        and src.duration_ms
+        and abs(src.duration_ms - tgt.duration_ms) <= DURATION_TOLERANCE_MS
+    ):
+        score += _W_DURATION
+        signals.append("duration")
 
     return score, signals
+
+
+def score_spotify_candidate(
+    source: SpotifyTrack,
+    target: LocalTrack,
+) -> tuple[float, tuple[str, ...]]:
+    """Public CAT-01 scoring primitive for cross-service catalog adapters."""
+    confidence, signals = _score_pair(source, target)
+    return confidence, tuple(signals)
 
 
 def _classify(confidence: float, signals: list[str]) -> Literal["matched", "review", "unmatched"]:
