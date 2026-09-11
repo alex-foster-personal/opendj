@@ -48,6 +48,8 @@ def track(
     own_key_camelot: str | None = "8A",
     own_key_openkey: str | None = "1m",
     rb_pssi: bool = False,
+    rb_phrases: list[dict[str, Any]] | None = None,
+    own_phrases: list[dict[str, Any]] | None = None,
     rb_cue_db: bool | None = None,
     rb_cues_db: list[dict[str, Any]] | None = None,
     own_cues: list[dict[str, Any]] | None = None,
@@ -69,6 +71,10 @@ def track(
         "rb_ext_readable": rb_ext_readable,
         "rb_pvdi": rb_pvdi,
     }
+    if rb_phrases is not None:
+        row["rb_phrases"] = rb_phrases
+    if own_phrases is not None:
+        row["own_phrases"] = own_phrases
     if rb_cues_db is not None:
         row["rb_cues_db"] = rb_cues_db
         row["rb_cue_db"] = bool(rb_cues_db)
@@ -239,4 +245,97 @@ def round1_fixture() -> dict[str, Any]:
             track("absent-audio", present=False),
         ],
         round_n=1,
+    )
+
+
+_REFERENCE_PHRASES: list[dict[str, Any]] = [
+    {"start_s": 0.0, "end_s": 16.0, "kind": 2, "mood": 2},
+    {"start_s": 16.0, "end_s": 32.0, "kind": 4, "mood": 2},
+]
+
+
+def _shift_phrases(phrases: list[dict[str, Any]], delta_s: float) -> list[dict[str, Any]]:
+    return [
+        {
+            "start_s": p["start_s"] + delta_s,
+            "end_s": p["end_s"] + delta_s,
+            "kind": p["kind"],
+            "mood": p["mood"],
+        }
+        for p in phrases
+    ]
+
+
+def round1_phrase_fixture() -> dict[str, Any]:
+    """Six present rows exercising phrase classification and boundary bands."""
+    return payload(
+        [
+            track(
+                "phrase-exact",
+                rb_bpm_x100=None,
+                own_bpm=None,
+                rb_key_scale_name=None,
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_pssi=True,
+                rb_phrases=_REFERENCE_PHRASES,
+                own_phrases=_REFERENCE_PHRASES,
+            ),
+            track(
+                "phrase-shift-0.4",
+                rb_bpm_x100=None,
+                own_bpm=None,
+                rb_key_scale_name=None,
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_pssi=True,
+                rb_phrases=_REFERENCE_PHRASES,
+                own_phrases=_shift_phrases(_REFERENCE_PHRASES, 0.4),
+            ),
+            track(
+                "phrase-shift-2.0",
+                rb_bpm_x100=None,
+                own_bpm=None,
+                rb_key_scale_name=None,
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_pssi=True,
+                rb_phrases=_REFERENCE_PHRASES,
+                own_phrases=_shift_phrases(_REFERENCE_PHRASES, 2.0),
+            ),
+            track(
+                "phrase-kind-miss",
+                rb_bpm_x100=None,
+                own_bpm=None,
+                rb_key_scale_name=None,
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_pssi=True,
+                rb_phrases=_REFERENCE_PHRASES,
+                own_phrases=[
+                    {"start_s": 0.0, "end_s": 16.0, "kind": 99, "mood": 2},
+                    {"start_s": 16.0, "end_s": 32.0, "kind": 88, "mood": 2},
+                ],
+            ),
+            track(
+                "phrase-no-own",
+                rb_bpm_x100=None,
+                own_bpm=None,
+                rb_key_scale_name=None,
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_pssi=True,
+                rb_phrases=_REFERENCE_PHRASES,
+            ),
+            track(
+                "phrase-missing-pssi",
+                rb_bpm_x100=None,
+                own_bpm=None,
+                rb_key_scale_name=None,
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_pssi=False,
+                own_phrases=_REFERENCE_PHRASES,
+            ),
+        ]
     )
