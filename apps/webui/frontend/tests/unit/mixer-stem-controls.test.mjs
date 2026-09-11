@@ -23,7 +23,7 @@ test('channel strip compiles and renders the shared StemRow below its fader', as
 	assert.match(strip, /import StemRow from '\.\.\/deck\/StemRow\.svelte';/);
 	assert.match(
 		strip,
-		/<div class="fader-slot">[\s\S]*?<\/div>\s*<span class="stem-label">STEM<\/span>\s*<div class="stem-slot">\s*<StemRow/,
+		/<div class="fader-slot">[\s\S]*?<\/div>\s*<span class="stem-label"[^>]*>STEM<\/span>\s*<div class="stem-slot">\s*<StemRow/,
 		'StemRow must occupy the reserved STEM slot directly below the fader'
 	);
 });

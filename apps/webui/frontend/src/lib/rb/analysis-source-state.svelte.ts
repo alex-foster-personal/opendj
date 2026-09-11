@@ -16,15 +16,21 @@
 
 export type AnalysisSource = 'rekordbox' | 'own';
 
-/** Features with a genuine own-rolled counterpart to A/B against rekordbox.
- * Mirrors the one lane apps.analysis.lanes' 5 lanes that this UI exposes --
- * widen only once another lane grows a real own-rolled counterpart. */
-export const ANALYSIS_SOURCE_FEATURES = ['beatgrid'] as const;
+/** Selection lanes exposed in the PARITY-02 top-bar dropdown. */
+export const ANALYSIS_SOURCE_FEATURES = [
+	'beatgrid',
+	'key',
+	'waveform',
+	'loudness',
+	'vocal'
+] as const;
 export type AnalysisSourceFeature = (typeof ANALYSIS_SOURCE_FEATURES)[number];
 
 interface AnalysisSourceState {
 	/** What the DAEMON last told us it has selected. Drives the visible control. */
 	features: Record<string, AnalysisSource>;
+	/** Lanes whose `own` option is allowed on this daemon (`GET .../source`). */
+	serving: readonly string[];
 	/** What the loaded DECKS are actually holding. See `_recordDeckSources`
 	 * in analysis-source.svelte.ts. Published rather than kept module-private
 	 * because the two can legitimately disagree for a poll interval, and an
@@ -35,5 +41,6 @@ interface AnalysisSourceState {
 
 export const analysisSourceState = $state<AnalysisSourceState>({
 	features: {},
-	deckFeatures: {}
+	deckFeatures: {},
+	serving: []
 });

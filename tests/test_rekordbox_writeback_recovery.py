@@ -220,7 +220,7 @@ def _plan_with_dest(source: Path, dest: Path):
 
     return SyncPlan(
         scope="probe",
-        files=(CrateFile(source=source, dest=dest, kind="track", size_bytes=0),),
+        files=(CrateFile(source=source, dest=dest, kind="audio", size_bytes=0),),
         skipped_streaming=0,
         skipped_absent=0,
     )

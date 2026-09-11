@@ -457,6 +457,51 @@
         "title": "AlignmentOut",
         "type": "object"
       },
+      "AnalysisOrderOut": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "phase": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "error"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "kind",
+          "phase"
+        ],
+        "title": "AnalysisOrderOut",
+        "type": "object"
+      },
+      "AnalysisOrdersOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AnalysisOrderOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AnalysisOrdersOut",
+        "type": "object"
+      },
       "AnalysisQueueItemOut": {
         "description": "One queued track. ``file_path`` is what the runner decodes.\n\nNamed apart from ``models.QueueItemOut`` (the M3 triage queues) on\npurpose: two Pydantic models sharing a name collapse into one OpenAPI\nschema, and the loser is served under the winner's shape.",
         "properties": {
@@ -558,10 +603,19 @@
             ],
             "description": "The toggle value this PUT's `toggle` just displaced for `lane`, read and overwritten under the same lock acquisition. Null for a GET, or a PUT that did not set `toggle`. A client's own prior GET/PUT response can be stale by the time it issues a later PUT (a concurrent agent's write can land in between), so a compensating rollback must restore THIS value, not one read earlier over a separate round trip.",
             "title": "Previous Toggle"
+          },
+          "serving": {
+            "description": "Selection lanes that currently have a serving own implementation on this daemon. Lanes absent from this list refuse PUT own.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Serving",
+            "type": "array"
           }
         },
         "required": [
-          "lanes"
+          "lanes",
+          "serving"
         ],
         "title": "AnalysisSourceOut",
         "type": "object"
@@ -1884,96 +1938,6 @@
           "event_id"
         ],
         "title": "ClientErrorTriageOut",
-        "type": "object"
-      },
-      "ClientEventIn": {
-        "properties": {
-          "client_event_id": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Client Event Id",
-            "type": "string"
-          },
-          "client_timestamp": {
-            "maxLength": 128,
-            "title": "Client Timestamp",
-            "type": "string"
-          },
-          "kind": {
-            "const": "page-view",
-            "title": "Kind",
-            "type": "string"
-          },
-          "language": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Language"
-          },
-          "path": {
-            "maxLength": 2048,
-            "minLength": 1,
-            "title": "Path",
-            "type": "string"
-          },
-          "referrer": {
-            "anyOf": [
-              {
-                "maxLength": 4096,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Referrer"
-          },
-          "secure_context": {
-            "title": "Secure Context",
-            "type": "boolean"
-          },
-          "url": {
-            "maxLength": 4096,
-            "minLength": 1,
-            "title": "Url",
-            "type": "string"
-          },
-          "user_agent": {
-            "maxLength": 2048,
-            "title": "User Agent",
-            "type": "string"
-          },
-          "viewport_height": {
-            "maximum": 100000.0,
-            "minimum": 0.0,
-            "title": "Viewport Height",
-            "type": "integer"
-          },
-          "viewport_width": {
-            "maximum": 100000.0,
-            "minimum": 0.0,
-            "title": "Viewport Width",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "client_event_id",
-          "kind",
-          "url",
-          "path",
-          "client_timestamp",
-          "user_agent",
-          "secure_context",
-          "viewport_width",
-          "viewport_height"
-        ],
-        "title": "ClientEventIn",
         "type": "object"
       },
       "ClientEventOut": {
@@ -6252,6 +6216,96 @@
         "title": "OverviewOut",
         "type": "object"
       },
+      "PageViewIn": {
+        "properties": {
+          "client_event_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Event Id",
+            "type": "string"
+          },
+          "client_timestamp": {
+            "maxLength": 128,
+            "title": "Client Timestamp",
+            "type": "string"
+          },
+          "kind": {
+            "const": "page-view",
+            "title": "Kind",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "referrer": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrer"
+          },
+          "secure_context": {
+            "title": "Secure Context",
+            "type": "boolean"
+          },
+          "url": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          },
+          "user_agent": {
+            "maxLength": 2048,
+            "title": "User Agent",
+            "type": "string"
+          },
+          "viewport_height": {
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Viewport Height",
+            "type": "integer"
+          },
+          "viewport_width": {
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Viewport Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_event_id",
+          "kind",
+          "url",
+          "path",
+          "client_timestamp",
+          "user_agent",
+          "secure_context",
+          "viewport_width",
+          "viewport_height"
+        ],
+        "title": "PageViewIn",
+        "type": "object"
+      },
       "PairingCreate": {
         "properties": {
           "direction": {
@@ -6639,6 +6693,68 @@
           "added_at"
         ],
         "title": "PendingTrackOut",
+        "type": "object"
+      },
+      "PerfSpanIn": {
+        "properties": {
+          "client_event_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Event Id",
+            "type": "string"
+          },
+          "client_timestamp": {
+            "maxLength": 128,
+            "title": "Client Timestamp",
+            "type": "string"
+          },
+          "duration_ms": {
+            "maximum": 86400000.0,
+            "minimum": 0.0,
+            "title": "Duration Ms",
+            "type": "number"
+          },
+          "kind": {
+            "const": "perf-span",
+            "title": "Kind",
+            "type": "string"
+          },
+          "method": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Method",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "stages": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stages"
+          }
+        },
+        "required": [
+          "client_event_id",
+          "kind",
+          "name",
+          "duration_ms",
+          "method",
+          "client_timestamp"
+        ],
+        "title": "PerfSpanIn",
         "type": "object"
       },
       "PerformanceFeedbackMarkIn": {
@@ -8621,7 +8737,25 @@
         "type": "object"
       },
       "RefreshIn": {
+        "description": "One refresh scope, including the explicit analysis-grid track order.",
         "properties": {
+          "analysis_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "vocals",
+                  "beatgrid",
+                  "key",
+                  "stems"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Kind"
+          },
           "batch_dir": {
             "anyOf": [
               {
@@ -8637,16 +8771,29 @@
             "default": "library",
             "enum": [
               "library",
-              "unmapped"
+              "unmapped",
+              "track"
             ],
             "title": "Scope",
             "type": "string"
+          },
+          "stable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Id"
           }
         },
         "title": "RefreshIn",
         "type": "object"
       },
       "RefreshStatusOut": {
+        "description": "The one-slot job's public, serializable state.",
         "properties": {
           "current_step": {
             "anyOf": [
@@ -9215,6 +9362,46 @@
             ],
             "title": "Key"
           },
+          "key_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Reason"
+          },
+          "key_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing"
+            ],
+            "title": "Key Status",
+            "type": "string"
+          },
+          "loudness_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Reason"
+          },
+          "loudness_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing"
+            ],
+            "title": "Loudness Status",
+            "type": "string"
+          },
           "match_context": {
             "title": "Match Context",
             "type": "string"
@@ -9315,6 +9502,10 @@
           "energy",
           "energy_source",
           "energy_reason",
+          "key_status",
+          "key_reason",
+          "loudness_status",
+          "loudness_reason",
           "match_context"
         ],
         "title": "SearchHit",
@@ -10094,6 +10285,23 @@
             "title": "Estimate Usd",
             "type": "number"
           },
+          "executor": {
+            "description": "modal farm or local on-device worker",
+            "title": "Executor",
+            "type": "string"
+          },
+          "local_refusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "why local stems are inert on this build; null when allowed",
+            "title": "Local Refusal"
+          },
           "pending": {
             "description": "audio on disk, no bundle yet: the work",
             "title": "Pending",
@@ -10143,6 +10351,7 @@
         "required": [
           "tier",
           "tier_name",
+          "executor",
           "total",
           "pending",
           "ready",
@@ -11795,6 +12004,46 @@
             ],
             "title": "Key"
           },
+          "key_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Reason"
+          },
+          "key_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing"
+            ],
+            "title": "Key Status",
+            "type": "string"
+          },
+          "loudness_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Reason"
+          },
+          "loudness_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing"
+            ],
+            "title": "Loudness Status",
+            "type": "string"
+          },
           "play_count": {
             "default": 0,
             "title": "Play Count",
@@ -11890,7 +12139,11 @@
           "artwork_status",
           "energy",
           "energy_source",
-          "energy_reason"
+          "energy_reason",
+          "key_status",
+          "key_reason",
+          "loudness_status",
+          "loudness_reason"
         ],
         "title": "TrackRowOut",
         "type": "object"
@@ -14163,6 +14416,101 @@
         ]
       }
     },
+    "/api/v1/analysis-queue/orders/{stable_id}": {
+      "get": {
+        "description": "Current shared-job state for a track, readable by UI and HTTP agents.",
+        "operationId": "get_track_analysis_orders_api_v1_analysis_queue_orders__stable_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisOrdersOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Analysis Orders",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis-queue/orders/{stable_id}/{kind}": {
+      "post": {
+        "description": "Order one real analysis CLI run through the same single refresh slot.",
+        "operationId": "order_track_analysis_api_v1_analysis_queue_orders__stable_id___kind__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisOrderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Order Track Analysis",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
     "/api/v1/analysis-queue/run": {
       "post": {
         "description": "Drain the queue now, through the shared one-slot refresh job.",
@@ -14793,7 +15141,22 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ClientEventIn"
+                "discriminator": {
+                  "mapping": {
+                    "page-view": "#/components/schemas/PageViewIn",
+                    "perf-span": "#/components/schemas/PerfSpanIn"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/PageViewIn"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PerfSpanIn"
+                  }
+                ],
+                "title": "Payload"
               }
             }
           },
@@ -19831,13 +20194,13 @@
         "operationId": "get_stems_plan_api_v1_stems_plan_get",
         "parameters": [
           {
-            "description": "Modal rung: S, M or L",
+            "description": "Modal rung S/M/L, or LOCAL when local-only",
             "in": "query",
             "name": "tier",
             "required": false,
             "schema": {
               "default": "M",
-              "description": "Modal rung: S, M or L",
+              "description": "Modal rung S/M/L, or LOCAL when local-only",
               "title": "Tier",
               "type": "string"
             }

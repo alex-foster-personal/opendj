@@ -23,7 +23,7 @@
 		type IngestCoverage,
 		type RefreshStatus
 	} from '$lib/rb/api-ingest';
-	import { RbApiError } from '$lib/rb/api-rb';
+	import { RbApiError } from '$lib/rb/api-rb-error';
 	import { jobProgress } from '$lib/rb/job-progress.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 

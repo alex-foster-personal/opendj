@@ -20,7 +20,7 @@ import os
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict
 
 from apps.webui.server.auth import (
@@ -36,6 +36,7 @@ from apps.webui.server.auth import (
     callback_url_for_origin,
     exchange_code,
 )
+from apps.webui.server.auth_timing import AuthTimer, last_capture
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -196,20 +197,26 @@ class MeOut(BaseModel):
 
 
 @router.post("/login", response_model=LoginOut)
-def start_login(body: LoginIn, request: Request) -> LoginOut:
+def start_login(body: LoginIn, request: Request) -> JSONResponse:
     """Begin sign-in: mint CSRF state + PKCE and return the consent URL.
 
     The caller (browser or agent) is responsible for actually visiting
     ``authorization_url``. Nothing is persisted until the callback lands.
     """
     config = _oauth_config()
-    origin = _resolve_origin(request, body.origin)
-    pending = _pending_logins(request).create(callback_url_for_origin(origin))
-    return LoginOut(
-        authorization_url=build_authorization_url(config, pending),
-        state=pending.state,
-        redirect_uri=pending.redirect_uri,
-    )
+    with AuthTimer.span("login"):
+        origin = _resolve_origin(request, body.origin)
+        pending = _pending_logins(request).create(callback_url_for_origin(origin))
+        payload = LoginOut(
+            authorization_url=build_authorization_url(config, pending),
+            state=pending.state,
+            redirect_uri=pending.redirect_uri,
+        )
+    capture = last_capture()
+    headers: dict[str, str] = {}
+    if capture is not None and capture.get("op") == "login":
+        headers["X-OpenDJ-Auth-Ms"] = str(int(capture["duration_ms"]))
+    return JSONResponse(content=payload.model_dump(), headers=headers)
 
 
 @router.get("/callback", include_in_schema=True)
@@ -240,21 +247,22 @@ def finish_login(
             },
         )
     config = _oauth_config()
-    try:
-        pending = _pending_logins(request).consume(state)
-        identity = exchange_code(config, pending, code)
-    except AuthFlowError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail={"code": "AUTH_EXCHANGE_FAILED", "message": str(exc)},
-        ) from exc
+    with AuthTimer.span("callback"):
+        try:
+            pending = _pending_logins(request).consume(state)
+            identity = exchange_code(config, pending, code)
+        except AuthFlowError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "AUTH_EXCHANGE_FAILED", "message": str(exc)},
+            ) from exc
 
-    token = _session_store(request).sign_in(identity)
-    spa_origin = pending.redirect_uri.removesuffix("/api/v1/auth/callback")
-    response = RedirectResponse(
-        url=f"{spa_origin}/", status_code=status.HTTP_303_SEE_OTHER,
-    )
-    _set_session_cookie(response, token)
+        token = _session_store(request).sign_in(identity)
+        spa_origin = pending.redirect_uri.removesuffix("/api/v1/auth/callback")
+        response = RedirectResponse(
+            url=f"{spa_origin}/", status_code=status.HTTP_303_SEE_OTHER,
+        )
+        _set_session_cookie(response, token)
     return response
 
 

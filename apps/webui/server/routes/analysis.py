@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import Callable, List, Literal, Optional
+from typing import Callable, List, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -275,11 +275,7 @@ def synthesize_fallback_beats(record: AnalysisRecord) -> list[FallbackBeatOut] |
             )
 
     beats: list[FallbackBeatOut] = []
-
-    def _emit(t: float, n: int, bar_s: float) -> None:
-        beats.append(FallbackBeatOut(
-            n=n, bpm=round(240.0 / bar_s, 2), t=round(t, 3),
-        ))
+    from .analysis_fallback_beats import fallback_emit, fallback_tail_beats
 
     # Bars between consecutive measured downbeats.
     for start, end in zip(downbeats, downbeats[1:]):
@@ -289,27 +285,9 @@ def synthesize_fallback_beats(record: AnalysisRecord) -> list[FallbackBeatOut] |
                 record.stable_id, f"bar of {bar_s:.4f}s implies >1200 BPM"
             )
         for k in range(BEATS_PER_BAR):
-            _emit(start + k * bar_s / BEATS_PER_BAR, k + 1, bar_s)
+            fallback_emit(beats, start + k * bar_s / BEATS_PER_BAR, k + 1, bar_s)
 
-    # Tail past the last downbeat, at the last measured bar tempo.
-    if len(downbeats) >= 2:
-        tail_bar_s = downbeats[-1] - downbeats[-2]
-    elif record.bpm > 0:
-        tail_bar_s = BEATS_PER_BAR * 60.0 / record.bpm
-    else:
-        # Single downbeat and no usable BPM: nothing anchors a grid.
-        return None
-    if tail_bar_s / BEATS_PER_BAR < _MIN_BEAT_INTERVAL_S:
-        raise _invalid_record(
-            record.stable_id, f"tempo bar of {tail_bar_s:.4f}s implies >1200 BPM"
-        )
-    t = downbeats[-1]
-    n = 1
-    while t < record.duration_s:
-        _emit(t, n, tail_bar_s)
-        t += tail_bar_s / BEATS_PER_BAR
-        n = n % BEATS_PER_BAR + 1
-    return beats
+    return fallback_tail_beats(record, downbeats, beats)
 
 
 # ----- endpoints --------------------------------------------------------------

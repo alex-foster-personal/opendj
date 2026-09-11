@@ -144,6 +144,7 @@ def test_rewrite_record_json_round_trips_8a() -> None:
     expected = canon.to_open_key(canon.from_camelot("8A"))
     assert expected == "1m"
     rewritten = rewrite_record_json(_record_json("8A", "8m"), expected)
+    assert rewritten is not None
     data = json.loads(rewritten)
     assert data["key_openkey"] == "1m"
     assert data["lanes"]["key"]["payload"]["openkey"] == "1m"

@@ -40,7 +40,6 @@
 	import { quickDrawUi } from '$lib/rb/quick-draw-ui.svelte';
 	import { installTrackDragGhost, removeTrackDragGhost } from '$lib/rb/drag-ghost';
 	import { beginTrackDrag, endTrackDrag, TRACK_STABLE_MIME } from '$lib/rb/track-drag.svelte';
-	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
 	import AutoPlayExplainer from './AutoPlayExplainer.svelte';
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
@@ -51,7 +50,12 @@
 	import AnalysisDotsPopover from './AnalysisDotsPopover.svelte';
 	import StemTags from './StemTags.svelte';
 	import VocalAnalyzeButton from './VocalAnalyzeButton.svelte';
-	import { computeVirtualWindow } from './virtual-window';
+	import {
+		computeVirtualWindow,
+		TRACK_TABLE_THEAD_PX,
+		masterFoldVisibility,
+		scrollTopForRowIndex
+	} from './virtual-window';
 	import { createRowVisibilityObserver } from './observe-row';
 	import {
 		ANALYSIS_COLORS,
@@ -65,6 +69,8 @@
 	import ContextMenu, { type ContextMenuItem } from '../ContextMenu.svelte';
 	import SpinnerIcon from './SpinnerIcon.svelte';
 
+	type DeckId = (typeof DECK_IDS)[number];
+
 	const DECKS: DeckId[] = [1, 2, 3, 4];
 	// Fixed row heights (virtualization window math requires constant height).
 	// compact = current tight rows; cosy = taller + slightly roomier cell pad.
@@ -75,8 +81,6 @@
 	// ----- AUTOPLAY-COL -----------------------------------------------------
 	const AUTOPLAY_ARROW = '\u2193'; // down; flip to \u2191 without re-plumbing
 	const AUTOPLAY_COL_COUNT = 18;
-	const AUTOPLAY_THEAD_H = 20;
-
 	let colWidths = $state<Record<ColId, number>>({ ...COL_DEFAULTS });
 	const manuallyResizedColumns = new Set<ColId>();
 	let resizeCol: ColId | null = null;
@@ -179,6 +183,20 @@
 		if (!keyCompat(key) || masterKeyColor === null) return base;
 		const border = `box-shadow: inset 0 0 0 1px ${masterKeyColor}`;
 		return base === undefined ? border : `${base};${border}`;
+	}
+
+	function keyCellInert(row: BrowserRow): boolean {
+		return row.key_status === 'failed' || row.key_status === 'missing';
+	}
+
+	function keyCellTitle(row: BrowserRow): string {
+		if (row.key_status === 'failed') {
+			return row.key_reason ?? 'key analysis failed';
+		}
+		if (row.key_status === 'missing') {
+			return row.key_reason ?? 'key not analyzed yet';
+		}
+		return `${camelotKeyHoverLabel(row.key) ?? 'Key not analyzed'} Dynamic key, musical mode, and chord progression analysis: not analyzed.`;
 	}
 
 	function bpmCellHeat(bpm: number | null) {
@@ -597,7 +615,7 @@
 			rankOf: autoPlayOrder.rankOf,
 			rowIndexOf,
 			rowHeight,
-			scrollTop: liveScrollTop - AUTOPLAY_THEAD_H,
+			scrollTop: liveScrollTop - TRACK_TABLE_THEAD_PX,
 			viewportHeight,
 			pad: rowHeight * 2
 		});
@@ -676,7 +694,8 @@
 			viewportHeight,
 			rowHeight,
 			rowCount: rows.length,
-			overscan: OVERSCAN
+			overscan: OVERSCAN,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX
 		})
 	);
 	const visibleRows = $derived(rows.slice(windowInfo.startIndex, windowInfo.endIndex));
@@ -692,7 +711,12 @@
 		if (idx < 0) return;
 		const el = wrapEl;
 		if (el === null) return;
-		const top = Math.max(0, idx * rh - Math.floor(vh / 3));
+		const top = scrollTopForRowIndex({
+			rowIndex: idx,
+			rowHeight: rh,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX,
+			offsetFromTopPx: Math.floor(vh / 3)
+		});
 		el.scrollTop = top;
 		liveScrollTop = top;
 		onscrollcursor(top);
@@ -702,14 +726,15 @@
 	const masterIndex = $derived(
 		masterStableId === null ? -1 : rows.findIndex((r) => r.stable_id === masterStableId)
 	);
-	const masterFold = $derived.by((): 'above' | 'below' | null => {
-		if (masterIndex < 0 || viewportHeight <= 0) return null;
-		const top = masterIndex * rowHeight;
-		const bottom = top + rowHeight;
-		if (bottom <= liveScrollTop + 2) return 'above';
-		if (top >= liveScrollTop + viewportHeight - 2) return 'below';
-		return null;
-	});
+	const masterFold = $derived.by((): 'above' | 'below' | null =>
+		masterFoldVisibility({
+			rowIndex: masterIndex,
+			rowHeight,
+			scrollTop: liveScrollTop,
+			viewportHeight,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX
+		})
+	);
 
 	/** Suggest-next hover: jump to row while hovered, restore scroll on leave. */
 	let _suggestSavedScroll: number | null = null;
@@ -731,14 +756,24 @@
 		if (_suggestSavedScroll === null) _suggestSavedScroll = el.scrollTop;
 		const rh = untrack(() => rowHeight);
 		const vh = untrack(() => viewportHeight);
-		const target = Math.max(0, idx * rh - Math.floor(vh / 3));
+		const target = scrollTopForRowIndex({
+			rowIndex: idx,
+			rowHeight: rh,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX,
+			offsetFromTopPx: Math.floor(vh / 3)
+		});
 		el.scrollTop = target;
 		liveScrollTop = target;
 	});
 
 	function jumpToMaster(): void {
 		if (wrapEl === null || masterIndex < 0) return;
-		const target = Math.max(0, masterIndex * rowHeight - viewportHeight * 0.35);
+		const target = scrollTopForRowIndex({
+			rowIndex: masterIndex,
+			rowHeight,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX,
+			offsetFromTopPx: viewportHeight * 0.35
+		});
 		wrapEl.scrollTop = target;
 		liveScrollTop = target;
 		onscrollcursor(target);
@@ -1452,15 +1487,20 @@
 						<td
 							class="c-key"
 							class:key-compat={keyCompat(row.key)}
+							class:key-inert={keyCellInert(row)}
 							style={keyCompatStyle(row.key)}
-							title={`${camelotKeyHoverLabel(row.key) ?? 'Key not analyzed'} Dynamic key, musical mode, and chord progression analysis: not analyzed.`}
+							title={keyCellTitle(row)}
 						>
-							{#snippet keyCharacters(text: string)}
-								{#each text as character}<span class:camelot-suffix={character === 'A' || character === 'B'}>{character}</span>{/each}
-							{/snippet}
-							{#each hl(row.key) as part, i (i)}
-								{#if part.hit}<mark class="find-hit">{@render keyCharacters(part.text)}</mark>{:else}{@render keyCharacters(part.text)}{/if}
-							{/each}
+							{#if row.key_status === 'failed' || row.key_status === 'missing'}
+								<span class="key-status">{row.key_status === 'failed' ? 'failed' : 'missing'}</span>
+							{:else}
+								{#snippet keyCharacters(text: string)}
+									{#each text as character}<span class:camelot-suffix={character === 'A' || character === 'B'}>{character}</span>{/each}
+								{/snippet}
+								{#each hl(row.key) as part, i (i)}
+									{#if part.hit}<mark class="find-hit">{@render keyCharacters(part.text)}</mark>{:else}{@render keyCharacters(part.text)}{/if}
+								{/each}
+							{/if}
 						</td>
 						<td
 							class="c-bpm"
@@ -2188,6 +2228,14 @@
 		border-radius: 2px;
 		padding-left: 4px;
 		padding-right: 4px;
+	}
+	.c-key.key-inert {
+		color: var(--rb-text-dim);
+		font-size: 0.85em;
+		text-transform: lowercase;
+	}
+	.key-status {
+		opacity: 0.85;
 	}
 	/* Sweet BPM: green wash only (no border). Half = purple wash. */
 	.c-bpm.bpm-sweet {

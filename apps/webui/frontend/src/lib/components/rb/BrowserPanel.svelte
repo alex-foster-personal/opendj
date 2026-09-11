@@ -31,8 +31,12 @@
 	import { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
 	import {
 		libraryHealthDot as _computeLibraryHealthDot,
-		type LibraryHealthDot
-	} from '$lib/rb/library-health-dots';
+		type LibraryHealthDot,
+		plannedTitle,
+		anyDeckPlaying,
+		createPlayingGate,
+		resolveRowVocals
+	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
 		PlaylistTrackRowWire,
@@ -45,8 +49,6 @@
 	// Deck state remains engine-owned; real load interactions route through
 	// the same validated dispatcher exposed to browser agents.
 	import { deckStates as decks, DECK_IDS, mixerState } from '$lib/rb/audio-engine.svelte';
-	import { resolveRowVocals } from '$lib/rb/row-vocals';
-	import { anyDeckPlaying, createPlayingGate } from '$lib/rb/playing-gate';
 	import {
 		createFilterDebounce,
 		recordCollectionSearchTiming,
@@ -163,6 +165,8 @@
 	import LyricSearchResults from './browser/LyricSearchResults.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
+	import { completeLibraryUsable } from '$lib/client-telemetry';
+	import { fillAllTracksPane } from './browser/fill-all-tracks';
 	import { fetchAllPages } from './browser/virtual-window';
 	import { ensureAudioPrefetch } from '$lib/rb/audio-prefetch-cache.svelte';
 	import {
@@ -174,8 +178,6 @@
 	} from './wave/anlz-cache.svelte';
 	import { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
 	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
-	import { plannedTitle } from '$lib/rb/planned-explainers';
-
 	// track-list-virtualization: TrackTable now DOM-virtualizes its render,
 	// so panes no longer cap fetches at 500 rows - All Tracks walks every
 	// cursor page (PAGE_SIZE is a per-request page size, not a result cap);
@@ -1284,9 +1286,9 @@
 			console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
 		}
 		for (const p of panes) {
-			// A blank pane has nothing to refresh, and a pane mid-load already
-			// has a newer load token that owns its rows.
-			if (p.playlist_id === null || p.loading) continue;
+			// A blank pane has nothing to refresh. Skip blocking loads
+			// (`loading`) and All Tracks background fills (`load_progress`).
+			if (p.playlist_id === null || p.loading || p.load_progress !== null) continue;
 			// Snapshotted BEFORE the await, then rechecked after it: the user
 			// can switch this pane to another playlist while the fetch is in
 			// flight, and writing the response then would paint pane B with
@@ -1538,14 +1540,23 @@
 		// completeLoad/failLoad no-op when a newer load superseded this one.
 		const seq = p.beginLoad(node.playlist_id, node.name);
 		try {
+			if (node.kind === 'all_tracks') {
+				await fillAllTracksPane({
+					pane: p,
+					seq,
+					fetchPage: (cursor) => listTracksHydrated({ limit: PAGE_SIZE, cursor }),
+					mapRow: (t, order) => _rowFromListWire(t, order),
+					progressTotal: allTracksNonBrokenCount,
+					onFirstPaint: () => completeLibraryUsable({ source: 'all-tracks' }),
+					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
+					onFillError: (error) => pushToast(`playlist load failed: ${error}`, 'error')
+				});
+				return;
+			}
 			const result =
-				node.kind === 'all_tracks'
-					? await _fetchAllRows((info) =>
-							p.updateLoadProgress(seq, info.loaded, allTracksNonBrokenCount)
-						)
-					: node.kind === 'missing_tracks'
-						? await fetchMissingTrackRows()
-						: await _fetchPlaylistRows(node.playlist_id);
+				node.kind === 'missing_tracks'
+					? await fetchMissingTrackRows()
+					: await _fetchPlaylistRows(node.playlist_id);
 			p.completeLoad(seq, result.rows, result.truncated, result.etag);
 		} catch (exc) {
 			if (p.failLoad(seq, String(exc))) {
@@ -1593,6 +1604,10 @@
 			energy: wire.energy,
 			energy_source: wire.energy_source,
 			energy_reason: wire.energy_reason,
+			key_status: wire.key_status ?? 'ok',
+			key_reason: wire.key_reason ?? null,
+			loudness_status: wire.loudness_status ?? 'ok',
+			loudness_reason: wire.loudness_reason ?? null,
 			file_exists: wire.file_exists,
 			is_streaming: wire.is_streaming,
 			spotify_pending:

@@ -64,8 +64,8 @@ test('the readiness flag reaches the sidebar and gates whether it renders rows',
 
 	const guard = sidebar.indexOf('{#if playlistsLoading}');
 	assert.ok(guard >= 0, 'SpotifySourcePanel must branch on playlistsLoading');
-	const rows = sidebar.indexOf('{#each playlists as playlist', guard);
-	assert.ok(rows > guard, 'the playlist rows must sit in the else side of that branch');
+	const rows = sidebar.indexOf('{#each visiblePlaylists as playlist', guard);
+	assert.ok(rows > guard, 'the playlist rows must sit in the ready branch after playlistsLoading clears');
 	assert.equal(
 		sidebar.slice(guard, rows).includes('{/if}'),
 		false,

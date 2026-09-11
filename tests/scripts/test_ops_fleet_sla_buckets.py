@@ -1,5 +1,7 @@
 """Wiring tests for ops/fleet/sla_buckets.py, the open-to-merge stage split.
 
+[if] the four SLA buckets do not sum to open-to-merge [then] fail, [else stop].
+
 Hermetic by construction: the script's SLA_GH_FIXTURES_DIR seam points every
 GitHub read at the committed fixture under tests/fixtures/fleet-sla/ instead of
 the network, so the tests run anywhere and never touch the repo. The fixture
@@ -53,6 +55,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -132,7 +135,7 @@ def _run(fixture: Path, *args: str) -> subprocess.CompletedProcess:
     )
 
 
-def _rows(fixture: Path) -> dict[int, dict[str, object]]:
+def _rows(fixture: Path) -> dict[int, dict[str, Any]]:
     result = _run(fixture, "--json")
     assert result.returncode == 0, result.stderr
     return {int(row["number"]): row for row in json.loads(result.stdout)}

@@ -62,6 +62,12 @@ class LaneSourceOut(BaseModel):
 
 class AnalysisSourceOut(BaseModel):
     lanes: dict[str, LaneSourceOut]
+    serving: list[str] = Field(
+        description=(
+            "Selection lanes that currently have a serving own implementation "
+            "on this daemon. Lanes absent from this list refuse PUT own."
+        )
+    )
     previous_toggle: str | None = Field(
         default=None,
         description=(
@@ -238,6 +244,17 @@ def _apply_toggle(
     return result
 
 
+def _refuse_unserved_own(lane: str, source: str) -> None:
+    if source != "own":
+        return
+    if lane in sel.SERVING_LANES:
+        return
+    raise HTTPException(
+        status_code=409,
+        detail={"error": f"lane {lane!r} has no serving implementation yet"},
+    )
+
+
 def _validate_put_body(body: AnalysisSourcePut) -> None:
     """Validate EVERYTHING before mutating ANYTHING. A PUT carrying a valid
     default and an invalid toggle used to persist the default and then
@@ -247,8 +264,10 @@ def _validate_put_body(body: AnalysisSourcePut) -> None:
         sel.check_lane(body.lane)
         if body.default is not None:
             sel.check_source(body.default)
+            _refuse_unserved_own(body.lane, body.default)
         if body.toggle is not None:
             sel.check_toggle_state(body.toggle)
+            _refuse_unserved_own(body.lane, body.toggle)
         if body.expected_toggle is not None:
             sel.check_toggle_state(body.expected_toggle)
     except sel.SelectionError as exc:

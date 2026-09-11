@@ -85,6 +85,62 @@ test('installVisitorTelemetry posts a page-view event once', async () => {
 	}
 });
 
+test('markLoginSubmit then completeLibraryUsable posts one perf-span with injected delay', async () => {
+	let body;
+	let resolvePosted;
+	const posted = new Promise((resolve) => {
+		resolvePosted = resolve;
+	});
+	globalThis.fetch = async (input) => {
+		body = await input.clone().json();
+		resolvePosted();
+		return new Response(JSON.stringify({ event_id: 'e2', stored: true }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' }
+		});
+	};
+	const storage = new Map();
+	defineGlobal('sessionStorage', {
+		getItem: (key) => storage.get(key) ?? null,
+		setItem: (key, value) => {
+			storage.set(key, value);
+		},
+		removeItem: (key) => {
+			storage.delete(key);
+		}
+	});
+	defineGlobal('performance', { timeOrigin: 1000 });
+
+	telemetry.markLoginSubmit(1000);
+	telemetry.markLoginNavigate(1100);
+	telemetry.completeLibraryUsable({ source: 'all-tracks', now: 1300 });
+	await posted;
+
+	assert.equal(body.kind, 'perf-span');
+	assert.equal(body.name, 'login-submit-to-library-usable');
+	assert.ok(body.duration_ms >= 200);
+});
+
+test('completeLibraryUsable without a pending submit is a no-op', async () => {
+	let posts = 0;
+	globalThis.fetch = async () => {
+		posts += 1;
+		return new Response(JSON.stringify({ event_id: 'e3', stored: true }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' }
+		});
+	};
+	defineGlobal('sessionStorage', {
+		getItem: () => null,
+		setItem: () => {},
+		removeItem: () => {}
+	});
+
+	telemetry.completeLibraryUsable({ source: 'playlist', now: 2000 });
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(posts, 0);
+});
+
 test('a rejecting fetch is swallowed and does not throw', async () => {
 	let sawReject = false;
 	let resolvePosted;

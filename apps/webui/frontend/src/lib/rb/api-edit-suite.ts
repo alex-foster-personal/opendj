@@ -13,7 +13,7 @@
 
 import type { components } from '../api-types';
 import { ApiError, api, unwrap } from '../api/client';
-import { RbApiError } from './api-rb';
+import { RbApiError } from './api-rb-error';
 
 /** Edit-suite routes put the machine code in `detail.error` (not
  * `detail.code`). Map from the parsed body so that contract stays intact. */

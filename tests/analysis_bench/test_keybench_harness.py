@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import struct
@@ -57,17 +58,18 @@ def test_harness_honors_paths_relative_to_manifest(tmp_path: Path) -> None:
             "error": None,
         }
 
-    class Args:
-        fixtures = str(staged / "manifest.json")
-        out = str(tmp_path / "arm.json")
-        limit = 0
+    args = argparse.Namespace(
+        fixtures=str(staged / "manifest.json"),
+        out=str(tmp_path / "arm.json"),
+        limit=0,
+    )
 
     assert _harness.run(
-        Args(), candidate="stub", version="test", device="cpu",
+        args, candidate="stub", version="test", device="cpu",
         build_analyzer=lambda: analyzer,
     ) == 0
     assert seen == [str(wav)]
-    payload = json.loads(Path(Args.out).read_text())
+    payload = json.loads(Path(args.out).read_text())
     assert payload["n_fixtures"] == 1
     assert payload["n_failed"] == 0
     assert payload["results"]["sid-1"]["key_camelot"] == "8B"
@@ -106,16 +108,17 @@ def test_throwing_analyzer_is_an_error_not_a_dropped_id(tmp_path: Path) -> None:
             raise RuntimeError("nope")
         return {"key_camelot": "8A", "key_openkey": "1m", "error": None}
 
-    class Args:
-        fixtures = str(staged / "manifest.json")
-        out = str(tmp_path / "arm.json")
-        limit = 0
+    args = argparse.Namespace(
+        fixtures=str(staged / "manifest.json"),
+        out=str(tmp_path / "arm.json"),
+        limit=0,
+    )
 
     assert _harness.run(
-        Args(), candidate="stub", version="test", device="cpu",
+        args, candidate="stub", version="test", device="cpu",
         build_analyzer=lambda: analyzer,
     ) == 0
-    payload = json.loads(Path(Args.out).read_text())
+    payload = json.loads(Path(args.out).read_text())
     assert set(payload["results"]) == {"ok", "boom"}
     assert payload["n_failed"] == 1
     assert payload["results"]["boom"]["error"].startswith("RuntimeError")

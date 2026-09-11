@@ -10,7 +10,7 @@
  * thin wrapper rather than editing it.
  */
 import { ApiError, api, unwrap } from '../api/client';
-import { RbApiError } from './api-rb';
+import { RbApiError } from './api-rb-error';
 import type { AnlzBeatgrid } from './anlz-types';
 
 /** GET /tracks/{sid}/beatgrid-fallback response (analysis.py::BeatgridFallbackOut).

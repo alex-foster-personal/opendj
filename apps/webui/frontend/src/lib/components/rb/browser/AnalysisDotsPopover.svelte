@@ -48,17 +48,14 @@
 	 *
 	 * DELIBERATELY NOT STORIED (no co-located .stories.ts), the same split
 	 * PerfMeters.svelte already establishes: this reaches for the live
-	 * jobProgress facade and calls startIngestRefresh (a real fetch), so it
+	 * jobProgress facade and calls the real track-order API, so it
 	 * cannot be a Storybook args-only render (storybook-stories.test.mjs
 	 * enforces exactly this line - see AnalysisDots.svelte's own doc
 	 * comment). AnalysisDots.svelte itself stays pure/storied; this wraps it.
 	 *
-	 * KNOWN GAP, stated rather than hidden: there is no per-track/per-kind
-	 * backend endpoint. The daemon's ingest pipeline only has three coarse
-	 * steps (analysis/stems/vocals - see api-ingest.ts), so "order" queues a
-	 * FULL-LIBRARY pass for the coarse step that covers the clicked kind,
-	 * which will include this track. It cannot target only this row, and the
-	 * queued-action label says so rather than implying a narrower scope.
+	 * The popover and an agent use the same typed track-order endpoint. It
+	 * records the requested stable ID and analysis kind in the shared job,
+	 * so an order made through either surface has the same live state here.
 	 *
 	 * FAIL-FAST FIX (bot review, PR #1291, 2 blocking P1s - same bug twice):
 	 * the first cut called startIngestRefresh() with no step selection at
@@ -86,12 +83,13 @@
 		ANALYSIS_COLORS,
 		ANALYSIS_ISSUE_COLORS,
 		ANALYSIS_LABELS,
+		analysisStatus,
 		jobProgress,
 		type AnalysisBadge,
 		type AnalysisIssues,
 		type AnalysisKind
 	} from '$lib/rb/job-progress.svelte';
-	import { startIngestRefresh } from '$lib/rb/api-ingest';
+	import { getTrackAnalysisOrders, orderTrackAnalysis } from '$lib/rb/api-ingest';
 	import { runAnalysisOrder } from '$lib/rb/analysis-order';
 	import { pushToast } from '$lib/stores.svelte';
 	import AnalysisDots from './AnalysisDots.svelte';
@@ -166,6 +164,10 @@
 		return 'analysis'; // beatgrid/key/cues/waveform/phrase/loudness/other share the one coarse step
 	}
 
+	function _isOrderable(kind: AnalysisKind): boolean {
+		return kind === 'vocals' || kind === 'beatgrid' || kind === 'key' || kind === 'stems';
+	}
+
 	function _ingestStepLabel(kind: AnalysisKind): string {
 		return _ingestStepId(kind);
 	}
@@ -188,8 +190,12 @@
 
 	function rowStateFor(kind: AnalysisKind): RowState {
 		const phase = jobPhaseFor(kind);
-		if (phase !== null) return { text: phase === 'queued' ? 'queued' : 'in-progress', clickable: false };
+		const status = analysisStatus(badge[kind] === true, phase);
+		if (status === 'queued' || status === 'in-progress') return { text: status, clickable: false };
 		if (kind === 'load') return { text: 'deck/audio only - not tracked here', clickable: false };
+		if (!_isOrderable(kind)) {
+			return { text: 'no producer is available for this analysis', clickable: false };
+		}
 
 		if (stableId !== null) {
 			if (ingestConfigStatus === 'error') {
@@ -224,10 +230,10 @@
 		}
 
 		if (mode === 'coverage') {
-			if (badge[kind] === true) return { text: 'done', clickable: false };
+			if (status === 'done') return { text: status, clickable: false };
 			return stableId === null
-				? { text: 'not analyzed', clickable: false }
-				: { text: 'not analyzed - click to queue', clickable: true, kind };
+				? { text: 'missing', clickable: false }
+				: { text: 'missing - click to queue', clickable: true, kind };
 		}
 		const issue = issues[kind];
 		if (issue === undefined) return { text: 'no detected issue', clickable: false };
@@ -241,21 +247,20 @@
 		if (_stepEnabled(kind) !== true) return; // mirrors rowStateFor's gate - never fire on an unconfirmed step
 		ordering = kind;
 		const sid = stableId;
-		// The transport-boundary decision (was the step actually included,
-		// never mark queued if not) lives in analysis-order.ts so it can be
-		// unit tested directly - see tests/unit/analysis-order.test.mjs.
-		await runAnalysisOrder(_ingestStepId(kind), _ingestStepLabel(kind), {
-			startIngestRefresh,
-			// Optimistic queued marker for THIS row only - runAnalysisOrder
-			// only calls this once the response CONFIRMS the step is
-			// included. The real phase transitions (running/done) still
-			// arrive through whatever already drives jobProgress for a
-			// refresh (TopBar's refresh badges it on completion), this
-			// does not invent one.
-			upsertJob: () => jobProgress.upsert({ stable_id: sid, kind, phase: 'queued' }),
+		await runAnalysisOrder(kind, {
+			orderTrackAnalysis: () => orderTrackAnalysis(sid, kind),
+			upsertJob: (phase) => jobProgress.upsert({ stable_id: sid, kind, phase }),
 			toast: pushToast
 		});
 		ordering = null;
+	}
+
+	async function refreshOrders(): Promise<void> {
+		if (stableId === null) return;
+		const sid = stableId;
+		for (const order of await getTrackAnalysisOrders(sid)) {
+			jobProgress.upsert({ stable_id: sid, kind: order.kind as AnalysisKind, phase: order.phase });
+		}
 	}
 
 	function _ensureIngestConfig(): void {
@@ -289,6 +294,7 @@
 		}
 		hovered = true;
 		_ensureIngestConfig();
+		void refreshOrders();
 	}
 
 	function onEnter(): void {

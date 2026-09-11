@@ -72,7 +72,12 @@ def _fn(name: str) -> ast.FunctionDef:
 # `desired_revision` and `presented_revision` into `presentation_clock`.
 
 
-def _published(playing: bool, source: str, desired: int = 7, presented: int = 7) -> dict:
+def _published(
+    playing: bool,
+    source: str,
+    desired: int | None = 7,
+    presented: int | None = 7,
+) -> dict:
     return {
         "playing": playing,
         "source": source,

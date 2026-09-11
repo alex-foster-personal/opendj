@@ -11,8 +11,13 @@ from ``writer`` itself -- see that module's docstring for why.
 """
 from __future__ import annotations
 
-from typing import Any, cast
+import sqlite3
+from contextlib import AbstractContextManager
+from typing import Any, Protocol
 
+from .events import EventBus, FakeEventBus
+from .sync_stamp import Stamp
+from .types import Event
 from .writer_common import (
     MEMBERSHIPS_TABLE,
     PLAYLISTS_TABLE,
@@ -21,13 +26,35 @@ from .writer_common import (
 )
 
 
+class _WriterHost(Protocol):
+    """StateWriter surface this mixin uses. Copy the real types; do not guess."""
+
+    bus: EventBus | FakeEventBus
+    _conn: sqlite3.Connection
+
+    def _tx(self) -> AbstractContextManager[sqlite3.Connection]: ...
+
+    def _stamp(self, table: str, row_pk: tuple[Any, ...], now: str) -> Stamp: ...
+
+    def _now_iso(self) -> str: ...
+
+    def _append_event(
+        self,
+        *,
+        kind: str,
+        stable_id: str | None,
+        payload: dict[str, Any],
+        ts: str | None = None,
+    ) -> Event: ...
+
+
 class _PlaylistWriterMixin:
     """Playlist mutation methods, mixed into ``StateWriter``."""
 
     # --- playlists ------------------------------------------------------
 
     def insert_playlist(
-        self,
+        self: _WriterHost,
         *,
         playlist_id: str,
         name: str,
@@ -95,7 +122,7 @@ class _PlaylistWriterMixin:
         return True
 
     def set_playlist_memberships(
-        self, playlist_id: str, stable_ids: list[str]
+        self: _WriterHost, playlist_id: str, stable_ids: list[str]
     ) -> None:
         """Full-replace playlist memberships. Positions become 0..N-1.
 
@@ -147,7 +174,7 @@ class _PlaylistWriterMixin:
             )
             self.bus.publish(ev)
 
-    def delete_playlist(self, playlist_id: str) -> bool:
+    def delete_playlist(self: _WriterHost, playlist_id: str) -> bool:
         """Tombstone a playlist and its memberships. Returns True when a live row existed.
 
         ADR 08 point 5 (round 1 finding 4a): a hard ``DELETE`` on a synced
@@ -227,24 +254,24 @@ class _PlaylistWriterMixin:
             self.bus.publish(ev)
         return True
 
-    def append_playlist_history(self, kind: str, payload: dict[str, Any]) -> object:
+    def append_playlist_history(
+        self: _WriterHost, kind: str, payload: dict[str, Any]
+    ) -> object:
         """Append a playlist.edit / undo / redo row on the events log.
 
         Does not change insert / memberships.set / delete payloads. Callers
         must already be inside the mutation's playlist_transaction (or accept
         a nested SAVEPOINT that commits on its own).
         """
-        # Host attrs live on StateWriter; this mixin is not independently typed.
-        writer = cast(Any, self)
-        now = writer._now_iso()
-        with writer._tx():
-            ev = writer._append_event(
+        now = self._now_iso()
+        with self._tx():
+            ev = self._append_event(
                 kind=kind,
                 stable_id=None,
                 payload=payload,
                 ts=now,
             )
-            writer.bus.publish(ev)
+            self.bus.publish(ev)
         return ev
 
 

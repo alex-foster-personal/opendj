@@ -25,7 +25,7 @@
  * free page count, and the fields it could not read are ABSENT, never zero.
  */
 
-import { API_BASE } from '$lib/api/client';
+import { API_BASE } from '$lib/api/base';
 import { bootScheduler, type BootScheduler } from './boot-scheduler';
 
 /** How often the engine is asked, while the page is visible. Low-rate on
