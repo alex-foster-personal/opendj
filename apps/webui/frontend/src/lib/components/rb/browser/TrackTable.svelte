@@ -70,6 +70,7 @@
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
 	import ContextMenu, { type ContextMenuItem } from '../ContextMenu.svelte';
 	import SpinnerIcon from './SpinnerIcon.svelte';
+	import { trackEditMenuItems, type TrackEditModalKind } from './track-edit-menu';
 
 	type DeckId = (typeof DECK_IDS)[number];
 
@@ -108,8 +109,8 @@
 		return [
 			...DECKS.map((deck) => ({ id: `load-${deck}`, label: `Load to deck ${deck}`, run: () => onloadrow(row, deck) })),
 			{ id: 'add-playlist', label: 'Add to playlist...' }, { id: 'edit', label: 'Edit' },
-			{ id: 'bulk-edit', label: `Bulk edit (${selected.length})` }, { id: 'find-replace', label: 'Find/replace' },
-			{ id: 'mytag', label: 'My Tag editor' }, { id: 'relocate', label: 'Relocate' },
+			...trackEditMenuItems(selected.length, onopeneditmodal),
+			{ id: 'relocate', label: 'Relocate' },
 			{ id: 'finder', label: 'Show in Finder' }, { id: 'copy-path', label: 'Copy path' },
 			{ id: 'analyze', label: 'Analyze' },
 			{ id: 'stems-generate', label: 'Stems: do next', run: onstemsdonext ? () => onstemsdonext(selected) : undefined },
@@ -299,7 +300,8 @@
 		 * it can measure. */
 		bodyOverlay = undefined as Snippet | undefined,
 		onstemsdonext = undefined as ((stableIds: string[]) => void) | undefined,
-		onlyricsdonext = undefined as ((stableIds: string[]) => void) | undefined
+		onlyricsdonext = undefined as ((stableIds: string[]) => void) | undefined,
+		onopeneditmodal = undefined as ((kind: TrackEditModalKind) => void) | undefined
 	}: {
 		/** Read contract: { rows, total, truncated, fetchWindow } - see
 		 * pane-contract.svelte.ts. */
@@ -372,6 +374,7 @@
 		onrefused?: (reason: string) => void;
 		onstemsdonext?: (stableIds: string[]) => void;
 		onlyricsdonext?: (stableIds: string[]) => void;
+		onopeneditmodal?: (kind: TrackEditModalKind) => void;
 		/** Genre chip / post-filter gestures. */
 		ongenrefilter?: (mode: 'strict' | 'loose' | 'clear' | 'undo', tag?: string) => void;
 		/** Epoch ms until which library dbl/triple remap to clear/undo. */
