@@ -61,8 +61,10 @@ from .probe_app_signals import (
 from .probe_log_store import append_bounded_jsonl, summarize_logs, trend_logs
 from .probe_native_metrics import (
     DarwinProcessMetrics,
+    churn_metrics_from_snapshots,
     machine_metrics,
     process_metric_record,
+    vm_stat_churn_snapshot,
     vmmap_summary,
 )
 from .probe_process_family import (
@@ -70,6 +72,7 @@ from .probe_process_family import (
     associate_process_family,
     bundle_build_identity,
     find_shell,
+    opendj_process_name,
     process_table,
     suspected_orphans,
 )
@@ -107,6 +110,10 @@ __all__ = [
 # tell "the app regressed" from "the app regressed and nothing recorded it".
 TREND_REPORT_FAILURE_EXIT = 3
 
+KERNEL_ELEVATED_LEVEL = 2
+PRESSURE_CHURN_EARLY_WARNING = 500
+PRESSURE_SAMPLE_ELEVATED_MS = 5000
+
 
 class OpenDJProbe:
     def __init__(
@@ -125,6 +132,8 @@ class OpenDJProbe:
         self.prior_io: dict[int, tuple[int, int]] = {}
         self.known_descendants: dict[int, tuple[str, str]] = {}
         self.build_by_shell_pid: dict[int, dict[str, Any]] = {}
+        self._prior_vm_stat: dict[str, int] | None = None
+        self._prior_vm_stat_at: float | None = None
 
     def _app_not_running_record(self, rows: list[ProcessRow]) -> dict[str, Any]:
         orphans = suspected_orphans(rows, set(), self.known_descendants)
@@ -149,11 +158,11 @@ class OpenDJProbe:
                 usage = self.native.read(row.pid)
             except ProcessLookupError:
                 continue
-            processes.append(
-                process_metric_record(
-                    row, role, usage, monotonic_now, self.prior_cpu, self.prior_io
-                )
+            record = process_metric_record(
+                row, role, usage, monotonic_now, self.prior_cpu, self.prior_io
             )
+            record["name"] = opendj_process_name(row.command)
+            processes.append(record)
         return processes
 
     def _forget_dead_pids(
@@ -234,6 +243,19 @@ class OpenDJProbe:
         orphans = suspected_orphans(rows, live_pids, self.known_descendants)
         self._forget_dead_pids(rows, family, live_pids)
 
+        machine = machine_metrics()
+        vm_snapshot = vm_stat_churn_snapshot()
+        if vm_snapshot is not None:
+            elapsed = (
+                0.0
+                if self._prior_vm_stat_at is None
+                else max(0.0, monotonic_now - self._prior_vm_stat_at)
+            )
+            machine.update(
+                churn_metrics_from_snapshots(self._prior_vm_stat, vm_snapshot, elapsed)
+            )
+            self._prior_vm_stat = vm_snapshot
+            self._prior_vm_stat_at = monotonic_now
         record: dict[str, Any] = {
             "schema_version": 1,
             "kind": "sample",
@@ -244,7 +266,7 @@ class OpenDJProbe:
             "build": build,
             "totals": _sample_totals(processes),
             "processes": processes,
-            "machine": machine_metrics(),
+            "machine": machine,
             "engine": engine_metrics(family),
             "browser_perf_ring": browser_perf_ring(self.bundle_ids),
             "suspected_orphan_count": len(orphans),
@@ -437,6 +459,23 @@ def _sample_once_or_report_error(probe: OpenDJProbe, deep: bool) -> dict[str, An
         }
 
 
+def _machine_sample_elevated(machine: object) -> bool:
+    if not isinstance(machine, dict):
+        return False
+    level = machine.get("kernel_memory_pressure_level")
+    if isinstance(level, int) and level >= KERNEL_ELEVATED_LEVEL:
+        return True
+    churn = machine.get("churn_score")
+    return isinstance(churn, (int, float)) and churn >= PRESSURE_CHURN_EARLY_WARNING
+
+
+def _probe_sleep_seconds(args: argparse.Namespace, record: dict[str, Any], started: float) -> float:
+    base = max(0.0, args.interval - (time.monotonic() - started))
+    if not _machine_sample_elevated(record.get("machine")):
+        return base
+    return max(base, PRESSURE_SAMPLE_ELEVATED_MS / 1000.0)
+
+
 def _print_loop_line(record: dict[str, Any], path: Path, stored: bool) -> None:
     totals = record.get("totals", {})
     print(
@@ -472,7 +511,7 @@ def _run_sampling_loop(probe: OpenDJProbe, args: argparse.Namespace) -> int:
             sample_count += 1
             if args.max_samples > 0 and sample_count >= args.max_samples:
                 return 0
-            time.sleep(max(0.0, args.interval - (time.monotonic() - started)))
+            time.sleep(_probe_sleep_seconds(args, record, started))
     except KeyboardInterrupt:
         return 130
     finally:

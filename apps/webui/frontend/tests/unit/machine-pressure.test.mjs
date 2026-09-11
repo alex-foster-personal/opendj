@@ -290,6 +290,41 @@ test('toggling visibility while still queued does not fire the poll twice', asyn
 	assert.equal(fetched.length, 1, 'exactly one poll, not two');
 });
 
+test('kernel missing leaves kernelMemoryPressureLevel null with no label', () => {
+	const snapshot = pressure.pressureSnapshotFrom(
+		{ available: true, load_avg_1m: 1.0, cache_age_ms: 0 },
+		0
+	);
+	assert.equal(snapshot.kernelMemoryPressureLevel, null);
+	const labels = pressure.pressureLabels(snapshot, 0);
+	assert.equal(labels.kernel_memory_pressure_level, undefined);
+});
+
+test('kernel level zero is treated as unreadable', () => {
+	const snapshot = pressure.pressureSnapshotFrom(
+		{ available: true, load_avg_1m: 1.0, kernel_memory_pressure_level: 0, cache_age_ms: 0 },
+		0
+	);
+	assert.equal(snapshot.kernelMemoryPressureLevel, null);
+	assert.equal(pressure.pressureLabels(snapshot, 0).kernel_memory_pressure_level, undefined);
+});
+
+test('churn score present becomes a label', () => {
+	const snapshot = pressure.pressureSnapshotFrom(
+		{ available: true, churn_score: 500, cache_age_ms: 0 },
+		0
+	);
+	assert.equal(snapshot.churnScore, 500);
+	assert.equal(pressure.pressureLabels(snapshot, 0).churn_score, '500');
+});
+
+test('the poll interval remains ten seconds', async () => {
+	const stop = pressure.startMachinePressurePolling(immediateBootScheduler());
+	await settle();
+	assert.equal(intervals[0].delayMs, 10_000);
+	stop();
+});
+
 test('a page that goes hidden while the first poll is still queued does not poll when released', async () => {
 	// The boot window can outlast the tab's visible spell: the release is on
 	// the SCHEDULER's clock, not the page's, so by the time it fires the page

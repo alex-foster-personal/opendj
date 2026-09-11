@@ -48,6 +48,16 @@ export interface PressureSnapshot {
 	readonly memFreeMb: number | null;
 	/** Swap in use in MB, or null. */
 	readonly swapUsedMb: number | null;
+	/** Kernel memory pressure level (1, 2, or 4), or null when unreadable. */
+	readonly kernelMemoryPressureLevel: 1 | 2 | 4 | null;
+	/** RAM churn score from swap/compressor rates, or null when unreadable. */
+	readonly churnScore: number | null;
+	/** Activity Monitor band when kernel level was read, or null. */
+	readonly band: 'fine' | 'warning' | 'critical' | null;
+	/** Server sampler interval governing the next sample, or null. */
+	readonly sampleIntervalMs: number | null;
+	/** Compressor footprint in MB, or null when unreadable. */
+	readonly compressedMb: number | null;
 	/**
 	 * `Date.now()` when this client ISSUED the request, not when the body
 	 * finished parsing.
@@ -98,10 +108,23 @@ interface PressureResponse {
 	mem_free_mb?: unknown;
 	swap_used_mb?: unknown;
 	cache_age_ms?: unknown;
+	kernel_memory_pressure_level?: unknown;
+	churn_score?: unknown;
+	band?: unknown;
+	sample_interval_ms?: unknown;
+	compressed_mb?: unknown;
 }
 
 function _finiteOrNull(value: unknown): number | null {
 	return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function _kernelLevelOrNull(value: unknown): 1 | 2 | 4 | null {
+	return value === 1 || value === 2 || value === 4 ? value : null;
+}
+
+function _bandOrNull(value: unknown): 'fine' | 'warning' | 'critical' | null {
+	return value === 'fine' || value === 'warning' || value === 'critical' ? value : null;
 }
 
 /**
@@ -122,13 +145,31 @@ export function pressureSnapshotFrom(
 	const loadAvg1m = _finiteOrNull(body.load_avg_1m);
 	const memFreeMb = _finiteOrNull(body.mem_free_mb);
 	const swapUsedMb = _finiteOrNull(body.swap_used_mb);
+	const kernelMemoryPressureLevel = _kernelLevelOrNull(body.kernel_memory_pressure_level);
+	const churnScore = _finiteOrNull(body.churn_score);
+	const band = _bandOrNull(body.band);
+	const sampleIntervalMs = _finiteOrNull(body.sample_interval_ms);
+	const compressedMb = _finiteOrNull(body.compressed_mb);
 	// A response carrying no readable number at all is the same as no response:
 	// keeping it would let a row print `pressure_age_ms` beside nothing.
-	if (loadAvg1m === null && memFreeMb === null && swapUsedMb === null) return null;
+	if (
+		loadAvg1m === null &&
+		memFreeMb === null &&
+		swapUsedMb === null &&
+		kernelMemoryPressureLevel === null &&
+		churnScore === null &&
+		compressedMb === null
+	)
+		return null;
 	return {
 		loadAvg1m,
 		memFreeMb,
 		swapUsedMb,
+		kernelMemoryPressureLevel,
+		churnScore,
+		band,
+		sampleIntervalMs,
+		compressedMb,
 		requestedAtMs,
 		serverCacheAgeMs: _finiteOrNull(body.cache_age_ms) ?? 0
 	};
@@ -157,6 +198,10 @@ export function pressureLabels(
 	if (snapshot.loadAvg1m !== null) labels.load_avg_1m = String(snapshot.loadAvg1m);
 	if (snapshot.memFreeMb !== null) labels.mem_free_mb = String(snapshot.memFreeMb);
 	if (snapshot.swapUsedMb !== null) labels.swap_used_mb = String(snapshot.swapUsedMb);
+	if (snapshot.kernelMemoryPressureLevel !== null) {
+		labels.kernel_memory_pressure_level = String(snapshot.kernelMemoryPressureLevel);
+	}
+	if (snapshot.churnScore !== null) labels.churn_score = String(snapshot.churnScore);
 	return labels;
 }
 
