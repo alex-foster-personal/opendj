@@ -25,6 +25,7 @@ require_env() {
 require_env MDT_PERF_KPI_SMALL_STABLE_ID
 require_env MDT_PERF_KPI_LARGE_STABLE_ID
 require_env MDT_PERF_KPI_STEMMED_STABLE_ID
+require_env MDT_PERF_KPI_DATA_DIR
 
 mkdir -p "$STATE_DIR" "$HOME/Library/LaunchAgents"
 
@@ -33,6 +34,8 @@ render() {
   sed \
     -e "s|{{REPO_ROOT}}|$REPO_ROOT|g" \
     -e "s|{{STATE_DIR}}|$STATE_DIR|g" \
+    -e "s|{{DATA_DIR}}|$MDT_PERF_KPI_DATA_DIR|g" \
+    -e "s|{{HOME}}|$HOME|g" \
     -e "s|{{SMALL_STABLE_ID}}|$MDT_PERF_KPI_SMALL_STABLE_ID|g" \
     -e "s|{{LARGE_STABLE_ID}}|$MDT_PERF_KPI_LARGE_STABLE_ID|g" \
     -e "s|{{STEMMED_STABLE_ID}}|$MDT_PERF_KPI_STEMMED_STABLE_ID|g" \

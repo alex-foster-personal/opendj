@@ -42,6 +42,7 @@ class PerfKpiConfig:
     samples: int
     machine: str
     tracks: tuple[TrackProfile, ...]
+    data_dir: Path | None = None
 
 
 def _env(name: str) -> str | None:
@@ -87,6 +88,8 @@ def load_config() -> PerfKpiConfig:
         ),
     )
     state_dir = Path(_env("MDT_PERF_KPI_STATE_DIR") or str(DEFAULT_STATE_DIR))
+    raw_data_dir = _env("MDT_PERF_KPI_DATA_DIR")
+    data_dir = Path(raw_data_dir).expanduser().resolve() if raw_data_dir else None
     return PerfKpiConfig(
         ledger_path=Path(_env("MDT_PERF_KPI_LEDGER") or str(DEFAULT_LEDGER)),
         state_dir=state_dir,
@@ -103,6 +106,7 @@ def load_config() -> PerfKpiConfig:
         samples=int(_env("MDT_PERF_KPI_SAMPLES") or DEFAULT_SAMPLES),
         machine=_env("MDT_PERF_KPI_MACHINE") or "air",
         tracks=tracks,
+        data_dir=data_dir,
     )
 
 
