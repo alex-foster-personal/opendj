@@ -8,6 +8,7 @@ never writes availability or ``deleted_at`` itself.
 Default drop fraction is 50%. Override only with an explicit
 ``allow_mass_missing`` (the ``--allow-mass-missing`` CLI flag).
 """
+
 from __future__ import annotations
 
 import os

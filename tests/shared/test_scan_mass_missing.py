@@ -2,6 +2,7 @@
 
 Never purge on absence. Real temp dirs, no mocked filesystem.
 """
+
 from __future__ import annotations
 
 import json
@@ -66,12 +67,8 @@ def test_a_drop_of_exactly_half_is_allowed() -> None:
 
 
 def test_allow_mass_missing_overrides_zero_and_fraction() -> None:
-    guard_scan_count(
-        "/music", current_n=0, prior_n=40, allow_mass_missing=True
-    )
-    guard_scan_count(
-        "/music", current_n=1, prior_n=10, allow_mass_missing=True
-    )
+    guard_scan_count("/music", current_n=0, prior_n=40, allow_mass_missing=True)
+    guard_scan_count("/music", current_n=1, prior_n=10, allow_mass_missing=True)
 
 
 def test_default_drop_fraction_is_fifty_percent() -> None:
@@ -114,20 +111,14 @@ def test_ingest_folder_empty_after_populate_refuses_and_keeps_rows(
         first = folder_ingest.ingest_folder(writer, [root], dry_run=False)
         assert first.tracks_inserted == 2
         before = list(
-            conn.execute(
-                "SELECT stable_id, file_path, deleted_at FROM tracks "
-                "ORDER BY stable_id"
-            )
+            conn.execute("SELECT stable_id, file_path, deleted_at FROM tracks ORDER BY stable_id")
         )
         _empty(root)
         with pytest.raises(MassMissingError, match="2") as caught:
             folder_ingest.ingest_folder(writer, [root], dry_run=False)
         assert str(root) in str(caught.value)
         after = list(
-            conn.execute(
-                "SELECT stable_id, file_path, deleted_at FROM tracks "
-                "ORDER BY stable_id"
-            )
+            conn.execute("SELECT stable_id, file_path, deleted_at FROM tracks ORDER BY stable_id")
         )
         assert after == before
         assert all(row[2] is None for row in after)
@@ -148,9 +139,7 @@ def test_ingest_folder_allow_mass_missing_writes_nothing_on_empty(
     try:
         folder_ingest.ingest_folder(writer, [root], dry_run=False)
         _empty(root)
-        report = folder_ingest.ingest_folder(
-            writer, [root], dry_run=False, allow_mass_missing=True
-        )
+        report = folder_ingest.ingest_folder(writer, [root], dry_run=False, allow_mass_missing=True)
         assert report.files_seen == 0
         n, deleted = conn.execute(
             "SELECT COUNT(*), SUM(deleted_at IS NOT NULL) FROM tracks"
@@ -228,9 +217,7 @@ def test_availability_allow_mass_missing_records_the_drop(
             allow_mass_missing=True,
         )
         assert report.counts.get("absent") == 1
-        state = conn.execute(
-            "SELECT state FROM track_availability"
-        ).fetchone()[0]
+        state = conn.execute("SELECT state FROM track_availability").fetchone()[0]
         assert state == "absent"
     finally:
         conn.close()
