@@ -58,7 +58,7 @@
 </script>
 
 {#if open}
-	<section class="panel" aria-label="Library job queue">
+	<section class="panel" aria-label="Library job queue" data-testid="library-job-queue-panel">
 		<header>
 			<strong>Library jobs</strong>
 			<button type="button" class="tab" class:on={lane === 'stems'} onclick={() => (lane = 'stems')} title="Stems lane: separate from lyrics, one running job">Stems</button>
@@ -68,13 +68,15 @@
 		{#if error}<p class="err">{error}</p>{/if}
 		<ul>
 			{#each running as item (item.stable_id)}
-				<li>
+				<li data-testid="library-job-row" data-stable-id={item.stable_id}>
 					<span class="chip run" title={chipTitle(item)}>{item.stable_id} running</span>
 					<button type="button" onclick={() => onCancel(item)} title="Cancel running job at the next safe point">Cancel</button>
 				</li>
 			{/each}
 			{#each pending as item, i (item.stable_id)}
 				<li
+					data-testid="library-job-row"
+					data-stable-id={item.stable_id}
 					draggable="true"
 					ondragstart={() => (dragId = item.stable_id)}
 					ondragover={(e) => e.preventDefault()}

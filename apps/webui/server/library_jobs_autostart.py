@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from apps.analysis import queue_user, queue_user_runner
+from apps.analysis.queue_user_runner import runner_from_environ
 from apps.analysis.queue_user_lanes import USER_JOB_LANES
 from apps.analysis.store import open_conn
 
@@ -63,6 +64,7 @@ class LibraryJobsWatcher:
         self.data_dir = data_dir
         self.enabled = enabled
         self.interval_s = interval_s
+        runner_from_environ()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 

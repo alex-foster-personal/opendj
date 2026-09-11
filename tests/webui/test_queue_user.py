@@ -240,6 +240,93 @@ def test_skip_at_claim_does_not_invoke_the_runner(tmp_path: Path) -> None:
     conn.close()
 
 
+def test_dry_runner_holds_without_subprocess(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import time
+
+    from apps.analysis import queue_user_runner
+
+    monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_RUNNER", "dry")
+    monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_DRY_HOLD_S", "0.01")
+    build_argv_called: list[str] = []
+    subprocess_called: list[str] = []
+    monkeypatch.setattr(
+        "apps.stems.job.build_argv",
+        lambda *args, **kwargs: build_argv_called.append("x"),
+    )
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda *args, **kwargs: subprocess_called.append("x"),
+    )
+    db = tmp_path / "state.db"
+    _seed(db, ["need"])
+    conn = _conn(db)
+    _enqueue(conn, "stems", ["need"], tmp_path)
+    t0 = time.monotonic()
+    outcome = queue_user_runner.tick_lane(
+        conn,
+        "stems",
+        runner_id="dry",
+        stems_root=tmp_path / "stems",
+        data_dir=tmp_path,
+    )
+    elapsed = time.monotonic() - t0
+    assert outcome == "ran"
+    assert build_argv_called == []
+    assert subprocess_called == []
+    assert elapsed >= 0.005
+    settled = user.list_lane(conn, "stems", include_settled=True)
+    assert settled[0].state == "done"
+    conn.close()
+
+
+def test_unknown_runner_env_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    from apps.analysis.queue_user_runner import runner_from_environ
+
+    monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_RUNNER", "gpu")
+    with pytest.raises(ValueError, match="MUSIC_DJ_LIBRARY_JOBS_RUNNER"):
+        runner_from_environ()
+
+
+def test_dry_runner_still_skips_fresh_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import time
+
+    from apps.analysis import queue_user_runner
+
+    monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_RUNNER", "dry")
+    monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_DRY_HOLD_S", "10")
+    sleep_called: list[float] = []
+    original_sleep = time.sleep
+
+    def spy_sleep(seconds: float) -> None:
+        sleep_called.append(seconds)
+        original_sleep(0)
+
+    monkeypatch.setattr(time, "sleep", spy_sleep)
+    db = tmp_path / "state.db"
+    _seed(db, ["fresh"])
+    conn = _conn(db)
+    _enqueue(conn, "stems", ["fresh"], tmp_path)
+    bundle = tmp_path / "stems" / "fresh"
+    bundle.mkdir(parents=True)
+    (bundle / MANIFEST_NAME).write_text("{}", encoding="utf-8")
+    outcome = queue_user_runner.tick_lane(
+        conn,
+        "stems",
+        runner_id="dry",
+        stems_root=tmp_path / "stems",
+        data_dir=tmp_path,
+    )
+    assert outcome == "ran"
+    assert sleep_called == []
+    settled = user.list_lane(conn, "stems", include_settled=True)
+    assert settled[0].state == "skipped"
+    conn.close()
+
+
 def test_reorder_running_is_conflict(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
     _seed(db, ["a", "b"])

@@ -8,8 +8,10 @@ One track per claim so remaining pending items stay reorderable. A late
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from apps.analysis import queue_store, queue_user
@@ -21,6 +23,59 @@ from apps.shared.events import publish
 log = logging.getLogger("apps.analysis.queue_user_runner")
 
 ExecuteFn = Callable[[str], None]
+
+LIBRARY_JOBS_RUNNER_ENV: str = "MUSIC_DJ_LIBRARY_JOBS_RUNNER"
+LIBRARY_JOBS_RUNNER_VALUES: tuple[str, ...] = ("live", "dry")
+LIBRARY_JOBS_DRY_HOLD_ENV: str = "MUSIC_DJ_LIBRARY_JOBS_DRY_HOLD_S"
+DEFAULT_DRY_HOLD_S: float = 2.5
+
+
+def runner_from_environ(environ: Mapping[str, str] | None = None) -> str:
+    """Fail-fast runner mode. CI and the library-jobs e2e set ``dry``."""
+    mapping = environ if environ is not None else os.environ
+    raw = mapping.get(LIBRARY_JOBS_RUNNER_ENV, "live").strip().lower()
+    if raw not in LIBRARY_JOBS_RUNNER_VALUES:
+        raise ValueError(
+            f"{LIBRARY_JOBS_RUNNER_ENV}={raw!r} is not a member of {LIBRARY_JOBS_RUNNER_VALUES}"
+        )
+    return raw
+
+
+def dry_hold_s_from_environ(environ: Mapping[str, str] | None = None) -> float:
+    mapping = environ if environ is not None else os.environ
+    raw = mapping.get(LIBRARY_JOBS_DRY_HOLD_ENV, str(DEFAULT_DRY_HOLD_S)).strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ValueError(f"{LIBRARY_JOBS_DRY_HOLD_ENV}={raw!r} is not a valid float") from None
+    if value < 0:
+        raise ValueError(f"{LIBRARY_JOBS_DRY_HOLD_ENV}={raw!r} must be non-negative")
+    return value
+
+
+def _dry_execute(hold_s: float) -> ExecuteFn:
+    def _run(_stable_id: str) -> None:
+        time.sleep(hold_s)
+
+    return _run
+
+
+def _resolve_execute_stems(execute_stems: ExecuteFn | None) -> ExecuteFn:
+    if execute_stems is not None:
+        return execute_stems
+    if runner_from_environ() == "dry":
+        return _dry_execute(dry_hold_s_from_environ())
+    return _default_stems
+
+
+def _resolve_execute_lyrics(
+    data_dir: Path, execute_lyrics: ExecuteFn | None
+) -> ExecuteFn:
+    if execute_lyrics is not None:
+        return execute_lyrics
+    if runner_from_environ() == "dry":
+        return _dry_execute(dry_hold_s_from_environ())
+    return _default_lyrics(data_dir)
 
 
 def _publish(stable_id: str) -> None:
@@ -55,11 +110,13 @@ def run_claimed(
         if moved:
             _publish(item.stable_id)
         return queue_store.ITEM_SKIPPED if moved else queue_store.ITEM_CANCELLED
+    stems_fn = _resolve_execute_stems(execute_stems)
+    lyrics_fn = _resolve_execute_lyrics(data_dir, execute_lyrics)
     try:
         if item.lane == "stems":
-            (execute_stems or _default_stems)(item.stable_id)
+            stems_fn(item.stable_id)
         else:
-            (execute_lyrics or _default_lyrics(data_dir))(item.stable_id)
+            lyrics_fn(item.stable_id)
         state = queue_store.ITEM_DONE
         reason = None
     except LyricsUnavailableError as exc:
