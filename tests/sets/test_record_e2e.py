@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pytest
 from apps.sets import record as record_mod
 from apps.sets.manifest import read_manifest
 from apps.sets.state import Event, SetsState
+from tests.waits import THREAD_HANG_GUARD_S
 
 
 class _FakeSource:
@@ -35,6 +37,24 @@ class _FakeSource:
                 value={"uuid": uuid},
             )
         )
+
+
+class _HeartbeatSignallingState(SetsState):
+    """A real SetsState that signals the moment a heartbeat row is written.
+
+    The write itself is the real one; the Event only lets the test wait on
+    the heartbeat thread's own progress instead of a wall-clock window.
+    """
+
+    def __init__(self, db_path: Path) -> None:
+        super().__init__(db_path=db_path)
+        self.heartbeat_written = threading.Event()
+
+    def record_event(self, event: Event) -> int:
+        row_id = super().record_event(event)
+        if event.action == "heartbeat":
+            self.heartbeat_written.set()
+        return row_id
 
 
 @pytest.fixture
@@ -220,7 +240,7 @@ def test_recorder_heartbeat_thread_emits_heartbeat(
         heartbeat_interval_s=0.01,
         poll_interval_s=0.01,
     )
-    state = SetsState(db_path=tmp_path / "sets.db")
+    state = _HeartbeatSignallingState(db_path=tmp_path / "sets.db")
     recorder = record_mod.start(
         config=cfg,
         sets_root=tmp_path / "sets",
@@ -230,19 +250,14 @@ def test_recorder_heartbeat_thread_emits_heartbeat(
         },
     )
     recorder.start_threads()
-    # Poll until the heartbeat thread has emitted at least one event, rather
-    # than relying on a wall-clock sleep. A never-set Event provides the
-    # inter-poll tick so this test has no raw time.sleep waits.
-    import threading
-    import time
-    deadline = time.monotonic() + 2.0
-    gate = threading.Event()
-    hb: list = []
-    while time.monotonic() < deadline:
-        hb = state.fetch_events(recorder.session_id, action="heartbeat")
-        if hb:
-            break
-        gate.wait(0.005)
-    record_mod.stop(recorder)
+    try:
+        # Wait on the heartbeat write itself: a slow runner only delays it.
+        assert state.heartbeat_written.wait(THREAD_HANG_GUARD_S), (
+            f"HANG: no heartbeat row written within {THREAD_HANG_GUARD_S}s of "
+            f"start_threads() (heartbeat thread alive="
+            f"{recorder._heartbeat_thread is not None and recorder._heartbeat_thread.is_alive()})"
+        )
+    finally:
+        record_mod.stop(recorder)
     hb = state.fetch_events(recorder.session_id, action="heartbeat")
-    assert len(hb) >= 1
+    assert len(hb) >= 1, f"a heartbeat was signalled but the timeline holds none: {hb}"
