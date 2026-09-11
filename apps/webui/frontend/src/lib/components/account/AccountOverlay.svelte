@@ -104,9 +104,11 @@
 
 	onMount(() => {
 		// This overlay is mounted at the root but starts closed, so its
-		// who-am-I is the second /auth/me of the boot burst and the one
-		// nobody can even see. Deferred (PERF-R6), not dropped: it still
-		// runs, seconds later, off the critical path.
+		// who-am-I is the second identity probe of the boot burst and the
+		// one nobody can even see. Deferred (PERF-R6), not dropped: it still
+		// runs, seconds later, off the critical path. refreshUser uses
+		// GET /api/v1/account (HTTP 200 when signed out) so this does not
+		// log Chromium's unsuppressable 401 console.error (#1876).
 		bootScheduler.defer('account-overlay:refreshUser', () => {
 			if (auth.user === null) void refreshUser();
 		});

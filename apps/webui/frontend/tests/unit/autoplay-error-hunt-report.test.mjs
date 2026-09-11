@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
@@ -197,4 +198,26 @@ test('buildHuntReport FAILs on unexpected findings and PASSes when allowlisted',
 	assert.equal(passed.status, 'PASS');
 	assert.equal(passed.unexpected.length, 0);
 	assert.match(formatReport(failed.findings), /stall:autoplay-idle/);
+});
+
+test('the committed allowlist does not mute Chromium 401 console.error (#1876)', () => {
+	const path = fileURLToPath(new URL('../e2e/autoplay-error-hunt.allow.json', import.meta.url));
+	const entries = loadAllowlist(path);
+	assert.equal(
+		entries.some((entry) => entry.issue === '#1876'),
+		false,
+		'#1876 is burned down: refreshUser must not GET /auth/me while mixing'
+	);
+	assert.equal(
+		entries.some(
+			(entry) =>
+				entry.signature ===
+				'console.error:Failed to load resource: the server responded with a status of 401 (Unauthorized)'
+		),
+		false
+	);
+	assert.ok(
+		entries.some((entry) => entry.issue === '#1875'),
+		'#1875 still owns the HTTP 401 /auth/me contract'
+	);
 });

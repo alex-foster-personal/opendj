@@ -10,7 +10,7 @@
  * proxies /api, and being explicit keeps that working if the base ever
  * moves.
  */
-import { API_BASE } from './api';
+import { API_BASE } from './api/base';
 import { markLoginNavigate, markLoginSubmit } from './client-telemetry';
 
 export interface AuthUser {
@@ -56,22 +56,31 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
 	return fallback;
 }
 
-/** Ask the daemon who is signed in. A 401 is the signed-out answer, not a failure. */
+/**
+ * Ask the daemon who is signed in.
+ *
+ * Uses GET /api/v1/account, which answers HTTP 200 with `signed_in: false`
+ * when nobody is signed in. GET /api/v1/auth/me still answers 401 for that
+ * same state (#1875 owns that contract). Chromium logs every non-2xx fetch as
+ * `Failed to load resource`, so the mixing-time bauble probe must not hit
+ * /auth/me or AutoPlay hunt #1876 records a console.error 401.
+ */
 export async function refreshUser(): Promise<void> {
 	auth.loading = true;
 	try {
-		const response = await authFetch('/api/v1/auth/me');
-		if (response.status === 401) {
-			auth.user = null;
-			auth.error = null;
-			return;
-		}
+		const response = await authFetch('/api/v1/account');
 		if (!response.ok) {
 			auth.user = null;
 			auth.error = await errorMessage(response, `sign-in check failed (${response.status})`);
 			return;
 		}
-		auth.user = (await response.json()) as AuthUser;
+		const body = (await response.json()) as { signed_in?: boolean; user?: AuthUser | null };
+		if (body.signed_in === true && body.user) {
+			auth.user = body.user;
+			auth.error = null;
+			return;
+		}
+		auth.user = null;
 		auth.error = null;
 	} catch (exc) {
 		auth.user = null;
