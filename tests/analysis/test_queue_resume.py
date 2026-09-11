@@ -419,10 +419,9 @@ def test_a_backend_wide_outage_stops_the_batch_and_keeps_it_retryable(
     # Everything is still queued: the item that met the outage was released
     # and the rest were never attempted.
     assert counts[queue_store.ITEM_PENDING] == 4
-    assert (
-        queue_store.get_batch(conn, result.batch_id).state
-        == queue_store.BATCH_QUEUED
-    )
+    batch = queue_store.get_batch(conn, result.batch_id)
+    assert batch is not None
+    assert batch.state == queue_store.BATCH_QUEUED
 
     # Install the capability (here: swap in the working producer) and re-run.
     summary = run_batch(conn, result.batch_id, backend_cls=BeatgridProbeV1)
