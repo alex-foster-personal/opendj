@@ -20,6 +20,30 @@ def test_health_happy_path(client):
     assert waveform["native_available"] == (waveform["selected"] == "rust-pyo3")
     assert waveform["native_import_error"] is None or waveform["selected"] == "python-numpy"
     assert body["version"]
+    assert isinstance(body["google_oauth_configured"], bool)
+
+
+@pytest.mark.requirement("CAT-05")
+def test_health_google_oauth_configured_false_when_env_missing(client, monkeypatch):
+    for name in (
+        "OPENDJ_GOOGLE_OAUTH_CLIENT_ID",
+        "OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET",
+        "GOOGLE_OAUTH_CLIENT_ID",
+        "GOOGLE_OAUTH_CLIENT_SECRET",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    r = client.get("/api/v1/health")
+    assert r.status_code == 200
+    assert r.json()["google_oauth_configured"] is False
+
+
+@pytest.mark.requirement("CAT-05")
+def test_health_google_oauth_configured_true_when_env_set(client, monkeypatch):
+    monkeypatch.setenv("OPENDJ_GOOGLE_OAUTH_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET", "test-client-secret")
+    r = client.get("/api/v1/health")
+    assert r.status_code == 200
+    assert r.json()["google_oauth_configured"] is True
 
 
 @pytest.mark.requirement("CAT-05")

@@ -5691,6 +5691,8 @@ export interface components {
             contract_rev: string;
             /** Engine Version */
             engine_version: string;
+            /** Google Oauth Configured */
+            google_oauth_configured: boolean;
             state_db: components["schemas"]["HealthStateDb"];
             /**
              * Status
@@ -7244,6 +7246,25 @@ export interface components {
              */
             stable_ids: string[];
         };
+        /** MembershipTransferIn */
+        MembershipTransferIn: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "add" | "move";
+            /** Source Etag */
+            source_etag?: string | null;
+            /** Source Playlist Id */
+            source_playlist_id?: string | null;
+            /** Stable Ids */
+            stable_ids: string[];
+        };
+        /** MembershipTransferOut */
+        MembershipTransferOut: {
+            dest: components["schemas"]["PlaylistWriteOut"];
+            source?: components["schemas"]["PlaylistWriteOut"] | null;
+        };
         /**
          * MetadataShareRequest
          * @description Explicit acknowledgement that the resulting web view excludes audio.
@@ -7274,25 +7295,6 @@ export interface components {
             share_state: "shared_cloud";
             /** Share Url */
             share_url: string;
-        };
-        /** MembershipTransferIn */
-        MembershipTransferIn: {
-            /**
-             * Mode
-             * @enum {string}
-             */
-            mode: "add" | "move";
-            /** Source Etag */
-            source_etag?: string | null;
-            /** Source Playlist Id */
-            source_playlist_id?: string | null;
-            /** Stable Ids */
-            stable_ids: string[];
-        };
-        /** MembershipTransferOut */
-        MembershipTransferOut: {
-            dest: components["schemas"]["PlaylistWriteOut"];
-            source?: components["schemas"]["PlaylistWriteOut"] | null;
         };
         /** MixerChannelMarkOut */
         MixerChannelMarkOut: {
@@ -10912,37 +10914,6 @@ export interface operations {
             };
         };
     };
-    api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SoundcloudExportResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     api_publish_metadata_share_api_sets__session_id__share_post: {
         parameters: {
             query?: never;
@@ -10965,6 +10936,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MetadataShareResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundcloudExportResponse"];
                 };
             };
             /** @description Validation Error */
