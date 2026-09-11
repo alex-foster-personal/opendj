@@ -304,9 +304,9 @@ def test_a_put_with_both_halves_valid_still_applies_both(tmp_path) -> None:
     try:
         with TestClient(app) as client:
             body = client.put("/api/v1/analysis/source", json={
-                "lane": "waveform", "default": "own", "toggle": "rbx",
+                "lane": "key", "default": "own", "toggle": "rbx",
             }).json()
-        assert body["lanes"]["waveform"] == {
+        assert body["lanes"]["key"] == {
             "default": "own", "toggle": "rbx", "toggle_revision": 1, "effective": "rbx",
         }
     finally:
@@ -330,17 +330,17 @@ def test_expected_toggle_revision_over_http_closes_the_aba_gap(tmp_path) -> None
     try:
         with TestClient(app) as client:
             first = client.put(
-                "/api/v1/analysis/source", json={"lane": "vocal", "toggle": "own"}
+                "/api/v1/analysis/source", json={"lane": "key", "toggle": "own"}
             ).json()
-            revision = first["lanes"]["vocal"]["toggle_revision"]
+            revision = first["lanes"]["key"]["toggle_revision"]
             # An external agent's own PUTs, unrelated to the rollback below.
-            client.put("/api/v1/analysis/source", json={"lane": "vocal", "toggle": "rbx"})
-            client.put("/api/v1/analysis/source", json={"lane": "vocal", "toggle": "own"})
+            client.put("/api/v1/analysis/source", json={"lane": "key", "toggle": "rbx"})
+            client.put("/api/v1/analysis/source", json={"lane": "key", "toggle": "own"})
 
             stale = client.put(
                 "/api/v1/analysis/source",
                 json={
-                    "lane": "vocal",
+                    "lane": "key",
                     "toggle": "unset",
                     "expected_toggle": "own",
                     "expected_toggle_revision": revision,
@@ -348,24 +348,24 @@ def test_expected_toggle_revision_over_http_closes_the_aba_gap(tmp_path) -> None
             )
             assert stale.status_code == 409
             after = client.get("/api/v1/analysis/source").json()
-            assert after["lanes"]["vocal"]["toggle"] == "own", (
+            assert after["lanes"]["key"]["toggle"] == "own", (
                 "the ABA-stale rollback must not erase the external agent's newer decision"
             )
 
             # Mutate-both-directions control: the identical rollback, given
             # the CURRENT revision instead of the stale one, must succeed.
-            current_revision = after["lanes"]["vocal"]["toggle_revision"]
+            current_revision = after["lanes"]["key"]["toggle_revision"]
             fresh = client.put(
                 "/api/v1/analysis/source",
                 json={
-                    "lane": "vocal",
+                    "lane": "key",
                     "toggle": "unset",
                     "expected_toggle": "own",
                     "expected_toggle_revision": current_revision,
                 },
             )
             assert fresh.status_code == 200
-            assert fresh.json()["lanes"]["vocal"]["toggle"] == "unset"
+            assert fresh.json()["lanes"]["key"]["toggle"] == "unset"
     finally:
         selection.reset_toggles()
 
