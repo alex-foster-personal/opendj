@@ -22,6 +22,8 @@ Single-line acceptance checks, in the repo's "if X then broken" shape:
 
 from __future__ import annotations
 
+import importlib
+import re
 import subprocess
 from pathlib import Path
 
@@ -298,6 +300,12 @@ idna==3.18
     #   requests
 anyio==4.13.0
     # via starlette
+cryptography==46.0.7
+    # via music-dj-tools
+cffi==2.0.0 ; platform_python_implementation != 'PyPy'
+    # via cryptography
+pycparser==3.0 ; implementation_name != 'PyPy'
+    # via cffi
 """
 
 
@@ -313,12 +321,20 @@ def test_the_lock_is_parsed_with_its_via_edges() -> None:
 @pytest.mark.requirement("INSTALL-12")
 def test_excluding_a_dependency_drops_what_only_it_needed() -> None:
     kept, dropped = prune_excluded(parse_locked_export(LOCK_SAMPLE), "music-dj-tools")
-    assert dropped == ["audioread", "pyacoustid", "requests", "standard-aifc"]
+    assert dropped == [
+        "audioread",
+        "cffi",
+        "pyacoustid",
+        "pycparser",
+        "requests",
+        "standard-aifc",
+    ]
     assert {entry.name for entry in kept} == {
         "fastapi",
         "starlette",
         "idna",
         "anyio",
+        "cryptography",
     }
 
 
@@ -341,6 +357,31 @@ def test_a_stale_exclusion_is_an_error_not_a_no_op() -> None:
 def test_every_exclusion_states_why_it_is_safe() -> None:
     for name, reason in EXCLUDED_DEPENDENCIES.items():
         assert len(reason) > 80, f"{name} has no real justification recorded"
+
+
+def _cffi_import_lines(package: str) -> list[str]:
+    """Every line under an installed package that imports cffi."""
+    root = Path(importlib.import_module(package).__file__).parent
+    pattern = re.compile(r"^\s*(import|from)\s+(cffi|_cffi_backend)\b")
+    return [
+        f"{path.relative_to(root)}:{line}"
+        for path in sorted(root.rglob("*.py"))
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if pattern.match(line)
+    ]
+
+
+@pytest.mark.requirement("INSTALL-12")
+def test_the_cffi_exclusion_claim_holds_for_the_locked_cryptography() -> None:
+    """The cffi exclusion claims cryptography never imports it.
+
+    Absence needs a control: the same scan over cffi itself must FIND its
+    own backend import, or the probe proves nothing.
+    """
+    assert "cffi" in EXCLUDED_DEPENDENCIES
+    assert _cffi_import_lines("cffi"), "the probe finds no cffi import even in cffi"
+    assert _cffi_import_lines("cryptography") == []
+    assert _cffi_import_lines("jwt") == []
 
 
 # ----- identity -----------------------------------------------------------
