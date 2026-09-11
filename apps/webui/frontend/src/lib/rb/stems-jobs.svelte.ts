@@ -32,6 +32,7 @@ export const DEFAULT_STEMS_TIER: StemsTier = 'M';
 export interface StemsPlan {
 	tier: string;
 	tier_name: string;
+	executor?: string;
 	/** library rows carrying a file path: pending + ready + unavailable */
 	total: number;
 	pending: number;
@@ -39,13 +40,11 @@ export interface StemsPlan {
 	unavailable: number;
 	estimate_seconds: number;
 	estimate_usd: number;
-	/** How this build reaches a GPU: 'relay' or 'direct'. */
+	/** How this build reaches a GPU, or 'local' for on-device separation. */
 	transport: string;
-	/** Why a run cannot start on this build, or null when it can. The counts
-	 * above describe work that exists; this says whether the machine can do it.
-	 * Without it the prompt offers a button, POST /api/v1/jobs accepts the job,
-	 * and the worker dies on a missing credential after the wizard said Done. */
 	transport_refusal: string | null;
+	/** PERFMODE / feature-flag refusal for local executor; null when allowed. */
+	local_refusal?: string | null;
 }
 
 /** Aggregate state of every stems job the store knows about. */
@@ -67,6 +66,18 @@ const ACTIVE_STATUSES = new Set(['queued', 'running', 'cancelling']);
 /** Every stems job in the store, newest first (the store's own order). */
 export function stemsJobs(jobs: readonly Job[]): Job[] {
 	return jobs.filter((job) => job.kind === STEMS_JOB_KIND);
+}
+
+/** True when this stems job runs on-device (CloudSync local-only path). */
+export function isLocalStemsJob(job: Job): boolean {
+	const payload = job.payload as { tier?: string; executor?: string } | undefined;
+	if (payload?.executor === 'local') return true;
+	if (payload?.tier === 'LOCAL') return true;
+	const argv = job.worker_argv;
+	if (Array.isArray(argv) && argv.some((part) => String(part).includes('stems_local_worker'))) {
+		return true;
+	}
+	return /local stems/i.test(job.message ?? '');
 }
 
 /**
@@ -106,19 +117,27 @@ function clamp01(value: number): number {
  * number is, so this names the jobs behind the percentage rather than
  * leaving a bare bar on screen with no way to ask what it means.
  */
-export function stemsProgressTitle(state: StemsProgress): string {
+export function stemsProgressTitle(state: StemsProgress, jobs: readonly Job[] = []): string {
 	if (!state.active) {
 		if (state.failed > 0) {
 			return `Stems separation: no job running. ${state.failed} failed, ${state.succeeded} succeeded. Open JOBS for the error.`;
 		}
 		return 'Stems separation: no job running.';
 	}
+	const local = stemsJobs(jobs).some(
+		(job) => isLocalStemsJob(job) && ACTIVE_STATUSES.has(job.status)
+	);
 	const parts = [
-		`Stems separation ${Math.round(state.progress * 100)}% across ${state.running + state.queued} job(s)`,
+		local
+			? `Generating stems locally ${Math.round(state.progress * 100)}%`
+			: `Stems separation ${Math.round(state.progress * 100)}% across ${state.running + state.queued} job(s)`,
 		`${state.running} running, ${state.queued} queued`
 	];
 	if (state.failed > 0) parts.push(`${state.failed} failed`);
 	if (state.message) parts.push(state.message);
+	if (local) {
+		return `${parts.join('. ')}. On-device separation; see JOBS to cancel.`;
+	}
 	return `${parts.join('. ')}. Separation runs on Modal GPUs and costs real money; see JOBS for per-job detail.`;
 }
 
