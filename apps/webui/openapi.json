@@ -10285,6 +10285,23 @@
             "title": "Estimate Usd",
             "type": "number"
           },
+          "executor": {
+            "description": "modal farm or local on-device worker",
+            "title": "Executor",
+            "type": "string"
+          },
+          "local_refusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "why local stems are inert on this build; null when allowed",
+            "title": "Local Refusal"
+          },
           "pending": {
             "description": "audio on disk, no bundle yet: the work",
             "title": "Pending",
@@ -10334,6 +10351,7 @@
         "required": [
           "tier",
           "tier_name",
+          "executor",
           "total",
           "pending",
           "ready",
@@ -20176,13 +20194,13 @@
         "operationId": "get_stems_plan_api_v1_stems_plan_get",
         "parameters": [
           {
-            "description": "Modal rung: S, M or L",
+            "description": "Modal rung S/M/L, or LOCAL when local-only",
             "in": "query",
             "name": "tier",
             "required": false,
             "schema": {
               "default": "M",
-              "description": "Modal rung: S, M or L",
+              "description": "Modal rung S/M/L, or LOCAL when local-only",
               "title": "Tier",
               "type": "string"
             }
