@@ -27,6 +27,7 @@ chunk, and a retry that does not converge):
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -36,8 +37,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.shared.state import schema as state_schema
-from apps.sync_hub import client, engine, service
+from apps.sync_hub import client, engine, service, wire_version
 
 from .enrollment_transport import TestClientTransport
 from .fault_transport import FaultInjected, FaultTransport
@@ -105,9 +105,16 @@ def _insert_tracks(data_dir: Path, stable_ids: tuple[str, ...], *, updated_at: s
     try:
         for stable_id in stable_ids:
             conn.execute(
-                "INSERT INTO tracks(stable_id, stable_id_tier, title, created_at, "
-                "updated_at, origin_device_id) VALUES (?, 'inferred', 'seed', ?, ?, ?)",
-                (stable_id, updated_at, updated_at, _DEV_A),
+                "INSERT INTO tracks(stable_id, stable_id_tier, title, content_hash, "
+                "created_at, updated_at, origin_device_id) "
+                "VALUES (?, 'inferred', 'seed', ?, ?, ?, ?)",
+                (
+                    stable_id,
+                    hashlib.sha256(stable_id.encode("utf-8")).hexdigest(),
+                    updated_at,
+                    updated_at,
+                    _DEV_A,
+                ),
             )
     finally:
         conn.close()
@@ -341,14 +348,21 @@ def test_a_fault_preempted_by_a_real_hub_error_stays_pending(
     """if a fault whose call the hub itself refused counts as fired then broken"""
     print("if a fault whose call the hub itself refused counts as fired then broken")
     _insert_tracks(spoke_a, ("trk-only",), updated_at=_T1)
-    # The spoke's build claims another schema version, so the REAL hub
-    # refuses the hello (409) before the armed drop can happen.
+    # The spoke's build claims another WIRE version. Schema is local storage
+    # (wire_version.incompatibility): a matching wire lets rows cross even
+    # when SCHEMA_VERSION differs, so patching schema would not 409. The
+    # hub must refuse hello itself before the armed drop can count as fired.
     monkeypatch.setattr(
-        client, "state_schema", SimpleNamespace(SCHEMA_VERSION=state_schema.SCHEMA_VERSION + 1)
+        client,
+        "wire_version",
+        SimpleNamespace(
+            WIRE_VERSION=wire_version.WIRE_VERSION + 1,
+            incompatibility=wire_version.incompatibility,
+        ),
     )
     faulty = FaultTransport(hub)
     faulty.drop_response_after_commit(1, path="hello")
-    with pytest.raises(client.SyncTransportError, match="SYNC_SCHEMA_VERSION") as excinfo:
+    with pytest.raises(client.SyncTransportError, match="SYNC_WIRE_VERSION") as excinfo:
         _sync(spoke_a, faulty, "spoke-a")
     assert not isinstance(excinfo.value, FaultInjected), "the hub's own error must surface"
     assert [call.outcome for call in faulty.calls_to("hello")] == ["hub_error"]

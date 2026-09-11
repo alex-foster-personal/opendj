@@ -33,6 +33,8 @@ class SafetyAbort(RuntimeError):
 
 
 # ----- P04-03: staged rollout (dry-run -> cautious -> bulk) -------------
+# apply_analysis write-back dry-run does not enter LiveWriteSession and must
+# not call backup_db.
 
 _ROLLOUT_STAMP_DIR = Path("data/sync/rollout")
 

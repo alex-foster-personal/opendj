@@ -22,6 +22,13 @@ from apps.sync_hub.engine_common import (
     _pk_predicate,
     apply_rank,
 )
+from apps.sync_hub.engine_identity import (
+    IdentityDecision,
+    names_held_parent,
+    remap_track_children,
+    resolve_track_identity,
+    rewrite_incoming_change,
+)
 from apps.sync_hub.engine_watermark import current_seq
 from apps.sync_hub.protocol import MEMBERSHIP_TABLE, SPEC_BY_TABLE, RowChange, TableSpec
 
@@ -60,6 +67,7 @@ class ApplyResult:
     seq: int
     quarantined: int = 0
     faults: tuple[protocol.StampFault, ...] = ()
+    identity_conflicts: int = 0
 
 
 @dataclass(frozen=True)
@@ -73,6 +81,9 @@ class _Resolution:
 
     loses: bool
     faults: tuple[protocol.StampFault, ...] = ()
+    drop_stored_pks: tuple[str, ...] = ()
+    rewrite_incoming_to: str | None = None
+    identity_conflict: bool = False
 
 
 def _stored_stamps(
@@ -341,32 +352,81 @@ def _apply(
     accepted = 0
     rejected = 0
     quarantined = 0
+    identity_conflicts = 0
     faults: list[protocol.StampFault] = []
+    remap: dict[str, str] = {}
+    held: set[str] = set()
     for change in ordered:
-        # apply_rank refused any out-of-set name during the sort above.
-        spec = SPEC_BY_TABLE[change.table]
-        columns, values = _checked_values(conn, change.table, spec, change)
-        verdict = _resolve_against_stored(conn, spec, change)
-        if verdict.faults:
-            quarantined += 1
-            faults.extend(verdict.faults)
-            _log_quarantine(change, verdict.faults)
-            continue
-        if verdict.loses:
+        outcome, extra = _apply_one(
+            conn, change, remap, held, record_changelog, stamp
+        )
+        if outcome == "accepted":
+            accepted += 1
+        elif outcome == "rejected":
             rejected += 1
-            continue
-        _upsert(conn, change.table, spec, columns, values)
-        if change.table == "playlists" and change.members is not None:
-            _replace_members(conn, change.pk[0], change.members)
-        if record_changelog:
-            _log_hub_change(conn, change, stamp)
-        accepted += 1
+        else:
+            quarantined += 1
+            faults.extend(extra)
+            if outcome == "identity":
+                identity_conflicts += 1
     return ApplyResult(
         accepted=accepted,
         rejected=rejected,
         seq=current_seq(conn),
         quarantined=quarantined,
         faults=tuple(faults),
+        identity_conflicts=identity_conflicts,
+    )
+
+
+def _apply_one(
+    conn: sqlite3.Connection,
+    change: RowChange,
+    remap: dict[str, str],
+    held: set[str],
+    record_changelog: bool,
+    stamp: str,
+) -> tuple[str, tuple[protocol.StampFault, ...]]:
+    """Apply one rewritten row. Returns accepted/rejected/quarantined/identity."""
+    change = rewrite_incoming_change(change, remap)
+    if names_held_parent(change, held):
+        return "identity", ()
+    spec = SPEC_BY_TABLE[change.table]
+    columns, values = _checked_values(conn, change.table, spec, change)
+    verdict = _resolve_against_stored(conn, spec, change)
+    if verdict.identity_conflict:
+        held.add(change.pk[0])
+        _log_identity_conflict(change)
+        return "identity", ()
+    if verdict.faults:
+        _log_quarantine(change, verdict.faults)
+        return "quarantined", verdict.faults
+    if verdict.loses:
+        if verdict.rewrite_incoming_to is not None:
+            remap[change.pk[0]] = verdict.rewrite_incoming_to
+        return "rejected", ()
+    # Survivor PK must exist before children remap onto it. Incoming-wins
+    # identity collapse writes the incoming row first, then moves stored
+    # children, then drops the loser. The other order is a FOREIGN KEY
+    # failure: the incoming PK is not stored yet.
+    _upsert(conn, change.table, spec, columns, values)
+    for stored_pk in verdict.drop_stored_pks:
+        remap_track_children(conn, stored_pk, change.pk[0])
+        _drop_superseded(conn, spec, (stored_pk,))
+    if change.table == "playlists" and change.members is not None:
+        _replace_members(conn, change.pk[0], change.members)
+    if record_changelog:
+        _log_hub_change(conn, change, stamp)
+    return "accepted", ()
+
+
+def _log_identity_conflict(change: RowChange) -> None:
+    log.error(
+        "refusing the incoming %s row %s: it shares a content identity with "
+        "a stored row but their identity signals disagree (content_hash vs "
+        "ISRC). Neither row is collapsed and the local row is untouched.",
+        change.table,
+        list(change.pk),
     )
 
 
@@ -383,6 +443,30 @@ def _log_quarantine(
         list(change.pk),
         protocol.describe_faults(faults),
     )
+
+
+def _resolution_from_identity(
+    conn: sqlite3.Connection,
+    spec: TableSpec,
+    decision: IdentityDecision,
+) -> _Resolution:
+    """Translate a content-identity decision into an apply verdict.
+
+    Stamp faults on a matched stored row still win: collapsing on a
+    comparison that was never made is the loss round 5 refused.
+    """
+    if decision.kind == "conflict":
+        return _Resolution(loses=False, identity_conflict=True)
+    for pk in decision.stored_pks:
+        stored = _stored_stamps(conn, spec, (pk,))
+        if stored is None:
+            continue
+        faults = _faults_of(spec.name, stored)
+        if faults:
+            return _Resolution(loses=False, faults=faults)
+    if decision.kind == "incoming_loses":
+        return _Resolution(loses=True, rewrite_incoming_to=decision.survivor_pk)
+    return _Resolution(loses=False, drop_stored_pks=decision.stored_pks)
 
 
 def _resolve_against_stored(
@@ -410,6 +494,10 @@ def _resolve_against_stored(
         member_faults = _membership_faults(conn, change.pk[0])
         if member_faults:
             return _Resolution(loses=False, faults=member_faults)
+    if change.table == "tracks":
+        decision = resolve_track_identity(conn, change)
+        if decision.kind != "none":
+            return _resolution_from_identity(conn, spec, decision)
     conflict_pks = _natural_conflict_pks(conn, spec, change)
     if not conflict_pks:
         stored = _stored_stamps(conn, spec, change.pk)
