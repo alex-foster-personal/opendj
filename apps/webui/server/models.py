@@ -99,6 +99,9 @@ class TrackListItemOut(TrackOut):
     preview_b64: str | None
     preview_max: int | None
     file_exists: bool
+    # LIBUX-07: our own audio in non-local storage, not streaming and not
+    # awaiting-volume. False (the default) is the honest common case.
+    is_remote: bool = False
     quality: QualityOut
     vocals: dict[str, Any]
     stems: dict[str, Any]
@@ -200,6 +203,8 @@ class TrackRowOut(BaseModel):
     preview_max: int | None
     file_exists: bool
     is_streaming: bool
+    # LIBUX-07: our own audio in non-local storage. False when unset.
+    is_remote: bool = False
     # Unmatched Spotify placeholder (synthetic spotify-pending:* stable_id).
     # Distinct from generic streaming so the browser can light-green tint.
     spotify_pending: bool = False

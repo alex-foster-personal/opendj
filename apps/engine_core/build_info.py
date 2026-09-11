@@ -222,6 +222,27 @@ def head_time_as_utc(raw: str) -> str:
     return committed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _tauri_app_version(repo_root: Path) -> str:
+    """The semver the desktop shell and updater compare, from tauri.conf.json."""
+    conf_path = repo_root / "apps/desktop/src-tauri/tauri.conf.json"
+    if not conf_path.is_file():
+        raise BuildInfoUnavailable(
+            f"{conf_path} is missing, so this checkout cannot name its app_version"
+        )
+    try:
+        conf = json.loads(conf_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise BuildInfoUnavailable(
+            f"{conf_path} could not be read as JSON: {exc}"
+        ) from exc
+    version = conf.get("version")
+    if not isinstance(version, str) or version.strip() == "":
+        raise BuildInfoUnavailable(
+            f"{conf_path} has no non-empty string 'version' field"
+        )
+    return version
+
+
 def _from_repo(repo_root: Path) -> BuildInfoOut:
     if shutil.which("git") is None:
         raise BuildInfoUnavailable(
@@ -240,6 +261,7 @@ def _from_repo(repo_root: Path) -> BuildInfoOut:
             _git(repo_root, "log", "-1", f"--format={HEAD_TIME_FORMAT}")
         ),
         built_at_kind="head-commit",
+        app_version=_tauri_app_version(repo_root),
     )
 
 

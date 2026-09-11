@@ -43,8 +43,6 @@ from __future__ import annotations
 import json
 import socket
 import sqlite3
-import threading
-import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -69,6 +67,7 @@ from tests.cloudsync.test_hub_sync import (
     _TestClientTransport,
     _track_title,
 )
+from tests.waits import start_uvicorn_in_thread
 
 pytestmark = pytest.mark.requirement("CAT-04")
 
@@ -443,14 +442,7 @@ def live_hub(hub_dir: Path) -> Iterator[str]:
     config = uvicorn.Config(
         _make_hub_app(hub_dir), host="127.0.0.1", port=port, log_level="warning"
     )
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    deadline = time.time() + 10.0
-    while not server.started and time.time() < deadline:
-        time.sleep(0.02)
-    if not server.started:
-        raise RuntimeError("the live hub did not start within 10s")
+    server, thread = start_uvicorn_in_thread(config, what="the live hub")
     try:
         yield f"http://127.0.0.1:{port}"
     finally:

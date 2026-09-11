@@ -27,3 +27,14 @@ test('playlist detail: populated and empty playlists render the honest diff stat
 		await expect(page.getByText(NOT_COMPUTED_MESSAGE, { exact: true })).toBeVisible();
 	}
 });
+
+// requirement: SET-04
+// [if] the populated playlist detail opens [then] PLAY IT pin controls are visible
+test('playlist detail: PLAY IT pin pickers are visible on populated playlist', async ({ page }) => {
+	const response = await page.goto('/playlist/e2e-fixture-populated');
+	expect(response?.status()).toBe(200);
+	await expect(page.getByRole('heading', { name: 'PLAY IT' })).toBeVisible();
+	await expect(page.getByText('Peak pins', { exact: true })).toBeVisible();
+	await expect(page.getByText('Viable openers', { exact: true })).toBeVisible();
+	await expect(page.getByText('Closer', { exact: true })).toBeVisible();
+});

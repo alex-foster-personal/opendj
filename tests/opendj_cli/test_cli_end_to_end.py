@@ -60,22 +60,29 @@ def _argv(engine: Engine, *tokens: str) -> list[str]:
     return ["--lock", str(engine.lock_path), *tokens]
 
 
-def _await_mirror(engine: Engine, ready: Callable[[dict], bool], what: str) -> None:
-    """Block until the ENGINE serves a mirror the CLI would read as ready.
+def _await_mirror(page: PerformancePage, ready: Callable[[dict], bool], what: str) -> None:
+    """Block until the ENGINE serves the page's edit, then require it is ready.
 
     Editing `page.mirror` only changes what the page will publish on its next
     20ms tick, so a test that edits and immediately invokes the CLI is racing
     that tick. It won the race in isolation and lost it in the full suite,
-    which is the worst way for a test to be wrong. Read the engine's own copy,
-    the exact document the CLI is about to GET, and wait for it.
+    which is the worst way for a test to be wrong.
+
+    So wait on the page's own signal: a publish that began after this call
+    serialized the edit, and the engine's PUT replaces its copy before it
+    answers 202 (apps/webui/server/routes/state.py), with the page thread as
+    its only writer. From then on the document the CLI is about to GET holds
+    the edit, so ONE read decides: a mirror that is not ready is a WRONG
+    VALUE at once, not a longer wait. A page that never gets such a publish
+    accepted fails inside the wait as HANG, REJECTED or DEAD instead.
     """
-    deadline = time.monotonic() + 5.0
-    while time.monotonic() < deadline:
-        response = httpx.get(f"{engine.base_url}/api/v1/state/ui-mirror", timeout=5.0)
-        if response.status_code == 200 and ready(response.json()):
-            return
-        time.sleep(0.02)
-    raise AssertionError(f"the engine never served {what}")
+    page.wait_for_publish_after(page.publishes_started(), what)
+    response = httpx.get(f"{page.base_url}/api/v1/state/ui-mirror", timeout=5.0)
+    if response.status_code != 200 or not ready(response.json()):
+        raise AssertionError(
+            f"WRONG VALUE: the engine accepted a publish made after the edit but "
+            f"does not serve {what}: {response.status_code} {response.text}"
+        )
 
 
 # ----- the engine is not there ---------------------------------------------
@@ -1049,13 +1056,13 @@ def test_a_ramp_sizes_its_deadline_from_the_live_mirror(
             engine, "--json", "--timeout", "0.2", "eq", "1", "low", "0.2", "--over", "4beats"
         )
         _await_mirror(
-            engine, lambda m: m["decks"]["1"]["effective_bpm"] == 30.0, "the 30 BPM master"
+            page, lambda m: m["decks"]["1"]["effective_bpm"] == 30.0, "the 30 BPM master"
         )
         assert main(argv) == EXIT_CONFIRMED
         slow = json.loads(capsys.readouterr().out)
         page.mirror["decks"]["1"]["effective_bpm"] = 240.0
         _await_mirror(
-            engine, lambda m: m["decks"]["1"]["effective_bpm"] == 240.0, "the 240 BPM master"
+            page, lambda m: m["decks"]["1"]["effective_bpm"] == 240.0, "the 240 BPM master"
         )
         assert main(argv) == EXIT_CONFIRMED
         fast = json.loads(capsys.readouterr().out)
@@ -1083,7 +1090,7 @@ def test_a_ramp_with_no_master_to_time_against_keeps_the_floor(
         argv = _argv(
             engine, "--json", "--timeout", "7.5", "eq", "1", "low", "0.2", "--over", "4beats"
         )
-        _await_mirror(engine, lambda m: m["master_deck"] is None, "a mirror with no master")
+        _await_mirror(page, lambda m: m["master_deck"] is None, "a mirror with no master")
         assert main(argv) == EXIT_CONFIRMED
         document = json.loads(capsys.readouterr().out)
     finally:
@@ -1438,7 +1445,7 @@ def test_the_json_document_names_the_tempo_the_deadline_was_sized_at(
     page.start()
     try:
         _await_mirror(
-            engine, lambda m: m["decks"]["1"]["effective_bpm"] == 96.0, "the 96 BPM master"
+            page, lambda m: m["decks"]["1"]["effective_bpm"] == 96.0, "the 96 BPM master"
         )
         argv = _argv(
             engine, "--json", "--timeout", "1", "eq", "1", "low", "0.2", "--over", "4bars"

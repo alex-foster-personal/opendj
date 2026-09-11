@@ -7103,6 +7103,17 @@
             "title": "Ceiling Energy",
             "type": "integer"
           },
+          "closer_pin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closer Pin"
+          },
           "duration_min": {
             "default": 60,
             "maximum": 240.0,
@@ -7117,6 +7128,13 @@
             "title": "Floor Energy",
             "type": "integer"
           },
+          "opener_pins": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Opener Pins",
+            "type": "array"
+          },
           "peak_at_min": {
             "anyOf": [
               {
@@ -7128,6 +7146,13 @@
               }
             ],
             "title": "Peak At Min"
+          },
+          "peak_pins": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Peak Pins",
+            "type": "array"
           }
         },
         "title": "PlayItGoalIn",
@@ -7264,6 +7289,22 @@
               }
             ],
             "title": "Key Camelot"
+          },
+          "pin_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "opener",
+                  "peak",
+                  "closer"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Role"
           },
           "position": {
             "title": "Position",
@@ -9410,6 +9451,11 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_remote": {
+            "default": false,
+            "title": "Is Remote",
+            "type": "boolean"
+          },
           "is_streaming": {
             "title": "Is Streaming",
             "type": "boolean"
@@ -9853,6 +9899,40 @@
           "etag"
         ],
         "title": "SmartlistConflictBody",
+        "type": "object"
+      },
+      "SmartlistCreateIn": {
+        "description": "Create payload matching ``python -m apps.smartlists.cli.create``.",
+        "properties": {
+          "name": {
+            "description": "Display name (non-empty)",
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "order_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sort key; defaults to 'added_date desc' like the CLI",
+            "title": "Order By"
+          },
+          "rule": {
+            "additionalProperties": true,
+            "title": "Rule",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "rule"
+        ],
+        "title": "SmartlistCreateIn",
         "type": "object"
       },
       "SmartlistPreconditionRequiredBody": {
@@ -11555,6 +11635,11 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_remote": {
+            "default": false,
+            "title": "Is Remote",
+            "type": "boolean"
+          },
           "key": {
             "anyOf": [
               {
@@ -12056,6 +12141,11 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_remote": {
+            "default": false,
+            "title": "Is Remote",
+            "type": "boolean"
+          },
           "is_streaming": {
             "title": "Is Streaming",
             "type": "boolean"
@@ -12325,6 +12415,11 @@
             "title": "Hide Todo Settings",
             "type": "boolean"
           },
+          "jog_radial_waveform": {
+            "default": false,
+            "title": "Jog Radial Waveform",
+            "type": "boolean"
+          },
           "level_calibration": {
             "$ref": "#/components/schemas/LevelCalibrationOut"
           },
@@ -12385,6 +12480,17 @@
               }
             ],
             "title": "Hide Todo Settings"
+          },
+          "jog_radial_waveform": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jog Radial Waveform"
           },
           "level_calibration": {
             "anyOf": [
@@ -19739,6 +19845,54 @@
           }
         },
         "summary": "List Smartlists",
+        "tags": [
+          "smartlists"
+        ]
+      },
+      "post": {
+        "description": "Persist a new smartlist and return the created summary plus ETag.",
+        "operationId": "create_smartlist_api_v1_smartlists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmartlistCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartlistSummary"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the complete persisted smartlist row",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Smartlist",
         "tags": [
           "smartlists"
         ]

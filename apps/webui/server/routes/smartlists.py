@@ -7,6 +7,8 @@ The rule editor and agents share this router's contract:
 
   * ``GET  /api/v1/smartlists``                -- list summaries
     (id, name, rule AST + human-readable rule_summary, order_by, ...).
+  * ``POST /api/v1/smartlists``                -- create (name + rule AST;
+    ``order_by`` defaults to ``added_date desc``, matching the CLI).
   * ``GET  /api/v1/smartlists/{id}``           -- one summary.
   * ``PUT  /api/v1/smartlists/{id}``           -- complete rule replacement,
     requiring the detail response ETag through ``If-Match``.
@@ -27,6 +29,7 @@ the daemon):
     the backend cannot hydrate (state/backend divergence).
   * 409 ``conflict``                  -- stale ``If-Match``; current summary
     and ETag are returned without mutation.
+  * 409 ``SMARTLIST_NAME_CONFLICT``   -- create reused an existing name.
   * 428 ``precondition_required``     -- update omitted ``If-Match``.
 
 NOTE for the wave integrator: wire with
@@ -39,10 +42,10 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Literal
+from typing import Annotated, Any, Iterator, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from pydantic import BaseModel, Field
 
 from apps.shared.events import publish
 from apps.shared.smartlists import SmartlistRow, SmartlistRuleError
@@ -109,6 +112,17 @@ class SmartlistSummary(BaseModel):
     modified_at: str
 
 
+class SmartlistCreateIn(BaseModel):
+    """Create payload matching ``python -m apps.smartlists.cli.create``."""
+
+    name: str = Field(min_length=1, description="Display name (non-empty)")
+    rule: dict[str, Any]
+    order_by: str | None = Field(
+        None,
+        description="Sort key; defaults to 'added_date desc' like the CLI",
+    )
+
+
 class SmartlistUpdateIn(BaseModel):
     """Complete desired rule plus optional replacement ordering."""
 
@@ -148,6 +162,11 @@ class SmartlistTracks(BaseModel):
     order_by: str
     items: list[str]
     tracks: list[TrackRowOut]
+
+
+_POST_RESPONSES: dict[int | str, dict[str, Any]] = {
+    201: {"headers": _ETAG_RESPONSE_HEADER},
+}
 
 
 _PUT_RESPONSES: dict[int | str, dict[str, Any]] = {
@@ -339,6 +358,45 @@ def list_smartlists(
     return [_to_summary(_row_to_model(r)) for r in rows]
 
 
+@router.post(
+    "",
+    response_model=SmartlistSummary,
+    status_code=status.HTTP_201_CREATED,
+    responses=_POST_RESPONSES,
+)
+def create_smartlist(
+    body: SmartlistCreateIn,
+    response: Response,
+    _backend: Annotated[StateBackend, Depends(get_write_state)],
+    conn: Annotated[sqlite3.Connection, Depends(get_smartlists_write_conn)],
+) -> SmartlistSummary:
+    """Persist a new smartlist and return the created summary plus ETag."""
+    try:
+        row = SmartlistsRepo(conn).create(
+            body.name,
+            body.rule,
+            order_by=body.order_by or "added_date desc",
+        )
+    except SmartlistRuleError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": "SMARTLIST_RULE_INVALID",
+            "message": str(exc),
+        }) from exc
+    except SmartlistsRepoError as exc:
+        if "already exists" in str(exc):
+            raise HTTPException(status_code=409, detail={
+                "code": "SMARTLIST_NAME_CONFLICT",
+                "message": str(exc),
+            }) from exc
+        raise HTTPException(status_code=422, detail={
+            "code": "SMARTLIST_RULE_INVALID",
+            "message": str(exc),
+        }) from exc
+    response.headers["ETag"] = _etag(smartlist_revision(row))
+    publish("library.changed", {"kind": "smartlists", "ids": [row.id]})
+    return _to_summary(row)
+
+
 @router.get(
     "/{smartlist_id}",
     response_model=SmartlistSummary,
@@ -451,10 +509,10 @@ def get_smartlist_tracks(
 
 
 __all__ = [
+    "SmartlistCreateIn",
     "SmartlistSummary",
-
-    "SmartlistUpdateIn",
     "SmartlistTracks",
+    "SmartlistUpdateIn",
     "get_smartlists_conn",
     "get_smartlists_write_conn",
     "router",
