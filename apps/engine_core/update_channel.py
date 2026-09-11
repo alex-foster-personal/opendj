@@ -448,6 +448,32 @@ def _mentions_other_sha(
 
 
 # ----- route --------------------------------------------------------------
+def _update_check_http_response(
+    identity: BuildIdentity, result: UpdateCheckOut
+) -> UpdateCheckOut | JSONResponse:
+    """Map a resolver verdict to the HTTP contract this build source carries.
+
+    Installed payloads answer 502 on a channel fault so a caller that only
+    reads the status code cannot treat an outage as reassurance. Developer
+    checkouts answer 200 with the named fault in the body: the UI and agents
+    branch on ``status``, and e2e surfaces treat any 502 from this route as a
+    defect even when the channel is genuinely unpublished.
+    """
+    if result.status in ANSWERED:
+        return result
+    info = identity.info
+    if info is not None and info.source == "repo":
+        return result
+    return JSONResponse(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        content={
+            "error": CODE_UPDATE_CHECK_FAILED,
+            "message": result.detail,
+            **result.model_dump(),
+        },
+    )
+
+
 def add_update_check_route(
     app: FastAPI, *, endpoint: str = UPDATE_ENDPOINT
 ) -> None:
@@ -468,19 +494,7 @@ def add_update_check_route(
         identity: BuildIdentity = getattr(app.state, BUILD_IDENTITY_STATE_ATTR)
         with httpx.Client() as client:
             result = resolve_update_check(identity, client=client, endpoint=endpoint)
-        if result.status in ANSWERED:
-            return result
-        # A fault is an HTTP fault. Returning 200 with a sad field is how a
-        # broken channel gets rendered as a working one by the next caller
-        # who only checks the status code.
-        return JSONResponse(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            content={
-                "error": CODE_UPDATE_CHECK_FAILED,
-                "message": result.detail,
-                **result.model_dump(),
-            },
-        )
+        return _update_check_http_response(identity, result)
 
 
 # ----- CLI ----------------------------------------------------------------

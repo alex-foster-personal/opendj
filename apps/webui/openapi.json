@@ -4668,6 +4668,38 @@
         "title": "HotCueSlotOut",
         "type": "object"
       },
+      "HubStorageErrorBody": {
+        "description": "The ``detail`` object a storage-full push carries.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "HubStorageErrorBody",
+        "type": "object"
+      },
+      "HubStorageErrorResponse": {
+        "description": "FastAPI wraps an ``HTTPException`` detail under ``detail``.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/HubStorageErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "HubStorageErrorResponse",
+        "type": "object"
+      },
       "JobIn": {
         "properties": {
           "external_ref": {
@@ -5599,6 +5631,30 @@
       },
       "MeOut": {
         "properties": {
+          "signed_in": {
+            "title": "Signed In",
+            "type": "boolean"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MeUserOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "signed_in",
+          "user"
+        ],
+        "title": "MeOut",
+        "type": "object"
+      },
+      "MeUserOut": {
+        "properties": {
           "avatar_url": {
             "anyOf": [
               {
@@ -5641,7 +5697,7 @@
           "avatar_url",
           "created_at"
         ],
-        "title": "MeOut",
+        "title": "MeUserOut",
         "type": "object"
       },
       "MemberOut": {
@@ -10415,6 +10471,37 @@
         "title": "StemTierOut",
         "type": "object"
       },
+      "StemUnavailableOut": {
+        "description": "HTTP 200 empty-state: no stored bundle for this stable_id.",
+        "properties": {
+          "code": {
+            "const": "STEM_BUNDLE_NOT_FOUND",
+            "default": "STEM_BUNDLE_NOT_FOUND",
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "unavailable",
+            "default": "unavailable",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "message"
+        ],
+        "title": "StemUnavailableOut",
+        "type": "object"
+      },
       "StemsPlanOut": {
         "description": "What separating this library at this tier would take.",
         "properties": {
@@ -11563,6 +11650,10 @@
             "title": "Artwork Status",
             "type": "string"
           },
+          "auto_cues_available": {
+            "title": "Auto Cues Available",
+            "type": "boolean"
+          },
           "bpm": {
             "anyOf": [
               {
@@ -11662,6 +11753,10 @@
             ],
             "title": "Last Played At"
           },
+          "lyrics_available": {
+            "title": "Lyrics Available",
+            "type": "boolean"
+          },
           "notes": {
             "anyOf": [
               {
@@ -11731,6 +11826,10 @@
             "title": "Stems",
             "type": "object"
           },
+          "stems_available": {
+            "title": "Stems Available",
+            "type": "boolean"
+          },
           "tags": {
             "default": [],
             "items": {
@@ -11765,13 +11864,16 @@
           "created_at",
           "updated_at",
           "has_rb_mapping",
+          "lyrics_available",
+          "auto_cues_available",
+          "stems_available",
+          "artwork_available",
           "preview_b64",
           "preview_max",
           "file_exists",
           "quality",
           "vocals",
           "stems",
-          "artwork_available",
           "artwork_status",
           "energy",
           "energy_source",
@@ -11831,6 +11933,21 @@
               }
             ],
             "title": "Artist"
+          },
+          "artwork_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Available"
+          },
+          "auto_cues_available": {
+            "title": "Auto Cues Available",
+            "type": "boolean"
           },
           "bpm": {
             "anyOf": [
@@ -11895,6 +12012,10 @@
             ],
             "title": "Last Played At"
           },
+          "lyrics_available": {
+            "title": "Lyrics Available",
+            "type": "boolean"
+          },
           "notes": {
             "anyOf": [
               {
@@ -11934,6 +12055,10 @@
             "title": "Stable Id",
             "type": "string"
           },
+          "stems_available": {
+            "title": "Stems Available",
+            "type": "boolean"
+          },
           "tags": {
             "default": [],
             "items": {
@@ -11962,7 +12087,11 @@
           "stable_id",
           "created_at",
           "updated_at",
-          "has_rb_mapping"
+          "has_rb_mapping",
+          "lyrics_available",
+          "auto_cues_available",
+          "stems_available",
+          "artwork_available"
         ],
         "title": "TrackOut",
         "type": "object"
@@ -14953,7 +15082,7 @@
     },
     "/api/v1/auth/me": {
       "get": {
-        "description": "The signed-in user, or 401. The bauble polls this on mount.",
+        "description": "Who is signed in.\n\nAlways HTTP 200. Signed-out is identity, not a fault: the bauble polls\nthis on mount, Chromium logs every 4xx, and the AutoPlay hunt treats\n4xx as a finding. Destructive routes that need a user still 401.",
         "operationId": "whoami_api_v1_auth_me_get",
         "responses": {
           "200": {
@@ -14991,6 +15120,30 @@
           }
         },
         "summary": "Get Kpi Ledger",
+        "tags": [
+          "bench"
+        ]
+      }
+    },
+    "/api/v1/bench/perf-kpi": {
+      "get": {
+        "description": "The perf ledger as cards: same kpis + snapshots shape as /bench/kpi.\n\nOne snapshot per (date, round), in date order, so the sparkline runs from\nthe first perf measurement to the latest. Cards with the most real readings\ncome first: the ones that have actually travelled lead the panel.",
+        "operationId": "get_perf_kpi_ledger_api_v1_bench_perf_kpi_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Perf Kpi Ledger Api V1 Bench Perf Kpi Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Perf Kpi Ledger",
         "tags": [
           "bench"
         ]
@@ -20826,6 +20979,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "507": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubStorageErrorResponse"
+                }
+              }
+            },
+            "description": "The hub sqlite database cannot take the write. code: SYNC_HUB_STORAGE."
           }
         },
         "summary": "Push",
@@ -21889,7 +22052,7 @@
     },
     "/api/v1/tracks/{stable_id}/stems": {
       "get": {
-        "description": "Return a stored v1 manifest only after all four files prove alignment.",
+        "description": "Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.",
         "operationId": "get_stem_manifest_api_v1_tracks__stable_id__stems_get",
         "parameters": [
           {
@@ -21907,7 +22070,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StemManifestOut"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/StemManifestOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StemUnavailableOut"
+                    }
+                  ],
+                  "title": "Response Get Stem Manifest Api V1 Tracks  Stable Id  Stems Get"
                 }
               }
             },

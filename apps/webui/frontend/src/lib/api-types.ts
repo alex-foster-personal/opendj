@@ -505,7 +505,11 @@ export interface paths {
         };
         /**
          * Whoami
-         * @description The signed-in user, or 401. The bauble polls this on mount.
+         * @description Who is signed in.
+         *
+         *     Always HTTP 200. Signed-out is identity, not a fault: the bauble polls
+         *     this on mount, Chromium logs every 4xx, and the AutoPlay hunt treats
+         *     4xx as a finding. Destructive routes that need a user still 401.
          */
         get: operations["whoami_api_v1_auth_me_get"];
         put?: never;
@@ -525,6 +529,30 @@ export interface paths {
         };
         /** Get Kpi Ledger */
         get: operations["get_kpi_ledger_api_v1_bench_kpi_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bench/perf-kpi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Perf Kpi Ledger
+         * @description The perf ledger as cards: same kpis + snapshots shape as /bench/kpi.
+         *
+         *     One snapshot per (date, round), in date order, so the sparkline runs from
+         *     the first perf measurement to the latest. Cards with the most real readings
+         *     come first: the ones that have actually travelled lead the panel.
+         */
+        get: operations["get_perf_kpi_ledger_api_v1_bench_perf_kpi_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3161,7 +3189,7 @@ export interface paths {
         };
         /**
          * Get Stem Manifest
-         * @description Return a stored v1 manifest only after all four files prove alignment.
+         * @description Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.
          */
         get: operations["get_stem_manifest_api_v1_tracks__stable_id__stems_get"];
         put?: never;
@@ -5113,6 +5141,23 @@ export interface components {
              */
             slot: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
         };
+        /**
+         * HubStorageErrorBody
+         * @description The ``detail`` object a storage-full push carries.
+         */
+        HubStorageErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * HubStorageErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        HubStorageErrorResponse: {
+            detail: components["schemas"]["HubStorageErrorBody"];
+        };
         /** JobIn */
         JobIn: {
             /** External Ref */
@@ -5492,6 +5537,12 @@ export interface components {
         };
         /** MeOut */
         MeOut: {
+            /** Signed In */
+            signed_in: boolean;
+            user: components["schemas"]["MeUserOut"] | null;
+        };
+        /** MeUserOut */
+        MeUserOut: {
             /** Avatar Url */
             avatar_url: string | null;
             /** Created At */
@@ -7298,6 +7349,28 @@ export interface components {
             where: string;
         };
         /**
+         * StemUnavailableOut
+         * @description HTTP 200 empty-state: no stored bundle for this stable_id.
+         */
+        StemUnavailableOut: {
+            /**
+             * Code
+             * @default STEM_BUNDLE_NOT_FOUND
+             * @constant
+             */
+            code: "STEM_BUNDLE_NOT_FOUND";
+            /** Message */
+            message: string;
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * Status
+             * @default unavailable
+             * @constant
+             */
+            status: "unavailable";
+        };
+        /**
          * StemsPlanOut
          * @description What separating this library at this tier would take.
          */
@@ -7728,6 +7801,8 @@ export interface components {
              * @enum {string}
              */
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
+            /** Auto Cues Available */
+            auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
             /** Created At */
@@ -7755,6 +7830,8 @@ export interface components {
             key?: string | null;
             /** Last Played At */
             last_played_at?: string | null;
+            /** Lyrics Available */
+            lyrics_available: boolean;
             /** Notes */
             notes?: string | null;
             /**
@@ -7782,6 +7859,8 @@ export interface components {
             stems: {
                 [key: string]: unknown;
             };
+            /** Stems Available */
+            stems_available: boolean;
             /**
              * Tags
              * @default []
@@ -7814,6 +7893,10 @@ export interface components {
             album?: string | null;
             /** Artist */
             artist?: string | null;
+            /** Artwork Available */
+            artwork_available: boolean | null;
+            /** Auto Cues Available */
+            auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
             /** Created At */
@@ -7828,6 +7911,8 @@ export interface components {
             key?: string | null;
             /** Last Played At */
             last_played_at?: string | null;
+            /** Lyrics Available */
+            lyrics_available: boolean;
             /** Notes */
             notes?: string | null;
             /**
@@ -7846,6 +7931,8 @@ export interface components {
             rating?: number | null;
             /** Stable Id */
             stable_id: string;
+            /** Stems Available */
+            stems_available: boolean;
             /**
              * Tags
              * @default []
@@ -9405,6 +9492,28 @@ export interface operations {
         };
     };
     get_kpi_ledger_api_v1_bench_kpi_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_perf_kpi_ledger_api_v1_bench_perf_kpi_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -13547,6 +13656,15 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description The hub sqlite database cannot take the write. code: SYNC_HUB_STORAGE. */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HubStorageErrorResponse"];
+                };
+            };
         };
     };
     status_api_v1_sync_status_get: {
@@ -14194,7 +14312,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StemManifestOut"];
+                    "application/json": components["schemas"]["StemManifestOut"] | components["schemas"]["StemUnavailableOut"];
                 };
             };
             /** @description Validation Error */

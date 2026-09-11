@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 from pathlib import Path
 
 import pytest
@@ -81,3 +82,32 @@ def test_happy_path_probes_emit_no_b_codes(tmp_path: Path) -> None:
     assert score_dimension(_dimension("citation.resolves"), cite) == 5
     assert score_dimension(_dimension("schema.id_policy"), schema) == 5
     assert score_dimension(_dimension("source_of_truth.unique"), corpus_findings) == 5
+
+
+def test_xref_integrity_skips_node_modules_enametoolong(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("[x](missing.md)\n", encoding="utf-8")
+    vendored = (
+        tmp_path
+        / "node_modules"
+        / ".pnpm"
+        / "semver@7.8.5"
+        / "node_modules"
+        / "semver"
+    )
+    vendored.mkdir(parents=True)
+    # No ')' in the href: the markdown extractor stops at the first ')'.
+    long_href = "=' | '='  partial-" + ("x" * 300)
+    (vendored / "README.md").write_text(f"[bad]({long_href})\n", encoding="utf-8")
+    with pytest.raises(OSError) as raised:
+        (vendored / long_href).exists()
+    assert raised.value.errno == errno.ENAMETOOLONG
+
+    findings = xref_integrity(tmp_path, REPO)
+
+    assert not any("node_modules" in str(f.get("path", "")) for f in findings)
+    assert any(
+        f["class"] == "relative_link_dangling"
+        and Path(f["path"]).name == "README.md"
+        and f.get("href") == "missing.md"
+        for f in findings
+    )

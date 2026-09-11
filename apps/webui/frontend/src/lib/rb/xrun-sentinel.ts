@@ -41,6 +41,7 @@ import {
 	quantumDurationMs,
 	xrunReportMessage,
 	xrunThresholdFromCadenceMs,
+	xrunWindowSeverity,
 	type XrunSessionCounter
 } from '$lib/rb/xrun-math';
 import xrunSentinelModuleUrl from '$lib/rb/xrun-sentinel-processor.js?url';
@@ -117,10 +118,12 @@ function _onReport(data: unknown): void {
 	}
 	_session = foldXrunReport(_session, data);
 	if (data.xruns === 0) return;
-	// error severity, so perf-event-log escalates it to /api/v1/client-errors
-	// (rate-limited there to one POST per kind per minute). A window the audio
-	// thread reports as late is an audio-liveness failure, not a notice.
-	recordPerfEvent('xrun', xrunReportMessage(data), null, 'error');
+	// A late window rate at or above 1% (LIVE-01 MAX_XRUN_RATE) is an
+	// audio-liveness failure and escalates to /api/v1/client-errors
+	// (rate-limited there to one POST per kind per minute). Isolated late
+	// callbacks still fold the session counter and still write a ring row,
+	// but they are warn, not console.error.
+	recordPerfEvent('xrun', xrunReportMessage(data), null, xrunWindowSeverity(data));
 }
 
 function _onMessage(data: unknown): void {

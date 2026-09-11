@@ -81,7 +81,10 @@ test('a pointer can travel from the SOURCE button into the menu without it closi
 	await page.mouse.move(fromX, fromY);
 	await expect(page.locator('.src-menu')).toBeVisible();
 
-	const ownBox = await page.locator('.src-seg button', { hasText: 'OWN' }).boundingBox();
+	const ownBox = await page
+		.getByLabel('beatgrid source')
+		.getByRole('button', { name: 'OWN' })
+		.boundingBox();
 	if (ownBox === null) throw new Error('the OWN button has no layout box');
 	const toX = ownBox.x + ownBox.width / 2;
 	const toY = ownBox.y + ownBox.height / 2;
@@ -96,7 +99,8 @@ test('a pointer can travel from the SOURCE button into the menu without it closi
 
 	await expect(page.locator('.src-menu')).toBeVisible();
 	const landed = await page.evaluate(() => {
-		const own = [...document.querySelectorAll('.src-seg button')].find(
+		const group = document.querySelector('[aria-label="beatgrid source"]');
+		const own = [...(group?.querySelectorAll('button') ?? [])].find(
 			(b) => b.textContent?.trim() === 'OWN'
 		);
 		if (own === undefined) return false;

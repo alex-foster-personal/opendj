@@ -74,7 +74,14 @@ def render_report(
     mtd = month_to_date(rows, month)
     used = _sum(mtd, "allowance_minutes")
     pct = (used / allowance_limit * 100) if allowance_limit else 0.0
-    state = "STOP" if pct >= stop_pct else "WARN" if pct >= warn_pct else "OK"
+    if not coverage.is_complete:
+        state = "UNKNOWN"
+    elif pct >= stop_pct:
+        state = "STOP"
+    elif pct >= warn_pct:
+        state = "WARN"
+    else:
+        state = "OK"
     wasted = sum(r.allowance_minutes for r in mtd if r.is_waste)
     unpriced = [r for r in rows if r.unpriced_jobs]
 
