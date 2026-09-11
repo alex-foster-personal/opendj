@@ -34,6 +34,9 @@ import { test } from 'node:test';
 const SOURCE_PATH = fileURLToPath(
 	new URL('../../src/lib/components/rb/AnalysisSourceToggle.svelte', import.meta.url)
 );
+const MENU_PATH = fileURLToPath(
+	new URL('../../src/lib/components/rb/AnalysisSourceMenu.svelte', import.meta.url)
+);
 
 function _source() {
 	const text = readFileSync(SOURCE_PATH, 'utf8');
@@ -76,11 +79,12 @@ test('the poll timer is cleared, so it does not outlive the component', () => {
 });
 
 test('the source menu is viewport-positioned outside the clipped top bar', () => {
-	const text = _source();
-	assert.match(text, /getBoundingClientRect\(\)/, 'menu placement must measure its trigger');
-	assert.match(text, /style=\{menuStyle\}/, 'the measured viewport placement must reach the menu');
+	const toggle = readFileSync(SOURCE_PATH, 'utf8');
+	const menu = readFileSync(MENU_PATH, 'utf8');
+	assert.match(toggle, /getBoundingClientRect\(\)/, 'menu placement must measure its trigger');
+	assert.match(toggle, /style=\{menuStyle\}/, 'the measured viewport placement must reach the menu');
 	assert.match(
-		text,
+		menu,
 		/\.src-menu\s*\{\s*position:\s*fixed/s,
 		'a menu below an overflow-hidden top bar must use fixed positioning'
 	);
