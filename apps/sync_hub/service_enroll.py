@@ -12,7 +12,9 @@ HTTP status.
 The status mapping is the part worth keeping together in one readable block:
 
   401  the credential did not establish an owner
-  501  the credential KIND is real and reserved but not built yet
+  503  the credential KIND is real but this hub cannot resolve it right now
+       (google_id_token: no OAuth client id configured, or Google's JWKS
+       unreachable)
   409  the machine is already owned by somebody else, its owner row is
        revoked, or the enrollment was otherwise refused
 
@@ -20,13 +22,16 @@ The three 409s carry different ``code`` values rather than one, because the
 remedies differ: a conflict wants the rightful owner, a revocation wants a
 deliberate decision to un-revoke, and the generic case wants the message.
 
-501 rather than 401 for the reserved ``google_id_token`` kind is deliberate.
-An unimplemented seam answering like a bad token is indistinguishable from a
-typo, and whoever picks up the in-app path would have nothing to find.
+503 rather than 401 when the hub cannot verify is deliberate. The remedy is
+on the hub, and a user told their token is bad would re-sign-in forever
+against a hub that has no client id. It used to be 501, while the kind was
+reserved but unbuilt; the verifier landed in :mod:`apps.sync_hub.google_id_token`.
 """
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Literal
 
 from fastapi import HTTPException
@@ -93,11 +98,13 @@ ENROLL_RESPONSES: dict[int | str, dict[str, object]] = {
             "(SYNC_ENROLL)."
         ),
     },
-    501: {
+    503: {
         "model": EnrollErrorResponse,
         "description": (
-            "The credential KIND is real and reserved but not built yet. "
-            "code: SYNC_ENROLL_KIND_UNAVAILABLE."
+            "The credential KIND is real but this hub cannot resolve it right "
+            "now: for google_id_token, no OAuth client id is configured or "
+            "Google's signing keys are unreachable. Never answered with an "
+            "unverified acceptance. code: SYNC_ENROLL_KIND_UNAVAILABLE."
         ),
     },
 }
@@ -116,36 +123,65 @@ class EnrollResponse(BaseModel):
     created: bool
 
 
+def verify_credential(
+    credential: EnrollCredentialModel,
+) -> enrollment_credentials.VerifiedCredential:
+    """Step 1, BEFORE the route opens its write transaction.
+
+    Everything network-bound (a Google id_token's JWKS fetch) happens here,
+    so the hub's sqlite write lock is never held across an outbound request
+    an unauthenticated caller triggered. Refusals map to the same statuses
+    as :func:`perform_enroll`'s.
+    """
+    with _enroll_errors_as_http():
+        return enrollment_credentials.verify_outside_transaction(
+            enrollment_credentials.credential_from_wire(credential.kind, credential.value)
+        )
+
+
 def perform_enroll(
     conn: sqlite3.Connection,
     *,
     machine: MachineRow,
-    credential: EnrollCredentialModel,
+    credential: enrollment_credentials.VerifiedCredential,
     hub_machine_id: str,
 ) -> EnrollResponse:
-    """Resolve the credential, then enroll. Caller owns the transaction.
+    """Step 2: resolve the verified credential, then enroll. Caller owns the transaction.
 
     Every raise below leaves the caller's transaction to roll back, so a
     refused enrollment writes nothing at all -- not the owner row, and not
     the ``machines`` row either.
     """
-    try:
-        resolved = enrollment_credentials.credential_from_wire(
-            credential.kind, credential.value
-        )
+    with _enroll_errors_as_http():
         owner = enrollment_credentials.resolve_enrollment_identity(
-            conn, resolved, machine_id=machine.machine_id
+            conn, credential, machine_id=machine.machine_id
         )
         result = enrollment.enroll_machine(
             conn,
             machine=machine,
             owner=owner,
             hub_machine_id=hub_machine_id,
-            enrolled_via=enrollment_credentials.ENROLLED_VIA_BY_KIND[credential.kind],
+            enrolled_via=enrollment_credentials.ENROLLED_VIA_BY_KIND[credential.KIND],
         )
+    return EnrollResponse(
+        machine_id=result.machine_id,
+        owner_google_sub=result.owner.google_sub,
+        owner_email=result.owner.email,
+        hub_machine_id=result.hub_machine_id,
+        enrolled_at=result.enrolled_at,
+        enrolled_via=result.enrolled_via,
+        created=result.created,
+    )
+
+
+@contextmanager
+def _enroll_errors_as_http() -> Iterator[None]:
+    """The one place an enrollment failure becomes an HTTP status."""
+    try:
+        yield
     except enrollment_credentials.EnrollmentCredentialUnavailable as exc:
         raise HTTPException(
-            status_code=501,
+            status_code=503,
             detail={"code": "SYNC_ENROLL_KIND_UNAVAILABLE", "message": str(exc)},
         ) from exc
     except enrollment_credentials.EnrollmentCredentialError as exc:
@@ -167,15 +203,6 @@ def perform_enroll(
         raise HTTPException(
             status_code=409, detail={"code": "SYNC_ENROLL", "message": str(exc)}
         ) from exc
-    return EnrollResponse(
-        machine_id=result.machine_id,
-        owner_google_sub=result.owner.google_sub,
-        owner_email=result.owner.email,
-        hub_machine_id=result.hub_machine_id,
-        enrolled_at=result.enrolled_at,
-        enrolled_via=result.enrolled_via,
-        created=result.created,
-    )
 
 
-__all__ = ["EnrollCredentialModel", "EnrollResponse", "perform_enroll"]
+__all__ = ["EnrollCredentialModel", "EnrollResponse", "perform_enroll", "verify_credential"]

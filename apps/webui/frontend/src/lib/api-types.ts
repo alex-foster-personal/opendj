@@ -15124,8 +15124,8 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description The credential KIND is real and reserved but not built yet. code: SYNC_ENROLL_KIND_UNAVAILABLE. */
-            501: {
+            /** @description The credential KIND is real but this hub cannot resolve it right now: for google_id_token, no OAuth client id is configured or Google's signing keys are unreachable. Never answered with an unverified acceptance. code: SYNC_ENROLL_KIND_UNAVAILABLE. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

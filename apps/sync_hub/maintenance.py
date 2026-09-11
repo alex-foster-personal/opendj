@@ -287,9 +287,10 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "a token from `python -m apps.sync_hub grant` on the hub. The "
-            "other credential kind, google_id_token, is the in-app path and "
-            "is not yet resolvable by the hub. Prefer --grant-file: an "
-            "argument is readable in /proc and lands in shell history."
+            "other credential kind, google_id_token, is the in-app path: "
+            "POST it to /api/v1/sync/enroll on a hub configured with the "
+            "OAuth client id. Prefer --grant-file: an argument is readable "
+            "in /proc and lands in shell history."
         ),
     )
     grant_source.add_argument(
