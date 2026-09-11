@@ -165,6 +165,8 @@
 	import LyricSearchResults from './browser/LyricSearchResults.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
+	import { completeLibraryUsable } from '$lib/client-telemetry';
+	import { fillAllTracksPane } from './browser/fill-all-tracks';
 	import { fetchAllPages } from './browser/virtual-window';
 	import { ensureAudioPrefetch } from '$lib/rb/audio-prefetch-cache.svelte';
 	import {
@@ -1284,9 +1286,9 @@
 			console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
 		}
 		for (const p of panes) {
-			// A blank pane has nothing to refresh, and a pane mid-load already
-			// has a newer load token that owns its rows.
-			if (p.playlist_id === null || p.loading) continue;
+			// A blank pane has nothing to refresh. Skip blocking loads
+			// (`loading`) and All Tracks background fills (`load_progress`).
+			if (p.playlist_id === null || p.loading || p.load_progress !== null) continue;
 			// Snapshotted BEFORE the await, then rechecked after it: the user
 			// can switch this pane to another playlist while the fetch is in
 			// flight, and writing the response then would paint pane B with
@@ -1538,14 +1540,23 @@
 		// completeLoad/failLoad no-op when a newer load superseded this one.
 		const seq = p.beginLoad(node.playlist_id, node.name);
 		try {
+			if (node.kind === 'all_tracks') {
+				await fillAllTracksPane({
+					pane: p,
+					seq,
+					fetchPage: (cursor) => listTracksHydrated({ limit: PAGE_SIZE, cursor }),
+					mapRow: (t, order) => _rowFromListWire(t, order),
+					progressTotal: allTracksNonBrokenCount,
+					onFirstPaint: () => completeLibraryUsable({ source: 'all-tracks' }),
+					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
+					onFillError: (error) => pushToast(`playlist load failed: ${error}`, 'error')
+				});
+				return;
+			}
 			const result =
-				node.kind === 'all_tracks'
-					? await _fetchAllRows((info) =>
-							p.updateLoadProgress(seq, info.loaded, allTracksNonBrokenCount)
-						)
-					: node.kind === 'missing_tracks'
-						? await fetchMissingTrackRows()
-						: await _fetchPlaylistRows(node.playlist_id);
+				node.kind === 'missing_tracks'
+					? await fetchMissingTrackRows()
+					: await _fetchPlaylistRows(node.playlist_id);
 			p.completeLoad(seq, result.rows, result.truncated, result.etag);
 		} catch (exc) {
 			if (p.failLoad(seq, String(exc))) {

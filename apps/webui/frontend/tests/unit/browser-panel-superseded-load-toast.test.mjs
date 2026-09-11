@@ -60,7 +60,7 @@ function makeLoadPane({ fetchPlaylistRows, pushToast }) {
 	const factory = Function(
 		'panes',
 		'setLastPlaylist',
-		'_fetchAllRows',
+		'fillAllTracksPane',
 		'allTracksNonBrokenCount',
 		'_fetchPlaylistRows',
 		'pushToast',
@@ -72,7 +72,7 @@ function makeLoadPane({ fetchPlaylistRows, pushToast }) {
 			throw new Error('setLastPlaylist must not be called');
 		},
 		() => {
-			throw new Error('_fetchAllRows must not be called (node.kind is "playlist")');
+			throw new Error('fillAllTracksPane must not be called (node.kind is "playlist")');
 		},
 		0,
 		fetchPlaylistRows,

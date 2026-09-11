@@ -5,9 +5,10 @@
  * - computeVirtualWindow: row-window math for TrackTable's DOM
  *   virtualization (which row indices to actually mount, given scroll
  *   position + row height + an overscan buffer).
- * - fetchAllPages: a generic cursor-following fetch loop so the 500-row
- *   server page cap no longer becomes a client-side truncation - callers
- *   supply the page fetcher, this walks next_cursor to exhaustion.
+ * - forEachCursorPage / fetchAllPages: a generic cursor-following fetch
+ *   loop so the 500-row server page cap no longer becomes a client-side
+ *   truncation - callers supply the page fetcher, this walks next_cursor
+ *   to exhaustion (or until shouldContinue says stop).
  */
 
 // ------------------------------------------------------------ row window
@@ -113,13 +114,22 @@ export interface CursorPage<T> {
 	next_cursor: string | null;
 }
 
-/** Walk a cursor-paginated endpoint to exhaustion, concatenating every
- * page's items in order. maxPages is a runaway-loop safety ceiling (a
- * backend that never returns next_cursor: null is a real bug to surface
- * loudly, not silently truncate) - NOT a library-size cap, and must not
- * become one: the backend's cursor is a "maybe more" heuristic (it hands
- * back a non-null cursor whenever a page comes back full, whether or not
- * a next page actually has rows - apps/webui/server/backend.py's
+/** One completed cursor page. `done` is `next_cursor === null`. */
+export interface CursorPageInfo<T> {
+	items: T[];
+	loaded: number;
+	pageCount: number;
+	done: boolean;
+}
+
+/** Walk a cursor-paginated endpoint, firing `onPage` after every successful
+ * fetch (including the confirming empty page for an exact N * pageSize
+ * library). maxPages is a runaway-loop safety ceiling (a backend that
+ * never returns next_cursor: null is a real bug to surface loudly, not
+ * silently truncate) - NOT a library-size cap, and must not become one:
+ * the backend's cursor is a "maybe more" heuristic (it hands back a
+ * non-null cursor whenever a page comes back full, whether or not a next
+ * page actually has rows - apps/webui/server/backend.py's
  * `next_cursor = page[-1].stable_id if len(page) == limit else None`), so
  * ANY library whose size is an exact multiple of the page size needs one
  * extra confirming empty-page fetch before next_cursor goes null. A low
@@ -127,7 +137,56 @@ export interface CursorPage<T> {
  * for a real, if large, library - default is generous enough that no
  * plausible real library reaches it (500/page * 20000 = 10,000,000 rows)
  * while still being finite so a truly broken backend (cursor never
- * advancing) fails loudly instead of looping forever. */
+ * advancing) fails loudly instead of looping forever.
+ *
+ * `shouldContinue` is cooperative cancel: when it returns false, stop
+ * requesting further pages and return without throwing. A cancelled load
+ * is not a pagination bug. */
+export async function forEachCursorPage<T>(
+	fetchPage: (cursor: string | undefined) => Promise<CursorPage<T>>,
+	opts: {
+		maxPages?: number;
+		shouldContinue?: () => boolean;
+		onPage: (info: CursorPageInfo<T>) => void;
+	}
+): Promise<void> {
+	const maxPages = opts.maxPages ?? 20000;
+	if (!Number.isSafeInteger(maxPages) || maxPages <= 0) {
+		throw new Error(`fetchAllPages: maxPages must be a positive integer, got ${maxPages}`);
+	}
+	let cursor: string | undefined;
+	let pages = 0;
+	let loaded = 0;
+	const seenCursors = new Set<string>();
+	for (;;) {
+		if (opts.shouldContinue?.() === false) return;
+		if (cursor !== undefined) {
+			if (seenCursors.has(cursor)) {
+				throw new Error(
+					`fetchAllPages: repeated cursor ${JSON.stringify(cursor)} - likely a pagination bug`
+				);
+			}
+			seenCursors.add(cursor);
+		}
+		const page = await fetchPage(cursor);
+		pages += 1;
+		loaded += page.items.length;
+		const next = page.next_cursor;
+		opts.onPage({ items: page.items, loaded, pageCount: pages, done: next === null });
+		if (next === null) return;
+		if (pages >= maxPages) {
+			throw new Error(
+				`fetchAllPages: exceeded ${maxPages} pages without next_cursor going null - ` +
+					'likely a pagination bug, not a real library size'
+			);
+		}
+		cursor = next;
+	}
+}
+
+/** Walk a cursor-paginated endpoint to exhaustion, concatenating every
+ * page's items in order. Thin wrapper over {@link forEachCursorPage} so
+ * ColumnBrowser and the All Tracks refresh path stay byte-compatible. */
 export async function fetchAllPages<T>(
 	fetchPage: (cursor: string | undefined) => Promise<CursorPage<T>>,
 	opts: {
@@ -141,34 +200,13 @@ export async function fetchAllPages<T>(
 		onPage?: (info: { loaded: number; pageCount: number }) => void;
 	} = {}
 ): Promise<T[]> {
-	const maxPages = opts.maxPages ?? 20000;
-	if (!Number.isSafeInteger(maxPages) || maxPages <= 0) {
-		throw new Error(`fetchAllPages: maxPages must be a positive integer, got ${maxPages}`);
-	}
 	const out: T[] = [];
-	let cursor: string | undefined;
-	let pages = 0;
-	const seenCursors = new Set<string>();
-	for (;;) {
-		if (cursor !== undefined) {
-			if (seenCursors.has(cursor)) {
-				throw new Error(
-					`fetchAllPages: repeated cursor ${JSON.stringify(cursor)} - likely a pagination bug`
-				);
-			}
-			seenCursors.add(cursor);
+	await forEachCursorPage(fetchPage, {
+		...(opts.maxPages !== undefined ? { maxPages: opts.maxPages } : {}),
+		onPage: (info) => {
+			out.push(...info.items);
+			opts.onPage?.({ loaded: info.loaded, pageCount: info.pageCount });
 		}
-		const page = await fetchPage(cursor);
-		out.push(...page.items);
-		pages += 1;
-		opts.onPage?.({ loaded: out.length, pageCount: pages });
-		if (page.next_cursor === null) return out;
-		if (pages >= maxPages) {
-			throw new Error(
-				`fetchAllPages: exceeded ${maxPages} pages without next_cursor going null - ` +
-					'likely a pagination bug, not a real library size'
-			);
-		}
-		cursor = page.next_cursor;
-	}
+	});
+	return out;
 }
