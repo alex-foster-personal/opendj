@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import json
+import os
+import signal
+import shutil
+import socket
 import statistics
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -14,9 +20,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from scripts.perf.kpi_ceiling import CEILING_FACTOR, ceiling_exceeded, trailing_median_ms
+from scripts.perf.capture_kpi_ledger import format_appended
+from scripts.perf.capture_kpis import capture_s5_against_engine
+from scripts.perf.kpi_ceiling import CEILING_FACTOR, ceiling_verdict, trailing_median_ms
 from scripts.perf.kpi_ledger_append import append_entries, load_ledger
-from scripts.perf.perf_kpi_config import PerfKpiConfig, kpi_name
+from scripts.perf.perf_kpi_config import REPO_ROOT, PerfKpiConfig, kpi_name
+
+ENGINE_READY_TIMEOUT_S = 90.0
+ENGINE_STOP_GRACE_S = 5.0
+SCRATCH_ENGINE_LOG_NAME = "scratch-engine.log"
 
 ProbeResult = tuple[int, float]
 ProbeFn = Callable[[str, str], ProbeResult]
@@ -35,6 +47,7 @@ class WarmMedian:
 class NightlyOutcome:
     entries: list[dict[str, Any]]
     breaches: list[dict[str, Any]]
+    unknowns: list[dict[str, Any]]
     exit_code: int
 
 
@@ -139,11 +152,11 @@ def find_ceiling_breaches(
             continue
         name = kpi_name(item.leg, item.profile_key)
         trailing = trailing_median_ms(ledger_entries, kpi=name, today=today)
-        if ceiling_exceeded(
+        if ceiling_verdict(
             warm_median_ms=item.median_ms,
             trailing_median_ms=trailing,
             factor=CEILING_FACTOR,
-        ):
+        ) == "breach":
             breaches.append(
                 {
                     "kpi": name,
@@ -156,10 +169,207 @@ def find_ceiling_breaches(
     return breaches
 
 
+def find_ceiling_unknowns(
+    ledger_entries: list[dict[str, Any]],
+    measurements: list[WarmMedian],
+    *,
+    today: dt.date,
+) -> list[dict[str, Any]]:
+    unknowns: list[dict[str, Any]] = []
+    for item in measurements:
+        if item.leg != "anlz" or item.median_ms is None:
+            continue
+        name = kpi_name(item.leg, item.profile_key)
+        trailing = trailing_median_ms(ledger_entries, kpi=name, today=today)
+        if ceiling_verdict(
+            warm_median_ms=item.median_ms,
+            trailing_median_ms=trailing,
+            factor=CEILING_FACTOR,
+        ) == "unknown":
+            unknowns.append(
+                {
+                    "kpi": name,
+                    "warm_median_ms": item.median_ms,
+                    "trailing_median_ms": None,
+                    "factor": CEILING_FACTOR,
+                    "profile_key": item.profile_key,
+                    "reason": "no trailing 7-day median",
+                }
+            )
+    return unknowns
+
+
+def _track_stable_id(config: PerfKpiConfig, key: str) -> str | None:
+    for track in config.tracks:
+        if track.key == key:
+            return track.stable_id
+    return None
+
+
 def append_history_row(path: Path, row: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _port_is_bound(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.25):
+            return True
+    except OSError:
+        return False
+
+
+def _health_ok(base_url: str, timeout_s: float = 2.0) -> bool:
+    url = f"{base_url.rstrip('/')}/api/v1/health"
+    request = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+            return response.status == 200
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError):
+        return False
+
+
+def _engine_unavailable(
+    config: PerfKpiConfig,
+    reason: str,
+    *,
+    engine_log: Path | None = None,
+) -> int:
+    stamp = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    row: dict[str, Any] = {
+        "ts": stamp,
+        "event": "engine_unavailable",
+        "machine": config.machine,
+        "status": "fail",
+        "reason": reason,
+    }
+    if engine_log is not None:
+        row["engine_log"] = str(engine_log)
+    append_history_row(config.history_log, row)
+    message = f"perf KPI nightly: engine unavailable: {reason}"
+    if engine_log is not None:
+        message = f"{message} (log: {engine_log})"
+    print(message, file=sys.stderr)
+    return 1
+
+
+def stop_scratch_engine(proc: subprocess.Popen[Any]) -> None:
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(proc.pid, signal.SIGTERM)
+    try:
+        proc.wait(timeout=ENGINE_STOP_GRACE_S)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait()
+
+
+def _scratch_engine_argv(data_dir: Path, port: int) -> list[str] | None:
+    uv = shutil.which("uv")
+    if uv is None:
+        return None
+    return [
+        uv,
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "apps.engine_core",
+        "serve",
+        "--data-dir",
+        str(data_dir),
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+    ]
+
+
+def acquire_nightly_engine(
+    config: PerfKpiConfig,
+    *,
+    base_url: str | None,
+) -> tuple[str | None, subprocess.Popen[Any] | None, Path | None, int]:
+    if base_url is not None:
+        return base_url.rstrip("/"), None, None, 0
+
+    data_dir = config.data_dir
+    if data_dir is None:
+        return None, None, None, _engine_unavailable(config, "MDT_PERF_KPI_DATA_DIR is unset")
+
+    state_db = data_dir / "state" / "state.db"
+    if not state_db.is_file():
+        return (
+            None,
+            None,
+            None,
+            _engine_unavailable(config, f"missing state database: {state_db}"),
+        )
+
+    port = config.scratch_port
+    if _port_is_bound(port):
+        return (
+            None,
+            None,
+            None,
+            _engine_unavailable(
+                config,
+                "already bound; refusing to reuse a foreign engine",
+            ),
+        )
+
+    argv = _scratch_engine_argv(data_dir, port)
+    if argv is None:
+        path_var = os.environ.get("PATH", "")
+        return (
+            None,
+            None,
+            None,
+            _engine_unavailable(config, f"uv not found on PATH ({path_var})"),
+        )
+
+    config.state_dir.mkdir(parents=True, exist_ok=True)
+    log_path = config.state_dir / SCRATCH_ENGINE_LOG_NAME
+    url = f"http://127.0.0.1:{port}"
+    with log_path.open("ab") as log_handle:
+        proc = subprocess.Popen(
+            argv,
+            cwd=REPO_ROOT,
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+
+    deadline = time.monotonic() + ENGINE_READY_TIMEOUT_S
+    while True:
+        if proc.poll() is not None:
+            stop_scratch_engine(proc)
+            return (
+                None,
+                None,
+                log_path,
+                _engine_unavailable(
+                    config,
+                    f"engine exited before healthy (code={proc.returncode})",
+                    engine_log=log_path,
+                ),
+            )
+        if _health_ok(url):
+            return url, proc, log_path, 0
+        if time.monotonic() >= deadline:
+            stop_scratch_engine(proc)
+            return (
+                None,
+                None,
+                log_path,
+                _engine_unavailable(
+                    config,
+                    f"engine not healthy within {ENGINE_READY_TIMEOUT_S}s",
+                    engine_log=log_path,
+                ),
+            )
+        time.sleep(0.25)
 
 
 def file_ceiling_issue(
@@ -238,11 +448,23 @@ def run_nightly(
         measurements=measurements,
     )
     append_entries(config.ledger_path, rows)
+    s5_rows = capture_s5_against_engine(
+        engine=base_url,
+        ledger=config.ledger_path,
+        data_dir=config.data_dir,
+        small=_track_stable_id(config, "small_mp3"),
+        large=_track_stable_id(config, "large_mp3"),
+        stemmed=_track_stable_id(config, "stemmed_mp3"),
+        sha=git_sha,
+    )
+    for s5_row in s5_rows:
+        print(format_appended(s5_row))
     ledger = load_ledger(config.ledger_path)
     breaches = find_ceiling_breaches(ledger["entries"], measurements, today=today)
+    unknowns = find_ceiling_unknowns(ledger["entries"], measurements, today=today)
     exit_code = 0
+    stamp = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     if breaches:
-        stamp = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         append_history_row(
             config.history_log,
             {
@@ -257,4 +479,22 @@ def run_nightly(
         if file_issue:
             file_ceiling_issue(breaches, repository=repository, git_sha=git_sha)
         exit_code = 3
-    return NightlyOutcome(entries=rows, breaches=breaches, exit_code=exit_code)
+    if unknowns:
+        append_history_row(
+            config.history_log,
+            {
+                "ts": stamp,
+                "event": "ceiling_unknown",
+                "machine": config.machine,
+                "status": "ok",
+                "git_sha": git_sha,
+                "reason": "no trailing 7-day median",
+                "unknowns": unknowns,
+            },
+        )
+    return NightlyOutcome(
+        entries=rows,
+        breaches=breaches,
+        unknowns=unknowns,
+        exit_code=exit_code,
+    )

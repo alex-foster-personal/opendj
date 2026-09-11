@@ -1540,6 +1540,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feedback/comments/{comment_id}/replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Append a follow-up on the same pin
+         * @description Appends a follow-up comment on the same pin without creating a second marker. This is not POST /follow-on, which opens a new pin at the same anchor only after the parent is fixed or merged. The agent_note scalar remains the latest agent lifecycle note; PATCH of agent_note also appends an agent reply unless it duplicates the last agent turn.
+         */
+        post: operations["add_reply_api_v1_feedback_comments__comment_id__replies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/general": {
         parameters: {
             query?: never;
@@ -3173,6 +3193,26 @@ export interface paths {
          * @description Live state of one generate job. Reports the real returncode, not a guess.
          */
         get: operations["job_status_api_v1_stems_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stems/live-capability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Live Stems Capability
+         * @description Read install-time capability and, when requested, its deck plan.
+         */
+        get: operations["get_live_stems_capability_api_v1_stems_live_capability_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5275,6 +5315,8 @@ export interface components {
             issue_url?: string | null;
             /** Page */
             page: string;
+            /** Replies */
+            replies?: components["schemas"]["CommentReplyOut"][];
             /** Status */
             status?: string | null;
             /** Text */
@@ -5285,6 +5327,35 @@ export interface components {
             x_pct: number;
             /** Y Pct */
             y_pct: number;
+        };
+        /** CommentReplyIn */
+        CommentReplyIn: {
+            /** Agent Kind */
+            agent_kind?: string | null;
+            /**
+             * Author
+             * @default operator
+             * @enum {string}
+             */
+            author: "operator" | "agent";
+            /** Text */
+            text: string;
+        };
+        /** CommentReplyOut */
+        CommentReplyOut: {
+            /** Agent Kind */
+            agent_kind?: string | null;
+            /**
+             * Author
+             * @enum {string}
+             */
+            author: "operator" | "agent";
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
         };
         /** CommentUpdateIn */
         CommentUpdateIn: {
@@ -13326,6 +13397,41 @@ export interface operations {
             };
         };
     };
+    add_reply_api_v1_feedback_comments__comment_id__replies_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentReplyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_general_api_v1_feedback_general_get: {
         parameters: {
             query?: never;
@@ -16371,6 +16477,45 @@ export interface operations {
             path: {
                 job_id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_live_stems_capability_api_v1_stems_live_capability_get: {
+        parameters: {
+            query?: {
+                /** @description Deck Count */
+                deck_count?: number | null;
+                /**
+                 * @description Bpm
+                 * @default 120
+                 */
+                bpm?: number;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

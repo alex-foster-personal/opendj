@@ -252,6 +252,7 @@ def test_the_real_load_average_is_a_plausible_reading_not_a_placeholder() -> Non
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_unreadable_kernel_pressure_is_absent_never_zero() -> None:
+    """[if] the sampler omits [then] the response omits, [else stop]."""
     cache = MachinePressureCache()
     sampler, _ = _counting_sampler({"load_average_1m": 1.0})
 
@@ -263,6 +264,7 @@ def test_unreadable_kernel_pressure_is_absent_never_zero() -> None:
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_kernel_pressure_zero_is_treated_as_unreadable() -> None:
+    """[if] kernel_memory_pressure_level is zero [then] the field is omitted as, [else stop]."""
     cache = MachinePressureCache()
     sampler, _ = _counting_sampler(
         {"load_average_1m": 1.0, "kernel_memory_pressure_level": 0}
@@ -275,6 +277,7 @@ def test_kernel_pressure_zero_is_treated_as_unreadable() -> None:
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_churn_score_uses_ram_cleanup_weight_ten() -> None:
+    """[if] vm_stat deltas include swap and [then] churn_score weights swap, [else stop]."""
     cache = MachinePressureCache()
     sampler, _ = _counting_sampler({"load_average_1m": 1.0})
     prior = {
@@ -298,6 +301,7 @@ def test_churn_score_uses_ram_cleanup_weight_ten() -> None:
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_first_sample_omits_churn_rather_than_zero() -> None:
+    """[if] no prior vm_stat snapshot exists [then] churn_score is omitted, [else stop]."""
     cache = MachinePressureCache()
     sampler, _ = _counting_sampler({"load_average_1m": 1.0})
     snapshot = {
@@ -314,6 +318,7 @@ def test_first_sample_omits_churn_rather_than_zero() -> None:
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_elevated_kernel_lengthens_the_ttl_to_five_seconds() -> None:
+    """[if] kernel_memory_pressure_level is elevated [then] TTL is 5s, [else stop]."""
     cache = MachinePressureCache()
     sampler, calls = _counting_sampler(
         {"load_average_1m": 1.0, "kernel_memory_pressure_level": 2}
@@ -328,6 +333,7 @@ def test_elevated_kernel_lengthens_the_ttl_to_five_seconds() -> None:
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_elevated_churn_lengthens_even_when_kernel_is_fine() -> None:
+    """[if] churn_score is elevated while kernel pressure is [then] TTL is still, [else stop]."""
     cache = MachinePressureCache()
     sampler, calls = _counting_sampler(
         {"load_average_1m": 1.0, "kernel_memory_pressure_level": 1}
@@ -355,6 +361,7 @@ def test_elevated_churn_lengthens_even_when_kernel_is_fine() -> None:
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_idle_ttl_is_one_second() -> None:
+    """[if] kernel pressure and churn are both idle [then] TTL is 1s, [else stop]."""
     cache = MachinePressureCache()
     sampler, calls = _counting_sampler(
         {"load_average_1m": 1.0, "kernel_memory_pressure_level": 1}
@@ -376,6 +383,7 @@ def test_idle_ttl_is_one_second() -> None:
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_sampler_does_not_sleep_to_build_churn(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] machine pressure is read on the request path [then] time.sleep is never, [else stop]."""
     def fail_sleep(_seconds: float) -> None:
         raise AssertionError("time.sleep must not run on the request path")
 
@@ -394,6 +402,7 @@ def test_sampler_does_not_sleep_to_build_churn(monkeypatch: pytest.MonkeyPatch) 
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_live_members_list_unnamed_rather_than_omitting() -> None:
+    """[if] a process family includes [then] live_process_family_members lists them, [else stop]."""
     rows = [
         ProcessInfo(pid=100, ppid=1, command="opendj-engine --name opendj-engine", rss_bytes=1000),
         ProcessInfo(pid=101, ppid=100, command="python3 -m apps.engine_core serve", rss_bytes=500),
@@ -408,6 +417,7 @@ def test_live_members_list_unnamed_rather_than_omitting() -> None:
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_live_walk_does_not_emit_command_or_pid() -> None:
+    """[if] live_process_family_members returns member [then] each record omits, [else stop]."""
     rows = [
         ProcessInfo(pid=100, ppid=1, command="opendj-engine --name opendj-engine", rss_bytes=1000),
     ]
@@ -419,6 +429,7 @@ def test_live_walk_does_not_emit_command_or_pid() -> None:
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_opendj_process_name_matches_probe_parser() -> None:
+    """[if] representative process command lines are parsed [then] webui and probe, [else stop]."""
     fixtures = [
         ("opendj-engine --name opendj-engine --port 8585 [/usr/bin/python3 ...]", "opendj-engine"),
         ("opendj-worker --name opendj-worker [...]", "opendj-worker"),

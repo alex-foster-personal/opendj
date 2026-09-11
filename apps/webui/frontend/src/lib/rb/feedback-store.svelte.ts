@@ -33,6 +33,9 @@
  *   ✔︎ 🎯 submitFollowOn: POST the dedicated /follow-on endpoint so the
  *     parent reference is server-generated, never client-typed text.
  *     [if] a follow-on pin can lose its parent link [then ⛔️] broken
+ *   ✔︎ 🎯 addReply: POST /comments/{id}/replies so a follow-up stays on the
+ *     same pin, never a second marker.
+ *     [if] a follow-up creates a second pin at a different position [then ⛔️] broken
  *   ✔︎ 🎯 refreshPins: discards a snapshot that started before a local
  *     mutation landed, and retires the poll on a 404.
  *     [if] a poll in flight during an archive/add overwrites it with stale
@@ -403,6 +406,28 @@ export async function submitFollowOn(
   text: string,
 ): Promise<boolean> {
   return (await _submitFollowOnPin(parentId, text)) !== null;
+}
+
+/**
+ * Append a follow-up on the same pin (issue #905). The daemon stores it in
+ * `replies` and returns the full pin; only then does the canvas re-render.
+ */
+export async function addReply(pinId: string, text: string): Promise<FeedbackPin | null> {
+  try {
+    const { data } = await api.POST("/api/v1/feedback/comments/{comment_id}/replies", {
+      params: { path: { comment_id: pinId } },
+      body: { text, author: "operator" },
+    });
+    if (data) {
+      _pinGeneration++;
+      _upsertPin(data);
+    }
+    feedbackState.error = null;
+    return data ?? null;
+  } catch (err) {
+    feedbackState.error = err instanceof Error ? err.message : String(err);
+    return null;
+  }
 }
 
 /**

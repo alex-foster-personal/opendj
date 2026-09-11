@@ -100,6 +100,18 @@ def _validate_pin(source: Path, pin: dict[str, Any]) -> None:
             or not math.isfinite(value)
         ):
             raise TypeError(f"feedback source {source} has a pin with invalid {field}")
+    replies = pin.get("replies")
+    if replies is not None:
+        if not isinstance(replies, list):
+            raise TypeError(f"feedback source {source} has a pin with invalid replies")
+        for reply in replies:
+            if not isinstance(reply, dict):
+                raise TypeError(f"feedback source {source} has a pin with invalid replies entry")
+            for field in ("id", "author", "text", "created_at"):
+                if not isinstance(reply.get(field), str):
+                    raise TypeError(
+                        f"feedback source {source} has a pin reply with invalid {field}"
+                    )
     build = pin.get("build")
     if not isinstance(build, dict):
         raise TypeError(f"feedback source {source} has a pin with invalid build")
