@@ -9451,6 +9451,11 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_remote": {
+            "default": false,
+            "title": "Is Remote",
+            "type": "boolean"
+          },
           "is_streaming": {
             "title": "Is Streaming",
             "type": "boolean"
@@ -11630,6 +11635,11 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_remote": {
+            "default": false,
+            "title": "Is Remote",
+            "type": "boolean"
+          },
           "key": {
             "anyOf": [
               {
@@ -12129,6 +12139,11 @@
           },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
+            "type": "boolean"
+          },
+          "is_remote": {
+            "default": false,
+            "title": "Is Remote",
             "type": "boolean"
           },
           "is_streaming": {

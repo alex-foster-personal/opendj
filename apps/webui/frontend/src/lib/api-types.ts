@@ -6894,6 +6894,11 @@ export interface components {
             genre: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /**
+             * Is Remote
+             * @default false
+             */
+            is_remote: boolean;
             /** Is Streaming */
             is_streaming: boolean;
             /** Key */
@@ -7741,6 +7746,11 @@ export interface components {
             file_path?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /**
+             * Is Remote
+             * @default false
+             */
+            is_remote: boolean;
             /** Key */
             key?: string | null;
             /** Last Played At */
@@ -7898,6 +7908,11 @@ export interface components {
             genre: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /**
+             * Is Remote
+             * @default false
+             */
+            is_remote: boolean;
             /** Is Streaming */
             is_streaming: boolean;
             /** Key */
