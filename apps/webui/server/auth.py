@@ -128,6 +128,13 @@ class GoogleOAuthConfig:
             )
         return cls(client_id=client_id, client_secret=client_secret)
 
+    @classmethod
+    def is_configured(cls, env: dict[str, str]) -> bool:
+        return bool(
+            _first_present(env, CLIENT_ID_ENV_NAMES)
+            and _first_present(env, CLIENT_SECRET_ENV_NAMES)
+        )
+
 
 def _first_present(env: dict[str, str], names: tuple[str, ...]) -> str | None:
     for name in names:

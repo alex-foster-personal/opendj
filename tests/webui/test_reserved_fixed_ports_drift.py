@@ -122,6 +122,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         5320,
     ),
     (
+        "apps/webui/frontend/tests/e2e/vite.lyrics-words.config.ts",
+        "export const LYRICS_WORDS_FRONTEND_PORT = 5328;",
+        5328,
+    ),
+    (
         "apps/webui/frontend/tests/e2e/vite.comment-hotkey-gate.config.ts",
         "export const COMMENT_HOTKEY_GATE_FRONTEND_PORT = 5321;",
         5321,
@@ -217,6 +222,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         "apps/webui/frontend/tests/e2e/library-jobs-e2e-endpoints.ts",
         "export const LIBRARY_JOBS_E2E_BACKEND_PORT = 8704;",
         8704,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/vite.lyrics-words.config.ts",
+        "export const LYRICS_WORDS_API_PORT = 8706;",
+        8706,
     ),
     (
         "apps/webui/frontend/tests/e2e/stems-e2e-endpoints.ts",

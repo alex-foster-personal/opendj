@@ -95,6 +95,8 @@
 		setLibraryDensity,
 		setPlaylistTreeWidth,
 		setNextOnlyFilter,
+		setRemixesFilter,
+		setVocalsFilter,
 		uiPrefs,
 		PLAYLIST_TREE_WIDTH_MAX,
 		PLAYLIST_TREE_WIDTH_MIN
@@ -109,6 +111,11 @@
 	import BuildIdentity from './BuildIdentity.svelte';
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
+	import {
+		isLibraryPanelsCollapsed,
+		noteVisibleLibraryRowCount,
+		toggleLibraryPanels
+	} from '$lib/rb/library-panels.svelte';
 	import {
 		createAutoPlayFeedSnapshot,
 		getAutoPlayRankOf,
@@ -144,6 +151,8 @@
 		resolveBootPlaylist,
 		resolveNewTabIndex,
 		shouldRetryBootPane,
+		rowHasVocalLyrics,
+		rowIsRemix,
 		sortRows,
 		visibleRowsOf
 	} from './browser/pane-contract.svelte';
@@ -509,11 +518,22 @@
 		return null;
 	});
 
+	function _applyLibraryFilters(rows: BrowserRow[]): BrowserRow[] {
+		let out = rows;
+		if (uiPrefs.remixes_filter) out = out.filter(rowIsRemix);
+		if (uiPrefs.vocals_filter) out = out.filter(rowHasVocalLyrics);
+		return out;
+	}
+
 	function _applyNextOnly(rows: BrowserRow[]): BrowserRow[] {
 		if (!uiPrefs.next_only_filter) return rows;
 		const ref = nextOnlyRef;
 		if (ref === null) return rows;
 		return rows.filter((r) => isAppropriateNext(r, ref));
+	}
+
+	function _applyPaneFilters(rows: BrowserRow[]): BrowserRow[] {
+		return _applyNextOnly(_applyLibraryFilters(rows));
 	}
 
 	interface VisibleSearchResult {
@@ -537,7 +557,7 @@
 		// Find mode: keep full list (no filter); TrackTable highlights matches.
 		if (searchMode === 'find') {
 			return {
-				rows: _applyNextOnly(
+				rows: _applyPaneFilters(
 					sortRows(
 						filterRows(pane.rows, '', hideBrokenForActivePane),
 						pane.sort_key,
@@ -556,7 +576,7 @@
 				autoPlayRankOf
 			);
 			const fallback = resolveSearchFilterFallback(
-				_applyNextOnly(unfilteredRows),
+				_applyPaneFilters(unfilteredRows),
 				unfilteredRows,
 				_searchFilterNames(false)
 			);
@@ -564,7 +584,7 @@
 		}
 		const unfilteredRows = visibleRowsOf(pane, false, autoPlayRankOf);
 		const fallback = resolveSearchFilterFallback(
-			_applyNextOnly(visibleRowsOf(pane, hideBrokenForActivePane, autoPlayRankOf)),
+			_applyPaneFilters(visibleRowsOf(pane, hideBrokenForActivePane, autoPlayRankOf)),
 			unfilteredRows,
 			pane.search.trim() === '' ? [] : _searchFilterNames(true)
 		);
@@ -586,6 +606,17 @@
 		const result = _computeVisibleSearchResult();
 		_lastVisibleComputeMs = performance.now() - startedAt;
 		return result;
+	});
+	function noteRenderedLibraryRowCapacity(count: number): void {
+		// PaneStore starts with an intentional empty array before onMount begins
+		// its first fetch. That is not a settled library result and must not
+		// collapse the panels for a normal relaunch.
+		if (!pane.has_settled_result || pane.loading) return;
+		noteVisibleLibraryRowCount(count);
+	}
+
+	$effect(() => {
+		if (isLibraryPanelsCollapsed()) suggestHoverId = null;
 	});
 	const visibleRows = $derived(visibleSearchResult.rows);
 	const ignoredSearchFilters = $derived(visibleSearchResult.ignoredFilters);
@@ -677,6 +708,10 @@
 			return nextOnlyRef === null
 				? 'next-only: load a track with key+BPM (master preferred) to filter'
 				: 'no appropriate next tracks in this list (Camelot + BPM ±6% or half/double ≤15)';
+		} else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.remixes_filter) {
+			return 'no remixes in this list (title markers: remix/bootleg/rework/VIP/edit)';
+		} else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.vocals_filter) {
+			return 'no tracks here with >5 lines of lyrics (Vocals filter)';
 		} else if (visibleRows.length === 0) return 'empty playlist';
 		else return null;
 	});
@@ -1628,7 +1663,10 @@
 			artwork_status: wire.artwork_status,
 			rb_meta: null,
 			revealed: false,
-			match_context: null
+			match_context: null,
+			lyrics: wire.lyrics ?? null,
+			is_remix: wire.is_remix ?? null,
+			is_radio_edit: wire.is_radio_edit ?? null
 		};
 	}
 
@@ -1674,7 +1712,10 @@
 			artwork_status: track.artwork_status,
 			rb_meta: null,
 			revealed: false,
-			match_context: null
+			match_context: null,
+			lyrics: track.lyrics ?? null,
+			is_remix: track.is_remix ?? null,
+			is_radio_edit: track.is_radio_edit ?? null
 		};
 	}
 
@@ -2692,6 +2733,28 @@
 					</svg>
 					<span>Broken</span>
 				</label>
+				<label
+					class="remixes-filter"
+					title="Keep only remixes: title version markers (remix / bootleg / rework / VIP / non-radio edit). The lyric repair signal joins this once the full-library alignment run lands"
+				>
+					<input
+						type="checkbox"
+						checked={uiPrefs.remixes_filter}
+						onchange={(e) => setRemixesFilter(e.currentTarget.checked)}
+					/>
+					<span>Remixes</span>
+				</label>
+				<label
+					class="vocals-filter"
+					title="Keep only tracks with real word-level lyrics spanning more than 5 lines; tracks not yet run through the lyric pipeline are excluded"
+				>
+					<input
+						type="checkbox"
+						checked={uiPrefs.vocals_filter}
+						onchange={(e) => setVocalsFilter(e.currentTarget.checked)}
+					/>
+					<span>Vocals</span>
+				</label>
 				<!--
 					pin 5e3ed689ad3a: this control used to live in `.search-options`,
 					which only renders while the search box is focused or non-empty, so
@@ -2786,6 +2849,7 @@
 				_noteLibraryInteraction();
 				panes[activePane].rememberScroll(top);
 			}}
+			onrenderedrowcapacity={noteRenderedLibraryRowCapacity}
 			onsort={sortBy}
 			onselectrow={selectRow}
 			onloadrow={loadRow}
@@ -2814,47 +2878,52 @@
 			primarySettled={!pane.searching}
 			onerror={(message) => pushToast(message, 'error')}
 		/>
-		<div class="suggestion-panels" data-testid="suggestion-panels">
-			<div class="suggestion-panel-content">
-				<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
-				<div class:collapsed-panel={uiPrefs.next_panel_collapsed}>
-					<SuggestNextStrip
-						stableId={decks[1].stable_id}
-						targetLabel={suggestTargetDeck === null ? null : `CH ${suggestTargetDeck}`}
-						playTargetLabel={suggestPlayTargetDeck === null ? null : `CH ${suggestPlayTargetDeck}`}
-						onload={(sid) => loadSuggest(sid)}
-						onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
-						onhover={(sid) => (suggestHoverId = sid)}
-						oncandidates={(cands) => (suggestCandidates = cands)}
-					/>
-				</div>
-				{#if !uiPrefs.recommended_panel_collapsed}
-					<RecommendedSection
-						candidates={suggestCandidates}
-						currentPlaylistId={pane.playlist_id}
-						currentPlaylistMemberIds={playlistMemberIds}
-						referenceBpm={masterRef?.bpm ?? null}
-						referenceKey={masterRef?.key ?? null}
-						stableId={decks[1].stable_id}
-						onload={(sid) => loadSuggest(sid)}
-						onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
-						onhover={(sid) => (suggestHoverId = sid)}
-					/>
-				{/if}
-			</div>
-			<div class="suggestion-panel-rail" aria-label="collapsed suggestion panels">
-				{#if uiPrefs.next_panel_collapsed}
-					<button type="button" class="suggestion-rail-label" aria-label="Expand NEXT panel" onclick={() => void runPerformanceCommandFromUi({ type: 'library_panels', panel: 'next', collapsed: false })}>NEXT</button>
-				{:else}
-					<button type="button" class="suggestion-collapse" aria-label="Collapse NEXT panel" onclick={() => void runPerformanceCommandFromUi({ type: 'library_panels', panel: 'next', collapsed: true })}>›</button>
-				{/if}
-				{#if uiPrefs.recommended_panel_collapsed}
-					<button type="button" class="suggestion-rail-label" aria-label="Expand RECC panel" onclick={() => void runPerformanceCommandFromUi({ type: 'library_panels', panel: 'recommended', collapsed: false })}>RECC</button>
-				{:else}
-					<button type="button" class="suggestion-collapse" aria-label="Collapse RECC panel" onclick={() => void runPerformanceCommandFromUi({ type: 'library_panels', panel: 'recommended', collapsed: true })}>›</button>
-				{/if}
-			</div>
+		<!-- LIBUX-02: one chevron collapses/restores both panels together, so
+		     TrackTable (flex: 1 in this column) reclaims their vertical space
+		     the instant they stop rendering. -->
+		<div
+			class="library-panels-collapse-bar"
+			class:collapsed={isLibraryPanelsCollapsed()}
+			data-testid="library-panels-collapse-bar"
+		>
+			<button
+				type="button"
+				class="panels-chevron"
+				title={isLibraryPanelsCollapsed()
+					? 'Show Next / Recommended panels'
+					: 'Hide Next / Recommended panels'}
+				aria-label={isLibraryPanelsCollapsed()
+					? 'Show Next / Recommended panels'
+					: 'Hide Next / Recommended panels'}
+				aria-pressed={isLibraryPanelsCollapsed()}
+				onclick={() => toggleLibraryPanels()}
+			>
+				{isLibraryPanelsCollapsed() ? '‹' : '›'}
+			</button>
 		</div>
+		{#if !isLibraryPanelsCollapsed()}
+			<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
+			<SuggestNextStrip
+				stableId={decks[1].stable_id}
+				targetLabel={suggestTargetDeck === null ? null : `CH ${suggestTargetDeck}`}
+				playTargetLabel={suggestPlayTargetDeck === null ? null : `CH ${suggestPlayTargetDeck}`}
+				onload={(sid) => loadSuggest(sid)}
+				onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
+				onhover={(sid) => (suggestHoverId = sid)}
+				oncandidates={(cands) => (suggestCandidates = cands)}
+			/>
+			<RecommendedSection
+				candidates={suggestCandidates}
+				currentPlaylistId={pane.playlist_id}
+				currentPlaylistMemberIds={playlistMemberIds}
+				referenceBpm={masterRef?.bpm ?? null}
+				referenceKey={masterRef?.key ?? null}
+				stableId={decks[1].stable_id}
+				onload={(sid) => loadSuggest(sid)}
+				onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
+				onhover={(sid) => (suggestHoverId = sid)}
+			/>
+		{/if}
 	</div>
 	<div class="bottom-bar">
 		<button
@@ -3059,7 +3128,9 @@
 		font-size: var(--rb-fs-label);
 	}
 	.hide-broken,
-	.next-only {
+	.next-only,
+	.remixes-filter,
+	.vocals-filter {
 		display: inline-flex;
 		align-items: center;
 		gap: 3px;
@@ -3069,11 +3140,15 @@
 		cursor: pointer;
 	}
 	.hide-broken:hover,
-	.next-only:hover {
+	.next-only:hover,
+	.remixes-filter:hover,
+	.vocals-filter:hover {
 		color: var(--rb-text);
 	}
 	.hide-broken input,
-	.next-only input {
+	.next-only input,
+	.remixes-filter input,
+	.vocals-filter input {
 		width: 10px;
 		height: 10px;
 		margin: 0;
@@ -3120,94 +3195,33 @@
 	.icon-btn.active {
 		color: var(--rb-accent);
 	}
-	.suggestion-panels {
-		display: flex;
-		align-items: flex-start;
-		min-height: 0;
-	}
-	.suggestion-panel-content {
-		min-width: 0;
-		flex: 1;
-	}
-	.collapsed-panel {
-		height: 0;
-		overflow: hidden;
-		pointer-events: none;
-		visibility: hidden;
-	}
-	/* Pin 9036adcedf4f: the rail is what decides how much the library gets
-	 * back, because `.suggestion-panels` is a flex ROW and the library's
-	 * `.tt-root` is `flex: 1` in the column above it -- so this box's height
-	 * is `max(content, rail)` and every pixel it releases lands in the
-	 * table automatically. Measured on e82773161 at 1680x1003, collapsing
-	 * both panels moved `.suggestion-panels` 34px -> 52px and the table
-	 * 226px -> 208px: collapsing COST the library 18px.
-	 *
-	 * The cause was `writing-mode: vertical-rl` on the collapsed labels.
-	 * Set down an 18px column, "NEXT" and "RECC" run ~26px each, against
-	 * ~17px for the `›` chevron each one replaces, so the act of collapsing
-	 * grew the chrome. Horizontal labels in a slightly wider rail cost 12px
-	 * apiece in the block direction whichever control is showing, which
-	 * makes the rail's height CONSTANT across the toggle and leaves
-	 * `max(content, rail)` free to fall to the rail's own floor.
-	 *
-	 * `align-items: flex-start` on the container is the other half: a
-	 * stretched rail would report the content's height rather than its own
-	 * and put the floor back. */
-	.suggestion-panel-rail {
-		display: flex;
+	.library-panels-collapse-bar {
 		flex: none;
-		flex-direction: column;
-		align-items: stretch;
+		display: flex;
+		align-items: center;
 		justify-content: flex-start;
-		/* Constant in BOTH directions across the toggle. Height is the pin
-		 * itself; width is the same trap one axis over -- a rail sized to its
-		 * content is 12px holding a chevron and ~27px holding the word
-		 * "RECC", so an auto width would buy the vertical reclaim by taking
-		 * 15px of library WIDTH on every collapse. This fix did exactly that
-		 * before the e2e assertion below caught it. Declared once, wide
-		 * enough for the longest label at the size set below WITH margin:
-		 * "RECC" at 7px needs 20px of content box, and a 26px rail left only
-		 * 19px, so the label was clipped by 1px in every state that showed
-		 * one. That was invisible until `overflow: hidden` below made the
-		 * real content width observable as scrollWidth -- an earlier reading
-		 * of "25 == 25" was taken while the overflow was still painting
-		 * outside the box. 32px leaves 25px of content for a 20px label, so
-		 * the wider metrics of Segoe UI or Roboto have somewhere to go. */
-		width: 32px;
-		border-left: 1px solid var(--rb-border);
+		min-height: 12px;
+		background: var(--rb-panel);
 	}
-	.suggestion-collapse,
-	.suggestion-rail-label {
-		display: block;
-		width: 100%;
+	.library-panels-collapse-bar.collapsed {
+		justify-content: flex-end;
+	}
+	.panels-chevron {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 16px;
 		height: 12px;
-		padding: 0 3px;
-		border: 0;
+		padding: 0;
 		background: transparent;
+		border: none;
 		color: var(--rb-text-dim);
-		font-family: var(--rb-font);
-		line-height: 12px;
-		text-align: center;
-		/* Defensive floor, not tuning. The 26px above was measured once, on
-		 * macOS Chromium, and the system-UI stack resolves to different
-		 * metrics on Windows (Segoe UI) and Linux (Roboto). The e2e
-		 * assertion fails loudly if a label ever outgrows its box, but in
-		 * PRODUCTION an unclipped overflow would paint the label over the
-		 * panel border beside it, so clip rather than bleed. */
-		overflow: hidden;
+		font-size: 10px;
+		line-height: 1;
 		cursor: pointer;
 	}
-	.suggestion-collapse:hover,
-	.suggestion-rail-label:hover {
+	.panels-chevron:hover {
 		color: var(--rb-accent);
-	}
-	.suggestion-collapse {
-		font-size: 11px;
-	}
-	.suggestion-rail-label {
-		font-size: 7px;
-		letter-spacing: 0.02em;
 	}
 	.bottom-bar {
 		grid-area: bottom;

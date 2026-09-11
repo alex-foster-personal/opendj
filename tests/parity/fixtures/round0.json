@@ -1,6 +1,7 @@
 {
   "schema": 1,
   "measured_at": "Fri 11 Sep 2026",
+  "parity_round": 0,
   "population": {
     "present": 10,
     "tracks_rows": 9986,
@@ -18,7 +19,10 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_cue_db": false
+      "rb_cue_db": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null
     },
     {
       "stable_id": "exact-key-c",
@@ -31,7 +35,10 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_cue_db": false
+      "rb_cue_db": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null
     },
     {
       "stable_id": "bpm-within-0.1",
@@ -44,7 +51,10 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_cue_db": false
+      "rb_cue_db": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null
     },
     {
       "stable_id": "bpm-octave-half",
@@ -57,7 +67,10 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_cue_db": false
+      "rb_cue_db": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null
     },
     {
       "stable_id": "key-relative",
@@ -70,7 +83,10 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_cue_db": false
+      "rb_cue_db": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null
     },
     {
       "stable_id": "missing-rb-bpm",
@@ -83,7 +99,10 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_cue_db": false
+      "rb_cue_db": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null
     },
     {
       "stable_id": "missing-rb-key",
@@ -96,7 +115,10 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_cue_db": false
+      "rb_cue_db": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null
     },
     {
       "stable_id": "no-own-bpm",
@@ -109,7 +131,10 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_cue_db": false
+      "rb_cue_db": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null
     },
     {
       "stable_id": "no-own-key",
@@ -122,7 +147,10 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_cue_db": false
+      "rb_cue_db": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null
     },
     {
       "stable_id": "ungradable-key-all",
@@ -135,7 +163,10 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_cue_db": false
+      "rb_cue_db": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null
     },
     {
       "stable_id": "absent-audio",
@@ -148,7 +179,10 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_cue_db": false
+      "rb_cue_db": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null
     }
   ],
   "round": 0
