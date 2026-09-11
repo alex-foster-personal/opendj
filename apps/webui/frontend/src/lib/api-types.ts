@@ -6409,6 +6409,8 @@ export interface components {
         LoginIn: {
             /** Origin */
             origin?: string | null;
+            /** Return To */
+            return_to?: string | null;
         };
         /** LoginOut */
         LoginOut: {

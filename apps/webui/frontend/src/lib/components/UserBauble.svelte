@@ -10,7 +10,13 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { auth, logout, refreshUser, startLogin } from '$lib/auth.svelte';
+	import {
+		auth,
+		consumeAuthErrorFromLocation,
+		logout,
+		refreshUser,
+		startLogin
+	} from '$lib/auth.svelte';
 	import { openAccountOverlay } from '$lib/account/overlay.svelte';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import { pushToast } from '$lib/stores.svelte';
@@ -34,6 +40,10 @@
 	);
 
 	onMount(() => {
+		const callbackError = consumeAuthErrorFromLocation();
+		if (callbackError) {
+			pushToast(callbackError, 'error', 12000);
+		}
 		// Deferred out of the boot burst (PERF-R6). The bauble renders its
 		// signed-out face while the answer is outstanding, which is what it
 		// already did for the duration of the request; nobody is waiting on
@@ -106,7 +116,7 @@
 		type="button"
 		class="bauble"
 		class:signed-in={Boolean(auth.user)}
-		disabled={busy || auth.loading}
+		disabled={busy || (Boolean(auth.user) && auth.loading)}
 		aria-haspopup={auth.user ? 'menu' : undefined}
 		aria-expanded={auth.user ? menuOpen : undefined}
 		aria-label={label}
