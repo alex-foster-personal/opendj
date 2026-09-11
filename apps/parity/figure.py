@@ -57,6 +57,7 @@ class LaneFigure:
     no_own_ids: tuple[str, ...] = ()
     ungradable_ids: tuple[str, ...] = ()
     ungradable: Mapping[str, int] = field(default_factory=dict)
+    details: Mapping[str, int | float | None] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         refuse_forbidden_denominator(self.denominator_n, what=self.lane)
@@ -105,4 +106,5 @@ class LaneFigure:
             "no_own_ids": list(self.no_own_ids),
             "ungradable_ids": list(self.ungradable_ids),
             "ungradable": dict(self.ungradable),
+            "details": dict(self.details),
         }

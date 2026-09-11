@@ -48,11 +48,14 @@ def compare_cue_lists(
     djay_cues: Iterable[NormalisedCue],
     *,
     tolerance_msec: int = TOLERANCE_MSEC,
+    check_metadata: bool = True,
 ) -> tuple[list[int], list[int], list[int]]:
     """Return ``(rb_only, djay_only, conflicts)`` as position-ms lists.
 
     A conflict is a matched pair (within ``tolerance_msec``) where either
-    side has a different name, colour, or loop length.
+    side has a different name, colour, or loop length. When
+    ``check_metadata`` is false, matches use kind, position, and hot-cue index
+    only (ANLZ PCOB/PCO2 siblings may carry names PCOB omits).
     """
     rb_list = list(rb_cues)
     djay_list = list(djay_cues)
@@ -66,7 +69,7 @@ def compare_cue_lists(
             if _positions_match(a, b, tolerance_msec):
                 rb_matched.add(i)
                 djay_matched.add(j)
-                if (
+                if check_metadata and (
                     (a.name or "") != (b.name or "")
                     or a.color_rgb != b.color_rgb
                     or (a.loop_length_msec or 0) != (b.loop_length_msec or 0)

@@ -35,3 +35,23 @@ def test_score_cli_prints_denominators_and_the_measurement_date() -> None:
     assert "at parity" not in out.lower()
     assert "delegated" in out.lower()
     assert "not_scored_this_round" in out or "not scored this round" in out.lower()
+
+
+def test_score_cli_round1_cues_lanes() -> None:
+    path = Path(__file__).parent / "fixtures" / "round1.json"
+    done = subprocess.run(
+        [sys.executable, "-m", "apps.parity", "score", "--payload", str(path)],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[2],
+    )
+    assert done.returncode == 0, done.stderr
+    out = done.stdout
+    assert "cues_db" in out
+    assert "cues_anlz" in out
+    assert "scored" in out
+    assert "missing_djmd_cue" in out or "unreadable_ext" in out
+    assert "at parity" not in out.lower()
+    assert "of 9986" not in out
+    assert "of 10479" not in out

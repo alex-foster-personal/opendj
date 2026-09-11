@@ -54,11 +54,11 @@ def test_beatgrid_and_downbeat_delegate_to_beatmap_and_do_not_invent_a_metric() 
 
 
 def test_unscored_lanes_are_not_scored_as_agreement_or_as_a_miss() -> None:
-    """Round 0 scores BPM and Key only. Every other remaining lane is
-    `not_scored_this_round` with a named reason, never 0-of-N agreement.
+    """Round 1 scores BPM, Key, and both cue lanes. Every other remaining
+    lane is `not_scored_this_round` with a named reason, never 0-of-N agreement.
     """
     report = score_payload(round0_fixture())
-    assert SCORED_THIS_ROUND == ("bpm", "key")
+    assert SCORED_THIS_ROUND == ("bpm", "key", "cues_db", "cues_anlz")
     for figure in report.figures:
         if figure.lane in SCORED_THIS_ROUND:
             assert figure.status == "scored"
