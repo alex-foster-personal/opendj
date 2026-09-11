@@ -3018,6 +3018,10 @@ export interface paths {
         /**
          * Get Auto Cues
          * @description PROPOSED hot cues from apps.analysis (META-04). Never committed cues.
+         *
+         *     Returns HTTP 200 with ``proposals: []`` and ``backend="none"`` when the
+         *     track is in the library but has no analysis row yet. Unknown stable_id
+         *     and unmatched ``?backend=`` still 404 with ``ANALYSIS_NOT_FOUND``.
          */
         get: operations["get_auto_cues_api_v1_tracks__stable_id__auto_cues_get"];
         put?: never;

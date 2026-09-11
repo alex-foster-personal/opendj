@@ -16,11 +16,6 @@
       "reason": "AutoPlay hunt: console.error 404 Not Found while mixing"
     },
     {
-      "signature": "http-404:GET:/api/v1/tracks/<hash>/auto-cues",
-      "issue": "#1871",
-      "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/auto-cues returns 404"
-    },
-    {
       "signature": "http-503:GET:/api/v1/tracks/<hash>/artwork",
       "issue": "#1872",
       "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/artwork returns 503"

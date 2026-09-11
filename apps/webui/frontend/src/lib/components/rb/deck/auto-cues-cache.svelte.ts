@@ -1,8 +1,9 @@
 /**
  * Reactive per-track auto-cues cache (build unit: HotCueBank).
  * Mirrors wave/beatgrid-fallback-cache.svelte.ts. Callers fetch on
- * deck.stable_id becoming non-null; a 404 ANALYSIS_NOT_FOUND is an
- * empty-slots state, never a UI error.
+ * deck.stable_id becoming non-null. Unanalyzed library tracks get HTTP 200
+ * with proposals:[] (status 'ready'); 404 ANALYSIS_NOT_FOUND (unknown sid or
+ * unmatched backend) is also an empty-slots state, never a UI error.
  *
  * .svelte.ts extension is REQUIRED for the $state rune (RECON-FRONTEND 10.1).
  */
