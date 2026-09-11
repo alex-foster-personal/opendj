@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Deck header row (SCREENSHOT-SPEC 3, COMPONENT-MAP 1.3): artwork thumb,
 	// deck number, title/artist, BPM+KEY readout, remaining/elapsed clocks,
-	// KEY SYNC, key badge + semitone nudge arrows,
+	// key badge + semitone nudge arrows, KEY SYNC,
 	// BEAT SYNC and exclusive MASTER stacked at the right.
 	import { artworkUrl } from '$lib/rb/api-rb';
 	import {
@@ -347,28 +347,6 @@
 					Enable MT
 				</button>
 			{/snippet}
-			<ControlExplainer
-				title={keySyncTitle}
-				bullets={keySyncBullets}
-				warning={keySyncWarning}
-				action={keySyncWarning === null ? null : masterTempoAction}
-			>
-				<button
-					class="rb-lit-button keysync"
-					class:lit={deck.key_sync_enabled}
-					disabled={pending || !keySyncAvailable}
-					aria-pressed={deck.key_sync_enabled}
-					data-performance-control="key-sync"
-					data-testid={`key-sync-deck-${deckId}`}
-					aria-label={`key sync deck ${deckId}`}
-					data-state={deck.key_sync_enabled ? 'on' : 'off'}
-					title={keySyncTitle}
-					onclick={async () => await onKeySync()}
-				>
-					KEY SYNC
-				</button>
-			</ControlExplainer>
-
 			<div class="key-badge">
 				<button
 					class="nudge"
@@ -399,6 +377,28 @@
 					&gt;
 				</button>
 			</div>
+
+			<ControlExplainer
+				title={keySyncTitle}
+				bullets={keySyncBullets}
+				warning={keySyncWarning}
+				action={keySyncWarning === null ? null : masterTempoAction}
+			>
+				<button
+					class="rb-lit-button keysync"
+					class:lit={deck.key_sync_enabled}
+					disabled={pending || !keySyncAvailable}
+					aria-pressed={deck.key_sync_enabled}
+					data-performance-control="key-sync"
+					data-testid={`key-sync-deck-${deckId}`}
+					aria-label={`key sync deck ${deckId}`}
+					data-state={deck.key_sync_enabled ? 'on' : 'off'}
+					title={keySyncTitle}
+					onclick={async () => await onKeySync()}
+				>
+					KEY SYNC
+				</button>
+			</ControlExplainer>
 
 			<div class="sync-col">
 				<ControlExplainer title={beatSyncTitle} bullets={beatSyncBullets}>
