@@ -151,21 +151,30 @@ test('the hot-cue columns are greedy on hover and on keyboard focus alike', () =
 		'focusout must never touch hoverCol - that would reintroduce the P3 bug'
 	);
 
-	assert.match(
-		text,
-		/\.cue-col\.grow\s*\{\s*flex-basis:\s*80%;\s*\}/,
-		'the active column must grow to 80% of the bank width'
-	);
-	assert.match(
-		text,
-		/\.cue-col\.shrink\s*\{\s*flex-basis:\s*20%;\s*\}/,
-		'the other column must shrink to 20% to make room'
-	);
+	const growRule = text.match(/\.cue-col\.grow\s*\{[^}]*\}/)?.[0] ?? '';
+	assert.match(growRule, /flex-basis:\s*80%;/, 'the active column must grow to 80% of the bank width');
+	const shrinkRule = text.match(/\.cue-col\.shrink\s*\{[^}]*\}/)?.[0] ?? '';
+	assert.match(shrinkRule, /flex-basis:\s*20%;/, 'the other column must shrink to 20% to make room');
 	assert.match(
 		text,
 		/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.cue-col\s*\{\s*transition:\s*none;\s*\}\s*\}/,
 		'the greedy-column animation must be disabled under prefers-reduced-motion'
 	);
+});
+
+test('an expanded cue-col.grow creates a stacking context above neighbors', () => {
+	const text = source(BANK_PATH);
+	const growRule = text.match(/\.cue-col\.grow\s*\{[^}]*\}/)?.[0] ?? '';
+	assert.match(growRule, /flex-basis:\s*80%;/);
+	assert.match(growRule, /z-index:\s*[1-9]\d*/);
+	assert.match(growRule, /background:\s*var\(--rb-panel\)/);
+	assert.doesNotMatch(
+		growRule,
+		/overflow:\s*hidden/,
+		'grow must not clip the rename popover above the first pad'
+	);
+	const shrinkRule = text.match(/\.cue-col\.shrink\s*\{[^}]*\}/)?.[0] ?? '';
+	assert.match(shrinkRule, /overflow:\s*hidden/);
 });
 
 test('a column stays grown while hover ends but focus remains inside it (or vice versa)', () => {

@@ -153,10 +153,11 @@ export interface ContrastViolation {
  *    held to the 3:1 non-text-UI floor against the window background they
  *    are drawn on.
  *
- * Known gap (stated rather than hidden): a handful of call sites reuse an
- * indicator colour as small `color:` text too (e.g. QualityBadge, error
- * labels). Those specific usages are not swept against 4.5:1 here - doing
- * so is a larger, separate per-usage audit, not this validator's job.
+ * Known gap (stated rather than hidden): a handful of call sites still reuse
+ * an indicator colour as small `color:` text without a declared pairing
+ * (e.g. QualityBadge, error labels). Deck-strip hotcue letter chips
+ * (`rb-bg` on `rb-green`) are covered below; the remaining usages are a
+ * separate per-usage audit, not this validator's job.
  */
 /**
  * Tokens with a deliberately DECORATIVE role only. `--rb-border` is
@@ -214,6 +215,12 @@ export const PAIRINGS: ContrastPairing[] = [
     bg: "rb-bg",
     level: "non-text",
     label: "loaded-track / loop-out indicator",
+  },
+  {
+    fg: "rb-bg",
+    bg: "rb-green",
+    level: "body",
+    label: "deck-strip hotcue letter chip (text on green fill)",
   },
   { fg: "rb-orange", bg: "rb-bg", level: "non-text", label: "waveform lows band" },
   { fg: "rb-wave-mid", bg: "rb-bg", level: "non-text", label: "waveform mids band" },
