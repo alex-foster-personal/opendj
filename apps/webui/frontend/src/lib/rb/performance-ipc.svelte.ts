@@ -1431,6 +1431,7 @@ export function performanceCommandQueueScopes(
 		|| command.type === 'load_play_intent'
 		|| command.type === 'playlist_undo'
 		|| command.type === 'playlist_redo'
+		|| command.type === 'feedback_mark'
 	) {
 		return null;
 	}

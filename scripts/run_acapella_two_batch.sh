@@ -30,7 +30,8 @@ fire() { # $1 run-id, remaining args = input files
   echo "[$(date '+%H:%M:%S')] FIRE $rid over $# tracks (max_containers=60)"
   MDT_ROFORMER_MAX_CONTAINERS=60 uv run --no-sync --with modal python scripts/modal_roformer_spike.py \
     separate --input "$@" --out-dir "$BASE/stems" --run-id "$rid"
-  echo "[$(date '+%H:%M:%S')] $rid returned rc=$?"
+  # Capture first: the $(date) below would otherwise reset $? to date's 0.
+  rc=$?; echo "[$(date '+%H:%M:%S')] $rid returned rc=$rc"
 }
 
 # stream vocals -> flat dir continuously, across both batches

@@ -3,16 +3,46 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
-from apps.sync_hub import client
+from apps.sync_hub import client, service
 from tests.cloudsync.test_hub_sync import _TestClientTransport, _seed_common_track, _sync
 
-pytest_plugins = ["tests.cloudsync.test_hub_sync"]
+
+@pytest.fixture(autouse=True)
+def _no_hub_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``MDT_IS_HUB`` from the developer's shell must not steer these tests."""
+    monkeypatch.delenv("MDT_IS_HUB", raising=False)
+
+
+@pytest.fixture
+def hub_dir(tmp_path: Path) -> Path:
+    """The hub's empty data dir. Guarantees as in ``test_hub_sync.py``."""
+    return tmp_path / "hub"
+
+
+@pytest.fixture
+def spoke_a(tmp_path: Path) -> Path:
+    """Spoke A's empty data dir. Guarantees as in ``test_hub_sync.py``."""
+    return tmp_path / "spoke-a"
+
+
+@pytest.fixture
+def hub(hub_dir: Path) -> Iterator[_TestClientTransport]:
+    """The real sync router on an empty hub DB. See ``test_hub_sync.hub``."""
+    app = FastAPI()
+    app.state.state_db_path = str(client.state_db_path(hub_dir))
+    app.state.sync_hub_data_dir = str(hub_dir)
+    app.state.sync_hub_machine_name = "hub"
+    app.include_router(service.router, prefix="/api/v1")
+    with TestClient(app) as http:
+        yield _TestClientTransport(http)
 
 
 class _DelayTransport:

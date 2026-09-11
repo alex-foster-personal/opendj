@@ -154,7 +154,7 @@ import {
 import type { TempoRampStep } from '$lib/rb/beat-sync-math';
 import { beatSyncOutcomeNotices } from '$lib/rb/beat-sync-math';
 import {
-	deckHasTrustedBeatGrid,
+	deckHasRealBeatGrid,
 	effectiveBeatSync,
 	effectiveQuantize,
 	gridFeatureInertTip,
@@ -2477,7 +2477,7 @@ const _resyncTracking = createBeatgridResyncTracking(); // pending/gridless trac
 const _beatgridResyncPorts: BeatgridResyncPorts = {
 	deckIds: DECK_IDS, syncMaster: _syncMaster, playing: (deck) => deckStates[deck].playing,
 	beatSyncEnabled: (deck) => deckStates[deck].beat_sync_enabled, setBeatSyncEnabled: (deck, enabled) => (deckStates[deck].beat_sync_enabled = enabled),
-	hasRealBeatGrid: (deck) => deckHasTrustedBeatGrid(deckStates[deck]), hasSyncError: (deck) => deckStates[deck].sync_error !== null,
+	hasRealBeatGrid: (deck) => deckHasRealBeatGrid(deckStates[deck]), hasSyncError: (deck) => deckStates[deck].sync_error !== null,
 	setSyncError: (deck, message) => (deckStates[deck].sync_error = message), requiresReschedule: syncChangeRequiresReschedule,
 	synchronizeFollowers: _synchronizeFollowers, ..._resyncTracking
 };

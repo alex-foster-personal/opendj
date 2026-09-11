@@ -118,7 +118,7 @@ function anlzWithCues(cues, { beats = [], phrases = [] } = {}) {
 		stable_id: 'a'.repeat(40),
 		points: 64,
 		waveform: { kind: 'tri', preview: bands(64), detail: bands(64) },
-		beatgrid: { beat_count: beats.length, beats },
+		beatgrid: { source: 'rekordbox', beat_count: beats.length, beats },
 		cues,
 		phrases,
 		vocals: { status: 'not_analyzed' }
@@ -225,9 +225,14 @@ describe('wave cue markers', () => {
 		// LOOP_HOT_CUE_B spans 15s..17s; a beat at 16s and a phrase starting at
 		// 16s both fall inside that span, so a pre-#877-style single paint pass
 		// (loop band painted last) would blank both out under the opaque band.
-		const beat = { n: 1, bpm: 120, t: 16 };
+		// shouldPaintBeatGrid requires validateBeatGrid-passing beats (>=2, cadence
+		// 1,2,3,4); a single beat is not a usable PQTZ grid.
+		const beats = [
+			{ n: 1, bpm: 120, t: 16 },
+			{ n: 2, bpm: 120, t: 16.5 }
+		];
 		const phrase = { start_s: 16, end_s: 20, kind: 1 };
-		const { sequence } = paint([LOOP_HOT_CUE_B], { beats: [beat], phrases: [phrase] });
+		const { sequence } = paint([LOOP_HOT_CUE_B], { beats, phrases: [phrase] });
 
 		const loopBandIndex = sequence.findIndex(
 			(c) => c.kind === 'fillRect' && c.style === PALETTE.cueLoop
