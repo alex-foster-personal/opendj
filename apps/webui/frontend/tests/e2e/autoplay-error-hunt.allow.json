@@ -14,11 +14,6 @@
       "signature": "console.error:Failed to load resource: the server responded with a status of 401 (Unauthorized)",
       "issue": "#1876",
       "reason": "AutoPlay hunt: console.error 401 Unauthorized while mixing"
-    },
-    {
-      "signature": "stall:autoplay-idle",
-      "issue": "#1878",
-      "reason": "AutoPlay hunt: AutoPlay stays pressed while both decks are stopped >10s"
     }
   ]
 }

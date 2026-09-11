@@ -12,9 +12,12 @@
  */
 
 import { bootScheduler, type BootScheduler } from './boot-scheduler';
-import { startMachinePressurePolling } from './machine-pressure';
+import { pressureIsElevated, readMachinePressure, startMachinePressurePolling } from './machine-pressure';
 import { installPerfEventLogGlobal } from './perf-event-log';
+import { anyDeckPlaying, startBackgroundDemandShed } from './playing-gate';
 import { installReloadCountdown } from './reload-countdown';
+import { readXrunSessionCounter } from './xrun-sentinel';
+import { pushToast } from '$lib/stores.svelte';
 import { startUsageHeartbeat } from './usage-heartbeat';
 
 /**
@@ -45,8 +48,16 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	// poll goes through the same boot scheduler as the heartbeat above, so it
 	// does not compete with a boot-time deck load either (#1658 review).
 	const stopMachinePressurePolling = startMachinePressurePolling(scheduler);
+	const stopBackgroundDemandShed = startBackgroundDemandShed({
+		isPlaying: anyDeckPlaying,
+		pressureElevated: () => pressureIsElevated(readMachinePressure()),
+		readXruns: () => readXrunSessionCounter().xruns,
+		notify: (suggestion) => pushToast(suggestion.message, 'warn'),
+		jobs: []
+	});
 
 	return () => {
+		stopBackgroundDemandShed();
 		stopMachinePressurePolling();
 		stopReloadCountdown();
 		stopUsageHeartbeat();

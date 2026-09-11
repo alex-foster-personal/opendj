@@ -48,8 +48,9 @@ import {
 	type AutoPlayMasterPromotion,
 	chartedOrderKey
 } from '$lib/rb/auto-play';
+import { planAutoPlayIdleDisarm, resetAutoPlayIdleClock } from '$lib/rb/autoplay-idle';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
-import { uiPrefs } from '$lib/rb/prefs.svelte';
+import { setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';
 import { pushToast } from '$lib/stores.svelte';
 import {
 	activateAutoPlayQueue,
@@ -60,7 +61,13 @@ import {
 } from '$lib/rb/autoplay-queue.svelte';
 import { autoPlayExhaustionToast, autoPlayStallReason } from '$lib/rb/autoplay-stall';
 import { applyAutoPlayBeatSyncDecision } from '$lib/rb/auto-play-phase-lock';
-import { clearAutoPlayStall, noteAutoPlayExhaustion, noteAutoPlayHandoffStall, retireAutoPlayStallIfAudible } from '$lib/rb/autoplay-stall.svelte';
+import {
+	clearAutoPlayStall,
+	noteAutoPlayExhaustion,
+	noteAutoPlayHandoffStall,
+	readAutoPlayStall,
+	retireAutoPlayStallIfAudible
+} from '$lib/rb/autoplay-stall.svelte';
 import { autoPlayDeckSnaps, autoPlayExcludeIds } from '$lib/rb/auto-play-snap';
 import { AutoPlayHandoffError } from '$lib/rb/auto-play-handoff-error';
 import type { DeckId } from '$lib/rb/deck-slots';
@@ -110,6 +117,8 @@ let _claimedIds = new Set<string>();
 /** Deferred master promotion, retried until the follower is audible (row 18). */
 let _pendingMaster: { deck: DeckId; stable_id: string } | null = null;
 let _promoting = false;
+/** Idle disarm with an active PLAY-08 stall keeps the banner after the pref drops. */
+let _disarmRetainStall = false;
 
 export { autoPlayOrder } from '$lib/rb/autoplay-queue.svelte';
 
@@ -296,6 +305,7 @@ async function _tick(): Promise<void> {
 	if (!uiPrefs.auto_play_enabled) {
 		_clearChartedOrder();
 		_pendingMaster = null;
+		resetAutoPlayIdleClock();
 		return;
 	}
 	// Row 18: runs on every poll, including while a handoff is in flight.
@@ -303,6 +313,19 @@ async function _tick(): Promise<void> {
 	if (_inFlight) return;
 
 	const snaps = _snaps();
+	const idlePlan = planAutoPlayIdleDisarm({
+		enabled: uiPrefs.auto_play_enabled,
+		snaps,
+		pending_master: _pendingMaster !== null,
+		now_ms: Date.now(),
+		stall_active: readAutoPlayStall() !== null
+	});
+	if (idlePlan.action === 'disarm') {
+		_disarmRetainStall = idlePlan.retain_stall;
+		setAutoPlayEnabled(false);
+		return;
+	}
+
 	const source = pickSourceDeck(snaps);
 	if (source === null || source.stable_id === null) {
 		// Row 1, but NOT while a promotion is still settling: between the old
@@ -542,7 +565,10 @@ export function installAutoPlay(): () => void {
 				_chartedOrderKey = null;
 				clearAutoPlayOrder();
 				clearAutoPlayQueue();
-				clearAutoPlayStall();
+				if (!_disarmRetainStall) {
+					clearAutoPlayStall();
+				}
+				_disarmRetainStall = false;
 			}
 		});
 	});
@@ -559,6 +585,8 @@ export function installAutoPlay(): () => void {
 		_waitingEmptyFeedEpoch = null;
 		_pendingMaster = null;
 		_promoting = false;
+		resetAutoPlayIdleClock();
+		_disarmRetainStall = false;
 		_claimedIds = new Set();
 		_playedIds = new Set();
 		_unplayableIds = new Set();

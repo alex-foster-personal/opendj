@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from . import queue_stale
 from .lanes import LANES, LaneResult, SemverError, parse_own_backend, semver_key
 from .record import AnalysisRecord
 
@@ -145,17 +146,33 @@ def key_lane_stale_but_unpromoted(
 def _eligible_rows(
     conn: sqlite3.Connection, stable_id: str, lane: str,
 ) -> list[tuple[str, str, str]]:
-    """(backend, backend_version, record_json) for rows that may be canonical."""
+    """(backend, backend_version, record_json) for rows that may be canonical.
+
+    Three exclusions, in this order: a row that is not an own record for
+    this lane, a bench candidate, and a row the queue has marked STALE.
+
+    The third is the dependency cascade (native-analysis v1, spec section 3;
+    :mod:`apps.analysis.queue`). A key record computed against beatgrid v1
+    is not wrong in itself, but once the canonical beatgrid moves it no
+    longer describes the grid the deck reads, so it must stop being the
+    canonical key until it is recomputed. Excluding it here rather than
+    deleting the row keeps the record (rows never overwrite across
+    producers) while taking it out of the pointer, which is exactly what the
+    spec asks for.
+    """
     rows = conn.execute(
         "SELECT backend, backend_version, record_json FROM analysis WHERE stable_id = ?",
         (stable_id,),
     ).fetchall()
+    stale = queue_stale.stale_rows(conn, stable_id, lane)
     out: list[tuple[str, str, str]] = []
     for backend, backend_version, record_json in rows:
         parsed = parse_own_backend(backend)
         if parsed is None or parsed.lane != lane or parsed.producer == "cand":
             continue
         if lane == "key" and _key_row_is_stale(conn, stable_id, record_json):
+            continue
+        if (backend, backend_version) in stale:
             continue
         out.append((backend, backend_version, record_json))
     return out
