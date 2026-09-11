@@ -15062,6 +15062,30 @@
         ]
       }
     },
+    "/api/v1/bench/perf-kpi": {
+      "get": {
+        "description": "The perf ledger as cards: same kpis + snapshots shape as /bench/kpi.\n\nOne snapshot per (date, round), in date order, so the sparkline runs from\nthe first perf measurement to the latest. Cards with the most real readings\ncome first: the ones that have actually travelled lead the panel.",
+        "operationId": "get_perf_kpi_ledger_api_v1_bench_perf_kpi_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Perf Kpi Ledger Api V1 Bench Perf Kpi Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Perf Kpi Ledger",
+        "tags": [
+          "bench"
+        ]
+      }
+    },
     "/api/v1/bench/ratings": {
       "get": {
         "operationId": "list_ratings_api_v1_bench_ratings_get",
