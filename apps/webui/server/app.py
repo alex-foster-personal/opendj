@@ -46,6 +46,7 @@ from .errors import (
     handle_not_found,
     handle_rekordbox_writeback_disabled,
 )
+from . import analysis_serving_bootstrap  # noqa: F401 - PARITY-02 lane registration
 from .frontend_build import frontend_build_dir
 from .routes import analysis as analysis_routes
 from .routes import analysis_backfill as analysis_backfill_routes

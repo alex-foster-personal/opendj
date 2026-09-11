@@ -30,6 +30,15 @@ import { after, before, beforeEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
+const ALL_SOURCE_FEATURES = ['beatgrid', 'key', 'waveform', 'loudness', 'vocal'];
+
+/** Mirror the five-lane GET shape the production endpoint now returns. */
+function mirrorFeatures(overrides = {}) {
+	return Object.fromEntries(
+		ALL_SOURCE_FEATURES.map((feature) => [feature, overrides[feature] ?? 'rekordbox'])
+	);
+}
+
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
 const SERVER_SCRIPT = fileURLToPath(new URL('./fixtures/analysis_source_anlz_server.py', import.meta.url));
 
@@ -183,6 +192,7 @@ beforeEach(() => {
 	// next test's FIRST sighting look like a change and refresh the decks.
 	analysisSource.analysisSourceState.features = {};
 	analysisSource.analysisSourceState.deckFeatures = {};
+	analysisSource.analysisSourceState.serving = ['beatgrid', 'key'];
 	runnerLog = [];
 	runnerFailures = 0;
 });
@@ -190,7 +200,7 @@ beforeEach(() => {
 test('loadAnalysisSource GETs the production daemon selection and mirrors it into state', async () => {
 	await analysisSource.loadAnalysisSource();
 
-	assert.deepEqual(analysisSource.analysisSourceState.features, { beatgrid: 'rekordbox' });
+	assert.deepEqual(analysisSource.analysisSourceState.features, mirrorFeatures());
 	assert.deepEqual(runnerLog, [], 'nothing is loaded, so a first sighting has nothing stale to refresh');
 });
 
@@ -224,14 +234,14 @@ test('the very first adopt must not rubber-stamp a deck that is ALREADY loaded (
 test('setAnalysisSource PUTs the production endpoint and adopts its validated response', async () => {
 	await analysisSource.setAnalysisSource('beatgrid', 'own');
 
-	assert.deepEqual(analysisSource.analysisSourceState.features, { beatgrid: 'own' });
+	assert.deepEqual(analysisSource.analysisSourceState.features, mirrorFeatures({ beatgrid: 'own' }));
 });
 
 test('a production-route rejected feature throws and leaves prior state untouched', async () => {
-	analysisSource.analysisSourceState.features = { beatgrid: 'rekordbox' };
+	analysisSource.analysisSourceState.features = mirrorFeatures();
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
 	await assert.rejects(() => analysisSource.setAnalysisSource('vocals', 'own'));
-	assert.deepEqual(analysisSource.analysisSourceState.features, { beatgrid: 'rekordbox' });
+	assert.deepEqual(analysisSource.analysisSourceState.features, mirrorFeatures());
 });
 
 test('a GET begun before a local PUT cannot overwrite the confirmed PUT adoption', async () => {
@@ -243,7 +253,7 @@ test('a GET begun before a local PUT cannot overwrite the confirmed PUT adoption
 
 	assert.deepEqual(
 		analysisSource.analysisSourceState.features,
-		{ beatgrid: 'own' },
+		mirrorFeatures({ beatgrid: 'own' }),
 		'a delayed older GET must not replace a newer locally confirmed PUT'
 	);
 });
@@ -253,7 +263,7 @@ test('a GET begun before a local PUT cannot overwrite the confirmed PUT adoption
 test('a poll that finds an external switch refreshes decks INSIDE the command queue', async () => {
 	await daemonSelect('rbx');
 	await analysisSource.loadAnalysisSource();
-	assert.deepEqual(analysisSource.analysisSourceState.features, { beatgrid: 'rekordbox' });
+	assert.deepEqual(analysisSource.analysisSourceState.features, mirrorFeatures());
 	assert.deepEqual(runnerLog, [], 'a first sighting is not a change and must not refresh anything');
 
 	await daemonSelect('own'); // an agent driving the endpoint directly
@@ -264,12 +274,12 @@ test('a poll that finds an external switch refreshes decks INSIDE the command qu
 		['enter', 'exit'],
 		'the poll refresh must run under the scheduler claim, not beside a PREPARE/START'
 	);
-	assert.deepEqual(analysisSource.analysisSourceState.features, { beatgrid: 'own' });
+	assert.deepEqual(analysisSource.analysisSourceState.features, mirrorFeatures({ beatgrid: 'own' }));
 });
 
 test('setAnalysisSource does NOT re-enter the queue its only caller already holds', async () => {
 	await daemonSelect('rbx');
-	analysisSource.analysisSourceState.features = { beatgrid: 'rekordbox' };
+	analysisSource.analysisSourceState.features = mirrorFeatures();
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
 
 	await analysisSource.setAnalysisSource('beatgrid', 'own');
@@ -279,7 +289,7 @@ test('setAnalysisSource does NOT re-enter the queue its only caller already hold
 		[],
 		'the analysis_source command already holds [...DECK_IDS, sync]; claiming again waits on its own tail forever'
 	);
-	assert.deepEqual(analysisSource.analysisSourceState.features, { beatgrid: 'own' });
+	assert.deepEqual(analysisSource.analysisSourceState.features, mirrorFeatures({ beatgrid: 'own' }));
 });
 
 test('a refresh with no runner installed throws instead of silently skipping the queue', async () => {
@@ -288,7 +298,7 @@ test('a refresh with no runner installed throws instead of silently skipping the
 	});
 	await daemonSelect('rbx');
 	await unwired.loadAnalysisSource();
-	assert.deepEqual(unwired.analysisSourceState.features, { beatgrid: 'rekordbox' });
+	assert.deepEqual(unwired.analysisSourceState.features, mirrorFeatures());
 
 	await daemonSelect('own');
 	await assert.rejects(
@@ -298,7 +308,7 @@ test('a refresh with no runner installed throws instead of silently skipping the
 	);
 	assert.deepEqual(
 		unwired.analysisSourceState.features,
-		{ beatgrid: 'rekordbox' },
+		mirrorFeatures(),
 		'a failed refresh must leave the mirror on the OLD value so the next poll retries'
 	);
 });
@@ -307,7 +317,7 @@ test('a refresh with no runner installed throws instead of silently skipping the
 
 test('two overlapping polls leave the NEWEST daemon answer in place, not the last to arrive', async () => {
 	await daemonSelect('rbx');
-	analysisSource.analysisSourceState.features = { beatgrid: 'rekordbox' };
+	analysisSource.analysisSourceState.features = mirrorFeatures();
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
 
 	// The delayed GET is issued FIRST and answers 'rbx' (correct at issue time);
@@ -325,7 +335,7 @@ test('two overlapping polls leave the NEWEST daemon answer in place, not the las
 
 	assert.deepEqual(
 		analysisSource.analysisSourceState.features,
-		{ beatgrid: 'own' },
+		mirrorFeatures({ beatgrid: 'own' }),
 		'an older poll response overtook a newer one and reinstated the pre-switch source'
 	);
 	assert.deepEqual(
@@ -338,7 +348,7 @@ test('two overlapping polls leave the NEWEST daemon answer in place, not the las
 // --------------------------------------------- re-analysis under an OWN source
 
 test('a completed re-analysis refreshes the decks while the beatgrid lane is OWN', async () => {
-	analysisSource.analysisSourceState.features = { beatgrid: 'own' };
+	analysisSource.analysisSourceState.features = mirrorFeatures({ beatgrid: 'own' });
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'own' };
 	const { socket, unsubscribe } = _subscribedBus();
 
@@ -354,7 +364,7 @@ test('a completed re-analysis refreshes the decks while the beatgrid lane is OWN
 	// Control, the opposite direction: on rekordbox the payload never reads that
 	// table, so a metadata edit must NOT cost every loaded deck a multi-MB refetch.
 	runnerLog = [];
-	analysisSource.analysisSourceState.features = { beatgrid: 'rekordbox' };
+	analysisSource.analysisSourceState.features = mirrorFeatures();
 	_deliverTracksChanged(socket);
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	assert.deepEqual(runnerLog, [], 'a rekordbox-sourced grid cannot have changed; refreshing is waste');
@@ -383,7 +393,7 @@ function _deliverTracksChanged(socket) {
 }
 
 test('a bus RESYNC refreshes the OWN grids the missed events could have moved', async () => {
-	analysisSource.analysisSourceState.features = { beatgrid: 'own' };
+	analysisSource.analysisSourceState.features = mirrorFeatures({ beatgrid: 'own' });
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'own' };
 	const { socket, unsubscribe } = _subscribedBus('ws://analysis-source-resync.test/events');
 
@@ -403,13 +413,13 @@ test('a bus RESYNC refreshes the OWN grids the missed events could have moved', 
 	// Control, the opposite direction: on rekordbox the /anlz payload never
 	// reads the analysis table, so a resync must NOT cost a multi-MB refetch.
 	runnerLog = [];
-	analysisSource.analysisSourceState.features = { beatgrid: 'rekordbox' };
+	analysisSource.analysisSourceState.features = mirrorFeatures();
 	socket.deliverRaw('still unparseable');
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	assert.deepEqual(runnerLog, [], 'a rekordbox-sourced grid cannot have gone stale');
 
 	// Disposal covers BOTH subscriptions, not just the kind one.
-	analysisSource.analysisSourceState.features = { beatgrid: 'own' };
+	analysisSource.analysisSourceState.features = mirrorFeatures({ beatgrid: 'own' });
 	unsubscribe();
 	socket.deliverRaw('after teardown');
 	await new Promise((resolve) => setTimeout(resolve, 0));
@@ -418,7 +428,7 @@ test('a bus RESYNC refreshes the OWN grids the missed events could have moved', 
 
 test('a FAILED record-change refresh stays pending and the next poll retries it', async () => {
 	await daemonSelect('own');
-	analysisSource.analysisSourceState.features = { beatgrid: 'own' };
+	analysisSource.analysisSourceState.features = mirrorFeatures({ beatgrid: 'own' });
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'own' };
 	const { socket, unsubscribe } = _subscribedBus('ws://analysis-source-retry.test/events');
 
@@ -463,7 +473,7 @@ test('an event-driven refresh records what /anlz actually SERVED, not the stale 
 	// discussion_r3976638774) - that guard is a real, independently-tested
 	// invariant, not the thing this test is about.
 	await daemonSelect('rbx');
-	analysisSource.analysisSourceState.features = { beatgrid: 'own' };
+	analysisSource.analysisSourceState.features = mirrorFeatures({ beatgrid: 'own' });
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'own' };
 	analysisSource.deckStates[1].stable_id = 'real-track-c-no-own-analysis';
 	const { socket, unsubscribe } = _subscribedBus('ws://analysis-source-served-watermark.test/events');
@@ -503,7 +513,7 @@ test('an event-driven refresh records what /anlz actually SERVED, not the stale 
 
 test('an EARLIER refresh completing must not clear a mark a LATER change set while it was in flight (discussion_r3972154604)', async () => {
 	await daemonSelect('own');
-	analysisSource.analysisSourceState.features = { beatgrid: 'own' };
+	analysisSource.analysisSourceState.features = mirrorFeatures({ beatgrid: 'own' });
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'own' };
 	// A real ~150ms server delay on /anlz (analysis_source_anlz_server.py),
 	// not a fabricated timer: the gap it opens is what lets a SECOND event
@@ -561,7 +571,7 @@ test('a mirror that drifted from the decks still refreshes them on the next answ
 	// older GET's `own`. Comparing the daemon's next answer against the MIRROR
 	// reads own-against-own and never refreshes, so the decks stay on the
 	// opposite grid for good (discussion_r3970117741).
-	analysisSource.analysisSourceState.features = { beatgrid: 'own' };
+	analysisSource.analysisSourceState.features = mirrorFeatures({ beatgrid: 'own' });
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
 
 	await analysisSource.loadAnalysisSource();
@@ -576,7 +586,7 @@ test('a mirror that drifted from the decks still refreshes them on the next answ
 
 test('a mirror that drifted does NOT buy a refresh the decks do not need', async () => {
 	await daemonSelect('rbx');
-	analysisSource.analysisSourceState.features = { beatgrid: 'own' };
+	analysisSource.analysisSourceState.features = mirrorFeatures({ beatgrid: 'own' });
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
 
 	await analysisSource.loadAnalysisSource();
@@ -585,7 +595,7 @@ test('a mirror that drifted does NOT buy a refresh the decks do not need', async
 	// daemon is serving, so the only thing that needed correcting was the
 	// mirror. A refresh here would be a multi-MB refetch for nothing.
 	assert.deepEqual(runnerLog, [], 'the decks already agree with the daemon');
-	assert.deepEqual(analysisSource.analysisSourceState.features, { beatgrid: 'rekordbox' });
+	assert.deepEqual(analysisSource.analysisSourceState.features, mirrorFeatures());
 });
 
 // ---------------------------------------- stale-source prefetch eviction
@@ -725,7 +735,7 @@ test('a switch with no loaded deck leaves an already-agreeing prefetched entry u
 test('a switch whose deck refresh fails puts the DAEMON back where it found it', async () => {
 	await daemonSelect('rbx');
 	await analysisSource.loadAnalysisSource();
-	assert.deepEqual(analysisSource.analysisSourceState.features, { beatgrid: 'rekordbox' });
+	assert.deepEqual(analysisSource.analysisSourceState.features, mirrorFeatures());
 
 	// A real loaded deck for a stable_id the server genuinely does not have, so
 	// the refresh fails on the production route's real 404 rather than on an
@@ -952,7 +962,7 @@ test(
 		'already won (r3975326238 P1 BLOCKING)',
 	async () => {
 		await daemonSelect('rbx');
-		analysisSource.analysisSourceState.features = { beatgrid: 'rekordbox' };
+		analysisSource.analysisSourceState.features = mirrorFeatures();
 		analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
 		analysisSource.invalidateAnlzCacheEntry('real-track-slow-own-grid');
 		// A sentinel no real server response could ever produce, so any change

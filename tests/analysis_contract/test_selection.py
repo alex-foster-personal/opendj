@@ -248,6 +248,7 @@ def test_persisting_a_default_on_an_in_memory_backend_is_refused(tmp_path) -> No
 def test_get_source_reports_every_lane(client) -> None:
     body = client.get("/api/v1/analysis/source").json()
     assert sorted(body["lanes"]) == sorted(LANES)
+    assert sorted(body["serving"]) == ["beatgrid", "key"]
     assert body["lanes"]["beatgrid"] == {
         "default": "rbx", "toggle": "unset", "toggle_revision": 0, "effective": "rbx",
     }
@@ -255,20 +256,21 @@ def test_get_source_reports_every_lane(client) -> None:
 
 def test_every_toggle_state_is_settable_and_readable(client) -> None:
     for state in ("rbx", "own", "unset"):
+        lane = "beatgrid" if state == "own" else "waveform"
         put = client.put(
-            "/api/v1/analysis/source", json={"lane": "waveform", "toggle": state}
+            "/api/v1/analysis/source", json={"lane": lane, "toggle": state}
         )
         assert put.status_code == 200, put.text
-        assert put.json()["lanes"]["waveform"]["toggle"] == state
+        assert put.json()["lanes"][lane]["toggle"] == state
         got = client.get("/api/v1/analysis/source").json()
-        assert got["lanes"]["waveform"]["toggle"] == state
+        assert got["lanes"][lane]["toggle"] == state
 
 
 def test_setting_a_default_over_http_changes_the_effective_source(client) -> None:
     body = client.put(
-        "/api/v1/analysis/source", json={"lane": "loudness", "default": "own"}
+        "/api/v1/analysis/source", json={"lane": "key", "default": "own"}
     ).json()
-    assert body["lanes"]["loudness"] == {
+    assert body["lanes"]["key"] == {
         "default": "own", "toggle": "unset", "toggle_revision": 0, "effective": "own",
     }
 

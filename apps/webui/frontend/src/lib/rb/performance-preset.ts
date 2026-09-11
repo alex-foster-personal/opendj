@@ -19,20 +19,16 @@ import type {
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { SyncMode } from '$lib/rb/deck-state-types';
 import type { CrossfaderAssign } from '$lib/rb/mixer-types';
+import {
+	MUTED_MASTER_VOLUME,
+	type PerformancePresetPhase
+} from '$lib/rb/performance-preset-constants';
 
 const PRESET_DECK_IDS = [1, 2, 3, 4] as const;
 const LOOP_BOUNDARY_TOLERANCE_MS = 0.01;
 const DEFAULT_AUTOPLAY_PROBE_TIMEOUT_MS = 750;
 const DEFAULT_PRESENTATION_TIMEOUT_MS = 30_000;
 const DEFAULT_STOP_TIMEOUT_MS = 30_000;
-export const MUTED_MASTER_VOLUME = 0;
-
-export type PerformancePresetPhase =
-	| 'loading'
-	| 'configuring'
-	| 'awaiting_audio'
-	| 'starting'
-	| 'stopping';
 export type PerformanceAudioActivationPolicy = 'auto' | 'require-gesture';
 
 export interface PerformanceMixerChannelPreset {

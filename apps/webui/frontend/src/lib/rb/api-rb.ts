@@ -16,7 +16,8 @@
 import { API_BASE } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
 import type { components } from '$lib/api-types';
-import { api, unwrap, RbApiError } from '$lib/api/client';
+import { api, unwrap } from '$lib/api/client';
+import { RbApiError } from './api-rb-error';
 import { currentAnlzFetchGeneration } from './anlz-fetch-generation';
 import type { AnlzCue, AnlzData } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
@@ -44,12 +45,16 @@ export type {
 
 export const RB_API_BASE: string = API_BASE;
 
+<<<<<<< HEAD
 // RbApiError lives beside its sibling ApiError in $lib/api/client, which is
 // the transport layer both error types describe. Re-exported here because 40
 // modules already import it from this path; moving the DEFINITION without
 // moving the import surface keeps this file the API client it is meant to be
 // rather than also the place errors are declared.
 export { RbApiError };
+=======
+export { RbApiError } from './api-rb-error';
+>>>>>>> origin/main
 
 export type TrackLyrics = {
 	stable_id: string;
@@ -356,6 +361,10 @@ export interface PlaylistTrackRowWire {
 	energy: number | null;
 	energy_source: 'mik' | null;
 	energy_reason: string;
+	key_status?: 'ok' | 'failed' | 'missing';
+	key_reason?: string | null;
+	loudness_status?: 'ok' | 'failed' | 'missing';
+	loudness_reason?: string | null;
 	duration_ms: number | null;
 	genre: string | null;
 	comments: string | null;

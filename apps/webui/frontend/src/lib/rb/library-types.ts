@@ -120,6 +120,11 @@ export interface TrackRow {
 	artist: string | null;
 	/** K column - Camelot key; null renders empty. */
 	key: string | null;
+	/** Own-lane key read model for failed/missing tooltips (NATIVE-04). */
+	key_status?: 'ok' | 'failed' | 'missing';
+	key_reason?: string | null;
+	loudness_status?: 'ok' | 'failed' | 'missing';
+	loudness_reason?: string | null;
 	/** B column - BPM; null renders empty. */
 	bpm: number | null;
 	/** Analyzer-only dynamic key/tempo facts. Absence is explicitly not analyzed. */

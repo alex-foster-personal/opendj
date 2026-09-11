@@ -309,6 +309,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analysis-queue/orders/{stable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Track Analysis Orders
+         * @description Current shared-job state for a track, readable by UI and HTTP agents.
+         */
+        get: operations["get_track_analysis_orders_api_v1_analysis_queue_orders__stable_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis-queue/orders/{stable_id}/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Order Track Analysis
+         * @description Order one real analysis CLI run through the same single refresh slot.
+         */
+        post: operations["order_track_analysis_api_v1_analysis_queue_orders__stable_id___kind__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analysis-queue/run": {
         parameters: {
             query?: never;
@@ -3556,6 +3596,23 @@ export interface components {
             /** Stable B */
             stable_b: string;
         };
+        /** AnalysisOrderOut */
+        AnalysisOrderOut: {
+            /** Kind */
+            kind: string;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "queued" | "running" | "done" | "error";
+            /** Stable Id */
+            stable_id: string;
+        };
+        /** AnalysisOrdersOut */
+        AnalysisOrdersOut: {
+            /** Items */
+            items: components["schemas"]["AnalysisOrderOut"][];
+        };
         /**
          * AnalysisQueueItemOut
          * @description One queued track. ``file_path`` is what the runner decodes.
@@ -3603,6 +3660,11 @@ export interface components {
              * @description The toggle value this PUT's `toggle` just displaced for `lane`, read and overwritten under the same lock acquisition. Null for a GET, or a PUT that did not set `toggle`. A client's own prior GET/PUT response can be stale by the time it issues a later PUT (a concurrent agent's write can land in between), so a compensating rollback must restore THIS value, not one read earlier over a separate round trip.
              */
             previous_toggle?: string | null;
+            /**
+             * Serving
+             * @description Selection lanes that currently have a serving own implementation on this daemon. Lanes absent from this list refuse PUT own.
+             */
+            serving: string[];
         };
         /**
          * AnalysisSourcePut
@@ -6875,8 +6937,13 @@ export interface components {
             /** Session Id */
             session_id: string | null;
         };
-        /** RefreshIn */
+        /**
+         * RefreshIn
+         * @description One refresh scope, including the explicit analysis-grid track order.
+         */
         RefreshIn: {
+            /** Analysis Kind */
+            analysis_kind?: ("vocals" | "beatgrid" | "key" | "stems") | null;
             /** Batch Dir */
             batch_dir?: string | null;
             /**
@@ -6884,9 +6951,14 @@ export interface components {
              * @default library
              * @enum {string}
              */
-            scope: "library" | "unmapped";
+            scope: "library" | "unmapped" | "track";
+            /** Stable Id */
+            stable_id?: string | null;
         };
-        /** RefreshStatusOut */
+        /**
+         * RefreshStatusOut
+         * @description The one-slot job's public, serializable state.
+         */
         RefreshStatusOut: {
             /** Current Step */
             current_step: string | null;
@@ -7075,6 +7147,20 @@ export interface components {
             is_streaming: boolean;
             /** Key */
             key: string | null;
+            /** Key Reason */
+            key_reason: string | null;
+            /**
+             * Key Status
+             * @enum {string}
+             */
+            key_status: "ok" | "failed" | "missing";
+            /** Loudness Reason */
+            loudness_reason: string | null;
+            /**
+             * Loudness Status
+             * @enum {string}
+             */
+            loudness_status: "ok" | "failed" | "missing";
             /** Match Context */
             match_context: string;
             /**
@@ -8034,6 +8120,20 @@ export interface components {
             is_streaming: boolean;
             /** Key */
             key: string | null;
+            /** Key Reason */
+            key_reason: string | null;
+            /**
+             * Key Status
+             * @enum {string}
+             */
+            key_status: "ok" | "failed" | "missing";
+            /** Loudness Reason */
+            loudness_reason: string | null;
+            /**
+             * Loudness Status
+             * @enum {string}
+             */
+            loudness_status: "ok" | "failed" | "missing";
             /**
              * Play Count
              * @default 0
@@ -9180,6 +9280,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AnalysisQueueOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_track_analysis_orders_api_v1_analysis_queue_orders__stable_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisOrdersOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    order_track_analysis_api_v1_analysis_queue_orders__stable_id___kind__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisOrderOut"];
                 };
             };
             /** @description Validation Error */

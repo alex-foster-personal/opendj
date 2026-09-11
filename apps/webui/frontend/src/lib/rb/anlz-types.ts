@@ -146,6 +146,26 @@ export interface AnlzPerformanceHints {
 	chord_progression?: string;
 }
 
+export type AnlzKeySegmentStatus = 'ok' | 'failed' | 'missing';
+
+/** One key-change segment boundary on the own `/anlz` payload (NATIVE-05). */
+export interface AnlzKeySegment {
+	start_bar: number;
+	end_bar: number;
+	start_s: number;
+	end_s: number;
+	key_camelot: string;
+	key_openkey: string;
+	confidence: number;
+}
+
+/** Own key lane segments block on `/anlz`. */
+export interface AnlzKeySegments {
+	status: AnlzKeySegmentStatus;
+	reason: string | null;
+	segments: AnlzKeySegment[];
+}
+
 /** Our own ffmpeg-decoded waveform status for a track with NO rekordbox
  * mapping (issue #735). Present ONLY on that branch - a rekordbox-mapped
  * track's response has no ``local_waveform`` key at all. */
@@ -185,6 +205,8 @@ export interface AnlzData {
 	 * when the analyzer found none. A rekordbox-sourced payload has no such
 	 * key at all. */
 	tempo_changes?: AnlzTempoChange[];
+	/** Own key lane only: bar-indexed key segments with their own status. */
+	key_segments?: AnlzKeySegments;
 	/** Optional, real analyzer-only detail. Absence means not analyzed. */
 	performance_hints?: AnlzPerformanceHints;
 	/** See AnlzLocalWaveform; absent for a rekordbox-mapped track. */

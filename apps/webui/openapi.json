@@ -457,6 +457,51 @@
         "title": "AlignmentOut",
         "type": "object"
       },
+      "AnalysisOrderOut": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "phase": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "error"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "kind",
+          "phase"
+        ],
+        "title": "AnalysisOrderOut",
+        "type": "object"
+      },
+      "AnalysisOrdersOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AnalysisOrderOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AnalysisOrdersOut",
+        "type": "object"
+      },
       "AnalysisQueueItemOut": {
         "description": "One queued track. ``file_path`` is what the runner decodes.\n\nNamed apart from ``models.QueueItemOut`` (the M3 triage queues) on\npurpose: two Pydantic models sharing a name collapse into one OpenAPI\nschema, and the loser is served under the winner's shape.",
         "properties": {
@@ -558,10 +603,19 @@
             ],
             "description": "The toggle value this PUT's `toggle` just displaced for `lane`, read and overwritten under the same lock acquisition. Null for a GET, or a PUT that did not set `toggle`. A client's own prior GET/PUT response can be stale by the time it issues a later PUT (a concurrent agent's write can land in between), so a compensating rollback must restore THIS value, not one read earlier over a separate round trip.",
             "title": "Previous Toggle"
+          },
+          "serving": {
+            "description": "Selection lanes that currently have a serving own implementation on this daemon. Lanes absent from this list refuse PUT own.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Serving",
+            "type": "array"
           }
         },
         "required": [
-          "lanes"
+          "lanes",
+          "serving"
         ],
         "title": "AnalysisSourceOut",
         "type": "object"
@@ -9036,7 +9090,25 @@
         "type": "object"
       },
       "RefreshIn": {
+        "description": "One refresh scope, including the explicit analysis-grid track order.",
         "properties": {
+          "analysis_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "vocals",
+                  "beatgrid",
+                  "key",
+                  "stems"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Kind"
+          },
           "batch_dir": {
             "anyOf": [
               {
@@ -9052,16 +9124,29 @@
             "default": "library",
             "enum": [
               "library",
-              "unmapped"
+              "unmapped",
+              "track"
             ],
             "title": "Scope",
             "type": "string"
+          },
+          "stable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Id"
           }
         },
         "title": "RefreshIn",
         "type": "object"
       },
       "RefreshStatusOut": {
+        "description": "The one-slot job's public, serializable state.",
         "properties": {
           "current_step": {
             "anyOf": [
@@ -9630,6 +9715,46 @@
             ],
             "title": "Key"
           },
+          "key_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Reason"
+          },
+          "key_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing"
+            ],
+            "title": "Key Status",
+            "type": "string"
+          },
+          "loudness_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Reason"
+          },
+          "loudness_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing"
+            ],
+            "title": "Loudness Status",
+            "type": "string"
+          },
           "match_context": {
             "title": "Match Context",
             "type": "string"
@@ -9730,6 +9855,10 @@
           "energy",
           "energy_source",
           "energy_reason",
+          "key_status",
+          "key_reason",
+          "loudness_status",
+          "loudness_reason",
           "match_context"
         ],
         "title": "SearchHit",
@@ -12210,6 +12339,46 @@
             ],
             "title": "Key"
           },
+          "key_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Reason"
+          },
+          "key_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing"
+            ],
+            "title": "Key Status",
+            "type": "string"
+          },
+          "loudness_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Reason"
+          },
+          "loudness_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing"
+            ],
+            "title": "Loudness Status",
+            "type": "string"
+          },
           "play_count": {
             "default": 0,
             "title": "Play Count",
@@ -12305,7 +12474,11 @@
           "artwork_status",
           "energy",
           "energy_source",
-          "energy_reason"
+          "energy_reason",
+          "key_status",
+          "key_reason",
+          "loudness_status",
+          "loudness_reason"
         ],
         "title": "TrackRowOut",
         "type": "object"
@@ -14573,6 +14746,101 @@
           }
         },
         "summary": "Get Analysis Queue",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis-queue/orders/{stable_id}": {
+      "get": {
+        "description": "Current shared-job state for a track, readable by UI and HTTP agents.",
+        "operationId": "get_track_analysis_orders_api_v1_analysis_queue_orders__stable_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisOrdersOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Analysis Orders",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis-queue/orders/{stable_id}/{kind}": {
+      "post": {
+        "description": "Order one real analysis CLI run through the same single refresh slot.",
+        "operationId": "order_track_analysis_api_v1_analysis_queue_orders__stable_id___kind__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisOrderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Order Track Analysis",
         "tags": [
           "analysis"
         ]

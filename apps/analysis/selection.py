@@ -40,6 +40,7 @@ from typing import Any, Literal
 
 from .canonical import PROJECTION_FIELDS
 from .lanes import LANES, Lane
+from .serving_lanes import SERVING_LANES, register_serving_lane, serving_lanes
 
 Source = Literal["rbx", "own"]
 SOURCES: tuple[Source, ...] = ("rbx", "own")
@@ -60,8 +61,6 @@ _RBX_FIELDS: frozenset[str] = frozenset({"bpm", "key"})
 # The `source` reported for an own lane that has no record yet. A real
 # own value reports its canonical backend name instead.
 OWN_ANALYSIS_SOURCE = "own-analysis"
-
-
 
 class SelectionError(ValueError):
     """An unknown lane, source, or toggle state."""
@@ -356,7 +355,8 @@ def source_state(conn: sqlite3.Connection) -> dict[str, Any]:
                 "effective": toggles[lane] if toggles[lane] != "unset" else defaults[lane],
             }
             for lane in LANES
-        }
+        },
+        "serving": sorted(SERVING_LANES),
     }
 
 
@@ -544,6 +544,7 @@ __all__ = [
     "LANES",
     "OWN_ANALYSIS_SOURCE",
     "PROJECTION_FIELDS",
+    "SERVING_LANES",
     "SOURCES",
     "TOGGLE_STATES",
     "EffectiveField",
@@ -567,7 +568,9 @@ __all__ = [
     "get_toggle",
     "get_toggle_revision",
     "lane_for_field",
+    "register_serving_lane",
     "reset_toggles",
+    "serving_lanes",
     "set_default",
     "set_toggle",
     "source_state",

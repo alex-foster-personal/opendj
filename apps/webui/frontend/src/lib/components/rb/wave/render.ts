@@ -12,7 +12,8 @@
  * band arrays the server filled - bands are NEVER synthesised.
  */
 import { vocalsOf } from '$lib/rb/api-rb';
-import type { AnlzBeat, AnlzData, AnlzPhrase, AnlzWaveform } from '$lib/rb/anlz-types';
+import { shouldPaintBeatGrid } from '$lib/player/grid-features';
+import type { AnlzBeat, AnlzData, AnlzPhrase, AnlzTempoChange, AnlzWaveform } from '$lib/rb/anlz-types';
 import type { LoopState } from '$lib/rb/deck-state-types';
 import { LOOP_MIN_BAND_PX, loopBandPx, visibleBeatLines, type LoopBandSource } from './wave-math';
 import { drawLoopCueBands, drawPointCueMarkers, MARKER_BAND_PX, type WavePalette } from './cues';
@@ -196,7 +197,10 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 		// would otherwise blank out for their span; point cue markers stay in
 		// the foreground, after them (discussion_r3918219289).
 		drawLoopCueBands(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
-		_drawBeatGrid(ctx, frame.anlz.beatgrid.beats, tLeft, pxPerS, w, h, palette);
+		if (shouldPaintBeatGrid(frame.anlz)) {
+			_drawBeatGrid(ctx, frame.anlz.beatgrid.beats, tLeft, pxPerS, w, h, palette);
+			_drawTempoChanges(ctx, frame.anlz.tempo_changes, tLeft, pxPerS, w, h, palette);
+		}
 		_drawPhrases(ctx, frame.anlz.phrases, tLeft, pxPerS, w, palette);
 		drawPointCueMarkers(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
 		_drawVocals(ctx, frame.anlz, tLeft, pxPerS, w);
@@ -329,6 +333,28 @@ function _drawBands(
 	ctx.fillStyle = palette.high;
 	ctx.fill(highPath);
 	ctx.globalAlpha = 1;
+}
+
+function _drawTempoChanges(
+	ctx: CanvasRenderingContext2D,
+	changes: readonly AnlzTempoChange[] | undefined,
+	tLeft: number,
+	pxPerS: number,
+	w: number,
+	h: number,
+	palette: WavePalette
+): void {
+	if (changes === undefined || changes.length === 0) return;
+	ctx.strokeStyle = palette.phrase;
+	ctx.lineWidth = 1;
+	for (const change of changes) {
+		const x = (change.at_s - tLeft) * pxPerS;
+		if (x < -2 || x > w + 2) continue;
+		ctx.beginPath();
+		ctx.moveTo(x, 0);
+		ctx.lineTo(x, h);
+		ctx.stroke();
+	}
 }
 
 function _drawBeatGrid(

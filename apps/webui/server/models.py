@@ -214,6 +214,10 @@ class TrackRowOut(BaseModel):
     energy: int | None
     energy_source: Literal["mik"] | None
     energy_reason: str
+    key_status: Literal["ok", "failed", "missing"]
+    key_reason: str | None
+    loudness_status: Literal["ok", "failed", "missing"]
+    loudness_reason: str | None
 
 
 class PlaylistDetail(BaseModel):

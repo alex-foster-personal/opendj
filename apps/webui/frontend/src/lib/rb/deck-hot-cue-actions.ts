@@ -2,7 +2,7 @@ import type { HotCueMutation } from '$lib/rb/api-rb';
 import { quantizeToNearestBeat } from '$lib/rb/beat-sync-math';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
-import { hasRealBeatGrid } from '$lib/player/grid-features';
+import { deckHasTrustedBeatGrid, effectiveQuantize } from '$lib/player/grid-features';
 import { dispatchPerformanceCommand, type PerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { pushToast } from '$lib/stores.svelte';
 
@@ -40,7 +40,7 @@ export function createDeckHotCueActions(
 		if (!revision) throw new Error(`hot cue ${slot}: slot revision is unavailable`);
 		let ms = fixedPositionMs ?? deck.position_ms;
 		const beats = deck.anlz?.beatgrid.beats;
-		if ((fixedPositionMs === undefined || quantizeFixedPosition) && deck.quantize_enabled && hasRealBeatGrid(beats)) {
+		if ((fixedPositionMs === undefined || quantizeFixedPosition) && effectiveQuantize(deck) && beats !== undefined) {
 			ms = Math.round(quantizeToNearestBeat(beats, ms / 1000) * 1000);
 		}
 		try {
