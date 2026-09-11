@@ -1,5 +1,7 @@
 """Migration v10: the ``lyric_verdict`` row and the widened ``asset_kind``.
 
+[if] a fresh ladder does not create lyric_verdict and its triage index [then] fail, [else stop].
+
 Contract under test: ``specs/karaoke-lyrics-operational-plan.md`` D13.1 and
 the ``sync_policies`` half of D13.2, implemented in
 :mod:`apps.shared.state.migrations_v10`.
