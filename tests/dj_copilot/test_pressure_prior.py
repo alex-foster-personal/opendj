@@ -1,4 +1,7 @@
-"""AI-05 soft pressure prior on suggest-next."""
+"""AI-05 soft pressure prior on suggest-next.
+
+[if] a release-pressure session ranks suggest-next [then] low-energy tracks get a small bump that never outranks a manual pairing, [else stop].
+"""
 from __future__ import annotations
 
 import sqlite3

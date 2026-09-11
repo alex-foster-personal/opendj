@@ -114,6 +114,33 @@ def test_unavailable_findings_do_not_file_bug_issues() -> None:
     assert github.created_issues == []
 
 
+def test_extra_label_is_applied_to_created_issues() -> None:
+    """If --label red-team is supplied then created issues carry it, or broken."""
+    github = RecordingGitHub()
+
+    result = mod.file_findings(
+        (_finding(),),
+        run_id="20260911-track-g",
+        priority="p0",
+        github=github,
+        extra_labels=("red-team",),
+    )
+
+    assert result.created == (901,)
+    _title, body, labels = github.created_issues[0]
+    assert "red-team" in labels
+    assert "queue:p0" in labels
+    assert "red-team" in github.created_labels
+    assert mod.fingerprint_footer("deck-1-silent") in body
+
+
+def test_cli_help_names_the_label_flag() -> None:
+    """If a caller passes --label red-team then argparse must accept it, or broken."""
+    source = Path(mod.__file__).read_text(encoding="utf-8")
+    assert '"--label"' in source
+    assert "red-team" in source
+
+
 def test_open_bug_dedupe_does_not_depend_on_eventual_search_index() -> None:
     """If an issue was just filed then a later run lists its open body directly, or broken."""
     source = Path(mod.__file__).read_text(encoding="utf-8")

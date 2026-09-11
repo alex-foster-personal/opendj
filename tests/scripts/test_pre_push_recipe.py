@@ -68,6 +68,10 @@ REQUIRED_STEPS: list[tuple[str, str]] = [
         r"scripts\.debt_index\s+--check",
     ),
     (
+        "ADR line on gated paths",
+        r"scripts\.adr_check\s+--base\s+origin/main",
+    ),
+    (
         "openapi.json regenerated from the engine and diffed",
         r"\{\{\s*engine_openapi_dump\s*\}\}.*apps/webui/openapi\.json",
     ),

@@ -189,12 +189,12 @@ def create_app(db_path: Path) -> FastAPI:
     app.include_router(client_events_routes.router, prefix="/api/v1")
     app.include_router(cloudsync_status_routes.router, prefix="/api/v1")
     # Real routes, not a hand-stub: a dev checkout has no OPENDJ_PAYLOAD_MANIFEST,
-    # so build identity resolves from git but carries no app_version, and
-    # resolve_update_check faults "identity-unavailable" before it ever reaches
-    # the network (apps/engine_core/update_channel.py:388). Hermetic by the same
-    # mechanism CI runs under. Strip the manifest env so a Playwright server
-    # that inherits a real OPENDJ_PAYLOAD_MANIFEST from its launcher still
-    # resolves a repo identity, not a live payload's.
+    # so build identity resolves from git and carries app_version from
+    # tauri.conf.json. The public manifest is still unpublished, so
+    # /update/check answers HTTP 200 with endpoint-refused rather than 502.
+    # Hermetic by the same mechanism CI runs under. Strip the manifest env so a
+    # Playwright server that inherits a real OPENDJ_PAYLOAD_MANIFEST from its
+    # launcher still resolves a repo identity, not a live payload's.
     fixture_environ = {k: v for k, v in os.environ.items() if k != MANIFEST_ENV}
     add_build_info_route(app, environ=fixture_environ, repo_root=platform_paths.PROJECT_ROOT)
     add_update_check_route(app)

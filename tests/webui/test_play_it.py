@@ -150,6 +150,7 @@ def test_solve_energy_missing_is_not_gating(client: TestClient) -> None:
 
 @pytest.mark.requirement("SET-04")
 def test_solve_with_pins_honors_roles(client: TestClient) -> None:
+    """[if] solve is posted with pin roles [then] opener peak and closer land in order, [else stop]."""
     r = client.post(
         "/api/v1/play-it/pl-002/solve",
         json={
@@ -172,6 +173,7 @@ def test_solve_with_pins_honors_roles(client: TestClient) -> None:
 
 @pytest.mark.requirement("SET-04")
 def test_solve_pin_not_in_playlist_is_422(client: TestClient) -> None:
+    """[if] a pin is not in the playlist [then] solve returns 422 pin_unsatisfiable, [else stop]."""
     r = client.post(
         "/api/v1/play-it/pl-002/solve",
         json={"duration_min": 60, "peak_pins": ["not-in-playlist"]},
@@ -184,6 +186,7 @@ def test_solve_pin_not_in_playlist_is_422(client: TestClient) -> None:
 
 @pytest.mark.requirement("SET-04")
 def test_openapi_lists_pin_goal_fields() -> None:
+    """[if] OpenAPI describes PlayItGoalIn [then] it lists the pin goal fields, [else stop]."""
     schema = create_app(mount_frontend=False).openapi()["components"]["schemas"][
         "PlayItGoalIn"
     ]
