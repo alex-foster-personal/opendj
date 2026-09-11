@@ -20,12 +20,12 @@ specific machine's live DB file and is regenerated whenever migrations run,
 so it can never go stale the way a hand-maintained doc can.
 
 No module-level dependency on :mod:`apps.shared.state.db` on purpose: that
-module is a layer BELOW ``apps.database`` (``apps/shared/state/db.py`` is
-meant to import ``apps.database`` to invoke the post-migration hook, per the
-wiring ask in the D3 AGENTS.md lane's report -- see ``apps/database/
-__init__.py``). A module-level import here in the other direction would be
-a circular import; :func:`main` -- the only place this module actually needs
-a live connection opener -- imports it locally instead.
+module is a layer BELOW ``apps.database``. ``open_rw`` locally imports
+:func:`apps.database.regenerate_agents_md_if_writable` after migrations
+(see ``apps/database/__init__.py``). A module-level import here in the
+other direction would be a circular import; :func:`main` -- the only place
+this module actually needs a live connection opener -- imports it locally
+instead.
 """
 
 from __future__ import annotations

@@ -26,19 +26,11 @@ __all__ = ["regenerate_agents_md_if_writable"]
 def regenerate_agents_md_if_writable(conn: sqlite3.Connection, state_dir: Path) -> bool:
     """Regenerate ``<state_dir>/AGENTS.md`` from ``conn``, if ``state_dir`` is writable.
 
-    WIRING ASK for whoever owns ``apps/shared/state/db.py`` (that module is
-    a layer below this package, so it should import this locally rather
-    than at module scope -- see ``apps/database/generate_agents_md.py``'s
-    module docstring for why a top-level import the other way round would
-    cycle): call this one line right after
-    ``apps.shared.state.schema.apply_migrations(conn)`` succeeds inside
-    ``open_rw``::
-
-        from apps.database import regenerate_agents_md_if_writable
-        regenerate_agents_md_if_writable(conn, target.parent)
-
-    (``target`` is already the state.db path in ``open_rw``; ``target.parent``
-    is the state directory both state.db and AGENTS.md live in.)
+    Called from ``apps.shared.state.db.open_rw`` after migrations and machine-id
+    backfill succeed (local import there, not at module scope -- see
+    ``apps/database/generate_agents_md.py``'s module docstring for the
+    circular-import risk). ``target.parent`` in ``open_rw`` is the state
+    directory both state.db and AGENTS.md live in.
 
     Returns False, writing nothing, when ``state_dir`` is not writable -- a
     read-only mount, a CI sandbox, a directory that does not exist yet.
