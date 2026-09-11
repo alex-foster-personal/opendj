@@ -71,13 +71,31 @@ def _now_iso() -> str:
 # pointer
 #-----------------------------------------------------------------------------
 
+def _canonical_beatgrid_record(
+    conn: sqlite3.Connection, stable_id: str,
+) -> AnalysisRecord | None:
+    """The canonical own beatgrid record visible on ``conn`` (same transaction)."""
+    pointer = canonical_pointer(conn, stable_id, "beatgrid")
+    if pointer is None:
+        return None
+    row = conn.execute(
+        "SELECT record_json FROM analysis "
+        "WHERE stable_id = ? AND backend = ? AND backend_version = ?",
+        (stable_id, pointer[0], pointer[1]),
+    ).fetchone()
+    if row is None:
+        return None
+    record = AnalysisRecord.from_json(row[0])
+    beatgrid_lane = record.lanes.get("beatgrid")
+    if beatgrid_lane is None or beatgrid_lane.status != "ok":
+        return None
+    return record
+
+
 def _key_row_is_stale(
     conn: sqlite3.Connection, stable_id: str, record_json: str,
 ) -> bool:
     """True when an ok key record's beatgrid dependency no longer matches."""
-    from pathlib import Path
-
-    from apps.analysis.backends.own_key import canonical_beatgrid_record
     from apps.analysis_key.lane_payload import (
         beatgrid_dependency_matches,
         beatgrid_identity_from_record,
@@ -90,9 +108,7 @@ def _key_row_is_stale(
     depends_on = key_lane.payload.get("depends_on", {}).get("beatgrid")
     if not isinstance(depends_on, dict):
         return False
-    db_row = conn.execute("PRAGMA database_list").fetchone()
-    assert db_row is not None
-    current = canonical_beatgrid_record(stable_id, db_path=Path(db_row[2]))
+    current = _canonical_beatgrid_record(conn, stable_id)
     if current is None:
         # No canonical beatgrid to compare against yet: the row may still win
         # canonical for scalar projection. Segment staleness is enforced at
