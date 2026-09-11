@@ -1,0 +1,6 @@
+{
+  "_note": "Synthetic present vs absent ids so lyrics wait KPIs do not need the maintainer's library. Tests copy these ids into a tmp data-dir and replay cache mtimes with os.utime (git does not preserve mtimes).",
+  "present": ["present-a", "present-b"],
+  "awaiting_volume": [],
+  "absent": ["absent-c"]
+}

@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 
 from apps.lyrics import cache as lyrics_cache
 from apps.shared import audio_quality
 from apps.shared.events import publish
+from apps.shared.paths import STATE_DB
 
 from .. import rb_vendor
 from ..backend import ConflictError, StateBackend, Track, TrackFilter
 from ..deps import get_read_state, get_write_state
 from ..errors import precondition_required
 from ..etag import compute_etag
+from ..stem_artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
 from ..models import (
     LyricsUnavailableOut,
     ProvenanceOut,
@@ -51,7 +54,79 @@ def _has_rb_mapping(stable_id: str) -> bool:
     return stable_id in rb_vendor.bulk_rb_meta([stable_id])
 
 
-def _track_to_out(track: Track, has_rb_mapping: bool) -> TrackOut:
+def _data_dir_from_state_db(state_db_path: Path) -> Path:
+    return state_db_path.parent.parent
+
+
+def _analysis_db_path(request: Request) -> Path:
+    override: Path | None = getattr(request.app.state, "analysis_db_path", None)
+    return Path(override) if override is not None else STATE_DB
+
+
+def _stems_dir(request: Request) -> Path:
+    configured = getattr(request.app.state, "stems_dir", DEFAULT_STEMS_DIR)
+    return Path(configured)
+
+
+def _lyrics_available_bulk(data_dir: Path, stable_ids: list[str]) -> dict[str, bool]:
+    return {
+        sid: lyrics_cache.cache_path(data_dir, sid).is_file()
+        for sid in stable_ids
+    }
+
+
+def _auto_cues_available_bulk(
+    analysis_db_path: Path, stable_ids: list[str]
+) -> dict[str, bool]:
+    if not stable_ids:
+        return {}
+    available = {sid: False for sid in stable_ids}
+    if not analysis_db_path.exists():
+        return available
+    placeholders = ",".join("?" * len(stable_ids))
+    sql = (
+        f"SELECT DISTINCT stable_id FROM analysis WHERE stable_id IN ({placeholders})"
+        " AND backend NOT LIKE 'own\\_%' ESCAPE '\\'"
+    )
+    conn = sqlite3.connect(f"file:{analysis_db_path}?mode=ro", uri=True)
+    try:
+        conn.execute("PRAGMA query_only = ON")
+        try:
+            for (sid,) in conn.execute(sql, stable_ids):
+                available[str(sid)] = True
+        except sqlite3.OperationalError as exc:
+            if "no such table: analysis" not in str(exc):
+                raise
+    finally:
+        conn.close()
+    return available
+
+
+def _stems_available_from_summary(stems: dict[str, Any]) -> bool:
+    # Skip GET /stems only when summary is "none" (404). "invalid" still probes (422).
+    return (stems or {}).get("status") != "none"
+
+
+def _optional_resource_flags(
+    stable_id: str,
+    *,
+    data_dir: Path,
+    analysis_db_path: Path,
+    stems: dict[str, Any],
+) -> tuple[bool, bool, bool]:
+    lyrics = _lyrics_available_bulk(data_dir, [stable_id])[stable_id]
+    auto_cues = _auto_cues_available_bulk(analysis_db_path, [stable_id])[stable_id]
+    return lyrics, auto_cues, _stems_available_from_summary(stems)
+
+
+def _track_to_out(
+    track: Track,
+    has_rb_mapping: bool,
+    *,
+    lyrics_available: bool,
+    auto_cues_available: bool,
+    stems_available: bool,
+) -> TrackOut:
     prov_out = {
         k: ProvenanceOut(
             value=v.value,
@@ -80,11 +155,15 @@ def _track_to_out(track: Track, has_rb_mapping: bool) -> TrackOut:
         updated_at=track.updated_at,
         provenance=prov_out,
         has_rb_mapping=has_rb_mapping,
+        lyrics_available=lyrics_available,
+        auto_cues_available=auto_cues_available,
+        stems_available=stems_available,
     )
 
 
 @router.get("", response_model=TracksPage)
 def list_tracks(
+    request: Request,
     q: Optional[str] = Query(None, description="Substring match on title/artist"),
     bpm_min: Optional[float] = None,
     bpm_max: Optional[float] = None,
@@ -116,11 +195,22 @@ def list_tracks(
     )
     page = backend.list_tracks(flt)
     rows = rb_vendor.build_track_rows(page.items)
+    stable_ids = [t.stable_id for t in page.items]
+    state_db_path = Path(request.app.state.state_db_path)
+    data_dir = _data_dir_from_state_db(state_db_path)
+    lyrics_by_sid = _lyrics_available_bulk(data_dir, stable_ids)
+    auto_cues_by_sid = _auto_cues_available_bulk(_analysis_db_path(request), stable_ids)
     items: list[TrackListItemOut] = []
     for track, row in zip(page.items, rows):
         if not keep_by_availability(available, row["file_exists"]):
             continue
-        base = _track_to_out(track, has_rb_mapping=row["has_rb_mapping"]).model_dump()
+        base = _track_to_out(
+            track,
+            has_rb_mapping=row["has_rb_mapping"],
+            lyrics_available=lyrics_by_sid[track.stable_id],
+            auto_cues_available=auto_cues_by_sid[track.stable_id],
+            stems_available=_stems_available_from_summary(row["stems"]),
+        ).model_dump()
         base["play_count"] = int(row.get("play_count") or 0)
         items.append(
             TrackListItemOut(
@@ -179,19 +269,36 @@ def get_track_lyrics(stable_id: str, request: Request) -> TrackLyricsOut:
 @router.get("/{stable_id}", response_model=TrackOut)
 def get_track(
     stable_id: str,
+    request: Request,
     response: Response,
     backend: StateBackend = Depends(get_read_state),
 ) -> TrackOut:
     # NotFoundError -> handle_not_found (errors.py).
     track = backend.get_track(stable_id)
     response.headers["ETag"] = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
-    return _track_to_out(track, has_rb_mapping=_has_rb_mapping(stable_id))
+    state_db_path = Path(request.app.state.state_db_path)
+    data_dir = _data_dir_from_state_db(state_db_path)
+    stems = bulk_stem_summaries([stable_id], stems_dir=_stems_dir(request))[stable_id]
+    lyrics, auto_cues, stems_avail = _optional_resource_flags(
+        stable_id,
+        data_dir=data_dir,
+        analysis_db_path=_analysis_db_path(request),
+        stems=stems,
+    )
+    return _track_to_out(
+        track,
+        has_rb_mapping=_has_rb_mapping(stable_id),
+        lyrics_available=lyrics,
+        auto_cues_available=auto_cues,
+        stems_available=stems_avail,
+    )
 
 
 @router.patch("/{stable_id}", response_model=TrackOut)
 def patch_track(
     stable_id: str,
     patch: TrackPatch,
+    request: Request,
     response: Response,
     if_match: Optional[str] = Header(None, alias="If-Match"),
     backend: StateBackend = Depends(get_write_state),
@@ -225,4 +332,19 @@ def patch_track(
         updated.stable_id, updated.updated_at, updated.selection_tag
     )
     publish("library.changed", {"kind": "tracks", "ids": [updated.stable_id]})
-    return _track_to_out(updated, has_rb_mapping=_has_rb_mapping(stable_id))
+    state_db_path = Path(request.app.state.state_db_path)
+    data_dir = _data_dir_from_state_db(state_db_path)
+    stems = bulk_stem_summaries([stable_id], stems_dir=_stems_dir(request))[stable_id]
+    lyrics, auto_cues, stems_avail = _optional_resource_flags(
+        stable_id,
+        data_dir=data_dir,
+        analysis_db_path=_analysis_db_path(request),
+        stems=stems,
+    )
+    return _track_to_out(
+        updated,
+        has_rb_mapping=_has_rb_mapping(stable_id),
+        lyrics_available=lyrics,
+        auto_cues_available=auto_cues,
+        stems_available=stems_avail,
+    )

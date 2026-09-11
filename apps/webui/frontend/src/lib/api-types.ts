@@ -7728,6 +7728,8 @@ export interface components {
              * @enum {string}
              */
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
+            /** Auto Cues Available */
+            auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
             /** Created At */
@@ -7755,6 +7757,8 @@ export interface components {
             key?: string | null;
             /** Last Played At */
             last_played_at?: string | null;
+            /** Lyrics Available */
+            lyrics_available: boolean;
             /** Notes */
             notes?: string | null;
             /**
@@ -7782,6 +7786,8 @@ export interface components {
             stems: {
                 [key: string]: unknown;
             };
+            /** Stems Available */
+            stems_available: boolean;
             /**
              * Tags
              * @default []
@@ -7814,6 +7820,8 @@ export interface components {
             album?: string | null;
             /** Artist */
             artist?: string | null;
+            /** Auto Cues Available */
+            auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
             /** Created At */
@@ -7828,6 +7836,8 @@ export interface components {
             key?: string | null;
             /** Last Played At */
             last_played_at?: string | null;
+            /** Lyrics Available */
+            lyrics_available: boolean;
             /** Notes */
             notes?: string | null;
             /**
@@ -7846,6 +7856,8 @@ export interface components {
             rating?: number | null;
             /** Stable Id */
             stable_id: string;
+            /** Stems Available */
+            stems_available: boolean;
             /**
              * Tags
              * @default []

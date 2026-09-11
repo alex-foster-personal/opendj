@@ -748,20 +748,28 @@
 		// FAST PATH: the engine tells us the moment a track changes, from any
 		// writer (this tab, another tab, the CLI, an agent). One targeted
 		// refetch, no idle polling.
-		// Every trigger here goes through `_libraryRefreshGate`, never through
+		// Pane-row refetches go through `_libraryRefreshGate`, never through
 		// `_refreshLibraryRowsOnce` directly: the gate decides WHEN a background
 		// refetch is allowed to run, and its coalescer guarantees it is only
-		// ever one refetch.
+		// ever one refetch. Playlist TREE names refresh immediately on
+		// `playlists` / resync (see the handlers below); that is cheap and is
+		// user-visible undo/redo state.
 		const unsubscribeTracks = subscribeKind('tracks', () => _libraryRefreshGate.request());
-		// Another tab or API client creating/deleting a playlist must not leave
-		// the "N playlists found" health-dot total stale until this tab does a
-		// local playlist op or a reload.
-		const unsubscribePlaylists = subscribeKind('playlists', () =>
-			_libraryRefreshGate.request()
-		);
+		// Tree names are user-visible undo/redo state (v1). The playing-gated
+		// full library refetch can be in flight, deferred, or throw after its
+		// GET /playlists snapshot, which left the history panel enabled while
+		// the renamed row never appeared (#1888). Refresh names immediately;
+		// the gate still refreshes pane membership and the health-dot total.
+		const unsubscribePlaylists = subscribeKind('playlists', () => {
+			void _refreshPlaylists();
+			_libraryRefreshGate.request();
+		});
 		// A resync means the bus knows it missed events but not which, so the
 		// only sound response is to refetch as if everything changed.
-		const unsubscribeResync = subscribeResync(() => _libraryRefreshGate.request());
+		const unsubscribeResync = subscribeResync(() => {
+			void _refreshPlaylists();
+			_libraryRefreshGate.request();
+		});
 		// DEGRADED PATH: the poll is deliberately kept, not deleted. When the
 		// WS is down (daemon restarting, engine built without the hub) it is
 		// the only thing keeping this pane honest. It is 60s rather than
@@ -1247,9 +1255,13 @@
 	}
 
 	async function _refreshPlaylists(): Promise<void> {
-		playlists = await listPlaylistsHydrated();
-		_playlistsWriteEpoch += 1;
-		await _sweepBlankPlaylists(playlists);
+		try {
+			playlists = await listPlaylistsHydrated();
+			_playlistsWriteEpoch += 1;
+			await _sweepBlankPlaylists(playlists);
+		} catch (exc) {
+			console.error(`[playlists] refresh failed: ${String(exc)}`);
+		}
 	}
 
 	/**
