@@ -29,6 +29,7 @@ export type AnalysisKind =
 	| 'phrase'
 	| 'loudness'
 	| 'stems'
+	| 'lyrics'
 	| 'load'
 	| 'other';
 
@@ -42,7 +43,7 @@ export const ANALYSIS_DOT_SLOTS: readonly (AnalysisKind | null)[] = [
 	'phrase',
 	'loudness',
 	'stems',
-	'other'
+	'lyrics'
 ] as const;
 
 /** Human-readable names for dot tooltips (funnel coverage + Err columns). */
@@ -55,6 +56,7 @@ export const ANALYSIS_LABELS: Record<AnalysisKind, string> = {
 	phrase: 'Phrase',
 	loudness: 'Loudness',
 	stems: 'Stems',
+	lyrics: 'Lyrics',
 	load: 'Load',
 	other: 'Other'
 };
@@ -68,6 +70,7 @@ export const ANALYSIS_COLORS: Record<AnalysisKind, string> = {
 	phrase: '#2ec4b6',
 	loudness: '#f2545b',
 	stems: '#adb5bd',
+	lyrics: '#c77dff',
 	load: '#4cc9f0',
 	other: '#868e96'
 };
@@ -153,10 +156,11 @@ export function fakeProgressAt(
 }
 
 export function isJobStuck(
-	job: Pick<TrackJob, 'phase' | 'started_at'>,
+	job: Pick<TrackJob, 'phase' | 'started_at' | 'kind'>,
 	now = Date.now(),
 	ttlMs = JOB_STUCK_TTL_MS
 ): boolean {
+	if (job.kind === 'stems' || job.kind === 'lyrics') return false;
 	if (job.phase !== 'queued' && job.phase !== 'running') return false;
 	return now - job.started_at >= ttlMs;
 }

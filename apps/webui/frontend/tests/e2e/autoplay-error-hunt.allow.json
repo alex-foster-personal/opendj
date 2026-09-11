@@ -9,11 +9,6 @@
       "signature": "http-404:GET:/api/v1/tracks/<hash>/auto-cues",
       "issue": "#1871",
       "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/auto-cues returns 404"
-    },
-    {
-      "signature": "stall:autoplay-idle",
-      "issue": "#1878",
-      "reason": "AutoPlay hunt: AutoPlay stays pressed while both decks are stopped >10s"
     }
   ]
 }
