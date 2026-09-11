@@ -9,6 +9,8 @@
 	import QualityBadge from '$lib/components/rb/QualityBadge.svelte';
 	import LyricsPanel from '$lib/components/LyricsPanel.svelte';
 	import { fetchRbMeta, RbApiError } from '$lib/rb/api-rb';
+	import { lyricEntry, loadLyrics } from '$lib/lyrics/lyrics-cache.svelte';
+	import { openStage } from '$lib/lyrics/stage-store.svelte';
 	import type { TrackQuality } from '$lib/rb/library-types';
 
 	let track = $state<Track | null>(null);
@@ -23,20 +25,20 @@
 	async function load(): Promise<void> {
 		const stable = $page.params.stable_id;
 		if (stable === undefined) throw new Error('track route param "stable_id" missing');
+		void loadLyrics(stable);
 		const res = await getTrack(stable);
 		track = res.track;
 		etag = res.etag;
 		try {
 			quality = (await fetchRbMeta(stable)).quality;
 		} catch (exc) {
-			// Since #505 rb-meta answers 200 for a locally imported track, so a
-			// 404 here means an unknown stable_id. Kept as a guard rather than
-			// removed: an unhandled rejection in onMount is not how that should
-			// surface. The badge stays absent (never a guessed rung); anything
-			// else is a real failure and still rejects onMount's promise.
 			if (!(exc instanceof RbApiError) || exc.status !== 404) throw exc;
 		}
 	}
+
+	const stageWordCount = $derived(
+		track === null ? 0 : (lyricEntry(track.stable_id)?.track?.words.length ?? 0)
+	);
 
 	async function applyPatch(patch: Record<string, unknown>): Promise<void> {
 		if (!track) return;
@@ -80,7 +82,13 @@
 		conflictServer = null;
 	}
 
-	onMount(load);
+	onMount(() => {
+		void load();
+		const stable = $page.params.stable_id;
+		if (stable !== undefined && new URLSearchParams(location.search).get('stage') === '1') {
+			openStage(stable);
+		}
+	});
 </script>
 
 {#if track}
@@ -103,6 +111,16 @@
 	<h3>Notes</h3>
 	<textarea rows="4" value={track.notes ?? ''} onblur={(e) => applyPatch({ notes: (e.currentTarget as HTMLTextAreaElement).value })}></textarea>
 
+	{#if stageWordCount > 0}
+		<button
+			type="button"
+			class="stage-open"
+			title={`Open the full-screen stage lyrics view - ${stageWordCount} aligned words (close with Esc or the X)`}
+			onclick={() => track !== null && openStage(track.stable_id)}
+		>
+			Stage
+		</button>
+	{/if}
 	<LyricsPanel stableId={track.stable_id} />
 
 	<h3>Actions (coming in Phase 17)</h3>

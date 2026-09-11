@@ -82,6 +82,22 @@ async function _apiErrorFrom(response: Response): Promise<ApiError> {
 	return new ApiError(response.status, code, message, response, body);
 }
 
+/** Read an ApiError's HTTP status without relying on `instanceof` alone.
+ * Unit tests bundle modules in isolation, which can produce a second ApiError
+ * class identity even though the thrown value is otherwise identical. */
+export function readApiErrorStatus(error: unknown): number | null {
+	if (error instanceof ApiError) return error.status;
+	if (
+		typeof error === 'object' &&
+		error !== null &&
+		(error as ApiError).name === 'ApiError' &&
+		typeof (error as ApiError).status === 'number'
+	) {
+		return (error as ApiError).status;
+	}
+	return null;
+}
+
 const _throwApiError: Middleware = {
 	async onResponse({ response }) {
 		if (response.ok) return undefined;

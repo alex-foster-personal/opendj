@@ -173,8 +173,8 @@ test('TrackTable imports the factory, keeps use:observeRow={row}, and does not k
 	const source = readFileSync(TRACK_TABLE, 'utf8');
 	assert.match(
 		source,
-		/import \{ createRowVisibilityObserver \} from '\.\/observe-row'/,
-		'TrackTable must import createRowVisibilityObserver from ./observe-row'
+		/import \{[^}]*createRowVisibilityObserver[^}]*\} from '\.\/virtual-window'/,
+		'TrackTable must import createRowVisibilityObserver from ./virtual-window'
 	);
 	assert.match(source, /use:observeRow=\{row\}/, 'template must still apply use:observeRow={row}');
 
