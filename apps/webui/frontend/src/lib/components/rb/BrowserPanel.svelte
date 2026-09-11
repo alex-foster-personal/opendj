@@ -2856,22 +2856,6 @@
 			</div>
 		</div>
 	</div>
-	<div class="library-health" aria-label="library processing health">
-		{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
-			<button
-				type="button"
-				class:complete={dot.state === 'complete'}
-				class:incomplete={dot.state === 'incomplete'}
-				class:unavailable={dot.state === 'unavailable'}
-				class:error={dot.state === 'error'}
-				class="health-dot"
-				aria-label={`${dot.label}: ${dot.detail}`}
-			>
-				<span aria-hidden="true"></span>
-				<span class="health-popover" role="tooltip"><strong>{dot.label}</strong><br />{dot.detail}</span>
-			</button>
-		{/each}
-	</div>
 	<div class="bottom-bar">
 		<button
 			class="icon-btn rb-inert"
@@ -2887,6 +2871,26 @@
 		     (pin 571f4281ecea, the maintainer, Wed 2 Sep 2026). -->
 		<span class="wordmark">open dj</span>
 		<LibraryJobsChrome />
+		<div class="library-health" aria-label="library processing health">
+			{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
+				<button
+					type="button"
+					class:complete={dot.state === 'complete'}
+					class:incomplete={dot.state === 'incomplete'}
+					class:unavailable={dot.state === 'unavailable'}
+					class:error={dot.state === 'error'}
+					class="health-dot"
+					aria-label={`${dot.label}: ${dot.detail}`}
+				>
+					<span aria-hidden="true"></span>
+				</button>
+			{/each}
+			<div class="health-popover" role="tooltip">
+				{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
+					<p><strong>{dot.label}</strong><br />{dot.detail}</p>
+				{/each}
+			</div>
+		</div>
 		<!-- The build identity lives at the RIGHT end of this tray on
 		     /performance. It used to be position:fixed bottom-left, sitting on
 		     top of the connectivity dots. The root layout mounts it in the app
@@ -3242,11 +3246,11 @@
 		text-overflow: ellipsis;
 	}
 	.library-health {
-		position: absolute;
-		right: 28px;
-		bottom: 22px;
+		position: relative;
 		display: flex;
+		align-items: center;
 		gap: 3px;
+		flex-shrink: 0;
 		z-index: 6;
 	}
 	.health-dot {
@@ -3277,7 +3281,7 @@
 		display: none;
 		position: absolute;
 		right: 0;
-		bottom: 16px;
+		bottom: calc(100% + 4px);
 		min-width: 180px;
 		max-width: 320px;
 		padding: 6px 8px;
@@ -3290,8 +3294,14 @@
 		white-space: normal;
 		box-shadow: 0 3px 10px rgb(0 0 0 / 40%);
 	}
-	.health-dot:hover .health-popover,
-	.health-dot:focus-visible .health-popover { display: block; }
+	.health-popover p {
+		margin: 0 0 4px;
+	}
+	.health-popover p:last-child {
+		margin-bottom: 0;
+	}
+	.library-health:hover .health-popover,
+	.library-health:focus-within .health-popover { display: block; }
 	.wordmark {
 		color: var(--rb-text-dim);
 		font-size: var(--rb-fs-label);
