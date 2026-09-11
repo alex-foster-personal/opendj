@@ -1,31 +1,39 @@
-<!--
-	The native-analysis v1 BACKFILL QUEUE panel (NATIVE-10).
-
-	Four controls, and every one of them is the UI leg of a triple the repo's
-	agent-native parity rule requires: an HTTP endpoint
-	(/api/v1/analysis/backfill/*) and a CLI subcommand
-	(`python -m apps.analysis.queue_cli <verb>`) exist for each. A parity test
-	reads this file and asserts the third leg, so a control added here without
-	its endpoint and its command fails the suite rather than shipping as a
-	browser-only flow.
-
-	WHAT THIS PANEL DOES NOT DO: run the analysis. A drain holds a process pool
-	for minutes to hours, so it is a CLI process, not a request the daemon
-	serves; a button that started one inside a request worker would block the
-	event loop and die with the request. The panel PLANS (enqueue), WATCHES
-	(progress) and STEERS (cancel, resume), and it prints the exact command to
-	start the drain, selectable, because a control you cannot copy is a control
-	an operator has to remember.
-
-	NO MOCKED DATA. With no daemon, or with a batch that does not exist, this
-	renders the error it got. It never renders zeros that look like an empty
-	queue -- "unknown" and "fine" must not look the same.
-
-	EVERY NUMBER CARRIES A HOVER TITLE (house rule), including the ones whose
-	meaning looks obvious: "workers 4" is not obvious at all, since the 4 comes
-	from the memory admission rule's band and never from core count.
--->
 <script lang="ts">
+	/**
+	 * The native-analysis v1 BACKFILL QUEUE panel (NATIVE-10).
+	 *
+	 * Four controls, and every one of them is the UI leg of a triple the repo's
+	 * agent-native parity rule requires: an HTTP endpoint
+	 * (/api/v1/analysis/backfill/*) and a CLI subcommand
+	 * (`python -m apps.analysis.queue_cli <verb>`) exist for each. A parity test
+	 * reads this file and asserts the third leg, so a control added here without
+	 * its endpoint and its command fails the suite rather than shipping as a
+	 * browser-only flow.
+	 *
+	 * WHAT THIS PANEL DOES NOT DO: run the analysis. A drain holds a process pool
+	 * for minutes to hours, so it is a CLI process, not a request the daemon
+	 * serves; a button that started one inside a request worker would block the
+	 * event loop and die with the request. The panel PLANS (enqueue), WATCHES
+	 * (progress) and STEERS (cancel, resume), and it prints the exact command to
+	 * start the drain, selectable, because a control you cannot copy is a control
+	 * an operator has to remember.
+	 *
+	 * NO MOCKED DATA. With no daemon, or with a batch that does not exist, this
+	 * renders the error it got. It never renders zeros that look like an empty
+	 * queue -- "unknown" and "fine" must not look the same.
+	 *
+	 * EVERY NUMBER CARRIES A HOVER TITLE (house rule), including the ones whose
+	 * meaning looks obvious: "workers 4" is not obvious at all, since the 4 comes
+	 * from the memory admission rule's band and never from core count.
+	 *
+	 * Written INSIDE the script block, not as a leading `<!-- -->`, and the
+	 * sibling route page does the same. jscpd 5.0.15 (the duplication gate's
+	 * pinned tool) mis-tokenizes an SFC that opens with an HTML comment and
+	 * reports the WHOLE script block as a clone of itself: measured on this
+	 * file, 135 duplicated lines from one file, and prepending this same
+	 * comment to BrowserPanel.svelte reproduces it there at 2522 lines. The
+	 * words are unchanged; only where they live is.
+	 */
 	import { onDestroy } from 'svelte';
 
 	import {
