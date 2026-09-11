@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { afterEach, before, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
@@ -473,6 +474,100 @@ test('resolveDisplayedAnlz: a still-retryable deck.anlz defers to a fresher cach
 	assert.equal(resolved.local_waveform.status, 'decoded');
 });
 
+test('resolveDisplayedAnlz: a still-retryable deck.anlz that already carries an engine-merged beatgrid keeps that grid when a fresher cache entry lands', async () => {
+	// PARITY-09's deferred upgrade (audio-engine.svelte.ts) merges the
+	// analysis-derived grid into deck.anlz without touching local_waveform,
+	// so a track whose waveform decode is still saturated/retryable stays
+	// the retryable CLASS even after its grid has landed. The cache's own
+	// /anlz refetch never carries that client-side merge - only deck.anlz
+	// does - so preferring the cache entry wholesale here would silently
+	// drop the already-merged grid the moment the waveform decode refreshes.
+	const realBeats = [
+		{ bpm: 120, n: 1, t: 0 },
+		{ bpm: 120, n: 2, t: 0.5 },
+		{ bpm: 120, n: 3, t: 1.0 },
+		{ bpm: 120, n: 4, t: 1.5 }
+	];
+	const mergedButRetryable = {
+		...anlzPayload({
+			status: 'not_decoded',
+			reason: 'decoder saturated',
+			preview_b64: null,
+			preview_max: null,
+			retryable: true
+		}),
+		beatgrid: { beat_count: realBeats.length, beats: realBeats }
+	};
+
+	globalThis.fetch = async () =>
+		jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'CCCC', preview_max: 200 }));
+	try {
+		cache.ensureAnlz('merged-grid-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+
+	const resolved = cache.resolveDisplayedAnlz(mergedButRetryable, 'merged-grid-track');
+	assert.equal(resolved.local_waveform.status, 'decoded', "the cache's refreshed waveform must still be adopted");
+	assert.deepEqual(
+		resolved.beatgrid,
+		mergedButRetryable.beatgrid,
+		'the engine-merged beatgrid must survive - the cache entry never has it, since only the engine merges the fallback grid'
+	);
+});
+
+test('resolveDisplayedAnlz: a fresher cache entry that already carries a real beatgrid wins over a stale fallback grid on the deck', async () => {
+	// discussion_r3916394792 (P2 BLOCKING): a local deck can be showing a
+	// fallback (analysis-derived) beatgrid on deck.anlz while its waveform is
+	// still retryable. If a rekordbox mapping lands and the cache's own
+	// ambient /anlz retry races ahead of the engine's separate PARITY-09
+	// upgrade fetch, the cache entry can carry the newly authoritative real
+	// grid before deck.anlz does. That must not be discarded in favor of the
+	// deck's older fallback grid just because the deck's grid is also "real".
+	const fallbackBeats = [
+		{ bpm: 128, n: 1, t: 0 },
+		{ bpm: 128, n: 2, t: 0.46875 },
+		{ bpm: 128, n: 3, t: 0.9375 },
+		{ bpm: 128, n: 4, t: 1.40625 }
+	];
+	const authoritativeBeats = [
+		{ bpm: 174, n: 1, t: 0 },
+		{ bpm: 174, n: 2, t: 0.3448 },
+		{ bpm: 174, n: 3, t: 0.6897 },
+		{ bpm: 174, n: 4, t: 1.0345 }
+	];
+	const staleDeckAnlz = {
+		...anlzPayload({
+			status: 'not_decoded',
+			reason: 'decoder saturated',
+			preview_b64: null,
+			preview_max: null,
+			retryable: true
+		}),
+		beatgrid: { beat_count: fallbackBeats.length, beats: fallbackBeats }
+	};
+
+	globalThis.fetch = async () =>
+		jsonResponse({
+			...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'DDDD', preview_max: 200 }),
+			beatgrid: { beat_count: authoritativeBeats.length, beats: authoritativeBeats }
+		});
+	try {
+		cache.ensureAnlz('mapping-landed-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+
+	const resolved = cache.resolveDisplayedAnlz(staleDeckAnlz, 'mapping-landed-track');
+	assert.deepEqual(
+		resolved.beatgrid,
+		{ beat_count: authoritativeBeats.length, beats: authoritativeBeats },
+		'the fresher cache-entry beatgrid must win once it is itself real, not the older fallback grid the deck still holds'
+	);
+});
+
 test('refreshAnlzCacheEntry overwrites a stale published entry without fetching', async () => {
 	globalThis.fetch = async () => jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
 	try {
@@ -512,6 +607,111 @@ test('refreshAnlzCacheEntry overwrites a stale published entry without fetching'
 		);
 	} finally {
 		globalThis.fetch = originalFetch;
+	}
+});
+
+test('a wrong-source /anlz response is discarded, not cached, when it disagrees with the confirmed selection (thread 2 fix, discussion_r3975650988\'s cache-side twin)', async () => {
+	// Real node:http server, not a mocked globalThis.fetch: AGENTS.md's
+	// no-mocks contract forbids monkeypatching the module's own request for a
+	// NEW regression (a pre-existing mocked test elsewhere in this file is not
+	// this test's scope to rewrite). A fresh module instance is loaded against
+	// the server's real origin, on a real socket, exercising the real request,
+	// source-selection and parser path end to end - separate from the shared
+	// `cache` singleton the rest of this file mutates via fetch swaps.
+	//
+	// Models an RBX->OWN->RBX round trip: the daemon has confirmed 'rekordbox'
+	// (analysisSourceState.features.beatgrid), but this request - an ambient
+	// prefetch or ensureAnlz call that raced an in-flight switch and lost -
+	// still resolves with the stale 'own' payload it was issued against.
+	const server = createServer((req, res) => {
+		res.writeHead(200, { 'content-type': 'application/json' });
+		res.end(
+			JSON.stringify({
+				...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
+				beatgrid_source: 'own',
+				beatgrid_own_unavailable_reason: null
+			})
+		);
+	});
+	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+	try {
+		const origin = `http://127.0.0.1:${server.address().port}`;
+		const isolatedCache = await loadTypeScriptModule('src/lib/components/rb/wave/anlz-cache.svelte.ts', {
+			viteApiBase: origin
+		});
+		isolatedCache.analysisSourceState.features.beatgrid = 'rekordbox';
+		isolatedCache.ensureAnlz('mismatched-track');
+		{
+			const deadline = Date.now() + 5000;
+			for (;;) {
+				const entry = isolatedCache.getAnlzEntry('mismatched-track');
+				if (entry === undefined || entry.status !== 'loading') break;
+				if (Date.now() > deadline) throw new Error('mismatched-track fetch never settled');
+				await new Promise((resolve) => setTimeout(resolve, 5));
+			}
+		}
+		assert.equal(
+			isolatedCache.getAnlzEntry('mismatched-track'),
+			undefined,
+			'a payload whose stamped source disagrees with the last CONFIRMED selection must not ' +
+				'reach the shared cache - isAnlzEntryUsable would otherwise serve it to the next deck load'
+		);
+	} finally {
+		await new Promise((resolve) => server.close(resolve));
+	}
+});
+
+test('fetchAnlzUntilSourceConfirmed retries a direct-publication fetch that resolves with a since-reverted source', async () => {
+	// No fetch mock needed: fetchAnlzUntilSourceConfirmed is generic over its
+	// `fetch` callback, so this exercises its real retry contract directly
+	// rather than the HTTP layer. Models an EXTERNAL client's RBX->OWN->RBX
+	// toggle that never bumps THIS client's generation counter (only this
+	// client's own refreshAnalysisSourceDecks does that): the first answer is
+	// stamped 'own' while 'rekordbox' is confirmed, so it must be retried
+	// rather than returned/installed as-is (discussion_r3978049099 P1 BLOCKING).
+	cache.analysisSourceState.features.beatgrid = 'rekordbox';
+	let calls = 0;
+	try {
+		const data = await cache.fetchAnlzUntilSourceConfirmed(async () => {
+			calls += 1;
+			return {
+				...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
+				beatgrid_source: calls === 1 ? 'own' : 'rekordbox',
+				beatgrid_own_unavailable_reason: null
+			};
+		});
+		assert.equal(calls, 2, 'a first answer disagreeing with the confirmed source must be retried once more');
+		assert.equal(
+			data.beatgrid_source,
+			'rekordbox',
+			'the returned answer must agree with the confirmed selection, not the rejected first attempt'
+		);
+	} finally {
+		delete cache.analysisSourceState.features.beatgrid;
+	}
+});
+
+test('refreshAnalysisSourceDecks own publish (alreadyScoped) is trusted even while it disagrees with the not-yet-updated selection mirror', async () => {
+	// The one `alreadyScoped: true` caller (refreshAnalysisSourceDecks) is
+	// itself what is about to advance analysisSourceState.features.beatgrid
+	// once it returns - comparing its own payload against the stale mirror
+	// here would reject the very write that is about to make it current.
+	cache.analysisSourceState.features.beatgrid = 'rekordbox';
+	try {
+		const payload = {
+			...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
+			beatgrid_source: 'own',
+			beatgrid_own_unavailable_reason: null
+		};
+		cache.refreshAnlzCacheEntry('trusted-track', payload, true);
+		const entry = cache.getAnlzEntry('trusted-track');
+		assert.equal(
+			cache.isAnlzEntryUsable(entry),
+			true,
+			"the switch's own trusted write must not be rejected by its own not-yet-updated mirror"
+		);
+	} finally {
+		delete cache.analysisSourceState.features.beatgrid;
 	}
 });
 
@@ -570,6 +770,234 @@ test('a decoded payload is terminal and never refetches', async () => {
 		cache.ensureAnlz('decoded-track');
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		assert.equal(calls, 1);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+// ---------------------------------------- stale-source prefetch eviction
+
+// evictAnlzCacheEntriesServingOtherSource's regression tests moved to
+// analysis-source-deck-refresh.test.mjs (discussion_r3974993960 P1 BLOCKING):
+// a fabricated globalThis.fetch response here let the assertions pass without
+// exercising the production request, source-selection, parser, or error
+// paths. They now run against that file's real fixture server, the same move
+// discussion_r3970117748 already made for invalidateAllAnlzCacheEntries.
+test('revalidateAnlz replaces a stale entry without blanking it first', async () => {
+	// The session-long-hit defect: a source toggle or a backfill promotion
+	// changes the served grid, and a ready entry cached before it keeps the
+	// deck on the old one for the rest of the session (Codex P1 BLOCKING,
+	// PR #1587). Revalidation has to swap the payload WITHOUT passing through
+	// 'loading', or every deck load blanks a waveform that was painting fine.
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = async () =>
+		jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+	try {
+		cache.ensureAnlz('promoted-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(cache.getAnlzEntry('promoted-track').data.local_waveform.preview_b64, 'AAAA');
+
+		let released;
+		const inFlight = new Promise((resolve) => {
+			released = resolve;
+		});
+		globalThis.fetch = async () => {
+			await inFlight;
+			return jsonResponse(
+				anlzPayload({ status: 'decoded', reason: null, preview_b64: 'BBBB', preview_max: 200 })
+			);
+		};
+
+		cache.revalidateAnlz('promoted-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const during = cache.getAnlzEntry('promoted-track');
+		assert.equal(
+			during.status,
+			'ready',
+			'the entry must stay usable while the revalidation is in flight, or the ' +
+				'deck load that triggered it paints a blank waveform'
+		);
+		assert.equal(during.data.local_waveform.preview_b64, 'AAAA');
+
+		released();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(
+			cache.getAnlzEntry('promoted-track').data.local_waveform.preview_b64,
+			'BBBB',
+			'the revalidated payload must replace the stale one'
+		);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test('a revalidation the server explicitly refuses marks the entry unusable, not stale-but-fine', async () => {
+	// Distinct from the network-failure case above: revalidation exists
+	// because the SELECTED source may have changed, so an explicit backend
+	// answer naming a real failure of that source (e.g. a corrupt canonical
+	// record, here stood in for by ANALYSIS_NOT_FOUND) is new evidence the
+	// cached payload can no longer be trusted, not an absence of information.
+	// Silently keeping the stale entry would be exactly the forbidden silent
+	// fallback (Codex P1 BLOCKING, PR #1587).
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = async () =>
+		jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+	try {
+		cache.ensureAnlz('corrupt-source-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		globalThis.fetch = async () =>
+			new Response(JSON.stringify({ detail: { code: 'ANALYSIS_NOT_FOUND', message: 'gone' } }), {
+				status: 404,
+				headers: { 'content-type': 'application/json' }
+			});
+		cache.revalidateAnlz('corrupt-source-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		const entry = cache.getAnlzEntry('corrupt-source-track');
+		assert.equal(entry.status, 'error');
+		assert.equal(entry.code, 'ANALYSIS_NOT_FOUND');
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test('revalidateAnlz notifies the authoritative-error sink for an explicit RbApiError, never for a network failure', async () => {
+	// The gap this closes: revalidateAnlz's RbApiError branch used to write
+	// only the shared cache entry, so a deck already loaded with this track
+	// (the revalidation settling AFTER its own load swapped in) never learned
+	// its source had failed and kept quantize/Beat Sync running against a
+	// grid the app no longer trusted (Codex P1 BLOCKING, PR #1587, third
+	// round).
+	const notified = [];
+	cache.installAuthoritativeAnlzErrorSink((stable_id, code) => notified.push([stable_id, code]));
+
+	const originalFetch = globalThis.fetch;
+	try {
+		globalThis.fetch = async () =>
+			jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+		cache.ensureAnlz('sink-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		globalThis.fetch = async () =>
+			new Response(JSON.stringify({ detail: { code: 'ANALYSIS_NOT_FOUND', message: 'gone' } }), {
+				status: 404,
+				headers: { 'content-type': 'application/json' }
+			});
+		cache.revalidateAnlz('sink-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(
+			notified,
+			[['sink-track', 'ANALYSIS_NOT_FOUND']],
+			'an explicit RbApiError must notify any deck already loaded with this track'
+		);
+		// A genuine network/shape failure is deliberately NOT exercised here the
+		// same way: revalidateAnlz's own non-RbApiError branch re-throws with no
+		// outer .catch (`throw err; // loud: network/shape failures must not
+		// vanish`), so triggering it live would raise a real unhandled promise
+		// rejection this suite cannot safely swallow (Node's test runner
+		// attributes it to the running test regardless of an app-level
+		// `unhandledRejection` listener also consuming it - confirmed by hand
+		// against this exact branch). The source-level guarantee that only the
+		// `err instanceof RbApiError` branch calls `_publishAnlzError` (and the
+		// non-RbApiError branch never writes the cache at all, let alone fires
+		// the sink) is what a network blip actually depends on; it is read at
+		// the call site above, not re-derived by crashing the test process.
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test('a settled own answer of missing reaches the engine, an empty rekordbox grid does not unless it is a source transition', async () => {
+	// The gate used to be "does this payload carry beats", which is right for
+	// a retryable payload (it must not wipe a deck's working grid) and wrong
+	// for a settled own answer of missing/failed: the effective source has no
+	// grid, and a deck left on the pre-promotion rekordbox beats keeps
+	// quantize and Beat Sync running on a grid the app no longer serves
+	// (Codex P1 BLOCKING, PR #1587). Revalidation is what made this reachable,
+	// since it is the one caller that turns a populated grid into an empty one
+	// for a track already loaded.
+	const adopted = [];
+	cache.installAuthoritativeAnlzGridSink((stable_id, data) => {
+		adopted.push([stable_id, data.beatgrid]);
+	});
+
+	const originalFetch = globalThis.fetch;
+	try {
+		// An empty REKORDBOX grid is the ordinary un-analyzed state and says
+		// nothing authoritative, so it must not clear anything.
+		globalThis.fetch = async () =>
+			jsonResponse({
+				...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
+				beatgrid: { source: 'rekordbox', beat_count: 0, beats: [] }
+			});
+		cache.ensureAnlz('unanalyzed-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(adopted.length, 0, 'an empty rekordbox grid is not an authoritative absence');
+
+		// A settled OWN answer of missing is.
+		globalThis.fetch = async () =>
+			jsonResponse({
+				...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
+				beatgrid: { source: 'own', status: 'missing', reason: null, beat_count: 0, beats: [] }
+			});
+		cache.ensureAnlz('own-missing-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(
+			adopted.map(([id]) => id),
+			['own-missing-track'],
+			'a settled own missing answer must reach the engine so it can drop the stale grid'
+		);
+		assert.equal(adopted[0][1].beats.length, 0);
+
+		// Codex P1 BLOCKING, PR #1587, a further round: when a loaded deck holds
+		// a successful own grid and the effective source switches back to
+		// Rekordbox for a track with no PQTZ, revalidation returns a terminal
+		// {source: 'rekordbox', beats: []}. The gate above treats that as
+		// non-authoritative unconditionally, so only the shared cache changed and
+		// `resolveDisplayedAnlz` kept preferring the terminal deck payload - the
+		// engine went on running quantize/Beat Sync on the now-superseded own
+		// beats. An unconditional "empty means authoritative" is not the fix
+		// either, or the "unanalyzed-track" case above would have failed - this
+		// widens the gate to a genuine SOURCE TRANSITION only.
+		const ownBeats = [
+			{ bpm: 128, n: 1, t: 0 },
+			{ bpm: 128, n: 2, t: 0.46875 }
+		];
+		globalThis.fetch = async () =>
+			jsonResponse({
+				...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
+				beatgrid: { source: 'own', status: 'ok', reason: null, beat_count: ownBeats.length, beats: ownBeats }
+			});
+		cache.ensureAnlz('demoted-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(
+			adopted.map(([id]) => id),
+			['own-missing-track', 'demoted-track'],
+			'the initial own grid must itself reach the engine'
+		);
+
+		// The source demotes: revalidation now returns an empty rekordbox answer
+		// for the SAME track. This IS a transition and must reach the engine.
+		globalThis.fetch = async () =>
+			jsonResponse({
+				...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
+				beatgrid: { source: 'rekordbox', beat_count: 0, beats: [] }
+			});
+		cache.revalidateAnlz('demoted-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(
+			adopted.map(([id]) => id),
+			['own-missing-track', 'demoted-track', 'demoted-track'],
+			'an empty rekordbox answer replacing a real own grid is a source transition and must reach the engine'
+		);
+		assert.equal(adopted[2][1].source, 'rekordbox');
+
+		// A SECOND revalidation returning the same empty rekordbox answer is an
+		// ordinary same-source retry, not a transition, and must not re-fire.
+		cache.revalidateAnlz('demoted-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(adopted.length, 3, 'a same-source rekordbox retry must not re-trigger adoption');
 	} finally {
 		globalThis.fetch = originalFetch;
 	}

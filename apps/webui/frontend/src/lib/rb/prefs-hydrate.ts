@@ -1,0 +1,122 @@
+/**
+ * Disk-backed ui-prefs hydration + PUT merge, split out of prefs.svelte.ts
+ * so the reactive singleton stays under the 600-line file-size gate.
+ */
+import { api, unwrap } from '../api/client';
+import {
+	DECK_LAYOUT_DURATIONS_MS,
+	type DeckLayoutDurationMs,
+	type DeckLayoutMode
+} from './deck-layout-prefs';
+import { makeDiskWriteChain } from './disk-write-chain';
+import { parseAutoSync, parseLevelCalibration } from './prefs-fields';
+import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
+
+export type UiTheme = 'dark' | 'light';
+
+export type DiskPrefsPatch = {
+	confirm?: {
+		delete_playlist?: boolean;
+		playlist_drop_mode?: 'add' | 'move';
+		dblclick_load_play?: boolean;
+	};
+	theme?: UiTheme;
+	hide_todo_settings?: boolean;
+	auto_sync?: AutoSyncPrefs;
+	technically_working_animate?: boolean;
+	show_agent_pins?: boolean;
+	jog_radial_waveform?: boolean;
+	deck_layout?: DeckLayoutMode;
+	deck_layout_animate?: boolean;
+	deck_layout_duration_ms?: DeckLayoutDurationMs;
+	level_calibration?: LevelCalibrationPrefs;
+};
+
+async function _putDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
+	try {
+		await api.PUT('/api/v1/ui-prefs', { body: patch });
+	} catch {
+		/* localStorage remains authoritative if daemon is down */
+	}
+}
+
+export function createDiskPrefsSync() {
+	return makeDiskWriteChain<DiskPrefsPatch>(_putDiskPrefs);
+}
+
+export interface PrefsHydrateTarget {
+	confirm: DiskPrefsPatch['confirm'] & Record<string, unknown>;
+	theme: UiTheme;
+	hide_todo_settings: boolean;
+	auto_sync: AutoSyncPrefs;
+	technically_working_animate: boolean;
+	show_agent_pins: boolean;
+	jog_radial_waveform: boolean;
+	deck_layout: DeckLayoutMode;
+	deck_layout_animate: boolean;
+	deck_layout_duration_ms: DeckLayoutDurationMs;
+	level_calibration: LevelCalibrationPrefs;
+	last_playlist: LastPlaylistPref | null;
+}
+
+export interface PrefsHydrateDeps {
+	uiPrefs: PrefsHydrateTarget;
+	persist: () => void;
+	applyThemeDom: (theme: UiTheme) => void;
+	storageKey: string;
+	defaults: Pick<PrefsHydrateTarget, 'auto_sync' | 'level_calibration'>;
+}
+
+/** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */
+export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
+	const { uiPrefs, persist, applyThemeDom, storageKey, defaults } = deps;
+	return async function hydrateConfirmPrefsFromDisk(): Promise<void> {
+		try {
+			const body = (await unwrap(api.GET('/api/v1/ui-prefs'))) as DiskPrefsPatch;
+			if (body.confirm !== undefined) {
+				uiPrefs.confirm = { ...uiPrefs.confirm, ...body.confirm };
+			}
+			if (body.theme === 'dark' || body.theme === 'light') {
+				uiPrefs.theme = body.theme;
+				applyThemeDom(body.theme);
+			}
+			if (typeof body.hide_todo_settings === 'boolean') {
+				uiPrefs.hide_todo_settings = body.hide_todo_settings;
+			}
+			if (body.auto_sync !== undefined && typeof body.auto_sync === 'object') {
+				uiPrefs.auto_sync = parseAutoSync(body.auto_sync, storageKey, defaults.auto_sync);
+			}
+			if (typeof body.technically_working_animate === 'boolean') {
+				uiPrefs.technically_working_animate = body.technically_working_animate;
+			}
+			if (typeof body.show_agent_pins === 'boolean') {
+				uiPrefs.show_agent_pins = body.show_agent_pins;
+			}
+			if (typeof body.jog_radial_waveform === 'boolean') {
+				uiPrefs.jog_radial_waveform = body.jog_radial_waveform;
+			}
+			if (body.deck_layout === 'more' || body.deck_layout === 'less') {
+				uiPrefs.deck_layout = body.deck_layout;
+			}
+			if (typeof body.deck_layout_animate === 'boolean') {
+				uiPrefs.deck_layout_animate = body.deck_layout_animate;
+			}
+			if (
+				typeof body.deck_layout_duration_ms === 'number' &&
+				(DECK_LAYOUT_DURATIONS_MS as readonly number[]).includes(body.deck_layout_duration_ms)
+			) {
+				uiPrefs.deck_layout_duration_ms = body.deck_layout_duration_ms;
+			}
+			if (body.level_calibration !== undefined && typeof body.level_calibration === 'object') {
+				uiPrefs.level_calibration = parseLevelCalibration(
+					body.level_calibration,
+					storageKey,
+					defaults.level_calibration
+				);
+			}
+			persist();
+		} catch {
+			/* ignore */
+		}
+	};
+}

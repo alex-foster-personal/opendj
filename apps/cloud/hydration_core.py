@@ -47,6 +47,7 @@ from typing import Literal
 from .asset_store import DEFAULT_PRESIGN_EXPIRY_SECONDS, presign_url, validate_content_hash
 from .config import CloudConfig
 from .eviction import HydrationError
+from .r2_keys import canonical_digest
 
 PolicyMode = Literal["pinned", "cached", "stream", "excluded"]
 PolicySource = Literal["sync_policies", "playlist_pin"]
@@ -62,12 +63,16 @@ MODE_STRENGTH: dict[str, int] = {
     "excluded": 0,
 }
 
-#: ``sync_policies.asset_kind`` CHECK vocabulary (schema v6).
+#: ``sync_policies.asset_kind`` CHECK vocabulary (schema v10). ``lyrics_cache``
+#: and ``karaoke_words`` were admitted when _V10 rebuilt the CHECK; this tuple
+#: and that CHECK are pinned equal by tests/cloud/test_asset_kind_vocabulary.py.
 ASSET_KINDS: tuple[str, ...] = (
     "audio",
     "stem_bundle",
     "anlz_cache",
     "vocal_cache",
+    "lyrics_cache",
+    "karaoke_words",
 )
 
 
@@ -297,14 +302,14 @@ def resolve_playback_source(
     returning a source the player cannot use.
     """
     policy = resolve_policy(conn, stable_id, machine_id, asset_kind=asset_kind)
-    digest = _content_hash(conn, stable_id)
+    content_hash = _content_hash(conn, stable_id)
 
     if policy.mode == "excluded":
         return PlaybackSource(
             origin="unavailable",
             mode=policy.mode,
             policy_source=policy.source,
-            content_hash=digest,
+            content_hash=content_hash,
             reason=(
                 f"policy 'excluded' for asset_kind {policy.asset_kind!r} on "
                 f"machine {machine_id!r}"
@@ -323,12 +328,12 @@ def resolve_playback_source(
             mode=policy.mode,
             policy_source=policy.source,
             path=local,
-            content_hash=digest,
+            content_hash=content_hash,
         )
 
     unhydrated_pin = policy.mode == "pinned"
 
-    if digest is None:
+    if content_hash is None:
         return PlaybackSource(
             origin="unavailable",
             mode=policy.mode,
@@ -340,6 +345,10 @@ def resolve_playback_source(
             ),
         )
 
+    # The state layer stores ``sha256:<hex>`` (apps.shared.hashing); a key
+    # and a cache entry can only be derived from the bare hex. Validate only
+    # once a remote lookup is required: local and excluded paths need no R2 key.
+    digest = canonical_digest(content_hash)
     cached = cache_path(cache_dir, digest)
     if cached.is_file():
         touch_cache_entry(cached)

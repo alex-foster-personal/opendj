@@ -3,8 +3,13 @@ from __future__ import annotations
 
 import pytest
 
+from apps.analysis.selection import Selection
 from apps.shared.smartlists import SmartlistRuleError
 from apps.smartlists.evaluator import EvaluatorError, compile_rule, evaluate
+
+# These compile-only tests state the selection explicitly: compile_rule has
+# no default, so a rule can never be compiled against an unstated source.
+RBX = Selection.all_rbx()
 
 pytestmark = pytest.mark.requirement("SMART-02")
 
@@ -29,22 +34,22 @@ def test_compile_and_tree() -> None:
             {"field": "bpm", "op": "between", "value": [120, 128]},
         ],
     }
-    sql, params = compile_rule(rule)
+    sql, params = compile_rule(rule, selection=RBX)
     assert " AND " in sql
     assert params == ["House", 120, 128]
 
 
 def test_compile_is_deterministic() -> None:
     rule = {"field": "bpm", "op": ">=", "value": 128}
-    s1, p1 = compile_rule(rule)
-    s2, p2 = compile_rule(rule)
+    s1, p1 = compile_rule(rule, selection=RBX)
+    s2, p2 = compile_rule(rule, selection=RBX)
     assert s1 == s2 and p1 == p2
 
 
 def test_compile_paired_with_equality() -> None:
     sql, params = compile_rule(
         {"field": "paired_with", "op": "=", "value": "anchor-id"}
-    )
+    , selection=RBX)
     assert "SELECT to_stable_id FROM pairings" in sql
     assert params == ["anchor-id"]
 
@@ -52,7 +57,7 @@ def test_compile_paired_with_equality() -> None:
 def test_compile_paired_with_in_list() -> None:
     sql, params = compile_rule(
         {"field": "paired_with", "op": "in", "value": ["a", "b", "c"]}
-    )
+    , selection=RBX)
     assert "IN (?, ?, ?)" in sql
     assert params == ["a", "b", "c"]
 
@@ -60,7 +65,7 @@ def test_compile_paired_with_in_list() -> None:
 def test_compile_contains_string_uses_like() -> None:
     sql, params = compile_rule(
         {"field": "genre", "op": "contains", "value": "House"}
-    )
+    , selection=RBX)
     assert "LIKE ?" in sql
     assert params == ["%House%"]
 
@@ -68,7 +73,7 @@ def test_compile_contains_string_uses_like() -> None:
 def test_compile_contains_list_uses_json_each() -> None:
     sql, params = compile_rule(
         {"field": "custom_tags", "op": "contains", "value": "peak"}
-    )
+    , selection=RBX)
     assert "json_each" in sql
     assert params == ["peak"]
 

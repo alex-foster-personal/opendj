@@ -23,6 +23,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from apps.analysis.selection import PROJECTION_FIELDS, Selection, field_column_sql
 from apps.shared.smartlists import (
     FIELD_TYPES,
     LOGICAL_OPS,
@@ -119,7 +120,7 @@ def _compile_paired_with(op: str, value: Any) -> tuple[str, list[Any]]:
     )
 
 
-def _compile_predicate(node: dict) -> tuple[str, list[Any]]:
+def _compile_predicate(node: dict, selection: Selection) -> tuple[str, list[Any]]:
     field = node["field"]
     op = node["op"]
     value = node["value"]
@@ -127,7 +128,13 @@ def _compile_predicate(node: dict) -> tuple[str, list[Any]]:
     if field == "paired_with":
         return _compile_paired_with(op, value)
 
-    col = _TRACKS_NATIVE.get(field) or _eav_scalar(field)
+    # Lane-owned fields resolve through apps.analysis.selection, which is
+    # also what the track read model calls: same module, same Selection,
+    # same table-choice rule, so the two readers cannot disagree.
+    if field in PROJECTION_FIELDS:
+        col = field_column_sql(field, selection)
+    else:
+        col = _TRACKS_NATIVE.get(field) or _eav_scalar(field)
     ftype = FIELD_TYPES[field]
 
     if ftype == "date":
@@ -157,18 +164,26 @@ def _compile_predicate(node: dict) -> tuple[str, list[Any]]:
     raise SmartlistRuleError(f"evaluator: unsupported op {op!r}")
 
 
-def compile_rule(rule: dict) -> tuple[str, list[Any]]:
-    """Compile a validated rule to ``(where_sql, params)``."""
+def compile_rule(rule: dict, *, selection: Selection) -> tuple[str, list[Any]]:
+    """Compile a validated rule to ``(where_sql, params)`` under ``selection``.
+
+    ``selection`` is REQUIRED and keyword-only on purpose. A default of
+    all-rbx would compile a filter on a promoted lane against rekordbox
+    data and return rows, which is a wrong answer that looks like a right
+    one. The caller has a connection; it can resolve the real selection.
+    """
     if "op" in rule and rule["op"] in LOGICAL_OPS:
         op = rule["op"]
         if op == "not":
-            inner_sql, inner_params = compile_rule(rule["children"][0])
+            inner_sql, inner_params = compile_rule(
+                rule["children"][0], selection=selection
+            )
             return f"NOT ({inner_sql})", inner_params
-        parts = [compile_rule(c) for c in rule["children"]]
+        parts = [compile_rule(c, selection=selection) for c in rule["children"]]
         sql = "(" + f" {op.upper()} ".join(p[0] for p in parts) + ")"
         params = [p for part in parts for p in part[1]]
         return sql, params
-    return _compile_predicate(rule)
+    return _compile_predicate(rule, selection)
 
 
 def _order_by_sql(order_by: str) -> str:
@@ -196,21 +211,33 @@ def evaluate(
     order_by: str = "added_date desc",
     limit: int | None = None,
     validate: bool = True,
+    selection: Selection | None = None,
 ) -> list[str]:
-    """Evaluate ``rule`` against ``conn`` and return ordered stable_ids."""
+    """Evaluate ``rule`` against ``conn`` and return ordered stable_ids.
+
+    ``selection`` defaults to the live per-lane sources read off ``conn``,
+    so a smartlist sees the same effective values the track list does.
+    """
     if validate:
         validate_rule(rule)
-    where_sql, params = compile_rule(rule)
+    if selection is None:
+        selection = Selection.resolve(conn)
+    where_sql, params = compile_rule(rule, selection=selection)
     order_sql = _order_by_sql(order_by)
     eav_order_field = _order_by_needs_join(order_by)
 
     if eav_order_field is not None:
-        select = (
-            "SELECT tracks.stable_id, "
-            f"(SELECT json_extract(tf_o.value_json, '$') FROM track_fields tf_o "
-            "WHERE tf_o.stable_id = tracks.stable_id AND tf_o.field_name = "
-            f"{_sql_literal(eav_order_field)} LIMIT 1) AS _{eav_order_field} "
-        )
+        # ORDER BY is a reader too: sorting a promoted lane by the
+        # rekordbox column would order the list by a value no cell shows.
+        if eav_order_field in PROJECTION_FIELDS:
+            order_col = field_column_sql(eav_order_field, selection)
+        else:
+            order_col = (
+                "(SELECT json_extract(tf_o.value_json, '$') FROM track_fields tf_o "
+                "WHERE tf_o.stable_id = tracks.stable_id AND tf_o.field_name = "
+                f"{_sql_literal(eav_order_field)} LIMIT 1)"
+            )
+        select = f"SELECT tracks.stable_id, {order_col} AS _{eav_order_field} "
     else:
         select = "SELECT tracks.stable_id "
 

@@ -26,6 +26,10 @@ export interface MixerChannelState {
 	eq_mid: number;
 	/** LOW knob 0..1; 0.5 = flat. Engine maps to lowshelf BiquadFilter dB. */
 	eq_low: number;
+	/** FILTER knob 0..1; 0.5 = bypass (dead zone). Below 0.5 sweeps a lowpass
+	 * closed toward FILTER_LP_FLOOR_HZ; above 0.5 sweeps a highpass closed
+	 * toward FILTER_HP_CEILING_HZ. See player/constants.ts. */
+	filter: number;
 	/** Vertical channel fader 0..1; 1 = full. Engine maps to fader GainNode. */
 	fader: number;
 	/** Crossfader bus assignment (the 2x2 numeral matrices). */

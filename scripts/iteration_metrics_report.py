@@ -31,7 +31,12 @@ from __future__ import annotations
 import statistics
 import sys
 
-from scripts.ci_health_core import PreconditionError
+try:
+    from scripts.ci_health_core import PreconditionError
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.iteration_metrics_report") from None
+    raise
 from scripts.ci_health_metrics import (
     ITERATION_METRICS_PATH,
     ITERATION_SPEED_MEDIAN_WINDOW,

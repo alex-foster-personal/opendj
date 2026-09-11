@@ -10,13 +10,22 @@ from __future__ import annotations
 import hashlib
 
 
-def compute_etag(stable_id: str, modified_at: str) -> str:
+def compute_etag(stable_id: str, modified_at: str, variant: str = "") -> str:
     """Return a quoted sha1 etag: ``"<40 hex>"``.
 
     Quotes match RFC 7232 strong-validator format so clients can compare
     byte-for-byte.
+
+    ``variant`` distinguishes two representations of one resource that share
+    a timestamp. A strong validator has to change whenever the bytes do, and
+    a track's bytes change when an analysis lane switches from rekordbox to
+    own analysis even though nothing about the track was modified. Empty by
+    default, and an empty variant hashes the SAME bytes this function has
+    always hashed, so every existing etag is unchanged.
     """
     raw = f"{stable_id}:{modified_at}".encode("utf-8")
+    if variant:
+        raw += b"|" + variant.encode()
     return '"' + hashlib.sha1(raw).hexdigest() + '"'
 
 

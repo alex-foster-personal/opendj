@@ -63,7 +63,6 @@ Pulled from [`reqs.json`](../reqs.json) and the generated
 | Req       | Scope                                   | Status      | Notes                                                                                                                     |
 |-----------|-----------------------------------------|-------------|---------------------------------------------------------------------------------------------------------------------------|
 | CAT-06    | Pioneer CDJ USB export                  | PARTIAL     | Spike complete across three parallel writers (`rbox`, `rekordcrate`, agentic). Hardware HITL is D11. Not promoted to LIVE until the CDJ / XDJ validation closes. |
-| SMART-04  | Dedicated web rule editor for smartlists | DEFERRED-V2 | CLI covers the use case; the Phase 11 SvelteKit SPA has partial scaffolding.                                              |
 | LAUNCH-03 | Launcher-driven DJ driver manager       | DEFERRED-V2 | Install + updater + verifier for third-party DJ drivers. Deferred per decision C6 in `MAINTAINER-REVIEW-QUEUE.md`.               |
 
 ## Known defects + structural gaps (non-P0)
@@ -165,7 +164,6 @@ canonical home is `apps.open_dj` (schema, registry, canon).
 These are explicitly NOT worked on before v1.0 ships and are called
 out here so operators do not wait for them.
 
-- **SMART-04** dedicated web rule editor (above).
 - **LAUNCH-03** DJ driver manager (above).
 - **CROSS-01 / CROSS-02** Windows + Linux support. v1 is macOS-only.
   The Tauri launcher is cross-platform-ready; the Python side uses

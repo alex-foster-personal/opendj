@@ -1,0 +1,237 @@
+{
+  "schema": 1,
+  "measured_at": "Fri 11 Sep 2026",
+  "population": {
+    "present": 7,
+    "tracks_rows": 9986,
+    "djmd_content_live": 10479
+  },
+  "tracks": [
+    {
+      "stable_id": "cue-db-exact",
+      "present": true,
+      "rb_bpm_x100": null,
+      "own_bpm": null,
+      "rb_key_scale_name": null,
+      "own_key_camelot": null,
+      "own_key_openkey": null,
+      "rb_pssi": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_cues_db": [
+        {
+          "in_ms": 1000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
+      ],
+      "rb_cue_db": true,
+      "own_cues": [
+        {
+          "in_ms": 1000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
+      ],
+      "rb_cues_pcob": [],
+      "rb_cues_pco2": []
+    },
+    {
+      "stable_id": "cue-db-disagree",
+      "present": true,
+      "rb_bpm_x100": null,
+      "own_bpm": null,
+      "rb_key_scale_name": null,
+      "own_key_camelot": null,
+      "own_key_openkey": null,
+      "rb_pssi": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_cues_db": [
+        {
+          "in_ms": 1000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
+      ],
+      "rb_cue_db": true,
+      "own_cues": [
+        {
+          "in_ms": 5000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
+      ],
+      "rb_cues_pcob": [],
+      "rb_cues_pco2": []
+    },
+    {
+      "stable_id": "cue-db-no-own",
+      "present": true,
+      "rb_bpm_x100": null,
+      "own_bpm": null,
+      "rb_key_scale_name": null,
+      "own_key_camelot": null,
+      "own_key_openkey": null,
+      "rb_pssi": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_cues_db": [
+        {
+          "in_ms": 1000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
+      ],
+      "rb_cue_db": true,
+      "rb_cues_pcob": [],
+      "rb_cues_pco2": []
+    },
+    {
+      "stable_id": "cue-db-missing",
+      "present": true,
+      "rb_bpm_x100": null,
+      "own_bpm": null,
+      "rb_key_scale_name": null,
+      "own_key_camelot": null,
+      "own_key_openkey": null,
+      "rb_pssi": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_cue_db": false,
+      "own_cues": [
+        {
+          "in_ms": 3000,
+          "kind": "hot",
+          "index": null,
+          "name": "intro",
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
+      ],
+      "rb_cues_pcob": [],
+      "rb_cues_pco2": []
+    },
+    {
+      "stable_id": "cue-anlz-pcob-exact",
+      "present": true,
+      "rb_bpm_x100": null,
+      "own_bpm": null,
+      "rb_key_scale_name": null,
+      "own_key_camelot": null,
+      "own_key_openkey": null,
+      "rb_pssi": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_cue_db": false,
+      "own_cues": [
+        {
+          "in_ms": 2000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
+      ],
+      "rb_cues_pcob": [
+        {
+          "in_ms": 2000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
+      ],
+      "rb_cues_pco2": [
+        {
+          "in_ms": 2000,
+          "kind": "hot",
+          "index": 0,
+          "name": "drop",
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
+      ]
+    },
+    {
+      "stable_id": "cue-anlz-unreadable-ext",
+      "present": true,
+      "rb_bpm_x100": null,
+      "own_bpm": null,
+      "rb_key_scale_name": null,
+      "own_key_camelot": null,
+      "own_key_openkey": null,
+      "rb_pssi": false,
+      "rb_ext_readable": false,
+      "rb_pvdi": false,
+      "rb_cue_db": false,
+      "own_cues": [
+        {
+          "in_ms": 2000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
+      ],
+      "rb_cues_pcob": [
+        {
+          "in_ms": 2000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
+      ]
+    },
+    {
+      "stable_id": "cue-anlz-empty",
+      "present": true,
+      "rb_bpm_x100": null,
+      "own_bpm": null,
+      "rb_key_scale_name": null,
+      "own_key_camelot": null,
+      "own_key_openkey": null,
+      "rb_pssi": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_cue_db": false,
+      "own_cues": [],
+      "rb_cues_pcob": [],
+      "rb_cues_pco2": []
+    },
+    {
+      "stable_id": "absent-audio",
+      "present": false,
+      "rb_bpm_x100": 12800,
+      "own_bpm": 128.0,
+      "rb_key_scale_name": "Am",
+      "own_key_camelot": "8A",
+      "own_key_openkey": "1m",
+      "rb_pssi": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_cue_db": false
+    }
+  ],
+  "round": 1
+}

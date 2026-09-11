@@ -8,6 +8,10 @@
   --accent: #ffb43a;
   --accent-dim: #7a5a1f;
   --danger: #ff5a5a;
+  /* The middle rung of the toast scale (pin 9bf12adccb45). Distinct from
+     --danger at a glance and in the two common colour-blindness types, where
+     red and amber separate by lightness rather than by hue. */
+  --warning: #e8a13a;
   --border: #1c222c;
   --surface: #121720;
   color-scheme: dark;
@@ -204,6 +208,9 @@ textarea {
   padding: 0.6rem 1rem;
   border-radius: 6px;
   min-width: 240px;
+}
+.toast.warn {
+  border-color: var(--warning);
 }
 .toast.error {
   border-color: var(--danger);

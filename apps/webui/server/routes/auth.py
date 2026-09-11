@@ -6,7 +6,7 @@ browser takes has an HTTP equivalent an agent can drive:
   POST /api/v1/auth/login     -> {authorization_url, state, redirect_uri}
   GET  /api/v1/auth/callback  -> Google's loopback redirect target; plants
                                  the session cookie and bounces to the SPA
-  GET  /api/v1/auth/me        -> the signed-in user, or 401
+  GET  /api/v1/auth/me        -> signed-in user or signed-out envelope (HTTP 200)
   POST /api/v1/auth/logout    -> drops the session and clears the cookie
 
 Cookie model: the browser holds an opaque token in an httpOnly cookie, the
@@ -20,7 +20,7 @@ import os
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict
 
 from apps.webui.server.auth import (
@@ -36,6 +36,7 @@ from apps.webui.server.auth import (
     callback_url_for_origin,
     exchange_code,
 )
+from apps.webui.server.auth_timing import AuthTimer, last_capture
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -175,7 +176,7 @@ class LoginOut(BaseModel):
     redirect_uri: str
 
 
-class MeOut(BaseModel):
+class MeUserOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     google_sub: str
@@ -184,11 +185,26 @@ class MeOut(BaseModel):
     avatar_url: str | None
     created_at: str
 
+
+class MeOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    signed_in: bool
+    user: MeUserOut | None
+
     @classmethod
-    def of(cls, user: SessionUser) -> MeOut:
+    def of(cls, user: SessionUser | None) -> MeOut:
+        if user is None:
+            return cls(signed_in=False, user=None)
         return cls(
-            google_sub=user.google_sub, email=user.email, name=user.name,
-            avatar_url=user.avatar_url, created_at=user.created_at,
+            signed_in=True,
+            user=MeUserOut(
+                google_sub=user.google_sub,
+                email=user.email,
+                name=user.name,
+                avatar_url=user.avatar_url,
+                created_at=user.created_at,
+            ),
         )
 
 
@@ -196,20 +212,26 @@ class MeOut(BaseModel):
 
 
 @router.post("/login", response_model=LoginOut)
-def start_login(body: LoginIn, request: Request) -> LoginOut:
+def start_login(body: LoginIn, request: Request) -> JSONResponse:
     """Begin sign-in: mint CSRF state + PKCE and return the consent URL.
 
     The caller (browser or agent) is responsible for actually visiting
     ``authorization_url``. Nothing is persisted until the callback lands.
     """
     config = _oauth_config()
-    origin = _resolve_origin(request, body.origin)
-    pending = _pending_logins(request).create(callback_url_for_origin(origin))
-    return LoginOut(
-        authorization_url=build_authorization_url(config, pending),
-        state=pending.state,
-        redirect_uri=pending.redirect_uri,
-    )
+    with AuthTimer.span("login"):
+        origin = _resolve_origin(request, body.origin)
+        pending = _pending_logins(request).create(callback_url_for_origin(origin))
+        payload = LoginOut(
+            authorization_url=build_authorization_url(config, pending),
+            state=pending.state,
+            redirect_uri=pending.redirect_uri,
+        )
+    capture = last_capture()
+    headers: dict[str, str] = {}
+    if capture is not None and capture.get("op") == "login":
+        headers["X-OpenDJ-Auth-Ms"] = str(int(capture["duration_ms"]))
+    return JSONResponse(content=payload.model_dump(), headers=headers)
 
 
 @router.get("/callback", include_in_schema=True)
@@ -240,34 +262,34 @@ def finish_login(
             },
         )
     config = _oauth_config()
-    try:
-        pending = _pending_logins(request).consume(state)
-        identity = exchange_code(config, pending, code)
-    except AuthFlowError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail={"code": "AUTH_EXCHANGE_FAILED", "message": str(exc)},
-        ) from exc
+    with AuthTimer.span("callback"):
+        try:
+            pending = _pending_logins(request).consume(state)
+            identity = exchange_code(config, pending, code)
+        except AuthFlowError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "AUTH_EXCHANGE_FAILED", "message": str(exc)},
+            ) from exc
 
-    token = _session_store(request).sign_in(identity)
-    spa_origin = pending.redirect_uri.removesuffix("/api/v1/auth/callback")
-    response = RedirectResponse(
-        url=f"{spa_origin}/", status_code=status.HTTP_303_SEE_OTHER,
-    )
-    _set_session_cookie(response, token)
+        token = _session_store(request).sign_in(identity)
+        spa_origin = pending.redirect_uri.removesuffix("/api/v1/auth/callback")
+        response = RedirectResponse(
+            url=f"{spa_origin}/", status_code=status.HTTP_303_SEE_OTHER,
+        )
+        _set_session_cookie(response, token)
     return response
 
 
 @router.get("/me", response_model=MeOut)
 def whoami(request: Request) -> MeOut:
-    """The signed-in user, or 401. The bauble polls this on mount."""
-    user = signed_in_user(request)
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "AUTH_REQUIRED", "message": "not signed in"},
-        )
-    return MeOut.of(user)
+    """Who is signed in.
+
+    Always HTTP 200. Signed-out is identity, not a fault: the bauble polls
+    this on mount, Chromium logs every 4xx, and the AutoPlay hunt treats
+    4xx as a finding. Destructive routes that need a user still 401.
+    """
+    return MeOut.of(signed_in_user(request))
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

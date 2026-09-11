@@ -3,22 +3,35 @@
  * Unknown keys throw (fail-loud).
  */
 import {
+	DECK_LAYOUT_DURATIONS_MS,
 	setAutoPlayEnabled,
 	setAutoPlayEnforceOrder,
 	setAutoPlayMaximizeReach,
 	setAutoSyncDestination,
 	setBeatSyncMax,
 	setConfirmPref,
+	setDeckLayoutAnimate,
+	setDeckLayoutDurationMs,
+	setDeckLayoutMode,
 	setHideBrokenLinks,
 	setHideTodoSettings,
+	setJogRadialWaveform,
 	setLibraryDensity,
 	setNextOnlyFilter,
+	setTechnicallyWorkingAnimate,
 	setTheme,
 	uiPrefs,
 	type AutoSyncDestination,
+	type DeckLayoutDurationMs,
+	type DeckLayoutMode,
 	type LibraryDensity,
 	type UiTheme
 } from '$lib/rb/prefs.svelte';
+import {
+	setWheelSensitivity,
+	wheelSensitivity,
+	type WheelInputKind
+} from '$lib/rb/wheel-adjust';
 
 export const ALLOWED_SETTING_KEYS = [
 	'theme',
@@ -30,11 +43,18 @@ export const ALLOWED_SETTING_KEYS = [
 	'auto_play_maximize_reach',
 	'next_only_filter',
 	'hide_todo_settings',
+	'technically_working_animate',
+	'jog_radial_waveform',
+	'deck_layout',
+	'deck_layout_animate',
+	'deck_layout_duration_ms',
 	'auto_sync.rekordbox',
 	'auto_sync.djay',
 	'auto_sync.open_dj',
 	'confirm.delete_playlist',
-	'confirm.dblclick_load_play'
+	'confirm.dblclick_load_play',
+	'wheel_sensitivity.mouse',
+	'wheel_sensitivity.trackpad'
 ] as const;
 
 export type AllowedSettingKey = (typeof ALLOWED_SETTING_KEYS)[number];
@@ -65,6 +85,16 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.next_only_filter;
 		case 'hide_todo_settings':
 			return uiPrefs.hide_todo_settings;
+		case 'technically_working_animate':
+			return uiPrefs.technically_working_animate;
+		case 'jog_radial_waveform':
+			return uiPrefs.jog_radial_waveform;
+		case 'deck_layout':
+			return uiPrefs.deck_layout;
+		case 'deck_layout_animate':
+			return uiPrefs.deck_layout_animate;
+		case 'deck_layout_duration_ms':
+			return String(uiPrefs.deck_layout_duration_ms);
 		case 'auto_sync.rekordbox':
 			return uiPrefs.auto_sync.rekordbox;
 		case 'auto_sync.djay':
@@ -75,6 +105,10 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.confirm.delete_playlist !== false;
 		case 'confirm.dblclick_load_play':
 			return uiPrefs.confirm.dblclick_load_play !== false;
+		case 'wheel_sensitivity.mouse':
+			return String(wheelSensitivity().mouse);
+		case 'wheel_sensitivity.trackpad':
+			return String(wheelSensitivity().trackpad);
 	}
 }
 
@@ -118,6 +152,32 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'hide_todo_settings':
 			setHideTodoSettings(_asBool(value, key));
 			return;
+		case 'technically_working_animate':
+			setTechnicallyWorkingAnimate(_asBool(value, key));
+			return;
+		case 'jog_radial_waveform':
+			setJogRadialWaveform(_asBool(value, key));
+			return;
+		case 'deck_layout': {
+			if (value !== 'more' && value !== 'less') {
+				throw new Error(`deck_layout must be more|less, got ${String(value)}`);
+			}
+			setDeckLayoutMode(value as DeckLayoutMode);
+			return;
+		}
+		case 'deck_layout_animate':
+			setDeckLayoutAnimate(_asBool(value, key));
+			return;
+		case 'deck_layout_duration_ms': {
+			const n = Number(value);
+			if (!(DECK_LAYOUT_DURATIONS_MS as readonly number[]).includes(n)) {
+				throw new Error(
+					`deck_layout_duration_ms must be one of ${DECK_LAYOUT_DURATIONS_MS.join(', ')}, got ${String(value)}`
+				);
+			}
+			setDeckLayoutDurationMs(n as DeckLayoutDurationMs);
+			return;
+		}
 		case 'auto_sync.rekordbox':
 		case 'auto_sync.djay':
 		case 'auto_sync.open_dj': {
@@ -131,7 +191,27 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'confirm.dblclick_load_play':
 			setConfirmPref('dblclick_load_play', _asBool(value, key));
 			return;
+		case 'wheel_sensitivity.mouse':
+		case 'wheel_sensitivity.trackpad': {
+			// setWheelSensitivity owns the range check and throws RangeError
+			// outside (0, WHEEL_SENSITIVITY_MAX]; this only has to turn the
+			// control's string into a number, or refuse loudly.
+			const kind = key.slice('wheel_sensitivity.'.length) as WheelInputKind;
+			setWheelSensitivity(kind, _asFactor(value, key));
+			return;
+		}
 	}
+}
+
+function _asFactor(value: SettingValue, key: string): number {
+	if (typeof value !== 'string' || value.trim() === '') {
+		throw new Error(`${key} expects a number, got ${String(value)}`);
+	}
+	const parsed = Number(value);
+	if (!Number.isFinite(parsed)) {
+		throw new Error(`${key} expects a number, got ${String(value)}`);
+	}
+	return parsed;
 }
 
 function _asBool(value: SettingValue, key: string): boolean {

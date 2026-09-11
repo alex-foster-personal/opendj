@@ -6,13 +6,6 @@ PYTEST := $(VENV)/bin/pytest
 WAVEFORM_CONSUMER_VENV := dist/waveform-consumer
 WAVEFORM_CONSUMER_PY := $(WAVEFORM_CONSUMER_VENV)/bin/python
 FRONTEND_NODE ?= node
-RB_PARITY_PYTEST_PATHS := \
-	tests/reconcile/test_prefix_dead_playlists.py \
-	tests/shared/test_rekordbox_db.py \
-	tests/test_codex_followups_c.py \
-	tests/test_progress.py \
-	tests/test_rb_assets.py \
-	tests/webui
 
 # PYTEST_JOBS feeds `-n`: `auto` lets xdist size itself to the box. Override for
 # a serial run (`make test PYTEST_JOBS=0`), which is what you want when reading
@@ -35,7 +28,7 @@ test:
 # Playwright suite once real DB fixtures are available (tracked in #155).
 rb-parity-check:
 	@echo "[rb-parity-check] focused Python, frontend unit, and type gates"
-	$(PYTEST) -q $(RB_PARITY_PYTEST_PATHS)
+	$(PYTEST) -q -m rb_parity
 	cd apps/webui/frontend && $(FRONTEND_NODE) --test --test-concurrency=1 tests/unit/*.test.mjs
 	cd apps/webui/frontend && pnpm check
 
@@ -84,11 +77,11 @@ clean:
 # ----- Pre-release checks -----------------------------------------------
 # `release-check` is the single command CI and humans run before cutting a
 # release tag. It runs the standard gates in sequence:
-#   1. test        — full pytest suite
-#   2. lint        — ruff check across apps/tests/scripts
-#   3. build-dist  — python -m build (wheel + sdist)
-#   4. reqs-check  — verify reqs.json is fresh vs REQUIREMENTS.md
-#   5. prior-tag   — best-effort `gh release view v1.0.1` sanity check (non-fatal)
+#   1. test        -- full pytest suite
+#   2. lint        -- ruff check across apps/tests/scripts
+#   3. build-dist  -- python -m build (wheel + sdist)
+#   4. reqs-check  -- verify reqs.json is fresh vs REQUIREMENTS.md
+#   5. prior-tag   -- best-effort `gh release view v1.0.1` sanity check (non-fatal)
 # Keep this target serial; failures should halt the pipeline immediately.
 
 lint:
@@ -183,7 +176,7 @@ spotify-watched:
 # (gitignored shim: scripts/spotdl_watched.py; pointer: scripts/spotdl_watched.md).
 spotdl-watched:
 	@if [ ! -f scripts/spotdl_watched.py ]; then \
-		echo "missing scripts/spotdl_watched.py — see scripts/spotdl_watched.md"; exit 2; \
+		echo "missing scripts/spotdl_watched.py -- see scripts/spotdl_watched.md"; exit 2; \
 	fi
 	$(PY) scripts/spotdl_watched.py $(SPOTDL_WATCHED_ARGS)
 
@@ -194,13 +187,13 @@ webui.dev:
 	just webui-backend
 
 webui.prod:
-	doppler run -p music-dj-tools -c prod -- $(PY) -m apps.webui.server --prod
+	doppler run -p general -c dev_personal -- $(PY) -m apps.webui.server --prod
 
 webui.openapi:
 	$(PY) -m apps.webui.server --dump-openapi apps/webui/openapi.json
 
 cloud.replicate:
-	doppler run -p music-dj-tools -c prod -- $(PY) -m apps.cloud.replicate
+	doppler run -p general -c dev_personal -- $(PY) -m apps.cloud.replicate
 
 cloud.self-check:
 	$(PY) -m apps.cloud.replicate --self-check

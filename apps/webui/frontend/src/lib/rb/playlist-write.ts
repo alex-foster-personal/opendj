@@ -141,6 +141,36 @@ export async function replacePlaylistTracks(
 	return { items: out.items, etag: fresh };
 }
 
+/** POST /playlists/{id}/tracks/transfer - atomic cross-playlist add (copy)
+ * or move. Throws PlaylistConflictError on a stale If-Match (409). */
+export async function transferPlaylistTracks(
+	destId: string,
+	destEtag: string,
+	body: {
+		stable_ids: string[];
+		mode: 'add' | 'move';
+		source_playlist_id?: string;
+		source_etag?: string;
+	}
+): Promise<{ dest: PlaylistRowWire; source: PlaylistRowWire | null; etag: string }> {
+	let data: unknown;
+	let response: Response;
+	try {
+		({ data, response } = await api.POST('/api/v1/playlists/{playlist_id}/tracks/transfer', {
+			params: { path: { playlist_id: destId }, header: { 'If-Match': destEtag } },
+			body
+		}));
+	} catch (error) {
+		_throwWriteError(error, `transfer tracks to playlist ${destId}`);
+	}
+	const fresh = response.headers.get('etag');
+	if (!fresh) {
+		throw new Error(`playlist ${destId}: POST transfer response carries no ETag header`);
+	}
+	const out = data as { dest: PlaylistRowWire; source: PlaylistRowWire | null };
+	return { dest: out.dest, source: out.source ?? null, etag: fresh };
+}
+
 /** POST /playlists - create empty playlist (201 + ETag). No If-Match, so
  * unlike the mutations below a failure never maps to PlaylistConflictError
  * (exactly as before the conversion). */
@@ -185,6 +215,37 @@ export async function deletePlaylist(playlistId: string, etag: string): Promise<
 	}
 }
 
+/** POST /playlists/{id}/duplicate - copy playlist with optional name override.
+ * Optional If-Match is CAS on the source row. Omit body to use the server
+ * default "<source name> (copy)". */
+export async function duplicatePlaylist(
+	playlistId: string,
+	etag?: string,
+	name?: string
+): Promise<PlaylistRowWire> {
+	try {
+		const params: {
+			path: { playlist_id: string };
+			header?: { 'If-Match': string };
+		} = { path: { playlist_id: playlistId } };
+		if (etag !== undefined) {
+			params.header = { 'If-Match': etag };
+		}
+		const options: {
+			params: typeof params;
+			body?: { name: string };
+		} = { params };
+		if (name !== undefined) {
+			options.body = { name };
+		}
+		return await unwrap(
+			api.POST('/api/v1/playlists/{playlist_id}/duplicate', options)
+		);
+	} catch (error) {
+		_throwWriteError(error, `duplicate playlist ${playlistId}`);
+	}
+}
+
 // ----------------------------------------------------------------------
 // Blank playlist policy (pure - no I/O, no api client)
 //
@@ -216,6 +277,9 @@ export type BlankPlaylistLike = {
 	track_count: number;
 	/** When set, only `webui` rows are delete candidates. */
 	vendor?: string;
+	/** Server last-touch timestamp (ISO 8601). Backs the grace check across a
+	 * reload, where `_graceUntil` (in-memory, this module) does not survive. */
+	updated_at?: string;
 };
 
 export type BlankDeleteDecision =
@@ -254,6 +318,16 @@ export function _resetCreateGraceForTests(): void {
 	_graceUntil.clear();
 }
 
+/** Server-timestamp fallback for `isWithinCreateGrace`: a row this recently
+ * touched is presumed still mid-create even with no (or an evicted)
+ * `_graceUntil` entry -- the case a reload produces, since that registry is
+ * in-memory only and does not survive one. */
+function isWithinServerGrace(updatedAt: string | undefined, nowMs: number): boolean {
+	if (updatedAt === undefined) return false;
+	const updatedMs = Date.parse(updatedAt);
+	return Number.isFinite(updatedMs) && nowMs - updatedMs < BLANK_PLAYLIST_GRACE_MS;
+}
+
 export function decideBlankPlaylistDelete(
 	p: BlankPlaylistLike,
 	nowMs: number = Date.now()
@@ -267,7 +341,10 @@ export function decideBlankPlaylistDelete(
 	if (!isBlankPlaylistName(p.name)) {
 		return { action: 'keep', reason: `renamed name=${JSON.stringify(p.name.trim())}` };
 	}
-	if (isWithinCreateGrace(p.playlist_id, nowMs)) {
+	if (
+		isWithinCreateGrace(p.playlist_id, nowMs) ||
+		isWithinServerGrace(p.updated_at, nowMs)
+	) {
 		return { action: 'keep', reason: `within ${BLANK_PLAYLIST_GRACE_MS}ms create grace` };
 	}
 	return {

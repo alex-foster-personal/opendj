@@ -8,14 +8,21 @@
  *     [if] a position is equidistant between beats [then] return the earlier t
  *   ✔︎ ✅ 🎯 Plan follower phase and local tempo at one future context time.
  *     [if] no raw, half-time, or double-time ratio fits [then ⛔️]
- *   ✔︎ ✅ 🎯 Require an explicit sync mode and preserve raw cadence in BAR mode.
- *     [if] BAR needs half/double normalization [then ⛔️] select BEAT instead
+ *   ✔︎ ✅ 🎯 Require an explicit sync mode; BAR prefers raw cadence and folds
+ *     only when nothing else locks (pin 9bf12adccb45, AGENTS.md).
+ *     [if] an exact BAR anchor exists but a fold is returned [then ⛔️]
+ *     [if] a fold is the only lock and BAR refuses it [then ⛔️]
+ *   ✔︎ ✅ 🎯 A re-anchor tempo ramp lands phase exactly on the plan (LATENCY-06).
+ *     [if] a ramped re-anchor ends off the one-step re-anchor's phase [then ⛔️]
+ *   ✔︎ ✅ 🎯 BSM ON forces BAR so downbeats stay aligned over playback (DECKUX-14).
+ *     [if] BSM is on and a BEAT-mode follower nearest-beat locks [then ⛔️]
  *
  * No DOM, Web Audio objects, nominal track BPM, or synthetic grid fallback.
  * Tempo ratios use beat INTERVALS (60/dt), never the PQTZ bpm field alone -
  * that field can disagree with .t (Proper Education: field 124.72 vs dt→125).
  */
-import type { AnlzBeat } from '$lib/rb/anlz-types';
+import type { AnlzBeat, AnlzCue } from '$lib/rb/anlz-types';
+import type { LoopState } from '$lib/rb/deck-state-types';
 
 // -------------------------------------------------------------- contracts
 
@@ -94,6 +101,38 @@ function _nearestBeatIndex(beats: readonly AnlzBeat[], positionSec: number): num
 	const earlierDistance = positionSec - beats[earlierIndex].t;
 	const laterDistance = beats[laterIndex].t - positionSec;
 	return earlierDistance <= laterDistance ? earlierIndex : laterIndex;
+}
+
+/**
+ * Return a stored loop's length only when both endpoints are exact PQTZ beat
+ * timestamps. Rekordbox BeatLoopSize is vendor metadata that can be packed,
+ * so it is deliberately not an input to this calculation.
+ */
+export function pqtzLoopBeatCount(
+	beats: readonly Pick<AnlzBeat, 't'>[],
+	inMs: number,
+	outMs: number
+): number | null {
+	if (!Number.isFinite(inMs) || !Number.isFinite(outMs) || outMs <= inMs) return null;
+	const startSec = inMs / 1000;
+	const endSec = outMs / 1000;
+	const startIndex = beats.findIndex((beat) => Math.abs(beat.t - startSec) < 1e-9);
+	const endIndex = beats.findIndex((beat) => Math.abs(beat.t - endSec) < 1e-9);
+	const count = endIndex - startIndex;
+	return startIndex >= 0 && endIndex > startIndex ? count : null;
+}
+
+/** Display-only stored loop (COMPONENT-MAP 1.3: loop chips are display at
+ * v1): the rekordbox active loop when one exists, engaged: false. */
+export function displayLoopFrom(cues: AnlzCue[], beats: readonly AnlzBeat[]): LoopState | null {
+	const active = cues.find((c) => c.active_loop && c.out_ms !== null);
+	if (active === undefined || active.out_ms === null) return null;
+	return {
+		in_ms: active.in_ms,
+		out_ms: active.out_ms,
+		engaged: false,
+		beat_length: pqtzLoopBeatCount(beats, active.in_ms, active.out_ms)
+	};
 }
 
 function _enclosingBeatIndex(
@@ -225,18 +264,37 @@ function _bestFollowerAnchor(
 ): _FollowerAnchorPlan {
 	let best: _FollowerAnchorPlan | null = null;
 	let bestDistance = Number.POSITIVE_INFINITY;
-	const rejectedBarNormalizations = new Set<TempoNormalization>();
+	// BAR's half/double anchors are held BESIDE the exact ones, not instead of
+	// them (pin 9bf12adccb45). Strict BAR used to refuse them outright, which
+	// made "sync these two decks" fail on a pair a DJ would happily mix; now
+	// they are the fallback, chosen only when no tempoNormalization=1 anchor
+	// exists at all. Preference, not permission: a pair that could always lock
+	// exactly still locks exactly, so nothing that worked before changes.
+	let folded: _FollowerAnchorPlan | null = null;
+	let foldedDistance = Number.POSITIVE_INFINITY;
 	for (let index = 0; index < beats.length - 1; index++) {
 		const beat = beats[index];
-		if (mode === 'bar' && beat.n !== masterBeatNumber) continue;
 		const followerBpm = _windowedIntervalBpm(beats, index);
 		const rawRatio = (masterBpm * masterTempoRatio) / followerBpm;
 		const tempo = _tempoRatioWithinRangeOrNull(rawRatio, minRatio, maxRatio);
 		if (tempo === null) continue;
-		if (mode === 'bar' && tempo.normalization !== 1) {
-			rejectedBarNormalizations.add(tempo.normalization);
-			continue;
-		}
+		const foldedBar = mode === 'bar' && tempo.normalization !== 1;
+		// The PQTZ bar-number constraint belongs to the EXACT lock alone. A
+		// folded lock has already given up the bar count - that is precisely
+		// what its orange warning says - so requiring a folded candidate to
+		// ALSO sit on the master's beat number throws away three quarters of
+		// the phase points for a property the fold does not preserve anyway.
+		// It is not merely wasteful, it moves the deck: 200 BPM master against
+		// a 100 BPM follower at 0.3 s on master beat 2 has its nearest folded
+		// phase point at follower 0.3 s, and the same-number filter picks
+		// 0.9 s instead - a whole 100-BPM beat away. So folded candidates
+		// search every beat number and exact ones keep the constraint.
+		//
+		// The cost is that BAR now measures the local BPM at every beat rather
+		// than at one in four, because normalization is not known until after
+		// `_tempoRatioWithinRangeOrNull` has run. That is the price of asking
+		// the right question in the right order.
+		if (mode === 'bar' && !foldedBar && beat.n !== masterBeatNumber) continue;
 		const subBeatIndex = tempo.normalization === 0.5 ? masterBeatIndex % 2 : 0;
 		const phaseOffsetIntervals = (subBeatIndex + beatPhase) * tempo.normalization;
 		const nextBoundaryOffsetIntervals = (subBeatIndex + 1) * tempo.normalization;
@@ -248,34 +306,32 @@ function _bestFollowerAnchor(
 		);
 		if (targetPositionSec === null || nextBoundarySec === null) continue;
 		const distance = Math.abs(targetPositionSec - positionSec);
-		if (distance < bestDistance) {
+		const candidate: _FollowerAnchorPlan = {
+			index,
+			positionSec: targetPositionSec,
+			tempoRatio: tempo.ratio,
+			normalization: tempo.normalization
+		};
+		if (foldedBar) {
+			if (distance < foldedDistance) {
+				foldedDistance = distance;
+				folded = candidate;
+			}
+		} else if (distance < bestDistance) {
 			bestDistance = distance;
-			best = {
-				index,
-				positionSec: targetPositionSec,
-				tempoRatio: tempo.ratio,
-				normalization: tempo.normalization
-			};
+			best = candidate;
 		}
 	}
-	if (best === null) {
-		if (mode === 'bar' && rejectedBarNormalizations.size > 0) {
-			const requiredNormalizations = [...rejectedBarNormalizations]
-				.sort((left, right) => left - right)
-				.map((normalization) => `tempoNormalization=${normalization}`)
-				.join(' or ');
-			throw new RangeError(
-				`strict BAR sync requires tempoNormalization=1 to preserve raw PQTZ cadence; ` +
-				`the available anchor requires ${requiredNormalizations}. ` +
-				`Select BEAT mode for half/double tempo matching or widen the follower tempo range.`
-			);
-		}
-		throw new RangeError(
-			`follower grid has no phase-capable ${mode} anchor with tempo ratio within ` +
-				`[${minRatio}, ${maxRatio}] for beat n=${masterBeatNumber}`
-		);
-	}
-	return best;
+	if (best !== null) return best;
+	if (folded !== null) return folded;
+	// The one limit that stays hard: a ratio outside the pitch range is not a
+	// policy this code may relax, it is a speed the fader cannot reach. Letting
+	// it through would mean playing at a tempo that never lines up - drift, not
+	// funk.
+	throw new RangeError(
+		`follower grid has no phase-capable ${mode} anchor with tempo ratio within ` +
+			`[${minRatio}, ${maxRatio}] for beat n=${masterBeatNumber}`
+	);
 }
 
 // --------------------------------------------------------------- public API
@@ -329,6 +385,100 @@ export function quantizeToNearestBeat(
 	validateBeatGrid(beats);
 	_assertFiniteNonNegative('positionSec', positionSec);
 	return beats[_nearestBeatIndex(beats, positionSec)].t;
+}
+
+/**
+ * Return the exact time of the nearest real PQTZ bar downbeat (n === 1).
+ *
+ * BeatSyncMax stores hot cues on bars, rather than merely on the nearest beat:
+ * a hand-set cue must be phase-safe before a later synchronized launch can
+ * use it. Ties are stable toward the earlier downbeat, matching ordinary
+ * quantization.
+ */
+export function quantizeToNearestDownbeat(
+	beats: readonly AnlzBeat[],
+	positionSec: number
+): number {
+	validateBeatGrid(beats);
+	_assertFiniteNonNegative('positionSec', positionSec);
+	const downbeats = beats.filter((beat) => beat.n === 1);
+	if (downbeats.length === 0) throw new Error('PQTZ beat grid contains no downbeat');
+	return downbeats[_nearestBeatIndex(downbeats, positionSec)].t;
+}
+
+/**
+ * Return the exact time of the nearest grid line for the DECK's selected
+ * quantize grid (pin a67bafbfc4b0): every beat (1), every bar downbeat (4,
+ * assumed 4/4 - same set `quantizeToNearestDownbeat` snaps to), or every
+ * OTHER bar downbeat (8 - a 2-bar grid). 'phase' never reaches here: it is
+ * rejected in performance-ipc._dispatchUnknown before it can become a
+ * setting change, so this function's grid parameter excludes it entirely.
+ *
+ * `validateBeatGrid` enforces an unbroken n=1,2,3,4 cadence with no gaps, so
+ * every downbeat is exactly 4 real beats after the last: the 2-bar grid's
+ * `index % 2 === 0` IS the musical bar parity here, not merely array order,
+ * because the schema forbids a bar going missing mid-grid.
+ *
+ * A grid with no downbeat at all (0 or 1 detected - a track with sparse or
+ * failed downbeat detection) degrades to the nearest available beat, or to
+ * that single downbeat, rather than throwing: an approximate grid line beats
+ * refusing to seek/loop at all.
+ */
+export function quantizeToNearestGridBeat(
+	beats: readonly AnlzBeat[],
+	positionSec: number,
+	gridBeats: 1 | 4 | 8
+): number {
+	if (gridBeats === 1) return quantizeToNearestBeat(beats, positionSec);
+	validateBeatGrid(beats);
+	_assertFiniteNonNegative('positionSec', positionSec);
+	const downbeats = beats.filter((beat) => beat.n === 1);
+	if (downbeats.length === 0) return quantizeToNearestBeat(beats, positionSec);
+	if (gridBeats === 4 || downbeats.length === 1) {
+		return downbeats[_nearestBeatIndex(downbeats, positionSec)].t;
+	}
+	const twoBarBeats = downbeats.filter((_beat, index) => index % 2 === 0);
+	return twoBarBeats[_nearestBeatIndex(twoBarBeats, positionSec)].t;
+}
+
+/**
+ * Return the exact time of the next real PQTZ bar downbeat at or after
+ * `positionSec` - the moment a BeatSyncMax hot-cue TRIGGER (#884) defers to,
+ * rather than the nearest one SAVE (above) snaps to. Once the grid runs out
+ * (`positionSec` past the last downbeat, near track end) there is no future
+ * phase-locked moment left, so this returns `positionSec` itself: fire now.
+ */
+export function nextDownbeatAtOrAfter(beats: readonly AnlzBeat[], positionSec: number): number {
+	validateBeatGrid(beats);
+	_assertFiniteNonNegative('positionSec', positionSec);
+	const downbeats = beats.filter((beat) => beat.n === 1);
+	if (downbeats.length === 0) throw new Error('PQTZ beat grid contains no downbeat');
+	const index = _firstBeatAtOrAfter(downbeats, positionSec);
+	return index < downbeats.length ? downbeats[index].t : positionSec;
+}
+
+export type HotCueTriggerPlan = { kind: 'immediate' } | { kind: 'armed'; armAtPositionSec: number };
+
+/**
+ * Decide whether a hot-cue TRIGGER (#884) jumps immediately or waits for the
+ * deck's own next downbeat.
+ *
+ * BeatSyncMax only protects an audible transition already in progress, so a
+ * stopped deck (nothing audible to protect) and a positionSec past an engaged
+ * loop's own already-tight window both jump immediately regardless of the
+ * preference. Cross-deck follower re-anchoring (the OTHER meaning of
+ * BeatSyncMax, for seek) is out of scope here - this is self-referential to
+ * the triggering deck's own grid only.
+ */
+export function planHotCueTrigger(
+	beatSyncMax: boolean,
+	playing: boolean,
+	loopEngaged: boolean,
+	positionSec: number,
+	beats: readonly AnlzBeat[]
+): HotCueTriggerPlan {
+	if (!beatSyncMax || !playing || loopEngaged) return { kind: 'immediate' };
+	return { kind: 'armed', armAtPositionSec: nextDownbeatAtOrAfter(beats, positionSec) };
 }
 
 /**
@@ -657,6 +807,46 @@ export function planTempoRatioRamp(
 	}));
 }
 
+export interface PhaseCompensatedReanchor {
+	/** Follower position to schedule at the sync instant, with the first step's rate. */
+	startPositionSec: number;
+	steps: TempoRampStep[];
+}
+
+/**
+ * The re-anchor ramp PLUS the start position that makes it phase-exact.
+ *
+ * `planTempoRatioRamp` eases only the RATE. A follower placed on its planned
+ * anchor at the sync instant and then run short of (or past) its target rate
+ * through the ramp ends it behind (or ahead of) that plan by the ramp's rate
+ * shortfall - 0.1125 s of track time per unit of ratio change for the default
+ * ramp - and nothing afterwards corrects it: every re-anchor since 786cc91a1
+ * (Sun 16 Aug 2026) left the follower off the beat until the next one, ~10 ms
+ * after a 1.00 -> 1.10 master tempo move. Starting ahead by exactly that
+ * shortfall makes phase converge onto the plan at the last step and stay.
+ *
+ * [if] fromTempoRatio equals toTempoRatio [then] startPositionSec is the
+ * anchor itself - an unchanged tempo has nothing to compensate.
+ * [if] the compensated start falls before the track start [then ⛔️] - a
+ * clamp would silently re-introduce the offset this exists to remove.
+ */
+export function planPhaseCompensatedReanchor(
+	anchorPositionSec: number,
+	fromTempoRatio: number,
+	toTempoRatio: number
+): PhaseCompensatedReanchor {
+	_assertFiniteNonNegative('anchorPositionSec', anchorPositionSec);
+	const steps = planTempoRatioRamp(fromTempoRatio, toTempoRatio);
+	let shortfallSec = 0;
+	for (let index = 0; index < steps.length - 1; index++) {
+		const heldSec = steps[index + 1].offsetSec - steps[index].offsetSec;
+		shortfallSec += (toTempoRatio - steps[index].tempoRatio) * heldSec;
+	}
+	const startPositionSec = anchorPositionSec + shortfallSec;
+	_assertFiniteNonNegative('phase-compensated start position', startPositionSec);
+	return { startPositionSec, steps };
+}
+
 /**
  * Plan one scheduled follower seek and playback-rate change.
  *
@@ -733,4 +923,109 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 		followerTempoRatio: followerAnchor.tempoRatio,
 		tempoNormalization: followerAnchor.normalization
 	};
+}
+
+
+// ----------------------------------------------- what the sync tells the DJ
+
+/**
+ * A completed Beat Sync has two things it may need to say, and both are pure
+ * functions of the plan it produced, so they are decided here rather than in
+ * the engine: the engine keeps the effects (`pushToast`, `recordPerfEvent`)
+ * and this returns the DATA describing them. That split is what lets the
+ * wording, the severity and the grouping key be asserted with no audio graph,
+ * no browser and no fixture library - see beat-sync-notices.test.mjs.
+ *
+ * Deck ids are a type parameter rather than an import: nothing here inspects
+ * a deck id beyond printing it, so `DeckId` flows through from the caller and
+ * this module keeps its existing dependency set.
+ */
+
+/** One perf-event row a notice wants written. */
+export interface BeatSyncNoticeEvent<D extends number> {
+	kind: 'beat-sync-fold' | 'beat-sync-skip';
+	detail: string;
+	deck: D;
+}
+
+/** One toast a notice wants raised, plus the rows that accompany it. */
+export interface BeatSyncNotice<D extends number> {
+	message: string;
+	/**
+	 * One severity for BOTH the toast and its perf rows, deliberately.
+	 * `recordPerfEvent`'s severity argument DEFAULTS to 'warn', so the
+	 * engine's old three-argument call filed a beat-sync SKIP - a red toast,
+	 * a follower that never locked - into the ring as a warning that could
+	 * never reach `_escalate()`. Carrying it here is what stops the colour
+	 * the DJ sees and the severity the ring records from drifting apart.
+	 */
+	kind: 'warn' | 'error';
+	/** Repeat presses against the same master coalesce onto one toast. */
+	groupKey: string;
+	events: BeatSyncNoticeEvent<D>[];
+}
+
+/** The slice of a planned follower these notices read. */
+export interface PlannedFollower<D extends number> {
+	deck: D;
+	plan: Pick<FollowerSyncPlan, 'mode' | 'tempoNormalization'>;
+}
+
+/** A follower that could not be planned at all, with the refusal's reason. */
+export interface FailedFollower<D extends number> {
+	deck: D;
+	message: string;
+}
+
+/**
+ * Pin 9bf12adccb45: BAR folding to half/double is now allowed, so the DJ is
+ * TOLD rather than blocked. Orange, not red, and not silent: the decks really
+ * are phase-locked, but one is counting bars at twice or half the other's
+ * rate, which is audible and deliberate.
+ *
+ * A follower planned in BEAT mode is never a fold notice however its tempo
+ * was normalized - BEAT never promised a bar count in the first place, so
+ * there is nothing there for the DJ to be surprised by.
+ */
+export function beatSyncOutcomeNotices<D extends number>(
+	planned: readonly PlannedFollower<D>[],
+	planFailed: readonly FailedFollower<D>[],
+	master: D
+): BeatSyncNotice<D>[] {
+	const notices: BeatSyncNotice<D>[] = [];
+	const folded = planned.filter(
+		(item) => item.plan.mode === 'bar' && item.plan.tempoNormalization !== 1
+	);
+	if (folded.length > 0) {
+		const detail = folded
+			.map(
+				(item) =>
+					`deck ${item.deck} at ${item.plan.tempoNormalization === 0.5 ? 'half' : 'double'} tempo`
+			)
+			.join(', ');
+		notices.push({
+			message: `BAR sync locked with a tempo fold (${detail}) - phase holds, the bar count does not`,
+			kind: 'warn',
+			groupKey: `beat-sync-fold:${master}`,
+			events: folded.map((item) => ({
+				kind: 'beat-sync-fold' as const,
+				detail: `tempoNormalization=${item.plan.tempoNormalization}`,
+				deck: item.deck
+			}))
+		});
+	}
+	if (planFailed.length > 0) {
+		const skipped = planFailed.map((f) => f.deck).join(',');
+		notices.push({
+			message: `Beat Sync skipped deck(s) [${skipped}] (tempo/phase cannot lock) - others stayed locked`,
+			kind: 'error',
+			groupKey: `beat-sync-followers:${master}`,
+			events: planFailed.map((f) => ({
+				kind: 'beat-sync-skip' as const,
+				detail: f.message,
+				deck: f.deck
+			}))
+		});
+	}
+	return notices;
 }

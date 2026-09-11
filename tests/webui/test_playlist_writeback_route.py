@@ -23,7 +23,7 @@ from apps.webui.server.routes.playlist_writeback import get_writeback_service
 # This module exercises live-write MECHANICS against tmp fixtures, so it runs
 # with the one-way rekordbox import gate ON (root conftest reads the marker).
 # It never touches a real rekordbox target.
-pytestmark = pytest.mark.rekordbox_writeback
+pytestmark = [pytest.mark.rekordbox_writeback, pytest.mark.rb_parity]
 # Backup ids are uuid4().hex and get joined into a path under
 # data/writeback-backups, so the format is pattern-bound at the route now: a
 # short label like "b1" is refused as 422 before the handler runs.

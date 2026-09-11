@@ -3,6 +3,13 @@
  * Search filters this list in-place (results ARE the settings).
  */
 
+import {
+	WHEEL_SENSITIVITY,
+	WHEEL_SENSITIVITY_MAX,
+	WHEEL_SENSITIVITY_MIN,
+	WHEEL_SENSITIVITY_STEP
+} from '$lib/rb/wheel-adjust';
+
 export type SettingGroupId =
 	| 'appearance'
 	| 'library'
@@ -34,7 +41,20 @@ export type SettingControl =
 	// `detail`/`title`, but clicking it does not yet navigate. A follow-up
 	// in SettingsOverlay.svelte adding `{:else if kind === 'link'}<a href=...>`
 	// (and a matching branch in `activateSetting`) makes it clickable.
-	| { kind: 'link'; href: string };
+	| { kind: 'link'; href: string }
+	// A live numeric row: range slider + value readout + a "default" reset.
+	// Bounds come from the module that VALIDATES the value (never a second
+	// literal here), so no slider position can be one the setter refuses.
+	| {
+			kind: 'number';
+			min: number;
+			max: number;
+			step: number;
+			/** What "Reset to default" restores, and the value shown as default. */
+			defaultValue: number;
+			/** Rendered after the readout, e.g. 'x'. */
+			unit: string;
+	  };
 
 export interface SettingDef {
 	id: string;
@@ -112,11 +132,12 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	},
 	{
 		id: 'next_only_filter',
-		label: 'Next-only library filter',
+		label: 'Compatible-only library filter',
 		group: 'library',
 		keywords: ['next', 'camelot', 'bpm', 'tab', 'suggest', 'compatible'],
-		title: 'Keep only Camelot+BPM-compatible next tracks',
-		detail: 'Filters the library list vs the loaded/master reference. Also toggled with Tab on /performance.',
+		title: 'Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)',
+		detail:
+			"Shown as the 'compatible' checkbox in the library header. Filters the library list vs the master, else playing, else any loaded with key and BPM (Camelot family, BPM window, half/double folds). Also toggled with Tab on /performance.",
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
@@ -125,9 +146,9 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		label: 'Beat Sync Max',
 		group: 'performance',
 		keywords: ['beatsync', 'bar', 'phase', 'seek', 'sync', 'master'],
-		title: 'Phase-preserving BAR sync on every relocate',
+		title: 'BAR downbeat lock on every relocate, held over playback',
 		detail:
-			'When on, every transport relocate (including master) keeps BAR phase lock across synced decks.',
+			'When on, synced playing decks keep PQTZ n=1 aligned, including after the lock, until Beat Sync Max or Beat Sync is turned off. When off, followers sync on seek using their own BEAT/BAR mode; the master free-seeks.',
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
@@ -163,6 +184,104 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 			'Smart mode only (ignored when enforce play order is on). When on (default), among key+-1 / BPM-compatible next tracks, pick the one with the fewest onward options so later tracks stay reachable. Cap ~50k compatibility checks per pick; over budget falls back to earliest.',
 		implemented: true,
 		control: { kind: 'boolean' }
+	},
+	{
+		id: 'technically_working_animate',
+		label: 'Technically-working mode animation',
+		group: 'performance',
+		keywords: ['technically', 'working', 'overlay', 'animate', 'fade', 'edge', 'reveal'],
+		title: 'Fade regions in/out on edge-reveal (cmd+R overlay mode)',
+		detail:
+			'When on (default), revealing/hiding a region in overlay mode cross-fades. Off swaps instantly, no transition.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'jog_radial_waveform',
+		label: 'Jog dial radial waveform',
+		group: 'performance',
+		keywords: ['radial', 'jog', 'waveform', 'wheel', 'polar', 'dial', 'preview'],
+		title: 'Show preview waveform as a polar plot on jog dials',
+		detail:
+			'When on, each loaded deck paints its 400-point preview waveform radially on the jog wheel face and hides the red position tick. The white progress trail still shows playback position. Default off.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'deck_layout',
+		label: 'Deck layout (MORE/LESS)',
+		group: 'performance',
+		keywords: ['deck', 'layout', 'more', 'less', '2 deck', '4 deck', 'library', 'space', 'toggle'],
+		title: 'Two vs four deck performance view',
+		detail:
+			'LESS collapses deck 3/4 chrome (mixer strips + waveform rows) and gives the library more room. Decks 3/4 keep playing and stay controllable over IPC - chrome only. Cmd/Ctrl+2 = less, Cmd/Ctrl+4 = more.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: 'more', label: 'More (4 deck)' },
+				{ value: 'less', label: 'Less (2 deck)' }
+			]
+		}
+	},
+	{
+		id: 'deck_layout_animate',
+		label: 'Animate deck layout switch',
+		group: 'performance',
+		keywords: ['deck', 'layout', 'animate', 'transition', 'more', 'less'],
+		title: 'Animate the MORE/LESS deck layout switch',
+		detail:
+			'When on (default), switching MORE/LESS cross-fades and shrinks the collapsing panels. Off swaps instantly. prefers-reduced-motion always forces instant regardless.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'deck_layout_duration_ms',
+		label: 'Deck layout switch duration',
+		group: 'performance',
+		keywords: ['deck', 'layout', 'duration', 'ms', 'speed', 'transition'],
+		title: 'MORE/LESS transition duration',
+		detail:
+			'How long the MORE/LESS deck layout transition takes when animation is on. Default 200ms.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: '0', label: '0ms' },
+				{ value: '100', label: '100ms' },
+				{ value: '200', label: '200ms' },
+				{ value: '300', label: '300ms' },
+				{ value: '400', label: '400ms' }
+			]
+		}
+	},
+	{
+		id: 'wheel_sensitivity.mouse',
+		label: 'Wheel sensitivity: mouse',
+		group: 'performance',
+		keywords: [
+			'wheel', 'scroll', 'scroll wheel', 'mouse', 'sensitivity', 'notch',
+			'detent', 'dial', 'knob', 'fader', 'crossfader', 'pitch'
+		],
+		title: 'How far one notched mouse-wheel detent moves a dial or fader (1x = the declared step)',
+		detail:
+			'Multiplier applied to every wheel-adjustable control: the mixer dials, the channel level faders, the crossfader, the pitch faders, the headphone mix/level, and the shift-selected dial driven by the page-level wheel. 1x is the reference the rest of the app was built around. Persisted locally, so it survives a reload.',
+		implemented: true,
+		control: _wheelSensitivityControl(WHEEL_SENSITIVITY.mouse)
+	},
+	{
+		id: 'wheel_sensitivity.trackpad',
+		label: 'Wheel sensitivity: trackpad',
+		group: 'performance',
+		keywords: [
+			'wheel', 'scroll', 'trackpad', 'touchpad', 'two finger', 'macbook',
+			'sensitivity', 'hypersensitive', 'dial', 'knob', 'fader'
+		],
+		title: 'Multiplier for a trackpad two-finger scroll, which emits many events where a mouse emits one detent',
+		detail:
+			'A macOS trackpad sends a dense burst of wheel events for a single finger movement, so it is scaled separately from a mouse: 1x here means "as sensitive as the mouse", and the shipped default is 3x less sensitive, derived from WHEEL_TRACKPAD_EVENTS_PER_DETENT in lib/rb/wheel-adjust.ts. Same controls and same persistence as the mouse factor.',
+		implemented: true,
+		control: _wheelSensitivityControl(WHEEL_SENSITIVITY.trackpad)
 	},
 	{
 		id: 'confirm.dblclick_load_play',
@@ -253,7 +372,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		],
 		title: 'Open the CloudSync policy matrix (/cloudsync)',
 		detail:
-			'Per-machine, per-asset-kind sync policy (pinned/cached/stream/excluded) for audio, stem bundles, ANLZ cache, and vocal cache. GET+PUT /api/v1/cloudsync/policies.',
+			'Per-machine, per-asset-kind sync policy (pinned/cached/stream/excluded) for audio, stem bundles, ANLZ cache, vocal cache, lyrics cache, and karaoke word timings. GET+PUT /api/v1/cloudsync/policies.',
 		implemented: true,
 		control: { kind: 'link', href: '/cloudsync?tab=policies' }
 	},
@@ -317,6 +436,23 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	_todo('djay.video', 'Video deck', 'djay', ['video', 'visual'], 'Video deck enable'),
 	_todo('djay.neumann', 'NEUMANN UI scale', 'djay', ['ui', 'scale', 'retina'], 'Interface scaling')
 ];
+
+/**
+ * Both wheel-sensitivity rows share one control shape; only the persisted
+ * entry each one writes differs. Bounds and step are read from the module that
+ * validates them, so a slider can never offer a factor `setWheelSensitivity`
+ * would reject, and widening the validator widens the slider in one edit.
+ */
+function _wheelSensitivityControl(defaultValue: number): SettingControl {
+	return {
+		kind: 'number',
+		min: WHEEL_SENSITIVITY_MIN,
+		max: WHEEL_SENSITIVITY_MAX,
+		step: WHEEL_SENSITIVITY_STEP,
+		defaultValue,
+		unit: 'x'
+	};
+}
 
 function _todo(
 	id: string,

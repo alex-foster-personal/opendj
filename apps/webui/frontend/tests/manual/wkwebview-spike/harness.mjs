@@ -19,6 +19,7 @@
  */
 
 import {
+	barSyncVerdict,
 	newResultsDocument,
 	recordVerdict,
 	renderEvidenceMarkdown,
@@ -422,19 +423,13 @@ export function installSpikeHarness(host, options = {}) {
 			follower.effective_bpm !== null && master.effective_bpm !== null
 				? follower.effective_bpm / master.effective_bpm
 				: null;
-		const normalized = ratio !== null && (Math.abs(ratio - 0.5) < 0.02 || Math.abs(ratio - 2) < 0.02);
-		if (masterPhase !== followerPhase || normalized) {
-			return {
-				verdict: 'FAIL',
-				detail: `BAR sync misaligned: master phase ${masterPhase}, follower phase ${followerPhase}, effective bpm ratio ${String(ratio)}`,
-				observations: { masterBeat, followerBeat, ratio, sync_error: follower.sync_error }
-			};
-		}
-		return {
-			verdict: 'PASS',
-			detail: `BAR sync aligned phase ${masterPhase} to ${followerPhase} with no half or double normalization (ratio ${String(ratio)}); exercise the explicit BEAT opt-out by hand before accepting this row`,
-			observations: { masterBeat, followerBeat, ratio }
-		};
+		return barSyncVerdict({
+			masterPhase,
+			followerPhase,
+			ratio,
+			syncError: follower.sync_error,
+			observations: { masterBeat, followerBeat }
+		});
 	}
 
 	async function _runTeardownCriterion() {

@@ -66,6 +66,63 @@ import { join, dirname, normalize, relative } from 'node:path';
 //              carries the app's real weight and may not silently grow. The
 //              measurement includes the xrun sentinel AudioWorklet (1,636),
 //              which the predecessor gate never counted at all.
+//              RAISED Sat 5 Sep 2026 (PR #1288, pin 93c82bb36eb7): the output
+//              liveness health bar under master volume adds a real, permanent
+//              part of the always-rendered performance UI (audio-output-health
+//              .svelte.ts, audio-output-health-display.ts, the liveness
+//              onSnapshot hook) - genuine new weight, not padding. Clean
+//              origin/main (54a6220cc) already measured 204,275 of 204,800
+//              (525 bytes headroom) before this PR landed, so this was going
+//              to trip on the next few bytes of ordinary feature work
+//              regardless. With this PR: measured 205,141, +5% ceil-to-KiB
+//              => 216,064 (211 KiB).
+//              RAISED Thu 10 Sep 2026 (PR #1010, pin 593b23ffe): the
+//              discussion_r3975326238 fix threads a new isSuperseded() guard
+//              through refreshAnalysisSourceDecks/_refreshDecks/_adopt in
+//              analysis-source.svelte.ts and analysis-source-refresh.ts,
+//              plus the JSDoc explaining the race it closes. CI measured
+//              216,952 on this head (deterministic across two independent
+//              CI builds); the equivalent local `pnpm build` on the exact
+//              same pinned toolchain (Node 22.14.0, pnpm 11.9.0, svelte
+//              5.56.7, @sveltejs/kit 2.70.1, vite 5.4.21, terser 5.51.2 -
+//              all confirmed byte-for-byte against CI's own install log)
+//              measured only 214,470 for the identical source tree - a
+//              pre-existing local-vs-CI gap (214,450 vs 214,747, ~300
+//              bytes) that grew to ~2,500 bytes specifically on this diff.
+//              Isolated with `pnpm build` chunk tables from both sides: the
+//              entire delta sits in the one large shared chunk carrying
+//              this route's bulk (HUoDj3ab.js on CI / I_4JPHqH.js locally),
+//              which is exactly the chunk these edited files land in -
+//              consistent with terser's frequency-based mangling producing
+//              a slightly different (non-hermetic) minification result
+//              when Rollup's module concatenation order shifts with
+//              filesystem enumeration order between the two build
+//              environments, not with new dead weight. Ratcheting on CI's
+//              own number since that is what the gate actually runs
+//              against: 216,952, +5% ceil-to-KiB => 228,352 (223 KiB).
+//              ALSO RAISED Thu 10 Sep 2026 (PR #1587, merged into main
+//              independently): CI (`frontend unit + check + build`, run
+//              34458533006, job 102810569554) measured 216,124 on main's
+//              tip alone, 60 bytes over the prior 216,064 ceiling, from
+//              unrelated feature work plus the same local-vs-CI build gap
+//              documented above. That PR's own ratchet, 227,328 (222 KiB),
+//              is superseded here by this merge because PR #1010's ceiling
+//              (228,352) is the larger of the two and covers both diffs'
+//              combined weight; re-measure on the merged head before
+//              tightening either number back down.
+//              RAISED Fri 11 Sep 2026 (found while landing #1555, nav1-key-
+//              record - a backend-only lane whose sole frontend diff is a
+//              JSDoc comment in api-types.ts, which cannot change emitted
+//              JS): pristine origin/main at 7c68dd0f3 already measured
+//              229,639 of 228,352 (11 files, over by 1,287), confirmed with
+//              a clean `git worktree add --detach` off that exact SHA with
+//              no branch changes applied, so this was inherited trunk
+//              growth, not a regression from this PR. `git log --oneline
+//              e0213b060..7c68dd0f3 -- apps/webui/frontend/src` is
+//              non-empty: several unrelated merges landed frontend work in
+//              that range. Ratcheting on the pristine-trunk number per the
+//              +5% ceil-to-KiB rule: 229,639, +5% => 241,121, ceil to KiB
+//              => 241,664 (236 KiB).
 // other-lazy   measured 60,160, same +5% ceil-to-KiB rule => 63,488 (62 KiB).
 //              RAISED Mon 1 Sep 2026: the CloudSync config route (/cloudsync
 //              policy matrix, machines, pins, overview + api-cloudsync client)
@@ -85,8 +142,31 @@ const BUDGETS = [
   { name: 'library', limit: 256000, measured: 93011, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
-  { name: 'performance', limit: 204800, measured: 193544, note: '/performance and children' },
-  { name: 'other-lazy', limit: 67584, measured: 64328, note: 'all other routes plus deferred shell' },
+  // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
+  // (PR #1010, discussion_r3975326238). CI measured 216,952 on this diff.
+  // Merge note: PR #1587 (main) independently measured 216,124 with its own
+  // unrelated changes and a smaller ratchet (227,328); PR #1010's larger
+  // ceiling is kept since it is the wider of the two and both diffs are now
+  // present on this branch. Re-measure on the merged head before tightening.
+  // Fri 11 Sep 2026: 223 -> 236 KiB, inherited trunk growth found while landing
+  // #1555 (nav1-key-record). See the header comment above for the measurement.
+  { name: 'performance', limit: 241664, measured: 229639, note: '/performance and children' },
+  // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
+  // is dynamically imported, so it lands here rather than in the deck route's eager
+  // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
+  // increase (107319 total, 63486 without it, against main's 64328). It is fetched only
+  // when a stemmed deck loads, never at boot and never on a route that has no stems, so
+  // it costs nothing on the boot-latency budget this program is elsewhere reducing.
+  // Flagged rather than absorbed quietly: the PR's own body measured the deck route
+  // closure (+2 KB) and did NOT measure this bucket, so this cost was unreported until
+  // the gate caught it. If the AAC rung (Q18 rung 2) ever replaces this decoder rather
+  // than adding to it, this limit comes back down with it. Merge note (PR #1010 x
+  // #1691): PR #1010 touches only the `performance` surface, so this `other-lazy`
+  // ceiling and its measured figure are carried from main unchanged.
+  // RAISED Fri 11 Sep 2026: the Library Wheel route (/library-wheel SVG sunburst,
+  // axis picker, fail-fast wheel-api client) is a new lazy SvelteKit node in this
+  // shared bucket; measured 113,342, same +5% ceil-to-KiB rule => 119,808 (117 KiB).
+  { name: 'other-lazy', limit: 119808, measured: 113342, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---
@@ -221,7 +301,7 @@ function main() {
       .flatMap(([, nodes]) => nodes)
       .map((n) => _nodeFile(immutableDir, n)),
   ];
-  for (const file of libraryFiles) {
+  for (const file of [...libraryFiles, ...performanceFiles]) {
     for (const target of _specifiers(immutableDir, file, DYNAMIC_IMPORT)) {
       if (known.has(target) && !libraryFiles.has(target) && !performanceFiles.has(target)) otherRoots.push(target);
     }
@@ -302,7 +382,12 @@ function main() {
       );
     }
   }
-  if (failed) process.exit(1);
+  if (failed) {
+    console.error(
+      '[ERROR] reproduce locally: cd apps/webui/frontend && pnpm build && bash scripts/check-bundle-size.sh',
+    );
+    process.exit(1);
+  }
   console.log('[OK] all bundle budgets satisfied and every emitted chunk is measured.');
 }
 

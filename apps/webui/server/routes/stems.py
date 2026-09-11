@@ -3,6 +3,8 @@
 The application integrator mounts :data:`router` at ``/api/v1``.  The router
 does not run Demucs or mutate files: every request reloads and validates the
 stored artifact before it exposes either the manifest or a WAV response.
+The manifest GET answers HTTP 200 unavailable when no bundle exists; the
+part GET still 404s when there is no file to stream.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ import stat
 from collections.abc import Iterator
 from io import BufferedReader
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -52,6 +55,17 @@ class StemManifestOut(BaseModel):
     parts: dict[str, StemPartOut]
 
 
+class StemUnavailableOut(BaseModel):
+    """HTTP 200 empty-state: no stored bundle for this stable_id."""
+
+    model_config = ConfigDict(frozen=True)
+
+    status: Literal["unavailable"] = "unavailable"
+    code: Literal["STEM_BUNDLE_NOT_FOUND"] = "STEM_BUNDLE_NOT_FOUND"
+    stable_id: str
+    message: str
+
+
 def _stems_dir(request: Request) -> Path:
     """Use an injected directory in isolated apps, else the canonical state dir."""
     configured = getattr(request.app.state, "stems_dir", DEFAULT_STEMS_DIR)
@@ -84,6 +98,10 @@ def _load_or_http_error(stable_id: str, request: Request) -> StemBundle:
             status_code=422,
             detail={"code": "STEM_ARTIFACT_INVALID", "message": str(exc)},
         ) from exc
+
+
+def _unavailable_out(stable_id: str, exc: StemBundleNotFoundError) -> StemUnavailableOut:
+    return StemUnavailableOut(stable_id=stable_id, message=str(exc))
 
 
 def _manifest_out(bundle: StemBundle) -> StemManifestOut:
@@ -136,10 +154,27 @@ def _stream_file(source: BufferedReader) -> Iterator[bytes]:
             yield chunk
 
 
-@router.get("/{stable_id}/stems", response_model=StemManifestOut)
-def get_stem_manifest(stable_id: str, request: Request) -> StemManifestOut:
-    """Return a stored v1 manifest only after all four files prove alignment."""
-    bundle = _load_or_http_error(stable_id, request)
+@router.get(
+    "/{stable_id}/stems",
+    response_model=StemManifestOut | StemUnavailableOut,
+)
+def get_stem_manifest(
+    stable_id: str, request: Request
+) -> StemManifestOut | StemUnavailableOut:
+    """Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists."""
+    try:
+        bundle = load_stem_bundle(
+            stable_id,
+            stems_dir=_stems_dir(request),
+            roots=_stem_roots(request),
+        )
+    except StemBundleNotFoundError as exc:
+        return _unavailable_out(stable_id, exc)
+    except StemArtifactError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "STEM_ARTIFACT_INVALID", "message": str(exc)},
+        ) from exc
     return _manifest_out(bundle)
 
 
@@ -175,4 +210,4 @@ def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingRespo
     )
 
 
-__all__ = ["StemManifestOut", "StemPartOut", "router"]
+__all__ = ["StemManifestOut", "StemPartOut", "StemUnavailableOut", "router"]

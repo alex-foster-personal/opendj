@@ -40,6 +40,7 @@ from apps.stems.job import (
     SCOPE_PENDING,
     StemsJobPayloadError,
     build_argv,
+    canonical_payload,
     on_progress,
     parse_payload,
     reconcile_from_disk,
@@ -47,6 +48,15 @@ from apps.stems.job import (
 
 SID_A = "a" * 40
 SID_B = "b" * 40
+
+
+@pytest.fixture(autouse=True)
+def _default_modal_executor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Most unit tests assume the Modal farm path unless they override."""
+    monkeypatch.setattr(
+        "apps.stems.routing.resolve_stems_executor",
+        lambda **_: "modal",
+    )
 
 
 class _RecordingHub:
@@ -70,7 +80,7 @@ def hub() -> Iterator[_RecordingHub]:
 
 def test_ids_are_deduplicated_and_order_preserved() -> None:
     """if a repeated id is separated twice then the GPU is billed twice"""
-    ids, tier, data_dir = parse_payload(
+    ids, tier, data_dir, _executor = parse_payload(
         {"stable_ids": [SID_B, SID_A, SID_B], "tier": "M"}
     )
     assert ids == [SID_B, SID_A]
@@ -81,7 +91,7 @@ def test_ids_are_deduplicated_and_order_preserved() -> None:
 def test_scope_defers_the_track_set_to_run_time() -> None:
     """if a scope job froze its ids at enqueue then a scan finishing in the
     gap would leave those tracks unseparated forever"""
-    ids, _tier, _data_dir = parse_payload({"scope": SCOPE_PENDING})
+    ids, _tier, _data_dir, _executor = parse_payload({"scope": SCOPE_PENDING})
     assert ids is None
 
 
@@ -112,11 +122,59 @@ def test_bad_payloads_are_refused_before_anything_spawns(
         parse_payload(payload)
 
 
-def test_local_tier_is_refused_because_this_kind_is_the_modal_path() -> None:
-    """if LOCAL were accepted then naming a free rung would start a paid one"""
+def test_local_tier_is_refused_when_modal_executor_is_selected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """if LOCAL were accepted on the Modal path then a free rung would start a paid one"""
+    monkeypatch.setattr(
+        "apps.stems.routing.resolve_stems_executor",
+        lambda **_: "modal",
+    )
     assert "LOCAL" not in MODAL_TIER_KEYS
     with pytest.raises(StemsJobPayloadError, match="not a Modal tier"):
         parse_payload({"stable_ids": [SID_A], "tier": "LOCAL"})
+
+
+def test_local_payload_accepted_when_local_executor_selected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "apps.stems.routing.resolve_stems_executor",
+        lambda **_: "local",
+    )
+    ids, tier, _data_dir, executor = parse_payload(
+        {"stable_ids": [SID_A], "tier": "M"}
+    )
+    assert ids == [SID_A]
+    assert tier == "LOCAL"
+    assert executor == "local"
+
+
+def test_canonical_payload_stores_executor_and_local_tier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "apps.stems.routing.resolve_stems_executor",
+        lambda **_: "local",
+    )
+    out = canonical_payload({"stable_ids": [SID_A, SID_A], "tier": "M"})
+    assert out["tier"] == "LOCAL"
+    assert out["executor"] == "local"
+    assert out["stable_ids"] == [SID_A]
+
+
+def test_local_argv_uses_local_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "apps.stems.routing.resolve_stems_executor",
+        lambda **_: "local",
+    )
+    monkeypatch.setattr("apps.stems.local_gate.local_stems_gate", lambda: None)
+    argv = build_argv({"stable_ids": [SID_A], "tier": "M"})
+    joined = " ".join(argv)
+    assert "stems_local_worker.py" in joined
+    assert "--with" not in argv
 
 
 # ----- argv ------------------------------------------------------------------
@@ -126,8 +184,8 @@ def test_argv_overlays_modal_rather_than_using_the_repo_venv() -> None:
     """if the overlay is dropped then the worker dies at `import modal`,
     because modal is deliberately absent from the repo venv"""
     argv = build_argv({"stable_ids": [SID_A], "tier": "M"})
-    assert argv[:5] == ["uv", "run", "--with", "modal", "python"]
-    assert argv[5].endswith("stems_modal_worker.py")
+    assert argv[:6] == ["uv", "run", "--no-sync", "--with", "modal", "python"]
+    assert argv[6].endswith("stems_modal_worker.py")
     assert "--stable-id" in argv and SID_A in argv
 
 

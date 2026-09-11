@@ -1,0 +1,231 @@
+"""Core migration ladder (v1-v5) for the shared state schema.
+
+Each ``_V<N>`` list is the SQL statements migration N contributes.
+:data:`apps.shared.state.schema.MIGRATIONS` assembles the ladder in order and
+:func:`apps.shared.state.schema.apply_migrations` is the runner -- both stay
+in ``schema.py`` along with the drift-tripwire table/view tuples. This
+module holds the v1-v5 ladder; v6-v8 live in
+:mod:`apps.shared.state.migrations_v6_v8` (issue #1583) because the combined
+ladder alone exceeds the 600-line file-size gate.
+"""
+from __future__ import annotations
+
+# --- migration 0 -> 1: initial schema ------------------------------------
+_V1: list[str] = [
+    # Identity table. Unwrapped facts per open-dj v0 strawman, section 6.
+    """
+    CREATE TABLE IF NOT EXISTS tracks (
+        stable_id       TEXT PRIMARY KEY,
+        stable_id_tier  TEXT NOT NULL CHECK
+                          (stable_id_tier IN ('isrc','fingerprint','inferred')),
+        title           TEXT,
+        artists_json    TEXT,
+        album           TEXT,
+        isrc            TEXT,
+        duration_ms     INTEGER,
+        file_path       TEXT,
+        content_hash    TEXT,
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_tracks_isrc ON tracks(isrc) WHERE isrc IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_tracks_file_path ON tracks(file_path)",
+    # Vendor-ID round-trip map. Opaque vendor ids keyed by stable_id.
+    """
+    CREATE TABLE IF NOT EXISTS track_vendor_ids (
+        stable_id  TEXT NOT NULL REFERENCES tracks(stable_id) ON DELETE CASCADE,
+        vendor     TEXT NOT NULL,
+        vendor_id  TEXT NOT NULL,
+        PRIMARY KEY (stable_id, vendor)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_track_vendor_ids_vendor ON track_vendor_ids(vendor, vendor_id)",
+    # Provenance-wrapped analysed fields (EAV).
+    """
+    CREATE TABLE IF NOT EXISTS track_fields (
+        stable_id    TEXT NOT NULL REFERENCES tracks(stable_id) ON DELETE CASCADE,
+        field_name   TEXT NOT NULL,
+        value_json   TEXT NOT NULL,
+        source       TEXT NOT NULL CHECK (source IN
+                       ('mik','rekordbox','djay','serato','traktor',
+                        'open-dj-tool','manual','inferred')),
+        confidence   REAL CHECK (confidence IS NULL OR
+                                 (confidence >= 0 AND confidence <= 1)),
+        modified_at  TEXT NOT NULL,
+        PRIMARY KEY (stable_id, field_name)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS track_field_history (
+        stable_id     TEXT NOT NULL,
+        field_name    TEXT NOT NULL,
+        value_json    TEXT NOT NULL,
+        source        TEXT NOT NULL,
+        confidence    REAL,
+        modified_at   TEXT NOT NULL,
+        superseded_at TEXT NOT NULL,
+        PRIMARY KEY (stable_id, field_name, superseded_at)
+    )
+    """,
+    # Playlists + memberships.
+    """
+    CREATE TABLE IF NOT EXISTS playlists (
+        playlist_id   TEXT PRIMARY KEY,
+        name          TEXT NOT NULL,
+        vendor        TEXT NOT NULL,
+        vendor_pl_id  TEXT NOT NULL,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL,
+        UNIQUE (vendor, vendor_pl_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS playlist_memberships (
+        playlist_id  TEXT NOT NULL REFERENCES playlists(playlist_id) ON DELETE CASCADE,
+        stable_id    TEXT NOT NULL REFERENCES tracks(stable_id) ON DELETE CASCADE,
+        position     INTEGER NOT NULL,
+        PRIMARY KEY (playlist_id, position)
+    )
+    """,
+    # Adapter registry -- last successful run per adapter.
+    """
+    CREATE TABLE IF NOT EXISTS adapters (
+        adapter_id   TEXT PRIMARY KEY,
+        last_run_at  TEXT,
+        last_ok      INTEGER NOT NULL DEFAULT 0,
+        notes        TEXT
+    )
+    """,
+    # Durable event log. INFRA-01 bus floor.
+    """
+    CREATE TABLE IF NOT EXISTS events (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts           TEXT NOT NULL,
+        kind         TEXT NOT NULL,
+        stable_id    TEXT,
+        payload_json TEXT,
+        actor        TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)",
+    "CREATE INDEX IF NOT EXISTS idx_events_stable_id ON events(stable_id) WHERE stable_id IS NOT NULL",
+]
+
+# --- migration 1 -> 2: history append-only ---------------------------------
+# [I1] The v1 ``track_field_history`` PK ``(stable_id, field_name,
+# superseded_at)`` could silently overwrite a prior row if two rewrites
+# landed in the same clock tick (e.g. frozen test clock or tight ingest
+# loop). Replace the PK with a surrogate ``id INTEGER PRIMARY KEY
+# AUTOINCREMENT`` so history is truly append-only, and keep the old triple
+# as a non-unique index for lookup. Existing rows are preserved.
+_V2: list[str] = [
+    """
+    CREATE TABLE track_field_history_v2 (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        stable_id     TEXT NOT NULL,
+        field_name    TEXT NOT NULL,
+        value_json    TEXT NOT NULL,
+        source        TEXT NOT NULL,
+        confidence    REAL,
+        modified_at   TEXT NOT NULL,
+        superseded_at TEXT NOT NULL
+    )
+    """,
+    """
+    INSERT INTO track_field_history_v2(
+        stable_id, field_name, value_json, source,
+        confidence, modified_at, superseded_at
+    )
+    SELECT stable_id, field_name, value_json, source,
+           confidence, modified_at, superseded_at
+    FROM track_field_history
+    """,
+    "DROP TABLE track_field_history",
+    "ALTER TABLE track_field_history_v2 RENAME TO track_field_history",
+    "CREATE INDEX IF NOT EXISTS idx_track_field_history_lookup "
+    "ON track_field_history(stable_id, field_name, superseded_at)",
+]
+
+# --- migration 2 -> 3: allow 'webui' as a track_fields source --------------
+# The webui daemon persists PATCH /tracks/{stable_id} edits (rating / notes /
+# tags) through StateWriter with source='webui'. The v1 CHECK constraint
+# predates that writer, so rebuild track_fields with the widened source list
+# (SQLite cannot ALTER a CHECK in place). Existing rows are preserved.
+# Mirror of apps.shared.state.types.SOURCES -- kept in sync by test.
+_V3: list[str] = [
+    """
+    CREATE TABLE track_fields_v3 (
+        stable_id    TEXT NOT NULL REFERENCES tracks(stable_id) ON DELETE CASCADE,
+        field_name   TEXT NOT NULL,
+        value_json   TEXT NOT NULL,
+        source       TEXT NOT NULL CHECK (source IN
+                       ('mik','rekordbox','djay','serato','traktor',
+                        'open-dj-tool','manual','inferred','webui')),
+        confidence   REAL CHECK (confidence IS NULL OR
+                                 (confidence >= 0 AND confidence <= 1)),
+        modified_at  TEXT NOT NULL,
+        PRIMARY KEY (stable_id, field_name)
+    )
+    """,
+    """
+    INSERT INTO track_fields_v3(
+        stable_id, field_name, value_json, source, confidence, modified_at
+    )
+    SELECT stable_id, field_name, value_json, source, confidence, modified_at
+    FROM track_fields
+    """,
+    "DROP TABLE track_fields",
+    "ALTER TABLE track_fields_v3 RENAME TO track_fields",
+]
+
+# --- migration 3 -> 4: multiple playable locations per track ---------------
+# tracks.file_path stays the ingest/legacy primary path. track_locations
+# holds extra copies (this machine, a remote host, a lower-bitrate
+# transcode). The play path picks one; the frontend never sees the list.
+_V4: list[str] = [
+    """
+    CREATE TABLE IF NOT EXISTS track_locations (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        stable_id     TEXT NOT NULL REFERENCES tracks(stable_id) ON DELETE CASCADE,
+        kind          TEXT NOT NULL CHECK (kind IN ('local', 'remote')),
+        role          TEXT NOT NULL DEFAULT 'alternate'
+                        CHECK (role IN ('primary', 'alternate')),
+        file_path     TEXT,
+        remote_url    TEXT,
+        venue_key     TEXT,
+        venue_rank    INTEGER,
+        available     INTEGER NOT NULL DEFAULT 0,
+        probed_at     TEXT,
+        content_hash  TEXT,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL,
+        CHECK (
+            (file_path IS NOT NULL AND file_path != '')
+            OR (remote_url IS NOT NULL AND remote_url != '')
+        )
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_track_locations_stable "
+    "ON track_locations(stable_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_track_locations_path "
+    "ON track_locations(stable_id, kind, file_path) "
+    "WHERE file_path IS NOT NULL",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_track_locations_url "
+    "ON track_locations(stable_id, kind, remote_url) "
+    "WHERE remote_url IS NOT NULL",
+    """
+    INSERT OR IGNORE INTO track_locations(
+        stable_id, kind, role, file_path, created_at, updated_at
+    )
+    SELECT stable_id, 'local', 'primary', file_path, updated_at, updated_at
+    FROM tracks
+    WHERE file_path IS NOT NULL AND file_path != ''
+    """,
+]
+
+# Live agentbox state.db already had schema_meta version 4 from an
+# out-of-band bump that did not create track_locations. Re-run the same
+# idempotent statements as 4 -> 5 so those DBs catch up. Fresh DBs run
+# both steps; IF NOT EXISTS / OR IGNORE keep the second a no-op.
+_V5: list[str] = _V4

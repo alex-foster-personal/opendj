@@ -62,7 +62,7 @@ REG  Q-09 Measure Python type debt with a pinned mypy, split by top-level
           [if MYPYPATH or PYTHONPATH is set in the calling shell then the
            isolated run still measures the pinned tree, not the ambient
            search path]
-REG  Q-08 Enforce three shell constructs as a hard gate (no ratchet) via
+REG  Q-08 Enforce four shell constructs as a hard gate (no ratchet) via
           scripts/shell_construct_lint.py, over shell sources and justfile
           recipes. Each one returns a plausible value with no error, so a
           growing allowance for them is not a rule.
@@ -83,6 +83,56 @@ REG  Q-10 Measure frontend type-erasure: `as unknown as` double-casts across
            run prints RATCHET and still exits 0]
           [if the frontend scan finds no sources then the run aborts rather
            than scoring 0 casts on an empty tree]
+REG  Q-11 Tell an inherited trunk regression from one this change introduced.
+          A merge result can sit over an allowance that NEITHER parent exceeded
+          (issue #1155: two sides each add lines to the same file, each stays
+          under the limit, the union crosses it), and once that lands on main
+          every later PR reads the same over-allowance metric as its own fault.
+          On a REGRESSION the gate re-measures that metric on the merge-base
+          main. If main is already AT OR ABOVE this run's value the line prints
+          INHERITED and does not fail the run - it is trunk's regression, not
+          this change's. If this run is ABOVE main's value the change made an
+          already-over metric worse and it stays a hard REGRESSION.
+          [if the merge-base main is already at this run's value then the line
+           prints INHERITED and the run exits 0]
+          [if this change adds to an already-over metric (base below the run)
+           then the run exits 1]
+          [if the merge base cannot be measured then the message is unchanged
+           and the output says why, never a silent pass]
+REG  Q-12 Judge a run against its allowance PLUS a small declared slack, so a
+          normal PR can land while debt still trends down (issue #1219: all
+          seven count metrics sat at zero headroom at once because each
+          landing PR lowered the allowance to whatever it achieved, and the
+          wall therefore moved with every burn-down). Slack is a per-metric
+          constant in baseline.json's `slack` block, worth roughly one
+          ordinary PR, justified in ops/quality/README.md. Allowances still
+          only shrink; the band is headroom at gate time, never a recorded
+          allowance, and a metric with no slack entry gets zero.
+          [if a metric lands exactly at allowance + slack then the run prints
+           WITHIN SLACK with both raw numbers and exits 0]
+          [if it lands one past allowance + slack then the run exits 1]
+          [if baseline.json declares no slack for a metric then that metric is
+           gated at its bare allowance, exactly as before]
+          [if --update-baseline rewrites the file then the `slack` block
+           survives, so a ratchet-down cannot silently re-tighten to zero]
+          [if --update-baseline runs on a tree whose metric sits inside its
+           slack band then the recorded allowance is KEPT, not raised to the
+           measurement, so repeated updates cannot walk the ceiling upward]
+REG  Q-13 Enforce sync-schema drift as a hard gate (no ratchet) via
+          scripts/sync_drift_lint.py, over a state DB provisioned by all
+          seven of its schema authorities. Every defect it names is an
+          OMISSION -- a forgotten SCHEMA_VERSION bump, a table never added to
+          SYNC_TABLES, an authority no inventory declares -- and an omission
+          raises nothing, so an allowance for one is an allowance for silence.
+          [if a table carries the sync columns and no registry lists it then
+           sync_drift.unregistered_synced_table is 1 and the run exits 1
+           regardless of baseline]
+          [if a MIGRATIONS step is appended without a SCHEMA_VERSION bump then
+           sync_drift.version_ladder_mismatch is 1 and exits 1]
+          [if the provisioned DB lacks a table ALL_KNOWN_TABLES declares then
+           the run aborts rather than scoring 0 violations]
+          [if a drift check stops being emitted at all then the evaluator
+           raises rather than reporting the remaining zeros]
 
 Usage:
     python -m scripts.quality_gate                       # gate against baseline
@@ -108,7 +158,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from scripts import shell_construct_lint
+try:
+    from scripts import shell_construct_lint
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.quality_gate") from None
+    raise
 
 # ----- config --------------------------------------------------------------
 
@@ -117,6 +172,10 @@ FRONTEND = REPO / "apps" / "webui" / "frontend"
 TOOL_REQS = REPO / "ops" / "quality" / "requirements.txt"
 MYPY_REQS = REPO / "ops" / "quality" / "mypy-requirements.txt"
 BASELINE = REPO / "ops" / "quality" / "baseline.json"
+# Ref the gate re-measures a regression against, to tell an inherited trunk
+# failure from one this change introduced (Q-11). Named here so a test or a
+# fork can point it at a different upstream without editing the call sites.
+MAIN_BASE_REF: str = "origin/main"
 
 # `--isolated` pins uv's *package* set but forwards the caller's environment
 # unchanged, and mypy reads these to widen its own import search path outside
@@ -158,6 +217,17 @@ class CFG:
     # Frontend tool pins. Python pins live in ops/quality/requirements.txt.
     KNIP: str = "knip@6.32.2"
     JSCPD: str = "jscpd@5.0.15"
+    # Lockfiles are repetitive by construction. jscpd scoring them is not a
+    # duplication finding anyone can act on, and it made committing the
+    # launcher lockfile a CI failure. Class-wide, not the one file that
+    # happened to hurt: the next committed lockfile will be someone else's PR.
+    LOCKFILE_GLOBS: tuple[str, ...] = (
+        "**/pnpm-lock.yaml",
+        "**/package-lock.json",
+        "**/yarn.lock",
+        "**/Cargo.lock",
+        "**/uv.lock",
+    )
     # Paths excluded from size/complexity scoring: vendored, not ours.
     #
     # Third-party source only. "rb_vendor" in a filename is not a licence:
@@ -196,6 +266,25 @@ HARD_ZERO: frozenset[str] = frozenset({
     "shell.gh_api_arg",
     "shell.zsh_modifier_path",
     "frontend.ts_escape_hatches",
+    # Sync-schema drift. Same reasoning one step further: every one of these
+    # is an OMISSION, and an omission raises nothing at runtime, so "we are
+    # allowed two unregistered synced tables" is an allowance for silence.
+    #
+    # This list is ALSO the independent declaration of which drift rules must
+    # exist: _eval_sync_drift refuses to return unless every key below was
+    # actually emitted. Without that, deleting a check from the linter's own
+    # CHECKS and RULES together would stop emitting its metric, and a
+    # hard-zero key that is never emitted is never compared -- the gate would
+    # pass by having stopped asking the question.
+    "sync_drift.unregistered_synced_table",
+    "sync_drift.registered_table_missing",
+    "sync_drift.version_ladder_mismatch",
+    "sync_drift.undocumented_table_or_column",
+    "sync_drift.naive_stamp_default",
+    "sync_drift.mirror_version_mismatch",
+    "sync_drift.migration_step_changed",
+    "sync_drift.undeclared_state_table",
+    "sync_drift.wire_shape_changed",
 })
 
 # Metrics that are measured and printed but never gated, because their value
@@ -219,7 +308,7 @@ HARD_ZERO: frozenset[str] = frozenset({
 # entry.
 #
 # shell.files_scanned is the second, for the opposite reason: it is a CONTROL on
-# the shell gate, not an allowance. It exists so a reader can see the three
+# the shell gate, not an allowance. It exists so a reader can see the four
 # hard-zero shell metrics were measured over a real file set rather than over
 # nothing, and gating it either way is wrong (a ratchet would fail on every new
 # script added, a hard zero is nonsense). The floor that makes it meaningful is
@@ -231,10 +320,21 @@ HARD_ZERO: frozenset[str] = frozenset({
 # the two apart. Gating it would be wrong both ways (a ratchet fails on every
 # new module; a hard zero is nonsense), so the floor that makes it meaningful
 # is enforced in _eval_mypy, which aborts rather than scoring a collapsed scan.
+#
+# sync_drift.checks_run is the fourth, and the same kind: it reports how many
+# of the drift checks actually ran, so the hard zeros above cannot be read as
+# clean when the truth is that nothing ran. What makes that number mean
+# something is NOT the count itself (counting loop iterations always agrees
+# with itself, and prints "7 of 7" after a check is deleted). It is the pair
+# of declarations either side of it: scripts/sync_drift_lint.
+# assert_checks_wired refuses to run when a check defined there is not
+# dispatched, and _eval_sync_drift below refuses to return unless every
+# hard-zero sync_drift key in this file was emitted.
 REPORT_ONLY: frozenset[str] = frozenset({
     "deps.issues",
     "shell.files_scanned",
     "mypy.files_checked",
+    "sync_drift.checks_run",
 })
 
 
@@ -974,6 +1074,40 @@ def _eval_frontend() -> list[Metric]:
 # ----- evaluator: size + duplication ---------------------------------------
 
 
+def _jscpd_duplication(apps_root: Path) -> Metric:
+    """Run pinned jscpd over `apps_root` and return the duplication metric.
+
+    Fresh report directory per call, removed after, for the same reason as
+    the deptry report: two concurrent gates must not share a path. A missing
+    JSON report is a broken tool, not a clean tree.
+    """
+    jscpd_dir = Path(tempfile.mkdtemp(prefix="quality-gate-jscpd-"))
+    try:
+        _pnpm_dlx(
+            CFG.JSCPD,
+            "--reporters", "json", "--output", str(jscpd_dir), "--silent",
+            "--min-lines", str(CFG.DUP_MIN_LINES), "--min-tokens", str(CFG.DUP_MIN_TOKENS),
+            "--ignore", ",".join(CFG.LOCKFILE_GLOBS),
+            str(apps_root),
+            allow_fail=True,
+        )
+        report_path = jscpd_dir / "jscpd-report.json"
+        if not report_path.is_file():
+            raise RuntimeError(
+                f"jscpd produced no JSON report at {report_path}; "
+                "the pinned tool is missing, broken, or the scan root is empty"
+            )
+        report = json.loads(report_path.read_text())
+    finally:
+        shutil.rmtree(jscpd_dir, ignore_errors=True)
+    total = report["statistics"]["total"]
+    percent = round(float(total["percentage"]), 2)
+    clones = int(total["clones"])
+    return Metric(
+        "duplication.percent", percent, "% duplicated lines", f"{clones} clones"
+    )
+
+
 def _eval_size() -> list[Metric]:
     def _measure(files: list[Path], limit: int) -> tuple[int, str, int]:
         sizes = sorted(
@@ -989,29 +1123,12 @@ def _eval_size() -> list[Metric]:
     py_max, py_worst, py_over = _measure(_python_files(), CFG.PY_FILE_LIMIT)
     fe_max, fe_worst, fe_over = _measure(_frontend_files(), CFG.FE_FILE_LIMIT)
 
-    # Fresh per call AND removed after, both for the reasons on the deptry
-    # report above.
-    jscpd_dir = Path(tempfile.mkdtemp(prefix="quality-gate-jscpd-"))
-    try:
-        _pnpm_dlx(
-            CFG.JSCPD,
-            "--reporters", "json", "--output", str(jscpd_dir), "--silent",
-            "--min-lines", str(CFG.DUP_MIN_LINES), "--min-tokens", str(CFG.DUP_MIN_TOKENS),
-            str(REPO / "apps"),
-            allow_fail=True,
-        )
-        report = json.loads((jscpd_dir / "jscpd-report.json").read_text())
-    finally:
-        shutil.rmtree(jscpd_dir, ignore_errors=True)
-    percent = round(float(report["statistics"]["total"]["percentage"]), 2)
-    clones = int(report["statistics"]["total"]["clones"])
-
     return [
         Metric("file_size.max_python", py_max, "lines", py_worst),
         Metric("file_size.over_limit_python", py_over, f"files > {CFG.PY_FILE_LIMIT} lines"),
         Metric("file_size.max_frontend", fe_max, "lines", fe_worst),
         Metric("file_size.over_limit_frontend", fe_over, f"files > {CFG.FE_FILE_LIMIT} lines"),
-        Metric("duplication.percent", percent, "% duplicated lines", f"{clones} clones"),
+        _jscpd_duplication(REPO / "apps"),
     ]
 
 
@@ -1019,7 +1136,7 @@ def _eval_size() -> list[Metric]:
 
 
 def _eval_shell() -> list[Metric]:
-    """Three shell constructs that silently answer a question nobody asked.
+    """Four shell constructs that silently answer a question nobody asked.
 
     Hard zero, never a ratchet: every one of these returns a plausible value with
     no error, so "we are allowed four of them" is not a position anyone would
@@ -1038,7 +1155,7 @@ def _eval_shell() -> list[Metric]:
     counts = collections.Counter(v.rule for v in violations)
     metrics = [
         Metric("shell.files_scanned", len(files), "shell files + justfiles",
-               "control: the three gates below are measured over this set")
+               "control: the four gates below are measured over this set")
     ]
     for rule in sorted(shell_construct_lint.RULES):
         offenders = [v.render(REPO) for v in violations if v.rule == rule]
@@ -1049,6 +1166,75 @@ def _eval_shell() -> list[Metric]:
                 "violations",
                 "; ".join(offenders[:3]),
             )
+        )
+    return metrics
+
+
+# ----- evaluator: sync-schema drift ----------------------------------------
+
+
+def _eval_sync_drift() -> list[Metric]:
+    """Sync-schema omissions, measured against a production-shaped state DB.
+
+    Hard zero, never a ratchet, for the same reason as the shell gate one
+    section up and then some: these defects do not merely return a wrong
+    answer, they return NO answer. A table missing from ``SYNC_TABLES`` does
+    not fail to sync loudly, it simply never appears, and a ``SCHEMA_VERSION``
+    that was not bumped makes ``apply_migrations`` skip the new DDL in silence.
+    Neither has a runtime symptom to notice, so a growing allowance for them is
+    a growing allowance for things nobody will ever find.
+
+    Two floors, in two files, because one of them cannot see its own absence.
+    ``sync_drift_lint.run`` raises rather than returning a clean result over a
+    subject that was not really built or a check that was not dispatched; and
+    the assertion at the end of this function raises when a rule named in
+    HARD_ZERO stopped being emitted at all, which is what deleting a check
+    looks like from out here. Rationale, the measured facts, and the dated
+    allowlist entries live in scripts/sync_drift_lint.py,
+    scripts/sync_drift_rules.py and tests/quality/test_sync_drift_lint.py.
+
+    The linter is imported here rather than at module scope on purpose: it
+    pulls in the application's schema modules, and a broken app module is
+    exactly when someone reaches for ``--only ruff``.
+
+    THIS IS THE ONLY EVALUATOR THAT IMPORTS THE APPLICATION, and that import
+    has to stay inside what this gate's environment can satisfy: CI runs the
+    whole file from a throwaway env holding ops/quality/requirements.txt and
+    NOTHING of the project's own dependencies, deliberately. A module-level
+    ``import yaml`` on the linter's path once killed the entire gate here
+    with a ModuleNotFoundError naming PyYAML rather than drift -- every PR
+    red, no report, no metrics. tests/quality/test_sync_drift_imports.py pins
+    the invariant (the drift gate's import graph reaches no third party) so a
+    reintroduction fails there by name instead of arriving as a red CI job
+    about something else.
+    """
+    from scripts import sync_drift_lint
+
+    with sync_drift_lint.measured_scan() as scan:
+        result = sync_drift_lint.run(scan)
+    counts = result.counts()
+    metrics = [
+        Metric(
+            "sync_drift.checks_run",
+            result.checks_run,
+            f"of {len(sync_drift_lint.CHECKS)} checks completed",
+            f"control: {result.tables_scanned} tables in the provisioned state DB, "
+            f"{result.ladders_scanned} ladders built",
+        )
+    ]
+    for rule in sorted(sync_drift_lint.RULES):
+        offenders = [v.render() for v in result.violations if v.rule == rule]
+        metrics.append(
+            Metric(f"sync_drift.{rule}", counts[rule], "violations", "; ".join(offenders[:3]))
+        )
+    emitted = {m.key for m in metrics}
+    silent = sorted(k for k in HARD_ZERO if k.startswith("sync_drift.") and k not in emitted)
+    if silent:
+        raise RuntimeError(
+            f"the drift linter emitted no metric for {silent}. A hard-zero key "
+            "that is never emitted is never compared, so the gate would pass "
+            "by having stopped asking the question. Restore the check, or "
+            "remove the key from HARD_ZERO deliberately."
         )
     return metrics
 
@@ -1088,6 +1274,7 @@ EVALUATORS: tuple[Evaluator, ...] = (
     Evaluator("frontend", "Frontend coupling and dead code", _eval_frontend, needs_node=True),
     Evaluator("size", "File bloat and duplication", _eval_size, needs_node=True),
     Evaluator("shell", "Shell constructs that fail silently", _eval_shell),
+    Evaluator("sync-drift", "Sync-schema omissions that never raise", _eval_sync_drift),
 )
 
 
@@ -1100,12 +1287,71 @@ def _load_baseline() -> dict[str, float]:
     return json.loads(BASELINE.read_text())["metrics"]
 
 
+def _load_slack() -> dict[str, float]:
+    """Per-metric headroom above the allowance, from baseline.json's `slack` (Q-12).
+
+    A metric with no entry gets zero, which is the pre-slack gate exactly. The
+    band therefore only ever exists where someone wrote it down and justified
+    it in ops/quality/README.md; a missing key can never widen a gate quietly.
+    """
+    if not BASELINE.exists():
+        return {}
+    return json.loads(BASELINE.read_text()).get("slack", {})
+
+
+def _ceiling(key: str, baseline: dict[str, float], slack: dict[str, float]) -> float:
+    """The number a run must not exceed: allowance plus this metric's slack."""
+    return baseline[key] + slack.get(key, 0.0)
+
+
+def _allowed_text(key: str, baseline: dict[str, float], slack: dict[str, float]) -> str:
+    """`49 allowed`, or `49 allowed + 1 slack` when the metric declares slack.
+
+    The allowance and the slack print separately, never pre-added, so a reader
+    can always see which number is the recorded debt and which is the band.
+    """
+    extra = slack.get(key, 0.0)
+    if not extra:
+        return f"{baseline[key]:g} allowed"
+    return f"{baseline[key]:g} allowed + {extra:g} slack"
+
+
+def _ratchet_exceeded(
+    m: Metric, baseline: dict[str, float], slack: dict[str, float] | None = None
+) -> bool:
+    """True when a plain ratchet metric is over its allowance PLUS its slack.
+
+    The only metrics a regression can be INHERITED on. A hard-zero rule has no
+    allowance to be over on main (a broken architecture contract must stay red
+    whoever caused it), and a report-only metric never regresses at all, so
+    neither is ever offered the inherited downgrade. Slack defaults to empty,
+    so a caller that does not pass one gets the strict allowance.
+    """
+    return (
+        m.key not in HARD_ZERO
+        and m.key not in REPORT_ONLY
+        and m.key in baseline
+        and m.value > _ceiling(m.key, baseline, slack or {})
+    )
+
+
 def _compare(
-    metrics: list[Metric], baseline: dict[str, float]
-) -> tuple[list[str], list[str], list[str]]:
+    metrics: list[Metric],
+    baseline: dict[str, float],
+    slack: dict[str, float] | None = None,
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Split every metric into regressions, ratchets, unknowns and slack users.
+
+    A value above the allowance but at or under allowance + slack is neither a
+    failure nor a ratchet: it is one ordinary PR's worth of movement inside a
+    declared band, reported as WITHIN SLACK with the raw numbers so it can
+    never pass unseen.
+    """
+    slack_of = slack or {}
     regressions: list[str] = []
     ratchets: list[str] = []
     unknown: list[str] = []
+    within_slack: list[str] = []
     for m in metrics:
         if m.key in HARD_ZERO:
             if m.value > 0:
@@ -1115,51 +1361,258 @@ def _compare(
             continue
         if m.key not in baseline:
             unknown.append(f"{m.key}: {m.value:g} (no baseline; run --update-baseline)")
+        elif _ratchet_exceeded(m, baseline, slack_of):
+            regressions.append(
+                f"{m.key}: {m.value:g} > {_allowed_text(m.key, baseline, slack_of)}"
+            )
         elif m.value > baseline[m.key]:
-            regressions.append(f"{m.key}: {m.value:g} > {baseline[m.key]:g} allowed")
+            within_slack.append(
+                f"{m.key}: {m.value:g} > {baseline[m.key]:g} allowed, inside the "
+                f"{slack_of.get(m.key, 0.0):g} slack "
+                f"(ceiling {_ceiling(m.key, baseline, slack_of):g})"
+            )
         elif m.value < baseline[m.key]:
             ratchets.append(f"{m.key}: {m.value:g} < {baseline[m.key]:g} allowed")
-    return regressions, ratchets, unknown
+    return regressions, ratchets, unknown, within_slack
+
+
+# ----- inherited trunk regressions (Q-11) ----------------------------------
+
+
+@dataclass(frozen=True)
+class BaseCheck:
+    """Result of asking the merge-base main whether it is over too.
+
+    sha is the short merge-base sha, "" when inheritance was undecidable.
+    inherited maps a metric key to (metric, the value main measured).
+    notes are the reasons any over-allowance metric was LEFT as a regression,
+    so a failure always says why instead of silently passing.
+    """
+
+    sha: str
+    inherited: dict[str, tuple[Metric, float]] = field(default_factory=dict)
+    notes: list[str] = field(default_factory=list)
+
+
+def _resolve_base() -> tuple[str | None, str]:
+    """The merge-base sha with main, or (None, why) when undecidable.
+
+    Inheritance is only meaningful when this run is not itself the trunk tip.
+    On a push-to-main run HEAD is origin/main, so the "other main" a branch
+    could blame is the very tree this run measures: downgrading there would
+    silence the one run that exists to detect a regression landing on main.
+    That case returns (None, ...) so the message stays exactly as it is today.
+    """
+    code, out = _run(["git", "merge-base", "HEAD", MAIN_BASE_REF], allow_fail=True)
+    if code != 0:
+        return None, f"git merge-base HEAD {MAIN_BASE_REF} failed (exit {code})"
+    sha = out.strip()
+    if not sha:
+        return None, f"git merge-base HEAD {MAIN_BASE_REF} returned no commit"
+    _, head_out = _run(["git", "rev-parse", "HEAD"])
+    if sha == head_out.strip():
+        return None, "HEAD is itself on main; there is no other main to inherit from"
+    return sha, ""
+
+
+def _measure_owners_at_base(
+    sha: str, owners: list[str]
+) -> tuple[dict[str, float] | None, str]:
+    """Measure `owners` against the tree at `sha`; (metrics, "") or (None, why).
+
+    The merge-base tree is checked out with `git worktree add --detach`, then
+    the gate is re-run there with the base tree's OWN committed copy of
+    scripts/quality_gate.py under the same ambient toolchain. Using the base's
+    own gate matters twice over: a metric over `scripts/` must be measured
+    against the base's version of that file, not this run's, and running the
+    committed gate means the flag this branch added does not have to exist on
+    main for the measurement to work. The base run writes its --json before it
+    decides its own exit code, so a base that is itself red still yields its
+    numbers.
+
+    The cost is deliberate: only a run that already regressed pays for the
+    second scan, and only for the evaluators that own the regressed metrics.
+    The worktree lives in a throwaway tempdir and is removed in `finally`, so
+    an interrupted run leaves at worst an orphaned entry that `git worktree
+    prune` clears.
+    """
+    # mkdtemp creates the dir, which `git worktree add` refuses to reuse.
+    base_dir = Path(tempfile.mkdtemp(prefix="quality-gate-base-"))
+    base_dir.rmdir()
+    try:
+        code, err = _run(
+            ["git", "worktree", "add", "--detach", str(base_dir), sha], allow_fail=True
+        )
+        if code != 0:
+            return None, f"git worktree add of merge base {sha[:10]} failed: {err[-200:]}"
+        if "frontend" in owners:
+            # knip and svelte-kit resolve against a node_modules install, which
+            # a git worktree does not carry. Reuse this run's install read-only
+            # instead of running pnpm install on a throwaway tree.
+            base_fe = base_dir / "apps" / "webui" / "frontend"
+            if (FRONTEND / "node_modules").is_dir():
+                (base_fe / "node_modules").symlink_to(
+                    FRONTEND / "node_modules", target_is_directory=True
+                )
+        out_json = base_dir / "metrics.json"
+        cmd = [
+            sys.executable, "-m", "scripts.quality_gate",
+            "--only", ",".join(owners), "--json", str(out_json),
+        ]
+        proc = subprocess.run(cmd, cwd=base_dir, capture_output=True, text=True, check=False)
+        if not out_json.exists():
+            return None, (
+                f"merge-base run for {','.join(owners)} exited {proc.returncode} "
+                f"without metrics: {proc.stderr.strip()[-300:]}"
+            )
+        return json.loads(out_json.read_text()), ""
+    finally:
+        # Remove the worktree entry first so the shared .git does not accumulate
+        # orphans, then clear any leftover files whether or not git agreed.
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(base_dir)],
+            capture_output=True, text=True, check=False,
+        )
+        shutil.rmtree(base_dir, ignore_errors=True)
+
+
+def _inherited_classification(
+    over: list[Metric],
+    owner_of: dict[str, str],
+    resolve_base: Callable[[], tuple[str | None, str]],
+    measure_owners: Callable[[str, list[str]], tuple[dict[str, float] | None, str]],
+) -> BaseCheck:
+    """Decide which over-allowance metrics the merge-base main already carries.
+
+    A metric is inherited when main measured AT OR ABOVE this run's value: main
+    is over the same allowance and this change added nothing to it, so failing
+    the author for it blames them for trunk. A base BELOW this run's value means
+    the change made an already-over metric worse - base at 50 and this run at 51
+    is this change's fault - so it stays a hard REGRESSION. A metric whose base
+    value cannot be measured stays an unqualified REGRESSION with a reason; the
+    gate must never downgrade on a guess or pass silently.
+    """
+    if not over:
+        return BaseCheck("")
+    base_sha, reason = resolve_base()
+    if base_sha is None:
+        return BaseCheck("", {}, [
+            f"cannot check the merge-base main: {reason}",
+            f"{len(over)} regression(s) reported unqualified rather than guessed",
+        ])
+    short = base_sha[:10]
+    owners = sorted({owner_of[m.key] for m in over})
+    base_values, measure_reason = measure_owners(base_sha, owners)
+    if base_values is None:
+        return BaseCheck(short, {}, [
+            f"cannot re-measure {', '.join(owners)} on merge-base main {short}: "
+            f"{measure_reason}",
+            f"{len(over)} regression(s) reported unqualified rather than guessed",
+        ])
+    inherited: dict[str, tuple[Metric, float]] = {}
+    notes: list[str] = []
+    for m in over:
+        base_value = base_values.get(m.key)
+        if base_value is None:
+            notes.append(f"{m.key}: the merge-base main run ({short}) did not "
+                         "report it; left as a plain regression, not guessed")
+        elif base_value >= m.value:
+            inherited[m.key] = (m, base_value)
+        else:
+            notes.append(f"{m.key}: merge-base main ({short}) measured "
+                         f"{base_value:g} against this run's {m.value:g}; this "
+                         "change is worse than main, so it stays a regression")
+    return BaseCheck(short, inherited, notes)
+
+
+def _inherited_block(
+    m: Metric,
+    base_value: float,
+    base_sha: str,
+    baseline: dict[str, float],
+    slack: dict[str, float] | None = None,
+) -> tuple[str, str]:
+    """The two console lines an INHERITED metric prints in place of REGRESSION."""
+    return (
+        f"INHERITED  {m.key}: {m.value:g} > "
+        f"{_allowed_text(m.key, baseline, slack or {})}",
+        f"          main ({base_sha}) is ALSO at {base_value:g} - this is a trunk "
+        "regression, not yours",
+    )
 
 
 # ----- report --------------------------------------------------------------
 
 
-def _markdown(metrics: list[Metric], baseline: dict[str, float], hotspots: list) -> str:
+def _report_allowed(
+    key: str, baseline: dict[str, float], slack: dict[str, float]
+) -> str:
+    """The report's `allowed` cell: the allowance, and its slack band if any."""
+    if key in HARD_ZERO:
+        return "0 (hard)"
+    if key in REPORT_ONLY:
+        return "n/a"
+    if key not in baseline:
+        return "-"
+    extra = slack.get(key, 0.0)
+    if not extra:
+        return f"{baseline[key]:g}"
+    return f"{baseline[key]:g} (+{extra:g} slack)"
+
+
+def _report_status(
+    m: Metric,
+    baseline: dict[str, float],
+    slack: dict[str, float],
+    inherited: frozenset[str],
+) -> str:
+    """The report's `status` cell for one metric.
+
+    A regression the merge-base main already carries is not this change's
+    doing, so INHERITED wins over REGRESSED; saying otherwise would put the
+    status column in contradiction with the exit code.
+    """
+    if m.key in inherited:
+        return "INHERITED (on main too)"
+    if m.key in HARD_ZERO:
+        return "PASS" if m.value == 0 else "FAIL"
+    if m.key in REPORT_ONLY:
+        return "report only"
+    if m.key not in baseline:
+        return "NEW"
+    if m.value > _ceiling(m.key, baseline, slack):
+        return "REGRESSED"
+    if m.value > baseline[m.key]:
+        return "within slack"
+    if m.value < baseline[m.key]:
+        return "RATCHET"
+    return "held"
+
+
+def _markdown(
+    metrics: list[Metric],
+    baseline: dict[str, float],
+    hotspots: list,
+    inherited: frozenset[str] = frozenset(),
+    slack: dict[str, float] | None = None,
+) -> str:
     lines = [
         "# Code quality report",
         "",
         f"Generated {datetime.now(UTC).isoformat(timespec='seconds')} by "
         "`python -m scripts.quality_gate`.",
         "",
-        "Every number is compared against `ops/quality/baseline.json`. Only a worse",
-        "number fails the build; a better number is a ratchet you can bank with",
-        "`--update-baseline`.",
+        "Every number is compared against `ops/quality/baseline.json`. Only a number",
+        "past the allowance PLUS that metric's declared slack fails the build; a",
+        "better number is a ratchet you can bank with `--update-baseline`.",
         "",
         "| metric | value | allowed | status | unit | worst offender |",
         "| ------ | ----: | ------: | ------ | ---- | -------------- |",
     ]
+    slack_of = slack or {}
     for m in metrics:
-        if m.key in HARD_ZERO:
-            allowed = "0 (hard)"
-        elif m.key in REPORT_ONLY:
-            allowed = "n/a"
-        elif m.key in baseline:
-            allowed = f"{baseline[m.key]:g}"
-        else:
-            allowed = "-"
-        if m.key in HARD_ZERO:
-            status = "PASS" if m.value == 0 else "FAIL"
-        elif m.key in REPORT_ONLY:
-            status = "report only"
-        elif m.key not in baseline:
-            status = "NEW"
-        elif m.value > baseline[m.key]:
-            status = "REGRESSED"
-        elif m.value < baseline[m.key]:
-            status = "RATCHET"
-        else:
-            status = "held"
+        allowed = _report_allowed(m.key, baseline, slack_of)
+        status = _report_status(m, baseline, slack_of, inherited)
         lines.append(
             f"| `{m.key}` | {m.value:g} | {allowed} | {status} | {m.unit} | {m.detail} |"
         )
@@ -1188,33 +1641,85 @@ def _preflight(selected: list[Evaluator]) -> None:
         raise RuntimeError("pnpm is not on PATH but a frontend evaluator was selected")
 
 
-def _marker(metric: Metric, allowed: float | None) -> str:
-    """Two-character status flag for one metric line."""
+def _marker(metric: Metric, allowed: float | None, slack: float = 0.0) -> str:
+    """Two-character status flag for one metric line.
+
+    `~~` is the slack band: over the recorded allowance, under the ceiling.
+    It is deliberately not `  ` (held), so a reader can see at a glance that
+    the tree floated up even though the run passed.
+    """
     if metric.key in HARD_ZERO:
         return "!!" if metric.value > 0 else "OK"
     if metric.key in REPORT_ONLY:
         return "--"
     if allowed is None:
         return "??"
-    if metric.value > allowed:
+    if metric.value > allowed + slack:
         return "!!"
+    if metric.value > allowed:
+        return "~~"
     if metric.value < allowed:
         return "->"
     return "  "
 
 
-def _print_metrics(metrics: list[Metric], baseline: dict[str, float]) -> None:
+def _print_metrics(
+    metrics: list[Metric],
+    baseline: dict[str, float],
+    slack: dict[str, float] | None = None,
+) -> None:
     print()
+    slack_of = slack or {}
     for m in metrics:
         allowed = baseline.get(m.key)
+        extra = slack_of.get(m.key, 0.0)
         if m.key in REPORT_ONLY:
             suffix = " (report only, not gated)"
+        elif allowed is not None and extra:
+            suffix = f" (allowed {allowed:g} + {extra:g} slack)"
         elif allowed is not None:
             suffix = f" (allowed {allowed:g})"
         else:
             suffix = ""
         detail = f"  [{m.detail}]" if m.detail else ""
-        print(f" {_marker(m, allowed):2s} {m.key:38s} {m.value:>8g} {m.unit}{suffix}{detail}")
+        marker = _marker(m, allowed, extra)
+        print(f" {marker:2s} {m.key:38s} {m.value:>8g} {m.unit}{suffix}{detail}")
+
+
+def _recorded_allowances(
+    metrics: list[Metric], previous: dict[str, float]
+) -> tuple[dict[str, float], list[str]]:
+    """The allowances a rewrite records: today's numbers, but only downward.
+
+    --update-baseline must never RAISE an allowance, and slack is exactly what
+    makes that possible to do by accident. A run inside its band measures above
+    the recorded allowance and still passes (Q-12); writing that measurement
+    back would bank the pass, and repeating it would walk the ceiling up one
+    band per run -- the opposite of a ratchet, and a hole straight through the
+    shrink-only invariant this file's own `note` states.
+
+    So a metric measured ABOVE its recorded allowance keeps the old number and
+    the run says which ones it kept. Only a lower measurement moves the file, a
+    metric with no prior allowance is recorded as a first one, and REPORT_ONLY
+    metrics are deliberately absent (this file lists allowances, and a number
+    nothing is allowed to exceed is not one). Raising an allowance is still
+    possible, and still exactly as visible as it was: hand-edit the number in a
+    diff someone reviews, with a `burn_down` entry saying why.
+    """
+    recorded: dict[str, float] = {}
+    retained: list[str] = []
+    for m in metrics:
+        if m.key in REPORT_ONLY:
+            continue
+        prior = previous.get(m.key)
+        if prior is not None and m.value > prior:
+            recorded[m.key] = prior
+            retained.append(
+                f"{m.key}: measured {m.value:g}, allowance kept at {prior:g}"
+            )
+        else:
+            recorded[m.key] = m.value
+    return recorded, retained
 
 
 def _write_baseline(metrics: list[Metric]) -> None:
@@ -1227,18 +1732,28 @@ def _write_baseline(metrics: list[Metric]) -> None:
     # raised and which refactor is committed to lowering it again. Dropping it
     # on the next --update-baseline would turn a tracked burn-down into an
     # anonymous number nobody remembers agreeing to.
+    # `slack` is carried for the same reason: it is a reviewed, justified band
+    # (ops/quality/README.md), and a --update-baseline that silently dropped it
+    # would re-tighten seven gates to zero headroom without saying so.
+    previous: dict[str, float] = {}
     if BASELINE.exists():
         existing = json.loads(BASELINE.read_text())
-        if "burn_down" in existing:
-            payload["burn_down"] = existing["burn_down"]
-    # REPORT_ONLY metrics are deliberately absent: this file is a list of
-    # allowances, and a number nothing is allowed to exceed does not belong
-    # in it.
-    payload["metrics"] = {
-        m.key: m.value for m in metrics if m.key not in REPORT_ONLY
-    }
+        previous = existing.get("metrics", {})
+        for carried in ("slack", "burn_down"):
+            if carried in existing:
+                payload[carried] = existing[carried]
+    payload["metrics"], retained = _recorded_allowances(metrics, previous)
     BASELINE.write_text(json.dumps(payload, indent=2) + "\n")
     print(f"\n[quality] baseline written to {BASELINE}")
+    for line in retained:
+        print(f"[quality] ALLOWANCE KEPT   {line}")
+    if retained:
+        print(
+            f"[quality] {len(retained)} allowance(s) were NOT raised to today's "
+            "measurement. Allowances only ever shrink; slack is headroom at "
+            "gate time, never a recorded number. To raise one, edit "
+            "ops/quality/baseline.json by hand with a burn_down entry."
+        )
 
 
 def _select(only: str | None) -> list[Evaluator]:
@@ -1247,6 +1762,64 @@ def _select(only: str | None) -> list[Evaluator]:
     if unknown_names:
         raise SystemExit(f"unknown evaluator(s): {', '.join(sorted(unknown_names))}")
     return [e for e in EVALUATORS if e.name in wanted]
+
+
+def _print_ratchet_verdict(
+    ratchets: list[str],
+    unknown: list[str],
+    regressions: list[str],
+    check: BaseCheck,
+    baseline: dict[str, float],
+    within_slack: list[str] | None = None,
+    slack: dict[str, float] | None = None,
+) -> int:
+    """Print the ratchet/regression readout and return the run's exit code.
+
+    An inherited metric prints INHERITED where its REGRESSION line would have
+    been, so the distinction appears at the metric's own place in the list.
+    Metric keys never contain a colon, so the line prefix names the metric.
+    A metric inside its slack band prints WITHIN SLACK with both raw numbers:
+    the run passes, but the movement is never invisible.
+    Extracted from main so main stays under the gate's own complexity ceilings.
+    """
+    used_slack = within_slack or []
+    print()
+    for line in ratchets:
+        print(f"[quality] RATCHET AVAILABLE  {line}")
+    for line in unknown:
+        print(f"[quality] NO BASELINE       {line}")
+    for line in used_slack:
+        print(f"[quality] WITHIN SLACK      {line}")
+    regressions_kept = 0
+    for line in regressions:
+        key = line.split(":", 1)[0]
+        if key in check.inherited:
+            m, base_value = check.inherited[key]
+            line1, line2 = _inherited_block(m, base_value, check.sha, baseline, slack)
+            print(f"[quality] {line1}")
+            print(line2)
+        else:
+            regressions_kept += 1
+            print(f"[quality] REGRESSION        {line}")
+    for note in check.notes:
+        print(f"[quality] base compare: {note}")
+    if regressions_kept:
+        print(f"\n[quality] FAIL: {regressions_kept} metric(s) got worse.")
+        return 1
+    if check.inherited:
+        print(
+            f"\n[quality] PASS: {len(check.inherited)} metric(s) over allowance "
+            "are INHERITED from main (above); this change made none worse."
+        )
+        return 0
+    if used_slack:
+        print(
+            f"\n[quality] PASS: {len(used_slack)} metric(s) used declared slack "
+            "(above); none passed its ceiling."
+        )
+        return 0
+    print("\n[quality] PASS: nothing got worse.")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1268,22 +1841,46 @@ def main(argv: list[str] | None = None) -> int:
     _preflight(selected)
 
     metrics: list[Metric] = []
+    owner_of: dict[str, str] = {}
     for evaluator in selected:
         print(f"[quality] {evaluator.name}: {evaluator.title}", flush=True)
-        metrics.extend(evaluator.run())
+        measured = evaluator.run()
+        # Record which evaluator owns each metric so an inherited re-measure
+        # can re-run just that evaluator on the merge-base tree (Q-11).
+        owner_of.update({m.key: evaluator.name for m in measured})
+        metrics.extend(measured)
 
     baseline = _load_baseline()
-    regressions, ratchets, unknown = _compare(metrics, baseline)
+    slack = _load_slack()
+    regressions, ratchets, unknown, within_slack = _compare(metrics, baseline, slack)
+
+    # Ask the merge-base main whether it is over too, but only when something
+    # actually regressed: a green run must not pay for a second scan.
+    check = BaseCheck("")
+    if not args.update_baseline:
+        over = [m for m in metrics if _ratchet_exceeded(m, baseline, slack)]
+        check = _inherited_classification(
+            over, owner_of, _resolve_base, _measure_owners_at_base
+        )
+
     hotspots = _hotspots()
 
-    _print_metrics(metrics, baseline)
+    _print_metrics(metrics, baseline, slack)
 
     # Absolute paths in the readout: this runs from justfile, Makefile and CI
     # with three different working directories, so a relative path is a path
     # the reader has to reconstruct before they can open it.
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(_markdown(metrics, baseline, hotspots))
+        args.report.write_text(
+            _markdown(
+                metrics,
+                baseline,
+                hotspots,
+                inherited=frozenset(check.inherited),
+                slack=slack,
+            )
+        )
         print(f"\n[quality] report written to {args.report.resolve()}")
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
@@ -1296,19 +1893,9 @@ def main(argv: list[str] | None = None) -> int:
         _write_baseline(metrics)
         return 0
 
-    print()
-    for line in ratchets:
-        print(f"[quality] RATCHET AVAILABLE  {line}")
-    for line in unknown:
-        print(f"[quality] NO BASELINE       {line}")
-    for line in regressions:
-        print(f"[quality] REGRESSION        {line}")
-
-    if regressions:
-        print(f"\n[quality] FAIL: {len(regressions)} metric(s) got worse.")
-        return 1
-    print("\n[quality] PASS: nothing got worse.")
-    return 0
+    return _print_ratchet_verdict(
+        ratchets, unknown, regressions, check, baseline, within_slack, slack
+    )
 
 
 if __name__ == "__main__":

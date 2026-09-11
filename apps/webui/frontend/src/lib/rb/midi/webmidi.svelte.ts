@@ -104,7 +104,9 @@ interface _ResolvedDevice {
 let _access: MIDIAccess | null = null;
 const _deviceMaps: DeviceMap[] = [];
 const _resolved: Map<string, _ResolvedDevice> = new Map();
-let _actionHandler: ((action: MidiAction, value: MidiInputValue, deviceId: string) => void) | null =
+let _actionHandler:
+	| ((action: MidiAction, value: MidiInputValue, deviceId: string, pressT0Ms: number) => void)
+	| null =
 	null;
 
 // LED queue: deviceId -> (`${ch}:${note}` -> velocity), flushed on a timer.
@@ -275,7 +277,12 @@ function _emit(
 		return;
 	}
 	try {
-		_actionHandler(binding.action, value, device.input.id);
+		// Q1: `log.ts` is `performance.now()` taken at message RECEIPT, at the
+		// top of `_dispatch`, so it is already the controller press stamp on
+		// the epoch the perf ring uses. A hardware press is the P0 gesture the
+		// latency program exists for; without this it produced plain schedule
+		// rows and the primary control surface went unmeasured.
+		_actionHandler(binding.action, value, device.input.id, log.ts);
 	} catch (exc) {
 		// Loud fail-fast: the message still lands in the learn log, the error
 		// still propagates (no silent swallow).
@@ -400,7 +407,7 @@ export function registerDeviceMap(map: DeviceMap): void {
 /** Register THE action handler (the glue layer). Exactly one; a second
  * registration is a wiring bug and throws. */
 export function registerActionHandler(
-	handler: (action: MidiAction, value: MidiInputValue, deviceId: string) => void
+	handler: (action: MidiAction, value: MidiInputValue, deviceId: string, pressT0Ms: number) => void
 ): void {
 	if (_actionHandler !== null) {
 		throw new Error('registerActionHandler: a handler is already registered');

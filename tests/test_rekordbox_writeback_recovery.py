@@ -220,7 +220,7 @@ def _plan_with_dest(source: Path, dest: Path):
 
     return SyncPlan(
         scope="probe",
-        files=(CrateFile(source=source, dest=dest, kind="track", size_bytes=0),),
+        files=(CrateFile(source=source, dest=dest, kind="audio", size_bytes=0),),
         skipped_streaming=0,
         skipped_absent=0,
     )
@@ -339,9 +339,10 @@ def test_a_manifest_cannot_aim_the_ssh_pull_lane_outside_the_crate(
     monkeypatch.setattr(subprocess, "run", _no_subprocess)
     key = tmp_path / "fake_key"
     key.write_text("not a key", encoding="utf-8")
-    monkeypatch.setattr(crate_sync, "OWNER_SSH_KEY", key)
+    monkeypatch.setenv(crate_sync.OWNER_SSH_KEY_ENV, str(key))
+    monkeypatch.setenv(crate_sync.OWNER_SSH_TARGETS_ENV, "dev@test-owner-ssh-target")
     crate, outside = _crate_and_outside(tmp_path)
-    owner = sorted(crate_sync.ALLOWED_OWNER_SSH)[0]
+    owner = sorted(crate_sync._owner_ssh_targets())[0]
 
     def _manifest(dest_root: Path) -> dict:
         return {"files": [{

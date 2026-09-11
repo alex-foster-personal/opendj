@@ -50,6 +50,7 @@
 	{#each items as toast (toast.id)}
 		<div
 			class="toast"
+			class:warn={toast.kind === 'warn'}
 			class:error={toast.kind === 'error'}
 			role="status"
 			data-toast-id={toast.logId}
@@ -64,6 +65,9 @@
 				onclick={() => copy(toast)}
 			>
 				<span class="toast-message">{toast.message}</span>
+				{#if toast.count > 1}
+					<span class="toast-note" data-toast-count={toast.count}>Repeated {toast.count} times</span>
+				{/if}
 				{#if copyState[toast.logId] === 'copied'}
 					<span class="toast-note" data-toast-copied={toast.logId}>copied</span>
 				{:else if copyState[toast.logId] !== undefined}

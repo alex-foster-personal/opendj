@@ -183,3 +183,51 @@ export async function getTransitions(sessionId: string): Promise<Transition[]> {
 export function sessionAudioUrl(sessionId: string, segmentName: string): string {
 	return `${SETS_API_BASE}${SETS_PATH}/${encodeURIComponent(sessionId)}/audio/${encodeURIComponent(segmentName)}`;
 }
+
+export interface SoundcloudTracklistRow {
+	timestamp_s: number;
+	timestamp_label: string;
+	title: string | null;
+	artist: string | null;
+	track_stable_id: string | null;
+	source: string | null;
+	deck: string | null;
+	display_name: string;
+}
+
+export interface SoundcloudExport {
+	kind: 'metadata_only';
+	session_id: string;
+	audio_upload: 'not_offered';
+	takeover: 'not_offered';
+	rights_position: 'unsettled';
+	licensing_reminder: string;
+	tracklist: SoundcloudTracklistRow[];
+	comment: string | null;
+	acknowledged?: boolean;
+}
+
+export async function getSoundcloudExport(sessionId: string): Promise<SoundcloudExport> {
+	try {
+		return (await unwrap(
+			api.GET('/api/sets/{session_id}/soundcloud-export', {
+				params: { path: { session_id: sessionId } }
+			})
+		)) as SoundcloudExport;
+	} catch (error) {
+		rethrowSetsError(error);
+	}
+}
+
+export async function acknowledgeSoundcloudExport(sessionId: string): Promise<SoundcloudExport> {
+	try {
+		return (await unwrap(
+			api.POST('/api/sets/{session_id}/soundcloud-export', {
+				params: { path: { session_id: sessionId } },
+				body: { acknowledge_rights: true }
+			})
+		)) as SoundcloudExport;
+	} catch (error) {
+		rethrowSetsError(error);
+	}
+}

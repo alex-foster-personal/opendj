@@ -46,8 +46,15 @@ Requirements (mini-PRD):
   ✔︎ ✅ R2 presence is a real listing or an explicit refusal, never a guess.
     [if] --check-r2 runs without credentials [then ⛔️] exit non-zero, say why
 
+MDT_EXTERNAL_STEM_ROOTS names this machine's external stem store path(s),
+os.pathsep-separated (e.g. "/Users/you/Music/_incoming/pack/stems"). Required
+when the default roots are used (no --root override): a real machine path
+must never be hardcoded in tracked code (#910), and the script fails fast
+if it is unset rather than silently scanning zero external roots.
+
 Run:
-  uv run scripts/stem_inventory.py
+  MDT_EXTERNAL_STEM_ROOTS=/Users/you/Music/_incoming/clubsauna-acapella-techno-100/stems \
+    uv run scripts/stem_inventory.py
   uv run scripts/stem_inventory.py --json out.json
   doppler run --project general --config dev_personal -- \
     uv run scripts/stem_inventory.py --check-r2
@@ -58,6 +65,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -103,9 +111,40 @@ _STABLE_ID_RE = re.compile(r"^[0-9a-fA-F]{40}([0-9a-fA-F]{24})?$")
 # Stores that exist outside any data directory. The acapella pack was bought
 # in and unpacked next to the audio it came with, so it never had a reason to
 # live under data/, which is precisely why it went uncounted for so long.
-EXTERNAL_ROOTS: tuple[Path, ...] = (
-    Path("/Users/dev/Music/_incoming/clubsauna-acapella-techno-100/stems"),
-)
+# There is no portable default (#910): the location is wherever THIS machine
+# unpacked the pack, so it comes from MDT_EXTERNAL_STEM_ROOTS, os.pathsep-
+# separated absolute paths, e.g.
+# "/Users/you/Music/_incoming/clubsauna-acapella-techno-100/stems". Unset is
+# a hard error rather than an empty tuple: an empty tuple would make the
+# inventory silently stop counting this store's bundles and still print a
+# healthy-looking report, which is exactly the failure #910 introduced.
+EXTERNAL_ROOTS_ENV: str = "MDT_EXTERNAL_STEM_ROOTS"
+
+
+def _external_roots() -> tuple[Path, ...]:
+    """External stem stores from ``MDT_EXTERNAL_STEM_ROOTS``, fail-fast.
+
+    Read fresh (not cached at import time) so a test can set/unset the
+    variable per case. Every configured entry must exist by the time this
+    returns: an operator who names a root here is affirmatively claiming it
+    is there, unlike the in-repo stores in :func:`default_roots`, where "not
+    here yet" is a normal, reportable state.
+    """
+    raw = os.environ.get(EXTERNAL_ROOTS_ENV)
+    if not raw:
+        raise RuntimeError(
+            f"{EXTERNAL_ROOTS_ENV} is not set -- export this machine's "
+            "external stem store path(s), os.pathsep-separated (e.g. "
+            f"{EXTERNAL_ROOTS_ENV}=/Users/you/Music/_incoming/"
+            "clubsauna-acapella-techno-100/stems); there is no safe default"
+        )
+    roots = tuple(Path(p) for p in raw.split(os.pathsep) if p)
+    for root in roots:
+        if not root.is_dir():
+            raise FileNotFoundError(
+                f"{EXTERNAL_ROOTS_ENV} entry does not exist: {root}"
+            )
+    return roots
 
 
 def default_roots(data_dir: Path) -> tuple[Path, ...]:
@@ -127,7 +166,7 @@ def default_roots(data_dir: Path) -> tuple[Path, ...]:
         data_dir / "state/stems-roformer-spike-verify",
         data_dir / "state/stems-demucs-ab",
         data_dir.parent / ".tmp/.tmp_pleasure_stem_review",
-        *EXTERNAL_ROOTS,
+        *_external_roots(),
     )
 
 

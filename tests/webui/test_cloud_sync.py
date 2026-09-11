@@ -86,3 +86,5 @@ def test_health_surfaces_configured_syncthing_status(seed_backend):
             "peers_connected": 2, "folder_state": "syncing",
             "last_scan_at": None,
         }
+
+pytestmark = pytest.mark.rb_parity

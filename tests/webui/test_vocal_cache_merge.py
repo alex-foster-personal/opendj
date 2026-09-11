@@ -25,7 +25,7 @@ from apps.vocals import cache as vcache
 from apps.webui.server import rb_vendor
 from apps.webui.server.rb_vendor import RbContent
 
-pytestmark = pytest.mark.requirement("CAT-05")
+pytestmark = [pytest.mark.requirement("CAT-05"), pytest.mark.rb_parity]
 
 
 def _content(tmp_path: Path, folder_path: str | None) -> RbContent:

@@ -59,9 +59,6 @@ def client(db_path: Path) -> Iterator[TestClient]:
         bind_host="127.0.0.1", hostname="test-host",
         lock_status_fn=lambda: None, mount_frontend=False,
     )
-    # The integrator wires this into app.py; tests wire it explicitly so the
-    # hotspot file stays untouched.
-    app.include_router(playlist_write.router, prefix="/api/v1")
     with TestClient(app) as c:
         yield c
     playlist_write.close_store(app)
@@ -525,7 +522,8 @@ def test_delete_cannot_precheck_while_membership_replace_holds_lock(
 
     def delete_b() -> None:
         try:
-            b_result.append(store_b.delete_playlist(playlist_id, expected_etag=etag))
+            store_b.delete_playlist(playlist_id, expected_etag=etag)
+            b_result.append(True)
         except Exception as exc:
             b_result.append(exc)
 

@@ -33,6 +33,8 @@
 		knobId: string;
 		/** Small caps label under the knob (TRIM / HI / MID / LOW / FILTER ...). */
 		label: string;
+		/** AX name when the visible caption needs deck context. */
+		accessibleLabel?: string;
 		/** Position 0..1; 0.5 = center detent (unity / flat). */
 		value: number;
 		/** Called with the new 0..1 value on every drag/keyboard change. */
@@ -41,26 +43,24 @@
 		inert?: boolean;
 		/** Indicator stroke tone. */
 		tone?: 'accent' | 'white' | 'rainbow';
-		/** Rendered dial diameter in px. The caption-inclusive wrapper is the hit area and scales with the dial. */
+		/** Rendered dial diameter in px. The caption-inclusive wrapper is the hit area. */
 		size?: number;
 	}
 
-	let { knobId, label, value, onchange, inert = false, tone = 'accent', size = 30 }: Props =
+	let { knobId, label, accessibleLabel, value, onchange, inert = false, tone = 'accent', size = 30 }: Props =
 		$props();
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 	const SWEEP_DEG = 270; // -135deg .. +135deg like rekordbox knobs
-	const KNOB_BASE_SIZE = 30;
 	const RAINBOW_STOPS = ['#e23a32', '#e8a13a', '#d7d83a', '#35c04f'] as const;
 	const visualStyle = $derived.by(() => {
 		if (!Number.isFinite(size) || size <= 0) {
 			throw new Error(`Knob size must be a positive finite number, got ${size}`);
 		}
-		const scale = size / KNOB_BASE_SIZE;
 		return (
 			`--knob-dial-size: ${size}px; ` +
-			`--knob-caption-size: ${8 * scale}px; ` +
-			`--knob-caption-gap: ${scale}px; ` +
+			`--knob-caption-size: 8px; ` +
+			`--knob-caption-gap: 1px; ` +
 			`--knob-rainbow-0: ${RAINBOW_STOPS[0]}; ` +
 			`--knob-rainbow-1: ${RAINBOW_STOPS[1]}; ` +
 			`--knob-rainbow-2: ${RAINBOW_STOPS[2]}; ` +
@@ -163,8 +163,9 @@
 	class:warn-orange={warn === 'orange'}
 	class:warn-red={warn === 'red'}
 	data-knob-id={knobId}
+	data-testid={`knob-${knobId}`}
 	role="slider"
-	aria-label={label}
+	aria-label={accessibleLabel ?? label}
 	aria-valuemin={0}
 	aria-valuemax={1}
 	aria-valuenow={value}

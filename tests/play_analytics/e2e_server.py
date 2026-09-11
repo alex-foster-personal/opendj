@@ -21,7 +21,11 @@ from apps.engine_core.build_info import MANIFEST_ENV, add_build_info_route
 from apps.engine_core.update_channel import add_update_check_route
 from apps.play_analytics.api import create_router
 from apps.shared import platform_paths
+from apps.shared.state.schema import apply_migrations
+from apps.webui.server.models import PreflightOut
+from apps.webui.server.preflight_checks import run_preflight
 from apps.webui.server.routes import client_events as client_events_routes
+from apps.webui.server.routes import cloudsync_status as cloudsync_status_routes
 from apps.webui.server.routes import ui_prefs as ui_prefs_routes
 
 
@@ -126,8 +130,49 @@ def _seed_database(db_path: Path) -> None:
         )
 
 
+def _seed_state_db(state_db_path: Path) -> None:
+    """A real, minimal, schema-current state.db for the preflight boot gate.
+
+    #1568: the app shell (and everything mounted inside it, including the
+    update-check request this harness's own tests wait on) never renders
+    until GET /api/v1/preflight answers status "pass". That route reads a
+    real state.db, not this fixture's throwaway sets/events db (a different
+    schema entirely), so it needs its own -- built the same way
+    tests/webui/library_wheel_fixtures.py builds one: apply_migrations for a
+    schema-current db, then one minimal track row. file_path is left NULL on
+    purpose: audio-access reports "pending" for a track with no recorded
+    location, which is honest and, per run_preflight, never blocks "pass".
+    """
+    state_db_path.parent.mkdir(parents=True, exist_ok=True)
+    if state_db_path.exists():
+        state_db_path.unlink()
+    connection = sqlite3.connect(state_db_path)
+    try:
+        apply_migrations(connection)
+        connection.execute(
+            "INSERT INTO tracks (stable_id, stable_id_tier, title, artists_json, "
+            "created_at, updated_at) VALUES (?, 'inferred', ?, ?, ?, ?)",
+            (
+                "e2e-fixture-track",
+                "Fixture Track",
+                json.dumps(["Fixture Artist"]),
+                "2026-01-01T00:00:00+00:00",
+                "2026-01-01T00:00:00+00:00",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def create_app(db_path: Path) -> FastAPI:
     _seed_database(db_path)
+    # <fixture-dir>/state/state.db, matching the real DATA_DIR/state/state.db
+    # layout: cloudsync_status_routes derives its data dir as
+    # state_db_path.parent.parent, so this shape is what keeps it inside the
+    # throwaway fixture dir instead of walking out of it.
+    state_db_path = db_path.parent / "state" / "state.db"
+    _seed_state_db(state_db_path)
     app = FastAPI()
     # The page under test boots the whole app shell, so it calls the same
     # start-up endpoints the real client does. Mount the REAL routers rather
@@ -137,20 +182,31 @@ def create_app(db_path: Path) -> FastAPI:
     # e2e db instead of the developer's MDT_DATA_DIR.
     app.state.data_dir = db_path.parent
     app.state.client_event_log_dir = db_path.parent
+    app.state.state_db_path = state_db_path
     app.include_router(create_router(db_path=db_path))
     app.include_router(entitlements_router, prefix="/api/v1")
     app.include_router(ui_prefs_routes.router, prefix="/api/v1")
     app.include_router(client_events_routes.router, prefix="/api/v1")
+    app.include_router(cloudsync_status_routes.router, prefix="/api/v1")
     # Real routes, not a hand-stub: a dev checkout has no OPENDJ_PAYLOAD_MANIFEST,
-    # so build identity resolves from git but carries no app_version, and
-    # resolve_update_check faults "identity-unavailable" before it ever reaches
-    # the network (apps/engine_core/update_channel.py:388). Hermetic by the same
-    # mechanism CI runs under. Strip the manifest env so a Playwright server
-    # that inherits a real OPENDJ_PAYLOAD_MANIFEST from its launcher still
-    # resolves a repo identity, not a live payload's.
+    # so build identity resolves from git and carries app_version from
+    # tauri.conf.json. The public manifest is still unpublished, so
+    # /update/check answers HTTP 200 with endpoint-refused rather than 502.
+    # Hermetic by the same mechanism CI runs under. Strip the manifest env so a
+    # Playwright server that inherits a real OPENDJ_PAYLOAD_MANIFEST from its
+    # launcher still resolves a repo identity, not a live payload's.
     fixture_environ = {k: v for k, v in os.environ.items() if k != MANIFEST_ENV}
     add_build_info_route(app, environ=fixture_environ, repo_root=platform_paths.PROJECT_ROOT)
     add_update_check_route(app)
+
+    # Real check logic (apps.webui.server.preflight_checks.run_preflight),
+    # not a hand-stub -- the shipped route wrapper reads a module-level
+    # rb_config.STATE_DB constant with no way to point it at this fixture's
+    # db, so this calls the same production function directly instead of
+    # reimplementing its checks (#1568).
+    @app.get("/api/v1/preflight", response_model=PreflightOut)
+    def preflight() -> PreflightOut:
+        return run_preflight(state_db_path)
 
     @app.get("/health")
     def health() -> dict[str, str]:

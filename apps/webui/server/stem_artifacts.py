@@ -29,6 +29,7 @@ contract.  Version 1 has this exact shape::
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import stat
@@ -52,6 +53,8 @@ from pydantic import (
 
 from apps.shared.paths import STATE_DIR
 from apps.shared.stable_id import is_safe_stable_id_segment
+
+LOGGER = logging.getLogger(__name__)
 
 STEM_PARTS: tuple[str, str, str, str] = ("vocals", "drums", "bass", "other")
 """The complete standard Demucs 4-part output, in API presentation order."""
@@ -176,7 +179,7 @@ class StemManifest(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def require_exact_layout_parts(self) -> "StemManifest":
+    def require_exact_layout_parts(self) -> StemManifest:
         expected = STEM_LAYOUTS[self.layout]
         if set(self.files) != set(expected):
             raise ValueError(f"files must contain exactly {expected!r} for {self.layout}")
@@ -235,12 +238,11 @@ def load_stem_bundle(
     stems_dir: Path = DEFAULT_STEMS_DIR,
     roots: Sequence[Path] | None = None,
 ) -> StemBundle:
-    """Load one complete, aligned bundle from the first root that has it.
+    """Load one complete, aligned bundle from the first valid root that has it.
 
-    Roots are tried in ``stem_roots`` order and the FIRST directory that exists
-    wins outright -- a bundle that exists but fails validation raises rather
-    than quietly falling through to a lesser store, so a corrupt Demucs bundle
-    surfaces as an error instead of silently degrading the deck to 2 parts.
+    Roots are tried in ``stem_roots`` order. An invalid bundle is logged and
+    does not shadow a valid lower-precedence bundle. If no candidate validates,
+    the raised error identifies every configured root and each failed candidate.
     """
     validate_stable_id(stable_id)
     search_roots = (
@@ -250,13 +252,32 @@ def load_stem_bundle(
     )
     if not search_roots:
         raise StemArtifactError("at least one stem root is required")
+    failures: list[tuple[Path, StemArtifactError]] = []
     for root in search_roots:
         candidate = root.resolve() / stable_id
         if candidate.is_dir() and not candidate.is_symlink():
-            return _load_from_root(stable_id, root.resolve())
+            try:
+                return _load_from_root(stable_id, root.resolve())
+            except StemArtifactError as exc:
+                failures.append((root, exc))
+                LOGGER.warning(
+                    "invalid stem bundle skipped for fallback: stable_id=%s root=%s error=%s",
+                    stable_id,
+                    root,
+                    exc,
+                )
+    roots_message = ", ".join(str(root) for root in search_roots)
+    if failures:
+        failures_message = "; ".join(
+            f"{root}: {exc}" for root, exc in failures
+        )
+        raise StemArtifactError(
+            f"no valid stem bundle exists for {stable_id!r} in any of "
+            f"{roots_message}; failed candidates: {failures_message}"
+        )
     raise StemBundleNotFoundError(
         f"no stem bundle exists for {stable_id!r} in any of "
-        f"{', '.join(str(r) for r in search_roots)}"
+        f"{roots_message}"
     )
 
 
@@ -313,20 +334,25 @@ def _load_v1_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
 
     files: dict[StemPart, Path] = {}
     metadata: dict[StemPart, WavMetadata] = {}
-    for part in STEM_PARTS:
+    for part in STEM_LAYOUTS[manifest.layout]:
         file_path = _resolve_stem_file(bundle_dir, manifest.files[part], part)
         files[part] = file_path
         metadata[part] = read_wav_metadata(file_path)
 
-    alignment = metadata[STEM_PARTS[0]]
-    for part in STEM_PARTS[1:]:
+    parts = STEM_LAYOUTS[manifest.layout]
+    alignment = metadata[parts[0]]
+    for part in parts[1:]:
         if metadata[part] != alignment:
             raise StemArtifactError(
                 f"{part} metadata {metadata[part]!r} does not align with "
-                f"{STEM_PARTS[0]} metadata {alignment!r}"
+                f"{parts[0]} metadata {alignment!r}"
             )
     return StemBundle(
-        manifest=manifest, files=files, alignment=alignment, media_type="audio/wav"
+        manifest=manifest,
+        files=files,
+        alignment=alignment,
+        media_type="audio/wav",
+        layout=manifest.layout,
     )
 
 
@@ -447,19 +473,7 @@ def _load_v3_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
     if alignment.sample_rate <= 0 or alignment.frame_count <= 0 or alignment.channels <= 0:
         raise StemArtifactError("v3 manifest audio metadata must be positive")
 
-    files: dict[StemPart, Path] = {}
-    media_types: set[str] = set()
-    for part in parts:
-        declared = files_raw[part]
-        if not isinstance(declared, str):
-            raise StemArtifactError(f"v3 files.{part} must be a string path")
-        file_path = _resolve_stem_file(bundle_dir, declared, part)
-        files[part] = file_path  # type: ignore[index]
-        media_types.add(_MEDIA_TYPES[file_path.suffix.lower()])
-    if len(media_types) != 1:
-        raise StemArtifactError(
-            f"v3 bundle mixes codecs {sorted(media_types)}; every part must share one"
-        )
+    files, media_types = _resolve_v3_files(bundle_dir, files_raw, parts)
 
     try:
         manifest = StemManifest.model_validate(
@@ -490,6 +504,26 @@ def _load_v3_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
         media_type=media_types.pop(),
         layout=layout,
     )
+
+
+def _resolve_v3_files(
+    bundle_dir: Path, files_raw: dict[Any, Any], parts: tuple[str, ...]
+) -> tuple[dict[StemPart, Path], set[str]]:
+    """Resolve v3 parts and require one codec across the declared layout."""
+    files: dict[StemPart, Path] = {}
+    media_types: set[str] = set()
+    for part in parts:
+        declared = files_raw[part]
+        if not isinstance(declared, str):
+            raise StemArtifactError(f"v3 files.{part} must be a string path")
+        file_path = _resolve_stem_file(bundle_dir, declared, part)
+        files[part] = file_path  # type: ignore[index]
+        media_types.add(_MEDIA_TYPES[file_path.suffix.lower()])
+    if len(media_types) != 1:
+        raise StemArtifactError(
+            f"v3 bundle mixes codecs {sorted(media_types)}; every part must share one"
+        )
+    return files, media_types
 
 
 def _require_flac_magic(path: Path) -> None:
@@ -669,6 +703,16 @@ def summarize_stem_bundle(
     return deepcopy(summary)
 
 
+def _summary_files(raw: Any) -> dict[str, Any]:
+    """Extract summary file declarations with the same object contract as the reader."""
+    if not isinstance(raw, dict):
+        raise TypeError("manifest.json must be an object")
+    files = raw.get("files")
+    if not isinstance(files, dict):
+        raise TypeError("files must be an object")
+    return files
+
+
 def _read_stem_summary(stable_id: str, stems_dir: Path) -> dict[str, Any]:
     """Read one bundle off disk: ``{"status": "none"}`` or ready.
 
@@ -688,10 +732,8 @@ def _read_stem_summary(stable_id: str, stems_dir: Path) -> dict[str, Any]:
             continue
         try:
             raw = json.loads(manifest_path.read_text(encoding="utf-8"))
-            files = raw["files"]
-            if not isinstance(files, dict):
-                raise ValueError("files must be an object")
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, ValueError) as exc:
+            files = _summary_files(raw)
+        except (OSError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             # "invalid" is NOT "none": a bundle whose manifest is corrupt is a
             # thing to go and fix, and the column says so rather than showing
             # the same blank as a track that was simply never separated.
@@ -751,11 +793,8 @@ __all__ = [
     "ROFORMER_PARTS",
     "ROFORMER_STEMS_DIR",
     "STEM_LAYOUTS",
-    "STEM_SUMMARY_TTL_S",
-    "bulk_stem_summaries",
-    "stem_roots",
-    "summarize_stem_bundle",
     "STEM_PARTS",
+    "STEM_SUMMARY_TTL_S",
     "DemucsModel",
     "StemArtifactError",
     "StemBundle",
@@ -764,7 +803,10 @@ __all__ = [
     "StemPart",
     "StemSourceProvenance",
     "WavMetadata",
+    "bulk_stem_summaries",
     "load_stem_bundle",
     "read_wav_metadata",
+    "stem_roots",
+    "summarize_stem_bundle",
     "validate_stable_id",
 ]

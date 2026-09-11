@@ -124,10 +124,54 @@ def local_seq(conn: sqlite3.Connection) -> int:
     return 0 if row is None else int(row[0])
 
 
+def settled_push_seq(
+    *, previous: int, ceiling: int, held_seq: int | None, undelivered: bool
+) -> int:
+    """The push fence to record after one round trip. Round 5 gate B1.
+
+    ``last_push_seq`` means "every ``local_changelog`` entry at or below this
+    was offered AND the peer decided it". Stamping ``ceiling`` on it
+    regardless of what happened is what lost rows: a row this machine held
+    back, or one the peer refused, then sat below the new fence, and the
+    fenced selection ``seq > last_push_seq`` can never name it again. The
+    row's only remaining copy is local, the digest stops agreeing once the
+    quarantine that excused it clears, and no repair on either machine
+    re-offers it.
+
+    One rule -- never step over a row that did not arrive:
+
+    * ``undelivered``: the peer decided FEWER rows than it was given
+      (``accepted + rejected`` below the rows offered). WHICH ones it refused
+      is not reported, so the fence stays exactly where it was and the whole
+      window is offered again. Measured from the peer's own conservation law
+      rather than from its quarantine counter: a peer that drops rows for a
+      reason nobody has thought of yet is caught by the same check, and a
+      peer too old to report a counter cannot read as "reported zero".
+    * ``held_seq``: the lowest changelog seq THIS machine held back. The
+      fence stops one below it, so that entry and everything after it is
+      selected again on every sync until the row can travel. A row a FULL
+      offer held back has no seq at all; those are re-logged instead
+      (:func:`apps.sync_hub.engine_changes.relog_held`).
+    * otherwise ``ceiling``: everything selected arrived. The ordinary case,
+      and the one that keeps the fence moving -- a fence that never advances
+      re-offers the whole library forever, which is the cost this fence
+      exists to remove.
+
+    ``previous`` is a floor, so the fence never goes backwards and the
+    re-offering is bounded by the writes made since the quarantine began.
+    """
+    if undelivered:
+        return previous
+    if held_seq is None:
+        return ceiling
+    return max(previous, min(ceiling, held_seq - 1))
+
+
 __all__ = [
     "Watermark",
     "current_seq",
     "local_seq",
     "read_watermark",
+    "settled_push_seq",
     "write_watermark",
 ]

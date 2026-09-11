@@ -12,7 +12,7 @@
  * band paints only for an engaged loop the engine actually reports.
  */
 import { drawLoopRegion, VOCAL_BLUE, vocalAlpha } from '../wave/render';
-import type { LoopBandSource } from '../wave/wave-math';
+import { loopBandPx, type LoopBandSource } from '../wave/wave-math';
 
 // This module is PRESENTATIONAL: it names the shapes it paints instead of
 // importing `$lib/rb/types` or `$lib/rb/api-rb`. Two reasons, in order:
@@ -29,6 +29,10 @@ const BAND_MID = 'rgba(61, 125, 217, 0.85)';
 const BAND_HIGH = 'rgba(207, 224, 242, 0.9)';
 /** 'mono' payloads carry heights only - one color, never invented bands. */
 const BAND_MONO = '#3d7dd9';
+/** Stored loop hot-cue span, distinct from the translucent engaged-loop band. */
+export const LOOP_CUE_COLOR = '#e8a13a';
+const LOOP_CUE_OUTLINE = '#c8cdd2';
+const LOOP_CUE_MARKER_PX = 8;
 
 /** Vocal bar height on the strip's backing canvas. 4 backing px over the 40px
  * backing height reads as the ~2 CSS px the strip is scaled down to. */
@@ -62,6 +66,12 @@ export type StripVocals =
 	| { status: 'no_vocals'; regions: readonly StripVocalRegion[] }
 	| { status: 'not_analyzed' };
 
+/** Persisted loop hot-cue bounds from the deck's real hot-cue bank. */
+export interface StripLoopCue {
+	in_ms: number;
+	out_ms: number;
+}
+
 /** One frame of the deck overview strip, in backing-canvas pixels. */
 export interface StripFrame {
 	/** Backing canvas width (CSS scales it to the deck's strip width). */
@@ -76,6 +86,8 @@ export interface StripFrame {
 	vocals: StripVocals | null;
 	/** Engaged loop reported by the engine; null when no loop is running. */
 	loop: LoopBandSource | null;
+	/** Stored loop hot cues. They remain visible when no loop is engaged. */
+	loopCues: readonly StripLoopCue[];
 }
 
 /**
@@ -97,6 +109,7 @@ export function drawStripWaveform(ctx: CanvasRenderingContext2D, frame: StripFra
 	// duration to place it with (DECKUX-04).
 	if (durationMs !== null && durationMs > 0) {
 		drawLoopRegion(ctx, frame.loop, (ms) => (ms / durationMs) * w, w, h);
+		_drawLoopCueBands(ctx, frame.loopCues, durationMs, w, h);
 	}
 }
 
@@ -156,4 +169,23 @@ function _drawVocalBars(
 		ctx.fillRect(x0, 0, x1 - x0, VOCAL_BAR_BACKING_PX);
 	}
 	ctx.globalAlpha = 1;
+}
+
+function _drawLoopCueBands(
+	ctx: CanvasRenderingContext2D,
+	loopCues: readonly StripLoopCue[],
+	durationMs: number,
+	widthPx: number,
+	heightPx: number
+): void {
+	for (const cue of loopCues) {
+		const band = loopBandPx({ ...cue, engaged: true }, (ms) => (ms / durationMs) * widthPx, widthPx);
+		if (band === null) continue;
+		const markerHeight = Math.min(LOOP_CUE_MARKER_PX, heightPx);
+		ctx.fillStyle = LOOP_CUE_COLOR;
+		ctx.fillRect(band.left, 0, band.right - band.left, markerHeight);
+		ctx.lineWidth = 1;
+		ctx.strokeStyle = LOOP_CUE_OUTLINE;
+		ctx.strokeRect(band.left + 0.5, 0.5, Math.max(0, band.right - band.left - 1), markerHeight - 1);
+	}
 }

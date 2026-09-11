@@ -1,0 +1,1 @@
+{"error":"Command '['ps', '-axo', 'pid=,ppid=,pgid=,command=']' timed out after 5.0 seconds","error_type":"TimeoutExpired","kind":"probe-error","schema_version":1,"timestamp":"2026-08-21T22:10:10.690Z"}

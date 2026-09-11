@@ -43,8 +43,6 @@ from __future__ import annotations
 import json
 import socket
 import sqlite3
-import threading
-import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -54,6 +52,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from apps.shared.state import normalize_stamps
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import client, engine, generation, maintenance, protocol, service
 from tests.cloudsync.test_hub_sync import (
@@ -68,6 +67,7 @@ from tests.cloudsync.test_hub_sync import (
     _TestClientTransport,
     _track_title,
 )
+from tests.waits import start_uvicorn_in_thread
 
 pytestmark = pytest.mark.requirement("CAT-04")
 
@@ -442,14 +442,7 @@ def live_hub(hub_dir: Path) -> Iterator[str]:
     config = uvicorn.Config(
         _make_hub_app(hub_dir), host="127.0.0.1", port=port, log_level="warning"
     )
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    deadline = time.time() + 10.0
-    while not server.started and time.time() < deadline:
-        time.sleep(0.02)
-    if not server.started:
-        raise RuntimeError("the live hub did not start within 10s")
+    server, thread = start_uvicorn_in_thread(config, what="the live hub")
     try:
         yield f"http://127.0.0.1:{port}"
     finally:
@@ -490,15 +483,17 @@ def test_the_cli_syncs_end_to_end_against_a_live_hub(
         hub_conn.close()
 
 
-def test_run_sync_raises_the_declared_protocol_error_on_an_unorderable_stamp(
-    hub: _TestClientTransport, spoke_a: Path
+def test_run_sync_quarantines_one_unorderable_stamp_and_syncs_the_rest(
+    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path
 ) -> None:
-    """R7 / R4's engine-side raise-contract half: the failure is DECLARED.
+    """R7 / R4's engine-side raise-contract half, as round 5 settled it.
 
-    An unorderable stored ``updated_at`` aborts ``spoke_push`` while the spoke
-    selects its own rows, before anything reaches the wire. Round 3 observed it
-    escape ``run_sync`` as an undeclared type; it is now catchable as
-    ``client.SyncProtocolError`` -- the same object as ``protocol``'s.
+    Round 4 aborted ``spoke_push`` on an unorderable stored ``updated_at``
+    before anything reached the wire, so one legacy row stopped every push
+    and every digest on the machine, forever. It now quarantines THAT ROW:
+    the row is not offered, the count says so, the digest compares the
+    eligible set, and the sync completes. The declared-type contract is
+    unchanged for the failures that remain.
     """
     assert client.SyncProtocolError is protocol.SyncProtocolError
     assert client.SyncApplyError is engine.SyncApplyError
@@ -506,8 +501,9 @@ def test_run_sync_raises_the_declared_protocol_error_on_an_unorderable_stamp(
     conn_a = _open(spoke_a)
     try:
         _insert_track(conn_a, "trk-1", title="one", updated_at=_T0, origin=_DEV_A)
+        _insert_track(conn_a, "trk-2", title="two", updated_at=_T0, origin=_DEV_A)
         # A naive, space-separated stamp: not orderable, stored raw past the
-        # writer so canonical_row hits it on the next full offer.
+        # writer so canonical_row would hit it on the next full offer.
         conn_a.execute(
             "UPDATE tracks SET updated_at = '2026-08-30 10:00:00' "
             "WHERE stable_id = 'trk-1'"
@@ -516,6 +512,41 @@ def test_run_sync_raises_the_declared_protocol_error_on_an_unorderable_stamp(
     finally:
         conn_a.close()
 
-    with pytest.raises(client.SyncProtocolError) as excinfo:
-        _sync(spoke_a, hub, "spoke-a")
-    assert "orderable timestamp" in str(excinfo.value)
+    result = _sync(spoke_a, hub, "spoke-a")
+    assert result.quarantined == 1, "the poisoned row must be counted, not silent"
+
+    hub_conn = _open(hub_dir)
+    try:
+        assert _track_title(hub_conn, "trk-2") == "two", (
+            "one legacy row must not stop an innocent row from syncing"
+        )
+        assert hub_conn.execute(
+            "SELECT COUNT(*) FROM tracks WHERE stable_id = 'trk-1'"
+        ).fetchone()[0] == 0, (
+            "a quarantined row must not reach the peer at all -- under the "
+            "coalescing design it would arrive stamped year zero"
+        )
+    finally:
+        hub_conn.close()
+
+    # Control: after the SANCTIONED repair the same row DOES sync and nothing
+    # is quarantined. Without this the assertions above would pass for a
+    # spoke that had simply stopped pushing anything. Driven through
+    # normalize_stamps rather than a raw UPDATE on purpose: a bare UPDATE
+    # leaves no local_changelog entry, so the fenced push would never offer
+    # the row and the control would fail for a reason that is not the one
+    # under test.
+    conn_a = _open(spoke_a)
+    try:
+        repairs = normalize_stamps.scan(conn_a)
+        assert [(r.table, r.column) for r in repairs] == [("tracks", "updated_at")]
+        normalize_stamps.apply_repairs(conn_a, repairs)
+    finally:
+        conn_a.close()
+    healed = _sync(spoke_a, hub, "spoke-a")
+    assert healed.quarantined == 0
+    hub_conn = _open(hub_dir)
+    try:
+        assert _track_title(hub_conn, "trk-1") == "one"
+    finally:
+        hub_conn.close()

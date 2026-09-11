@@ -25,6 +25,9 @@ just quality-baseline    # rewrites baseline.json at today's numbers
 Allowances only ever shrink. Raising one by hand is a decision someone has to
 defend in a diff, which is the point.
 
+A run is judged against **allowance + slack**, where slack is a small declared
+band per metric. The section below says why, and what each band is worth.
+
 There are two exceptions, in opposite directions.
 
 `arch.contracts_broken` is **hard-gated at zero** regardless of baseline. An
@@ -60,6 +63,127 @@ directions (a ratchet fails on every module added; a hard zero is nonsense), so
 each instead carries a floor in its evaluator that ABORTS the run rather than
 scoring a collapsed scan: `shell_construct_lint.CFG.MIN_FILES` and
 `CFG.MYPY_MIN_FILES`.
+
+## Slack: one PR's worth of headroom, declared and justified
+
+A ratchet whose allowance is re-recorded at whatever each landing PR achieved
+has **zero headroom by construction**: burning debt down does not create slack,
+because the wall moves with you. #1200 took `file_size.over_limit_python` from
+49 to 48, the allowance followed to 48, and the next PR still started at zero
+and still failed at 49 > 48.
+
+Measured at pinned main on Fri 5 Sep 2026 (issue #1219), all seven count
+metrics sat at zero headroom **simultaneously**: `ruff.complexity` 142/142,
+`complexity.blocks_over_limit` 144/144, `frontend.max_fan_out` 35/35,
+`frontend.unknown_casts` 16/16, `file_size.over_limit_python` 48/48,
+`file_size.max_frontend` 4042/4042, `file_size.over_limit_frontend` 10/10. Any
+PR adding one unit on any one axis was red. Of the 30 red PRs open that
+morning, the three that were mergeable-with-a-real-failure failed on this gate
+and nothing else (#383, #1122, #1215), and fixers spent hours moving code
+between files to fit rather than doing the work in the PR.
+
+So `baseline.json` carries a `slack` block: a per-metric constant worth roughly
+one ordinary PR. The gate fails on `measured > allowance + slack`, and a run
+inside the band prints
+
+```
+[quality] WITHIN SLACK      file_size.over_limit_python: 49 > 48 allowed, inside the 1 slack (ceiling 49)
+```
+
+with the metric line marked `~~` rather than held, and the report's status
+column reading `within slack`. Nothing is hidden behind the pass.
+
+Four properties make this a budget rather than a hole:
+
+1. **Allowances still only shrink, and `--update-baseline` enforces it.** Slack
+   is headroom at gate time, never a recorded number: a rewrite records a
+   measurement only when it is LOWER than the allowance already on file, and a
+   metric floating inside its band keeps the old number and prints
+   `ALLOWANCE KEPT  file_size.over_limit_python: measured 49, allowance kept at
+   48`. Without that clamp the band compounds -- the run at 49 passes, the
+   update banks 49, the next run passes at 50, and the ceiling walks up one
+   band per update while this file still claims allowances only ever shrink.
+   Raising one is still possible and still exactly as visible as before: edit
+   the number by hand, in a diff someone reviews, with a `burn_down` entry
+   saying why.
+2. **A missing key is zero, not a default.** A metric with no `slack` entry is
+   gated exactly as it was before this existed, so the band can never widen a
+   gate nobody wrote down. `tests/quality/test_gate_slack.py` fails if it does.
+3. **The band is declared in the repo and reviewed in a diff**, like every
+   other allowance here. Raising one is still a decision someone defends.
+4. **The ceiling is a ceiling.** `allowance + slack + 1` is red, and a run
+   above a trunk that is itself over allowance stays a hard `REGRESSION` (the
+   #1155 inheritance rules below are unchanged).
+
+The bands, and why each is that size:
+
+| metric                                 | slack | one PR's worth means                                                                                                                          |
+| -------------------------------------- | ----: | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ruff.total`                           |     8 | The sum of the five bucket bands below. `ruff.total` IS that sum (2192 = 142+64+346+353+1287), so a smaller number would make bucket slack unusable: the PR that spends `ruff.complexity`'s band would fail on the total instead. |
+| `ruff.complexity`                      |     2 | One new function over a threshold usually trips more than one rule at once: the worked case in this file (`crate_sync.py::_run`) tripped four. Two covers the ordinary C901-plus-PLR0912 pair without covering a four-rule monster. |
+| `ruff.coupling`                        |     1 | One new cross-module import in a feature.                                                                                                       |
+| `ruff.style`                           |     5 | A new module of ordinary size lands a handful of style findings before anyone reads it.                                                          |
+| `ruff.safety`                          |     0 | Deliberate. A rising `ruff.safety` is a new blind `except Exception`, which is the fail-fast house rule breaking. There is no ordinary PR that needs one. |
+| `ruff.correctness`                     |     0 | Deliberate, same reasoning: a new correctness finding is a defect, not debt.                                                                     |
+| `complexity.blocks_over_limit`         |     2 | Paired with `ruff.complexity`: one added function over the mccabe limit, plus one for a helper extracted alongside it.                            |
+| `complexity.worst_block`               |     0 | A new deepest function in the tree is a review conversation, not a budget line.                                                                  |
+| `complexity.low_maintainability_files` |     0 | Same: a whole file dropping below rank A is a decision, not drift.                                                                               |
+| `python.package_cycles`                |     0 | A new package cycle is an architecture defect; `arch.contracts_broken` is already hard-gated for the same reason.                                 |
+| `mypy.errors_apps` / `_tests` / `_scripts` | 5 each | These counts were recorded as-measured and never fixed (see the mypy section), and a new module lands a few unannotated signatures. 5 is about 3% of each pile, small enough that a real regression still shows. |
+| `frontend.import_cycles`               |     0 | A new cycle is the exact defect the hand-rolled graph exists to catch.                                                                            |
+| `frontend.max_fan_in`                  |     1 | Every new deck-aware module imports `DeckId` from `types.ts`, so ordinary work costs exactly +1 here (two rows above document this happening).    |
+| `frontend.max_fan_out`                 |     1 | One import added to the worst-offender component, which is what extracting a helper out of `BrowserPanel.svelte` costs (the row above documents that PR scoring a decoupling as a regression). |
+| `frontend.unknown_casts`               |     1 | One `as unknown as` in new code, which must then be paid back: the `FRONTEND_UNKNOWN_CASTS` burn-down still targets 0 and still names every file. |
+| `frontend.unused_exports`              |     3 | A new module usually exports a little more than its first caller consumes.                                                                        |
+| `frontend.unused_files` / `unused_deps` |    0 | An orphaned module or an unused package is a mistake to fix, not a cost to absorb.                                                               |
+| `file_size.max_python`                 |    60 | About 1.5% of the current worst file, and the size of one feature's worth of lines in an already-long module.                                     |
+| `file_size.over_limit_python`          |     1 | One file crossing the 600-line review threshold.                                                                                                  |
+| `file_size.max_frontend`               |    60 | Same as the Python band, against a 4042-line worst offender.                                                                                      |
+| `file_size.over_limit_frontend`        |     1 | One file crossing the frontend threshold.                                                                                                         |
+| `duplication.percent`                  |  0.05 | Smaller than the 0.03 a fourth device map cost (row above), scaled to leave room for one such file without covering a copy-pasted module.          |
+
+Hard-gated and report-only metrics carry no slack at all, and a test fails if
+one ever appears there: a hard rule with a band is not a rule, and a number
+that never fails the gate cannot use headroom.
+
+Slack does not replace burning debt down. It buys the PR in front of you room
+to land, once, and `just quality-baseline` will not turn that room into a new
+allowance. The moment the tree drifts up into a band, the next PR on that
+axis is red again unless someone ratchets the allowance down first, which is
+exactly the pressure this file is here to apply.
+
+## A regression that main already carries is not yours
+
+A merge can land a metric over its allowance that NEITHER parent exceeded:
+two branches each add lines to the same file, each stays under the limit, and
+the union crosses it. Once that sits on main, every later PR measures the same
+over-allowance metric and would fail on a regression it inherited (issue
+#1155, worked instance: `file_size.over_limit_python` 49 -> 50 on merged
+line-adds to one file).
+
+So when a metric regresses, the gate re-measures that metric on the merge-base
+`git merge-base HEAD origin/main` and splits the outcome:
+
+- main is AT OR ABOVE this run's value: the line prints `INHERITED`, names
+  main as the owner (`main (sha) is ALSO at N - this is a trunk regression,
+  not yours`), and does not fail the run. Seven PR authors should not each
+  debug the same trunk state.
+- main is BELOW this run's value: the change made an already-bad number
+  worse, so it stays a hard `REGRESSION` and fails. Only `base >= run` is
+  inherited; `base` at 50 and the run at 51 is the run's fault.
+- the merge base cannot be measured (HEAD is itself on main, the ref is
+  missing, or the base tree will not run): the message is unchanged and the
+  output says why. The gate never downgrades on a guess and never passes
+  silently.
+
+The base re-measure only runs when something actually regressed, and only for
+the evaluator that owns the regressed metric. It checks the base out with
+`git worktree add --detach` into a throwaway tempdir and runs that commit's
+own committed copy of the gate there, so a metric over `scripts/` is measured
+against the base's version of the file and a branch-only flag does not have to
+exist on main for the measurement to work. Hard-zero rules are never offered
+the downgrade: a broken architecture contract has no allowance to be "over"
+on main.
 
 ## The mypy ratchet, and its pinned install set
 
@@ -234,6 +358,15 @@ falls when that is split by concern rather than by being a single types file.
 hotspot) is decomposed. Neither is a job for a rescue PR. Do not raise either
 again without adding a row here.
 
+### Sat 5 Sep 2026: waveform track artwork crosses the api-rb.ts ceiling
+
+| metric                | was | now | what is in the gap                                                                                                                                                                                          |
+| --------------------- | --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `frontend.max_fan_in` | 36  | 38  | Top module is now `src/lib/rb/api-rb.ts` (it overtook `client.ts` since the allowance was measured); #1297's `WaveTrackSummary.svelte` is its 38th importer, taking `artworkUrl`. Recorded to clear a red trunk. |
+
+Owner and payback: `baseline.json` entry `WAVE_ARTWORK_API_RB_FAN_IN`. The
+same split that #677 names for `client.ts` applies to `api-rb.ts`.
+
 ## What each evaluator answers
 
 | evaluator    | tool                        | the question it answers                                                                                                                                                              |
@@ -313,3 +446,11 @@ Highest-value targets, in the order they are worth doing:
 preflight` at 41, against a limit of 12. Two files sit at maintainability
    rank C: `apps/webui/crate_sync.py` (MI 5.0) and `apps/vocals/cli.py`
    (MI 6.1), on a scale where anything under 20 is hard to change safely.
+
+## Scored rubric (not this ratchet)
+
+The per-surface code-quality rubric in [`rubric/README.md`](rubric/README.md)
+scores `open-dj`, `apps/open_dj`, `apps/adapters`, and
+`apps/webui/frontend` independently. It catches doc and contract defects that
+lint and tests miss. It does **not** update `baseline.json` and is not part of
+`just quality`.

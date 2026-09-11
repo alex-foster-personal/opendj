@@ -62,6 +62,7 @@ JOB_KIND: str = "stems.separate"
 there is more than one and a UI can group by the part before the dot."""
 
 WORKER_SCRIPT: str = "scripts/stems_modal_worker.py"
+LOCAL_WORKER_SCRIPT: str = "scripts/stems_local_worker.py"
 
 SCOPE_PENDING: str = "pending"
 """The only scope: every library row with audio on disk and no bundle yet.
@@ -120,25 +121,56 @@ class StemsJobPayloadError(ValueError):
 # ----- payload ---------------------------------------------------------------
 
 
-def parse_payload(payload: dict[str, Any]) -> tuple[list[str] | None, str, Path | None]:
-    """Validate an enqueue payload into (stable_ids, tier, data_dir).
+def _parse_tier(payload: dict[str, Any], *, executor: str) -> str:
+    tier = payload.get("tier", DEFAULT_TIER)
+    from apps.stems.routing import EXECUTOR_LOCAL, effective_tier
 
-    ``stable_ids`` comes back None for ``scope: "pending"`` -- the caller
-    asked for "everything that still needs stems" and the answer is whatever
-    that is AT RUN TIME, resolved once in the worker. Freezing the list here
-    would let a scan that finishes between enqueue and spawn go unseparated,
-    and the install flow enqueues while the first scan is still running.
+    tier = effective_tier(tier if isinstance(tier, str) else DEFAULT_TIER, executor)
+    if executor == EXECUTOR_LOCAL:
+        if tier != "LOCAL":
+            raise StemsJobPayloadError(
+                f"local executor requires tier LOCAL; got {tier!r}"
+            )
+        return tier
+    if not isinstance(payload.get("tier", DEFAULT_TIER), str) or tier not in MODAL_TIER_KEYS:
+        # LOCAL is a real rung of apps/stems/tiers.py and is refused here on
+        # purpose when the Modal executor is selected: this kind IS the Modal
+        # path. A local rung needs a different worker, not a flag on this one.
+        raise StemsJobPayloadError(
+            f"tier {tier!r} is not a Modal tier; this job kind runs on Modal. "
+            f"Known Modal tiers: {', '.join(MODAL_TIER_KEYS)}"
+        )
+    return tier
 
-    Raised errors surface as a 400 from ``POST /api/v1/jobs`` because
-    ``worker_argv`` runs BEFORE the row is inserted. That ordering is what
-    makes a typo cost nothing: a bad payload never becomes a queued job, and
-    a queued job never becomes GPU spend.
-    """
+
+def parse_payload(payload: dict[str, Any]) -> tuple[list[str] | None, str, Path | None, str]:
+    """Validate payload; fourth value is the resolved executor."""
+    from apps.stems.routing import resolve_stems_executor
+
+    executor = resolve_stems_executor()
     return (
         _parse_target(payload),
-        _parse_tier(payload),
+        _parse_tier(payload, executor=executor),
         _parse_data_dir(payload),
+        executor,
     )
+
+
+def canonical_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize tier and executor for the stored job row and UI."""
+    stable_ids, tier, data_dir, executor = parse_payload(payload)
+    out = dict(payload)
+    out["tier"] = tier
+    out["executor"] = executor
+    if stable_ids is not None:
+        out["stable_ids"] = stable_ids
+        out.pop("scope", None)
+    elif "scope" in payload:
+        out["scope"] = payload["scope"]
+        out.pop("stable_ids", None)
+    if data_dir is not None:
+        out["data_dir"] = str(data_dir)
+    return out
 
 
 def _parse_target(payload: dict[str, Any]) -> list[str] | None:
@@ -181,20 +213,6 @@ def _parse_target(payload: dict[str, Any]) -> list[str] | None:
     return seen
 
 
-def _parse_tier(payload: dict[str, Any]) -> str:
-    tier = payload.get("tier", DEFAULT_TIER)
-    if not isinstance(tier, str) or tier not in MODAL_TIER_KEYS:
-        # LOCAL is a real rung of apps/stems/tiers.py and is refused here on
-        # purpose: this kind IS the Modal path. A local rung needs a different
-        # worker, not a flag on this one, so naming it is a payload error
-        # rather than a silent promotion to a card the maintainer pays for.
-        raise StemsJobPayloadError(
-            f"tier {tier!r} is not a Modal tier; this job kind runs on Modal. "
-            f"Known Modal tiers: {', '.join(MODAL_TIER_KEYS)}"
-        )
-    return tier
-
-
 def _parse_data_dir(payload: dict[str, Any]) -> Path | None:
     raw_dir = payload.get("data_dir")
     if raw_dir is None:
@@ -228,25 +246,40 @@ def resolve_transport() -> str:
 
 
 def build_argv(payload: dict[str, Any]) -> list[str]:
-    stable_ids, tier, data_dir = parse_payload(payload)
+    from apps.stems.local_gate import local_stems_gate
+    from apps.stems.routing import EXECUTOR_LOCAL
+
+    stable_ids, tier, data_dir, executor = parse_payload(payload)
     if shutil.which(UV_BIN) is None:
         raise StemsJobPayloadError(
-            f"{UV_BIN!r} is not on PATH, and the stems worker needs it: modal "
-            "is deliberately not a repo dependency, so the worker runs under "
-            "`uv run --with modal`. Install uv, or set MDT_UV_BIN."
+            f"{UV_BIN!r} is not on PATH, and the stems worker needs uv. "
+            "Install uv, or set MDT_UV_BIN."
         )
-    argv: list[str] = [
-        UV_BIN,
-        "run",
-        "--with",
-        "modal",
-        "python",
-        WORKER_SCRIPT,
-        "--tier",
-        tier,
-        "--transport",
-        resolve_transport(),
-    ]
+    if executor == EXECUTOR_LOCAL:
+        refusal = local_stems_gate()
+        if refusal is not None:
+            raise StemsJobPayloadError(refusal)
+        argv: list[str] = [
+            UV_BIN,
+            "run",
+            "--no-sync",
+            "python",
+            LOCAL_WORKER_SCRIPT,
+        ]
+    else:
+        argv = [
+            UV_BIN,
+            "run",
+            "--no-sync",
+            "--with",
+            "modal",
+            "python",
+            WORKER_SCRIPT,
+            "--tier",
+            tier,
+            "--transport",
+            resolve_transport(),
+        ]
     if data_dir is not None:
         argv += ["--data-dir", str(data_dir)]
     if stable_ids is None:
@@ -284,7 +317,7 @@ def reconcile_from_disk(job: dict[str, Any]) -> str:
     time. Re-running the GPU is not the fix for a bad decode.
     """
     try:
-        stable_ids, _tier, data_dir = parse_payload(job.get("payload") or {})
+        stable_ids, _tier, data_dir, _executor = parse_payload(job.get("payload") or {})
     except StemsJobPayloadError:
         return "unknown"
     if stable_ids is None:
@@ -321,6 +354,7 @@ __all__ = [
     "SCOPE_PENDING",
     "StemsJobPayloadError",
     "build_argv",
+    "canonical_payload",
     "on_progress",
     "parse_payload",
     "reconcile_from_disk",

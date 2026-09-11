@@ -1,6 +1,8 @@
 """CLI parity regressions for fail-closed playlist writeback."""
 from __future__ import annotations
 
+import pytest
+
 from apps.webui import writeback_cli
 
 
@@ -40,3 +42,5 @@ def test_cli_apply_refuses_a_live_write_without_confirmation(capsys) -> None:
 
     assert writeback_cli.main(arguments) == 2
     assert "--confirm or --dry-run" in capsys.readouterr().err
+
+pytestmark = pytest.mark.rb_parity

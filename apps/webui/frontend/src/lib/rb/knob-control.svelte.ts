@@ -57,8 +57,21 @@ export const knobUi = $state<{
 	hoveredId: null
 });
 
-const _registry = new Map<string, KnobRef>();
+/**
+ * Per-id STACK, not a single ref: EqOverlay's knobs (LIBUX-05 cmd+E) mount
+ * the same deck:band id as the mixer's always-mounted ChannelStrip knob for
+ * the same parameter while raised, then unmount on close. A single-ref map
+ * loses the mixer's registration permanently on that unregister. Register
+ * pushes, unregister pops its own entry, so closing the overlay always
+ * uncovers whichever control was registered before it - LIFO, which matches
+ * mount order since EqOverlay is strictly nested inside the mixer's lifetime.
+ */
+const _registry = new Map<string, KnobRef[]>();
 let _wheelBound = false;
+
+function _activeRef(id: string): KnobRef | undefined {
+	return _registry.get(id)?.at(-1);
+}
 
 // ----- helpers -----
 
@@ -96,18 +109,33 @@ function _partnerOf(id: string): string | null {
 // ----- registry -----
 
 export function registerKnob(ref: KnobRef): void {
-	_registry.set(ref.id, ref);
+	const stack = _registry.get(ref.id);
+	if (stack) stack.push(ref);
+	else _registry.set(ref.id, [ref]);
 	_ensureGlobalWheel();
 }
 
 export function unregisterKnob(id: string): void {
+	const stack = _registry.get(id);
+	if (!stack) return;
+	stack.pop();
+	if (stack.length > 0) return;
 	_registry.delete(id);
+	// An earlier registrant for this id (e.g. the mixer knob a shadowing
+	// EqOverlay widget sits on top of) surviving underneath means the user's
+	// selection/link is still pointing at a live widget - only clear the
+	// UI-state once the LAST registrant for this id is gone.
 	if (knobUi.selectedId === id) knobUi.selectedId = null;
 	if (knobUi.linkPendingId === id) knobUi.linkPendingId = null;
 	if (knobUi.hoveredId === id) knobUi.hoveredId = null;
 	if (knobUi.link !== null && (knobUi.link.a === id || knobUi.link.b === id)) {
 		knobUi.link = null;
 	}
+}
+
+/** Test-only: clears the module-level registry stack between test cases. */
+export function _resetKnobRegistryForTests(): void {
+	_registry.clear();
 }
 
 export function isKnobSelected(id: string): boolean {
@@ -158,14 +186,14 @@ export function clearKnobLink(): void {
 /** Apply a delta to a knob; if linked, move the partner inversely with stagger. */
 export function nudgeKnob(id: string, delta: number): void {
 	if (!Number.isFinite(delta) || delta === 0) return;
-	const primary = _registry.get(id);
+	const primary = _activeRef(id);
 	if (primary === undefined) return;
 	const partnerId = _partnerOf(id);
 	if (partnerId === null) {
 		primary.setValue(clamp01(primary.getValue() + delta));
 		return;
 	}
-	const secondary = _registry.get(partnerId);
+	const secondary = _activeRef(partnerId);
 	if (secondary === undefined) {
 		primary.setValue(clamp01(primary.getValue() + delta));
 		return;
@@ -177,7 +205,7 @@ export function nudgeKnob(id: string, delta: number): void {
 
 /** Set absolute value on primary; derive delta vs current for link math. */
 export function setKnobAbsolute(id: string, value: number): void {
-	const primary = _registry.get(id);
+	const primary = _activeRef(id);
 	if (primary === undefined) return;
 	const delta = clamp01(value) - primary.getValue();
 	nudgeKnob(id, delta);
@@ -194,14 +222,14 @@ export function setKnobFromDrag(
 	partnerId: string | null,
 	startSecondary: number | null
 ): void {
-	const primary = _registry.get(id);
+	const primary = _activeRef(id);
 	if (primary === undefined) return;
 	const target = clamp01(targetPrimary);
 	if (partnerId === null || startSecondary === null) {
 		primary.setValue(target);
 		return;
 	}
-	const secondary = _registry.get(partnerId);
+	const secondary = _activeRef(partnerId);
 	if (secondary === undefined) {
 		primary.setValue(target);
 		return;
@@ -217,7 +245,7 @@ export function linkedPartnerId(id: string): string | null {
 }
 
 export function readKnobValue(id: string): number | null {
-	return _registry.get(id)?.getValue() ?? null;
+	return _activeRef(id)?.getValue() ?? null;
 }
 
 function _onWindowWheel(e: WheelEvent): void {

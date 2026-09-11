@@ -30,6 +30,22 @@ class MikBackend:
         return shutil.which(_BIN)
 
     @classmethod
+    def jit_cache_roots(cls) -> tuple[Path, ...]:
+        """No in-process JIT, so no cache to fingerprint and none to protect."""
+        return ()
+
+    @classmethod
+    def warm_jit_cache(cls) -> str:
+        """Nothing to warm: every analysis is a subprocess of an external CLI.
+
+        Stated rather than silently inherited, so an empty warm-up here is a
+        recorded fact about this backend and not an oversight. If this backend
+        ever grows an in-process numba path, this is the method that must
+        stop being a no-op.
+        """
+        return "no in-process JIT; mixed-in-key-cli runs out of process"
+
+    @classmethod
     def analyze(cls, path: Path, stable_id: str) -> AnalysisRecord:
         binary = cls._binary_path()
         if not binary:

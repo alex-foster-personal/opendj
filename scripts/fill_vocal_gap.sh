@@ -4,7 +4,9 @@
 # logs N/total + resulting status. Self-contained; safe to re-run (valid
 # cache is skipped unless --force).
 set -uo pipefail
-REPO="/Users/dev/Music/music-dj-tools"
+# This repo's own checkout location, not a machine-specific value (#910): no
+# personal home should ever be hardcoded here.
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # No -e in this script (per-track failures are counted, not fatal), so the cd
 # is guarded explicitly: every path below is relative to the repo root.
 cd "$REPO" || { echo "FATAL: no checkout at $REPO" >&2; exit 1; }

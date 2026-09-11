@@ -1,6 +1,6 @@
 import type { components } from '../api-types';
 import { ApiError, api, unwrap } from '../api/client';
-import { RbApiError } from './api-rb';
+import { RbApiError } from './api-rb-error';
 
 export type WritebackVendor = 'rekordbox' | 'djay';
 export type WritebackTargetMode = 'live';

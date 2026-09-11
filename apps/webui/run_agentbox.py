@@ -50,7 +50,19 @@ SCRATCH_DIR = PROJECT_ROOT / ".tmp"
 EPHEMERAL_LOG_DIR = Path(tempfile.gettempdir()) / "music-dj-tools"
 FRONTEND_DIR = PROJECT_ROOT / "apps" / "webui" / "frontend"
 AGENTBOX_HOSTNAME = "agentbox"
-ALLOWED_SSH_HOSTS = frozenset({"agentbox", "agentbox.example-tailnet.ts.net"})
+#: Env naming this deployment's agentbox SSH destinations, comma separated, in
+#: addition to the bare ssh alias. The MagicDNS name embeds a TAILNET label,
+#: which is deployment-specific, so it is CONFIGURED rather than spelled in the
+#: tracked tree (#1540). Reading the PROCESS environment is deliberate: the
+#: worktree root .env holds the two port variables and is rewritten by the port
+#: tooling, so it is not this contract's home.
+#:
+#: A SHAPE check ("ends in .ts.net") would not do: any tailnet whose owner named
+#: a node "agentbox" satisfies it, and crate_sync hands an approved destination
+#: straight to rsync without re-verifying the remote hostname. Only exact
+#: membership of this allowlist stands between a typo and a library copied to
+#: somebody else's machine.
+AGENTBOX_SSH_HOSTS_ENV = "MDT_AGENTBOX_SSH_HOSTS"
 SSH_HOST = "agentbox"
 REMOTE_REPO = "/root/music-dj-tools"
 SSH_CONNECT_TIMEOUT = "8"
@@ -85,6 +97,28 @@ def public_host(hosts: Sequence[str]) -> str:
         if host.endswith(".ts.net"):
             return host
     return hosts[0]
+
+
+#: The one line that reports the origin the box ACTUALLY served, and the pattern
+#: that reads it back. A caller must not re-derive the public host from local
+#: config: the MagicDNS name is deployment config (#1540), and a URL guessed here
+#: is how a restart that never came up behind HTTPS looks successful.
+SERVE_LINE_RE = re.compile(r"^\[OK\] serve \S+ -> (https://\S+) via \S+\s*$", re.MULTILINE)
+
+
+def serve_url_from_launcher_output(text: str) -> str:
+    """The HTTPS origin the launcher reported, or a hard failure.
+
+    Deliberately no fallback. The LAST match wins, so a caller replaying an
+    accumulated log gets the run it just made rather than an older one.
+    """
+    matches = SERVE_LINE_RE.findall(text)
+    if not matches:
+        raise PortConfigError(
+            "run-agentbox printed no serve line, so the box never came up behind "
+            "HTTPS serve; there is no public origin to open"
+        )
+    return matches[-1]
 
 
 def _windows_listener_pids(port: int) -> list[int]:
@@ -462,8 +496,8 @@ def dated_log_path(
     durable_dir: Path | None = None,
     now: time.struct_time | None = None,
 ) -> Path:
-    """One append-only file per process per local day."""
-    day = time.strftime("%Y-%m-%d", now or time.localtime())
+    """One append-only file per process per UTC day."""
+    day = time.strftime("%Y-%m-%d", now or time.gmtime())
     return (durable_dir or log_dir_for(name)) / f"{name}-{day}.log"
 
 
@@ -670,16 +704,35 @@ def is_agentbox(*, hostname: str | None = None) -> bool:
     return host == AGENTBOX_HOSTNAME or host.startswith(f"{AGENTBOX_HOSTNAME}.")
 
 
-def allowed_ssh_host(host: str) -> bool:
-    """Only the tailnet alias or MagicDNS name. No public IPs, no env override."""
-    return host in ALLOWED_SSH_HOSTS
+def allowed_ssh_hosts(*, environ: Mapping[str, str] | None = None) -> frozenset[str]:
+    """The ssh alias plus this deployment's configured MagicDNS destinations.
+
+    Empty is not an error here, unlike ``resolve_allowed_hosts``: the bare alias
+    is a complete allowlist for a deployment that reaches agentbox by name, so a
+    machine with no extra configuration is configured correctly rather than
+    silently unconfigured.
+    """
+    effective = os.environ if environ is None else environ
+    raw = effective.get(AGENTBOX_SSH_HOSTS_ENV, "")
+    extra = {part.strip() for part in raw.split(",") if part.strip()}
+    return frozenset({AGENTBOX_HOSTNAME}) | extra
+
+
+def allowed_ssh_host(host: str, *, environ: Mapping[str, str] | None = None) -> bool:
+    """Exact membership of the configured allowlist. No public IPs, no shape match."""
+    return host in allowed_ssh_hosts(environ=environ)
+
+
+def allowed_ssh_hosts_description(*, environ: Mapping[str, str] | None = None) -> str:
+    """The allowlist, for an error message a human has to act on."""
+    return f"{sorted(allowed_ssh_hosts(environ=environ))} ({AGENTBOX_SSH_HOSTS_ENV})"
 
 
 def ssh_agentbox_argv(remote_command: str, *, ssh_host: str = SSH_HOST) -> list[str]:
     """Fixed argv for a BatchMode hop. Caller must pass a constant command."""
     if not allowed_ssh_host(ssh_host):
         raise PortConfigError(
-            f"refusing SSH host {ssh_host!r}; allowed {sorted(ALLOWED_SSH_HOSTS)}"
+            f"refusing SSH host {ssh_host!r}; allowed {allowed_ssh_hosts_description()}"
         )
     if not remote_command or any(ch in remote_command for ch in "\n\r"):
         raise PortConfigError("refusing a multiline remote command")

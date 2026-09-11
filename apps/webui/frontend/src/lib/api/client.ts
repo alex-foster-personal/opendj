@@ -28,13 +28,9 @@ import createFetchClient, { type Middleware } from 'openapi-fetch';
 
 import type { paths } from '../api-types';
 
-/** Same-origin by default; `VITE_API_BASE` points the UI at a remote daemon.
- * THE base URL for the frontend: `src/lib/api.ts` used to resolve a second,
- * identical copy and now re-exports this one, so there is nothing left to
- * drift. Resolved here rather than imported from there because this module is
- * the root of the dependency graph -- importing `$lib/api` would be a cycle. */
-const ENV_BASE = import.meta.env.VITE_API_BASE as string | undefined;
-export const API_BASE = ENV_BASE ?? '';
+import { API_BASE } from './base';
+
+export { API_BASE } from './base';
 
 /** A non-2xx response from the daemon, decoded from `{"detail": {code, message}}`. */
 export class ApiError extends Error {
@@ -105,6 +101,25 @@ const _throwApiError: Middleware = {
  *
  *     const broken = await unwrap(api.GET('/api/v1/reconcile/broken', {}));
  */
+/** Explicit backend error: HTTP status + the contract's detail.code. */
+export class RbApiError extends Error {
+	constructor(
+		public status: number,
+		public code: string,
+		message: string,
+		/** The raw `{detail: {...}}` error body, when a caller chose to keep
+		 * it - most callers only need code/message, so this defaults to null
+		 * rather than forcing every construction site to thread it through.
+		 * beatgrid-upgrade.ts reads `body.detail.anlz_available` off a 404
+		 * here: the same field a 200 response carries, but otherwise lost the
+		 * moment ApiError converts onto this type. */
+		public body: unknown = null
+	) {
+		super(`${code}: ${message}`);
+		this.name = 'RbApiError';
+	}
+}
+
 export async function unwrap<T>(
 	call: Promise<{ data?: T; response: Response }>
 ): Promise<NonNullable<T>> {

@@ -36,6 +36,14 @@ PROFILES_DIR: Path = Path(__file__).resolve().parent / "profiles"
 #: a second way to spell the default that could silently disagree.
 DEFAULT_PROFILE: str = "full"
 
+#: The Mac App Store profile. Named here rather than spelled as a literal at
+#: each site because a control asking "am I dead because of the store build?"
+#: must not answer yes for SOME OTHER profile that happens not to be `full`:
+#: the App Store refusal names Apple's sandbox, and saying that about a build
+#: that is not the store build is a different lie in the same shape as the one
+#: SAND-01 exists to stop.
+STORE_PROFILE: str = "appstore"
+
 
 class UnknownProfileError(ValueError):
     """A build profile was named that does not exist."""
@@ -79,6 +87,7 @@ __all__ = [
     "BUILD_PROFILE_ENV",
     "DEFAULT_PROFILE",
     "PROFILES_DIR",
+    "STORE_PROFILE",
     "UnknownProfileError",
     "available_profiles",
     "profile_path",

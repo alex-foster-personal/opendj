@@ -36,6 +36,7 @@
 	<button
 		type="button"
 		class="hp-btn"
+		aria-label="ADD OUTPUT"
 		title="Grant browser access to a second audio output for headphones"
 		onclick={onacquire}>+ OUT</button
 	>
@@ -43,6 +44,7 @@
 		type="button"
 		class="hp-btn"
 		title="Rescan available headphone output devices"
+		aria-label="Rescan available headphone output devices"
 		onclick={onrefresh}>↻</button
 	>
 	<select
@@ -80,7 +82,7 @@
 		background: var(--rb-panel-raised, #1a1e25);
 		border: 1px solid var(--rb-border, #23282f);
 		border-radius: 2px;
-		color: var(--rb-text-dim, #7a8088);
+		color: var(--rb-text-dim, #838990);
 		cursor: pointer;
 	}
 	.hp-btn:hover {
@@ -94,7 +96,7 @@
 		padding: 0 2px;
 		background: var(--rb-panel-raised, #1a1e25);
 		border: 1px solid var(--rb-border, #23282f);
-		color: var(--rb-text-dim, #7a8088);
+		color: var(--rb-text-dim, #838990);
 	}
 	.hp-error {
 		color: var(--rb-danger, #ff6b6b);

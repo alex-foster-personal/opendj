@@ -6,10 +6,15 @@
  * math are the parts most worth unit-testing, so they live where node:test
  * can bundle them without a DOM or a Svelte runtime.
  *
- * localStorage carries ONLY the panel position and, since #858, which pin
- * updates this viewer has already read - both per-viewer conveniences.
- * Feedback CONTENT never touches client storage; it goes straight to
- * /api/v1/feedback so an agent harvest can never miss it.
+ * localStorage carries the panel position, ONE unsent pin draft, and since
+ * #858 which pin updates this viewer has already read - all per-viewer
+ * conveniences. Feedback CONTENT still never touches client storage: the
+ * moment a pin is saved it goes to /api/v1/feedback and the draft is dropped,
+ * so an agent harvest can never miss anything the store has. A draft is the
+ * other thing - text that has never been submitted, so there is nothing for a
+ * harvest to miss, and losing it on a refresh was pin 307e0e84bfbe. Parking it
+ * locally rather than POSTing it half-written is deliberate: autosaving
+ * drafts to the daemon would fill the maintainer's own review list with fragments.
  *
  * Requirements (mini-PRD):
  *   ✔︎ 🎯 clampPanelPos: a dragged position is kept fully on-viewport.
@@ -25,11 +30,19 @@
  *     [if] flush() drops a pending value [then ⛔️] broken
  *   ✔︎ 🎯 pinFromClient: a viewport click becomes 0..100 percents, clamped.
  *     [if] a click at the exact bottom-right corner exceeds 100 [then ⛔️] broken
+ *   ✔︎ 🎯 pinBodyPos: a reopened/hovered pin body's MEASURED size is clamped
+ *     fully on-viewport (issue #928), reusing clampPanelPos.
+ *     [if] a pin near the bottom or a side opens with its body off-screen
+ *       [then ⛔️] broken
  *   ✔︎ 🎯 pinStatus/isPinDrawn/pinIsDone: a pin with no status is open, an
  *     unknown status is open, only archived leaves the canvas, and only a
  *     fixed/merged pin offers Archive and Follow-on.
  *     [if] a pre-#858 pin (status null) stops being drawn [then ⛔️] broken
  *     [if] an open pin offers Archive [then ⛔️] broken
+ *   ✔︎ 🎯 isPartialNote/pinVisualState (feedback-pin-partial.ts, split out to
+ *     stay under the file-size gate): a HALF-FIXED pin (pin 58a16ac781db,
+ *     follow-on to #907) is a reply convention, not a new persisted status.
+ *     See that file's own docstring for the acceptance tests.
  *   ✔︎ 🎯 isPinUnread/markPinSeen/parsePinSeen: stamp-compared unread marker;
  *     junk in storage reads as an empty map.
  *     [if] a pin no agent touched wears a blue dot [then ⛔️] broken
@@ -37,6 +50,17 @@
  *   ✔︎ 🎯 describeAnchor: nearest stable identifier (id > data-testid >
  *     aria-label > class), null when nothing stable exists - never a guess.
  *     [if] an anonymous div chain yields a fabricated selector [then ⛔️] broken
+ *   ✔︎ 🎯 parsePinsVisible/serializePinsVisible: a new viewer (no stored
+ *     value) defaults pin markers OFF; an existing viewer's choice round-trips;
+ *     any other stored value is rejected, never silently read as OFF.
+ *     [if] a brand-new viewer sees pins already drawn [then ⛔️] broken
+ *     [if] an opted-in viewer loses that choice on reload [then ⛔️] broken
+ *     [if] a corrupted stored value is read as a silent OFF [then ⛔️] broken
+ *   ✔︎ 🎯 linkifyAgentNote: splits plain text around bare http/https URLs
+ *     without dropping or mangling any character; never markup.
+ *     [if] a bare URL in an agent note is not its own link segment [then ⛔️] broken
+ *     [if] joining every segment's value does not reconstruct the original
+ *       text exactly [then ⛔️] broken
  */
 
 export interface PanelPos {
@@ -45,6 +69,9 @@ export interface PanelPos {
 }
 
 export const PANEL_POS_KEY = "odj-feedback-panel-pos";
+
+/** Where an UNSENT pin draft is parked so a refresh cannot eat it. */
+export const PIN_DRAFT_KEY = "odj-feedback-pin-draft";
 
 /** Keep at least this many px of the panel header reachable on both axes. */
 // ----- panel position ----------------------------------------------------
@@ -221,6 +248,33 @@ export function pinBodyStyle(pin: PinPoint): string {
   );
 }
 
+/**
+ * Where a pin's body sits, from its ACTUAL rendered size rather than the
+ * fixed 252x320 guess `pinBodyStyle` uses. The guess is safe (it always
+ * over-reserves) but wrong: `.fb-pin-body` renders at 240px wide with the
+ * repo-wide `box-sizing: border-box`, and its true height is whatever the
+ * pin's own text and agent note measure, almost always well under the
+ * 320px max-height cap. Reserving the cap every time nudges a short pin's
+ * body further from its marker than the body actually needs.
+ *
+ * `clampPanelPos` (issue #928 review) already solves exactly this problem
+ * for the review panel, so this composes it rather than inventing a second
+ * clamp: the pin's percent point becomes a px position against the live
+ * viewport, then that position is clamped fully on-screen by the caller's
+ * MEASURED panel size (`FeedbackPinCard`'s own `getBoundingClientRect()`).
+ */
+export function pinBodyPos(
+  pin: PinPoint,
+  panel: { w: number; h: number },
+  viewport: { w: number; h: number },
+): PanelPos {
+  const pos = {
+    x: (pin.x_pct / 100) * viewport.w,
+    y: (pin.y_pct / 100) * viewport.h,
+  };
+  return clampPanelPos(pos, panel, viewport);
+}
+
 // ----- pin lifecycle (issue #858) ----------------------------------------
 /**
  * The five states a comment pin moves through. A pin NEVER disappears on its
@@ -247,6 +301,7 @@ export interface LifecyclePin {
   status?: string | null;
   issue_url?: string | null;
   updated_at?: string | null;
+  agent_note?: string | null;
 }
 
 /**
@@ -260,6 +315,55 @@ export interface LifecyclePin {
 export function pinStatus(pin: LifecyclePin): PinStatus {
   const raw = pin.status ?? "open";
   return (PIN_STATUSES.includes(raw) ? raw : "open") as PinStatus;
+}
+
+// Partial state (pin 58a16ac781db, follow-on to #907) lives in
+// feedback-pin-partial.ts, split out to keep this file under the 600-line
+// file-size gate (Amendment 17: extraction, never a raised budget). It
+// imports pinStatus/LifecyclePin/PinStatus from here; nothing here imports
+// it back.
+
+export interface PinStatusSummary {
+	total: number;
+	untriaged: number;
+	open: number;
+	issued: number;
+	fixed: number;
+	merged: number;
+}
+
+/** Count active statuses from the live comment board. Archived pins are moved
+ * out of this board, and engine job states have no stable comment-id join, so
+ * neither belongs in the comment-icon total. A missing status is deliberately
+ * separate from explicit `open`: older pins have no triage record yet, while
+ * an open pin was explicitly recorded as open. */
+export function summarizePinStatuses(pins: readonly LifecyclePin[]): PinStatusSummary {
+	const summary: PinStatusSummary = {
+		total: 0,
+		untriaged: 0,
+		open: 0,
+		issued: 0,
+		fixed: 0,
+		merged: 0
+	};
+	for (const pin of pins) {
+		const status = pinStatus(pin);
+		if (status === 'archived') continue;
+		summary.total += 1;
+    if (pin.status === null || pin.status === undefined) {
+      summary.untriaged += 1;
+    } else {
+      summary[status] += 1;
+    }
+  }
+  return summary;
+}
+
+export function describePinStatusSummary(pins: readonly LifecyclePin[]): string {
+	const summary = summarizePinStatuses(pins);
+	return `Active comment pins: ${summary.total} total - ` +
+		`${summary.untriaged} untriaged, ${summary.open} open, ${summary.issued} issued, ` +
+		`${summary.fixed} fixed, ${summary.merged} merged`;
 }
 
 /** Archived pins leave the canvas; everything else stays on it forever. */
@@ -326,6 +430,33 @@ export function serializePinSeen(seen: PinSeen): string {
   return JSON.stringify(seen);
 }
 
+// ----- pin visibility preference (pin 88e3abec02a0) ----------------------
+/** Per-viewer, localStorage-only: whether comment pin markers are drawn on
+ * the canvas at all. A NEW viewer (no stored value) defaults OFF - the
+ * feature is opt-in until this ships far enough that showing pins by default
+ * is itself decided. An existing viewer's own choice always round-trips.
+ * Fail-fast: only null (no stored value yet), "0" and "1" are valid: every
+ * other value is corrupted or future-version state, and hiding that behind
+ * a silent OFF would mask exactly the failure this file exists to surface. */
+export const PINS_VISIBLE_KEY = "mdt.feedback.pinsVisible.v1";
+
+export function parsePinsVisible(raw: string | null): boolean {
+  if (raw === null) return false;
+  if (raw === "0") return false;
+  if (raw === "1") return true;
+  throw new Error(`pinsVisible: unrecognised stored value ${JSON.stringify(raw)}`);
+}
+
+export function serializePinsVisible(visible: boolean): string {
+  return visible ? "1" : "0";
+}
+
+// ----- linkifying an agent's plain-text note (pin 27fe1e3e61b5) ----------
+// Moved to feedback-note.ts (Thu 3 Sep 2026, pin review v2) to bring this
+// file back under the 600-line file-size gate; re-exported here so nothing
+// importing it from feedback.ts needs to change.
+export { linkifyAgentNote } from "./feedback-note";
+
 // ----- nearest stable anchor ---------------------------------------------
 /** The slice of Element the anchor walk reads; tests pass plain objects. */
 export interface AnchorishElement {
@@ -365,4 +496,98 @@ export function describeAnchor(start: AnchorishElement | null): string | null {
     hops += 1;
   }
   return null;
+}
+
+
+// ----- unsent pin draft ---------------------------------------------------
+export interface PinDraft {
+  point: PinPoint;
+  anchor: string | null;
+  text: string;
+  /** The pathname the draft's point/anchor were computed against, captured
+   * at creation time (r3919185341). A draft is only ever meaningful on the
+   * page it was placed on - restoring it under a different pathname and
+   * saving with the CURRENT page would silently attach the comment to the
+   * wrong page and reinterpret stale coordinates against a different UI. */
+  page: string;
+  /** Viewport captured at creation time. Optional only because an
+   * older-shaped stored draft (pre this field) must still parse. */
+  viewport?: { width: number; height: number };
+  /** Follow-on parent link, if this draft is a reply-in-progress. Persisted
+   * across a refresh (pin b0f-followon, FeedbackWidget.svelte:138 review):
+   * dropping it on restore silently downgraded a follow-on draft to a
+   * plain top-level draft, which is the bug this field exists to close. */
+  followOn?: { parentId: string; label: string } | null;
+}
+
+export function serializePinDraft(draft: PinDraft): string {
+  return JSON.stringify(draft);
+}
+
+
+/**
+ * Restore a parked draft, or null. Strict on purpose, the same way
+ * parsePanelPos is: a half-shaped record must read as "no draft" rather than
+ * restore a bubble with an undefined position on it. Whitespace-only text is
+ * nothing to restore either - it would reopen an empty bubble over the page
+ * on every load.
+ */
+export function parsePinDraft(raw: string | null): PinDraft | null {
+  if (raw === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const d = parsed as Record<string, unknown>;
+  const point = d.point as Record<string, unknown> | undefined;
+  if (
+    typeof point !== "object" ||
+    point === null ||
+    !Number.isFinite(point.x_pct as number) ||
+    !Number.isFinite(point.y_pct as number)
+  ) {
+    return null;
+  }
+  if (typeof d.text !== "string" || d.text.trim() === "") return null;
+  if (d.anchor !== null && typeof d.anchor !== "string") return null;
+  if (typeof d.page !== "string" || d.page === "") return null;
+  // followOn is optional and, when present, must be a well-formed
+  // { parentId, label } record - a half-shaped one is worse than none,
+  // since saving against a bad parentId would fail server-side.
+  let followOn: { parentId: string; label: string } | null | undefined;
+  if (d.followOn === null || d.followOn === undefined) {
+    followOn = d.followOn === null ? null : undefined;
+  } else if (
+    typeof d.followOn === "object" &&
+    typeof (d.followOn as Record<string, unknown>).parentId === "string" &&
+    typeof (d.followOn as Record<string, unknown>).label === "string"
+  ) {
+    const fo = d.followOn as Record<string, unknown>;
+    followOn = { parentId: fo.parentId as string, label: fo.label as string };
+  } else {
+    return null; // corrupt follow-on link - do not restore a broken draft
+  }
+  const vp = d.viewport as Record<string, unknown> | undefined;
+  const viewport =
+    typeof vp === "object" &&
+    vp !== null &&
+    Number.isFinite(vp.width as number) &&
+    Number.isFinite(vp.height as number)
+      ? { width: vp.width as number, height: vp.height as number }
+      : undefined;
+  // exactOptionalPropertyTypes forbids `viewport: undefined` / `followOn:
+  // undefined` against PinDraft's optional (not `| undefined`) properties -
+  // the key must be ABSENT, not present-with-undefined, when there is no
+  // value to restore.
+  return {
+    point: { x_pct: point.x_pct as number, y_pct: point.y_pct as number },
+    page: d.page,
+    anchor: d.anchor,
+    text: d.text,
+    ...(viewport !== undefined ? { viewport } : {}),
+    ...(followOn !== undefined ? { followOn } : {}),
+  };
 }

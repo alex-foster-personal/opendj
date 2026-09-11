@@ -1,0 +1,82 @@
+name: concurrent-reorder
+description: >
+  Two spokes reorder the same playlist before either has synced. Membership
+  is whole-list last-writer-wins, stamped on the playlist row (ADR-0004 c5;
+  round 4 findings 5 and 5b stay open by design), so the later reorder wins
+  WHOLE on every machine and the earlier one is discarded, not merged. This
+  pins that semantic so a refactor cannot change it unnoticed. A reorders
+  with the 'reorder' verb and B with 'edit playlist_memberships'; both write
+  the same way.
+
+machines:
+  - id: hub
+    role: hub
+  - id: spoke-a
+    role: spoke
+  - id: spoke-b
+    role: spoke
+
+seed:
+  tracks:
+    - stable_id: t1
+      title: one
+      "on": [spoke-a, spoke-b]
+    - stable_id: t2
+      title: two
+      "on": [spoke-a, spoke-b]
+    - stable_id: t3
+      title: three
+      "on": [spoke-a, spoke-b]
+  playlists:
+    - playlist_id: pl-set
+      name: Friday set
+      members: [t1, t2, t3]
+      "on": [spoke-a, spoke-b]
+
+steps:
+  - "on": spoke-a
+    action: reorder
+    args:
+      playlist_id: pl-set
+      members: [t3, t1, t2]
+
+  - "on": spoke-b
+    action: edit
+    args:
+      table: playlist_memberships
+      playlist_id: pl-set
+      members: [t2, t3, t1]
+
+  - "on": spoke-a
+    action: sync
+  - "on": spoke-b
+    action: sync
+  - "on": spoke-a
+    action: sync
+    args:
+      expect: { applied: 1 }
+
+  - "on": spoke-a
+    action: assert_converged
+    args:
+      table: playlist_memberships
+      pk: { playlist_id: pl-set, position: 0 }
+      field: stable_id
+      equals: t2
+  - "on": spoke-a
+    action: assert_converged
+    args:
+      table: playlist_memberships
+      pk: { playlist_id: pl-set, position: 2 }
+      field: stable_id
+      equals: t1
+  - "on": spoke-b
+    action: assert_converged
+    args:
+      table: playlist_memberships
+      pk: { playlist_id: pl-set, position: 0 }
+      field: stable_id
+      equals: t2
+
+expected:
+  digest_converged: true
