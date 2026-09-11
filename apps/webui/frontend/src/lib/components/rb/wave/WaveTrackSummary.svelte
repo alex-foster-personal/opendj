@@ -12,9 +12,9 @@
 		return deck.title;
 	});
 	const artworkSrc = $derived(
-		deck.stable_id !== null && shouldFetchArtwork(deck.stable_id)
-			? artworkUrl(deck.stable_id, 's')
-			: null
+		deck.stable_id === null || !shouldFetchArtwork(deck.stable_id)
+			? null
+			: artworkUrl(deck.stable_id, 's')
 	);
 	let artworkFailed = $state(false);
 	let artworkLoaded = $state(false);

@@ -59,10 +59,10 @@ export function optionalResources(stableId: string): OptionalResourceCaps {
 	};
 }
 
-/** True when deck/wave should set an artwork <img src> (advertised present or unknown). */
+/** Fetch artwork unless the cap is a known miss (`false`) or reader-unavailable (`null`). */
 export function shouldFetchArtwork(stableId: string): boolean {
 	const cap = optionalResources(stableId).artwork;
-	return cap === true || cap === 'unknown';
+	return cap !== false && cap !== null;
 }
 
 /** Unit tests only. */

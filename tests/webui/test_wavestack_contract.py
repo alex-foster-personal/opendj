@@ -85,6 +85,7 @@ def test_waveform_seek_canvas_remains_an_accessible_bounded_slider() -> None:
 def test_waveform_gutter_has_track_artwork_and_hover_scrubbable_title() -> None:
     source = _source(WAVE_TRACK_SUMMARY)
 
+    assert "shouldFetchArtwork" in source
     assert "artworkUrl(deck.stable_id, 's')" in source
     assert 'class="wave-art"' in source
     assert 'class="wave-track-name"' in source
