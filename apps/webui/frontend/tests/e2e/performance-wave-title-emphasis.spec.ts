@@ -347,8 +347,9 @@ test('the artwork-failure slate is standalone too, not just the no-track one', a
 	page,
 	request
 }) => {
-	// `artworkSrc` is non-null for every loaded deck, so the "NO ART" branch is
-	// reachable ONLY through the <img>'s onerror. Aborting the artwork request
+	// Advertised-absent tracks skip the artwork GET and hit the NO ART slate
+	// directly; this case still covers advertised-present / unknown decks whose
+	// <img> fires onerror when the request is aborted. Aborting the artwork request
 	// is the real mechanism, not a fabricated flag: the deleted unit test
 	// asserted this branch's markup, and without this case a refactor that
 	// drops `standalone` from the {:else} arm alone regains the raised fill

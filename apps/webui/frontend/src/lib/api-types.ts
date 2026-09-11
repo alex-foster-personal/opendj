@@ -7820,6 +7820,8 @@ export interface components {
             album?: string | null;
             /** Artist */
             artist?: string | null;
+            /** Artwork Available */
+            artwork_available: boolean | null;
             /** Auto Cues Available */
             auto_cues_available: boolean;
             /** Bpm */

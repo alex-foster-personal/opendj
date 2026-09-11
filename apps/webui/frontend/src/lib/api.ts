@@ -117,6 +117,7 @@ function _rememberTrackOptionalResources(track: Track): void {
 		lyrics?: boolean;
 		autoCues?: boolean;
 		stems?: boolean;
+		artwork?: boolean | null;
 	} = {};
 	if (typeof track.lyrics_available === 'boolean') {
 		partial.lyrics = track.lyrics_available;
@@ -126,6 +127,13 @@ function _rememberTrackOptionalResources(track: Track): void {
 	}
 	if (typeof track.stems_available === 'boolean') {
 		partial.stems = track.stems_available;
+	}
+	if (
+		track.artwork_available === true ||
+		track.artwork_available === false ||
+		track.artwork_available === null
+	) {
+		partial.artwork = track.artwork_available;
 	}
 	if (Object.keys(partial).length > 0) {
 		rememberOptionalResources(track.stable_id, partial);

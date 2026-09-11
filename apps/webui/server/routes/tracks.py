@@ -119,6 +119,12 @@ def _optional_resource_flags(
     return lyrics, auto_cues, _stems_available_from_summary(stems)
 
 
+def _artwork_available_for_track(track: Track) -> bool | None:
+    """Same predicate listing rows use via build_track_rows."""
+    rows = rb_vendor.build_track_rows([track])
+    return rows[0]["artwork_available"]
+
+
 def _track_to_out(
     track: Track,
     has_rb_mapping: bool,
@@ -126,6 +132,7 @@ def _track_to_out(
     lyrics_available: bool,
     auto_cues_available: bool,
     stems_available: bool,
+    artwork_available: bool | None,
 ) -> TrackOut:
     prov_out = {
         k: ProvenanceOut(
@@ -158,6 +165,7 @@ def _track_to_out(
         lyrics_available=lyrics_available,
         auto_cues_available=auto_cues_available,
         stems_available=stems_available,
+        artwork_available=artwork_available,
     )
 
 
@@ -210,6 +218,7 @@ def list_tracks(
             lyrics_available=lyrics_by_sid[track.stable_id],
             auto_cues_available=auto_cues_by_sid[track.stable_id],
             stems_available=_stems_available_from_summary(row["stems"]),
+            artwork_available=row["artwork_available"],
         ).model_dump()
         base["play_count"] = int(row.get("play_count") or 0)
         items.append(
@@ -222,7 +231,6 @@ def list_tracks(
                 quality=row["quality"],
                 vocals=row["vocals"],
                 stems=row["stems"],
-                artwork_available=row["artwork_available"],
                 artwork_status=row["artwork_status"],
                 energy=row["energy"],
                 energy_source=row["energy_source"],
@@ -291,6 +299,7 @@ def get_track(
         lyrics_available=lyrics,
         auto_cues_available=auto_cues,
         stems_available=stems_avail,
+        artwork_available=_artwork_available_for_track(track),
     )
 
 
@@ -347,4 +356,5 @@ def patch_track(
         lyrics_available=lyrics,
         auto_cues_available=auto_cues,
         stems_available=stems_avail,
+        artwork_available=_artwork_available_for_track(updated),
     )
