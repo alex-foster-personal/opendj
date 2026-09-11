@@ -11,6 +11,8 @@ from ``writer`` itself -- see that module's docstring for why.
 """
 from __future__ import annotations
 
+from typing import Any, cast
+
 from .writer_common import (
     MEMBERSHIPS_TABLE,
     PLAYLISTS_TABLE,
@@ -225,22 +227,24 @@ class _PlaylistWriterMixin:
             self.bus.publish(ev)
         return True
 
-    def append_playlist_history(self, kind: str, payload: dict) -> object:
+    def append_playlist_history(self, kind: str, payload: dict[str, Any]) -> object:
         """Append a playlist.edit / undo / redo row on the events log.
 
         Does not change insert / memberships.set / delete payloads. Callers
         must already be inside the mutation's playlist_transaction (or accept
         a nested SAVEPOINT that commits on its own).
         """
-        now = self._now_iso()
-        with self._tx():
-            ev = self._append_event(
+        # Host attrs live on StateWriter; this mixin is not independently typed.
+        writer = cast(Any, self)
+        now = writer._now_iso()
+        with writer._tx():
+            ev = writer._append_event(
                 kind=kind,
                 stable_id=None,
                 payload=payload,
                 ts=now,
             )
-            self.bus.publish(ev)
+            writer.bus.publish(ev)
         return ev
 
 
