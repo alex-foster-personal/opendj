@@ -26,6 +26,9 @@
 	import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { hotCueTitle } from '$lib/rb/hot-cue-label';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
+	import { proposalCaption, proposalTitle, visibleProposalForSlot } from '$lib/rb/auto-cue-proposals';
+	import { ensureAutoCues, getAutoCuesEntry } from './auto-cues-cache.svelte';
+	import HotCueProposalLabel from './HotCueProposalLabel.svelte';
 
 	const MAPPING_TIP = 'cues need a rekordbox mapping';
 	const NOT_LOADED_TIP = 'no track loaded - nothing to save';
@@ -60,6 +63,19 @@
 			cue: deck.hot_cues.find((c) => c.slot === slot) ?? null
 		}))
 	);
+
+	$effect(() => {
+		const sid = deck.stable_id;
+		if (sid !== null) ensureAutoCues(sid);
+	});
+	const filledSlots = $derived(new Set(deck.hot_cues.map((c) => c.slot)));
+	const proposalFor = $derived.by(() => {
+		const sid = deck.stable_id;
+		if (sid === null) return null;
+		const entry = getAutoCuesEntry(sid);
+		if (entry === undefined || entry.status !== 'ready') return null;
+		return entry.data.proposals;
+	});
 
 	// Local write-round-trip busy state, separate from `pending` (transport
 	// commands) so a save/clear in flight only disables its own slot. `pending`
@@ -241,28 +257,36 @@
 				}}
 			>
 				{#each column as entry (entry.slot)}
+					{@const visible = proposalFor === null ? null : visibleProposalForSlot(entry.slot, filledSlots, proposalFor)}
 					<div class="slot-cell">
 						<button
 							class="slot"
 							class:filled={entry.cue !== null}
+							class:proposal={entry.cue === null && visible !== null}
 							class:loop={entry.cue !== null && entry.cue.is_loop}
 							class:inert-mapping={entry.cue === null &&
 								(deck.stable_id === null || !deck.has_rb_mapping)}
 							disabled={busySlot === entry.slot || renameSlot === entry.slot}
 							aria-busy={pending}
-							aria-label={`hot cue ${entry.slot} deck ${deck.deck_id}`}
+							aria-label={`hot cue ${entry.slot} deck ${deck.deck_id}${visible !== null ? ` ${proposalCaption(visible.kind)}` : ''}`}
 							data-testid={`hot-cue-${deck.deck_id}-${entry.slot}`}
 							data-performance-control="hot-cue"
+							data-proposal-kind={visible !== null ? visible.kind : undefined}
 							title={entry.cue === null
 								? deck.stable_id === null
 									? NOT_LOADED_TIP
 									: deck.has_rb_mapping
-										? 'empty hot cue slot - click to save the current position'
+										? visible !== null
+											? `${proposalTitle(visible.kind, visible.time_s)} - click to save the current position`
+											: 'empty hot cue slot - click to save the current position'
 										: MAPPING_TIP
 								: hotCueTitle(entry.cue, deck.anlz?.beatgrid.beats ?? [])}
 							onclick={(e) => onSlotClick(entry, e.timeStamp)}
 						>
 							<span class="letter">{entry.slot}</span>
+							{#if visible !== null}
+								<HotCueProposalLabel kind={visible.kind} />
+							{/if}
 							{#if entry.cue !== null}
 								<span class="cue-label">{entry.cue.comment ?? `CUE ${entry.slot}`}</span>
 								<span

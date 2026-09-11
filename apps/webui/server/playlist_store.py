@@ -66,12 +66,14 @@ the authoritative row, checking its ETag, or validating requested tracks.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Literal, Optional
+from typing import Any, Literal
 
 from apps.shared.state import db as _state_db
 from apps.shared.state.events import EventBus, FakeEventBus
@@ -79,6 +81,16 @@ from apps.shared.state.writer import StateWriter, compute_playlist_id
 
 from .backend import BackendError, ConflictError, NotFoundError
 from .etag import compute_etag, strip_quotes
+from .playlist_history import (
+    HISTORY_LIMIT,
+    PlaylistEditCommand,
+    PlaylistHistoryEmptyError,
+    PlaylistSnapshot,
+    invert,
+    label_for,
+    rebuild_stack,
+    snapshots_match,
+)
 
 WEBUI_VENDOR: str = "webui"
 """Vendor tag for playlists created through the web UI / agent API."""
@@ -112,7 +124,7 @@ class PlaylistStore:
         *,
         bus: EventBus | FakeEventBus | None = None,
         actor: str = "webui",
-        clock: Optional[Callable[..., Any]] = None,
+        clock: Callable[..., Any] | None = None,
     ) -> None:
         path = Path(state_db_path)
         if not path.is_file():
@@ -128,9 +140,13 @@ class PlaylistStore:
             path, check_same_thread=False,
         )
         self._conn.row_factory = sqlite3.Row
+        self._actor = actor
         self._writer = StateWriter(self._conn, bus, clock=clock, actor=actor)
         self._lock = threading.RLock()
         self._closed = False
+        self._stack: list[PlaylistEditCommand] = []
+        self._cursor = 0
+        self._rebuild_from_events()
 
     # --- lifecycle --------------------------------------------------------
     def close(self) -> None:
@@ -141,7 +157,7 @@ class PlaylistStore:
             self._writer.close()
             self._conn.close()
 
-    def __enter__(self) -> "PlaylistStore":
+    def __enter__(self) -> PlaylistStore:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -181,6 +197,107 @@ class PlaylistStore:
             raise BackendError("playlist name must be a non-empty string")
         return cleaned
 
+    def _snapshot(self, row: PlaylistRow) -> PlaylistSnapshot:
+        return PlaylistSnapshot(
+            playlist_id=row.playlist_id, name=row.name,
+            vendor=row.vendor, vendor_pl_id=row.vendor_pl_id,
+            items=list(row.items),
+        )
+
+    def _try_load(self, playlist_id: str) -> PlaylistRow | None:
+        try:
+            return self._load(playlist_id)
+        except NotFoundError:
+            return None
+
+    def _rebuild_from_events(self) -> None:
+        rows = self._conn.execute(
+            "SELECT kind, payload_json FROM events "
+            "WHERE actor = ? AND kind IN "
+            "('playlist.edit','playlist.undo','playlist.redo') "
+            "ORDER BY id",
+            (self._actor,),
+        ).fetchall()
+        events = [
+            {"kind": row["kind"], "payload": json.loads(row["payload_json"])}
+            for row in rows
+        ]
+        self._stack, self._cursor = rebuild_stack(events)
+
+    def _record_edit(
+        self,
+        op: str,
+        playlist_id: str,
+        before: PlaylistSnapshot | None,
+        after: PlaylistSnapshot | None,
+    ) -> None:
+        command = PlaylistEditCommand(
+            command_id=uuid.uuid4().hex,
+            op=op,  # type: ignore[arg-type]
+            playlist_id=playlist_id,
+            ts=self._writer._now_iso(),
+            before=before,
+            after=after,
+        )
+        self._writer.append_playlist_history("playlist.edit", command.to_dict())
+        self._stack = self._stack[: self._cursor]
+        self._stack.append(command)
+        if len(self._stack) > HISTORY_LIMIT:
+            self._stack = self._stack[-HISTORY_LIMIT:]
+        self._cursor = len(self._stack)
+
+    def _conflict(self, live: PlaylistRow | None) -> None:
+        raise ConflictError(
+            current=live.to_dict() if live is not None else {},
+            etag=live.etag if live is not None else '""',
+        )
+
+    def _restore_playlist(self, snap: PlaylistSnapshot) -> PlaylistRow:
+        with self._writer.playlist_transaction():
+            self._writer.insert_playlist(
+                playlist_id=snap.playlist_id, name=snap.name,
+                vendor=snap.vendor, vendor_pl_id=snap.vendor_pl_id,
+            )
+            self._writer.set_playlist_memberships(
+                snap.playlist_id, list(snap.items),
+            )
+            return self._load(snap.playlist_id)
+
+    def _apply_inverse(
+        self,
+        op: str,
+        snap: PlaylistSnapshot | None,
+        live: PlaylistRow | None,
+    ) -> PlaylistRow | None:
+        if op == "delete":
+            if live is not None:
+                self.delete_playlist(
+                    live.playlist_id, expected_etag=live.etag, record_edit=False,
+                )
+            return None
+        if snap is None:
+            raise BackendError(f"{op} inverse is missing the snapshot")
+        if op == "create":
+            return self._restore_playlist(snap)
+        if live is None:
+            raise BackendError(f"{op} inverse is missing live row")
+        if op == "rename":
+            return self.rename_playlist(
+                live.playlist_id, snap.name,
+                expected_etag=live.etag, record_edit=False,
+            )
+        if op == "memberships":
+            return self.replace_memberships(
+                live.playlist_id, list(snap.items),
+                expected_etag=live.etag, record_edit=False,
+            )
+        raise BackendError(f"unknown playlist history op: {op}")
+
+    def _forward_op(self, command: PlaylistEditCommand) -> str:
+        if command.op in ("create", "duplicate"):
+            return "create"
+        return command.op
+
     def _require_known_tracks(self, stable_ids: list[str]) -> None:
         """Fail fast (422) when any stable_id has no ``tracks`` row."""
         unique = list(dict.fromkeys(stable_ids))
@@ -203,20 +320,27 @@ class PlaylistStore:
             )
 
     # --- mutations --------------------------------------------------------
-    def create_playlist(self, name: str) -> PlaylistRow:
+    def create_playlist(
+        self, name: str, *, record_edit: bool = True,
+    ) -> PlaylistRow:
         """Create an empty playlist owned by the ``webui`` vendor."""
         cleaned = self._validated_name(name)
         with self._lock:
-            vendor_pl_id = uuid.uuid4().hex
-            playlist_id = compute_playlist_id(WEBUI_VENDOR, vendor_pl_id)
-            self._writer.insert_playlist(
-                playlist_id=playlist_id, name=cleaned,
-                vendor=WEBUI_VENDOR, vendor_pl_id=vendor_pl_id,
-            )
-            return self._load(playlist_id)
+            with self._writer.playlist_transaction():
+                vendor_pl_id = uuid.uuid4().hex
+                playlist_id = compute_playlist_id(WEBUI_VENDOR, vendor_pl_id)
+                self._writer.insert_playlist(
+                    playlist_id=playlist_id, name=cleaned,
+                    vendor=WEBUI_VENDOR, vendor_pl_id=vendor_pl_id,
+                )
+                row = self._load(playlist_id)
+                if record_edit:
+                    self._record_edit("create", playlist_id, None, self._snapshot(row))
+                return row
 
     def rename_playlist(
         self, playlist_id: str, name: str, *, expected_etag: str,
+        record_edit: bool = True,
     ) -> PlaylistRow:
         """Rename; renaming to the current name is a no-op (same etag)."""
         cleaned = self._validated_name(name)
@@ -230,10 +354,17 @@ class PlaylistStore:
                 )
                 if not changed:
                     return row
-                return self._load(playlist_id)
+                new_row = self._load(playlist_id)
+                if record_edit:
+                    self._record_edit(
+                        "rename", playlist_id,
+                        self._snapshot(row), self._snapshot(new_row),
+                    )
+                return new_row
 
     def delete_playlist(
         self, playlist_id: str, *, expected_etag: str,
+        record_edit: bool = True,
     ) -> None:
         with self._lock:
             with self._writer.playlist_transaction():
@@ -242,13 +373,18 @@ class PlaylistStore:
                 deleted = self._writer.delete_playlist(playlist_id)
                 if not deleted:  # pragma: no cover - guarded by the lock
                     raise NotFoundError(f"playlist not found: {playlist_id}")
+                if record_edit:
+                    self._record_edit(
+                        "delete", playlist_id, self._snapshot(row), None,
+                    )
 
     def duplicate_playlist(
         self,
         playlist_id: str,
         *,
-        name: Optional[str] = None,
-        expected_etag: Optional[str] = None,
+        name: str | None = None,
+        expected_etag: str | None = None,
+        record_edit: bool = True,
     ) -> PlaylistRow:
         """Copy name (or ``name``) + full membership into a new webui playlist.
 
@@ -272,10 +408,16 @@ class PlaylistStore:
                 )
                 if source.items:
                     self._writer.set_playlist_memberships(new_id, list(source.items))
-                return self._load(new_id)
+                copy = self._load(new_id)
+                if record_edit:
+                    self._record_edit(
+                        "duplicate", new_id, None, self._snapshot(copy),
+                    )
+                return copy
 
     def replace_memberships(
         self, playlist_id: str, stable_ids: list[str], *, expected_etag: str,
+        record_edit: bool = True,
     ) -> PlaylistRow:
         """Full membership replace = add/remove/reorder in one idempotent op.
 
@@ -290,7 +432,13 @@ class PlaylistStore:
                 if list(row.items) == list(stable_ids):
                     return row
                 self._writer.set_playlist_memberships(playlist_id, list(stable_ids))
-                return self._load(playlist_id)
+                new_row = self._load(playlist_id)
+                if record_edit:
+                    self._record_edit(
+                        "memberships", playlist_id,
+                        self._snapshot(row), self._snapshot(new_row),
+                    )
+                return new_row
 
     def transfer_memberships(
         self,
@@ -378,5 +526,62 @@ class PlaylistStore:
             self._check_etag(row, expected_etag)
             return row
 
+    def history(self) -> dict[str, Any]:
+        """Live undo window: entries oldest-first, cursor at next-redo."""
+        with self._lock:
+            return {
+                "cursor": self._cursor,
+                "limit": HISTORY_LIMIT,
+                "can_undo": self._cursor > 0,
+                "can_redo": self._cursor < len(self._stack),
+                "entries": [
+                    {
+                        "command_id": cmd.command_id,
+                        "op": cmd.op,
+                        "playlist_id": cmd.playlist_id,
+                        "ts": cmd.ts,
+                        "label": label_for(cmd),
+                    }
+                    for cmd in self._stack
+                ],
+            }
 
-__all__ = ["PlaylistRow", "PlaylistStore", "WEBUI_VENDOR"]
+    def undo(self) -> tuple[PlaylistEditCommand, PlaylistRow | None]:
+        with self._lock:
+            if self._cursor <= 0:
+                raise PlaylistHistoryEmptyError("undo")
+            command = self._stack[self._cursor - 1]
+            live = self._try_load(command.playlist_id)
+            if not snapshots_match(
+                None if live is None else self._snapshot(live), command.after,
+            ):
+                self._conflict(live)
+            op, snap = invert(command)
+            current = self._apply_inverse(op, snap, live)
+            self._writer.append_playlist_history(
+                "playlist.undo", {"command_id": command.command_id},
+            )
+            self._cursor -= 1
+            return command, current
+
+    def redo(self) -> tuple[PlaylistEditCommand, PlaylistRow | None]:
+        with self._lock:
+            if self._cursor >= len(self._stack):
+                raise PlaylistHistoryEmptyError("redo")
+            command = self._stack[self._cursor]
+            live = self._try_load(command.playlist_id)
+            if not snapshots_match(
+                None if live is None else self._snapshot(live), command.before,
+            ):
+                self._conflict(live)
+            current = self._apply_inverse(
+                self._forward_op(command), command.after, live,
+            )
+            self._writer.append_playlist_history(
+                "playlist.redo", {"command_id": command.command_id},
+            )
+            self._cursor += 1
+            return command, current
+
+
+__all__ = ["WEBUI_VENDOR", "PlaylistRow", "PlaylistStore"]

@@ -7,6 +7,7 @@ real tar and real sha256. `subprocess.run` is stubbed so ssh/rsync never leave
 the box. A restore that passed because nothing was there to lose is not a test;
 `_make_dirty` plants modified, untracked and gitignored work plus a `.venv` and
 `node_modules` the archive must not carry.
+  - [if] remote backup drops local work or ships node_modules [then] fail, [else stop]
 """
 
 from __future__ import annotations

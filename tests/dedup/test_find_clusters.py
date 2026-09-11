@@ -193,6 +193,67 @@ def test_idempotent_outcomes(
         )
 
     assert shape(first) == shape(second)
+    with sqlite3.connect(db) as conn:
+        first_clusters = conn.execute(
+            "SELECT COUNT(*) FROM duplicate_clusters"
+        ).fetchone()[0]
+        first_aliases = conn.execute(
+            "SELECT COUNT(*) FROM track_aliases"
+        ).fetchone()[0]
+    # Re-read after the second run already completed: counts must match the
+    # first run's outcomes, not double them (replace, do not append).
+    assert first_clusters == len(first)
+    assert first_aliases == sum(len(cluster.alias_paths) for cluster in first)
+
+
+@pytest.mark.requirement("META-03")
+def test_rerun_replaces_same_member_set(tmp_path: Path) -> None:
+    db = tmp_path / "phase7.sqlite"
+    canonical = Fingerprint(
+        path=tmp_path / "canonical.flac",
+        duration=180.0,
+        fp_str="same-fingerprint",
+        size=2_000,
+        mtime=100.0,
+        bitrate=320,
+    )
+    alias = Fingerprint(
+        path=tmp_path / "alias.mp3",
+        duration=180.0,
+        fp_str="same-fingerprint",
+        size=1_000,
+        mtime=200.0,
+        bitrate=128,
+    )
+    cache = FingerprintCache(db)
+    cache.put(canonical, stable_id="canonical-sid")
+    cache.put(alias, stable_id="alias-sid")
+    first = fc_mod.run_find_clusters(
+        db_path=db,
+        threshold=0.9,
+        roots=[tmp_path],
+        clusters_csv=tmp_path / "c1.csv",
+        manual_review_csv=tmp_path / "m1.csv",
+        fingerprints=[canonical, alias],
+    )
+    second = fc_mod.run_find_clusters(
+        db_path=db,
+        threshold=0.9,
+        roots=[tmp_path],
+        clusters_csv=tmp_path / "c2.csv",
+        manual_review_csv=tmp_path / "m2.csv",
+        fingerprints=[canonical, alias],
+    )
+    assert len(first) == 1
+    assert len(second) == 1
+    with sqlite3.connect(db) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM duplicate_clusters"
+        ).fetchone() == (1,)
+        assert conn.execute(
+            "SELECT COUNT(*) FROM track_aliases"
+        ).fetchone() == (1,)
+    assert first[0].cluster_id == second[0].cluster_id
 
 
 @pytest.mark.requirement("META-03")

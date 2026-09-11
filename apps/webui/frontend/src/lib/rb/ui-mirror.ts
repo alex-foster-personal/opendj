@@ -61,6 +61,7 @@ export function buildUiMirror(): Record<string, unknown> {
 		// no clock is named. Without it an agent cannot resolve its own
 		// beat-relative order against the grid the page will use (#1739).
 		master_deck: state.master_deck,
+		transition: state.transition,
 		context_state: audioContextState(),
 		master: { ...state.master, level: state.mixer.master, rms: silence.rms },
 		xrun_sentinel: readXrunSessionCounter(),

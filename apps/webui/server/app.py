@@ -76,6 +76,7 @@ from .routes import pairing_capture as pairing_capture_routes
 from .routes import pairings as pairings_routes
 from .routes import performance_telemetry as performance_telemetry_routes
 from .routes import play_it as play_it_routes
+from .routes import playlist_history as playlist_history_routes
 from .routes import playlist_write as playlist_write_routes
 from .routes import playlist_writeback as playlist_writeback_routes
 from .routes import playlists as playlists_routes
@@ -372,6 +373,7 @@ def create_app(
     app.include_router(mytag_routes.router, prefix=api_prefix)
     app.include_router(playlists_routes.router, prefix=api_prefix)
     app.include_router(playlist_write_routes.router, prefix=api_prefix)
+    app.include_router(playlist_history_routes.router, prefix=api_prefix)
     app.include_router(play_it_routes.router, prefix=api_prefix)
     app.include_router(playlist_writeback_routes.router, prefix=api_prefix)
     app.include_router(pairings_routes.router, prefix=api_prefix)

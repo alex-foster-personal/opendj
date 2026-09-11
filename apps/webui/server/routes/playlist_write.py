@@ -26,6 +26,11 @@ ETag / error semantics copied from the tracks PATCH:
 complete desired ordering, so add / remove / reorder / move / copy are one
 idempotent full-replace call (replaying the same list returns the same etag).
 
+Every successful non-noop write also appends a ``playlist.edit`` event with
+before/after snapshots. Downstream undo/redo lives at
+``/api/v1/playlist-history`` (never ``/playlists/history``: the read router
+already owns ``GET /playlists/{id}``).
+
 Writes go through :class:`..playlist_store.PlaylistStore` ->
 :class:`apps.shared.state.writer.StateWriter` (events + provenance). The
 integrator wires this router into ``app.py``::

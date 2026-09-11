@@ -10,7 +10,15 @@
 
 import { API_BASE, ApiError, api } from '$lib/api/client';
 
-import type { ClustersResponse, Decision, DecisionAction, DecisionRecord } from './types';
+import type {
+	ApplyRecord,
+	ClustersResponse,
+	Decision,
+	DecisionAction,
+	DecisionRecord,
+	PlaylistRewrite,
+	UndoRecord
+} from './types';
 
 const DECISION_ACTIONS: readonly DecisionAction[] = ['merge', 'keep-all', 'skip'];
 
@@ -79,7 +87,8 @@ function parseDecision(value: unknown, context: string): Decision | null {
 		cluster_key: asString(object.cluster_key, `${context}.cluster_key`),
 		survivor: asString(object.survivor, `${context}.survivor`),
 		action: asDecisionAction(object.action, `${context}.action`),
-		decided_at: asString(object.decided_at, `${context}.decided_at`)
+		decided_at: asString(object.decided_at, `${context}.decided_at`),
+		pending_apply: asBoolean(object.pending_apply, `${context}.pending_apply`)
 	};
 }
 
@@ -125,29 +134,85 @@ function parseCluster(value: unknown, context: string) {
 
 export function validateClustersResponse(raw: unknown): ClustersResponse {
 	const object = asObject(raw, 'response');
+	const clusters = asArray(object.clusters, 'clusters').map((cluster, index) =>
+		parseCluster(cluster, `clusters[${index}]`)
+	);
+	const seen = new Set<string>();
+	for (const cluster of clusters) {
+		if (seen.has(cluster.cluster_key)) {
+			throw new Error(`dedup: duplicate cluster_key ${cluster.cluster_key}`);
+		}
+		seen.add(cluster.cluster_key);
+	}
 	return {
-		clusters: asArray(object.clusters, 'clusters').map((cluster, index) =>
-			parseCluster(cluster, `clusters[${index}]`)
-		),
+		clusters,
 		note: asStringOrNull(object.note, 'note'),
 		revision: asString(object.revision, 'revision')
 	};
 }
 
+function parseMutationRecord(raw: unknown, context: string) {
+	const object = asObject(raw, context);
+	return {
+		cluster_id: asInteger(object.cluster_id, `${context}.cluster_id`),
+		cluster_key: asString(object.cluster_key, `${context}.cluster_key`),
+		survivor: asString(object.survivor, `${context}.survivor`),
+		action: asDecisionAction(object.action, `${context}.action`),
+		decided_at: asString(object.decided_at, `${context}.decided_at`),
+		pending_apply: asBoolean(object.pending_apply, `${context}.pending_apply`),
+		revision: asString(object.revision, `${context}.revision`)
+	};
+}
+
 export function validateDecisionRecord(raw: unknown): DecisionRecord {
-	const object = asObject(raw, 'decision response');
-	const pendingApply = asBoolean(object.pending_apply, 'decision response.pending_apply');
-	if (!pendingApply) {
+	const result = parseMutationRecord(raw, 'decision response');
+	if (!result.pending_apply) {
 		throw new Error('dedup: decision response must remain pending apply');
 	}
+	return result;
+}
+
+function parsePlaylistRewrite(value: unknown, context: string): PlaylistRewrite {
+	const object = asObject(value, context);
 	return {
-		cluster_id: asInteger(object.cluster_id, 'decision response.cluster_id'),
-		cluster_key: asString(object.cluster_key, 'decision response.cluster_key'),
-		survivor: asString(object.survivor, 'decision response.survivor'),
-		action: asDecisionAction(object.action, 'decision response.action'),
-		decided_at: asString(object.decided_at, 'decision response.decided_at'),
-		pending_apply: pendingApply,
-		revision: asString(object.revision, 'decision response.revision')
+		playlist_id: asString(object.playlist_id, `${context}.playlist_id`),
+		name: asString(object.name, `${context}.name`),
+		before: asArray(object.before, `${context}.before`).map((item, index) =>
+			asString(item, `${context}.before[${index}]`)
+		),
+		after: asArray(object.after, `${context}.after`).map((item, index) =>
+			asString(item, `${context}.after[${index}]`)
+		)
+	};
+}
+
+export function validateApplyRecord(raw: unknown): ApplyRecord {
+	const object = asObject(raw, 'apply response');
+	const result = parseMutationRecord(raw, 'apply response');
+	if (result.action !== 'merge') {
+		throw new Error('dedup: apply response.action is not merge');
+	}
+	return {
+		...result,
+		action: 'merge',
+		playlists: asArray(object.playlists, 'apply response.playlists').map((row, index) =>
+			parsePlaylistRewrite(row, `apply response.playlists[${index}]`)
+		)
+	};
+}
+
+export function validateUndoRecord(raw: unknown): UndoRecord {
+	const object = asObject(raw, 'undo response');
+	const result = parseMutationRecord(raw, 'undo response');
+	if (result.action !== 'merge') {
+		throw new Error('dedup: undo response.action is not merge');
+	}
+	return {
+		...result,
+		action: 'merge',
+		playlist_ids: asArray(object.playlist_ids, 'undo response.playlist_ids').map((item, index) =>
+			asString(item, `undo response.playlist_ids[${index}]`)
+		)
 	};
 }
 
@@ -211,6 +276,62 @@ export async function postDedupDecision(
 		throw asDedupError(error, `POST /api/v1/dedup/clusters/${clusterId}/decision`);
 	}
 	const result = validateDecisionRecord(data);
+	requireMatchingRevision(response, result.revision);
+	return result;
+}
+
+function asDedupConflict(error: unknown, route: string): Error {
+	if (error instanceof ApiError && error.status === 409) {
+		return new DedupConflictError(
+			'duplicate review changed; refresh before retrying',
+			error.response.headers.get('etag') ?? ''
+		);
+	}
+	return asDedupError(error, route);
+}
+
+export async function applyDedupMerge(
+	clusterId: number,
+	clusterKey: string,
+	survivor: string,
+	revision: string,
+	signal?: AbortSignal
+): Promise<ApplyRecord> {
+	let data: unknown;
+	let response: Response;
+	try {
+		({ data, response } = await api.POST('/api/v1/dedup/clusters/{cluster_id}/apply', {
+			params: { path: { cluster_id: clusterId }, header: { 'If-Match': revision } },
+			body: { cluster_key: clusterKey, survivor },
+			signal: signal ?? null
+		}));
+	} catch (error) {
+		throw asDedupConflict(error, `POST /api/v1/dedup/clusters/${clusterId}/apply`);
+	}
+	const result = validateApplyRecord(data);
+	requireMatchingRevision(response, result.revision);
+	return result;
+}
+
+export async function undoDedupMerge(
+	clusterId: number,
+	clusterKey: string,
+	survivor: string,
+	revision: string,
+	signal?: AbortSignal
+): Promise<UndoRecord> {
+	let data: unknown;
+	let response: Response;
+	try {
+		({ data, response } = await api.POST('/api/v1/dedup/clusters/{cluster_id}/undo', {
+			params: { path: { cluster_id: clusterId }, header: { 'If-Match': revision } },
+			body: { cluster_key: clusterKey, survivor },
+			signal: signal ?? null
+		}));
+	} catch (error) {
+		throw asDedupConflict(error, `POST /api/v1/dedup/clusters/${clusterId}/undo`);
+	}
+	const result = validateUndoRecord(data);
 	requireMatchingRevision(response, result.revision);
 	return result;
 }

@@ -22,6 +22,9 @@
 	import { TreeSmartlists } from './tree-smartlists.svelte';
 	import { TreePlaylistRename } from './tree-playlist-rename.svelte';
 	import TreeContextMenu from './TreeContextMenu.svelte';
+	import MissingTracksFolder from './MissingTracksFolder.svelte';
+	import { MISSING_TRACKS_ID, missingTracksNode } from './missing-tracks';
+	import PlaylistHistoryPanel from './PlaylistHistoryPanel.svelte';
 
 	let {
 		nodes,
@@ -121,6 +124,7 @@
 
 	/** Make a playlist row draggable onto the pane tab bar. */
 	function _onPlaylistDragStart(event: DragEvent, node: PlaylistNode): void {
+		if (node.kind === 'missing_tracks') return;
 		event.dataTransfer?.setData(
 			PLAYLIST_DRAG_MIME,
 			encodePlaylistDrag({
@@ -202,6 +206,7 @@
 </script>
 
 <div class="tree-root">
+	<PlaylistHistoryPanel />
 	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} {onselect} />
 	<div class="view-tabs">
 		<button class="vt" class:active={mode === 'tree'} onclick={() => (mode = 'tree')}>
@@ -403,6 +408,13 @@
 				{/each}
 			{/if}
 		{/if}
+		<!-- data-testid="playlist-missing-tracks" is on MissingTracksFolder -->
+		<MissingTracksFolder
+			brokenCount={allTracksBrokenCount}
+			error={allTracksError}
+			selected={selectedId === MISSING_TRACKS_ID}
+			onselect={() => onselect(missingTracksNode(allTracksBrokenCount ?? 0))}
+		/>
 	</div>
 </div>
 

@@ -14,6 +14,7 @@ Regression one-liners:
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,10 @@ WAVE_GUTTER = REPO_ROOT / "apps/webui/frontend/src/lib/components/rb/wave/WaveGu
 WAVE_TRACK_SUMMARY = (
     REPO_ROOT / "apps/webui/frontend/src/lib/components/rb/wave/WaveTrackSummary.svelte"
 )
+
+# The deck number span may carry extra attributes (the explainer audit added a
+# hover `title`), but it must keep its class and still render the deck id.
+DECK_NUM_SPAN = re.compile(r'<span class="deck-num"[^>]*>\{deckId\}</span>')
 
 
 def _source(path: Path) -> str:
@@ -42,6 +47,7 @@ def test_wavestack_mounts_exactly_the_four_supported_decks() -> None:
 
 
 def test_every_wavestack_row_carries_its_deck_identity() -> None:
+    """[if] a wavestack row drops its deck id span [then] fail, [else stop]."""
     source = _source(WAVE_ROW)
 
     gutter = _source(WAVE_GUTTER)
@@ -49,7 +55,10 @@ def test_every_wavestack_row_carries_its_deck_identity() -> None:
     assert 'class="rb-waverow"' in source
     assert "data-deck={deckId}" in source
     assert '<WaveGutter {deck} {deckId} {barsLabel} />' in source
-    assert '<span class="deck-num">{deckId}</span>' in gutter
+    assert DECK_NUM_SPAN.search(gutter), (
+        f"{WAVE_GUTTER.name} must render the deck id inside a .deck-num span; "
+        f"no match in:\n{gutter}"
+    )
 
 
 def test_empty_or_busy_deck_waveform_is_not_seekable() -> None:

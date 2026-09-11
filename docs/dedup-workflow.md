@@ -40,7 +40,18 @@ Canonical selection follows the D2 tie-break ladder:
 bitrate → size → duration → canonical root → oldest mtime.
 
 Inserts rows into `duplicate_clusters` + `track_aliases` (same tables
-Phase 5 shared-state will absorb later).
+Phase 5 shared-state will absorb later). Repeat runs replace those
+derived cluster rows (fingerprints stay); display `cluster_id` values
+are stable because `sqlite_sequence` is reset.
+
+### 2b. Review and merge in `/dedup`
+
+The `/dedup` page applies OpenDJ playlist membership rewrites: Merge
+replaces alias stable ids with the survivor in every playlist that
+referenced an alias, and Undo restores the journaled membership. It does
+not delete, rename, or archive audio files. Rekordbox FolderPath rewrite
+remains `python -m apps.dedup.apply --live ...` with the six rails in
+step 4.
 
 ### 3. Dry-run apply
 

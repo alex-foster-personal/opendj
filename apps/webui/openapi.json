@@ -727,6 +727,77 @@
         "title": "AnlzCueOut",
         "type": "object"
       },
+      "ApplyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "cluster_key": {
+            "title": "Cluster Key",
+            "type": "string"
+          },
+          "survivor": {
+            "title": "Survivor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cluster_key",
+          "survivor"
+        ],
+        "title": "ApplyIn",
+        "type": "object"
+      },
+      "ApplyRecordOut": {
+        "properties": {
+          "action": {
+            "const": "merge",
+            "title": "Action",
+            "type": "string"
+          },
+          "cluster_id": {
+            "title": "Cluster Id",
+            "type": "integer"
+          },
+          "cluster_key": {
+            "title": "Cluster Key",
+            "type": "string"
+          },
+          "decided_at": {
+            "title": "Decided At",
+            "type": "string"
+          },
+          "pending_apply": {
+            "title": "Pending Apply",
+            "type": "boolean"
+          },
+          "playlists": {
+            "items": {
+              "$ref": "#/components/schemas/PlaylistRewriteOut"
+            },
+            "title": "Playlists",
+            "type": "array"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "survivor": {
+            "title": "Survivor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cluster_id",
+          "cluster_key",
+          "survivor",
+          "action",
+          "decided_at",
+          "revision",
+          "pending_apply",
+          "playlists"
+        ],
+        "title": "ApplyRecordOut",
+        "type": "object"
+      },
       "ApplyRequest": {
         "properties": {
           "confirmation": {
@@ -3252,6 +3323,10 @@
             "title": "Decided At",
             "type": "string"
           },
+          "pending_apply": {
+            "title": "Pending Apply",
+            "type": "boolean"
+          },
           "survivor": {
             "title": "Survivor",
             "type": "string"
@@ -3261,7 +3336,8 @@
           "cluster_key",
           "survivor",
           "action",
-          "decided_at"
+          "decided_at",
+          "pending_apply"
         ],
         "title": "DecisionOut",
         "type": "object"
@@ -4774,6 +4850,134 @@
           "ownership"
         ],
         "title": "HelloResponse",
+        "type": "object"
+      },
+      "HistoryApplyOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "can_redo": {
+            "title": "Can Redo",
+            "type": "boolean"
+          },
+          "can_undo": {
+            "title": "Can Undo",
+            "type": "boolean"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlaylistWriteOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Etag"
+          },
+          "op": {
+            "title": "Op",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "op",
+          "action",
+          "playlist_id",
+          "can_undo",
+          "can_redo"
+        ],
+        "title": "HistoryApplyOut",
+        "type": "object"
+      },
+      "HistoryEntryOut": {
+        "properties": {
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "op": {
+            "title": "Op",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "op",
+          "playlist_id",
+          "ts",
+          "label"
+        ],
+        "title": "HistoryEntryOut",
+        "type": "object"
+      },
+      "HistoryGetOut": {
+        "properties": {
+          "can_redo": {
+            "title": "Can Redo",
+            "type": "boolean"
+          },
+          "can_undo": {
+            "title": "Can Undo",
+            "type": "boolean"
+          },
+          "cursor": {
+            "title": "Cursor",
+            "type": "integer"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryEntryOut"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cursor",
+          "limit",
+          "can_undo",
+          "can_redo",
+          "entries"
+        ],
+        "title": "HistoryGetOut",
         "type": "object"
       },
       "HotCueMutationOut": {
@@ -7663,6 +7867,40 @@
           }
         },
         "title": "PlaylistRenameIn",
+        "type": "object"
+      },
+      "PlaylistRewriteOut": {
+        "properties": {
+          "after": {
+            "items": {
+              "type": "string"
+            },
+            "title": "After",
+            "type": "array"
+          },
+          "before": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Before",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "name",
+          "before",
+          "after"
+        ],
+        "title": "PlaylistRewriteOut",
         "type": "object"
       },
       "PlaylistSummary": {
@@ -12294,6 +12532,58 @@
         "title": "UiPrefsPatch",
         "type": "object"
       },
+      "UndoRecordOut": {
+        "properties": {
+          "action": {
+            "const": "merge",
+            "title": "Action",
+            "type": "string"
+          },
+          "cluster_id": {
+            "title": "Cluster Id",
+            "type": "integer"
+          },
+          "cluster_key": {
+            "title": "Cluster Key",
+            "type": "string"
+          },
+          "decided_at": {
+            "title": "Decided At",
+            "type": "string"
+          },
+          "pending_apply": {
+            "title": "Pending Apply",
+            "type": "boolean"
+          },
+          "playlist_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Playlist Ids",
+            "type": "array"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "survivor": {
+            "title": "Survivor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cluster_id",
+          "cluster_key",
+          "survivor",
+          "action",
+          "decided_at",
+          "revision",
+          "pending_apply",
+          "playlist_ids"
+        ],
+        "title": "UndoRecordOut",
+        "type": "object"
+      },
       "UpdateCheckOut": {
         "description": "What the UI and any agent read.\n\n``applies_via`` is stated because the answer and the action come from\ndifferent components: this route answers, and the Tauri updater inside\nthe desktop shell is what can act. A browser tab can learn an update\nexists and cannot install it, and saying so beats a dead button.",
         "properties": {
@@ -15640,6 +15930,90 @@
         ]
       }
     },
+    "/api/v1/dedup/clusters/{cluster_id}/apply": {
+      "post": {
+        "description": "Rewrite OpenDJ playlist memberships so aliases point at the survivor.",
+        "operationId": "post_dedup_apply_api_v1_dedup_clusters__cluster_id__apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cluster_id",
+            "required": true,
+            "schema": {
+              "title": "Cluster Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Decision-store ETag returned by GET /api/v1/dedup/clusters",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyRecordOut"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact decision-store bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The decision revision or stable cluster identity is stale",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact decision-store bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "428": {
+            "description": "If-Match is required for every decision write"
+          }
+        },
+        "summary": "Post Dedup Apply",
+        "tags": [
+          "dedup-review"
+        ]
+      }
+    },
     "/api/v1/dedup/clusters/{cluster_id}/decision": {
       "post": {
         "description": "Persist a pending review decision without applying a merge.",
@@ -15719,6 +16093,90 @@
           }
         },
         "summary": "Post Dedup Decision",
+        "tags": [
+          "dedup-review"
+        ]
+      }
+    },
+    "/api/v1/dedup/clusters/{cluster_id}/undo": {
+      "post": {
+        "description": "Restore playlist memberships from the apply journal for this cluster.",
+        "operationId": "post_dedup_undo_api_v1_dedup_clusters__cluster_id__undo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cluster_id",
+            "required": true,
+            "schema": {
+              "title": "Cluster Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Decision-store ETag returned by GET /api/v1/dedup/clusters",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UndoRecordOut"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact decision-store bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The decision revision or stable cluster identity is stale",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact decision-store bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "428": {
+            "description": "If-Match is required for every decision write"
+          }
+        },
+        "summary": "Post Dedup Undo",
         "tags": [
           "dedup-review"
         ]
@@ -17839,6 +18297,69 @@
         "summary": "Solve Play It",
         "tags": [
           "play-it"
+        ]
+      }
+    },
+    "/api/v1/playlist-history": {
+      "get": {
+        "operationId": "get_playlist_history_api_v1_playlist_history_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryGetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Playlist History",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/playlist-history/redo": {
+      "post": {
+        "operationId": "redo_playlist_edit_api_v1_playlist_history_redo_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryApplyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Redo Playlist Edit",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/playlist-history/undo": {
+      "post": {
+        "operationId": "undo_playlist_edit_api_v1_playlist_history_undo_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryApplyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Undo Playlist Edit",
+        "tags": [
+          "playlists-write"
         ]
       }
     },

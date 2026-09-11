@@ -28,6 +28,7 @@ from pathlib import Path
 from apps.analysis import run as analysis_run
 from apps.lyrics import cache as lyrics_cache
 from apps.shared import fs_residency
+from apps.webui.soft_deletes import has_soft_deletes
 from apps.shared.paths import PROJECT_ROOT
 from apps.vocals import cache as vocals_cache
 from apps.webui.server.routes.ingest_analysis_argv import CliFailed
@@ -283,10 +284,17 @@ def tracks_on_disk(
     """
     conn = conn_factory()
     try:
-        rows = conn.execute(
-            "SELECT stable_id, file_path FROM tracks "
-            "WHERE file_path IS NOT NULL AND deleted_at IS NULL"
-        ).fetchall()
+        if has_soft_deletes(conn, "tracks"):
+            tracks_sql = (
+                "SELECT stable_id, file_path FROM tracks "
+                "WHERE file_path IS NOT NULL AND deleted_at IS NULL"
+            )
+        else:
+            tracks_sql = (
+                "SELECT stable_id, file_path FROM tracks "
+                "WHERE file_path IS NOT NULL"
+            )
+        rows = conn.execute(tracks_sql).fetchall()
     finally:
         conn.close()
     ok: list[tuple[str, str]] = []

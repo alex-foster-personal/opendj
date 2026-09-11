@@ -901,6 +901,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/dedup/clusters/{cluster_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Dedup Apply
+         * @description Rewrite OpenDJ playlist memberships so aliases point at the survivor.
+         */
+        post: operations["post_dedup_apply_api_v1_dedup_clusters__cluster_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/dedup/clusters/{cluster_id}/decision": {
         parameters: {
             query?: never;
@@ -915,6 +935,26 @@ export interface paths {
          * @description Persist a pending review decision without applying a merge.
          */
         post: operations["post_dedup_decision_api_v1_dedup_clusters__cluster_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dedup/clusters/{cluster_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Dedup Undo
+         * @description Restore playlist memberships from the apply journal for this cluster.
+         */
+        post: operations["post_dedup_undo_api_v1_dedup_clusters__cluster_id__undo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1797,6 +1837,57 @@ export interface paths {
         put?: never;
         /** Solve Play It */
         post: operations["solve_play_it_api_v1_play_it__playlist_id__solve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlist-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Playlist History */
+        get: operations["get_playlist_history_api_v1_playlist_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlist-history/redo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Redo Playlist Edit */
+        post: operations["redo_playlist_edit_api_v1_playlist_history_redo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlist-history/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo Playlist Edit */
+        post: operations["undo_playlist_edit_api_v1_playlist_history_undo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3576,6 +3667,35 @@ export interface components {
              */
             slot: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
         };
+        /** ApplyIn */
+        ApplyIn: {
+            /** Cluster Key */
+            cluster_key: string;
+            /** Survivor */
+            survivor: string;
+        };
+        /** ApplyRecordOut */
+        ApplyRecordOut: {
+            /**
+             * Action
+             * @constant
+             */
+            action: "merge";
+            /** Cluster Id */
+            cluster_id: number;
+            /** Cluster Key */
+            cluster_key: string;
+            /** Decided At */
+            decided_at: string;
+            /** Pending Apply */
+            pending_apply: boolean;
+            /** Playlists */
+            playlists: components["schemas"]["PlaylistRewriteOut"][];
+            /** Revision */
+            revision: string;
+            /** Survivor */
+            survivor: string;
+        };
         /** ApplyRequest */
         ApplyRequest: {
             /** Confirmation */
@@ -4551,6 +4671,8 @@ export interface components {
             cluster_key: string;
             /** Decided At */
             decided_at: string;
+            /** Pending Apply */
+            pending_apply: boolean;
             /** Survivor */
             survivor: string;
         };
@@ -5179,6 +5301,50 @@ export interface components {
             schema_version: number;
             /** Seq */
             seq: number;
+        };
+        /** HistoryApplyOut */
+        HistoryApplyOut: {
+            /** Action */
+            action: string;
+            /** Can Redo */
+            can_redo: boolean;
+            /** Can Undo */
+            can_undo: boolean;
+            /** Command Id */
+            command_id: string;
+            current?: components["schemas"]["PlaylistWriteOut"] | null;
+            /** Etag */
+            etag?: string | null;
+            /** Op */
+            op: string;
+            /** Playlist Id */
+            playlist_id: string;
+        };
+        /** HistoryEntryOut */
+        HistoryEntryOut: {
+            /** Command Id */
+            command_id: string;
+            /** Label */
+            label: string;
+            /** Op */
+            op: string;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Ts */
+            ts: string;
+        };
+        /** HistoryGetOut */
+        HistoryGetOut: {
+            /** Can Redo */
+            can_redo: boolean;
+            /** Can Undo */
+            can_undo: boolean;
+            /** Cursor */
+            cursor: number;
+            /** Entries */
+            entries: components["schemas"]["HistoryEntryOut"][];
+            /** Limit */
+            limit: number;
         };
         /** HotCueMutationOut */
         HotCueMutationOut: {
@@ -6253,6 +6419,17 @@ export interface components {
              * @description New display name; omit for a no-op that returns the current row + etag
              */
             name?: string | null;
+        };
+        /** PlaylistRewriteOut */
+        PlaylistRewriteOut: {
+            /** After */
+            after: string[];
+            /** Before */
+            before: string[];
+            /** Name */
+            name: string;
+            /** Playlist Id */
+            playlist_id: string;
         };
         /** PlaylistSummary */
         PlaylistSummary: {
@@ -7955,6 +8132,28 @@ export interface components {
             technically_working_animate?: boolean | null;
             /** Theme */
             theme?: ("dark" | "light") | null;
+        };
+        /** UndoRecordOut */
+        UndoRecordOut: {
+            /**
+             * Action
+             * @constant
+             */
+            action: "merge";
+            /** Cluster Id */
+            cluster_id: number;
+            /** Cluster Key */
+            cluster_key: string;
+            /** Decided At */
+            decided_at: string;
+            /** Pending Apply */
+            pending_apply: boolean;
+            /** Playlist Ids */
+            playlist_ids: string[];
+            /** Revision */
+            revision: string;
+            /** Survivor */
+            survivor: string;
         };
         /**
          * UpdateCheckOut
@@ -10056,6 +10255,62 @@ export interface operations {
             };
         };
     };
+    post_dedup_apply_api_v1_dedup_clusters__cluster_id__apply_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Decision-store ETag returned by GET /api/v1/dedup/clusters */
+                "If-Match": string;
+            };
+            path: {
+                cluster_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong validator for the exact decision-store bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplyRecordOut"];
+                };
+            };
+            /** @description The decision revision or stable cluster identity is stale */
+            409: {
+                headers: {
+                    /** @description Strong validator for the exact decision-store bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description If-Match is required for every decision write */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     post_dedup_decision_api_v1_dedup_clusters__cluster_id__decision_post: {
         parameters: {
             query?: never;
@@ -10083,6 +10338,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DecisionRecordOut"];
+                };
+            };
+            /** @description The decision revision or stable cluster identity is stale */
+            409: {
+                headers: {
+                    /** @description Strong validator for the exact decision-store bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description If-Match is required for every decision write */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post_dedup_undo_api_v1_dedup_clusters__cluster_id__undo_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Decision-store ETag returned by GET /api/v1/dedup/clusters */
+                "If-Match": string;
+            };
+            path: {
+                cluster_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong validator for the exact decision-store bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UndoRecordOut"];
                 };
             };
             /** @description The decision revision or stable cluster identity is stale */
@@ -11645,6 +11956,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_playlist_history_api_v1_playlist_history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryGetOut"];
+                };
+            };
+        };
+    };
+    redo_playlist_edit_api_v1_playlist_history_redo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryApplyOut"];
+                };
+            };
+        };
+    };
+    undo_playlist_edit_api_v1_playlist_history_undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryApplyOut"];
                 };
             };
         };
