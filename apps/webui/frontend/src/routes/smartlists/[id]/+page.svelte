@@ -9,7 +9,7 @@
 		updateSmartlist,
 		type SmartlistOut,
 		type SmartlistTrackOut
-	} from '$lib/api';
+	} from '$lib/smartlists/http';
 	import {
 		astToForm,
 		createEmptyGroup,

@@ -42,7 +42,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Literal
+from typing import Annotated, Any, Iterator, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
@@ -367,8 +367,8 @@ def list_smartlists(
 def create_smartlist(
     body: SmartlistCreateIn,
     response: Response,
-    _backend: StateBackend = Depends(get_write_state),
-    conn: sqlite3.Connection = Depends(get_smartlists_write_conn),
+    _backend: Annotated[StateBackend, Depends(get_write_state)],
+    conn: Annotated[sqlite3.Connection, Depends(get_smartlists_write_conn)],
 ) -> SmartlistSummary:
     """Persist a new smartlist and return the created summary plus ETag."""
     try:

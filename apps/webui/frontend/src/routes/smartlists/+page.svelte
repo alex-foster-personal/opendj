@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { createSmartlist, listSmartlists, type SmartlistOut } from '$lib/api';
+	import { createSmartlist, listSmartlists, type SmartlistOut } from '$lib/smartlists/http';
 	import { pushToast } from '$lib/stores.svelte';
 
 	const STARTER_RULE = { field: 'rating', op: '>=', value: 0 } as const;

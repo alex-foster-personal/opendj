@@ -9,7 +9,7 @@ let api;
 let originalFetch;
 
 before(async () => {
-	api = await loadTypeScriptModule('src/lib/api.ts', { viteApiBase: API_BASE });
+	api = await loadTypeScriptModule('src/lib/smartlists/http.ts', { viteApiBase: API_BASE });
 	originalFetch = globalThis.fetch;
 });
 

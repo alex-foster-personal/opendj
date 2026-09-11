@@ -202,7 +202,7 @@ def test_get_smartlist_404(client):
 
 @pytest.mark.requirement("SMART-04")
 def test_create_smartlist_returns_201_etag_and_listable_row(client):
-    """[if] POST /smartlists does not persist a named rule [then] web create is still CLI-only, [else stop]."""
+    """[if] POST /smartlists does not persist [then] web create is still CLI-only, [else stop]."""
     r = client.post(
         "/api/v1/smartlists",
         json={
@@ -228,7 +228,7 @@ def test_create_smartlist_returns_201_etag_and_listable_row(client):
 
 @pytest.mark.requirement("SMART-04")
 def test_create_smartlist_honors_cli_order_by_default_and_override(client):
-    """[if] POST drops the CLI order_by default [then] create diverges from python -m apps.smartlists.cli.create, [else stop]."""
+    """[if] POST drops the CLI order_by default [then] create diverges from the CLI, [else stop]."""
     defaulted = client.post(
         "/api/v1/smartlists",
         json={"name": "Default order", "rule": _BPM_RULE},
@@ -250,7 +250,7 @@ def test_create_smartlist_honors_cli_order_by_default_and_override(client):
 
 @pytest.mark.requirement("SMART-04")
 def test_create_smartlist_rejects_invalid_rule_and_duplicate_name(client):
-    """[if] invalid rules or duplicate names insert a row [then] CLI validation is skipped, [else stop]."""
+    """[if] invalid rules or duplicate names insert [then] CLI checks are skipped, [else stop]."""
     bad = client.post(
         "/api/v1/smartlists",
         json={
@@ -284,7 +284,7 @@ def test_create_smartlist_rejects_invalid_rule_and_duplicate_name(client):
 
 @pytest.mark.requirement("SMART-04")
 def test_create_smartlist_creates_table_on_pre_phase08_db(tmp_path):
-    """[if] the first POST cannot create the lazy smartlists table [then] a fresh library cannot author from the web UI, [else stop]."""
+    """[if] the first POST cannot create the lazy table [then] a fresh library cannot author, [else stop]."""
     path = tmp_path / "state.db"
     conn = state_db.open_rw(path, apply_schema=True)
     conn.close()
@@ -304,7 +304,7 @@ def test_create_smartlist_creates_table_on_pre_phase08_db(tmp_path):
 
 @pytest.mark.requirement("SMART-04")
 def test_create_smartlist_peer_cloud_lock_503_does_not_insert(state_db_path):
-    """[if] a peer lock still inserts [then] create bypasses the write lock PUT already honors, [else stop]."""
+    """[if] a peer lock still inserts [then] create bypasses the write lock, [else stop]."""
     with _make_client(
         state_db_path,
         lock_status_fn=lambda: {"holder": "other-host"},
