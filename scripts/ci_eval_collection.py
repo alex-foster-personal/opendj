@@ -35,7 +35,10 @@ def _timestamp(value: str) -> datetime:
 
 def collect_campaign(campaign: dict[str, Any], runner: Any) -> dict[str, Any]:  # noqa: C901
     """Collect workflow and cost evidence for every submitted campaign PR."""
-    if len(campaign.get("prs") or []) != CASE_COUNT:
+    prs = campaign.get("prs") or []
+    if len(prs) != CASE_COUNT:
+        raise CampaignError("collect requires all ten PRs to have been submitted")
+    if any(not row.get("number") or not row.get("url") for row in prs):
         raise CampaignError("collect requires all ten PRs to have been submitted")
     if not campaign.get("prepared_at"):
         raise CampaignError("campaign is missing its prepared_at timestamp")
