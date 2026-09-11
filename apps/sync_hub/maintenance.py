@@ -12,8 +12,10 @@
                                                 (--grant TOKEN | --grant-file F)
                                                 [--name N]
     uv run python -m apps.sync_hub fleet        --data-dir DIR [--json]
+    uv run python -m apps.sync_hub policy <verb> --data-dir DIR ...  (see maintenance_policy)
 
-Eight operations:
+Eight operations, plus ``policy`` (per-machine sync policy, its own module
+:mod:`apps.sync_hub.maintenance_policy`, dry-run by default, exit 0/1/3/4):
 
 * **sync** runs one spoke round trip against ``--hub`` (round 3 finding R7).
   Nothing outside pytest called ``run_sync`` before -- the whole spoke
@@ -55,6 +57,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -66,6 +69,7 @@ from apps.sync_hub import (
     enrollment_credentials,
     generation,
     maintenance_enroll,
+    maintenance_policy,
 )
 from apps.sync_hub import status as sync_status
 
@@ -312,6 +316,7 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print the same readout as JSON (agent parity with the UI)",
     )
+    maintenance_policy.add_policy_parser(subcommands, common)
     return parser
 
 
@@ -426,7 +431,7 @@ def _print_fleet(args: argparse.Namespace) -> None:
 #: and exiting 0. Named here, not in the test, so "every registered
 #: subcommand is dispatched" can be re-derived from the module instead of
 #: from a list a test author kept up to date by hand.
-EXIT_CODE_COMMANDS: frozenset[str] = frozenset({"sync", "status"})
+EXIT_CODE_COMMANDS: frozenset[str] = frozenset({"sync", "status", "policy"})
 
 
 PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
@@ -439,13 +444,26 @@ PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
 }
 
 
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
+    """argparse exits 2 on a usage error; ``policy`` documents 1, so remap it there."""
+    try:
+        return _parser().parse_args(argv)
+    except SystemExit as exc:
+        tokens = sys.argv[1:] if argv is None else argv
+        if exc.code == 2 and maintenance_policy.is_policy_argv(tokens):
+            raise SystemExit(maintenance_policy.EXIT_USAGE) from exc
+        raise
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run one subcommand. Returns a process exit code."""
-    args = _parser().parse_args(argv)
+    args = _parse_args(argv)
     if args.command == "sync":
         return _report_sync(sync(args.data_dir, args.hub, name=args.name))
     if args.command == "status":
         return _report_status(sync_status.read_status(args.data_dir))
+    if args.command == "policy":
+        return maintenance_policy.run(args)
     # Everything below prints and exits 0; the two above own their own codes.
     handler = PRINTING_COMMANDS.get(args.command)
     if handler is None:
