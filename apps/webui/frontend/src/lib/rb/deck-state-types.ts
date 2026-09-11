@@ -35,12 +35,12 @@ export interface LoopState {
 	beat_length: number | null;
 }
 
-/** One secondary in-deck safety loop (auto-engage near end-of-track). */
+/** One secondary in-deck safety loop (auto-engages when its out is reached). */
 export interface SafetyLoopSlot {
 	in_ms: number;
 	out_ms: number;
 	beat_length: number | null;
-	/** When true, engine engages this loop instead of natural-end stop. */
+	/** When true, engine engages this loop when playback reaches its out. */
 	armed: boolean;
 }
 
@@ -108,7 +108,7 @@ export interface DeckState {
 	stems: StemDeckState;
 	/** Active loop or null. */
 	loop: LoopState | null;
-	/** Secondary safety loop (one slot); auto-engages near end when armed. */
+	/** Secondary safety loop (one slot); auto-engages at its out when armed. */
 	safety_loop: SafetyLoopSlot | null;
 	/** Hot-cue bank content (empty slots = letters absent from this array). */
 	hot_cues: HotCue[];

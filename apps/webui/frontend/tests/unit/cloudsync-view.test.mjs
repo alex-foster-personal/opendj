@@ -167,6 +167,91 @@ test('the chip lights only with a fresh heartbeat, and keeps inconclusive distin
 	);
 });
 
+test('chipFullLabel matches the full status strings', () => {
+	/** if the full label drifts from the chip's visible text at desktop widths then broken */
+	const frozenNow = Date.parse('2026-09-11T12:00:00.000Z');
+	const pushAt = '2026-09-11T11:48:00.000Z';
+	const originalNow = Date.now;
+	Date.now = () => frozenNow;
+	try {
+		assert.equal(view.chipFullLabel(null), 'sync: off');
+		assert.equal(view.chipFullLabel(status()), 'sync: off');
+		const live = { configured: true, running: true, enabled: true };
+		assert.equal(view.chipFullLabel(status(live)), 'sync: syncing');
+		assert.equal(
+			view.chipFullLabel(
+				status({
+					...live,
+					last_push_at: pushAt,
+					last_result: { status: 'ok', message: '' }
+				})
+			),
+			'sync: ok 12m ago'
+		);
+		assert.equal(
+			view.chipFullLabel(status({ ...live, last_result: { status: 'error', message: 'fail' } })),
+			'sync: error'
+		);
+		assert.equal(
+			view.chipFullLabel(
+				status({
+					...live,
+					last_push_at: pushAt,
+					last_result: { status: 'inconclusive', message: '' }
+				})
+			),
+			'sync: inconclusive 12m ago'
+		);
+	} finally {
+		Date.now = originalNow;
+	}
+});
+
+test('chipShortLabel is three letters or fewer for compact viewports', () => {
+	/** if the short label is too long to stay single-line at 900px then broken */
+	const live = { configured: true, running: true, enabled: true };
+	assert.equal(view.chipShortLabel(null), 'off');
+	assert.equal(view.chipShortLabel(status(live)), 'sync');
+	assert.equal(
+		view.chipShortLabel(status({ ...live, last_result: { status: 'ok', message: '' } })),
+		'ok'
+	);
+	assert.equal(
+		view.chipShortLabel(status({ ...live, last_result: { status: 'error', message: '' } })),
+		'err'
+	);
+	assert.equal(
+		view.chipShortLabel(status({ ...live, last_result: { status: 'inconclusive', message: '' } })),
+		'inc'
+	);
+});
+
+test('chipTitle names the state and links to /cloudsync', () => {
+	/** if the tooltip CTA still points at the old popover then broken */
+	assert.equal(view.CHIP_HREF, '/cloudsync');
+	const offTitle = view.chipTitle(status(), null);
+	assert.match(offTitle, /CloudSync is off/);
+	assert.match(offTitle, /Click to open CloudSync\./);
+	assert.doesNotMatch(offTitle, /Click to open recent results\./);
+	const live = { configured: true, running: true, enabled: true };
+	const originalNow = Date.now;
+	Date.now = () => Date.parse('2026-09-11T12:00:00.000Z');
+	try {
+		const okTitle = view.chipTitle(
+			status({
+				...live,
+				last_push_at: '2026-09-11T11:48:00.000Z',
+				last_result: { status: 'ok', message: '' }
+			}),
+			null
+		);
+		assert.match(okTitle, /CloudSync last succeeded 12m ago/);
+		assert.match(okTitle, /Click to open CloudSync\./);
+	} finally {
+		Date.now = originalNow;
+	}
+});
+
 // ----------------------------------------------------------- sync now + config
 
 test('Sync now posts the effective hub URL and machine name, and refuses without a hub', () => {

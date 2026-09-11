@@ -95,6 +95,12 @@ let _latestPollAdopted = 0;
  * 5s poll rather than by a second timer of its own. */
 let _recordRefreshPending = false;
 
+/** Deck refreshes in flight. A faster no-refresh switch that wins while one is
+ * still awaiting /anlz must bump the fetch generation so the slower batch's
+ * pre-publication guard can discard itself even when the mirror never moved
+ * (discussion_r3975326238 P1 BLOCKING). */
+let _sourceRefreshInFlight = 0;
+
 /** Bumped every time a record-change event marks a refresh pending. Lets
  * `_refreshDecks` tell "a refresh that started before this change" apart
  * from "a refresh that can actually have seen it" (discussion_r3972154604
@@ -199,6 +205,9 @@ async function _adopt(
 		// in-flight fetch elsewhere to re-check itself for nothing.
 		const beatgrid = features.beatgrid;
 		if (beatgrid !== undefined) {
+			if (_sourceRefreshInFlight > 0) {
+				bumpAnlzFetchGeneration();
+			}
 			// `evictAnlzCacheEntriesServingOtherSource` only clears READY entries
 			// - a LOADING one (a prefetch already in flight when this adoption
 			// runs) is invisible to it, since we do not yet know what source it
@@ -464,23 +473,28 @@ async function _refreshDecks(
 	// (discussion_r3972154604 P2 BLOCKING).
 	const requestedGeneration = _recordRefreshGeneration;
 	let served: AnalysisSource | null;
-	if (serialize) {
-		if (_refreshRunner === null) {
-			throw new Error('no analysis source refresh runner is installed');
+	_sourceRefreshInFlight += 1;
+	try {
+		if (serialize) {
+			if (_refreshRunner === null) {
+				throw new Error('no analysis source refresh runner is installed');
+			}
+			served = await _refreshRunner(() =>
+				refreshAnalysisSourceDecks(DECK_IDS, deckStates, isSuperseded)
+			);
+			if (served === undefined) {
+				// A runner that awaits the work but drops its result would silently
+				// write `undefined` into the deck watermark, and every later
+				// comparison against it would read "never refreshed". Loud, because
+				// the runner is injected and TypeScript cannot enforce this at the
+				// installation site's runtime.
+				throw new Error('the analysis source refresh runner dropped its work result');
+			}
+		} else {
+			served = await refreshAnalysisSourceDecks(DECK_IDS, deckStates, isSuperseded);
 		}
-		served = await _refreshRunner(() =>
-			refreshAnalysisSourceDecks(DECK_IDS, deckStates, isSuperseded)
-		);
-		if (served === undefined) {
-			// A runner that awaits the work but drops its result would silently
-			// write `undefined` into the deck watermark, and every later
-			// comparison against it would read "never refreshed". Loud, because
-			// the runner is injected and TypeScript cannot enforce this at the
-			// installation site's runtime.
-			throw new Error('the analysis source refresh runner dropped its work result');
-		}
-	} else {
-		served = await refreshAnalysisSourceDecks(DECK_IDS, deckStates, isSuperseded);
+	} finally {
+		_sourceRefreshInFlight -= 1;
 	}
 	// Any successful refresh refetches EVERY loaded deck, so it satisfies a
 	// pending record-change retry whatever triggered it - unless a NEWER
