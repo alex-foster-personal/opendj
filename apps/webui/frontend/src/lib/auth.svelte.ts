@@ -3,7 +3,9 @@
  * Thin client over the daemon's /api/v1/auth/* endpoints. The session lives
  * in an httpOnly cookie the daemon sets, so there is no token to hold here
  * and nothing to persist in localStorage -- `refreshUser` asks the daemon
- * who we are and that is the only source of truth.
+ * who we are and that is the only source of truth. Each browser profile
+ * keeps its own cookie jar, so a second Chrome profile or Safari must sign
+ * in separately even on the same machine.
  *
  * `credentials: 'same-origin'` is explicit rather than relying on the fetch
  * default: in dev the SPA and the API share an origin only because Vite
