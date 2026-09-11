@@ -8,6 +8,7 @@ import {
 	manifestGate,
 	manifestMismatches
 } from '../live/fixture-manifest.mjs';
+import { missingFixtureMessage } from '../live/stem-decode-kpis.mjs';
 
 /**
  * Provenance for the live decode rung's inputs.
@@ -242,4 +243,9 @@ test('the margin is read from the implementation, and unreadable means unreadabl
 	assert.equal(stopwatchLane(margin, margin), 'main-thread', 'exactly the margin is not a win');
 	assert.equal(stopwatchLane(1.71, margin), 'workers');
 	assert.equal(stopwatchLane(0.38, margin), 'main-thread');
+});
+
+test('a missing-fixture refusal names Q18_FLAC_DIR', () => {
+	const lines = missingFixtureMessage({ found: 1, required: 4, fixtureDir: '/tmp/no-flacs' });
+	assert.ok(lines.some((line) => line.includes('Q18_FLAC_DIR')));
 });

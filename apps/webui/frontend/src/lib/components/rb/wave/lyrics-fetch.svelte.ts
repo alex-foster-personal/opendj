@@ -13,6 +13,25 @@ import { ensureLyricsCachedIdsLoaded, getLyricsCachedIds } from './lyrics-cached
 
 type LyricsPayload = { lines: LyricLine[] };
 
+const lyricsCache = new Map<string, LyricsPayload | null>();
+const lyricsInflight = new Map<string, Promise<LyricsPayload | null>>();
+
+function fetchLyricsCached(
+	stableId: string,
+	fetchLyrics: (stableId: string) => Promise<LyricsPayload | null>
+): Promise<LyricsPayload | null> {
+	if (lyricsCache.has(stableId)) return Promise.resolve(lyricsCache.get(stableId)!);
+	const inflight = lyricsInflight.get(stableId);
+	if (inflight !== undefined) return inflight;
+	const promise = fetchLyrics(stableId).then((result) => {
+		lyricsCache.set(stableId, result);
+		lyricsInflight.delete(stableId);
+		return result;
+	});
+	lyricsInflight.set(stableId, promise);
+	return promise;
+}
+
 export function createLyricsFetchState(
 	stableId: () => string | null,
 	fetchLyrics: (stableId: string) => Promise<LyricsPayload | null>,
@@ -30,9 +49,13 @@ export function createLyricsFetchState(
 		if (sid === null) return;
 		if (optionalResources(sid).lyrics === false) return;
 		if (!shouldFetchTrackLyrics(sid, cachedIds)) return;
+		if (lyricsCache.has(sid)) {
+			lyrics = lyricsCache.get(sid)!;
+			return;
+		}
 		void (async () => {
 			try {
-				const result = await fetchLyrics(sid);
+				const result = await fetchLyricsCached(sid, fetchLyrics);
 				if (!cancelled) lyrics = result;
 			} catch (error: unknown) {
 				if (!cancelled) loadError = error instanceof Error ? error : new Error(String(error));

@@ -27,8 +27,6 @@ _UNGRADABLE_REASON: dict[str, str] = {
 def _ungradable_pred(lane: str) -> Callable[[dict[str, Any]], bool]:
     if lane == "waveform_detail":
         return lambda row: not row.get("rb_ext_readable", True)
-    if lane == "vocal":
-        return lambda row: not row.get("rb_pvdi")
     return lambda _row: False
 
 

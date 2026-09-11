@@ -318,7 +318,10 @@ def test_red_fixture_flips_every_input_driven_health_line(tmp_path):
     (fixture / "probes" / "watchdog-loops").write_text("\n")  # zero loops != main pid
     (fixture / "probes" / "residents-watchdog-pgrep").write_text("12345\n")
     os.utime(fixture / "jobs" / "logs" / "tick-gate.log", (NOW - 2000, NOW - 2000))
-    (fixture / "jobs" / "state" / "tickgate-dispatcher.ts").write_text(f"{NOW - 9999}\n")
+    (fixture / "jobs" / "logs" / "dispatcher.log").write_text(
+        f"---tick-end {_iso(NOW - 100)} model=opus effort=high "
+        "reason=unclassified-error exit=1---\n"
+    )
     (fixture / "jobs" / "state" / "cap-agents").write_text("1\n")  # live_now=2 > 1
     # The timestamped line is what flips this verdict. The untimestamped one
     # rides along only to prove it changes the label's excluded count without

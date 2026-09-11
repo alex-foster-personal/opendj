@@ -9,6 +9,7 @@ CI's on-disk library as a side effect of collection.
 Tests construct a fresh app via :func:`create_app` so they can inject a
 seeded backend without leaking global state.
 """
+
 from __future__ import annotations
 
 import logging
@@ -20,6 +21,8 @@ from typing import Any
 from fastapi import FastAPI
 
 from apps.feature_flags import FlagStore
+from apps.sets.share import SetShareConfig
+from apps.sets.share_page import router as set_share_page_router
 
 from . import (
     analysis_autostart,
@@ -70,6 +73,8 @@ def create_app(  # noqa: PLR0913
     stem_roots: Sequence[Path] | None = None,
     usage_store: UsageStore | None = None,
     share_config: ShareConfig | None = None,
+    set_share_config: SetShareConfig | None = None,
+    sets_root: Path | None = None,
     auto_analyze: bool = False,
     lyric_index: bool = False,
     auto_user_jobs: bool = False,
@@ -118,6 +123,8 @@ def create_app(  # noqa: PLR0913
         syncthing_status_fn,
         state_db_path,
     )
+    app.state.set_share_config = set_share_config or SetShareConfig.from_environ()
+    app.state.sets_root = Path(sets_root) if sets_root is not None else None
     _bind_feature_state(
         app,
         version,
@@ -135,6 +142,7 @@ def create_app(  # noqa: PLR0913
         _configure_cors(app, frontend_port)
     _configure_http_middleware(app, bind_host)
     _mount_api_routers(app)
+    app.include_router(set_share_page_router)
     _mount_frontend_or_placeholder(app, mount_frontend, FRONTEND_BUILD_DIR)
     return app
 
@@ -162,6 +170,7 @@ def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWa
     three callables would keep passing after the daemon started draining the
     wrong scope. Call this instead.
     """
+
     def start_unmapped_drain(
         guard: analysis_autostart.GuardFn,
     ) -> analysis_autostart.ConsumedFn:
@@ -209,10 +218,7 @@ def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWa
             # lost target then sits behind `unchanged` for as long as it keeps
             # its content token.
             latest = ingest_routes._JOBS.last_unmapped
-            if (
-                latest is not None
-                and latest.phase not in ingest_routes.ACTIVE_PHASES
-            ):
+            if latest is not None and latest.phase not in ingest_routes.ACTIVE_PHASES:
                 return latest.queue_signature
             # No unmapped drain has finished in this process, or the newest
             # one is still running and its signature is not final. Fall back
@@ -352,6 +358,7 @@ def _build_default_app() -> FastAPI:
     # and that must abort this boot path too (#762) rather than silently
     # swallow into an empty in-memory library.
     from .sqlite_backend import make_backend
+
     backend: StateBackend = make_backend()
     # Late import, same reason as make_backend()'s: apply_library_env() above
     # must run first so STATE_DB (re-exported from platform_paths.DATA_DIR)
@@ -370,7 +377,9 @@ def _build_default_app() -> FastAPI:
     # this entrypoint against a fixture data dir with an unmapped track (#949).
     from apps.shared.paths import STATE_DB
     return create_app(
-        backend=backend, bind_host=bind_host, hostname=hostname,
+        backend=backend,
+        bind_host=bind_host,
+        hostname=hostname,
         syncthing_status_fn=probe_syncthing_status,
         stem_roots=stems.roots,
         state_db_path=str(STATE_DB),

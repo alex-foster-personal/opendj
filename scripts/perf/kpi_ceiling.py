@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import datetime as dt
 import statistics
-from typing import Any
+from typing import Any, Literal
 
 SUPERSEDED = "SUPERSEDED"
 DEFAULT_FACTOR = 3.0
 CEILING_FACTOR = DEFAULT_FACTOR
 DEFAULT_WINDOW_DAYS = 7
+
+CeilingVerdict = Literal["unknown", "breach", "ok"]
 
 
 def _parse_date(value: str) -> dt.date:
@@ -56,12 +58,27 @@ def trailing_median_ms(
     return float(statistics.median(values))
 
 
+def ceiling_verdict(
+    *,
+    warm_median_ms: float,
+    trailing_median_ms: float | None,
+    factor: float = DEFAULT_FACTOR,
+) -> CeilingVerdict:
+    if trailing_median_ms is None or trailing_median_ms <= 0:
+        return "unknown"
+    if warm_median_ms > trailing_median_ms * factor:
+        return "breach"
+    return "ok"
+
+
 def ceiling_exceeded(
     *,
     warm_median_ms: float,
     trailing_median_ms: float | None,
     factor: float = DEFAULT_FACTOR,
 ) -> bool:
-    if trailing_median_ms is None or trailing_median_ms <= 0:
-        return True
-    return warm_median_ms > trailing_median_ms * factor
+    return ceiling_verdict(
+        warm_median_ms=warm_median_ms,
+        trailing_median_ms=trailing_median_ms,
+        factor=factor,
+    ) == "breach"

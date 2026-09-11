@@ -4,8 +4,9 @@ specs/lyrics-version-check.md round 3. Repair NEVER acts on its own judgement:
 it edits only the decisive findings of an ARBITRATED verdict, and the
 acceptance gate is closing the loop -- the repaired sheet must re-enter the
 full pipeline (classify + arbitrate) and come back `matched` ("green after
-repair", the maintainer's bar). unverifiable and wrong_song verdicts are refused here:
-those sheets route to review or re-sourcing, not editing.
+repair", the maintainer's bar). unverifiable, wrong_song, and needs_acoustic_check
+verdicts are refused here: those sheets must go through acoustic arbitration
+(or review / re-sourcing), not editing.
 
 Edits by finding kind (sheet-centric):
 - sheet_repeat_unsupported / missing_in_audio (arbitrated REAL): DELETE the
@@ -42,7 +43,7 @@ class RepairResult:
 
 
 def repair_sheet(sheet_words: list[str], asr_words: list[str], verdict: Verdict) -> RepairResult:
-    if verdict.verdict in ("unverifiable", "wrong_song"):
+    if verdict.verdict in ("unverifiable", "wrong_song", "needs_acoustic_check"):
         raise ValueError(
             f"refusing to repair a {verdict.verdict} sheet -- route to review/re-sourcing"
         )

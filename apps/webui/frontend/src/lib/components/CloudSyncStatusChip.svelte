@@ -5,50 +5,25 @@
 	// reads 'off' whenever there is no fresh scheduler heartbeat
 	// (status.running false), whatever the config or the last result says.
 	import {
+		CHIP_HREF,
 		CHIP_POLL_MS,
 		STATUS_CHANGED_EVENT,
+		chipFullLabel,
+		chipShortLabel,
 		chipState as chipStateOf,
-		relativeTime
+		chipTitle
 	} from '$lib/components/cloudsync/cloudsync-view';
 
 	let status = $state<CloudSyncStatus | null>(null);
-	let detailsOpen = $state(false);
 	let loadError = $state<string | null>(null);
 
 	function chipState(): ReturnType<typeof chipStateOf> {
 		return chipStateOf(status);
 	}
 
-	const label = $derived.by(() => {
-		const state = chipState();
-		if (state === 'ok') return `sync: ok ${relativeTime(status?.last_push_at ?? null)}`;
-		if (state === 'error') return 'sync: error';
-		if (state === 'inconclusive')
-			return `sync: inconclusive ${relativeTime(status?.last_push_at ?? null)}`;
-		return `sync: ${state}`;
-	});
-	const title = $derived.by(() => {
-		if (status === null) {
-			return loadError === null
-				? 'CloudSync status - still loading from the daemon. Click after it loads to see details.'
-				: `CloudSync status unavailable: ${loadError}. Click to retry details.`;
-		}
-		const state = chipState();
-		const next = 'Click to open recent results.';
-		if (state === 'off') {
-			return `CloudSync is off${status.reason ? ` (${status.reason})` : ''}. ${next}`;
-		}
-		if (state === 'error') {
-			return `CloudSync error: ${status.last_result?.message ?? 'last sync failed'}. ${next}`;
-		}
-		if (state === 'inconclusive') {
-			return `CloudSync last run was inconclusive - agreement was not verified. ${next}`;
-		}
-		if (state === 'ok') {
-			return `CloudSync last succeeded ${relativeTime(status.last_push_at)}. ${next}`;
-		}
-		return `CloudSync is syncing${status.rows_pending !== null ? ` (${status.rows_pending} rows pending)` : ''}. ${next}`;
-	});
+	const fullLabel = $derived(chipFullLabel(status));
+	const shortLabel = $derived(chipShortLabel(status));
+	const title = $derived(chipTitle(status, loadError));
 
 	async function load(): Promise<void> {
 		try {
@@ -76,43 +51,89 @@
 </script>
 
 <div class="cloudsync-status">
-	<button
-		type="button"
+	<a
+		href={CHIP_HREF}
+		class="chip"
 		class:error={chipState() === 'error'}
 		class:ok={chipState() === 'ok'}
 		class:inconclusive={chipState() === 'inconclusive'}
-		class="chip"
 		title={title}
-		aria-expanded={detailsOpen}
 		aria-label="CloudSync status"
-		onclick={() => (detailsOpen = !detailsOpen)}
 	>
-		{label}
-	</button>
-	{#if detailsOpen}
-		<div class="details" role="status">
-			<strong>CloudSync</strong>
-			<p>{status?.reason ?? status?.endpoint ?? loadError ?? 'Checking status.'}</p>
-			{#if status?.recent_results.length}
-				<ol>
-					{#each status.recent_results as result}
-						<li>{result.finished_at}: {result.status} - {result.message}</li>
-					{/each}
-				</ol>
-			{:else}
-				<p>No sync attempts have completed yet.</p>
-			{/if}
-		</div>
-	{/if}
+		<svg
+			class="chip-icon"
+			width="12"
+			height="12"
+			viewBox="0 0 24 24"
+			fill="currentColor"
+			aria-hidden="true"
+		>
+			<path
+				d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"
+			/>
+		</svg>
+		<span class="chip-label-full">{fullLabel}</span>
+		<span class="chip-label-short">{shortLabel}</span>
+	</a>
 </div>
 
 <style>
-	.cloudsync-status { position: relative; }
-	.chip { border: 1px solid var(--muted); border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 0.72rem; padding: 0.18rem 0.45rem; cursor: pointer; }
-	.chip.ok { border-color: var(--accent-dim); color: var(--accent); }
-	.chip.error { border-color: var(--danger); color: var(--danger); }
-	.chip.inconclusive { border-color: var(--warning, #b8860b); color: var(--warning, #b8860b); }
-	.details { position: absolute; z-index: 40; right: 0; top: calc(100% + 6px); width: 320px; padding: 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--fg); font-size: 0.75rem; }
-	.details p { margin: 0.35rem 0; }
-	.details ol { max-height: 12rem; overflow: auto; margin: 0; padding-left: 1.2rem; }
+	.cloudsync-status {
+		position: relative;
+		flex: none;
+	}
+
+	.chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.2rem;
+		box-sizing: border-box;
+		max-height: 24px;
+		border: 1px solid var(--muted);
+		border-radius: 999px;
+		background: transparent;
+		color: var(--muted);
+		font: inherit;
+		font-size: 0.72rem;
+		line-height: 1;
+		padding: 0.1rem 0.45rem;
+		white-space: nowrap;
+		text-decoration: none;
+		cursor: pointer;
+	}
+
+	.chip:hover {
+		text-decoration: none;
+	}
+
+	.chip.ok {
+		border-color: var(--accent-dim);
+		color: var(--accent);
+	}
+
+	.chip.error {
+		border-color: var(--danger);
+		color: var(--danger);
+	}
+
+	.chip.inconclusive {
+		border-color: var(--warning, #b8860b);
+		color: var(--warning, #b8860b);
+	}
+
+	.chip-icon {
+		flex: none;
+	}
+
+	@media (max-width: 1024px) {
+		.chip-label-full {
+			display: none;
+		}
+	}
+
+	@media (min-width: 1025px) {
+		.chip-label-short {
+			display: none;
+		}
+	}
 </style>
