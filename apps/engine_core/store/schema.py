@@ -79,6 +79,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import cache
 
+from apps.analysis.queue_stale import STALE_TABLES_SQL
+from apps.analysis.queue_store import QUEUE_TABLES_SQL
 from apps.shared.state.migrations_v9 import ENROLLED_VIA_VALUES
 
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -480,6 +482,17 @@ _NATIVE_ANALYSIS_V1: tuple[str, ...] = (
         updated_at  TEXT NOT NULL
     )
     """,
+    # The backfill queue (spec section 3 "Queue") and the staleness table,
+    # SPLICED IN from the modules that own them rather than restated. They
+    # were written out here as well until Thu 10 Sep 2026 and the two copies
+    # were byte-identical, which is exactly the drift sync_drift_lint exists
+    # to catch: a column added on one side and not the other provisions a
+    # fresh database differently from a running one. One definition, two
+    # readers. The import direction is owner -> registry (the same direction
+    # as ENROLLED_VIA_VALUES above); neither analysis module imports
+    # engine_core, so there is no cycle.
+    *QUEUE_TABLES_SQL,
+    *STALE_TABLES_SQL,
 )
 
 
@@ -1054,6 +1067,9 @@ TABLES: dict[str, tuple[str, ...]] = {
         "analysis_canonical",
         "analysis_projection",
         "analysis_source_default",
+        "analysis_queue_batch",
+        "analysis_queue_item",
+        "analysis_stale",
     ),
     "analysis_retention": (
         "track_availability",
