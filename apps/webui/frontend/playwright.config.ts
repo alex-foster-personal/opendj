@@ -97,6 +97,7 @@ export default defineConfig({
 		'**/library-wheel.spec.ts', // playwright.library-wheel.config.ts (real engine, genre fixture)
 		'**/rekordbox-writeback-disabled.spec.ts', // playwright.rekordbox-gate.config.ts
 		'**/hot-cue-mapping-gate.spec.ts', // playwright.hotcue-mapping-gate.config.ts (real backend, fixture library)
+		'**/lyrics-words.spec.ts', // playwright.lyrics-words.config.ts (real backend, words fixture)
 		'**/stems-progress.spec.ts', // playwright.stems.config.ts (engine + ffmpeg)
 		'**/library-jobs-ordering.spec.ts', // playwright.library-jobs.config.ts (dry runner)
 		'**/stretch-artifact.spec.ts', // playwright.stretch-artifact.config.ts (built artifact)
