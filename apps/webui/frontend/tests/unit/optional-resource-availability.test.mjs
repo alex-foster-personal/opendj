@@ -68,13 +68,32 @@ test('remember and read optional resource caps', () => {
 	assert.deepEqual(availability.optionalResources('sid-1'), {
 		lyrics: false,
 		autoCues: true,
-		stems: false
+		stems: false,
+		artwork: 'unknown'
 	});
 	assert.deepEqual(availability.optionalResources('sid-2'), {
 		lyrics: 'unknown',
 		autoCues: 'unknown',
-		stems: 'unknown'
+		stems: 'unknown',
+		artwork: 'unknown'
 	});
+});
+
+test('remember artwork tri-state and shouldFetchArtwork gate', () => {
+	availability.resetOptionalResourcesForTests();
+	availability.rememberOptionalResources('art-null', { artwork: null });
+	assert.equal(availability.optionalResources('art-null').artwork, null);
+	assert.equal(availability.shouldFetchArtwork('art-null'), false);
+
+	availability.rememberOptionalResources('art-false', { artwork: false });
+	assert.equal(availability.optionalResources('art-false').artwork, false);
+	assert.equal(availability.shouldFetchArtwork('art-false'), false);
+
+	availability.rememberOptionalResources('art-true', { artwork: true });
+	assert.equal(availability.optionalResources('art-true').artwork, true);
+	assert.equal(availability.shouldFetchArtwork('art-true'), true);
+
+	assert.equal(availability.shouldFetchArtwork('art-unknown'), true);
 });
 
 test('fetchTrackLyrics skips fetch when lyrics remembered absent', async () => {

@@ -57,6 +57,11 @@ class TrackOut(BaseModel):
     lyrics_available: bool
     auto_cues_available: bool
     stems_available: bool
+    # Tri-state predictor of GET /artwork: True -> 200; False -> 404
+    # ARTWORK_NOT_FOUND; None -> 503 ARTWORK_READER_UNAVAILABLE. Lets the
+    # browser skip a fetch Chromium would log unsuppressably. Same job as
+    # has_rb_mapping / lyrics_available.
+    artwork_available: bool | None
 
 
 class QualityOut(BaseModel):

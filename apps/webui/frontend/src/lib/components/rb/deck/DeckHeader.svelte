@@ -4,6 +4,7 @@
 	// KEY SYNC, key badge + semitone nudge arrows,
 	// BEAT SYNC and exclusive MASTER stacked at the right.
 	import { artworkUrl } from '$lib/rb/api-rb';
+	import { shouldFetchArtwork } from '$lib/rb/optional-resource-availability';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 	import {
 		DECK_IDS,
@@ -48,7 +49,9 @@
 
 	let artworkFailed: boolean = $state(false);
 	const artSrc: string | null = $derived(
-		deck.stable_id === null ? null : artworkUrl(deck.stable_id, 'orig')
+		deck.stable_id !== null && shouldFetchArtwork(deck.stable_id)
+			? artworkUrl(deck.stable_id, 'orig')
+			: null
 	);
 	$effect(() => {
 		// Reset the failure flag whenever the artwork target changes.
