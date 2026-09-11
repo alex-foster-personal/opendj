@@ -50,6 +50,19 @@ baseline itself -- a force-push that rewrites away the real previous head
 NO_BASELINE or as an older-but-real surviving baseline, never as a
 fabricated one; both are fail-closed, never a false SUCCESS.
 
+The CONTRACTION gap (issue #1689, PR #1685 thread r3976977757) is the mirror
+image: a past push triggered path-filtered workflows (`ci.yml`, `e2e.yml`)
+whose job names stayed in `expected` even after a later push made the PR
+docs-only, so `poll_until_terminal` waited the full timeout for check-runs
+that GitHub would never schedule. `expected_for_head` now intersects the
+PR-branch baseline with the job names of workflows whose own `pull_request`
+`paths` / `paths-ignore` filters match the PR's cumulative changed-files list
+at the current head (GitHub's negation ordering for inclusive `paths`, per
+`.github/workflows/ci.yml`), falling back to that applicable set when every
+catalogued baseline name is dropped. Expansion (a workflow newly activated by
+a path change) is still closed by the two-poll stabilization rule, not by
+inflating `expected` from YAML alone -- fail-closed over false SUCCESS.
+
 `total_count` from the `check-runs` endpoint is asserted against what this
 module actually collected (see `_check_runs_at_sha`): on a genuinely
 multi-page result, `gh api --paginate` prints each page as its OWN
@@ -154,6 +167,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable
+from pathlib import Path
 
 from scripts.ci_wait_core import (
     WaitResult,
@@ -164,6 +178,11 @@ from scripts.ci_wait_core import (
     _pull_request_triggered_runs,
     _resolve_head_repo,
     poll_until_terminal,
+)
+from scripts.ci_wait_workflows import (
+    WorkflowCatalog,
+    default_workflows_dir,
+    derive_expected_for_changed_paths,
 )
 from scripts.review_gh import TriageError, _gh
 
@@ -291,6 +310,15 @@ def _memoized_run_event(repo: str = REPO) -> Callable[[str], str]:
     return get
 
 
+def _pr_changed_files(pr: str, repo: str = REPO) -> list[str]:
+    raw = _gh(["pr", "view", pr, "--repo", repo, "--json", "files"])
+    files = json.loads(raw).get("files") or []
+    paths = [entry["path"] for entry in files if entry.get("path")]
+    if not paths:
+        raise TriageError(f"gh returned no changed files for PR {pr} in {repo}")
+    return paths
+
+
 def expected_from_previous_head(pr: str, head_sha: str, repo: str = REPO) -> frozenset[str] | None:
     """Expected check-run names for `head_sha`, read from the nearest earlier
     commit on this PR that actually has a `pull_request`-triggered baseline.
@@ -307,6 +335,23 @@ def expected_from_previous_head(pr: str, head_sha: str, repo: str = REPO) -> fro
     )
 
 
+def expected_for_head(
+    pr: str,
+    head_sha: str,
+    repo: str = REPO,
+    *,
+    workflows_dir: Path | None = None,
+) -> frozenset[str] | None:
+    """Expected check-run names at `head_sha`, filtered to workflows that would
+    actually run for this PR's cumulative changed-files list at the head."""
+    baseline = expected_from_previous_head(pr, head_sha, repo)
+    if baseline is None:
+        return None
+    changed_files = _pr_changed_files(pr, repo)
+    catalog = WorkflowCatalog.from_workflows_dir(workflows_dir or default_workflows_dir())
+    return derive_expected_for_changed_paths(baseline, changed_files, catalog)
+
+
 def wait_for_checks(
     pr: str,
     repo: str = REPO,
@@ -319,7 +364,7 @@ def wait_for_checks(
     refuse SUCCESS until every expected Actions check-run at that exact SHA
     exists, is completed, and passed."""
     head_sha = _head_sha(pr, repo)
-    expected = expected_from_previous_head(pr, head_sha, repo)
+    expected = expected_for_head(pr, head_sha, repo)
     if expected is None:
         return WaitResult(
             WaitStatus.NO_BASELINE,
