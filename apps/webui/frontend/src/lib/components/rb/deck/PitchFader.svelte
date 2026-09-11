@@ -74,7 +74,7 @@
 	}
 
 	function handlePointerDown(e: PointerEvent): void {
-		if (pending) return;
+		if (pending || deck.stable_id === null) return;
 		const target = e.currentTarget as HTMLElement;
 		target.focus();
 		activePointerId = e.pointerId;
@@ -88,6 +88,7 @@
 	}
 
 	function handleDoubleClick(): void {
+		if (deck.stable_id === null) return;
 		// No `pending` guard, unlike handlePointerDown/handleKeyDown: those gate
 		// STARTING a new gesture while a command is in flight (see
 		// handlePointerMove below, which has no such guard either once a
@@ -108,7 +109,7 @@
 	}
 
 	function handleKeyDown(e: KeyboardEvent): void {
-		if (pending) return;
+		if (pending || deck.stable_id === null) return;
 		if (e.key === 'ArrowUp') {
 			e.preventDefault();
 			_setTempoFromKey(deck.pitch + KEY_STEP_PCT / 100);
@@ -142,7 +143,7 @@
 		aria-valuemin={-pitchRange}
 		aria-valuemax={pitchRange}
 		aria-valuenow={Number(((deck.pitch - 1) * 100).toFixed(2))}
-		aria-disabled={pending}
+		aria-disabled={pending || deck.stable_id === null}
 		tabindex="0"
 		data-performance-control="pitch"
 		data-testid={`pitch-fader-deck-${deck.deck_id}`}
