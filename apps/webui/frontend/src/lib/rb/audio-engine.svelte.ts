@@ -90,8 +90,14 @@ import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import { detachProcessorForDisposal, disposeAudioResources } from '$lib/rb/audio-resource-disposal';
 import { beginDeckLoad, recordDeckLoad, reportDeckLoadFailure } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
-import { noteMasterSilence, resetMasterSilenceWatch } from '$lib/rb/master-silence-report';
-import { notePresentationClock, notePresentationTickFailure, readOutputTimestamp as _readOutputTimestamp, resetPresentationClockStall } from '$lib/rb/presentation-clock-report';
+import {
+	noteMasterSilence,
+	notePresentationClock,
+	notePresentationTickFailure,
+	readOutputTimestamp as _readOutputTimestamp,
+	resetMasterSilenceWatch,
+	resetPresentationClockStall
+} from '$lib/rb/engine-clock-reports';
 import {
 	armAudioContextWatchdog,
 	armDeckMeters,

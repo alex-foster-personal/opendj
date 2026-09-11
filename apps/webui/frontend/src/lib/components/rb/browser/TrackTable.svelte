@@ -40,7 +40,6 @@
 	import { quickDrawUi } from '$lib/rb/quick-draw-ui.svelte';
 	import { installTrackDragGhost, removeTrackDragGhost } from '$lib/rb/drag-ghost';
 	import { beginTrackDrag, endTrackDrag, TRACK_STABLE_MIME } from '$lib/rb/track-drag.svelte';
-	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
 	import AutoPlayExplainer from './AutoPlayExplainer.svelte';
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
@@ -64,6 +63,8 @@
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
 	import ContextMenu, { type ContextMenuItem } from '../ContextMenu.svelte';
 	import SpinnerIcon from './SpinnerIcon.svelte';
+
+	type DeckId = (typeof DECK_IDS)[number];
 
 	const DECKS: DeckId[] = [1, 2, 3, 4];
 	// Fixed row heights (virtualization window math requires constant height).

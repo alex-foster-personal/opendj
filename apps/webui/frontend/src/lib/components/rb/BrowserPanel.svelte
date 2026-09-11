@@ -31,8 +31,12 @@
 	import { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
 	import {
 		libraryHealthDot as _computeLibraryHealthDot,
-		type LibraryHealthDot
-	} from '$lib/rb/library-health-dots';
+		type LibraryHealthDot,
+		plannedTitle,
+		anyDeckPlaying,
+		createPlayingGate,
+		resolveRowVocals
+	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
 		PlaylistTrackRowWire,
@@ -45,8 +49,6 @@
 	// Deck state remains engine-owned; real load interactions route through
 	// the same validated dispatcher exposed to browser agents.
 	import { deckStates as decks, DECK_IDS, mixerState } from '$lib/rb/audio-engine.svelte';
-	import { resolveRowVocals } from '$lib/rb/row-vocals';
-	import { anyDeckPlaying, createPlayingGate } from '$lib/rb/playing-gate';
 	import {
 		createFilterDebounce,
 		recordCollectionSearchTiming,
@@ -174,8 +176,6 @@
 	} from './wave/anlz-cache.svelte';
 	import { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
 	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
-	import { plannedTitle } from '$lib/rb/planned-explainers';
-
 	// track-list-virtualization: TrackTable now DOM-virtualizes its render,
 	// so panes no longer cap fetches at 500 rows - All Tracks walks every
 	// cursor page (PAGE_SIZE is a per-request page size, not a result cap);

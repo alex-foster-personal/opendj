@@ -12,7 +12,7 @@
  * reported stale, which is exactly the truth we want on the other side.
  */
 
-import { API_BASE } from '$lib/api/client';
+import { API_BASE } from '$lib/api/base';
 import { bootScheduler, type BootScheduler } from './boot-scheduler';
 
 export type UsageSurface = 'desktop-shell' | 'browser';

@@ -7,7 +7,7 @@
  * Rune class - the .svelte.ts extension is REQUIRED for $state.
  */
 import { listSmartlists, type SmartlistSummary } from '$lib/rb/api-smartlists';
-import { RbApiError } from '$lib/rb/api-rb';
+import { RbApiError } from '$lib/rb/api-rb-error';
 
 export class TreeSmartlists {
 	open = $state(true);
