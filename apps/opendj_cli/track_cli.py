@@ -17,10 +17,13 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 KEY_SEGMENTS_VERB = "key-segments"
 
-_USAGE = "usage: opendj track key-segments <stable_id>"
+_USAGE = (
+    "usage: opendj track key-segments <stable_id> [--state-db PATH] [--json]"
+)
 
 
 def run(rest: Sequence[str], *, as_json: bool) -> int:
@@ -35,16 +38,34 @@ def run(rest: Sequence[str], *, as_json: bool) -> int:
 
 
 def _key_segments(args: Sequence[str], *, as_json: bool) -> int:
-    if len(args) != 1:
+    stable_id: str | None = None
+    state_db: Path | None = None
+    position = 0
+    while position < len(args):
+        token = args[position]
+        if token == "--state-db":
+            if position + 1 >= len(args):
+                print(_USAGE, file=sys.stderr)
+                return 1
+            state_db = Path(args[position + 1])
+            position += 2
+            continue
+        if stable_id is not None:
+            print(_USAGE, file=sys.stderr)
+            return 1
+        stable_id = token
+        position += 1
+    if stable_id is None:
         print(_USAGE, file=sys.stderr)
         return 1
-    (stable_id,) = args
     # Lazy import: this CLI's other heads never touch the analysis package,
     # and importing it eagerly would pull librosa/numpy into every deck
     # command's startup path for a head most invocations never take.
     from apps.webui.server.rb_vendor_pkg.own_key_overlay import apply_own_key_segments
 
-    block = apply_own_key_segments({}, stable_id)["key_segments"]
+    block = apply_own_key_segments(
+        {}, stable_id, state_db_path=state_db
+    )["key_segments"]
     if as_json:
         print(json.dumps(block, indent=2, sort_keys=True))
         return 0

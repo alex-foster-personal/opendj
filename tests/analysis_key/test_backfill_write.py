@@ -81,21 +81,23 @@ def _write_triad_wav(path: Path, *, seconds: float, key: canon.Key, sr: int = 44
 
 
 @pytest.fixture
-def state_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
-    """A fresh state DB, and the path every reader in this test resolves."""
-    from apps.shared import paths as state_paths
-
+def state_db(tmp_path: Path) -> Iterator[Path]:
+    """A fresh state DB passed explicitly into every store and producer call."""
     db_path = tmp_path / "state" / "state.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     open_conn(db_path).close()
-    monkeypatch.setattr(state_paths, "STATE_DB", db_path)
-    monkeypatch.setattr(selection, "reset_toggles", selection.reset_toggles)
     selection.reset_toggles()
     yield db_path
     selection.reset_toggles()
 
 
-def _own_beatgrid_record(stable_id: str, *, n_bars: int, bar_s: float = 2.0):
+def _own_beatgrid_record(
+    stable_id: str,
+    *,
+    n_bars: int,
+    bar_s: float = 2.0,
+    decode_fingerprint: str = CANONICAL_FINGERPRINT,
+):
     """A canonical own BEATGRID record whose bars the key lane segments over.
 
     Written through the real store, from beats this test computes: the key
@@ -141,7 +143,7 @@ def _own_beatgrid_record(stable_id: str, *, n_bars: int, bar_s: float = 2.0):
         producer_version="1.1.0",
         uses_model=False,
         model_sha256=None,
-        decode_fingerprint=CANONICAL_FINGERPRINT,
+        decode_fingerprint=decode_fingerprint,
         lanes={"beatgrid": LaneResult(status="ok", payload=payload)},
     )
 
@@ -358,9 +360,17 @@ def test_two_segments_reach_the_projection_as_key_change_count(
     stable_id = "sid-grid"
     audio = tmp_path / "c-major.wav"
     _write_triad_wav(audio, seconds=24.0, key=C_MAJOR)
-    upsert_record(_own_beatgrid_record(stable_id, n_bars=12), db_path=state_db)
+    from apps.analysis.pcm_fingerprint import canonical_decode_fingerprint
 
-    record = OwnKeyBackfillBackend.analyze(audio, stable_id)
+    audio_fingerprint = f"sha256:{canonical_decode_fingerprint(audio)}"
+    upsert_record(
+        _own_beatgrid_record(
+            stable_id, n_bars=12, decode_fingerprint=audio_fingerprint
+        ),
+        db_path=state_db,
+    )
+
+    record = OwnKeyBackfillBackend.analyze(audio, stable_id, db_path=state_db)
     block = record.lanes["key"].payload["segments"]
     assert block["status"] == "ok", block["reason"]
     assert len(block["segments"]) >= 1
@@ -375,7 +385,7 @@ def test_two_segments_reach_the_projection_as_key_change_count(
     assert depends_on["backend"] == "own_beatgrid.backfill"
     assert depends_on["producer_version"] == "1.1.0"
     assert depends_on["model_sha256"] is None
-    assert depends_on["decode_fingerprint"] == CANONICAL_FINGERPRINT
+    assert depends_on["decode_fingerprint"] == audio_fingerprint
     assert depends_on["record_digest"].startswith("sha256:")
     validate_record_contract(record)
 
@@ -397,9 +407,9 @@ def test_the_record_is_idempotent_across_two_runs(tmp_path: Path, state_db: Path
     rather than a second canonical row (determinism, spec section 4)."""
     audio = tmp_path / "c-major.wav"
     _write_triad_wav(audio, seconds=24.0, key=C_MAJOR)
-    first = OwnKeyBackfillBackend.analyze(audio, "sid-twice")
+    first = OwnKeyBackfillBackend.analyze(audio, "sid-twice", db_path=state_db)
     upsert_record(first, db_path=state_db)
-    second = OwnKeyBackfillBackend.analyze(audio, "sid-twice")
+    second = OwnKeyBackfillBackend.analyze(audio, "sid-twice", db_path=state_db)
     result = upsert_record(second, db_path=state_db)
     assert result.unchanged is True
     assert first.lanes["key"].payload == second.lanes["key"].payload

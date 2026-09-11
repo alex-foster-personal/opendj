@@ -61,6 +61,11 @@ from apps.analysis_key.profiles import KeyEstimate
 #: to the track row, which renders the cell inert with the tooltip).
 REASON_NO_TONAL_CENTER = "no_tonal_center"
 
+#: The canonical rebuild, queue cascade and `/anlz` overlay all use this
+#: token when a key record's `depends_on.beatgrid` no longer matches the
+#: current canonical own beatgrid (spec section 5, nav1-key-record.md).
+REASON_STALE_DEPENDENCY = "stale_dependency"
+
 #: The exact five-field dependency-identity schema (spec section 5). Compared
 #: field for field by whichever reader checks staleness; a block missing any
 #: of them is not a weaker match, it is not a block.
@@ -113,6 +118,25 @@ def depends_on_identity(
         "decode_fingerprint": decode_fingerprint,
         "record_digest": beatgrid_record_digest(beatgrid_payload),
     }
+
+
+def beatgrid_identity_from_record(record: Any) -> dict[str, Any]:
+    """The five-field identity for one canonical own beatgrid record."""
+    beatgrid_lane = record.lanes["beatgrid"]
+    return depends_on_identity(
+        backend=record.backend,
+        producer_version=record.producer_version,
+        model_sha256=record.model_sha256,
+        decode_fingerprint=record.decode_fingerprint,
+        beatgrid_payload=beatgrid_lane.payload,
+    )
+
+
+def beatgrid_dependency_matches(
+    stored: Mapping[str, Any], current: Mapping[str, Any]
+) -> bool:
+    """True when every required dependency field matches the current grid."""
+    return all(stored.get(name) == current.get(name) for name in DEPENDS_ON_FIELDS)
 
 
 def validate_key_depends_on(payload: Mapping[str, Any]) -> None:
@@ -247,7 +271,10 @@ def _check_segments_block(segments_block: Mapping[str, Any]) -> None:
 __all__ = [
     "DEPENDS_ON_FIELDS",
     "REASON_NO_TONAL_CENTER",
+    "REASON_STALE_DEPENDENCY",
     "KeyLane",
+    "beatgrid_dependency_matches",
+    "beatgrid_identity_from_record",
     "beatgrid_record_digest",
     "build_key_lane",
     "depends_on_identity",

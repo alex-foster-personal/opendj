@@ -69,6 +69,7 @@ from apps.analysis.pcm_fingerprint import (
 from apps.analysis_key import canon, flags, profiles, segments
 from apps.analysis_key.lane_payload import (
     REASON_NO_TONAL_CENTER,
+    REASON_STALE_DEPENDENCY,
     build_key_lane,
     depends_on_identity,
 )
@@ -337,14 +338,22 @@ def analyze_audio(
     duration_s = float(len(samples)) / float(sample_rate)
     chroma = librosa.feature.chroma_cqt(y=samples, sr=sample_rate)
     times = librosa.times_like(chroma, sr=sample_rate)
+    if canonical_decode_fingerprint(audio_path) != decode_fingerprint:
+        raise TrackVanished(
+            f"{audio_path} changed while key analysis was running, so its "
+            "estimate came from bytes this record cannot vouch for"
+        )
 
     estimate = profiles.estimate_key_krumhansl(chroma)
     flag = flags.evaluate_tonal_center(estimate)
 
     beatgrid_record = canonical_beatgrid_record(stable_id, db_path=db_path)
     depends_on_beatgrid: dict[str, Any] | None = None
+    audio_fingerprint = f"sha256:{decode_fingerprint}"
     if beatgrid_record is None:
         block = segments.missing_block(segments.REASON_NO_DOWNBEATS)
+    elif beatgrid_record.decode_fingerprint != audio_fingerprint:
+        block = segments.missing_block(REASON_STALE_DEPENDENCY)
     else:
         beatgrid_lane = beatgrid_record.lanes["beatgrid"]
         block = segments.segment_audio(
@@ -377,13 +386,15 @@ class OwnKeyBackfillBackend:
     version: str = PRODUCER_VERSION
 
     @classmethod
-    def analyze(cls, path: Path, stable_id: str) -> AnalysisRecord:
+    def analyze(
+        cls, path: Path, stable_id: str, *, db_path: Path | None = None
+    ) -> AnalysisRecord:
         _require_deps()
         audio_path = Path(path)
         if not audio_path.exists():
             raise TrackVanished(f"{audio_path} was gone before the decode opened it")
         try:
-            return analyze_audio(audio_path, stable_id)
+            return analyze_audio(audio_path, stable_id, db_path=db_path)
         except TrackUnreadable:
             if not audio_path.exists():
                 raise TrackVanished(

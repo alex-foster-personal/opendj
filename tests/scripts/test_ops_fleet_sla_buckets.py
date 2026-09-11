@@ -11,6 +11,8 @@ buckets SUM to open-to-merge. A bucket set that merely looks plausible while
 dropping the hours it cannot attribute is how a stage split reports the wrong
 stage as the biggest.
 
+  [if] the four SLA buckets do not sum to open-to-merge [then] broken, [else stop]
+
 Regression lines:
   - if the four buckets do not sum to open-to-merge then broken (4.5 h on the
     fully measured fixture PR, and the sum is asserted against the total, not

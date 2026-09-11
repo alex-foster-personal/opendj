@@ -4,6 +4,8 @@ Contract under test: ``specs/karaoke-lyrics-operational-plan.md`` D13.1 and
 the ``sync_policies`` half of D13.2, implemented in
 :mod:`apps.shared.state.migrations_v10`.
 
+  [if] a migrated ladder and a fresh ladder disagree on lyric_verdict DDL [then] broken, [else stop]
+
 Acceptance criteria, one assertion block each:
 - if a fresh ladder does not create ``lyric_verdict`` AND
   ``idx_lyric_verdict_red``, the triage listing silently table-scans and the

@@ -30,11 +30,13 @@ from typing import Any
 
 import pytest
 
-from apps.adapters.rekordbox import config as rb_config
 from apps.analysis import selection
 from apps.analysis.backends.own_key import record_from_estimate
+from apps.analysis.lanes import LaneResult
+from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import open_conn, upsert_record
 from apps.analysis_key import canon, flags, profiles, segments
+from apps.analysis_key.lane_payload import depends_on_identity
 from apps.webui.server.rb_vendor_pkg import own_key_overlay as overlay_mod
 from apps.webui.server.rb_vendor_pkg import own_overlays
 
@@ -52,11 +54,10 @@ def _launch_state_toggles() -> Any:
 
 
 @pytest.fixture
-def state_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def state_db(tmp_path: Path) -> Path:
     db_path = tmp_path / "state" / "state.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     open_conn(db_path).close()
-    monkeypatch.setattr(rb_config, "STATE_DB", db_path)
     return db_path
 
 
@@ -86,21 +87,62 @@ def _bar_chroma(keys: list[canon.Key]) -> Any:
     return np.stack(columns, axis=1)
 
 
-#: A fixture five-field dependency identity, standing in for a canonical own
-#: beatgrid record's fields, matching the shape `depends_on_identity` builds.
-_DEPENDS_ON_BEATGRID = {
-    "backend": "own_beatgrid.backfill",
-    "producer_version": "1.0.0",
-    "model_sha256": None,
-    "decode_fingerprint": FINGERPRINT,
-    "record_digest": "sha256:" + "aa" * 32,
-}
+def _matching_beatgrid_record(stable_id: str) -> AnalysisRecord:
+    from datetime import UTC, datetime
+
+    beats = [
+        {
+            "t": round(index * 0.5, 5),
+            "n": (index % 4) + 1,
+            "bpm": 120.0,
+        }
+        for index in range(32)
+    ]
+    payload = {
+        "beats": beats,
+        "bpm": 120.0,
+        "bpm_confidence": 0.9,
+        "octave_reason": "in_band",
+        "first_downbeat_s": 0.0,
+        "tempo_changes": [],
+        "static_grid_untrusted": False,
+    }
+    return AnalysisRecord(
+        stable_id=stable_id,
+        backend="own_beatgrid.backfill",
+        backend_version="1.0.0",
+        analyzed_at=datetime.now(UTC),
+        duration_s=64.0,
+        sample_rate=44100,
+        bpm=120.0,
+        bpm_confidence=0.9,
+        key_camelot="",
+        key_openkey="",
+        key_confidence=0.0,
+        energy=0,
+        producer="backfill",
+        producer_version="1.0.0",
+        uses_model=False,
+        model_sha256=None,
+        decode_fingerprint=FINGERPRINT,
+        lanes={"beatgrid": LaneResult(status="ok", payload=payload)},
+    )
 
 
 def _own_key_record(
     stable_id: str, *, block: dict[str, Any], key: canon.Key = C_MAJOR
 ) -> Any:
     estimate = profiles.KeyEstimate(key=key, confidence=0.9, margin=0.4)
+    depends_on_beatgrid = None
+    if block.get("status") == "ok":
+        grid = _matching_beatgrid_record(stable_id)
+        depends_on_beatgrid = depends_on_identity(
+            backend=grid.backend,
+            producer_version=grid.producer_version,
+            model_sha256=grid.model_sha256,
+            decode_fingerprint=grid.decode_fingerprint,
+            beatgrid_payload=grid.lanes["beatgrid"].payload,
+        )
     return record_from_estimate(
         stable_id=stable_id,
         estimate=estimate,
@@ -109,8 +151,15 @@ def _own_key_record(
         sample_rate=44100,
         decode_fingerprint=FINGERPRINT_HEX,
         segments_block=block,
-        depends_on_beatgrid=_DEPENDS_ON_BEATGRID if block.get("status") == "ok" else None,
+        depends_on_beatgrid=depends_on_beatgrid,
     )
+
+
+def _seed_own_key_with_beatgrid(
+    state_db: Path, stable_id: str, *, block: dict[str, Any]
+) -> None:
+    upsert_record(_matching_beatgrid_record(stable_id), db_path=state_db)
+    upsert_record(_own_key_record(stable_id, block=block), db_path=state_db)
 
 
 def _rekordbox_payload(stable_id: str) -> dict[str, Any]:
@@ -127,12 +176,12 @@ def _rekordbox_payload(stable_id: str) -> dict[str, Any]:
 
 def test_two_own_segments_are_served_on_the_own_payload(state_db: Path) -> None:
     stable_id = "t-two"
-    upsert_record(
-        _own_key_record(stable_id, block=_two_segment_block()), db_path=state_db
-    )
+    _seed_own_key_with_beatgrid(state_db, stable_id, block=_two_segment_block())
     selection.set_toggle("key", "own")
 
-    payload = overlay_mod.apply_own_key_segments(_rekordbox_payload(stable_id), stable_id)
+    payload = overlay_mod.apply_own_key_segments(
+        _rekordbox_payload(stable_id), stable_id, state_db_path=state_db
+    )
 
     block = payload["key_segments"]
     assert block["status"] == "ok"
@@ -157,7 +206,9 @@ def test_an_ok_lane_always_carries_a_segments_block_with_its_own_status(
     )
     selection.set_toggle("key", "own")
 
-    payload = overlay_mod.apply_own_key_segments(_rekordbox_payload(stable_id), stable_id)
+    payload = overlay_mod.apply_own_key_segments(
+        _rekordbox_payload(stable_id), stable_id, state_db_path=state_db
+    )
 
     assert payload["key_segments"]["status"] == "missing"
     assert payload["key_segments"]["reason"] == segments.REASON_NO_DOWNBEATS
@@ -181,7 +232,9 @@ def test_a_failed_segments_block_keeps_its_reason(state_db: Path) -> None:
     )
     selection.set_toggle("key", "own")
 
-    payload = overlay_mod.apply_own_key_segments(_rekordbox_payload(stable_id), stable_id)
+    payload = overlay_mod.apply_own_key_segments(
+        _rekordbox_payload(stable_id), stable_id, state_db_path=state_db
+    )
 
     assert payload["key_segments"]["status"] == "failed"
     assert payload["key_segments"]["reason"] == segments.REASON_TOO_FEW_BARS
@@ -189,7 +242,9 @@ def test_a_failed_segments_block_keeps_its_reason(state_db: Path) -> None:
 
 def test_own_selected_with_no_record_is_missing_with_a_reason(state_db: Path) -> None:
     selection.set_toggle("key", "own")
-    payload = overlay_mod.apply_own_key_segments(_rekordbox_payload("t-none"), "t-none")
+    payload = overlay_mod.apply_own_key_segments(
+        _rekordbox_payload("t-none"), "t-none", state_db_path=state_db
+    )
     assert payload["key_segments"]["status"] == "missing"
     assert payload["key_segments"]["reason"] == overlay_mod.OWN_KEY_MISSING_REASON
     assert payload["key_segments"]["segments"] == []
@@ -214,7 +269,9 @@ def test_a_failed_key_lane_is_not_served_as_a_missing_one(state_db: Path) -> Non
     )
     selection.set_toggle("key", "own")
 
-    payload = overlay_mod.apply_own_key_segments(_rekordbox_payload(stable_id), stable_id)
+    payload = overlay_mod.apply_own_key_segments(
+        _rekordbox_payload(stable_id), stable_id, state_db_path=state_db
+    )
 
     assert payload["key_segments"]["status"] == "failed"
     assert payload["key_segments"]["reason"].startswith(overlay_mod.NO_TONAL_CENTER)
@@ -232,14 +289,13 @@ def test_an_ok_lane_with_no_segments_is_refused_not_served(state_db: Path) -> No
     version or edited out of band.
     """
     stable_id = "t-empty-ok"
-    upsert_record(
-        _own_key_record(stable_id, block=_two_segment_block()), db_path=state_db
-    )
+    _seed_own_key_with_beatgrid(state_db, stable_id, block=_two_segment_block())
     conn = open_conn(state_db)
     try:
         stored = json.loads(
             conn.execute(
-                "SELECT record_json FROM analysis WHERE stable_id = ?", (stable_id,)
+                "SELECT record_json FROM analysis WHERE stable_id = ? AND backend LIKE 'own_key.%'",
+                (stable_id,),
             ).fetchone()[0]
         )
         stored["lanes"]["key"]["payload"]["segments"] = {
@@ -248,7 +304,7 @@ def test_an_ok_lane_with_no_segments_is_refused_not_served(state_db: Path) -> No
             "segments": [],
         }
         conn.execute(
-            "UPDATE analysis SET record_json = ? WHERE stable_id = ?",
+            "UPDATE analysis SET record_json = ? WHERE stable_id = ? AND backend LIKE 'own_key.%'",
             (json.dumps(stored, sort_keys=True, separators=(",", ":")), stable_id),
         )
         conn.commit()
@@ -257,7 +313,9 @@ def test_an_ok_lane_with_no_segments_is_refused_not_served(state_db: Path) -> No
     selection.set_toggle("key", "own")
 
     with pytest.raises(RuntimeError, match="segments"):
-        overlay_mod.apply_own_key_segments(_rekordbox_payload(stable_id), stable_id)
+        overlay_mod.apply_own_key_segments(
+        _rekordbox_payload(stable_id), stable_id, state_db_path=state_db
+    )
 
 
 #-----------------------------------------------------------------------------
@@ -266,12 +324,12 @@ def test_an_ok_lane_with_no_segments_is_refused_not_served(state_db: Path) -> No
 
 def test_a_rekordbox_payload_never_carries_the_field(state_db: Path) -> None:
     stable_id = "t-rbx"
-    upsert_record(
-        _own_key_record(stable_id, block=_two_segment_block()), db_path=state_db
-    )
+    _seed_own_key_with_beatgrid(state_db, stable_id, block=_two_segment_block())
     # The record exists, but the lane's effective source is still rekordbox
     # (D1: no promotion), so the field must be ABSENT rather than served.
-    payload = overlay_mod.apply_own_key_segments(_rekordbox_payload(stable_id), stable_id)
+    payload = overlay_mod.apply_own_key_segments(
+        _rekordbox_payload(stable_id), stable_id, state_db_path=state_db
+    )
     assert "key_segments" not in payload
 
 
@@ -282,10 +340,10 @@ def test_a_stale_cached_block_is_removed_when_the_source_is_rekordbox(
     ANLZ mtime and points -- neither of which moves when the toggle flips. A
     cached entry written while own was selected must not survive the flip."""
     stable_id = "t-stale"
-    upsert_record(
-        _own_key_record(stable_id, block=_two_segment_block()), db_path=state_db
+    _seed_own_key_with_beatgrid(state_db, stable_id, block=_two_segment_block())
+    payload = overlay_mod.apply_own_key_segments(
+        _rekordbox_payload(stable_id), stable_id, state_db_path=state_db
     )
-    payload = overlay_mod.apply_own_key_segments(_rekordbox_payload(stable_id), stable_id)
     assert "key_segments" not in payload
 
 
@@ -326,7 +384,9 @@ def test_the_composed_overlay_still_replaces_the_beatgrid_block(state_db: Path) 
     selection.set_toggle("beatgrid", "own")
     selection.set_toggle("key", "own")
 
-    payload = own_overlays.apply_own_overlays(_rekordbox_payload(stable_id), stable_id)
+    payload = own_overlays.apply_own_overlays(
+        _rekordbox_payload(stable_id), stable_id, state_db_path=state_db
+    )
 
     assert payload["beatgrid"]["source"] == "own"
     assert payload["beatgrid"]["status"] == "ok"

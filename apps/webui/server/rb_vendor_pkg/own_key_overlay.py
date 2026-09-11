@@ -54,7 +54,9 @@ _SEGMENT_KEYS = (
 )
 
 
-def _segments_block(result: Any, stable_id: str) -> dict[str, Any]:
+def _segments_block(
+    result: Any, stable_id: str, *, state_db_path: Path | None = None
+) -> dict[str, Any]:
     """The wire block for one own key lane result, or the `missing` shape."""
     if result is None:
         return {
@@ -64,6 +66,24 @@ def _segments_block(result: Any, stable_id: str) -> dict[str, Any]:
         }
     if result.status != "ok":
         return {"status": result.status, "reason": result.reason, "segments": []}
+    depends_on = result.payload.get("depends_on", {}).get("beatgrid")
+    if isinstance(depends_on, dict):
+        from apps.analysis.backends.own_key import canonical_beatgrid_record
+        from apps.analysis_key.lane_payload import (
+            REASON_STALE_DEPENDENCY,
+            beatgrid_dependency_matches,
+            beatgrid_identity_from_record,
+        )
+
+        current = canonical_beatgrid_record(stable_id, db_path=state_db_path)
+        if current is None or not beatgrid_dependency_matches(
+            depends_on, beatgrid_identity_from_record(current)
+        ):
+            return {
+                "status": "missing",
+                "reason": REASON_STALE_DEPENDENCY,
+                "segments": [],
+            }
     block = result.payload["segments"]
     if not isinstance(block, Mapping):
         raise TypeError(
@@ -110,7 +130,9 @@ def apply_own_key_segments(
     finally:
         if conn is not None:
             conn.close()
-    payload["key_segments"] = _segments_block(result, stable_id)
+    payload["key_segments"] = _segments_block(
+        result, stable_id, state_db_path=state_db_path
+    )
     return payload
 
 

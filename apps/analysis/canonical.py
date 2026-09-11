@@ -71,6 +71,35 @@ def _now_iso() -> str:
 # pointer
 #-----------------------------------------------------------------------------
 
+def _key_row_is_stale(
+    conn: sqlite3.Connection, stable_id: str, record_json: str,
+) -> bool:
+    """True when an ok key record's beatgrid dependency no longer matches."""
+    from pathlib import Path
+
+    from apps.analysis.backends.own_key import canonical_beatgrid_record
+    from apps.analysis_key.lane_payload import (
+        beatgrid_dependency_matches,
+        beatgrid_identity_from_record,
+    )
+
+    record = AnalysisRecord.from_json(record_json)
+    key_lane = record.lanes.get("key")
+    if key_lane is None or key_lane.status != "ok":
+        return False
+    depends_on = key_lane.payload.get("depends_on", {}).get("beatgrid")
+    if not isinstance(depends_on, dict):
+        return False
+    db_row = conn.execute("PRAGMA database_list").fetchone()
+    assert db_row is not None
+    current = canonical_beatgrid_record(stable_id, db_path=Path(db_row[2]))
+    if current is None:
+        return True
+    return not beatgrid_dependency_matches(
+        depends_on, beatgrid_identity_from_record(current)
+    )
+
+
 def _eligible_rows(
     conn: sqlite3.Connection, stable_id: str, lane: str,
 ) -> list[tuple[str, str, str]]:
@@ -83,6 +112,8 @@ def _eligible_rows(
     for backend, backend_version, record_json in rows:
         parsed = parse_own_backend(backend)
         if parsed is None or parsed.lane != lane or parsed.producer == "cand":
+            continue
+        if lane == "key" and _key_row_is_stale(conn, stable_id, record_json):
             continue
         out.append((backend, backend_version, record_json))
     return out

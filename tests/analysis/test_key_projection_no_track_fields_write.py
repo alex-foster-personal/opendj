@@ -12,10 +12,7 @@ about an empty table: an empty-table assertion passes for a run that wrote
 nothing because it analyzed nothing, which is the failure mode this test exists
 to catch. The run here is the real producer over real audio.
 
-  if two scalar readers (track list, smartlist evaluator) disagree on a track's
-  effective key then broken
-  if a smartlist filter on key_change_count reads anything but
-  analysis_projection then broken
+  [if] a key backfill run writes into track_fields or history [then] broken, [else stop]
 
 -Claude
 """
@@ -48,13 +45,10 @@ def _launch_state_toggles() -> Any:
 
 
 @pytest.fixture
-def state_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    from apps.shared import paths as state_paths
-
+def state_db(tmp_path: Path) -> Path:
     db_path = tmp_path / "state" / "state.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     open_conn(db_path).close()
-    monkeypatch.setattr(state_paths, "STATE_DB", db_path)
     return db_path
 
 
@@ -135,7 +129,7 @@ def test_a_key_backfill_run_writes_no_track_fields_and_no_history(
         # The run under test: the real producer over real audio, through the
         # real write path, with the lane then promoted to own so the read side
         # has something to serve.
-        record = OwnKeyBackfillBackend.analyze(audio, stable_id)
+        record = OwnKeyBackfillBackend.analyze(audio, stable_id, db_path=state_db)
         upsert_record(record, conn=conn)
         selection.set_default(conn, "key", "own")
         selection.set_toggle("key", "own")
@@ -183,7 +177,7 @@ def test_the_track_list_and_the_smartlist_column_agree_on_the_effective_key(
     try:
         _seed_rekordbox_key(conn, stable_id)
         selection.set_default(conn, "key", "own")
-        record = OwnKeyBackfillBackend.analyze(audio, stable_id)
+        record = OwnKeyBackfillBackend.analyze(audio, stable_id, db_path=state_db)
         upsert_record(record, conn=conn)
 
         # Reader 1: the row fetch every track-list caller uses.
