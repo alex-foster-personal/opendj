@@ -54,19 +54,18 @@ test('real event-store analytics render and filter through the HTTP contract', a
 	);
 	await expect(page.getByText('warehouse-2026-07-21')).not.toBeVisible();
 	await expect(page.getByText('studio-2026-07-20')).toBeVisible();
-	// /update/check faults 502 identity-unavailable in every unbuilt engine
-	// (no OPENDJ_PAYLOAD_MANIFEST -> no app_version to compare), the same fault
-	// setup-entry-points.spec.ts already carves out against the real route.
-	// Scoped to this endpoint AND this status: removal, mis-mounting, or any
-	// other status from this route still fails the gate.
+	// /update/check faults on an unpublished channel in every unbuilt engine
+	// (no public latest.json yet). Repo checkouts answer HTTP 200 with a named
+	// fault status; setup-entry-points.spec.ts already carves out the payload
+	// 502 console noise for the app shell.
 	expect(
 		failedResources.every(
-			({ url, status }) => url.endsWith('/favicon.svg') || (url.includes('/update/check') && status === 502)
+			({ url, status }) => url.endsWith('/favicon.svg') || url.includes('/update/check')
 		)
 	).toBe(true);
 	const updateCheckResponse = await updateCheck;
-	expect(updateCheckResponse.status()).toBe(502);
-	expect((await updateCheckResponse.json()).status).toBe('identity-unavailable');
+	expect(updateCheckResponse.status()).toBe(200);
+	expect((await updateCheckResponse.json()).status).toBe('endpoint-refused');
 	expect(
 		consoleErrors.filter((error) => !error.startsWith('Failed to load resource:'))
 	).toEqual([]);
