@@ -7,6 +7,7 @@ and takeover guard pushed that module past the 600-line ratchet (PR #1586).
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import sqlite3
 from datetime import UTC, datetime
@@ -24,13 +25,15 @@ def ensure_batch_lease_columns(conn: sqlite3.Connection) -> None:
         for row in conn.execute("PRAGMA table_info(analysis_queue_batch)")
     }
     if "active_runner_id" not in cols:
-        conn.execute(
-            "ALTER TABLE analysis_queue_batch ADD COLUMN active_runner_id TEXT"
-        )
+        with contextlib.suppress(sqlite3.OperationalError):
+            conn.execute(
+                "ALTER TABLE analysis_queue_batch ADD COLUMN active_runner_id TEXT"
+            )
     if "active_runner_pid" not in cols:
-        conn.execute(
-            "ALTER TABLE analysis_queue_batch ADD COLUMN active_runner_pid INTEGER"
-        )
+        with contextlib.suppress(sqlite3.OperationalError):
+            conn.execute(
+                "ALTER TABLE analysis_queue_batch ADD COLUMN active_runner_pid INTEGER"
+            )
 
 
 def pid_is_alive(pid: int) -> bool:
