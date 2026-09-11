@@ -29,7 +29,7 @@ test:
 rb-parity-check:
 	@echo "[rb-parity-check] focused Python, frontend unit, and type gates"
 	$(PYTEST) -q -m rb_parity
-	cd apps/webui/frontend && $(FRONTEND_NODE) --test --test-concurrency=1 tests/unit/*.test.mjs
+	cd apps/webui/frontend && $(FRONTEND_NODE) --test --test-concurrency=4 tests/unit/*.test.mjs
 	cd apps/webui/frontend && pnpm check
 
 rb-parity-final: rb-parity-check

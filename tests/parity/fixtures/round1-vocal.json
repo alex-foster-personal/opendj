@@ -1,0 +1,239 @@
+{
+  "schema": 1,
+  "measured_at": "Fri 11 Sep 2026",
+  "parity_round": 1,
+  "population": {
+    "present": 10,
+    "tracks_rows": 9986,
+    "djmd_content_live": 10479
+  },
+  "tracks": [
+    {
+      "stable_id": "exact-128",
+      "present": true,
+      "rb_bpm_x100": 12800,
+      "own_bpm": 128.0,
+      "rb_key_scale_name": "Am",
+      "own_key_camelot": "8A",
+      "own_key_openkey": "1m",
+      "rb_pssi": false,
+      "rb_cue_db": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": true,
+      "rb_vocal_regions": [
+        {
+          "start_s": 10.0,
+          "end_s": 90.0
+        }
+      ],
+      "own_vocal_regions": [
+        {
+          "start_s": 10.5,
+          "end_s": 89.5
+        }
+      ],
+      "duration_s": 100.0
+    },
+    {
+      "stable_id": "exact-key-c",
+      "present": true,
+      "rb_bpm_x100": 12800,
+      "own_bpm": 128.0,
+      "rb_key_scale_name": "C",
+      "own_key_camelot": "8B",
+      "own_key_openkey": "1d",
+      "rb_pssi": false,
+      "rb_cue_db": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": true,
+      "rb_vocal_regions": [],
+      "own_vocal_regions": [],
+      "duration_s": 100.0
+    },
+    {
+      "stable_id": "bpm-within-0.1",
+      "present": true,
+      "rb_bpm_x100": 12800,
+      "own_bpm": 128.08,
+      "rb_key_scale_name": "Am",
+      "own_key_camelot": "8A",
+      "own_key_openkey": "1m",
+      "rb_pssi": false,
+      "rb_cue_db": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": true,
+      "rb_vocal_regions": [
+        {
+          "start_s": 0.0,
+          "end_s": 30.0
+        }
+      ],
+      "own_vocal_regions": [
+        {
+          "start_s": 70.0,
+          "end_s": 100.0
+        }
+      ],
+      "duration_s": 100.0
+    },
+    {
+      "stable_id": "bpm-octave-half",
+      "present": true,
+      "rb_bpm_x100": 12800,
+      "own_bpm": 64.0,
+      "rb_key_scale_name": "Am",
+      "own_key_camelot": "8A",
+      "own_key_openkey": "1m",
+      "rb_pssi": false,
+      "rb_cue_db": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": true,
+      "rb_vocal_regions": [],
+      "own_vocal_regions": [
+        {
+          "start_s": 20.0,
+          "end_s": 80.0
+        }
+      ],
+      "duration_s": 100.0
+    },
+    {
+      "stable_id": "key-relative",
+      "present": true,
+      "rb_bpm_x100": 12800,
+      "own_bpm": 128.0,
+      "rb_key_scale_name": "C",
+      "own_key_camelot": "8A",
+      "own_key_openkey": "1m",
+      "rb_pssi": false,
+      "rb_cue_db": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": true,
+      "rb_vocal_regions": [
+        {
+          "start_s": 5.0,
+          "end_s": 40.0
+        }
+      ],
+      "own_vocal_regions": [
+        {
+          "start_s": 6.0,
+          "end_s": 38.0
+        }
+      ],
+      "duration_s": null
+    },
+    {
+      "stable_id": "missing-rb-bpm",
+      "present": true,
+      "rb_bpm_x100": null,
+      "own_bpm": 128.0,
+      "rb_key_scale_name": "Am",
+      "own_key_camelot": "8A",
+      "own_key_openkey": "1m",
+      "rb_pssi": false,
+      "rb_cue_db": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null
+    },
+    {
+      "stable_id": "missing-rb-key",
+      "present": true,
+      "rb_bpm_x100": 12800,
+      "own_bpm": 128.0,
+      "rb_key_scale_name": null,
+      "own_key_camelot": "8A",
+      "own_key_openkey": "1m",
+      "rb_pssi": false,
+      "rb_cue_db": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null
+    },
+    {
+      "stable_id": "no-own-bpm",
+      "present": true,
+      "rb_bpm_x100": 12800,
+      "own_bpm": null,
+      "rb_key_scale_name": "Am",
+      "own_key_camelot": "8A",
+      "own_key_openkey": "1m",
+      "rb_pssi": false,
+      "rb_cue_db": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": true,
+      "rb_vocal_regions": [
+        {
+          "start_s": 5.0,
+          "end_s": 50.0
+        }
+      ],
+      "own_vocal_regions": null,
+      "duration_s": null
+    },
+    {
+      "stable_id": "no-own-key",
+      "present": true,
+      "rb_bpm_x100": 12800,
+      "own_bpm": 128.0,
+      "rb_key_scale_name": "Am",
+      "own_key_camelot": null,
+      "own_key_openkey": null,
+      "rb_pssi": false,
+      "rb_cue_db": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": true,
+      "rb_vocal_regions": [
+        {
+          "start_s": 15.0,
+          "end_s": 60.0
+        }
+      ],
+      "own_vocal_regions": [
+        {
+          "start_s": 15.0,
+          "end_s": 58.0
+        }
+      ],
+      "duration_s": 100.0
+    },
+    {
+      "stable_id": "ungradable-key-all",
+      "present": true,
+      "rb_bpm_x100": 12800,
+      "own_bpm": 128.0,
+      "rb_key_scale_name": "All",
+      "own_key_camelot": "8A",
+      "own_key_openkey": "1m",
+      "rb_pssi": false,
+      "rb_cue_db": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null
+    },
+    {
+      "stable_id": "absent-audio",
+      "present": false,
+      "rb_bpm_x100": 12800,
+      "own_bpm": 128.0,
+      "rb_key_scale_name": "Am",
+      "own_key_camelot": "8A",
+      "own_key_openkey": "1m",
+      "rb_pssi": false,
+      "rb_cue_db": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null
+    }
+  ],
+  "round": 1
+}

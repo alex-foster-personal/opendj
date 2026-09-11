@@ -20,12 +20,14 @@ import {
 } from './deck-layout-prefs';
 import { makeJogRadialWaveformSetters } from './jog-radial-prefs';
 import { makeLevelCalibrationSetters } from './level-calibration-prefs';
+import { LYRICS_PREF_DEFAULTS, makeLyricsPrefSetters, validateLyricsPrefFields, type LyricsLoadStrategy } from './lyrics-prefs';
 import { createDiskPrefsSync, makePrefsHydrator } from './prefs-hydrate';
 import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLibrary } from './prefs-fields';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
+export { type LyricsLoadStrategy } from './lyrics-prefs';
 export type { AutoSyncPrefs, LastPlaylistPref } from './prefs-types';
 
 const STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
@@ -133,6 +135,18 @@ export interface RbUiPrefs {
 	/** Transition duration in ms when deck_layout_animate is true. */
 	deck_layout_duration_ms: DeckLayoutDurationMs;
 	level_calibration: LevelCalibrationPrefs;
+	/** Master switch (TopBar LYR) for every lyric overlay. */
+	lyrics_global: boolean;
+	/** Lyrics column in the library table (hover tip carries the text). */
+	lyrics_library_col: boolean;
+	/** Word readout + click-to-audition while hover-scrubbing a preview strip. */
+	lyrics_hover_scrub: boolean;
+	/** When the library pulls word timings into memory. */
+	lyrics_load_strategy: LyricsLoadStrategy;
+	/** The word-lane gate: word lanes over the main deck waveforms (D13.4). */
+	lyrics_waveform_overlay: boolean;
+	/** Current lyric line under the deck hot cues. */
+	lyrics_deck_line: boolean;
 }
 
 const DEFAULTS: RbUiPrefs = {
@@ -161,7 +175,8 @@ const DEFAULTS: RbUiPrefs = {
 	deck_layout: 'more',
 	deck_layout_animate: true,
 	deck_layout_duration_ms: 200,
-	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false }
+	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false },
+	...LYRICS_PREF_DEFAULTS
 };
 
 // ----------------------------------------------------------- _helpers
@@ -372,7 +387,9 @@ function _load(): RbUiPrefs {
 		deck_layout: deckLayout ?? DEFAULTS.deck_layout,
 		deck_layout_animate: deckLayoutAnimate ?? DEFAULTS.deck_layout_animate,
 		deck_layout_duration_ms: deckLayoutDurationMs ?? DEFAULTS.deck_layout_duration_ms,
-		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration)
+		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration),
+		...LYRICS_PREF_DEFAULTS,
+		...validateLyricsPrefFields(parsed, STORAGE_KEY)
 	};
 }
 
@@ -514,6 +531,18 @@ export const {
 	setDeckLayoutAnimate,
 	setDeckLayoutDurationMs
 } = makeDeckLayoutSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
+
+/** The six karaoke lyric setters (PR-4 section C), built against this module's
+ * own uiPrefs/_persist/_syncDiskPrefs (lyrics-prefs.ts). */
+export const {
+	setLyricsGlobal,
+	toggleLyricsGlobal,
+	setLyricsLibraryCol,
+	setLyricsHoverScrub,
+	setLyricsLoadStrategy,
+	setLyricsWaveformOverlay,
+	setLyricsDeckLine
+} = makeLyricsPrefSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
 export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean): void {
 	uiPrefs.auto_sync[dest] = next;

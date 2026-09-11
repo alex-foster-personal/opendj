@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import tempfile
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
 _REQUIRED = ("date", "round", "kpi", "unit", "machine", "source", "note")
+_ENTRIES_CLOSE_RE = re.compile(r"\n(?P<ws>\s*)\](?P<tail>\s*\}\s*)$")
+_EMPTY_ENTRIES_RE = re.compile(r'"entries"\s*:\s*\[\s*\]')
+_COMPACT_CLOSE_RE = re.compile(r"\](?P<tail>\s*\}\s*)$")
 
 
 def load_ledger(path: Path) -> dict[str, Any]:
@@ -40,11 +47,89 @@ def validate_entry(raw: dict[str, Any]) -> dict[str, Any]:
     return entry
 
 
-def append_entries(path: Path, rows: list[dict[str, Any]]) -> None:
-    doc = load_ledger(path)
-    entries = doc["entries"]
+def _format_new_entries(rows: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
     for row in rows:
-        entries.append(validate_entry(row))
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(doc, indent=1) + "\n", encoding="utf-8")
-    temporary.replace(path)
+        dumped = json.dumps(row, indent=1, ensure_ascii=False)
+        indented = "\n".join(f"  {line}" if line else line for line in dumped.split("\n"))
+        parts.append(indented)
+    return ",\n".join(parts)
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        os.replace(tmp_name, path)
+    except Exception:
+        with suppress(OSError):
+            os.unlink(tmp_name)
+        raise
+
+
+def _splice_entries(stripped: str, rows: list[dict[str, Any]]) -> str:
+    formatted = _format_new_entries(rows)
+    insert = ",\n" + formatted
+    matches = list(_ENTRIES_CLOSE_RE.finditer(stripped))
+    if matches:
+        match = matches[-1]
+        return (
+            stripped[: match.start()]
+            + insert
+            + "\n"
+            + match.group("ws")
+            + "]"
+            + match.group("tail")
+            + "\n"
+        )
+
+    compact = _COMPACT_CLOSE_RE.search(stripped)
+    if compact is not None:
+        bracket_pos = compact.start()
+        last_brace = stripped.rfind("}", 0, bracket_pos)
+        if last_brace < 0:
+            raise ValueError("cannot locate last entry close in compact ledger")
+        return (
+            stripped[: last_brace + 1]
+            + insert
+            + stripped[last_brace + 1 : bracket_pos]
+            + "]"
+            + compact.group("tail")
+            + "\n"
+        )
+
+    raise ValueError("cannot locate entries array close in ledger")
+
+
+def append_entries(path: Path, rows: list[dict[str, Any]], *, validate: bool = True) -> None:
+    if not rows:
+        return
+    if validate:
+        rows = [validate_entry(row) for row in rows]
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not path.exists():
+        doc = {"schema_version": 2, "entries": rows}
+        path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+        return
+
+    text = path.read_text(encoding="utf-8")
+    stripped = text.rstrip("\n")
+    empty_match = _EMPTY_ENTRIES_RE.search(stripped)
+    if empty_match is not None:
+        formatted = _format_new_entries(rows)
+        new_array = "[\n" + formatted + "\n]"
+        new_text = (
+            stripped[: empty_match.start()]
+            + '"entries": '
+            + new_array
+            + stripped[empty_match.end() :]
+            + "\n"
+        )
+        _atomic_write(path, new_text)
+        return
+
+    _atomic_write(path, _splice_entries(stripped, rows))

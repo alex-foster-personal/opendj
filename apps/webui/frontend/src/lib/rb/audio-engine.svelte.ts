@@ -248,9 +248,11 @@ import {
 } from '$lib/player/key/camelot';
 import type { CamelotKey } from '$lib/player/key/camelot';
 import {
+	disarmSafetyLoopOnExplicitExit,
 	exactBeatLoopRangeMs,
 	loopEndpointsWithinDurationMs,
-	phaseLockedSafetyLoopAtTrackEnd,
+	phaseLockedSafetyLoop,
+	playbackReachedSafetyLoopOut,
 	precedingDownbeatMs,
 	quantizedLoopEndpointsMs,
 	quantizedPositionMs,
@@ -1769,27 +1771,43 @@ function _publishPresentedTransport(
 	if (wasAudible !== observation.audible) {
 		_handleAudibleTransition(deck, wasAudible, observation.audible);
 	}
+	if (_ctx !== null) {
+		const segment = _controlSegmentAt(rt, _ctx.currentTime);
+		const safety = st.safety_loop;
+		if (
+			playbackReachedSafetyLoopOut({
+				active: segment.active,
+				startPositionSec: segment.startPositionSec,
+				startContextTime: segment.startContextTime,
+				tempoRatio: segment.tempoRatio,
+				atContextTime: _ctx.currentTime,
+				safety,
+				liveLoop: st.loop
+			})
+		) {
+			const nextLoop = phaseLockedSafetyLoop(
+				st.anlz?.beatgrid.beats ?? [],
+				safety!,
+				rt.durationSec * 1000
+			);
+			if (nextLoop !== null) {
+				void _scheduleDeck(
+					deck,
+					safeTransportScheduleTime(_ctx.currentTime, _transportLeadSec(deck)),
+					nextLoop.in_ms / 1000,
+					true,
+					undefined,
+					undefined,
+					nextLoop
+				).catch((error: unknown) => {
+					if (rt.processor !== null) _recordProcessorFailure(deck, error);
+				});
+				return observation;
+			}
+		}
+	}
 	if (naturalEndNeedsRevisionedStop(st.playing, observation, rt.durationSec, rt.scheduleIntentCount)) {
 		if (_ctx === null) throw new Error('natural-end cleanup requires an AudioContext');
-		const safety = st.safety_loop;
-		const nextLoop =
-			safety !== null && safety.armed && (st.loop === null || !st.loop.engaged)
-				? phaseLockedSafetyLoopAtTrackEnd(st.anlz?.beatgrid.beats ?? [], safety, rt.durationSec * 1000)
-				: null;
-		if (nextLoop !== null) {
-			void _scheduleDeck(
-				deck,
-				safeTransportScheduleTime(_ctx.currentTime, _transportLeadSec(deck)),
-				nextLoop.in_ms / 1000,
-				true,
-				undefined,
-				undefined,
-				nextLoop
-			).catch((error: unknown) => {
-				if (rt.processor !== null) _recordProcessorFailure(deck, error);
-			});
-			return observation;
-		}
 		void _scheduleDeck(
 			deck,
 			safeTransportScheduleTime(_ctx.currentTime, _transportLeadSec(deck)),
@@ -3374,6 +3392,7 @@ class RbAudioEngine implements AudioEngine {
 		const wasPlaying = st.playing;
 		const scheduleAt = wasPlaying ? _futureScheduleTime(deck) : 0;
 		if (loop === null) {
+			st.safety_loop = disarmSafetyLoopOnExplicitExit(st.safety_loop);
 			if (st.slip_active) {
 				await _resumeSlip(deck);
 				return;
