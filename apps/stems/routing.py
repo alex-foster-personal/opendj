@@ -28,7 +28,7 @@ def resolve_stems_executor(
     )
     if not remote:
         return EXECUTOR_LOCAL
-    from apps.stems.api import stems_transport_state
+    from apps.stems.transport_state import stems_transport_state
 
     _transport, refusal = stems_transport_state()
     if refusal is None:

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from apps.engine_core.perf_tier import local_stems_tier_refusal
+from apps.shared.perf_tier import local_stems_tier_refusal
 from apps.stems.routing import EXECUTOR_LOCAL, resolve_stems_executor
 
 FLAG_ID: str = "local_stems.executor"

@@ -94,43 +94,10 @@ class StemsPlanOut(BaseModel):
 
 
 def stems_transport_state() -> tuple[str, str | None]:
-    """The build's GPU transport, and why it cannot be used (or None).
+    """Re-export for callers that still import from the plan module."""
+    from apps.stems.transport_state import stems_transport_state as _state
 
-    Asks the transport's OWN preflight rather than re-deriving the rules here,
-    so the answer the prompt shows and the answer the worker hits are the same
-    code. A build with no relay base and no identity token cannot separate
-    anything, and saying so up front is the difference between an honest inert
-    step and a job that is accepted, queued, and then dies on a credential the
-    tester was never given.
-
-    Imported locally: the relay client pulls httpx, and the plan endpoint is on
-    the engine boot path.
-    """
-    from apps.stems.job import (
-        DEFAULT_TRANSPORT,
-        StemsJobPayloadError,
-        resolve_transport,
-    )
-
-    try:
-        transport = resolve_transport()
-    except StemsJobPayloadError as exc:
-        # A misconfigured transport env is itself a refusal, and naming it is
-        # more useful than pretending the default applies.
-        return DEFAULT_TRANSPORT, str(exc)
-    if transport != "relay":
-        # 'direct' is opt-in through MDT_STEMS_TRANSPORT and means the operator
-        # deliberately supplied a Modal credential on this machine. The worker
-        # verifies it for real; there is nothing to preflight from here.
-        return transport, None
-    from apps.stems.relay.client import RelayUnavailable, identity_token, relay_base_url
-
-    try:
-        relay_base_url()
-        identity_token()
-    except RelayUnavailable as exc:
-        return transport, str(exc)
-    return transport, None
+    return _state()
 
 
 def _data_dir(request: Request) -> Path:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from apps.engine_core.perf_tier import (
+from apps.shared.perf_tier import (
     LOCAL_STEMS_MIN_TIER,
     PerfTier,
     local_stems_tier_refusal,

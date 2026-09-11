@@ -20,7 +20,7 @@ def test_cloud_policy_with_farm_available_selects_modal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "apps.stems.api.stems_transport_state",
+        "apps.stems.transport_state.stems_transport_state",
         lambda: ("relay", None),
     )
     assert resolve_stems_executor(remote_processing_allowed=True) == EXECUTOR_MODAL
@@ -30,7 +30,7 @@ def test_cloud_policy_falls_back_to_local_when_transport_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "apps.stems.api.stems_transport_state",
+        "apps.stems.transport_state.stems_transport_state",
         lambda: ("relay", "no relay configured"),
     )
     assert resolve_stems_executor(remote_processing_allowed=True) == EXECUTOR_LOCAL
