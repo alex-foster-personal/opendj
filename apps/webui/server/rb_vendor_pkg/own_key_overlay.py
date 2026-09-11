@@ -109,6 +109,20 @@ def _segments_block(
     }
 
 
+def _set_dynamic_key_hint(payload: dict[str, Any], *, present: bool) -> None:
+    """Reconcile `performance_hints.dynamic_key` for every own-key outcome."""
+    existing = payload.get("performance_hints")
+    hints = dict(existing) if isinstance(existing, dict) else {}
+    if present:
+        hints["dynamic_key"] = True
+    else:
+        hints.pop("dynamic_key", None)
+    if hints:
+        payload["performance_hints"] = hints
+    else:
+        payload.pop("performance_hints", None)
+
+
 def apply_own_key_segments(
     payload: dict[str, Any], stable_id: str, state_db_path: Path | None = None
 ) -> dict[str, Any]:
@@ -125,14 +139,19 @@ def apply_own_key_segments(
     try:
         if effective_lane_source(conn, OWN_KEY_LANE) != SOURCE_OWN:
             payload.pop("key_segments", None)
+            _set_dynamic_key_hint(payload, present=False)
             return payload
         result = canonical_lane_result(conn, stable_id, OWN_KEY_LANE)
     finally:
         if conn is not None:
             conn.close()
-    payload["key_segments"] = _segments_block(
-        result, stable_id, state_db_path=state_db_path
+    wire_block = _segments_block(result, stable_id, state_db_path=state_db_path)
+    payload["key_segments"] = wire_block
+    dynamic = (
+        wire_block.get("status") == "ok"
+        and len(wire_block.get("segments", ())) >= 2
     )
+    _set_dynamic_key_hint(payload, present=dynamic)
     return payload
 
 
