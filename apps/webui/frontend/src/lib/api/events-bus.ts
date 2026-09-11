@@ -27,7 +27,7 @@
  * stale exactly when the bus is least reliable.
  */
 
-import { API_BASE } from './client';
+import { API_BASE } from './base';
 
 export const EVENTS_PATH = '/api/v1/events';
 

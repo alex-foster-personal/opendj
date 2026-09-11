@@ -15,7 +15,7 @@
 		pqtzBarPhase
 	} from '$lib/components/rb/wave/wave-math';
 	import type { PhaseBeatMark } from '$lib/components/rb/wave/wave-math';
-	import { GRID_FEATURE_TIP, gridFeaturesInert } from '$lib/player/grid-features';
+	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import ControlExplainer from './ControlExplainer.svelte';
@@ -142,9 +142,10 @@
 	// inert rather than lying about what a click will do. Transport is
 	// deliberately NOT gated the same way - play, pause and cue always run.
 	const gridless: boolean = $derived(gridFeaturesInert(deck));
+	const gridInertTip: string = $derived(gridFeatureInertTip(deck));
 	const qTitle: string = $derived(
 		gridless
-			? GRID_FEATURE_TIP
+			? gridInertTip
 			: deck.quantize_enabled
 				? 'Quantize ON - snaps seeks, cue, and loop ends to the beatgrid'
 				: 'Quantize OFF - seeks, cue, and loop ends use exact playhead times'

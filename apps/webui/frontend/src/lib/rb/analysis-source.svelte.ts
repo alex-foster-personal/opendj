@@ -46,7 +46,7 @@ export type { AnalysisSource, AnalysisSourceFeature };
 // This UI's feature id doubles as the backend's lane name (both "beatgrid"),
 // but the two vocabularies are declared independently on purpose: the wire
 // vocabulary here is UI-facing and predates apps.analysis.lanes.
-const _LANE_OF_FEATURE: Record<AnalysisSourceFeature, string> = { beatgrid: 'beatgrid' };
+const _LANE_OF_FEATURE = Object.fromEntries(ANALYSIS_SOURCE_FEATURES.map((feature) => [feature, feature])) as Record<AnalysisSourceFeature, string>;
 
 const _UI_SOURCE_OF_EFFECTIVE: Record<string, AnalysisSource> = { rbx: 'rekordbox', own: 'own' };
 const _TOGGLE_OF_UI_SOURCE: Record<AnalysisSource, 'rbx' | 'own'> = { rekordbox: 'rbx', own: 'own' };
@@ -126,12 +126,16 @@ let _recordRefreshGeneration = 0;
  * snapshot of what the daemon said; only `deckFeatures` is a statement about
  * what would actually be stale. */
 function _decksDisagreeWith(next: Record<string, AnalysisSource>): boolean {
-	for (const [feature, source] of Object.entries(next)) {
+	for (const feature of ANALYSIS_SOURCE_FEATURES) {
+		const source = next[feature];
+		if (source === undefined) continue;
 		const held = analysisSourceState.deckFeatures[feature];
 		if (held !== undefined) {
 			if (held !== source) return true;
 			continue;
 		}
+		// Only beatgrid is deck-stamped on `/anlz` today; other lanes are toggle-only.
+		if (feature !== 'beatgrid') continue;
 		if (DECK_IDS.some((deck) => deckStates[deck].stable_id !== null)) return true;
 	}
 	return false;
@@ -144,13 +148,10 @@ function _recordDeckSources(
 	intended: Record<string, AnalysisSource>,
 	served: AnalysisSource | null
 ): void {
-	for (const feature of Object.keys(intended)) {
-		// `beatgrid` is the only feature exposed, and `beatgrid_source` is the
-		// stamp for exactly that lane. Widening ANALYSIS_SOURCE_FEATURES means
-		// teaching /anlz to stamp the new lane too, not defaulting it here.
-		analysisSourceState.deckFeatures[feature] =
-			served !== null && feature === 'beatgrid' ? served : intended[feature];
-	}
+	const beatgridSource = intended.beatgrid;
+	if (beatgridSource === undefined) return;
+	analysisSourceState.deckFeatures.beatgrid =
+		served !== null ? served : beatgridSource;
 }
 
 /** Adopts a confirmed selection from the daemon (a GET mirror or a PUT
@@ -252,15 +253,14 @@ export async function loadAnalysisSource(): Promise<void> {
 }
 
 /** The UI feature map from one wire body. */
-function _featuresOf(body: {
-	lanes: Record<string, { effective: string; toggle: string }>;
-}): Record<string, AnalysisSource> {
+function _featuresOf(body: { lanes: Record<string, { effective: string; toggle: string }>; serving?: readonly string[] }): Record<string, AnalysisSource> {
 	const features: Record<string, AnalysisSource> = {};
 	for (const feature of ANALYSIS_SOURCE_FEATURES) {
 		const lane = body.lanes[_LANE_OF_FEATURE[feature]];
 		if (lane === undefined) continue;
 		features[feature] = _UI_SOURCE_OF_EFFECTIVE[lane.effective];
 	}
+	analysisSourceState.serving = body.serving ?? [];
 	return features;
 }
 

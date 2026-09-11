@@ -169,7 +169,9 @@ def test_a_symlink_is_audited_by_its_link_text_not_by_its_target(tmp_path: Path)
     broken = tmp_path / "broken.link"
     working = tmp_path / "working.link"
     os.symlink(_REAL_HOME_ROOT + "/gone.md", broken)
-    os.symlink(target, working)
+    # Relative: an absolute tmp_path under /home/<login> is itself a
+    # linux-home-path finding, which this half of the test must not plant.
+    os.symlink(target.name, working)
 
     result = audit_paths(tmp_path, [broken, working])
 

@@ -25,6 +25,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from pydantic import BaseModel
+
 from apps.analysis import run as analysis_run
 from apps.lyrics import cache as lyrics_cache
 from apps.shared import fs_residency
@@ -81,6 +83,23 @@ ACTIVE_PHASES: tuple[str, ...] = ("queued", "running")
 UNMAPPED_SCOPE: str = "unmapped"
 
 
+class RefreshStatusOut(BaseModel):
+    """The one-slot job's public, serializable state."""
+
+    running: bool
+    phase: str
+    steps: list[str]
+    current_step: str | None
+    step_done: int
+    step_total: int
+    steps_completed: list[str]
+    started_at: float | None
+    finished_at: float | None
+    error: str | None
+    log_tail: list[str]
+    recently_done_ids: list[str]
+
+
 @dataclass
 class _RefreshJob:
     started_at: float
@@ -102,9 +121,13 @@ class _RefreshJob:
     recently_done_ids: deque = field(default_factory=lambda: deque(maxlen=200))
     queue_signature: str | None = None   # unmapped scope: what the worker read
     finished_at: float | None = None
+    #: Explicit one-track requests keyed by the analysis kind the caller asked
+    #: for. The worker still uses the one shared analysis CLI, never a UI-only
+    #: imitation of an analyzer.
+    analysis_orders: dict[str, str] = field(default_factory=dict)
 
 
-_job_lock = threading.Lock()
+_job_lock = threading.RLock()
 
 
 class _JOBS:

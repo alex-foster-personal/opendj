@@ -1,5 +1,7 @@
 """Wiring tests for ops/fleet/sla_buckets.py, the open-to-merge stage split.
 
+[if] the four SLA buckets do not sum to open-to-merge [then] fail, [else stop].
+
 Hermetic by construction: the script's SLA_GH_FIXTURES_DIR seam points every
 GitHub read at the committed fixture under tests/fixtures/fleet-sla/ instead of
 the network, so the tests run anywhere and never touch the repo. The fixture

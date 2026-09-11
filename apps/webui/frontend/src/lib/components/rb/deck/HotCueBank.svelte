@@ -26,7 +26,7 @@
 	import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { hotCueTitle } from '$lib/rb/hot-cue-label';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
-	import { proposalCaption, proposalTitle, visibleProposalForSlot } from '$lib/rb/auto-cue-proposals';
+	import { proposalTitle, visibleProposalForSlot } from '$lib/rb/auto-cue-proposals';
 	import { ensureAutoCues, getAutoCuesEntry } from './auto-cues-cache.svelte';
 	import HotCueProposalLabel from './HotCueProposalLabel.svelte';
 
@@ -268,7 +268,7 @@
 								(deck.stable_id === null || !deck.has_rb_mapping)}
 							disabled={busySlot === entry.slot || renameSlot === entry.slot}
 							aria-busy={pending}
-							aria-label={`hot cue ${entry.slot} deck ${deck.deck_id}${visible !== null ? ` ${proposalCaption(visible.kind)}` : ''}`}
+							aria-label={`hot cue ${entry.slot} deck ${deck.deck_id}`}
 							data-testid={`hot-cue-${deck.deck_id}-${entry.slot}`}
 							data-performance-control="hot-cue"
 							data-proposal-kind={visible !== null ? visible.kind : undefined}

@@ -3,6 +3,13 @@
  * Search filters this list in-place (results ARE the settings).
  */
 
+import {
+	WHEEL_SENSITIVITY,
+	WHEEL_SENSITIVITY_MAX,
+	WHEEL_SENSITIVITY_MIN,
+	WHEEL_SENSITIVITY_STEP
+} from '$lib/rb/wheel-adjust';
+
 export type SettingGroupId =
 	| 'appearance'
 	| 'library'
@@ -34,7 +41,20 @@ export type SettingControl =
 	// `detail`/`title`, but clicking it does not yet navigate. A follow-up
 	// in SettingsOverlay.svelte adding `{:else if kind === 'link'}<a href=...>`
 	// (and a matching branch in `activateSetting`) makes it clickable.
-	| { kind: 'link'; href: string };
+	| { kind: 'link'; href: string }
+	// A live numeric row: range slider + value readout + a "default" reset.
+	// Bounds come from the module that VALIDATES the value (never a second
+	// literal here), so no slider position can be one the setter refuses.
+	| {
+			kind: 'number';
+			min: number;
+			max: number;
+			step: number;
+			/** What "Reset to default" restores, and the value shown as default. */
+			defaultValue: number;
+			/** Rendered after the readout, e.g. 'x'. */
+			unit: string;
+	  };
 
 export interface SettingDef {
 	id: string;
@@ -225,6 +245,34 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		}
 	},
 	{
+		id: 'wheel_sensitivity.mouse',
+		label: 'Wheel sensitivity: mouse',
+		group: 'performance',
+		keywords: [
+			'wheel', 'scroll', 'scroll wheel', 'mouse', 'sensitivity', 'notch',
+			'detent', 'dial', 'knob', 'fader', 'crossfader', 'pitch'
+		],
+		title: 'How far one notched mouse-wheel detent moves a dial or fader (1x = the declared step)',
+		detail:
+			'Multiplier applied to every wheel-adjustable control: the mixer dials, the channel level faders, the crossfader, the pitch faders, the headphone mix/level, and the shift-selected dial driven by the page-level wheel. 1x is the reference the rest of the app was built around. Persisted locally, so it survives a reload.',
+		implemented: true,
+		control: _wheelSensitivityControl(WHEEL_SENSITIVITY.mouse)
+	},
+	{
+		id: 'wheel_sensitivity.trackpad',
+		label: 'Wheel sensitivity: trackpad',
+		group: 'performance',
+		keywords: [
+			'wheel', 'scroll', 'trackpad', 'touchpad', 'two finger', 'macbook',
+			'sensitivity', 'hypersensitive', 'dial', 'knob', 'fader'
+		],
+		title: 'Multiplier for a trackpad two-finger scroll, which emits many events where a mouse emits one detent',
+		detail:
+			'A macOS trackpad sends a dense burst of wheel events for a single finger movement, so it is scaled separately from a mouse: 1x here means "as sensitive as the mouse", and the shipped default is 3x less sensitive, derived from WHEEL_TRACKPAD_EVENTS_PER_DETENT in lib/rb/wheel-adjust.ts. Same controls and same persistence as the mouse factor.',
+		implemented: true,
+		control: _wheelSensitivityControl(WHEEL_SENSITIVITY.trackpad)
+	},
+	{
 		id: 'confirm.dblclick_load_play',
 		label: 'Confirm double-click Load+play',
 		group: 'confirmations',
@@ -377,6 +425,23 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	_todo('djay.video', 'Video deck', 'djay', ['video', 'visual'], 'Video deck enable'),
 	_todo('djay.neumann', 'NEUMANN UI scale', 'djay', ['ui', 'scale', 'retina'], 'Interface scaling')
 ];
+
+/**
+ * Both wheel-sensitivity rows share one control shape; only the persisted
+ * entry each one writes differs. Bounds and step are read from the module that
+ * validates them, so a slider can never offer a factor `setWheelSensitivity`
+ * would reject, and widening the validator widens the slider in one edit.
+ */
+function _wheelSensitivityControl(defaultValue: number): SettingControl {
+	return {
+		kind: 'number',
+		min: WHEEL_SENSITIVITY_MIN,
+		max: WHEEL_SENSITIVITY_MAX,
+		step: WHEEL_SENSITIVITY_STEP,
+		defaultValue,
+		unit: 'x'
+	};
+}
 
 function _todo(
 	id: string,

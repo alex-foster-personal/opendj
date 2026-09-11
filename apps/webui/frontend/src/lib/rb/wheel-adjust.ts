@@ -45,6 +45,27 @@
  *       is still in force ⛔️
  *     [if] a stored blob is malformed [then] it throws loudly rather than
  *       silently resetting to the default ⛔️
+ *   ✔︎ A user can retune both factors from the settings panel, no devtools.
+ *     [if] the wheel sensitivity row's slider moves [then] the factor for that
+ *       input kind changes and persists, and every wheel-adjustable control
+ *       obeys it on the next scroll ⛔️
+ *     [if] the same factor is written through window.__mdtWheelSensitivity
+ *       instead [then] the slider readout and the runtime agree, one store ⛔️
+ *   ✔︎ WHEEL_TRACKPAD_EVENTS_PER_DETENT stays the one place the ratio is
+ *     stated, so the default 3x survives being made user-editable.
+ *     [if] the trackpad factor is reset [then] it is again the reciprocal of
+ *       the events-per-detent constant ⛔️
+ *   ✔︎ Making the floor a write-time rule never bricks an existing install.
+ *     [if] a blob stored before the floor existed holds a factor below it
+ *       [then] the factor is raised to the floor and the migrated blob is
+ *       written back, and a fresh load reads the raised value ⛔️
+ *     [if] a stored factor was never legal in any version (non-finite, zero,
+ *       negative, or above the ceiling) [then] it still throws loudly ⛔️
+ *   ✔︎ Anything that changes the factors tells the settings panel, whoever
+ *     changed them.
+ *     [if] the agent bridge writes or resets while the panel is open [then]
+ *       every subscriber is told, so the slider and its readout cannot keep
+ *       showing the previous factor ⛔️
  */
 
 //-----------------------------------------------------------------------------
@@ -95,9 +116,25 @@ export const WHEEL_SENSITIVITY: Readonly<Record<WheelInputKind, number>> = {
 	trackpad: 1 / WHEEL_TRACKPAD_EVENTS_PER_DETENT
 };
 
-/** Upper sanity bound for a configured factor. A typo like 300 would make
- * every control unusable in one scroll, so it throws instead. */
+/**
+ * Upper sanity bound for a configured factor. A typo like 300 would make
+ * every control unusable in one scroll, so it throws instead.
+ *
+ * MIN and MAX are the single source for the settings panel's slider range
+ * (lib/settings/catalog.ts builds the control's min/max/step from them), so a
+ * slider position can never be a value the validator refuses, and widening the
+ * validator widens the slider in the same edit.
+ */
 export const WHEEL_SENSITIVITY_MAX = 4;
+
+/** Lower sanity bound for a configured factor. Zero is refused outright (a
+ * factor of 0 makes every wheel-adjustable control inert while looking live),
+ * and 0.05 is the smallest factor that still reads as movement rather than a
+ * dead dial. */
+export const WHEEL_SENSITIVITY_MIN = 0.05;
+
+/** Slider granularity for the settings control, in factor units. */
+export const WHEEL_SENSITIVITY_STEP = 0.05;
 
 /**
  * Legacy WHEEL_DELTA quantum. Quantized ("notched") wheel devices report
@@ -169,7 +206,23 @@ function _storage(): Storage | null {
 	return window.localStorage ?? null;
 }
 
-function _assertFactor(kind: WheelInputKind, factor: number): void {
+/**
+ * The subset of the factor contract that has held in EVERY version of this
+ * module, and therefore the only thing a STORED value may be judged against.
+ *
+ * The floor is deliberately excluded: `WHEEL_SENSITIVITY_MIN` arrived with the
+ * settings control (issue #613), AFTER the agent bridge shipped in #599, so a
+ * stored factor between 0 and the floor is a value an earlier version of this
+ * module wrote and accepted. It is stale, not corrupt. `_loadSensitivity`
+ * migrates it rather than refusing it, because this module is imported by the
+ * settings catalog and every performance control, so throwing here would stop
+ * the UI loading at import time for anyone who had already retuned from
+ * devtools (review thread r3984202673).
+ *
+ * Anything that fails THIS check was never writable through any version, so it
+ * is corruption and still throws.
+ */
+function _assertStoredFactor(kind: WheelInputKind, factor: number): void {
 	if (typeof factor !== 'number' || !Number.isFinite(factor) || factor <= 0) {
 		throw new RangeError(
 			`wheel sensitivity for '${kind}' must be a positive finite number, got ${factor}`
@@ -182,11 +235,28 @@ function _assertFactor(kind: WheelInputKind, factor: number): void {
 	}
 }
 
+function _assertFactor(kind: WheelInputKind, factor: number): void {
+	_assertStoredFactor(kind, factor);
+	if (factor < WHEEL_SENSITIVITY_MIN) {
+		throw new RangeError(
+			`wheel sensitivity for '${kind}' must be >= ${WHEEL_SENSITIVITY_MIN}, got ${factor}`
+		);
+	}
+}
+
 /**
  * A MISSING key is the real first-run state and yields WHEEL_SENSITIVITY; a
  * PRESENT but malformed blob throws loudly rather than silently resetting, so a
  * corrupted value cannot masquerade as "he never configured it". Same policy as
  * rb/prefs.svelte.ts.
+ *
+ * A stored factor below the floor is the one exception, and it is a migration
+ * rather than a tolerance: it is raised to the floor and the migrated blob is
+ * written back immediately, so the stored value and the settings slider (whose
+ * minimum is that same floor) cannot end up disagreeing about what is set.
+ * There is no path by which a NEW value below the floor can be stored --
+ * `setWheelSensitivity` still refuses one -- so this only ever runs once, on
+ * the first load after the upgrade.
  */
 function _loadSensitivity(): Record<WheelInputKind, number> {
 	const storage = _storage();
@@ -201,19 +271,26 @@ function _loadSensitivity(): Record<WheelInputKind, number> {
 		);
 	}
 	const next = { ...WHEEL_SENSITIVITY } as Record<WheelInputKind, number>;
+	let migrated = false;
 	for (const kind of ['mouse', 'trackpad'] as const) {
 		const value = parsed[kind];
 		if (value === undefined) continue;
 		try {
-			_assertFactor(kind, value);
+			_assertStoredFactor(kind, value);
 		} catch (cause) {
 			throw new Error(
 				`${SENSITIVITY_STORAGE_KEY}: malformed blob (${(cause as Error).message}) - ` +
 					'clear the localStorage key to recover'
 			);
 		}
-		next[kind] = value;
+		if (value < WHEEL_SENSITIVITY_MIN) {
+			next[kind] = WHEEL_SENSITIVITY_MIN;
+			migrated = true;
+		} else {
+			next[kind] = value;
+		}
 	}
+	if (migrated) storage.setItem(SENSITIVITY_STORAGE_KEY, JSON.stringify(next));
 	return next;
 }
 
@@ -228,8 +305,38 @@ export function wheelSensitivity(): Record<WheelInputKind, number> {
 	return { ..._sensitivity };
 }
 
+type SensitivityListener = (next: Record<WheelInputKind, number>) => void;
+
+const _listeners = new Set<SensitivityListener>();
+
+function _notifySensitivityChange(): void {
+	for (const listener of [..._listeners]) listener({ ..._sensitivity });
+}
+
+/**
+ * Subscribe to every change of the factors, whoever made it: the settings
+ * panel's slider, the agent bridge, or a reset. Returns an unsubscribe.
+ *
+ * This exists because the store is a plain module variable in a `.ts` file, so
+ * Svelte cannot track it. Without a subscription, the settings overlay's own
+ * draft mirror is only correct for writes that came through its own mutator,
+ * and shows the previous factor after `window.__mdtWheelSensitivity.set()` or
+ * `.reset()` runs while the panel is open -- two answers for one setting
+ * (review thread r3984202679). The listener is told WHEN the factors changed,
+ * never what to render: each caller owns its own render state.
+ *
+ * Listeners are called synchronously and in registration order, and the copy
+ * passed to each one is the caller's own.
+ */
+export function subscribeWheelSensitivity(listener: SensitivityListener): () => void {
+	_listeners.add(listener);
+	return () => {
+		_listeners.delete(listener);
+	};
+}
+
 /** Set one input kind's factor and persist it. Throws on a value outside
- * (0, WHEEL_SENSITIVITY_MAX]. */
+ * (WHEEL_SENSITIVITY_MIN, WHEEL_SENSITIVITY_MAX]. */
 export function setWheelSensitivity(kind: WheelInputKind, factor: number): void {
 	if (kind !== 'mouse' && kind !== 'trackpad') {
 		throw new TypeError(`wheel sensitivity kind must be 'mouse'|'trackpad', got ${kind}`);
@@ -237,12 +344,14 @@ export function setWheelSensitivity(kind: WheelInputKind, factor: number): void 
 	_assertFactor(kind, factor);
 	_sensitivity[kind] = factor;
 	_persistSensitivity();
+	_notifySensitivityChange();
 }
 
 /** Drop any configured override and go back to WHEEL_SENSITIVITY. */
 export function resetWheelSensitivity(): void {
 	_sensitivity = { ...WHEEL_SENSITIVITY };
 	_storage()?.removeItem(SENSITIVITY_STORAGE_KEY);
+	_notifySensitivityChange();
 }
 
 /**

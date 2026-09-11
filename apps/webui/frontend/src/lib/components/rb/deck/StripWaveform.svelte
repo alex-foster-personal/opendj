@@ -13,6 +13,7 @@
 	// PVDI regions (status 'rekordbox'); the two barless states surface as
 	// explicit tooltips - three mandatory states, nothing invented.
 	import { vocalsOf, type Vocals } from '$lib/rb/api-rb';
+	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { drawStripWaveform } from './strip-waveform-render';
@@ -83,6 +84,10 @@
 
 	const loopCues: { in_ms: number; out_ms: number }[] = $derived(
 		deck.hot_cues.flatMap((hc) => (hc.is_loop && hc.out_ms !== null ? [{ in_ms: hc.in_ms, out_ms: hc.out_ms }] : []))
+	);
+
+	const keySegmentMarkersS: readonly number[] = $derived(
+		keyAtPlayheadNow(deck.anlz, deck.position_ms, deck.key_shift_semitones, deck.key).markerTimesS
 	);
 
 	// ----------------------------------------------------------- _helpers
@@ -169,6 +174,14 @@
 
 		{#each memoryCuesMs as ms, i (i)}
 			<span class="mem-cue" style={`left:${_pctOf(ms)}%`}></span>
+		{/each}
+
+		{#each keySegmentMarkersS as atS, i (i)}
+			<span
+				class="key-seg-marker"
+				style={`left:${_pctOf(atS * 1000)}%`}
+				title={`key change at ${_fmtMmSs(atS * 1000)}`}
+			></span>
 		{/each}
 
 		{#each deck.hot_cues as hc (hc.slot)}
@@ -259,6 +272,14 @@
 		border-left: 3px solid transparent;
 		border-right: 3px solid transparent;
 		border-top: 4px solid var(--rb-red);
+	}
+	.key-seg-marker {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 1px;
+		margin-left: -1px;
+		background: rgba(230, 180, 60, 0.85);
 	}
 	.cue-letter {
 		position: absolute;

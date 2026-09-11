@@ -37,6 +37,7 @@ from apps.adapters.rekordbox import config as rb_config
 from apps.analysis.lanes import LaneResult
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import upsert_record
+from apps.webui.server import analysis_serving_bootstrap  # noqa: F401 - PARITY-02 lanes
 from apps.webui.server.backend import BackendError, ConflictError, InMemoryBackend, NotFoundError
 from apps.webui.server.errors import handle_backend_error, handle_conflict, handle_not_found
 from apps.webui.server.routes.analysis_source import router as analysis_source_router

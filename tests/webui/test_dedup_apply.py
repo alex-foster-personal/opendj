@@ -1,6 +1,6 @@
 """OpenDJ playlist membership apply/undo for duplicate-review-merge.
 
-  [if] merge apply rewrites playlist membership without a matching undo [then] broken, [else stop]
+[if] merge does not rewrite every alias playlist position to the survivor [then] fail, [else stop].
 
 Regression one-liners:
   - if merge does not rewrite every alias position to the survivor, including

@@ -268,6 +268,10 @@ _VERBS: tuple[Verb, ...] = (
         arg("from_deck", "deck", deck_value, "1-4"),
         arg("to_deck", "deck", deck_value, "1-4"),
     )),
+    Verb("playlist_undo", "playlist_undo", (),
+         note="Requires a mounted playlist history panel."),
+    Verb("playlist_redo", "playlist_redo", (),
+         note="Requires a mounted playlist history panel."),
 )
 
 VERBS: dict[str, Verb] = {verb.name: verb for verb in _VERBS}
