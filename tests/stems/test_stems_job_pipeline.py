@@ -59,12 +59,45 @@ SEPARATOR = "tests.stems.modal_separator_double:separate"
 # fetch modal into an overlay env on a cold cache.
 RUN_TIMEOUT_S = 300.0
 
+
+def _farm_stem_bundle_schema() -> int:
+    """scripts/modal_vocal_farm.py::STEM_BUNDLE_SCHEMA, without importing modal."""
+    import ast
+
+    tree = ast.parse((REPO_ROOT / "scripts" / "modal_vocal_farm.py").read_text())
+    for node in tree.body:
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "STEM_BUNDLE_SCHEMA"
+            and node.value is not None
+        ):
+            return int(ast.literal_eval(node.value))
+    raise AssertionError(
+        "STEM_BUNDLE_SCHEMA literal missing from scripts/modal_vocal_farm.py"
+    )
+
+
 pytestmark = pytest.mark.skipif(
     shutil.which("ffmpeg") is None
     or shutil.which("ffprobe") is None
     or shutil.which("uv") is None,
     reason="the pipeline test needs ffmpeg, ffprobe and uv on PATH",
 )
+
+
+@pytest.fixture(autouse=True)
+def _default_modal_executor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Most unit tests assume the Modal farm path unless they override.
+
+    CI has no relay, so without this pin ``build_argv`` spawns
+    ``scripts/stems_local_worker.py``, which ignores ``MDT_STEMS_SEPARATOR``
+    and writes stem_bundle_worker schema 3.
+    """
+    monkeypatch.setattr(
+        "apps.stems.routing.resolve_stems_executor",
+        lambda **_: "modal",
+    )
 
 
 class _RecordingHub:
@@ -195,7 +228,9 @@ def test_two_tracks_land_as_bundles_and_announce_themselves_one_by_one(
         assert bundle.is_dir(), f"no bundle directory for {stable_id}"
         manifest = json.loads((bundle / "manifest.json").read_text())
         assert manifest["stable_id"] == stable_id
-        assert manifest["schema_version"] == 2
+        assert manifest["schema_version"] == _farm_stem_bundle_schema()
+        assert {"sample_rate", "frame_count", "channels"} <= set(manifest["audio"])
+        assert "preset" in manifest
         assert set(manifest["files"]) == {"vocals", "drums", "bass", "other"}
         for name in manifest["files"].values():
             part = bundle / name
