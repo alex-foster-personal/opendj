@@ -19,14 +19,19 @@ from typing import Any
 
 from .own_beatgrid_overlay import apply_own_beatgrid
 from .own_key_overlay import apply_own_key_segments
+from .own_waveform_overlay import apply_own_waveform
 
 
 def apply_own_overlays(
     payload: dict[str, Any], stable_id: str, state_db_path: Path | None = None
 ) -> dict[str, Any]:
     """Apply every own-lane overlay. Mutates and returns ``payload``."""
-    return apply_own_key_segments(
-        apply_own_beatgrid(payload, stable_id, state_db_path),
+    return apply_own_waveform(
+        apply_own_key_segments(
+            apply_own_beatgrid(payload, stable_id, state_db_path),
+            stable_id,
+            state_db_path,
+        ),
         stable_id,
         state_db_path,
     )

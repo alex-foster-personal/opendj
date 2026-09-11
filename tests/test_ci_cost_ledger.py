@@ -229,6 +229,7 @@ def test_incomplete_coverage_is_flagged_so_a_floor_is_not_read_as_a_total():
     )
 
     assert summary["complete"] is False
+    assert summary["state"] == "UNKNOWN"
     assert summary["coverage_pct"] == 53.9
     assert "855 of 1855 runs were not priced" in report
     assert "FLOOR" in report

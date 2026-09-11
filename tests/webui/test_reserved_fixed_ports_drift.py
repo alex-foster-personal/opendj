@@ -107,6 +107,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         5273,
     ),
     (
+        "apps/webui/frontend/tests/e2e/library-jobs-e2e-endpoints.ts",
+        "export const LIBRARY_JOBS_E2E_FRONTEND_PORT = 5277;",
+        5277,
+    ),
+    (
         "apps/webui/frontend/tests/e2e/playwright.stretch-artifact.config.ts",
         "export const STRETCH_ARTIFACT_PORT = 5311;",
         5311,
@@ -192,6 +197,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         "apps/webui/frontend/tests/e2e/vite.autoplay-error-hunt.config.ts",
         "export const AUTOPLAY_HUNT_API_PORT = 8703;",
         8703,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/library-jobs-e2e-endpoints.ts",
+        "export const LIBRARY_JOBS_E2E_BACKEND_PORT = 8704;",
+        8704,
     ),
     (
         "apps/webui/frontend/tests/e2e/stems-e2e-endpoints.ts",

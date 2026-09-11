@@ -691,6 +691,14 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm test:e2e --output test-results/root-playwright
 
+      - name: Library jobs ordering (chromium, dry runner)
+        working-directory: apps/webui/frontend
+        if: ${{ !cancelled() }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" library-jobs \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8704 5277 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.library-jobs.config.ts --output test-results/library-jobs
+
       - name: Restore the PulseAudio server (unload our null sink, previous default back)
         # Always, even after a red suite: the server may be the host's shared,
         # long-lived one, and the next job (or anything else on the host) must

@@ -43,11 +43,23 @@ function defineGlobal(name, value) {
 }
 
 function installBrowserGlobals() {
-	defineGlobal('window', { location: { origin: 'https://app.example.test', pathname: '/' } });
+	const storage = new Map();
+	const localStorage = {
+		getItem: (key) => storage.get(key) ?? null,
+		setItem: (key, value) => storage.set(key, String(value))
+	};
+	defineGlobal('localStorage', localStorage);
+	defineGlobal('window', {
+		location: { origin: 'https://app.example.test', pathname: '/' },
+		localStorage
+	});
 	defineGlobal('document', {
 		visibilityState: 'visible',
+		documentElement: { dataset: {}, style: {} },
 		addEventListener: () => {},
 		removeEventListener: () => {},
+		createElement: () => ({ id: '', style: {}, textContent: '' }),
+		body: { appendChild() {} },
 		// The reload announcer (REFRESH-01) owns one overlay element and looks
 		// it up by id on render and teardown. Null is the honest answer here:
 		// this fake has never been asked to create one.
@@ -153,6 +165,14 @@ test('init installs the reload announcer, and its teardown removes it', () => {
 	assert.equal(typeof window.__mdtScheduleReload, 'function');
 	stop();
 	assert.equal(window.__mdtScheduleReload, undefined);
+});
+
+test('startAppInstruments arms the background demand shed', () => {
+	const source = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/app-init.ts', import.meta.url)),
+		'utf8'
+	);
+	assert.match(source, /startBackgroundDemandShed/);
 });
 
 test('the root layout actually calls startAppInstruments', () => {

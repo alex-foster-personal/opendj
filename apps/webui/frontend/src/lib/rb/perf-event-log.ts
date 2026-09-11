@@ -198,6 +198,16 @@ export function flushPerfEventLog(): void {
 }
 
 /**
+ * Empty the perf ring and persist immediately.
+ * PerfMeters monitor reset path (PERFMODE-05, issue #1987).
+ */
+export function resetPerfEventLog(): void {
+	_events = [];
+	_unflushed = true;
+	flushPerfEventLog();
+}
+
+/**
  * Record that the player's four decks were just created empty (page-load
  * reset) as ONE durable baseline, not four ring rows.
  *
