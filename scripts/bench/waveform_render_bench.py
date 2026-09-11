@@ -103,7 +103,11 @@ def _threaded_throughput(
     calls: int,
 ) -> float:
     def invoke(_index: int) -> int:
-        return int(kernel(bands, POINTS)["length"])
+        length = kernel(bands, POINTS)["length"]
+        if not isinstance(length, int):
+            print("[ERROR] threaded benchmark returned a non-integer length", file=sys.stderr)
+            raise SystemExit(1)
+        return length
 
     started_ns = time.perf_counter_ns()
     with ThreadPoolExecutor(max_workers=workers) as executor:
