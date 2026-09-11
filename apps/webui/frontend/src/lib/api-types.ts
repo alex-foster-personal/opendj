@@ -1194,6 +1194,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feedback/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Feedback Sync */
+        post: operations["post_feedback_sync_api_v1_feedback_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feedback/sync/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Feedback Sync Status */
+        get: operations["get_feedback_sync_status_api_v1_feedback_sync_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/todos": {
         parameters: {
             query?: never;
@@ -4190,6 +4224,21 @@ export interface components {
             /** Stored */
             stored: boolean;
         };
+        /** CloudSyncLinkOut */
+        CloudSyncLinkOut: {
+            /** Enabled */
+            enabled: boolean;
+            /** Endpoint */
+            endpoint: string | null;
+            /** Last Finished At */
+            last_finished_at: string | null;
+            /** Last Message */
+            last_message: string | null;
+            /** Last Result */
+            last_result: string | null;
+            /** Reason */
+            reason: string | null;
+        };
         /** CloudSyncStatusOut */
         CloudSyncStatusOut: {
             /** Enabled */
@@ -4678,6 +4727,46 @@ export interface components {
             quota: number | null;
             /** Server Side */
             server_side: boolean;
+        };
+        /** FeedbackStoreSyncOut */
+        FeedbackStoreSyncOut: {
+            /** Archived */
+            archived: number;
+            /** Attachments Missing */
+            attachments_missing: number;
+            /** Live */
+            live: number;
+            /** Pending Push */
+            pending_push: number;
+            /** Synced */
+            synced: number;
+            /** Unreconciled */
+            unreconciled: number;
+        };
+        /** FeedbackSyncOut */
+        FeedbackSyncOut: {
+            /** Exported */
+            exported: number;
+            /** Imported */
+            imported: number;
+            /** Message */
+            message: string;
+            /** Pulled */
+            pulled: number;
+            /** Pushed */
+            pushed: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "inconclusive";
+        };
+        /** FeedbackSyncStatusOut */
+        FeedbackSyncStatusOut: {
+            cloudsync: components["schemas"]["CloudSyncLinkOut"];
+            /** Pins */
+            pins: components["schemas"]["PinSyncOut"][];
+            store: components["schemas"]["FeedbackStoreSyncOut"];
         };
         /**
          * FileProbeOut
@@ -5993,6 +6082,31 @@ export interface components {
             viewport_height: number;
             /** Viewport Width */
             viewport_width: number;
+        };
+        /**
+         * PinSyncOut
+         * @description Where one pin stands. ``attachment_bytes: missing`` is FBSYNC-05's gap:
+         *     the screenshot's metadata synced here but its bytes did not.
+         */
+        PinSyncOut: {
+            /** Archived */
+            archived: boolean;
+            /**
+             * Attachment Bytes
+             * @enum {string}
+             */
+            attachment_bytes: "none" | "present" | "missing";
+            /** Origin Device Id */
+            origin_device_id: string | null;
+            /** Pin Id */
+            pin_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "synced" | "pending_push" | "unreconciled";
+            /** Updated At */
+            updated_at: string;
         };
         /** PlanModel */
         PlanModel: {
@@ -10675,6 +10789,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PerformanceFeedbackMarksOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_feedback_sync_api_v1_feedback_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackSyncOut"];
+                };
+            };
+        };
+    };
+    get_feedback_sync_status_api_v1_feedback_sync_status_get: {
+        parameters: {
+            query?: {
+                pin_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackSyncStatusOut"];
                 };
             };
             /** @description Validation Error */

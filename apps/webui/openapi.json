@@ -2155,6 +2155,79 @@
         "title": "ClientPerformanceSampleOut",
         "type": "object"
       },
+      "CloudSyncLinkOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "last_finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Finished At"
+          },
+          "last_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Message"
+          },
+          "last_result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Result"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "enabled",
+          "reason",
+          "endpoint",
+          "last_result",
+          "last_message",
+          "last_finished_at"
+        ],
+        "title": "CloudSyncLinkOut",
+        "type": "object"
+      },
       "CloudSyncStatusOut": {
         "properties": {
           "enabled": {
@@ -3518,6 +3591,110 @@
           "note"
         ],
         "title": "FeatureEntitlementOut",
+        "type": "object"
+      },
+      "FeedbackStoreSyncOut": {
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "integer"
+          },
+          "attachments_missing": {
+            "title": "Attachments Missing",
+            "type": "integer"
+          },
+          "live": {
+            "title": "Live",
+            "type": "integer"
+          },
+          "pending_push": {
+            "title": "Pending Push",
+            "type": "integer"
+          },
+          "synced": {
+            "title": "Synced",
+            "type": "integer"
+          },
+          "unreconciled": {
+            "title": "Unreconciled",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "live",
+          "archived",
+          "synced",
+          "pending_push",
+          "unreconciled",
+          "attachments_missing"
+        ],
+        "title": "FeedbackStoreSyncOut",
+        "type": "object"
+      },
+      "FeedbackSyncOut": {
+        "properties": {
+          "exported": {
+            "title": "Exported",
+            "type": "integer"
+          },
+          "imported": {
+            "title": "Imported",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "pulled": {
+            "title": "Pulled",
+            "type": "integer"
+          },
+          "pushed": {
+            "title": "Pushed",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "inconclusive"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "exported",
+          "imported",
+          "pushed",
+          "pulled",
+          "message"
+        ],
+        "title": "FeedbackSyncOut",
+        "type": "object"
+      },
+      "FeedbackSyncStatusOut": {
+        "properties": {
+          "cloudsync": {
+            "$ref": "#/components/schemas/CloudSyncLinkOut"
+          },
+          "pins": {
+            "items": {
+              "$ref": "#/components/schemas/PinSyncOut"
+            },
+            "title": "Pins",
+            "type": "array"
+          },
+          "store": {
+            "$ref": "#/components/schemas/FeedbackStoreSyncOut"
+          }
+        },
+        "required": [
+          "store",
+          "cloudsync",
+          "pins"
+        ],
+        "title": "FeedbackSyncStatusOut",
         "type": "object"
       },
       "FileProbeOut": {
@@ -6975,6 +7152,62 @@
           "release_version"
         ],
         "title": "PinEnvironmentOut",
+        "type": "object"
+      },
+      "PinSyncOut": {
+        "description": "Where one pin stands. ``attachment_bytes: missing`` is FBSYNC-05's gap:\nthe screenshot's metadata synced here but its bytes did not.",
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "attachment_bytes": {
+            "enum": [
+              "none",
+              "present",
+              "missing"
+            ],
+            "title": "Attachment Bytes",
+            "type": "string"
+          },
+          "origin_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Device Id"
+          },
+          "pin_id": {
+            "title": "Pin Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "synced",
+              "pending_push",
+              "unreconciled"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pin_id",
+          "state",
+          "archived",
+          "updated_at",
+          "origin_device_id",
+          "attachment_bytes"
+        ],
+        "title": "PinSyncOut",
         "type": "object"
       },
       "PlanModel": {
@@ -16698,6 +16931,76 @@
           }
         },
         "summary": "Create Performance Mark",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/sync": {
+      "post": {
+        "operationId": "post_feedback_sync_api_v1_feedback_sync_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackSyncOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Feedback Sync",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/sync/status": {
+      "get": {
+        "operationId": "get_feedback_sync_status_api_v1_feedback_sync_status_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "pin_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pin Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackSyncStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Feedback Sync Status",
         "tags": [
           "feedback"
         ]
