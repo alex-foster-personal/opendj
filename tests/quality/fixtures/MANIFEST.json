@@ -1,0 +1,6 @@
+{
+  "source_commit": "a4adf880",
+  "source_commit_full": "a4adf880a4f45470de3eda0c7413521159073184",
+  "path": "open-dj-a4adf880",
+  "note": "open-dj/ as of a4adf880 for issue #389 seed cases B1 B2 B3 B5. Not an ancestor of rewritten main; do not git-merge this tree."
+}

@@ -110,6 +110,19 @@ import { join, dirname, normalize, relative } from 'node:path';
 //              (228,352) is the larger of the two and covers both diffs'
 //              combined weight; re-measure on the merged head before
 //              tightening either number back down.
+//              RAISED Fri 11 Sep 2026 (found while landing #1555, nav1-key-
+//              record - a backend-only lane whose sole frontend diff is a
+//              JSDoc comment in api-types.ts, which cannot change emitted
+//              JS): pristine origin/main at 7c68dd0f3 already measured
+//              229,639 of 228,352 (11 files, over by 1,287), confirmed with
+//              a clean `git worktree add --detach` off that exact SHA with
+//              no branch changes applied, so this was inherited trunk
+//              growth, not a regression from this PR. `git log --oneline
+//              e0213b060..7c68dd0f3 -- apps/webui/frontend/src` is
+//              non-empty: several unrelated merges landed frontend work in
+//              that range. Ratcheting on the pristine-trunk number per the
+//              +5% ceil-to-KiB rule: 229,639, +5% => 241,121, ceil to KiB
+//              => 241,664 (236 KiB).
 // other-lazy   measured 60,160, same +5% ceil-to-KiB rule => 63,488 (62 KiB).
 //              RAISED Mon 1 Sep 2026: the CloudSync config route (/cloudsync
 //              policy matrix, machines, pins, overview + api-cloudsync client)
@@ -135,7 +148,9 @@ const BUDGETS = [
   // unrelated changes and a smaller ratchet (227,328); PR #1010's larger
   // ceiling is kept since it is the wider of the two and both diffs are now
   // present on this branch. Re-measure on the merged head before tightening.
-  { name: 'performance', limit: 228352, measured: 216952, note: '/performance and children' },
+  // Fri 11 Sep 2026: 223 -> 236 KiB, inherited trunk growth found while landing
+  // #1555 (nav1-key-record). See the header comment above for the measurement.
+  { name: 'performance', limit: 241664, measured: 229639, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the

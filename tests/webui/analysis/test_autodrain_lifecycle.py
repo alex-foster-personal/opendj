@@ -23,7 +23,6 @@ Regression lines:
 from __future__ import annotations
 
 import threading
-import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -31,6 +30,7 @@ from fastapi.testclient import TestClient
 from apps.webui.server import analysis_autostart
 from apps.webui.server import app as app_mod
 from apps.webui.server.routes import ingest as ingest_mod
+from tests.waits import PARKED_INTERVAL_S, THREAD_HANG_GUARD_S
 from tests.webui.analysis.conftest import (
     _a_library_too_big_to_scan_quickly,
     _audio,
@@ -66,14 +66,15 @@ def test_lifespan_runs_a_real_reconcile_thread_and_joins_it(app, tmp_path):
         state_db_path=str(app.state.state_db), mount_frontend=False,
         port=18734, frontend_port=19734, auto_analyze=True,
     )
-    armed.state.auto_analyze.interval_s = 0.05
+    armed.state.auto_analyze.interval_s = PARKED_INTERVAL_S
 
     with TestClient(armed) as c:
         assert c.get("/api/v1/health").status_code == 200
-        deadline = time.time() + 10
-        while armed.state.auto_analyze.last_outcome is None and time.time() < deadline:
-            time.sleep(0.05)
-        assert armed.state.auto_analyze.last_outcome == "empty"
+        outcome = armed.state.auto_analyze_watcher.wait_for_outcome(THREAD_HANG_GUARD_S)
+        assert outcome is not None, (
+            f"HANG: the reconcile thread recorded no outcome within {THREAD_HANG_GUARD_S}s"
+        )
+        assert outcome == "empty", f"WRONG OUTCOME: {outcome!r} over an empty backlog"
         assert _reconcile_threads(), "the lifespan did not start the loop"
 
     assert not _reconcile_threads(), "the lifespan did not join the loop"
@@ -244,19 +245,21 @@ def test_a_restarted_lifespan_reuses_the_watcher_it_left_on_the_app(app, tmp_pat
         state_db_path=str(app.state.state_db), mount_frontend=False,
         port=18736, frontend_port=19736, auto_analyze=True,
     )
-    armed.state.auto_analyze.interval_s = 0.05
+    armed.state.auto_analyze.interval_s = PARKED_INTERVAL_S
 
     seen = []
     for _ in range(2):
         with TestClient(armed) as c:
             assert c.get("/api/v1/health").status_code == 200
-            deadline = time.time() + 10
-            while armed.state.auto_analyze.last_outcome is None and time.time() < deadline:
-                time.sleep(0.05)
-            assert armed.state.auto_analyze.last_outcome == "empty", (
-                "the restarted lifespan never ran a tick, so the reused "
-                "watcher was left holding a stop event nobody cleared"
+            outcome = armed.state.auto_analyze_watcher.wait_for_outcome(
+                THREAD_HANG_GUARD_S
             )
+            assert outcome is not None, (
+                f"HANG: the restarted lifespan recorded no tick within "
+                f"{THREAD_HANG_GUARD_S}s, so the reused watcher was left "
+                "holding a stop event nobody cleared"
+            )
+            assert outcome == "empty", f"WRONG OUTCOME: {outcome!r} over an empty backlog"
             assert len(_reconcile_threads()) == 1, (
                 "a second reconcile loop was started beside the first"
             )

@@ -6605,6 +6605,69 @@
         "title": "PassiveActivityOut",
         "type": "object"
       },
+      "PeakPressureIn": {
+        "properties": {
+          "session_ids": {
+            "description": "Recently played stable_ids, oldest first, most-recent last. Unknown ids are a 404, not silently dropped.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Session Ids",
+            "type": "array"
+          }
+        },
+        "title": "PeakPressureIn",
+        "type": "object"
+      },
+      "PeakPressureOut": {
+        "properties": {
+          "advisory": {
+            "title": "Advisory",
+            "type": "string"
+          },
+          "cue": {
+            "enum": [
+              "keep_building",
+              "hold",
+              "release",
+              "unknown"
+            ],
+            "title": "Cue",
+            "type": "string"
+          },
+          "cue_label": {
+            "title": "Cue Label",
+            "type": "string"
+          },
+          "limitation": {
+            "title": "Limitation",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "scored_tracks": {
+            "title": "Scored Tracks",
+            "type": "integer"
+          },
+          "skipped_unknown": {
+            "title": "Skipped Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "score",
+          "cue",
+          "scored_tracks",
+          "skipped_unknown",
+          "cue_label",
+          "advisory",
+          "limitation"
+        ],
+        "title": "PeakPressureOut",
+        "type": "object"
+      },
       "PendingTrackOut": {
         "description": "One persisted, unmatched Spotify playlist entry.",
         "properties": {
@@ -7040,6 +7103,17 @@
             "title": "Ceiling Energy",
             "type": "integer"
           },
+          "closer_pin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closer Pin"
+          },
           "duration_min": {
             "default": 60,
             "maximum": 240.0,
@@ -7054,6 +7128,13 @@
             "title": "Floor Energy",
             "type": "integer"
           },
+          "opener_pins": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Opener Pins",
+            "type": "array"
+          },
           "peak_at_min": {
             "anyOf": [
               {
@@ -7065,6 +7146,13 @@
               }
             ],
             "title": "Peak At Min"
+          },
+          "peak_pins": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Peak Pins",
+            "type": "array"
           }
         },
         "title": "PlayItGoalIn",
@@ -7201,6 +7289,22 @@
               }
             ],
             "title": "Key Camelot"
+          },
+          "pin_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "opener",
+                  "peak",
+                  "closer"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Role"
           },
           "position": {
             "title": "Position",
@@ -9347,6 +9451,11 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_remote": {
+            "default": false,
+            "title": "Is Remote",
+            "type": "boolean"
+          },
           "is_streaming": {
             "title": "Is Streaming",
             "type": "boolean"
@@ -9790,6 +9899,40 @@
           "etag"
         ],
         "title": "SmartlistConflictBody",
+        "type": "object"
+      },
+      "SmartlistCreateIn": {
+        "description": "Create payload matching ``python -m apps.smartlists.cli.create``.",
+        "properties": {
+          "name": {
+            "description": "Display name (non-empty)",
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "order_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sort key; defaults to 'added_date desc' like the CLI",
+            "title": "Order By"
+          },
+          "rule": {
+            "additionalProperties": true,
+            "title": "Rule",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "rule"
+        ],
+        "title": "SmartlistCreateIn",
         "type": "object"
       },
       "SmartlistPreconditionRequiredBody": {
@@ -10463,13 +10606,17 @@
           },
           "current": {
             "$ref": "#/components/schemas/CopilotTrackOut"
+          },
+          "pressure": {
+            "$ref": "#/components/schemas/PeakPressureOut"
           }
         },
         "required": [
           "current",
           "context_source",
           "context_size",
-          "candidates"
+          "candidates",
+          "pressure"
         ],
         "title": "SuggestNextOut",
         "type": "object"
@@ -11488,6 +11635,11 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_remote": {
+            "default": false,
+            "title": "Is Remote",
+            "type": "boolean"
+          },
           "key": {
             "anyOf": [
               {
@@ -11989,6 +12141,11 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_remote": {
+            "default": false,
+            "title": "Is Remote",
+            "type": "boolean"
+          },
           "is_streaming": {
             "title": "Is Streaming",
             "type": "boolean"
@@ -12258,6 +12415,11 @@
             "title": "Hide Todo Settings",
             "type": "boolean"
           },
+          "jog_radial_waveform": {
+            "default": false,
+            "title": "Jog Radial Waveform",
+            "type": "boolean"
+          },
           "level_calibration": {
             "$ref": "#/components/schemas/LevelCalibrationOut"
           },
@@ -12318,6 +12480,17 @@
               }
             ],
             "title": "Hide Todo Settings"
+          },
+          "jog_radial_waveform": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jog Radial Waveform"
           },
           "level_calibration": {
             "anyOf": [
@@ -15561,6 +15734,57 @@
         "summary": "Complete Command",
         "tags": [
           "agent-commands"
+        ]
+      }
+    },
+    "/api/v1/copilot/peak-pressure": {
+      "post": {
+        "operationId": "peak_pressure_route_api_v1_copilot_peak_pressure_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeakPressureIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeakPressureOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "unknown session id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Peak Pressure Route",
+        "tags": [
+          "copilot"
         ]
       }
     },
@@ -19621,6 +19845,54 @@
           }
         },
         "summary": "List Smartlists",
+        "tags": [
+          "smartlists"
+        ]
+      },
+      "post": {
+        "description": "Persist a new smartlist and return the created summary plus ETag.",
+        "operationId": "create_smartlist_api_v1_smartlists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmartlistCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartlistSummary"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the complete persisted smartlist row",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Smartlist",
         "tags": [
           "smartlists"
         ]

@@ -82,7 +82,9 @@ export default defineConfig({
 		'**/missing-tracks-folder.spec.ts', // playwright.rekordbox-gate.config.ts
 		'**/boot-burst.spec.ts', // playwright.boot-burst.config.ts (real library benchmark)
 		'**/comment-hotkey-browser.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
+		'**/autoplay-stall-browser.spec.ts', // playwright.autoplay-stall-gate.config.ts (real backend)
 		'**/performance-*.spec.ts', // playwright.performance.config.ts (real library)
+		'**/kpi-login-capture.spec.ts', // playwright.kpi-capture.config.ts (S13 login KPI capture; operator-only)
 		'**/meter-artifact.spec.ts', // playwright.meter-artifact.config.ts (built artifact)
 		'**/preflight-gate.spec.ts', // playwright.preflight-gate.config.ts (two real backends)
 		'**/savepoint-smoke.spec.ts', // playwright.savepoint.config.ts (real library)
@@ -97,7 +99,8 @@ export default defineConfig({
 		'**/stretch-artifact.spec.ts', // playwright.stretch-artifact.config.ts (built artifact)
 		'**/stretch-quality.spec.ts', // playwright.stretch-quality.config.ts (no server)
 		'**/full-reload-gate.spec.ts', // playwright.full-reload-gate.config.ts (own vite instance, r3920753724)
-		'**/audio-soak.spec.ts' // playwright.audio-soak.config.ts (built artifact, MINUTES; `just test-audio-soak`)
+		'**/audio-soak.spec.ts', // playwright.audio-soak.config.ts (built artifact, MINUTES; `just test-audio-soak`)
+		'**/autoplay-error-hunt.spec.ts' // playwright.autoplay-error-hunt.config.ts (MINUTES; `just test-autoplay-hunt`)
 	],
 	fullyParallel: false,
 	workers: 1,

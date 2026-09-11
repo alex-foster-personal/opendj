@@ -813,6 +813,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/copilot/peak-pressure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Peak Pressure Route */
+        post: operations["peak_pressure_route_api_v1_copilot_peak_pressure_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/copilot/suggest-next": {
         parameters: {
             query?: never;
@@ -2419,7 +2436,11 @@ export interface paths {
         /** List Smartlists */
         get: operations["list_smartlists_api_v1_smartlists_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create Smartlist
+         * @description Persist a new smartlist and return the created summary plus ETag.
+         */
+        post: operations["create_smartlist_api_v1_smartlists_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5824,6 +5845,34 @@ export interface components {
             /** Seconds Since Last Request */
             seconds_since_last_request: number | null;
         };
+        /** PeakPressureIn */
+        PeakPressureIn: {
+            /**
+             * Session Ids
+             * @description Recently played stable_ids, oldest first, most-recent last. Unknown ids are a 404, not silently dropped.
+             */
+            session_ids?: string[];
+        };
+        /** PeakPressureOut */
+        PeakPressureOut: {
+            /** Advisory */
+            advisory: string;
+            /**
+             * Cue
+             * @enum {string}
+             */
+            cue: "keep_building" | "hold" | "release" | "unknown";
+            /** Cue Label */
+            cue_label: string;
+            /** Limitation */
+            limitation: string;
+            /** Score */
+            score: number;
+            /** Scored Tracks */
+            scored_tracks: number;
+            /** Skipped Unknown */
+            skipped_unknown: number;
+        };
         /**
          * PendingTrackOut
          * @description One persisted, unmatched Spotify playlist entry.
@@ -5991,6 +6040,8 @@ export interface components {
              * @default 9
              */
             ceiling_energy: number;
+            /** Closer Pin */
+            closer_pin?: string | null;
             /**
              * Duration Min
              * @default 60
@@ -6001,8 +6052,12 @@ export interface components {
              * @default 3
              */
             floor_energy: number;
+            /** Opener Pins */
+            opener_pins?: string[];
             /** Peak At Min */
             peak_at_min?: number | null;
+            /** Peak Pins */
+            peak_pins?: string[];
         };
         /** PlayItSolveOut */
         PlayItSolveOut: {
@@ -6039,6 +6094,8 @@ export interface components {
             energy: number | null;
             /** Key Camelot */
             key_camelot: string | null;
+            /** Pin Role */
+            pin_role?: ("opener" | "peak" | "closer") | null;
             /** Position */
             position: number;
             /** Stable Id */
@@ -6837,6 +6894,11 @@ export interface components {
             genre: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /**
+             * Is Remote
+             * @default false
+             */
+            is_remote: boolean;
             /** Is Streaming */
             is_streaming: boolean;
             /** Key */
@@ -6999,6 +7061,26 @@ export interface components {
             etag: string;
             /** Message */
             message: string;
+        };
+        /**
+         * SmartlistCreateIn
+         * @description Create payload matching ``python -m apps.smartlists.cli.create``.
+         */
+        SmartlistCreateIn: {
+            /**
+             * Name
+             * @description Display name (non-empty)
+             */
+            name: string;
+            /**
+             * Order By
+             * @description Sort key; defaults to 'added_date desc' like the CLI
+             */
+            order_by?: string | null;
+            /** Rule */
+            rule: {
+                [key: string]: unknown;
+            };
         };
         /**
          * SmartlistPreconditionRequiredBody
@@ -7336,6 +7418,7 @@ export interface components {
             /** Context Source */
             context_source: string;
             current: components["schemas"]["CopilotTrackOut"];
+            pressure: components["schemas"]["PeakPressureOut"];
         };
         /**
          * SuggestedSourcesOut
@@ -7663,6 +7746,11 @@ export interface components {
             file_path?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /**
+             * Is Remote
+             * @default false
+             */
+            is_remote: boolean;
             /** Key */
             key?: string | null;
             /** Last Played At */
@@ -7820,6 +7908,11 @@ export interface components {
             genre: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /**
+             * Is Remote
+             * @default false
+             */
+            is_remote: boolean;
             /** Is Streaming */
             is_streaming: boolean;
             /** Key */
@@ -7902,6 +7995,11 @@ export interface components {
              * @default false
              */
             hide_todo_settings: boolean;
+            /**
+             * Jog Radial Waveform
+             * @default false
+             */
+            jog_radial_waveform: boolean;
             level_calibration?: components["schemas"]["LevelCalibrationOut"];
             /**
              * Show Agent Pins
@@ -7929,6 +8027,8 @@ export interface components {
             } | null;
             /** Hide Todo Settings */
             hide_todo_settings?: boolean | null;
+            /** Jog Radial Waveform */
+            jog_radial_waveform?: boolean | null;
             level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
@@ -9873,6 +9973,48 @@ export interface operations {
                     "application/json": {
                         [key: string]: boolean;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    peak_pressure_route_api_v1_copilot_peak_pressure_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PeakPressureIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeakPressureOut"];
+                };
+            };
+            /** @description unknown session id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Validation Error */
@@ -12747,6 +12889,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SmartlistSummary"][];
+                };
+            };
+        };
+    };
+    create_smartlist_api_v1_smartlists_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SmartlistCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    /** @description Strong validator for the complete persisted smartlist row */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SmartlistSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

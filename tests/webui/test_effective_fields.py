@@ -40,6 +40,16 @@ DECODE_FINGERPRINT = (
 )
 
 
+#: A stand-in for the beatgrid this segments block was computed against
+#: (spec section 5): this suite is about the scalar key projection, not
+#: staleness, so one fixed identity is enough to satisfy the record contract.
+_DEPENDS_ON_BEATGRID = {
+    "backend": "own_beatgrid.backfill", "producer_version": "1.0.0",
+    "model_sha256": None, "decode_fingerprint": "sha256:" + "1f" * 32,
+    "record_digest": "sha256:" + "2f" * 32,
+}
+
+
 def _key_payload(camelot: str, segments: int = 1) -> dict:
     """Derived, not hardcoded: the contract cross-checks the three spellings."""
     from apps.analysis.lane_payloads import _CAMELOT_PITCH_CLASS
@@ -57,6 +67,7 @@ def _key_payload(camelot: str, segments: int = 1) -> dict:
                 for i in range(segments)
             ],
         },
+        "depends_on": {"beatgrid": dict(_DEPENDS_ON_BEATGRID)},
     }
 
 

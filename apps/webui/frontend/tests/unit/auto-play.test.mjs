@@ -489,6 +489,80 @@ describe('auto-play track pick', () => {
 	});
 });
 
+describe('auto-play fold-lock preference', () => {
+	const wide = { min_tempo_ratio: 0.84, max_tempo_ratio: 1.16 };
+
+	function pickInput(playlist, current, key, bpm, extra = {}) {
+		return {
+			playlist,
+			current_stable_id: current,
+			current_key: key,
+			current_bpm: bpm,
+			exclude_ids: new Set(),
+			played_ids: new Set(),
+			enforce_play_order: false,
+			...wide,
+			...extra
+		};
+	}
+
+	function assertBoth(playlist, current, key, bpm, expected, bounds = wide) {
+		const { pickNextStableId } = chain;
+		assert.equal(
+			pickNextStableId(pickInput(playlist, current, key, bpm, { maximize_reach: false, ...bounds })),
+			expected
+		);
+		assert.equal(
+			pickNextStableId(pickInput(playlist, current, key, bpm, { maximize_reach: true, ...bounds })),
+			expected
+		);
+	}
+
+	it('tempoLockClass table: exact, fold, and still-not-a-lock pairs', () => {
+		const { tempoLockClass } = chain;
+		assert.equal(tempoLockClass(120, 120, 0.84, 1.16), 'exact');
+		assert.equal(tempoLockClass(64, 128, 0.84, 1.16), 'fold');
+		assert.equal(tempoLockClass(256, 128, 0.84, 1.16), 'fold');
+		assert.equal(tempoLockClass(160, 120, 0.84, 1.16), null);
+		assert.equal(tempoLockClass(220, 128, 0.84, 1.16), null);
+	});
+
+	it('exact always wins even when a fold sits earlier in membership', () => {
+		const playlist = [row('cur', '8A', 128), row('fold', '8A', 64), row('exact', '8A', 124)];
+		assertBoth(playlist, 'cur', '8A', 128, 'exact');
+	});
+
+	it('fold when nothing exact: 128→64 and 128→256', () => {
+		assertBoth([row('cur', '8A', 128), row('half', '8A', 64)], 'cur', '8A', 128, 'half');
+		assertBoth([row('cur', '8A', 128), row('double', '8A', 256)], 'cur', '8A', 128, 'double');
+	});
+
+	it('still not a lock: 160 vs 120, 220 vs 128, 40 vs 128', () => {
+		assertBoth([row('cur', '8A', 120), row('off', '8A', 160)], 'cur', '8A', 120, null);
+		assertBoth([row('cur', '8A', 128), row('demo4', '8A', 220)], 'cur', '8A', 128, null);
+		assertBoth([row('cur', '8A', 128), row('low', '8A', 40)], 'cur', '8A', 128, null);
+	});
+
+	it('key still gates folds', () => {
+		assertBoth([row('cur', '8A', 128), row('wrong', '2A', 64)], 'cur', '8A', 128, null);
+	});
+
+	it('pitch range still hard: 70 vs 128 folds at ±16% and misses at ±8%', () => {
+		const { tempoBoundsFromPitchRange } = mod;
+		const at16 = tempoBoundsFromPitchRange(16);
+		const at8 = tempoBoundsFromPitchRange(8);
+		const playlist = [row('cur', '8A', 128), row('seventy', '8A', 70)];
+		assertBoth(playlist, 'cur', '8A', 128, 'seventy', {
+			min_tempo_ratio: at16.min,
+			max_tempo_ratio: at16.max
+		});
+		assertBoth(playlist, 'cur', '8A', 128, null, {
+			min_tempo_ratio: at8.min,
+			max_tempo_ratio: at8.max
+		});
+	});
+});
+
 describe('auto-play maximize reach (slack path)', () => {
 	// Tight BPM window: greedy earliest (b) is a dead end; c unlocks d.
 	const strand = [
@@ -518,6 +592,39 @@ describe('auto-play maximize reach (slack path)', () => {
 		assert.equal(
 			pickNextStableId({
 				playlist: strand,
+				current_stable_id: 'a',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: false,
+				maximize_reach: true,
+				...tight
+			}),
+			'c'
+		);
+	});
+
+	it('Warnsdorff unchanged when a fold row sits beside exact matches', () => {
+		const { pickNextStableId } = mod;
+		const withFold = [...strand, row('fold64', '8A', 64)];
+		assert.equal(
+			pickNextStableId({
+				playlist: withFold,
+				current_stable_id: 'a',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: false,
+				maximize_reach: false,
+				...tight
+			}),
+			'b'
+		);
+		assert.equal(
+			pickNextStableId({
+				playlist: withFold,
 				current_stable_id: 'a',
 				current_key: '8A',
 				current_bpm: 120,

@@ -41,6 +41,16 @@ MODEL_SHA256 = "sha256:227e7b8b1facb2a9684479407fb7869ae9500a22f70f0af9d43d6984e
 # placeable at the boundary itself (`at_s == duration_s`).
 _FIXTURE_GRID_SPAN_S = 300.0
 
+# Stand-in beatgrid dependency for key payloads: contract tests validate shape,
+# not staleness against a live canonical beatgrid row.
+_DEPENDS_ON_BEATGRID = {
+    "backend": "own_beatgrid.inapp",
+    "producer_version": "1.0.0",
+    "model_sha256": MODEL_SHA256,
+    "decode_fingerprint": DECODE_FINGERPRINT,
+    "record_digest": "sha256:" + "2f" * 32,
+}
+
 
 def beatgrid_payload(
     bpm: float = 128.0, tempo_changes: int = 0, grid_span_s: float = _FIXTURE_GRID_SPAN_S,
@@ -124,6 +134,7 @@ def key_payload(camelot: str = "8A", segments: int = 1) -> dict[str, Any]:
                 for i in range(segments)
             ],
         },
+        "depends_on": {"beatgrid": dict(_DEPENDS_ON_BEATGRID)},
     }
 
 

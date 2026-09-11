@@ -107,6 +107,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         5322,  # tests/e2e/playwright.meter-artifact.config.ts METER_ARTIFACT_PORT
         5323,  # tests/e2e/playwright.preflight-gate.config.ts / vite.full-reload-gate.config.ts
         5324,  # tests/e2e/vite.autoplay-stall-gate.config.ts / playwright.audio-soak.config.ts
+        5326,  # tests/e2e/vite.autoplay-error-hunt.config.ts AUTOPLAY_HUNT_FRONTEND_PORT
         5399,  # tests/e2e/vite.rekordbox-gate.config.ts REKORDBOX_GATE_E2E_PORT
         8686,  # tests/e2e/vite.performance.config.ts DEFAULT_API_BASE
         8688,  # tests/e2e/stems-e2e-endpoints.ts DEFAULT_BACKEND_PORT
@@ -118,6 +119,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8697,  # tests/e2e/playwright.preflight-gate.config.ts PREFLIGHT_GATE_BROKEN_API_PORT
         8698,  # apps/desktop/mcp/smoke.ts ENGINE_PORT
         8699,  # tests/e2e/vite.autoplay-stall-gate.config.ts API port
+        8703,  # tests/e2e/vite.autoplay-error-hunt.config.ts AUTOPLAY_HUNT_API_PORT
         9408,  # tests/e2e/stems-e2e-endpoints.ts DEFAULT_FRONTEND_PORT
         9414,  # tests/e2e/playwright.play-analytics.config.ts backend port
         9473,  # tests/e2e/playwright.desktop-setup.config.ts DEAD_ENGINE_PORT
