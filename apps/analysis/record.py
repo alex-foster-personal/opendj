@@ -65,6 +65,7 @@ from .lanes import (
     semver_key,
     validate_lane_result,
 )
+from apps.analysis_beatgrid.activations import activations_ref
 
 EnergySource = Literal["mik", "inferred"]
 
@@ -118,6 +119,9 @@ class AnalysisRecord:
     rms_peaks_s: list[float] = field(default_factory=list)
 
     features_blob: dict[str, Any] = field(default_factory=dict)
+    #: Own beatgrid records may carry ``features_blob["activations"]`` with
+    #: ``{npz|blob, fps}`` pointing at retained Beat This! framewise logits
+    #: for the dynamic-grid fitter. See :func:`apps.analysis_beatgrid.activations.activations_ref`.
 
     # --- v2 (native-analysis v1, spec section 3) -------------------------
     producer: Producer = "backfill"
@@ -264,5 +268,6 @@ __all__ = [
     "AnalysisRecord",
     "EnergySource",
     "RecordContractError",
+    "activations_ref",
     "validate_record_contract",
 ]
