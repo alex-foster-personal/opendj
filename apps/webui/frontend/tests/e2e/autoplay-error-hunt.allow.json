@@ -11,11 +11,6 @@
       "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/lyrics returns 404"
     },
     {
-      "signature": "console.error:Failed to load resource: the server responded with a status of 404 (Not Found)",
-      "issue": "#1870",
-      "reason": "AutoPlay hunt: console.error 404 Not Found while mixing"
-    },
-    {
       "signature": "http-404:GET:/api/v1/tracks/<hash>/auto-cues",
       "issue": "#1871",
       "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/auto-cues returns 404"

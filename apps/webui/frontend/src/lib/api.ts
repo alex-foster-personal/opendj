@@ -23,6 +23,7 @@ import type { components, paths } from './api-types';
 import { ApiError, api, requireBody, unwrap } from './api/client';
 import { subscribeKind, subscribeResync } from './api/events-bus';
 import { BOOT_COALESCE_TTL_MS, requestCoalescer } from './api/request-coalescer';
+import { rememberOptionalResources } from './rb/optional-resource-availability';
 
 export { API_BASE } from './api/client';
 export { api, unwrap, ApiError } from './api/client';
@@ -111,10 +112,31 @@ export async function listTracks(params: Record<string, string | number | undefi
 	return unwrap(api.GET('/api/v1/tracks', { params: { query } }));
 }
 
+function _rememberTrackOptionalResources(track: Track): void {
+	const partial: {
+		lyrics?: boolean;
+		autoCues?: boolean;
+		stems?: boolean;
+	} = {};
+	if (typeof track.lyrics_available === 'boolean') {
+		partial.lyrics = track.lyrics_available;
+	}
+	if (typeof track.auto_cues_available === 'boolean') {
+		partial.autoCues = track.auto_cues_available;
+	}
+	if (typeof track.stems_available === 'boolean') {
+		partial.stems = track.stems_available;
+	}
+	if (Object.keys(partial).length > 0) {
+		rememberOptionalResources(track.stable_id, partial);
+	}
+}
+
 export async function getTrack(stable_id: string): Promise<{ track: Track; etag: string }> {
 	const { data, response } = requireBody(
 		await api.GET('/api/v1/tracks/{stable_id}', { params: { path: { stable_id } } })
 	);
+	_rememberTrackOptionalResources(data);
 	return { track: data, etag: response.headers.get('etag') ?? '' };
 }
 
@@ -140,6 +162,7 @@ export async function patchTrack(
 		throw error;
 	}
 	const { data, response } = requireBody(call);
+	_rememberTrackOptionalResources(data);
 	return { track: data, etag: response.headers.get('etag') ?? '' };
 }
 

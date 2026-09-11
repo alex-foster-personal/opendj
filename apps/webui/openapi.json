@@ -11563,6 +11563,10 @@
             "title": "Artwork Status",
             "type": "string"
           },
+          "auto_cues_available": {
+            "title": "Auto Cues Available",
+            "type": "boolean"
+          },
           "bpm": {
             "anyOf": [
               {
@@ -11662,6 +11666,10 @@
             ],
             "title": "Last Played At"
           },
+          "lyrics_available": {
+            "title": "Lyrics Available",
+            "type": "boolean"
+          },
           "notes": {
             "anyOf": [
               {
@@ -11731,6 +11739,10 @@
             "title": "Stems",
             "type": "object"
           },
+          "stems_available": {
+            "title": "Stems Available",
+            "type": "boolean"
+          },
           "tags": {
             "default": [],
             "items": {
@@ -11765,6 +11777,9 @@
           "created_at",
           "updated_at",
           "has_rb_mapping",
+          "lyrics_available",
+          "auto_cues_available",
+          "stems_available",
           "preview_b64",
           "preview_max",
           "file_exists",
@@ -11832,6 +11847,10 @@
             ],
             "title": "Artist"
           },
+          "auto_cues_available": {
+            "title": "Auto Cues Available",
+            "type": "boolean"
+          },
           "bpm": {
             "anyOf": [
               {
@@ -11895,6 +11914,10 @@
             ],
             "title": "Last Played At"
           },
+          "lyrics_available": {
+            "title": "Lyrics Available",
+            "type": "boolean"
+          },
           "notes": {
             "anyOf": [
               {
@@ -11934,6 +11957,10 @@
             "title": "Stable Id",
             "type": "string"
           },
+          "stems_available": {
+            "title": "Stems Available",
+            "type": "boolean"
+          },
           "tags": {
             "default": [],
             "items": {
@@ -11962,7 +11989,10 @@
           "stable_id",
           "created_at",
           "updated_at",
-          "has_rb_mapping"
+          "has_rb_mapping",
+          "lyrics_available",
+          "auto_cues_available",
+          "stems_available"
         ],
         "title": "TrackOut",
         "type": "object"

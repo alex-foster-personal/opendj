@@ -51,6 +51,12 @@ class TrackOut(BaseModel):
     # deck-load path (GET /tracks/{sid}, never the listing row) can gate
     # hot-cue SAVE without guessing (PARITY-TODO, issue #736).
     has_rb_mapping: bool
+    # Whether the matching optional GET would succeed, so the browser can skip
+    # a fetch that would 404 (Chromium logs those unsuppressably). Same job as
+    # has_rb_mapping: predict empty-state before issuing the request.
+    lyrics_available: bool
+    auto_cues_available: bool
+    stems_available: bool
 
 
 class QualityOut(BaseModel):
