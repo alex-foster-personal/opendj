@@ -29,6 +29,8 @@ Regression lines:
     of a morning)
   - if _escalate regains a kind allowlist then broken (it can only ever DROP
     error-severity rows before they leave the browser)
+
+[if] the ui-mirror drops or reshapes audio_health [then] fail, [else stop].
 """
 from __future__ import annotations
 

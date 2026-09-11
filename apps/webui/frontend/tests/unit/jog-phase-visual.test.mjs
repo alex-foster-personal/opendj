@@ -335,6 +335,14 @@ test('JogDial renders white per-beat marks and no black spinning grid', () => {
 	assert.doesNotMatch(jogDialSource, /animation:/, 'phase must not advance from a CSS wall clock');
 });
 
+test('position tick is conditional on radial waveform preview availability', () => {
+	assert.match(
+		jogDialSource,
+		/\{#if !\(radialOn && hasPreview\)\}[\s\S]{0,200}class="position-tick"/,
+		'the red tick must stay in the annulus when radial is off, and hide when radial preview is on'
+	);
+});
+
 test('beat 1 is drawn strictly thicker than the other beats, and all marks are white', () => {
 	const base = strokeWidthOf('.phase-mark');
 	const downbeat = strokeWidthOf('.phase-mark.downbeat');

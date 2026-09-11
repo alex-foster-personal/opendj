@@ -26,6 +26,9 @@ on:
   pull_request:
     branches: [main]
     # Mirrors ci.yml: a docs-only PR cannot change runtime behavior.
+    # Extra ignores: workflow YAML and pytest-only trees cannot change
+    # Playwright behaviour. Scheduling E2E for those would skip the nightly
+    # `extended` job on the PR, and a SKIPPED check is not a pass.
     paths-ignore:
       - "**.md"
       - "docs/**"
@@ -33,6 +36,10 @@ on:
       - ".planning/**"
       - "specs/**"
       - "blog/**"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/e2e.yml"
+      - "tests/perf/**"
+      - "tests/docs/**"
   push:
     branches: [main]
     paths-ignore:
@@ -42,6 +49,10 @@ on:
       - ".planning/**"
       - "specs/**"
       - "blog/**"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/e2e.yml"
+      - "tests/perf/**"
+      - "tests/docs/**"
   schedule:
     # 04:17 UTC daily, for the extended tier. Off-peak and deliberately not on
     # the hour, where GitHub's scheduler queues are busiest.

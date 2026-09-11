@@ -249,8 +249,8 @@ def _tauri_app_version(repo_root: Path) -> str:
     raw_version = conf.get("version")
     if not isinstance(raw_version, str) or raw_version.strip() == "":
         raise BuildInfoUnavailable(
-            f"{conf_path} has no string 'version' field, so this checkout "
-            "cannot name the app version the updater compares"
+            f"{conf_path} has no non-empty string 'version' field, so this "
+            "checkout cannot name the app version the updater compares"
         )
     return raw_version.strip()
 

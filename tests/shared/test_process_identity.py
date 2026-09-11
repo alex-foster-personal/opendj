@@ -7,14 +7,19 @@ import time
 import pytest
 
 from apps.shared.process_identity import _os_title, process_command, process_title
+from tests.waits import EXTERNAL_STATE_GUARD_S, wait_for_external_state
 
-_SUBPROCESS_TIMEOUT_SECONDS = 10.0
+#: Per-call ceiling for pgrep/ps and the final reap. Generous because it only
+#: costs time when a call genuinely hangs; a loaded runner is not a defect.
+_SUBPROCESS_TIMEOUT_SECONDS = EXTERNAL_STATE_GUARD_S
 
+# The child outlives any rename wait (the test kills it), so a slow rename can
+# never race the child's own exit.
 _ENGINE_LAUNCH_SOURCE = """
 import time
 from apps.shared.process_identity import set_process_identity
 set_process_identity("Engine", 8585, invocation_marker="apps.engine_core serve")
-time.sleep(10)
+time.sleep(600)
 """
 
 
@@ -65,32 +70,38 @@ def test_set_process_identity_preserves_probe_markers_in_the_os_title() -> None:
     ``scripts/diagnostics/probe_process_family.py`` greps in production.
     """
     proc = subprocess.Popen([sys.executable, "-c", _ENGINE_LAUNCH_SOURCE])
-    try:
-        command = ""
-        deadline = time.monotonic() + _SUBPROCESS_TIMEOUT_SECONDS
-        while time.monotonic() < deadline:
-            result = subprocess.run(
-                ["pgrep", "-f", "opendj-engine"],
-                capture_output=True,
-                text=True,
-                timeout=5.0,
-                check=False,
-            )
-            found_pids = {int(pid) for pid in result.stdout.split() if pid.isdigit()}
-            if proc.pid in found_pids:
-                command = subprocess.run(
-                    ["ps", "-p", str(proc.pid), "-ww", "-o", "command="],
-                    capture_output=True,
-                    text=True,
-                    timeout=5.0,
-                    check=False,
-                ).stdout.strip()
-                break
-            time.sleep(0.1)
-        else:
-            pytest.fail(f"process {proc.pid} never reported a renamed title: {command!r}")
+    started = time.monotonic()
 
-        assert command.startswith("opendj-engine --name opendj-engine --port 8585 [")
+    def _child_renamed() -> bool:
+        if proc.poll() is not None:
+            raise AssertionError(
+                f"child {proc.pid} exited rc {proc.returncode} after "
+                f"{time.monotonic() - started:.1f}s without renaming its title"
+            )
+        result = subprocess.run(
+            ["pgrep", "-f", "opendj-engine"],
+            capture_output=True,
+            text=True,
+            timeout=_SUBPROCESS_TIMEOUT_SECONDS,
+            check=False,
+        )
+        return proc.pid in {int(pid) for pid in result.stdout.split() if pid.isdigit()}
+
+    try:
+        waited = wait_for_external_state(
+            _child_renamed, what=f"pgrep -f opendj-engine finding child {proc.pid}"
+        )
+        command = subprocess.run(
+            ["ps", "-p", str(proc.pid), "-ww", "-o", "command="],
+            capture_output=True,
+            text=True,
+            timeout=_SUBPROCESS_TIMEOUT_SECONDS,
+            check=False,
+        ).stdout.strip()
+
+        assert command.startswith("opendj-engine --name opendj-engine --port 8585 ["), (
+            f"renamed after {waited:.1f}s, but the title reads {command!r}"
+        )
         assert sys.executable in command
         assert "apps.engine_core serve" in command
     finally:

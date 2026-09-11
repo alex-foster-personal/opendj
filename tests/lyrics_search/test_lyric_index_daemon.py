@@ -20,7 +20,6 @@ Regression lines:
 from __future__ import annotations
 
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -35,6 +34,7 @@ from apps.lyrics.search_index import (
     open_write,
 )
 from apps.webui.server import lyric_index_autostart
+from tests.waits import PARKED_INTERVAL_S, THREAD_HANG_GUARD_S
 
 
 def test_create_app_leaves_the_lyric_index_disarmed() -> None:
@@ -77,18 +77,18 @@ def test_lifespan_runs_and_joins_a_real_lyric_index_thread(tmp_path: Path) -> No
         frontend_port=19736,
         lyric_index=True,
     )
-    armed.state.lyric_index.interval_s = 0.05
+    armed.state.lyric_index.interval_s = PARKED_INTERVAL_S
 
     with TestClient(armed) as client:
         assert client.get("/api/v1/health").status_code == 200
-        deadline = time.time() + 10
-        while (
-            armed.state.lyric_index.last_outcome not in ("indexed", "idle")
-            and time.time() < deadline
-        ):
-            time.sleep(0.05)
-        assert armed.state.lyric_index.last_outcome in ("indexed", "idle"), (
-            "the lifespan loop never reported a real outcome"
+        outcome = armed.state.lyric_index_watcher.wait_for_outcome(THREAD_HANG_GUARD_S)
+        assert outcome is not None, (
+            f"HANG: the lyric-index thread recorded no outcome within "
+            f"{THREAD_HANG_GUARD_S}s"
+        )
+        assert outcome == "indexed", (
+            f"WRONG OUTCOME: the first tick over a one-file cache reported "
+            f"{outcome!r}, not 'indexed'"
         )
         assert _index_threads(), "the lifespan did not start the lyric-index loop"
         conn = open_write(index_path(data_dir))

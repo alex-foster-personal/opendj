@@ -72,6 +72,7 @@ def _identity(app_version: str | None = RUNNING_VERSION) -> BuildIdentity:
         failure=None,
     )
 
+
 def _repo_identity(app_version: str | None = RUNNING_VERSION) -> BuildIdentity:
     return BuildIdentity(
         info=BuildInfoOut(
@@ -202,7 +203,9 @@ def test_the_same_release_is_up_to_date() -> None:
 
 def test_the_same_version_from_a_different_build_is_surfaced() -> None:
     # The case semver cannot see. The updater will not act; the human is told.
-    with _client(_json_ok(_manifest(RUNNING_VERSION, notes="built from cafe1234"))) as client:
+    with _client(
+        _json_ok(_manifest(RUNNING_VERSION, notes="built from cafe1234"))
+    ) as client:
         result = resolve_update_check(_identity(), client=client, key=KEY)
     assert result.status == "up-to-date"
     assert result.same_version_different_build is True
@@ -283,7 +286,7 @@ def _route_response(monkeypatch, handler, *, identity: BuildIdentity | None = No
     mock_client = _client(handler)
     monkeypatch.setattr(module.httpx, "Client", lambda: mock_client)
     monkeypatch.setattr(module, "platform_key", lambda *a, **k: KEY)
-    resolved = _identity() if identity is None else identity
+    resolved = identity if identity is not None else _identity()
     with TestClient(_app(resolved)) as client:
         return client.get(UPDATE_CHECK_PATH)
 
@@ -311,8 +314,9 @@ def test_a_repo_checkout_returns_200_when_the_channel_faults(monkeypatch) -> Non
         identity=_repo_identity(),
     )
     assert response.status_code == 200
-    assert response.json()["status"] == "endpoint-refused"
-    assert "error" not in response.json()
+    body = response.json()
+    assert body["status"] == "endpoint-refused"
+    assert "error" not in body
 
 
 # ----- the agent-native path ----------------------------------------------

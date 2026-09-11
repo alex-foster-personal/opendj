@@ -36,6 +36,7 @@ from apps.engine_core.jobs.reap import (
     reap,
     reap_group,
 )
+from tests.waits import wait_for_external_state
 
 # The leader spawns a child in its OWN process group (no start_new_session on
 # the inner Popen), prints the child's pid, and exits immediately. What is left
@@ -74,9 +75,10 @@ def _leaderless_group() -> tuple[int, int, float]:
     child_pid = int(line.strip())
     leader.wait(timeout=10)  # reap the leader so pid `pgid` is truly gone
 
-    deadline = time.monotonic() + 5
-    while psutil.pid_exists(leader.pid) and time.monotonic() < deadline:
-        time.sleep(0.02)
+    wait_for_external_state(
+        lambda: not psutil.pid_exists(leader.pid),
+        what=f"leader pid {leader.pid} gone from the process table after wait()",
+    )
     return leader.pid, child_pid, spawned_at
 
 
@@ -152,9 +154,10 @@ def test_a_dead_leader_with_no_survivors_is_simply_gone(leaderless) -> None:
     """Nothing left to kill is a clean skip, not a refusal to retry forever."""
     pgid, child_pid, spawned_at = leaderless
     _kill_pid(child_pid)
-    deadline = time.monotonic() + 5
-    while group_has_live_member(pgid) and time.monotonic() < deadline:
-        time.sleep(0.02)
+    wait_for_external_state(
+        lambda: not group_has_live_member(pgid),
+        what=f"process group {pgid} empty after SIGKILL of its last member {child_pid}",
+    )
 
     result = reap_group(
         WorkerIdentity(pgid=pgid, argv=("x",), started_at=spawned_at)

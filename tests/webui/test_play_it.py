@@ -147,4 +147,52 @@ def test_solve_energy_missing_is_not_gating(client: TestClient) -> None:
     assert r.status_code == 200, r.text
     assert all(step["energy"] is None for step in r.json()["steps"])
 
+
+@pytest.mark.requirement("SET-04")
+def test_solve_with_pins_honors_roles(client: TestClient) -> None:
+    """[if] solve is posted with pin roles [then] opener peak and closer land in order, [else stop]."""
+    r = client.post(
+        "/api/v1/play-it/pl-002/solve",
+        json={
+            "duration_min": 30,
+            "peak_at_min": 8,
+            "peak_pins": ["track-001"],
+            "opener_pins": ["track-002"],
+            "closer_pin": "track-004",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["proposed_order"][0] == "track-002"
+    assert body["proposed_order"][-1] == "track-004"
+    roles = {step["stable_id"]: step.get("pin_role") for step in body["steps"]}
+    assert roles["track-002"] == "opener"
+    assert roles["track-004"] == "closer"
+    assert roles["track-001"] == "peak"
+
+
+@pytest.mark.requirement("SET-04")
+def test_solve_pin_not_in_playlist_is_422(client: TestClient) -> None:
+    """[if] a pin is not in the playlist [then] solve returns 422 pin_unsatisfiable, [else stop]."""
+    r = client.post(
+        "/api/v1/play-it/pl-002/solve",
+        json={"duration_min": 60, "peak_pins": ["not-in-playlist"]},
+    )
+    assert r.status_code == 422
+    body = r.json()
+    assert body["error"] == "pin_unsatisfiable"
+    assert body["details"]["reason"] == "pin_not_in_playlist"
+
+
+@pytest.mark.requirement("SET-04")
+def test_openapi_lists_pin_goal_fields() -> None:
+    """[if] OpenAPI describes PlayItGoalIn [then] it lists the pin goal fields, [else stop]."""
+    schema = create_app(mount_frontend=False).openapi()["components"]["schemas"][
+        "PlayItGoalIn"
+    ]
+    assert "peak_pins" in schema["properties"]
+    assert "opener_pins" in schema["properties"]
+    assert "closer_pin" in schema["properties"]
+
+
 pytestmark = pytest.mark.rb_parity

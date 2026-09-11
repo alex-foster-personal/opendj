@@ -11,7 +11,6 @@
  * the typeof guard only protects unit tests.
  */
 
-import { api, unwrap } from '../api/client';
 import {
 	validateDeckLayoutFields,
 	makeDeckLayoutSetters,
@@ -19,8 +18,9 @@ import {
 	type DeckLayoutDurationMs,
 	type DeckLayoutMode
 } from './deck-layout-prefs';
-import { makeDiskWriteChain } from './disk-write-chain';
+import { makeJogRadialWaveformSetters } from './jog-radial-prefs';
 import { makeLevelCalibrationSetters } from './level-calibration-prefs';
+import { createDiskPrefsSync, makePrefsHydrator } from './prefs-hydrate';
 import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLibrary } from './prefs-fields';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
@@ -103,6 +103,8 @@ export interface RbUiPrefs {
 	 * fade transitions (default); false = instant appear/disappear.
 	 */
 	technically_working_animate: boolean;
+	/** DECKUX-02: polar preview waveform on jog dials instead of the red tick. */
+	jog_radial_waveform: boolean;
 	/** PIN-AGENT-01: agent findings stay independently visible from operator pins. */
 	show_agent_pins: boolean;
 	/**
@@ -151,6 +153,7 @@ const DEFAULTS: RbUiPrefs = {
 	usb_toast_ms: 5000,
 	usb_auto_open_panel: false,
 	technically_working_animate: true,
+	jog_radial_waveform: false,
 	show_agent_pins: true,
 	confirm: {},
 	last_playlist: null,
@@ -306,6 +309,12 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (parsed.jog_radial_waveform !== undefined && typeof parsed.jog_radial_waveform !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (jog_radial_waveform is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	if (parsed.show_agent_pins !== undefined && typeof parsed.show_agent_pins !== 'boolean') {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (show_agent_pins is not a boolean) - ` +
@@ -355,6 +364,7 @@ function _load(): RbUiPrefs {
 		usb_auto_open_panel: parsed.usb_auto_open_panel ?? DEFAULTS.usb_auto_open_panel,
 		technically_working_animate:
 			parsed.technically_working_animate ?? DEFAULTS.technically_working_animate,
+		jog_radial_waveform: parsed.jog_radial_waveform ?? DEFAULTS.jog_radial_waveform,
 		show_agent_pins: parsed.show_agent_pins ?? DEFAULTS.show_agent_pins,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) },
 		last_playlist: lastPlaylist,
@@ -370,29 +380,8 @@ function _persist(): void {
 	_storage()?.setItem(STORAGE_KEY, JSON.stringify($state.snapshot(uiPrefs)));
 }
 
-type DiskPrefsPatch = {
-	confirm?: RbUiPrefs['confirm'];
-	theme?: UiTheme;
-	hide_todo_settings?: boolean;
-	auto_sync?: AutoSyncPrefs;
-	technically_working_animate?: boolean;
-	show_agent_pins?: boolean;
-	deck_layout?: DeckLayoutMode;
-	deck_layout_animate?: boolean;
-	deck_layout_duration_ms?: DeckLayoutDurationMs;
-	level_calibration?: LevelCalibrationPrefs;
-};
-
-async function _putDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
-	try {
-		await api.PUT('/api/v1/ui-prefs', { body: patch });
-	} catch {
-		/* localStorage remains authoritative if daemon is down */
-	}
-}
-
 /** One shared write queue (issue #1578) - see disk-write-chain.ts. */
-const _syncDiskPrefs = makeDiskWriteChain<DiskPrefsPatch>(_putDiskPrefs);
+const _syncDiskPrefs = createDiskPrefsSync();
 
 // -------------------------------------------------------- public API
 
@@ -506,6 +495,10 @@ export function setTechnicallyWorkingAnimate(next: boolean): void {
 	void _syncDiskPrefs({ technically_working_animate: next });
 }
 
+export const { setJogRadialWaveform } = makeJogRadialWaveformSetters(uiPrefs, _persist, (patch) =>
+	void _syncDiskPrefs(patch)
+);
+
 /** Persist the agent-pin layer through both local state and its HTTP twin. */
 export function setShowAgentPins(next: boolean): void {
 	uiPrefs.show_agent_pins = next;
@@ -555,46 +548,10 @@ export function setConfirmPref<K extends keyof RbUiPrefs['confirm']>(
 }
 
 /** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */
-export async function hydrateConfirmPrefsFromDisk(): Promise<void> {
-	try {
-		// Same optional field set the setters below PUT, so it doubles as the GET
-		// response shape rather than duplicating a second inline type for it.
-		const body = (await unwrap(api.GET('/api/v1/ui-prefs'))) as DiskPrefsPatch;
-		if (body.confirm !== undefined) {
-			uiPrefs.confirm = { ...uiPrefs.confirm, ...body.confirm };
-		}
-		if (body.theme === 'dark' || body.theme === 'light') {
-			uiPrefs.theme = body.theme;
-			_applyThemeDom(body.theme);
-		}
-		if (typeof body.hide_todo_settings === 'boolean') {
-			uiPrefs.hide_todo_settings = body.hide_todo_settings;
-		}
-		if (body.auto_sync !== undefined && typeof body.auto_sync === 'object') {
-			uiPrefs.auto_sync = parseAutoSync(body.auto_sync, STORAGE_KEY, DEFAULTS.auto_sync);
-		}
-		if (typeof body.technically_working_animate === 'boolean') {
-			uiPrefs.technically_working_animate = body.technically_working_animate;
-		}
-		if (typeof body.show_agent_pins === 'boolean') {
-			uiPrefs.show_agent_pins = body.show_agent_pins;
-		}
-		if (body.deck_layout === 'more' || body.deck_layout === 'less') {
-			uiPrefs.deck_layout = body.deck_layout;
-		}
-		if (typeof body.deck_layout_animate === 'boolean') {
-			uiPrefs.deck_layout_animate = body.deck_layout_animate;
-		}
-		if (
-			typeof body.deck_layout_duration_ms === 'number' &&
-			(DECK_LAYOUT_DURATIONS_MS as readonly number[]).includes(body.deck_layout_duration_ms)
-		) {
-			uiPrefs.deck_layout_duration_ms = body.deck_layout_duration_ms;
-		}
-		if (body.level_calibration !== undefined && typeof body.level_calibration === 'object')
-			uiPrefs.level_calibration = parseLevelCalibration(body.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration);
-		_persist();
-	} catch {
-		/* ignore */
-	}
-}
+export const hydrateConfirmPrefsFromDisk = makePrefsHydrator({
+	uiPrefs,
+	persist: _persist,
+	applyThemeDom: _applyThemeDom,
+	storageKey: STORAGE_KEY,
+	defaults: DEFAULTS
+});
