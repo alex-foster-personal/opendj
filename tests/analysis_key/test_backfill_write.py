@@ -108,15 +108,14 @@ def _own_beatgrid_record(
 
     from apps.analysis.record import AnalysisRecord
 
-    beats = []
-    for index in range(n_bars * 4):
-        beats.append(
-            {
-                "t": round(index * bar_s / 4.0, 5),
-                "n": (index % 4) + 1,
-                "bpm": 120.0,
-            }
-        )
+    beats = [
+        {
+            "t": round(index * bar_s / 4.0, 5),
+            "n": (index % 4) + 1,
+            "bpm": 120.0,
+        }
+        for index in range(n_bars * 4)
+    ]
     payload = {
         "beats": beats,
         "bpm": 120.0,

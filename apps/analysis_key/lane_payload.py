@@ -260,7 +260,7 @@ def _check_segments_block(segments_block: Mapping[str, Any]) -> None:
     constructible in the first place.
     """
     if not isinstance(segments_block, Mapping):
-        raise ValueError(f"segments block must be a mapping, got {segments_block!r}")
+        raise TypeError(f"segments block must be a mapping, got {segments_block!r}")
     if segments_block.get("status") == "ok" and not segments_block.get("segments"):
         raise ValueError(
             "segments block is status ok with no segments; a stable key is one "

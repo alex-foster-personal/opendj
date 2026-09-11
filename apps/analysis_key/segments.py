@@ -359,6 +359,10 @@ def segment_bars(
     caller to segment at a resolution the minimum-length rule is defined
     against.
     """
+    if grid.ends and grid.ends[-1] > duration_s + 1e-9:
+        raise ValueError(
+            f"bar grid ends at {grid.ends[-1]}s but duration_s is {duration_s}s"
+        )
     if chroma.ndim != 2 or chroma.shape[0] != 12:
         raise ValueError(
             f"chroma must be a (12, n_bars) pitch-class matrix, got shape {chroma.shape}"

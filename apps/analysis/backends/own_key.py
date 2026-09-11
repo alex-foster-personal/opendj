@@ -234,7 +234,9 @@ def _table_present(conn: Any, name: str) -> bool:
     ).fetchone() is not None
 
 
-def canonical_beatgrid_record(stable_id: str, *, db_path: Path | None = None) -> AnalysisRecord | None:
+def canonical_beatgrid_record(
+    stable_id: str, *, db_path: Path | None = None,
+) -> AnalysisRecord | None:
     """The canonical own beatgrid record, or None when there is none YET.
 
     None covers every way this track has no own grid YET (no state DB, no
