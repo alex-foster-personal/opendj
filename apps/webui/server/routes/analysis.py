@@ -257,9 +257,10 @@ def _empty_auto_cues(stable_id: str) -> AutoCuesOut:
 def _track_in_library(backend: StateBackend, stable_id: str) -> bool:
     try:
         backend.get_track(stable_id)
-        return True
     except NotFoundError:
         return False
+    else:
+        return True
 
 
 def _invalid_record(stable_id: str, message: str) -> HTTPException:
