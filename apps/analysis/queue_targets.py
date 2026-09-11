@@ -44,6 +44,13 @@ def candidates_from_state(
     (``platform_paths.resolve_library_path`` over the legacy column plus
     ``track_locations``), so the queue and the drain cannot disagree about
     where a track's bytes are.
+
+    The read filters ``deleted_at``: nothing hard-deletes a synced row here,
+    so a removed track is a tombstone that is still selectable. Asking for
+    one raises ``QueueError`` alongside the ids that never existed, because
+    both mean the same thing to the caller -- the library has no live track
+    under that id -- and a silent drop would spend a worker on a file the
+    user deleted.
     """
     if not stable_ids:
         return []
@@ -51,14 +58,15 @@ def candidates_from_state(
     placeholders = ",".join("?" * len(wanted))
     rows = conn.execute(
         f"SELECT stable_id, file_path, duration_ms FROM tracks "
-        f"WHERE stable_id IN ({placeholders})",
+        f"WHERE stable_id IN ({placeholders}) AND deleted_at IS NULL",
         wanted,
     ).fetchall()
     found = {row[0] for row in rows}
     missing = [sid for sid in wanted if sid not in found]
     if missing:
         raise QueueError(
-            f"{len(missing)} stable_id(s) are not in tracks: {missing[:5]}"
+            f"{len(missing)} stable_id(s) are not a live track "
+            f"(unknown or deleted): {missing[:5]}"
         )
     path_map = platform_paths.load_path_map()
     locations = track_locations.list_location_paths(conn, wanted)
