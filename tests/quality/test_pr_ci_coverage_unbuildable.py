@@ -1,12 +1,9 @@
 """Issue #1782: DIRTY merge refs are unbuildable, not uncovered.
 
-[if] an open non-docs PR head has mergeable_state dirty [then] the watchdog logs
-verdict=unbuildable, does not fail, and does not list it as uncovered [else stop].
-[if] the same PR is rebased clean and gains a run [then] it is no longer unbuildable
-and counts as covered [else stop].
-[if] a clean mergeable_state head has zero runs [then] the watchdog still fails [else stop].
-[if] the run log names an exempted PR [then] verdict=unbuildable is visible, not silent
-[else stop].
+[if] an open non-docs PR head has mergeable_state dirty [then] the watchdog logs verdict=unbuildable, does not fail, and does not list it as uncovered, [else stop].
+[if] the same PR is rebased clean and gains a run [then] it is no longer unbuildable and counts as covered, [else stop].
+[if] a clean mergeable_state head has zero runs [then] the watchdog still fails, [else stop].
+[if] the run log names an exempted PR [then] verdict=unbuildable is visible rather than silent, [else stop].
 
 -Claude
 """
@@ -103,6 +100,7 @@ def test_log_distinguishes_unbuildable_from_uncovered(
 
 
 def test_dirty_merge_state_skips_actions_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] mergeable_state is dirty [then] skip Actions lookup, [else stop]."""
     called = False
 
     def fail_if_called(_head: str) -> bool:
@@ -110,6 +108,7 @@ def test_dirty_merge_state_skips_actions_lookup(monkeypatch: pytest.MonkeyPatch)
         called = True
         return False
 
+    monkeypatch.setattr(pr_ci_coverage, "_changed_files", lambda _n: [NON_DOCS_FILE])
     monkeypatch.setattr(pr_ci_coverage, "_has_actions_run_at_head", fail_if_called)
     inspection = pr_ci_coverage._inspect_pr((492, DIRTY_HEAD, "dirty"))
     assert inspection[4] is True
