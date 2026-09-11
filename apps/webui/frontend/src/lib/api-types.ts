@@ -1573,6 +1573,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Library Jobs */
+        get: operations["list_library_jobs_api_v1_library_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library-jobs/enqueue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue Library Jobs */
+        post: operations["enqueue_library_jobs_api_v1_library_jobs_enqueue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library-jobs/{lane}/{stable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Reorder Library Job */
+        patch: operations["reorder_library_job_api_v1_library_jobs__lane___stable_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/library-jobs/{lane}/{stable_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Library Job */
+        post: operations["cancel_library_job_api_v1_library_jobs__lane___stable_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/readiness": {
         parameters: {
             query?: never;
@@ -5615,6 +5683,70 @@ export interface components {
              * @default false
              */
             red_enabled: boolean;
+        };
+        /** LibraryJobEnqueueIn */
+        LibraryJobEnqueueIn: {
+            /**
+             * Lane
+             * @enum {string}
+             */
+            lane: "stems" | "lyrics";
+            /**
+             * Placement
+             * @default next
+             * @enum {string}
+             */
+            placement: "next" | "tail";
+            /** Stable Ids */
+            stable_ids: string[];
+        };
+        /** LibraryJobEnqueueOut */
+        LibraryJobEnqueueOut: {
+            /** Already Running */
+            already_running: string[];
+            /** Items */
+            items: components["schemas"]["LibraryJobItemOut"][];
+            /** Lane */
+            lane: string;
+        };
+        /** LibraryJobItemOut */
+        LibraryJobItemOut: {
+            /** Attempts */
+            attempts: number;
+            /** Detail */
+            detail: string | null;
+            /** Enqueued At */
+            enqueued_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Lane */
+            lane: string;
+            /** Position */
+            position: number;
+            /** Reason */
+            reason: string | null;
+            /** Stable Id */
+            stable_id: string;
+            /** Started At */
+            started_at: string | null;
+            /** State */
+            state: string;
+        };
+        /** LibraryJobListOut */
+        LibraryJobListOut: {
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** Items */
+            items: components["schemas"]["LibraryJobItemOut"][];
+            /** Lane */
+            lane: string;
+        };
+        /** LibraryJobReorderIn */
+        LibraryJobReorderIn: {
+            /** Before Stable Id */
+            before_stable_id?: string | null;
         };
         /**
          * LibraryReadinessCounts
@@ -11698,6 +11830,141 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_library_jobs_api_v1_library_jobs_get: {
+        parameters: {
+            query: {
+                /** @description stems or lyrics */
+                lane: "stems" | "lyrics";
+                /** @description settled to include terminals */
+                include?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryJobListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enqueue_library_jobs_api_v1_library_jobs_enqueue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LibraryJobEnqueueIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryJobEnqueueOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_library_job_api_v1_library_jobs__lane___stable_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lane: "stems" | "lyrics";
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LibraryJobReorderIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryJobItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_library_job_api_v1_library_jobs__lane___stable_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lane: "stems" | "lyrics";
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryJobItemOut"];
                 };
             };
             /** @description Validation Error */

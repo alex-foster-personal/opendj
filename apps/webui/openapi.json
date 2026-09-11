@@ -5489,6 +5489,203 @@
         "title": "LevelCalibrationOut",
         "type": "object"
       },
+      "LibraryJobEnqueueIn": {
+        "properties": {
+          "lane": {
+            "enum": [
+              "stems",
+              "lyrics"
+            ],
+            "title": "Lane",
+            "type": "string"
+          },
+          "placement": {
+            "default": "next",
+            "enum": [
+              "next",
+              "tail"
+            ],
+            "title": "Placement",
+            "type": "string"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "lane",
+          "stable_ids"
+        ],
+        "title": "LibraryJobEnqueueIn",
+        "type": "object"
+      },
+      "LibraryJobEnqueueOut": {
+        "properties": {
+          "already_running": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Already Running",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryJobItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lane",
+          "items",
+          "already_running"
+        ],
+        "title": "LibraryJobEnqueueOut",
+        "type": "object"
+      },
+      "LibraryJobItemOut": {
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "enqueued_at": {
+            "title": "Enqueued At",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lane",
+          "stable_id",
+          "state",
+          "reason",
+          "detail",
+          "position",
+          "attempts",
+          "enqueued_at",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "LibraryJobItemOut",
+        "type": "object"
+      },
+      "LibraryJobListOut": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryJobItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lane",
+          "items",
+          "counts"
+        ],
+        "title": "LibraryJobListOut",
+        "type": "object"
+      },
+      "LibraryJobReorderIn": {
+        "properties": {
+          "before_stable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Stable Id"
+          }
+        },
+        "title": "LibraryJobReorderIn",
+        "type": "object"
+      },
       "LibraryReadinessCounts": {
         "description": "Every field is a count over ``present``, never over ``total_tracks``.",
         "properties": {
@@ -18010,6 +18207,233 @@
         "summary": "Reenqueue Job",
         "tags": [
           "jobs"
+        ]
+      }
+    },
+    "/api/v1/library-jobs": {
+      "get": {
+        "operationId": "list_library_jobs_api_v1_library_jobs_get",
+        "parameters": [
+          {
+            "description": "stems or lyrics",
+            "in": "query",
+            "name": "lane",
+            "required": true,
+            "schema": {
+              "description": "stems or lyrics",
+              "enum": [
+                "stems",
+                "lyrics"
+              ],
+              "title": "Lane",
+              "type": "string"
+            }
+          },
+          {
+            "description": "settled to include terminals",
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "settled to include terminals",
+              "title": "Include"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryJobListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Library Jobs",
+        "tags": [
+          "library-jobs"
+        ]
+      }
+    },
+    "/api/v1/library-jobs/enqueue": {
+      "post": {
+        "operationId": "enqueue_library_jobs_api_v1_library_jobs_enqueue_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryJobEnqueueIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryJobEnqueueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enqueue Library Jobs",
+        "tags": [
+          "library-jobs"
+        ]
+      }
+    },
+    "/api/v1/library-jobs/{lane}/{stable_id}": {
+      "patch": {
+        "operationId": "reorder_library_job_api_v1_library_jobs__lane___stable_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lane",
+            "required": true,
+            "schema": {
+              "enum": [
+                "stems",
+                "lyrics"
+              ],
+              "title": "Lane",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryJobReorderIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryJobItemOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reorder Library Job",
+        "tags": [
+          "library-jobs"
+        ]
+      }
+    },
+    "/api/v1/library-jobs/{lane}/{stable_id}/cancel": {
+      "post": {
+        "operationId": "cancel_library_job_api_v1_library_jobs__lane___stable_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lane",
+            "required": true,
+            "schema": {
+              "enum": [
+                "stems",
+                "lyrics"
+              ],
+              "title": "Lane",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryJobItemOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Library Job",
+        "tags": [
+          "library-jobs"
         ]
       }
     },
