@@ -411,40 +411,14 @@ def collect_plan(
     preload1: bool = False,
 ) -> SyncPlan:
     """Keep a row only when the owner-machine source file is present."""
+    from apps.webui import crate_sync_plan as plan_mod
+
     state = _open_ro(state_db, "STATE_DB")
     try:
         wanted = _selected_stable_ids(
             state, playlist=playlist, stable_ids=stable_ids, preload1=preload1
         )
-        if wanted is None:
-            if has_soft_deletes(state, "tracks"):
-                all_tracks_sql = (
-                    "SELECT stable_id, file_path FROM tracks "
-                    "WHERE deleted_at IS NULL ORDER BY stable_id"
-                )
-            else:
-                all_tracks_sql = (
-                    "SELECT stable_id, file_path FROM tracks "
-                    "ORDER BY stable_id"
-                )
-            rows = state.execute(all_tracks_sql).fetchall()
-        else:
-            marks = ",".join("?" * len(wanted))
-            if has_soft_deletes(state, "tracks"):
-                in_list_sql = (
-                    f"SELECT stable_id, file_path FROM tracks WHERE stable_id IN ({marks}) "
-                    "AND deleted_at IS NULL ORDER BY stable_id"
-                )
-            else:
-                in_list_sql = (
-                    f"SELECT stable_id, file_path FROM tracks WHERE stable_id IN ({marks}) "
-                    "ORDER BY stable_id"
-                )
-            rows = state.execute(in_list_sql, wanted).fetchall()
-            found = {str(r["stable_id"]) for r in rows}
-            missing = [sid for sid in wanted if sid not in found]
-            if missing:
-                raise RuntimeError(f"stable_id not in state.db: {', '.join(missing)}")
+        rows = plan_mod.selected_track_rows(state, wanted)
         vendor_ids = {
             str(r["stable_id"]): str(r["vendor_id"])
             for r in state.execute(
@@ -454,66 +428,14 @@ def collect_plan(
     finally:
         state.close()
 
-    rb_assets: dict[str, tuple[Optional[str], Optional[str], Optional[str]]] = {}
-    if master_db is not None and master_db.is_file():
-        master = _open_ro(master_db, "MASTER_DB")
-        try:
-            for row in master.execute(
-                "SELECT ID, FolderPath, ImagePath, AnalysisDataPath FROM djmdContent "
-                "WHERE rb_local_deleted = 0"
-            ):
-                rb_assets[str(row["ID"])] = (
-                    row["FolderPath"] or None,
-                    row["ImagePath"] or None,
-                    row["AnalysisDataPath"] or None,
-                )
-        finally:
-            master.close()
-
-    files: dict[str, CrateFile] = {}
-    skipped_streaming = 0
-    skipped_absent = 0
-
-    def _add(source: Path, kind: FileKind, stable_id: str) -> None:
-        dest = crate_dest(source, crate_root=crate_root, user_maps=user_maps)
-        key = dest.as_posix()
-        size = fs_residency.materialised_size(source)
-        if size is None:
-            raise RuntimeError(f"source vanished during plan: {source}")
-        existing = files.get(key)
-        stable_ids = tuple(
-            sorted({stable_id, *(existing.stable_ids if existing else ())})
-        )
-        files[key] = CrateFile(
-            source=source,
-            dest=dest,
-            kind=kind,
-            size_bytes=size,
-            mtime_s=int(source.stat().st_mtime),
-            stable_ids=stable_ids,
-        )
-
-    for row in rows:
-        file_path = row["file_path"]
-        vendor_id = vendor_ids.get(str(row["stable_id"]))
-        folder, image, analysis = (None, None, None)
-        if vendor_id is not None:
-            folder, image, analysis = rb_assets.get(vendor_id, (None, None, None))
-        audio_raw = folder or file_path
-        if _is_streaming(audio_raw):
-            skipped_streaming += 1
-            continue
-        audio = _materialised_source(audio_raw)
-        if audio is None:
-            skipped_absent += 1
-            continue
-        stable_id = str(row["stable_id"])
-        _add(audio, "audio", stable_id)
-        for anlz in _anlz_sources(analysis):
-            _add(anlz, "anlz", stable_id)
-        for art in _artwork_sources(image):
-            _add(art, "artwork", stable_id)
-
+    rb_assets = plan_mod.load_rb_assets(master_db)
+    files, skipped_streaming, skipped_absent = plan_mod.accumulate_plan_files(
+        rows,
+        vendor_ids,
+        rb_assets,
+        crate_root,
+        user_maps,
+    )
     ordered = tuple(sorted(files.values(), key=lambda item: item.dest.as_posix()))
     return SyncPlan(
         scope=_scope_name(playlist=playlist, stable_ids=stable_ids, preload1=preload1),
@@ -853,6 +775,7 @@ def _rsync_manifest_from_host(
     manifest: dict[str, object], *, owner: str, crate_root: Path
 ) -> int:
     """Pull one owner ledger in NUL-safe batches; rsync skips unchanged files."""
+    from apps.webui.crate_sync_plan import group_manifest_relatives
 
     if not allowed_owner_ssh(owner):
         raise RuntimeError(
@@ -860,27 +783,7 @@ def _rsync_manifest_from_host(
             f"{sorted(_owner_ssh_targets())}"
         )
     owner_ssh_key = _require_owner_ssh_key()
-    groups: dict[tuple[Path, Path], list[Path]] = {}
-    for entry in _manifest_files(manifest):
-        source = Path(str(entry["source"]))
-        source_root = Path(str(entry["source_root"]))
-        dest = Path(str(entry["dest"]))
-        dest_root = Path(str(entry["dest_root"]))
-        relative = Path(str(entry["relative"]))
-        if not (source_root.is_absolute() and dest_root.is_absolute()):
-            raise RuntimeError("owner manifest roots must be absolute")
-        if relative.is_absolute() or ".." in relative.parts:
-            raise RuntimeError(f"unsafe owner relative path: {relative}")
-        if source_root / relative != source:
-            raise RuntimeError(f"owner source mapping drift: {source}")
-        if dest_root / relative != dest:
-            raise RuntimeError(f"owner destination mapping drift: {dest}")
-        # This lane writes LOCALLY (rsync pulls from the owner into the crate),
-        # so both sides resolve: `..` collapses and a symlink aimed back at the
-        # Pioneer share is followed rather than trusted.
-        _assert_within_crate(dest, crate_root, local=True)
-        _assert_within_crate(dest_root, crate_root, local=True)
-        groups.setdefault((source_root, dest_root), []).append(relative)
+    groups = group_manifest_relatives(manifest, crate_root)
 
     changed = 0
     for (source_root, dest_root), relative_paths in sorted(
@@ -1568,235 +1471,9 @@ def _print_manifest_plan(payload: dict[str, object], *, as_json: bool) -> None:
 
 
 def _run(argv: Optional[Sequence[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
-    library_mode.apply_library_env()
-    platform_paths.refresh_share_root()
+    from apps.webui.crate_sync_cli import run_crate_sync
 
-    data_dir = Path(args.data_dir) if args.data_dir else platform_paths.DATA_DIR
-    crate_root = (
-        Path(args.crate_root)
-        if args.crate_root
-        else (
-            library_mode.crate_root()
-            if os.environ.get(library_mode.CRATE_ROOT_ENV, "").strip()
-            else DEFAULT_CRATE_ROOT
-        )
-    )
-    user_maps = tuple(args.map) if args.map else default_user_maps(crate_root)
-    dest_kind: DestKind = args.dest or "ssh"
-    state_db = data_dir / "state" / "state.db"
-    master_db = data_dir / "master.plain.db"
-    manifest_path = crate_root / "manifest.json"
-    path_map_path = data_dir / "path-map.json"
-    to_explicit = any(
-        a == "--to" or a.startswith("--to=") for a in (argv or sys.argv[1:])
-    )
-    side = _operation_side(args)
-
-    if args.status:
-        report = status_report(
-            state_db=state_db,
-            crate_root=crate_root,
-            user_maps=user_maps,
-            manifest_path=manifest_path,
-        )
-        report["operation_side"] = side
-        sys.stdout.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
-        return 0
-
-    if args.audit:
-        manifest = load_manifest(manifest_path)
-        if not manifest:
-            raise RuntimeError(f"no crate manifest at {manifest_path}")
-        payload = audit_payload(
-            manifest,
-            crate_root=crate_root,
-            state_db=state_db,
-        )
-        sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-        return 0 if payload["ok"] is True else 1
-
-    if args.reconcile_state:
-        if side != "remote":
-            raise RuntimeError("--reconcile-state is a remote-only operation")
-        manifest = load_manifest(manifest_path)
-        if not manifest:
-            raise RuntimeError(f"no crate manifest at {manifest_path}")
-        state_reconciliation = reconcile_library_manifest(
-            manifest,
-            state_db=state_db,
-            crate_root=crate_root,
-        )
-        write_json(manifest_path, manifest)
-        reconciliation = audit_payload(
-            manifest,
-            crate_root=crate_root,
-            state_db=state_db,
-        )
-        assert_audit_ok(reconciliation, label="replica")
-        result = {
-            "state_reconciliation": state_reconciliation,
-            "reconciliation": reconciliation,
-        }
-        sys.stdout.write(json.dumps(result, indent=2, sort_keys=True) + "\n")
-        return 0
-
-    if args.verify_spike:
-        ids = _stable_ids_arg(args.stable_ids) or preload1_stable_ids()
-        result = verify_spike(stable_ids=ids, base_url=args.base_url)
-        sys.stdout.write(json.dumps(result, indent=2, sort_keys=True) + "\n")
-        if not result["ok"]:
-            return 1
-        manifest = load_manifest(manifest_path)
-        if not manifest:
-            raise RuntimeError(
-                f"no crate manifest at {manifest_path}; run --live --preload1 first"
-            )
-        manifest["spike_verified"] = True
-        write_json(manifest_path, manifest)
-        return 0
-
-    if args.full and _filtered(args):
-        raise RuntimeError(
-            "--full cannot combine with --playlist / --stable-ids / --preload1"
-        )
-
-    if side == "remote":
-        if library_mode.library_mode() != "remote":
-            raise RuntimeError(
-                "--remote pull requires MDT_LIBRARY_MODE=remote; refusing to "
-                "write a replica into a local-library process"
-            )
-        owner = args.owner or _owner_ssh_default()
-        owner_repo = Path(args.owner_repo) if args.owner_repo else _owner_repo_default()
-        payload = owner_manifest(
-            owner=owner,
-            owner_repo=owner_repo,
-            forwarded_args=_forwarded_plan_args(
-                args,
-                crate_root=crate_root,
-                user_maps=user_maps,
-            ),
-        )
-        if str(payload.get("crate_root")) != str(crate_root):
-            raise RuntimeError(
-                f"owner planned crate {payload.get('crate_root')}; expected {crate_root}"
-            )
-        if args.dry_run:
-            _print_manifest_plan(payload, as_json=args.json)
-            return 0
-        existing = load_manifest(manifest_path)
-        assert_full_allowed(
-            filtered=_filtered(args),
-            spike_ok=spike_verified(existing),
-        )
-        payload["spike_verified"] = spike_verified(existing)
-        transferred = _rsync_manifest_from_host(
-            payload,
-            owner=owner,
-            crate_root=crate_root,
-        )
-        write_json(path_map_path, path_map_document(user_maps))
-        state_reconciliation = reconcile_library_manifest(
-            payload,
-            state_db=state_db,
-            crate_root=crate_root,
-        )
-        write_json(manifest_path, payload)
-        reconciliation = audit_payload(
-            payload,
-            crate_root=crate_root,
-            state_db=state_db,
-        )
-        assert_audit_ok(reconciliation, label="replica")
-        result = {
-            "direction": "pull",
-            "transferred_files": transferred,
-            "state_reconciliation": state_reconciliation,
-            "reconciliation": reconciliation,
-        }
-        sys.stdout.write(json.dumps(result, indent=2, sort_keys=True) + "\n")
-        return 0
-
-    plan = collect_plan(
-        state_db=state_db,
-        master_db=master_db if master_db.is_file() else None,
-        crate_root=crate_root,
-        user_maps=user_maps,
-        playlist=args.playlist,
-        stable_ids=_stable_ids_arg(args.stable_ids),
-        preload1=args.preload1,
-    )
-    payload = manifest_payload(
-        plan,
-        source_host=socket.gethostname(),
-        crate_root=crate_root,
-        user_maps=user_maps,
-        spike_verified=False,
-        library_snapshot=_owner_library_snapshot(
-            state_db,
-            playlist=args.playlist,
-            stable_ids=_stable_ids_arg(args.stable_ids),
-            preload1=args.preload1,
-        ),
-    )
-
-    if args.dry_run:
-        _print_manifest_plan(payload, as_json=args.json)
-        return 0
-
-    assert_push_host(dest_kind=dest_kind, dest_host=args.to, to_explicit=to_explicit)
-    existing = load_destination_manifest(
-        dest_kind=dest_kind,
-        dest_host=args.to,
-        manifest_path=manifest_path,
-    )
-    assert_full_allowed(
-        filtered=_filtered(args),
-        spike_ok=spike_verified(existing),
-    )
-    payload["spike_verified"] = spike_verified(existing)
-    transferred = apply_plan(
-        plan,
-        dest_kind=dest_kind,
-        dest_host=args.to,
-        crate_root=crate_root,
-        user_maps=user_maps,
-    )
-    map_doc = path_map_document(user_maps)
-    if dest_kind == "local":
-        write_json(path_map_path, map_doc)
-        if library_mode.library_mode() == "remote":
-            reconcile_library_manifest(
-                payload,
-                state_db=state_db,
-                crate_root=crate_root,
-            )
-        write_json(manifest_path, payload)
-        reconciliation = audit_payload(
-            payload,
-            crate_root=crate_root,
-            state_db=state_db,
-        )
-        assert_audit_ok(reconciliation, label="replica")
-    else:
-        with tempfile.TemporaryDirectory(prefix="mdt-crate-") as tmp:
-            tmp_root = Path(tmp)
-            tmp_map = tmp_root / "path-map.json"
-            tmp_manifest = tmp_root / "manifest.json"
-            write_json(tmp_map, map_doc)
-            write_json(tmp_manifest, payload)
-            _rsync_to_host(tmp_map, args.to, REMOTE_REPO / "data" / "path-map.json")
-            _rsync_to_host(tmp_manifest, args.to, crate_root / "manifest.json")
-        remote_result = remote_reconcile(dest_host=args.to, crate_root=crate_root)
-        reconciliation = remote_result["reconciliation"]
-    result = {
-        "direction": "push",
-        "transferred_files": transferred,
-        "reconciliation": reconciliation,
-    }
-    sys.stdout.write(json.dumps(result, indent=2, sort_keys=True) + "\n")
-    return 0
+    return run_crate_sync(argv)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

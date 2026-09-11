@@ -20,7 +20,7 @@
 	/** Null when the daemon offers jobs; a sentence when it does not. */
 	const refusal = $derived(jobsRefusal());
 	const state = $derived(stemsProgress(jobsStore.jobs));
-	const title = $derived(stemsProgressTitle(state));
+	const title = $derived(stemsProgressTitle(state, jobsStore.jobs));
 	const pct = $derived(progressPct(state.progress));
 
 	// Hold the live subscription for as long as this bar is on screen. The

@@ -55,6 +55,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -134,7 +135,7 @@ def _run(fixture: Path, *args: str) -> subprocess.CompletedProcess:
     )
 
 
-def _rows(fixture: Path) -> dict[int, dict[str, object]]:
+def _rows(fixture: Path) -> dict[int, dict[str, Any]]:
     result = _run(fixture, "--json")
     assert result.returncode == 0, result.stderr
     return {int(row["number"]): row for row in json.loads(result.stdout)}

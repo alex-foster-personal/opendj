@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections.abc import Iterator
 from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
@@ -44,7 +45,7 @@ CREATE TABLE track_vendor_ids (
 
 
 @pytest.fixture
-def state_conn() -> sqlite3.Connection:
+def state_conn() -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(":memory:", isolation_level=None)
     conn.executescript(_STATE_DDL)
     rows = [

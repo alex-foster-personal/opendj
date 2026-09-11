@@ -29,6 +29,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from apps.analysis.lane_enums import LaneStatus
 from apps.analysis.lanes import LaneResult
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import upsert_record
@@ -92,7 +93,9 @@ def _record(
     )
 
 
-def _own_beatgrid_record(sid: str, *, status: str, reason: str | None) -> AnalysisRecord:
+def _own_beatgrid_record(
+    sid: str, *, status: LaneStatus, reason: str | None
+) -> AnalysisRecord:
     """A v1 own_beatgrid row that made a real determination (ok or failed).
 
     Only the fields the record contract actually checks are filled in: see

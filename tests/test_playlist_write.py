@@ -522,7 +522,8 @@ def test_delete_cannot_precheck_while_membership_replace_holds_lock(
 
     def delete_b() -> None:
         try:
-            b_result.append(store_b.delete_playlist(playlist_id, expected_etag=etag))
+            store_b.delete_playlist(playlist_id, expected_etag=etag)
+            b_result.append(True)
         except Exception as exc:
             b_result.append(exc)
 

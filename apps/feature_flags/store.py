@@ -106,6 +106,18 @@ FLAGS: tuple[FlagDef, ...] = (
         retire_by="2027-03-01",
         sandbox_gated=True,
     ),
+    FlagDef(
+        flag_id="local_stems.executor",
+        default=True,
+        owner="maintainer",
+        note=(
+            "On-device stem separation for local-only CloudSync policy "
+            "(issue #1866). OFF hides the path with an explicit refusal; "
+            "never a silent no-op."
+        ),
+        retire_by="2027-03-01",
+        sandbox_gated=False,
+    ),
 )
 
 

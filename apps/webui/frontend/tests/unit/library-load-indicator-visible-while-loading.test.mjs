@@ -59,6 +59,30 @@ test('LibraryLoadIndicator has an indeterminate label when progress is still nul
 	);
 });
 
+test('background fill uses a non-blocking loading more label while progress remains', () => {
+	// After first-page paint, loading is false and load_progress stays set
+	// until the cursor walk ends. The overlay must stay visible without the
+	// blocking "loading..." tab/empty state that hid the table.
+	const src = stripComments(
+		readFileSync(path.join(componentsDir, 'LibraryLoadIndicator.svelte'), 'utf8')
+	);
+	assert.match(
+		src,
+		/loading more\.\.\./,
+		'a pane with rows on screen and progress still in flight must say loading more, not hide the table'
+	);
+	assert.match(
+		src,
+		/loading\s*\?\s*['"]loading\.\.\.['"]\s*:\s*['"]loading more\.\.\.['"]/,
+		'the verb must key off loading so page 0 stays loading... and the fill is loading more...'
+	);
+	assert.match(
+		src,
+		/\{#if\s+[^}]*progress\s*!==\s*null[^}]*\}/,
+		'progress !== null must keep the overlay up during the background fill'
+	);
+});
+
 test('BrowserPanel passes pane.loading through to LibraryLoadIndicator', () => {
 	const src = stripComments(readFileSync(browserPanelPath, 'utf8'));
 	assert.match(

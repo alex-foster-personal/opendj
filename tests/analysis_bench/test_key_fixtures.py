@@ -115,7 +115,7 @@ def _tiny_inputs(tmp_path: Path, *, n_contents: int = 1) -> dict[str, Path]:
         "mik": mik,
         "audio_root": audio_root,
         "copy_manifest": manifest,
-        "orig": orig,
+        "orig": Path(orig),
         "wav": wav,
     }
 

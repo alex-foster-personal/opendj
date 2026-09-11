@@ -56,7 +56,10 @@ def _doc(path: Path) -> dict:
 
 
 def _triggers(doc: dict) -> dict:
-    return doc.get("on", doc.get(True))
+    triggers = doc.get("on", doc.get(True))
+    if not isinstance(triggers, dict):
+        raise TypeError("workflow on: is not a mapping")
+    return triggers
 
 
 def _runs_the_gate(doc: dict) -> bool:

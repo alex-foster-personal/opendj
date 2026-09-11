@@ -19,7 +19,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from apps.adapters.rekordbox.paths import empty_anlz_payload
 from apps.analysis import canonical, selection
 from apps.analysis.record import AnalysisRecord
 

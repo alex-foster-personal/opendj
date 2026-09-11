@@ -70,8 +70,9 @@
 
 	const label = $derived.by((): string => {
 		if (progress === null) return 'loading...';
-		if (progress.total === null) return `loading... ${progress.loaded.toLocaleString()} rows received`;
-		return `loading... ${progress.loaded.toLocaleString()} of ${progress.total.toLocaleString()} rows`;
+		const verb = loading ? 'loading...' : 'loading more...';
+		if (progress.total === null) return `${verb} ${progress.loaded.toLocaleString()} rows received`;
+		return `${verb} ${progress.loaded.toLocaleString()} of ${progress.total.toLocaleString()} rows`;
 	});
 </script>
 
