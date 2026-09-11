@@ -33,6 +33,12 @@ import { bootScheduler, type BootScheduler } from './boot-scheduler';
  * the origin's connection budget with audio. */
 export const PRESSURE_POLL_INTERVAL_MS = 10_000;
 
+/** Locked PERFMODE-04 shed thresholds (issue #1984). */
+export const KERNEL_ELEVATED_LEVEL = 2;
+export const PRESSURE_CHURN_WEIGHT_SWAP = 10;
+export const PRESSURE_CHURN_EARLY_WARNING = 500;
+export const S1_XRUN_DELTA_MAX = 0;
+
 const PRESSURE_PATH = '/api/v1/performance/telemetry/pressure';
 
 /**
@@ -48,6 +54,14 @@ export interface PressureSnapshot {
 	readonly memFreeMb: number | null;
 	/** Swap in use in MB, or null. */
 	readonly swapUsedMb: number | null;
+	/** Kernel memory pressure level, or null if absent or unreadable. */
+	readonly kernelLevel: number | null;
+	/** Churn score (swap_rate * weight + decomp_rate), or null if absent. */
+	readonly churnScore: number | null;
+	/** Swap rate samples per second, or null if absent. */
+	readonly swapRate: number | null;
+	/** Decompression rate samples per second, or null if absent. */
+	readonly decompRate: number | null;
 	/**
 	 * `Date.now()` when this client ISSUED the request, not when the body
 	 * finished parsing.
@@ -66,6 +80,18 @@ export interface PressureSnapshot {
 }
 
 let _snapshot: PressureSnapshot | null = null;
+const _listeners: Array<(snapshot: PressureSnapshot | null) => void> = [];
+
+/** Subscribe to accepted pressure stores. Fires only when a newer snapshot lands. */
+export function subscribeMachinePressure(
+	listener: (snapshot: PressureSnapshot | null) => void
+): () => void {
+	_listeners.push(listener);
+	return () => {
+		const index = _listeners.indexOf(listener);
+		if (index >= 0) _listeners.splice(index, 1);
+	};
+}
 
 /** The last reading, or null if none has ever arrived. */
 export function readMachinePressure(): PressureSnapshot | null {
@@ -87,7 +113,16 @@ export function readMachinePressure(): PressureSnapshot | null {
 export function storeMachinePressure(snapshot: PressureSnapshot): boolean {
 	if (_snapshot !== null && snapshot.requestedAtMs <= _snapshot.requestedAtMs) return false;
 	_snapshot = snapshot;
+	for (const listener of _listeners) listener(snapshot);
 	return true;
+}
+
+/** True when kernel or churn crosses the locked PERFMODE-04 thresholds. */
+export function pressureIsElevated(snapshot: PressureSnapshot | null): boolean {
+	if (snapshot === null) return false;
+	if (snapshot.kernelLevel !== null && snapshot.kernelLevel >= KERNEL_ELEVATED_LEVEL) return true;
+	if (snapshot.churnScore !== null && snapshot.churnScore >= PRESSURE_CHURN_EARLY_WARNING) return true;
+	return false;
 }
 
 /** The engine's answer. Absent fields stay absent; this module never fills
@@ -98,6 +133,11 @@ interface PressureResponse {
 	mem_free_mb?: unknown;
 	swap_used_mb?: unknown;
 	cache_age_ms?: unknown;
+	kernel_level?: unknown;
+	kernel_memory_pressure_level?: unknown;
+	churn_score?: unknown;
+	swap_rate?: unknown;
+	decomp_rate?: unknown;
 }
 
 function _finiteOrNull(value: unknown): number | null {
@@ -125,10 +165,24 @@ export function pressureSnapshotFrom(
 	// A response carrying no readable number at all is the same as no response:
 	// keeping it would let a row print `pressure_age_ms` beside nothing.
 	if (loadAvg1m === null && memFreeMb === null && swapUsedMb === null) return null;
+	const kernelLevel =
+		_finiteOrNull(body.kernel_level) ?? _finiteOrNull(body.kernel_memory_pressure_level);
+	const swapRate = _finiteOrNull(body.swap_rate);
+	const decompRate = _finiteOrNull(body.decomp_rate);
+	const churnFromBody = _finiteOrNull(body.churn_score);
+	const churnScore =
+		churnFromBody ??
+		(swapRate !== null && decompRate !== null
+			? swapRate * PRESSURE_CHURN_WEIGHT_SWAP + decompRate
+			: null);
 	return {
 		loadAvg1m,
 		memFreeMb,
 		swapUsedMb,
+		kernelLevel,
+		churnScore,
+		swapRate,
+		decompRate,
 		requestedAtMs,
 		serverCacheAgeMs: _finiteOrNull(body.cache_age_ms) ?? 0
 	};
@@ -157,6 +211,8 @@ export function pressureLabels(
 	if (snapshot.loadAvg1m !== null) labels.load_avg_1m = String(snapshot.loadAvg1m);
 	if (snapshot.memFreeMb !== null) labels.mem_free_mb = String(snapshot.memFreeMb);
 	if (snapshot.swapUsedMb !== null) labels.swap_used_mb = String(snapshot.swapUsedMb);
+	if (snapshot.kernelLevel !== null) labels.kernel_level = String(snapshot.kernelLevel);
+	if (snapshot.churnScore !== null) labels.churn_score = String(snapshot.churnScore);
 	return labels;
 }
 
