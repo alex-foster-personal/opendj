@@ -11,11 +11,6 @@
       "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/auto-cues returns 404"
     },
     {
-      "signature": "http-503:GET:/api/v1/tracks/<hash>/artwork",
-      "issue": "#1872",
-      "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/artwork returns 503"
-    },
-    {
       "signature": "http-404:GET:/api/v1/tracks/<hash>/stems",
       "issue": "#1874",
       "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/stems returns 404"

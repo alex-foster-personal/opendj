@@ -128,11 +128,7 @@ function _rememberTrackOptionalResources(track: Track): void {
 	if (typeof track.stems_available === 'boolean') {
 		partial.stems = track.stems_available;
 	}
-	if (
-		track.artwork_available === true ||
-		track.artwork_available === false ||
-		track.artwork_available === null
-	) {
+	if ('artwork_available' in track) {
 		partial.artwork = track.artwork_available;
 	}
 	if (Object.keys(partial).length > 0) {
