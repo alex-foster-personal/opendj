@@ -9,16 +9,14 @@ Mounted by the webui at ``/api/v1/sync/*``:
     GET  /api/v1/sync/status   hub identity, seq, fleet, row counts
     GET  /api/v1/sync/digest   per-table digests for the post-sync compare
 
-Trust in v1 is tailnet membership (ADR 04 c7): any process that can reach the
-daemon can push. That is deliberate for a personal fleet and must be revisited
-before any multi-user deployment.
-
-``/enroll`` (ADR 12) is the first step off that position, and it is an OBSERVE
-step only: it records WHO owns each machine and ``hello`` reports the answer,
-but nothing is refused on it yet. Switching ``hello`` to refuse an unowned
-caller is a separate, separately gated decision, and reading this file as
-"the hub is authenticated now" would be exactly the error
-``.claude/rules/verification.md`` is about.
+Machines authenticate with a per-machine sync credential (plan X5), minted by
+``/enroll`` (ADR 12) and checked on ``hello``, ``push``, ``pull``, ``status``
+and ``digest`` by :mod:`apps.sync_hub.service_credentials`. The default
+OBSERVE mode refuses nothing (it logs the verdict and ``hello`` reports it);
+only ``MDT_SYNC_CREDENTIAL_MODE=enforce`` answers 401. Until then trust is
+tailnet membership (ADR 04 c7), and reading this file as "the hub is
+authenticated" would be exactly the error ``.claude/rules/verification.md``
+is about. Multi-user: ``specs/cloudsync-multi-user.md``.
 
 ``push``, ``pull`` and ``status`` all take a ``machine_id`` and all refuse a
 machine that never said hello (ADR 08 point 6, round 1 finding 7b). That is a
@@ -63,13 +61,17 @@ from apps.sync_hub import (
     capabilities,
     engine,
     enrollment,
+    entitlement_gate,
     generation,
     protocol,
+    service_credentials,
     service_enroll,
     service_shortfall,
     service_storage,
+    wire_version,
 )
 from apps.sync_hub.service_models import (
+    SYNC_VERSION_RESPONSES,
     DigestResponse,
     EnrollRequest,
     HelloRequest,
@@ -83,6 +85,8 @@ from apps.sync_hub.service_models import (
 )
 
 router = APIRouter(prefix="/sync", tags=["sync"])
+#: The 401/503 each credential-gated route declares, per endpoint (plan X5).
+_auth = service_credentials.credential_responses
 
 #: Hard ceiling on ``/pull?limit=``. A spoke asking for more than this is
 #: asking the hub to hold an unbounded response in memory on its behalf.
@@ -159,17 +163,12 @@ def _transaction(conn: sqlite3.Connection) -> Iterator[None]:
     conn.execute("COMMIT")
 
 
-def _require_schema_version(offered: int) -> None:
-    if offered != state_schema.SCHEMA_VERSION:
+def _require_same_wire(offered_wire: int | None, offered_schema: int) -> None:
+    """409 before any row is read or written; the rule is in :mod:`wire_version`."""
+    refusal = wire_version.incompatibility(offered_wire, offered_schema, peer="peer")
+    if refusal is not None:
         raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "SYNC_SCHEMA_VERSION",
-                "message": (
-                    f"peer is on schema v{offered}, hub is on "
-                    f"v{state_schema.SCHEMA_VERSION}; migrate before syncing."
-                ),
-            },
+            status_code=409, detail={"code": refusal.code, "message": refusal.message}
         )
 
 
@@ -256,6 +255,15 @@ def _require_registered(conn: sqlite3.Connection, machine_id: str) -> None:
         )
 
 
+def _require_credential(
+    request: Request, conn: sqlite3.Connection, machine_id: str, endpoint: str
+) -> service_credentials.CredentialVerdict:
+    """Read-only; call BEFORE ``_require_registered`` and before any write."""
+    return service_credentials.require_credential(
+        request, conn, machine_id, data_dir=_data_dir(request), endpoint=endpoint
+    )
+
+
 def _generation(request: Request, conn: sqlite3.Connection) -> str:
     """This hub's generation token, re-minted if the DB moved backwards.
 
@@ -271,6 +279,15 @@ def _generation(request: Request, conn: sqlite3.Connection) -> str:
             status_code=500,
             detail={"code": "SYNC_HUB_GENERATION", "message": str(exc)},
         ) from exc
+
+
+def _gate(
+    request: Request, conn: sqlite3.Connection, machine_id: str, op: entitlement_gate.Operation
+) -> None:
+    """The hosted-hub entitlement check; returns at once on a self-hosted hub."""
+    entitlement_gate.require(
+        request, conn, machine_id=machine_id, operation=op, data_dir=lambda: _data_dir(request)
+    )
 
 
 def _apply_error(exc: engine.SyncApplyError) -> HTTPException:
@@ -312,11 +329,16 @@ def _refuse_unless_capable(
 # ----- endpoints -----------------------------------------------------------
 
 
-@router.post("/hello", response_model=HelloResponse)
+@router.post(
+    "/hello",
+    response_model=HelloResponse,
+    responses={**SYNC_VERSION_RESPONSES, **_auth("hello")},
+)
 def hello(request: Request, payload: HelloRequest) -> HelloResponse:
     """Register a spoke in ``machines`` and report the hub's id and seq."""
-    _require_schema_version(payload.schema_version)
+    _require_same_wire(payload.wire_version, payload.schema_version)
     with _hub_conn(request) as conn:
+        credential = _require_credential(request, conn, payload.machine.machine_id, "hello")
         try:
             with _transaction(conn):
                 hub_machine_id = _hub_identity(request, conn)
@@ -341,6 +363,7 @@ def hello(request: Request, payload: HelloRequest) -> HelloResponse:
         return HelloResponse(
             hub_machine_id=hub_machine_id,
             schema_version=state_schema.SCHEMA_VERSION,
+            wire_version=wire_version.WIRE_VERSION,
             seq=engine.current_seq(conn),
             machines=_machine_models(conn),
             hub_generation=_generation(request, conn),
@@ -348,6 +371,7 @@ def hello(request: Request, payload: HelloRequest) -> HelloResponse:
             ownership=enrollment.ownership_state(
                 conn, payload.machine.machine_id, hub_machine_id=hub_machine_id
             ),
+            credential=credential,
         )
 
 
@@ -371,7 +395,7 @@ def enroll(
     browser and no local Google session enroll at all. One transaction, so a
     refusal registers nothing. Idempotent: a re-run answers ``created: false``.
     """
-    _require_schema_version(payload.schema_version)
+    _require_same_wire(payload.wire_version, payload.schema_version)
     machine = _to_machines([payload.machine])[0]
     # Before BEGIN: verification may fetch Google's JWKS, and an
     # unauthenticated caller must never hold the write lock across that.
@@ -392,7 +416,12 @@ def enroll(
 @router.post(
     "/push",
     response_model=PushResponse,
-    responses=service_storage.PUSH_STORAGE_RESPONSES,
+    responses={
+        **service_storage.PUSH_STORAGE_RESPONSES,
+        **_auth("push"),
+        **SYNC_VERSION_RESPONSES,
+        **entitlement_gate.refusals("push"),
+    },
 )
 def push(request: Request, payload: PushRequest) -> PushResponse:
     """Merge offered rows under last-writer-wins; append to ``hub_changelog``.
@@ -408,11 +437,13 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
     it -- an un-upgraded spoke reads ``accepted + rejected < offered`` as
     nothing at all and steps its push fence over the held row.
     """
-    _require_schema_version(payload.schema_version)
+    _require_same_wire(payload.wire_version, payload.schema_version)
     changes = _to_changes(payload.rows)
     fleet = _to_machines(payload.machines)
     with _hub_conn(request) as conn:
+        _require_credential(request, conn, payload.machine_id, "push")
         _require_registered(conn, payload.machine_id)
+        _gate(request, conn, payload.machine_id, "write")
         try:
             with _transaction(conn):
                 engine.merge_machines(conn, fleet, caller_id=payload.machine_id)
@@ -443,7 +474,11 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
         )
 
 
-@router.get("/pull", response_model=PullResponse)
+@router.get(
+    "/pull",
+    response_model=PullResponse,
+    responses={**_auth("pull"), **entitlement_gate.refusals("pull")},
+)
 def pull(
     request: Request,
     machine_id: str = Query(min_length=1, description="the calling spoke"),
@@ -468,7 +503,9 @@ def pull(
     and can never ask for those entries again -- not even after the repair.
     """
     with _hub_conn(request) as conn:
+        _require_credential(request, conn, machine_id, "pull")
         _require_registered(conn, machine_id)
+        _gate(request, conn, machine_id, "read")
         try:
             batch = engine.hub_changes_since(conn, since_seq, limit=limit)
             _refuse_unless_capable(capabilities_, "pull", service_shortfall.pull_shortfall(batch))
@@ -486,7 +523,7 @@ def pull(
         )
 
 
-@router.get("/status", response_model=StatusResponse)
+@router.get("/status", response_model=StatusResponse, responses=_auth("status"))
 def status(
     request: Request,
     machine_id: str = Query(min_length=1, description="the calling spoke"),
@@ -499,6 +536,7 @@ def status(
         # unregistered, so a refused status call still had a write side
         # effect. ``_require_registered`` only reads, so this costs nothing
         # on the accepted path and nothing happens at all on the refused one.
+        _require_credential(request, conn, machine_id, "status")
         _require_registered(conn, machine_id)
         with _transaction(conn):
             hub_machine_id = _hub_identity(request, conn)
@@ -514,14 +552,16 @@ def status(
         return StatusResponse(
             hub_machine_id=hub_machine_id,
             schema_version=state_schema.SCHEMA_VERSION,
+            wire_version=wire_version.WIRE_VERSION,
             seq=seq,
             machines=machines,
             row_counts=counts,
             hub_generation=_generation(request, conn),
+            **entitlement_gate.status_fields(request),
         )
 
 
-@router.get("/digest", response_model=DigestResponse)
+@router.get("/digest", response_model=DigestResponse, responses=_auth("digest"))
 def digest(
     request: Request,
     machine_id: str = Query(min_length=1, description="the calling spoke"),
@@ -560,6 +600,7 @@ def digest(
     alarm -- a false one, raised on ordinary legacy data.
     """
     with _hub_conn(request) as conn:
+        _require_credential(request, conn, machine_id, "digest")
         _require_registered(conn, machine_id)
         try:
             with _transaction(conn):

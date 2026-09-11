@@ -37,6 +37,7 @@ from apps.feature_flags.profiles import (
     available_profiles,
     profile_path,
 )
+from apps.shared.sync_bind_guard import SyncBindRefused, assert_sync_bind_allowed
 
 EXIT_OK: int = 0
 EXIT_LOCKED: int = 1
@@ -106,8 +107,21 @@ def _apply_build_profile(name: str | None) -> None:
     os.environ[BUILD_PROFILE_ENV] = name
 
 
+def _assert_sync_bind(host: str) -> None:
+    """The engine mounts ``/api/v1/sync/*``: a wide bind needs explicit trust.
+
+    Checked here, before the lock and the socket, so a refused bind exits
+    EXIT_REFUSED with the ADR named instead of after the port is open.
+    """
+    try:
+        assert_sync_bind_allowed(host)
+    except SyncBindRefused as exc:
+        raise EngineBootError(str(exc)) from exc
+
+
 def _preflight(cfg: EngineConfig, *, workers: int) -> None:
     assert_single_worker(workers)
+    _assert_sync_bind(cfg.host)
     if not cfg.data_dir.is_dir():
         # Never invent a library root: a typo in --data-dir would otherwise
         # produce a silently empty library that looks like a real one.

@@ -156,6 +156,44 @@
         "title": "AccountUserOut",
         "type": "object"
       },
+      "AdoptOut": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "enrolled_at": {
+            "title": "Enrolled At",
+            "type": "string"
+          },
+          "enrolled_via": {
+            "title": "Enrolled Via",
+            "type": "string"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_email": {
+            "title": "Owner Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "name",
+          "owner_email",
+          "enrolled_at",
+          "enrolled_via",
+          "created"
+        ],
+        "title": "AdoptOut",
+        "type": "object"
+      },
       "AiApplyIn": {
         "properties": {
           "instruction": {
@@ -1614,6 +1652,34 @@
         "title": "BeatgridIssueOut",
         "type": "object"
       },
+      "BlockerOut": {
+        "properties": {
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "unowned",
+              "foreign",
+              "no_credential"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "name",
+          "reason"
+        ],
+        "title": "BlockerOut",
+        "type": "object"
+      },
       "Body_upload_api_v1_ingest_upload_post": {
         "properties": {
           "batch": {
@@ -2609,11 +2675,156 @@
         "title": "ClientPerformanceSampleOut",
         "type": "object"
       },
-      "CloudSyncStatusOut": {
+      "CloudSyncConfig": {
+        "additionalProperties": false,
+        "description": "The persisted file, validated. Also the HTTP PUT body.",
         "properties": {
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
+          },
+          "hub_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Url"
+          },
+          "machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Name"
+          }
+        },
+        "required": [
+          "enabled",
+          "hub_url",
+          "machine_name"
+        ],
+        "title": "CloudSyncConfig",
+        "type": "object"
+      },
+      "CloudSyncConfigOut": {
+        "properties": {
+          "effective": {
+            "$ref": "#/components/schemas/CloudSyncEffectiveConfigOut"
+          },
+          "file": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloudSyncConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "file",
+          "effective"
+        ],
+        "title": "CloudSyncConfigOut",
+        "type": "object"
+      },
+      "CloudSyncEffectiveConfigOut": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "enabled_source": {
+            "enum": [
+              "env",
+              "file",
+              "default"
+            ],
+            "title": "Enabled Source",
+            "type": "string"
+          },
+          "hub_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Url"
+          },
+          "hub_url_source": {
+            "enum": [
+              "env",
+              "file",
+              "default"
+            ],
+            "title": "Hub Url Source",
+            "type": "string"
+          },
+          "machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Name"
+          }
+        },
+        "required": [
+          "enabled",
+          "hub_url",
+          "machine_name",
+          "configured",
+          "enabled_source",
+          "hub_url_source"
+        ],
+        "title": "CloudSyncEffectiveConfigOut",
+        "type": "object"
+      },
+      "CloudSyncStatusOut": {
+        "properties": {
+          "configured": {
+            "description": "the effective config is on and names a hub",
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "enabled": {
+            "description": "configured AND running: a scheduler heartbeat is fresh",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "enabled_source": {
+            "description": "which source decided 'enabled': env override, config file, or default",
+            "enum": [
+              "env",
+              "file",
+              "default"
+            ],
+            "title": "Enabled Source",
+            "type": "string"
           },
           "endpoint": {
             "anyOf": [
@@ -2625,6 +2836,28 @@
               }
             ],
             "title": "Endpoint"
+          },
+          "endpoint_source": {
+            "description": "which source decided the hub URL: env override, config file, or default",
+            "enum": [
+              "env",
+              "file",
+              "default"
+            ],
+            "title": "Endpoint Source",
+            "type": "string"
+          },
+          "heartbeat_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "UTC time of the last scheduler beat, fresh or stale",
+            "title": "Heartbeat At"
           },
           "last_pull_at": {
             "anyOf": [
@@ -2687,6 +2920,11 @@
             ],
             "title": "Rows Pending"
           },
+          "running": {
+            "description": "a scheduler heartbeat is fresh",
+            "title": "Running",
+            "type": "boolean"
+          },
           "signed_in_as": {
             "anyOf": [
               {
@@ -2701,6 +2939,11 @@
         },
         "required": [
           "enabled",
+          "configured",
+          "running",
+          "heartbeat_at",
+          "enabled_source",
+          "endpoint_source",
           "reason",
           "signed_in_as",
           "last_push_at",
@@ -3278,6 +3521,95 @@
         "title": "CoverageOut",
         "type": "object"
       },
+      "CredentialMachineOut": {
+        "properties": {
+          "credential_minted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Minted At"
+          },
+          "is_this_hub": {
+            "title": "Is This Hub",
+            "type": "boolean"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ownership": {
+            "enum": [
+              "owned",
+              "unowned",
+              "foreign",
+              "revoked"
+            ],
+            "title": "Ownership",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "name",
+          "ownership",
+          "credential_minted_at",
+          "is_this_hub"
+        ],
+        "title": "CredentialMachineOut",
+        "type": "object"
+      },
+      "CredentialsOut": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/BlockerOut"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "enforce_ready": {
+            "title": "Enforce Ready",
+            "type": "boolean"
+          },
+          "hub_machine_id": {
+            "title": "Hub Machine Id",
+            "type": "string"
+          },
+          "machines": {
+            "items": {
+              "$ref": "#/components/schemas/CredentialMachineOut"
+            },
+            "title": "Machines",
+            "type": "array"
+          },
+          "mode": {
+            "enum": [
+              "observe",
+              "enforce"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_machine_id",
+          "mode",
+          "enforce_ready",
+          "blockers",
+          "machines"
+        ],
+        "title": "CredentialsOut",
+        "type": "object"
+      },
       "DecisionIn": {
         "additionalProperties": false,
         "properties": {
@@ -3737,6 +4069,18 @@
           "schema_version": {
             "title": "Schema Version",
             "type": "integer"
+          },
+          "wire_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sync wire version; absent on pre-split builds",
+            "title": "Wire Version"
           }
         },
         "required": [
@@ -3776,6 +4120,17 @@
           "owner_google_sub": {
             "title": "Owner Google Sub",
             "type": "string"
+          },
+          "sync_credential": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Credential"
           }
         },
         "required": [
@@ -3785,7 +4140,8 @@
           "hub_machine_id",
           "enrolled_at",
           "enrolled_via",
-          "created"
+          "created",
+          "sync_credential"
         ],
         "title": "EnrollResponse",
         "type": "object"
@@ -4337,6 +4693,36 @@
         "title": "FlagsOut",
         "type": "object"
       },
+      "FleetErrorBody": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "FleetErrorBody",
+        "type": "object"
+      },
+      "FleetErrorResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/FleetErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "FleetErrorResponse",
+        "type": "object"
+      },
       "FleetMachineOut": {
         "additionalProperties": false,
         "description": "One row of ``fleet --json``. ``extra=forbid`` so a field the shared\nfunction adds fails loudly here instead of silently vanishing from HTTP.",
@@ -4629,6 +5015,49 @@
           "how_to_grant"
         ],
         "title": "FolderScanOut",
+        "type": "object"
+      },
+      "GateErrorBody": {
+        "description": "The refusal. ``ui_title`` is present only on a plan refusal (ENT-02).",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ui_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ui Title"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "GateErrorBody",
+        "type": "object"
+      },
+      "GateErrorResponse": {
+        "description": "FastAPI wraps an ``HTTPException`` detail under ``detail``.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/GateErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "GateErrorResponse",
         "type": "object"
       },
       "GeneralNoteOut": {
@@ -4973,6 +5402,18 @@
           "schema_version": {
             "title": "Schema Version",
             "type": "integer"
+          },
+          "wire_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sync wire version; absent on pre-split builds",
+            "title": "Wire Version"
           }
         },
         "required": [
@@ -4990,6 +5431,17 @@
             },
             "title": "Capabilities",
             "type": "array"
+          },
+          "credential": {
+            "enum": [
+              "valid",
+              "missing",
+              "invalid",
+              "revoked",
+              "unowned"
+            ],
+            "title": "Credential",
+            "type": "string"
           },
           "hub_generation": {
             "title": "Hub Generation",
@@ -5022,15 +5474,21 @@
           "seq": {
             "title": "Seq",
             "type": "integer"
+          },
+          "wire_version": {
+            "title": "Wire Version",
+            "type": "integer"
           }
         },
         "required": [
           "hub_machine_id",
           "schema_version",
+          "wire_version",
           "seq",
           "machines",
           "hub_generation",
-          "ownership"
+          "ownership",
+          "credential"
         ],
         "title": "HelloResponse",
         "type": "object"
@@ -6333,6 +6791,20 @@
           "detail"
         ],
         "title": "LyricsUnavailableOut",
+        "type": "object"
+      },
+      "MachineIdIn": {
+        "properties": {
+          "machine_id": {
+            "minLength": 1,
+            "title": "Machine Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id"
+        ],
+        "title": "MachineIdIn",
         "type": "object"
       },
       "MachineModel": {
@@ -9257,6 +9729,18 @@
           "schema_version": {
             "title": "Schema Version",
             "type": "integer"
+          },
+          "wire_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sync wire version; absent on pre-split builds",
+            "title": "Wire Version"
           }
         },
         "required": [
@@ -10536,6 +11020,34 @@
         "title": "RelocateCandidateOut",
         "type": "object"
       },
+      "RevokeOut": {
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "credential_deleted": {
+            "title": "Credential Deleted",
+            "type": "boolean"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "revoked_at": {
+            "title": "Revoked At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "revoked_at",
+          "changed",
+          "credential_deleted"
+        ],
+        "title": "RevokeOut",
+        "type": "object"
+      },
       "RowModel": {
         "description": "One offered row. ``members`` is set only on a ``playlists`` row.",
         "properties": {
@@ -11516,6 +12028,21 @@
       },
       "StatusResponse": {
         "properties": {
+          "entitlement_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entitlement Provider"
+          },
+          "hosted": {
+            "title": "Hosted",
+            "type": "boolean"
+          },
           "hub_generation": {
             "title": "Hub Generation",
             "type": "string"
@@ -11545,15 +12072,22 @@
           "seq": {
             "title": "Seq",
             "type": "integer"
+          },
+          "wire_version": {
+            "title": "Wire Version",
+            "type": "integer"
           }
         },
         "required": [
           "hub_machine_id",
           "schema_version",
+          "wire_version",
           "seq",
           "machines",
           "row_counts",
-          "hub_generation"
+          "hub_generation",
+          "hosted",
+          "entitlement_provider"
         ],
         "title": "StatusResponse",
         "type": "object"
@@ -12071,6 +12605,38 @@
           "seconds_since_request"
         ],
         "title": "SurfaceActivityOut",
+        "type": "object"
+      },
+      "SyncErrorBody": {
+        "description": "The ``detail`` of every sync refusal: a stable code and prose.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "SyncErrorBody",
+        "type": "object"
+      },
+      "SyncErrorResponse": {
+        "description": "FastAPI wraps an ``HTTPException`` detail under ``detail``.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/SyncErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "SyncErrorResponse",
         "type": "object"
       },
       "SyncPolicyOut": {
@@ -17055,6 +17621,92 @@
         ]
       }
     },
+    "/api/v1/cloudsync/config": {
+      "get": {
+        "operationId": "get_config_api_v1_cloudsync_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudSyncConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "500": {
+            "description": "a CloudSync state file in the data dir is malformed or unreadable"
+          }
+        },
+        "summary": "Get Config",
+        "tags": [
+          "cloudsync"
+        ]
+      },
+      "put": {
+        "operationId": "put_config_api_v1_cloudsync_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudSyncConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudSyncConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "a CloudSync state file in the data dir is malformed or unreadable"
+          }
+        },
+        "summary": "Put Config",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
     "/api/v1/cloudsync/data-classes": {
       "get": {
         "description": "Every class of data and how it syncs (``policy classes`` twin).",
@@ -17199,6 +17851,192 @@
         ]
       }
     },
+    "/api/v1/cloudsync/fleet/adopt": {
+      "post": {
+        "description": "Twin of ``adopt``, always adopting to the signed-in user.",
+        "operationId": "adopt_machine_api_v1_cloudsync_fleet_adopt_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MachineIdIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdoptOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "adopt needs a signed-in user. code: AUTH_REQUIRED."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "No such machine on this hub. code: CLOUDSYNC_UNKNOWN_MACHINE."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "This install is not a hub (CLOUDSYNC_NOT_A_HUB), or the machine is owned by someone else (CLOUDSYNC_OWNER_CONFLICT) or revoked (CLOUDSYNC_REVOKED)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Adopt Machine",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/fleet/credentials": {
+      "get": {
+        "description": "Twin of ``python -m apps.sync_hub credentials --json``.",
+        "operationId": "read_credentials_api_v1_cloudsync_fleet_credentials_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "Not signed in. code: AUTH_REQUIRED."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "This install is not a hub (CLOUDSYNC_NOT_A_HUB)."
+          }
+        },
+        "summary": "Read Credentials",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/fleet/revoke": {
+      "post": {
+        "description": "Twin of ``revoke``, limited to machines the signed-in user owns.",
+        "operationId": "revoke_machine_api_v1_cloudsync_fleet_revoke_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MachineIdIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "revoke needs a signed-in user. code: AUTH_REQUIRED."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "The machine is owned by another user. code: CLOUDSYNC_NOT_YOUR_MACHINE."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "This install is not a hub (CLOUDSYNC_NOT_A_HUB), or the machine has no owner row to revoke (CLOUDSYNC_FLEET)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Machine",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
     "/api/v1/cloudsync/machines": {
       "get": {
         "operationId": "list_machines_api_v1_cloudsync_machines_get",
@@ -17216,6 +18054,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "500": {
+            "description": "CLOUDSYNC_IDENTITY_ERROR or CLOUDSYNC_CONFIG_INVALID (cloudsync-config.json is malformed, so the configured name is unknown)"
           }
         },
         "summary": "List Machines",
@@ -17653,6 +18494,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "500": {
+            "description": "a CloudSync state file in the data dir is malformed or unreadable"
           }
         },
         "summary": "Get Status",
@@ -22921,6 +23765,9 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "description": "digest refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -22930,6 +23777,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "digest refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
           }
         },
         "summary": "Digest",
@@ -22981,7 +23831,7 @@
                 }
               }
             },
-            "description": "The machine is already owned by somebody else (SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked (SYNC_ENROLL_REVOKED), or the enrollment was otherwise refused (SYNC_ENROLL)."
+            "description": "The machine is already owned by somebody else (SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked (SYNC_ENROLL_REVOKED), the enrollment was otherwise refused (SYNC_ENROLL), or the caller speaks another sync wire version (SYNC_WIRE_VERSION, or SYNC_SCHEMA_VERSION for a pre-split build)."
           },
           "422": {
             "content": {
@@ -23035,6 +23885,19 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "description": "hello refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncErrorResponse"
+                }
+              }
+            },
+            "description": "The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -23044,6 +23907,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "hello refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
           }
         },
         "summary": "Hello",
@@ -23122,6 +23988,19 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "description": "pull refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateErrorResponse"
+                }
+              }
+            },
+            "description": "HOSTED hubs only. pull is refused with entitlement_not_in_plan when the calling machine's owner is archived (never read_only: a lapsed user can always pull), or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -23131,6 +24010,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateErrorResponse"
+                }
+              }
+            },
+            "description": "HOSTED hubs only. pull cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER)."
           }
         },
         "summary": "Pull",
@@ -23164,6 +24053,29 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "description": "push refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateErrorResponse"
+                }
+              }
+            },
+            "description": "HOSTED hubs only. push is refused with entitlement_not_in_plan when the calling machine's owner is read_only or archived, or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncErrorResponse"
+                }
+              }
+            },
+            "description": "The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -23173,6 +24085,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateErrorResponse"
+                }
+              }
+            },
+            "description": "HOSTED hubs only. push cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER)."
           },
           "507": {
             "content": {
@@ -23220,6 +24142,9 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "description": "status refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -23229,6 +24154,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "status refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
           }
         },
         "summary": "Status",

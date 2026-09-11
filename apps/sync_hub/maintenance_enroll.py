@@ -41,6 +41,8 @@ from apps.sync_hub import (
     enrollment_credentials,
     protocol,
     service_enroll,
+    spoke_credential,
+    wire_version,
 )
 from apps.sync_hub.client_transport_ops import state_db_path
 from apps.sync_hub.transport import API_PREFIX, HttpTransport, HubTransport
@@ -59,6 +61,13 @@ class EnrollOutcome:
     enrolled_at: str
     enrolled_via: str
     created: bool
+    #: True when the hub minted a sync credential on THIS call and it was
+    #: written to ``credential_path``. The token itself is never carried here,
+    #: so no readout or JSON dump of an outcome can leak it.
+    credential_issued: bool
+    #: ``<data-dir>/sync-credential`` when a credential is on file after this
+    #: call (new or kept from before), None when this machine holds none.
+    credential_path: str | None
 
     def to_wire(self) -> dict[str, Any]:
         return {
@@ -69,6 +78,8 @@ class EnrollOutcome:
             "enrolled_at": self.enrolled_at,
             "enrolled_via": self.enrolled_via,
             "created": self.created,
+            "credential_issued": self.credential_issued,
+            "credential_path": self.credential_path,
         }
 
 
@@ -168,6 +179,7 @@ def enroll(
         {
             "machine": machine.to_wire(),
             "schema_version": state_schema.SCHEMA_VERSION,
+            "wire_version": wire_version.WIRE_VERSION,
             "credential": {"kind": credential_kind, "value": credential_value},
         },
     )
@@ -180,6 +192,11 @@ def enroll(
     # both sides of the wire; a field the server adds is covered here for
     # free instead of needing a second edit.
     reported = service_enroll.EnrollResponse.model_validate(body)
+    # Written BEFORE anything is printed, and only when minted: the response
+    # is the one time the raw credential exists anywhere.
+    if reported.sync_credential is not None:
+        spoke_credential.write_credential(Path(data_dir), reported.sync_credential)
+    on_file = spoke_credential.credential_path(Path(data_dir))
     return EnrollOutcome(
         machine_id=reported.machine_id,
         name=machine.name,
@@ -188,6 +205,8 @@ def enroll(
         enrolled_at=reported.enrolled_at,
         enrolled_via=reported.enrolled_via,
         created=reported.created,
+        credential_issued=reported.sync_credential is not None,
+        credential_path=str(on_file) if on_file.exists() else None,
     )
 
 
@@ -249,10 +268,20 @@ def fleet(data_dir: Path) -> dict[str, Any]:
 def enroll_lines(outcome: EnrollOutcome) -> list[str]:
     """The enroll readout. A no-op must SAY it was a no-op."""
     verb = "enrolled" if outcome.created else "already enrolled"
+    if outcome.credential_issued:
+        credential = f"sync credential issued and stored at {outcome.credential_path} (0600)"
+    elif outcome.credential_path is not None:
+        credential = f"no new sync credential; keeping {outcome.credential_path}"
+    else:
+        credential = (
+            "WARNING: no sync credential on file; a hub in enforce mode will "
+            "refuse this machine. Enroll again with a fresh grant."
+        )
     return [
         f"{verb} {outcome.name} ({outcome.machine_id}) on hub "
         f"{outcome.hub_machine_id} as {outcome.owner_email} "
-        f"via {outcome.enrolled_via} at {outcome.enrolled_at}"
+        f"via {outcome.enrolled_via} at {outcome.enrolled_at}",
+        credential,
     ]
 
 

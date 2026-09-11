@@ -60,7 +60,13 @@ def test_status_exposes_a_recorded_error(tmp_path: Path, monkeypatch):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["enabled"] is True
+    # Configured by env, but no scheduler heartbeat exists in this test: the
+    # truthful answer is configured-but-not-enabled (was a false-green).
+    assert body["configured"] is True
+    assert body["running"] is False
+    assert body["enabled"] is False
+    assert body["enabled_source"] == "env"
+    assert body["endpoint_source"] == "env"
     assert body["endpoint"] == "https://hub.example.test"
     assert body["last_result"] == {"status": "error", "message": "hub unavailable"}
     assert body["recent_results"][0]["status"] == "error"

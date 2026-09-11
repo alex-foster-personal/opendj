@@ -62,6 +62,7 @@ class LaneFigure:
     min_r: float | None = None
     band_median_r: Mapping[str, float] | None = None
     median_r_secondary: float | None = None
+    details: Mapping[str, int | float | None] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         refuse_forbidden_denominator(self.denominator_n, what=self.lane)
@@ -115,4 +116,5 @@ class LaneFigure:
             "min_r": self.min_r,
             "band_median_r": dict(self.band_median_r) if self.band_median_r else None,
             "median_r_secondary": self.median_r_secondary,
+            "details": dict(self.details),
         }

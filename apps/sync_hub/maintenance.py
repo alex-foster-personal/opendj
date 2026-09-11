@@ -13,9 +13,26 @@
                                                 [--name N]
     uv run python -m apps.sync_hub fleet        --data-dir DIR [--json]
     uv run python -m apps.sync_hub policy <verb> --data-dir DIR ...  (see maintenance_policy)
+    uv run python -m apps.sync_hub config show|set --data-dir DIR
+                                                [--enabled|--disabled]
+                                                [--hub URL] [--name N]
+    uv run python -m apps.sync_hub adopt        --data-dir DIR --machine-id ID
+                                                --owner EMAIL
+    uv run python -m apps.sync_hub revoke       --data-dir DIR --machine-id ID
+    uv run python -m apps.sync_hub credentials  --data-dir DIR [--json]
+    uv run python -m apps.sync_hub hosted       --data-dir DIR
+
+``config`` (see :mod:`apps.sync_hub.config_cli`) is the CLI twin of
+``GET/PUT /api/v1/cloudsync/config``: the persisted per-machine config the
+background scheduler (:mod:`apps.sync_hub.scheduler`) reads.
 
 Eight operations, plus ``policy`` (per-machine sync policy, its own module
-:mod:`apps.sync_hub.maintenance_policy`, dry-run by default, exit 0/1/3/4):
+:mod:`apps.sync_hub.maintenance_policy`, dry-run by default, exit 0/1/3/4),
+plus ``fleet`` (who owns which machine on this hub), plus adopt, revoke and
+credentials, which live in :mod:`apps.sync_hub.fleet_admin` (plan X5) and
+register themselves below, plus ``hosted`` (JSON: whether this hub is HOSTED,
+its entitlement provider and owner count, the same checks the webui runs at
+startup -- :mod:`apps.sync_hub.hosted_config`):
 
 * **sync** runs one spoke round trip against ``--hub`` (round 3 finding R7).
   Nothing outside pytest called ``run_sync`` before -- the whole spoke
@@ -56,6 +73,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
 from collections.abc import Callable
@@ -65,9 +83,12 @@ from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
 from apps.sync_hub import (
     client,
+    config_cli,
     engine,
     enrollment_credentials,
+    fleet_admin,
     generation,
+    hosted_config,
     maintenance_enroll,
     maintenance_policy,
 )
@@ -78,6 +99,11 @@ from apps.sync_hub import status as sync_status
 #: wrong or the hub is down" from "rows moved but the check was excluded", and
 #: distinct from 0 because an unmeasured comparison is not a clean one.
 EXIT_INCONCLUSIVE: int = 4
+
+#: Exit code for a sync whose PUSH a hosted hub refused on plan grounds while
+#: its pull completed. Distinct from 1 (nothing came in) and from 4 (nothing
+#: was withheld): here rows arrived and this machine's own edits did not leave.
+EXIT_PUSH_REFUSED: int = 5
 
 
 def _open(data_dir: Path) -> sqlite3.Connection:
@@ -131,7 +157,23 @@ def _journal_entry(
     stamping ``ok`` on it is exactly the "failed measurement rendered as a
     clean result" ``.claude/rules/verification.md`` exists to stop. So the
     journal carries the third verdict rather than rounding to one of two.
+
+    A refused push is ``error``: rows came IN, but this machine's edits did
+    not go out, so the sync did not do its job and ``ok`` would be a lie.
     """
+    if result.push_refused:
+        return sync_status.SyncResult(
+            finished_at=sync_stamp.canonical_now(),
+            status="error",
+            message=(
+                f"sync started at {started_at}: hub {result.hub_machine_id} "
+                f"REFUSED the push (entitlement_not_in_plan: the owner's plan "
+                f"is read_only). Pulled {result.pulled} row(s); this "
+                f"machine's edits stay local and are offered again next sync."
+            ),
+            pushed=result.accepted,
+            pulled=result.pulled,
+        )
     if result.digest_inconclusive:
         return sync_status.SyncResult(
             finished_at=sync_stamp.canonical_now(),
@@ -317,7 +359,14 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print the same readout as JSON (agent parity with the UI)",
     )
+    fleet_admin.add_subcommands(subcommands, common)
     maintenance_policy.add_policy_parser(subcommands, common)
+    config_cli.add_config_parser(subcommands, common)
+    subcommands.add_parser(
+        "hosted",
+        parents=[common],
+        help="print whether this hub is hosted, its entitlement provider and owner count",
+    )
     return parser
 
 
@@ -346,6 +395,13 @@ def _report_sync(result: client.SyncResult) -> int:
             f"row(s) refused; repair with `python -m apps.shared.state."
             f"normalize_stamps --live` on the machine holding them"
         )
+    if result.push_refused:
+        print(
+            "PUSH REFUSED: the hub's plan check (entitlement_not_in_plan) "
+            "does not admit writes for this machine's owner; pulled rows "
+            "arrived, local edits did not leave this machine"
+        )
+        return EXIT_PUSH_REFUSED
     if not result.digest_inconclusive:
         return 0
     # NOT a silent 0. The sync completed and the comparison did not, so the
@@ -418,6 +474,10 @@ def _print_fleet(args: argparse.Namespace) -> None:
         print(line)
 
 
+def _print_hosted(args: argparse.Namespace) -> None:
+    print(json.dumps(hosted_config.describe_for_cli(os.environ, args.data_dir), sort_keys=True))
+
+
 #: Subcommand name -> handler, for the commands that PRINT and exit 0.
 #: ``sync`` and ``status`` are not here: they own their own exit codes and
 #: returning one is the whole point of them.
@@ -442,6 +502,9 @@ PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
     "grant": _print_grant,
     "enroll": _print_enroll,
     "fleet": _print_fleet,
+    "config": config_cli.run_config,
+    **fleet_admin.PRINTING_COMMANDS,
+    "hosted": _print_hosted,
 }
 
 

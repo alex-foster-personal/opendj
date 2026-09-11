@@ -35,6 +35,9 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from apps.entitlements import lifecycle
+from apps.entitlements.source import EntitlementSource, Standing
+
 #: The one switch. Unset or blank -> inert. Any value -> fail fast, because
 #: no provider integration exists to name.
 PROVIDER_ENV: str = "MDT_ENTITLEMENTS_PROVIDER"
@@ -150,28 +153,82 @@ def current_plan() -> Plan:
     return UNGATED_PLAN
 
 
-def has(feature_id: str) -> bool:
-    """May the current account use ``feature_id``?
+def _assert_subject(subject: str | None, source: EntitlementSource) -> str:
+    """Refuse to consult a source without a subject to consult it about.
 
-    True for everything while no provider is configured, INCLUDING ids that
-    are not in the catalog (ENT-04): an unmapped feature must never read as a
+    A per-subject source asked about nobody has no honest answer, and every
+    guess is wrong one way or the other: "entitled" hands a paid feature to an
+    unauthenticated caller, "not entitled" refuses a paying one. So the
+    source is never reached with ``subject=None`` -- the caller has a bug to
+    fix (it did not resolve the owner) and this says so.
+    """
+    if subject is None or not isinstance(subject, str) or not subject.strip():
+        raise ValueError(
+            f"subject must be a non-empty Google sub when a source is given, "
+            f"got {subject!r}; source {source.provider!r} was NOT consulted. "
+            "Resolve the caller to its owner (machine_owners.google_sub) "
+            "before asking what it may do."
+        )
+    return subject
+
+
+def standing(feature_id: str, *, subject: str | None, source: EntitlementSource) -> Standing | None:
+    """Where ``subject`` stands for ``feature_id`` according to ``source``.
+
+    The lifecycle-aware read behind :func:`has` and :func:`quota`, for a
+    server-side check point that must tell ``read_only`` (pull works) apart
+    from ``archived`` (nothing works). None means the source holds no record
+    for the subject at all.
+    """
+    _assert_feature_id(feature_id)
+    configured_provider()
+    return source.standing(_assert_subject(subject, source), feature_id)
+
+
+def has(
+    feature_id: str,
+    *,
+    subject: str | None = None,
+    source: EntitlementSource | None = None,
+) -> bool:
+    """May the account use ``feature_id``?
+
+    True for everything while no source is given, INCLUDING ids that are not
+    in the catalog (ENT-04): an unmapped feature must never read as a
     denial, or adding a call site before its catalog entry would silently
-    switch a working feature off.
+    switch a working feature off. ``subject`` alone changes nothing: without
+    a source there is nothing to ask about it.
+
+    With a source, True only for a lifecycle state that admits writes
+    (``active``, ``past_due``); a subject the source has no record for is not
+    entitled.
     """
     _assert_feature_id(feature_id)
     configured_provider()
-    return True
+    if source is None:
+        return True
+    found = standing(feature_id, subject=subject, source=source)
+    return found is not None and lifecycle.allows(found.state, "write")
 
 
-def quota(feature_id: str) -> int | None:
-    """How many of ``feature_id`` the current account may use.
+def quota(
+    feature_id: str,
+    *,
+    subject: str | None = None,
+    source: EntitlementSource | None = None,
+) -> int | None:
+    """How many of ``feature_id`` the account may use.
 
-    None means UNLIMITED, which is every feature while no provider is
-    configured. None never means "unknown": an unresolvable quota raises.
+    None means UNLIMITED, which is every feature while no source is given.
+    None never means "unknown": an unresolvable quota raises. With a source,
+    the subject's reported quota, or 0 when the source has no record for it.
     """
     _assert_feature_id(feature_id)
     configured_provider()
-    return None
+    if source is None:
+        return None
+    found = standing(feature_id, subject=subject, source=source)
+    return 0 if found is None else found.quota
 
 
 __all__ = [
@@ -189,4 +246,5 @@ __all__ = [
     "current_plan",
     "has",
     "quota",
+    "standing",
 ]

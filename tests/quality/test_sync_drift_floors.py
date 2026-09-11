@@ -190,8 +190,8 @@ def test_d09_and_d08_survive_a_second_full_text_index(scan: lint.Scan) -> None:
 
     result = lint.run(widened)
 
-    assert result.checks_run == len(lint.CHECKS) == 8, (
-        "all eight checks must have RUN. A floor that aborts raises SystemExit "
+    assert result.checks_run == len(lint.CHECKS) == 9, (
+        "all nine checks must have RUN. A floor that aborts raises SystemExit "
         "before the first one, and no Result is produced at all."
     )
     undeclared = {v.subject for v in result.violations if v.rule == "undeclared_state_table"}

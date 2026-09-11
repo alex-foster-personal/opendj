@@ -28,6 +28,7 @@ import os
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
@@ -64,8 +65,10 @@ from apps.feature_flags import load_flags
 from apps.shared import events, platform_paths
 from apps.shared.library_mode import apply_library_env, assert_ready
 from apps.shared.paths import STATE_DB
+from apps.shared.sync_bind_guard import assert_sync_bind_allowed
 from apps.stems import job as stems_job
 from apps.stems.api import router as stems_plan_router
+from apps.sync_hub.scheduler import scheduler_lifespan
 from apps.webui.library_assets import ensure_stem_storage, stem_storage
 from apps.webui.server import analysis_autostart
 from apps.webui.server.app import _SpaStaticFiles
@@ -103,6 +106,7 @@ def create_app(
 ) -> FastAPI:
     """Build the engine app. No import-time construction, no globals."""
     assert_no_progress_ledger(cfg.data_dir)
+    assert_sync_bind_allowed(cfg.host)
     prepare_layout(cfg)
 
     boot_id = lock.boot_id if lock is not None else str(uuid.uuid4())
@@ -365,7 +369,10 @@ def _wrap_lifespan(
             },
         )
         try:
-            async with legacy_lifespan(instance):
+            # The CloudSync scheduler idles until cloudsync-config.json (or
+            # its env overrides) turns it on, and never starts on the hub.
+            cloudsync_dir = Path(str(instance.state.state_db_path)).resolve().parent.parent
+            async with legacy_lifespan(instance), scheduler_lifespan(cloudsync_dir):
                 yield
         finally:
             if heartbeat is not None:

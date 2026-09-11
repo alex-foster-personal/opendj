@@ -2,39 +2,13 @@
   "schema": 1,
   "measured_at": "Fri 11 Sep 2026",
   "population": {
-    "present": 12,
+    "present": 7,
     "tracks_rows": 9986,
     "djmd_content_live": 10479
   },
   "tracks": [
     {
-      "stable_id": "exact-128",
-      "present": true,
-      "rb_bpm_x100": 12800,
-      "own_bpm": 128.0,
-      "rb_key_scale_name": "Am",
-      "own_key_camelot": "8A",
-      "own_key_openkey": "1m",
-      "rb_pssi": false,
-      "rb_cue_db": false,
-      "rb_ext_readable": true,
-      "rb_pvdi": false
-    },
-    {
-      "stable_id": "exact-key-c",
-      "present": true,
-      "rb_bpm_x100": 12800,
-      "own_bpm": 128.0,
-      "rb_key_scale_name": "C",
-      "own_key_camelot": "8B",
-      "own_key_openkey": "1d",
-      "rb_pssi": false,
-      "rb_cue_db": false,
-      "rb_ext_readable": true,
-      "rb_pvdi": false
-    },
-    {
-      "stable_id": "wave-preview-exact",
+      "stable_id": "cue-db-exact",
       "present": true,
       "rb_bpm_x100": null,
       "own_bpm": null,
@@ -42,120 +16,34 @@
       "own_key_camelot": null,
       "own_key_openkey": null,
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_pwav": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
+      "rb_cues_db": [
+        {
+          "in_ms": 1000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
       ],
-      "rb_pwv2": null,
-      "rb_pwv3": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
+      "rb_cue_db": true,
+      "own_cues": [
+        {
+          "in_ms": 1000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
       ],
-      "rb_pwv4_luminance": null,
-      "rb_pwv5": null,
-      "rb_pwv6": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      },
-      "rb_pwv7": null,
-      "own_preview": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
-      ],
-      "own_detail": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
-      ],
-      "own_triband": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      }
+      "rb_cues_pcob": [],
+      "rb_cues_pco2": []
     },
     {
-      "stable_id": "wave-detail-exact",
+      "stable_id": "cue-db-disagree",
       "present": true,
       "rb_bpm_x100": null,
       "own_bpm": null,
@@ -163,120 +51,34 @@
       "own_key_camelot": null,
       "own_key_openkey": null,
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_pwav": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
+      "rb_cues_db": [
+        {
+          "in_ms": 1000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
       ],
-      "rb_pwv2": null,
-      "rb_pwv3": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
+      "rb_cue_db": true,
+      "own_cues": [
+        {
+          "in_ms": 5000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
       ],
-      "rb_pwv4_luminance": null,
-      "rb_pwv5": null,
-      "rb_pwv6": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      },
-      "rb_pwv7": null,
-      "own_preview": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
-      ],
-      "own_detail": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
-      ],
-      "own_triband": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      }
+      "rb_cues_pcob": [],
+      "rb_cues_pco2": []
     },
     {
-      "stable_id": "wave-triband-exact",
+      "stable_id": "cue-db-no-own",
       "present": true,
       "rb_bpm_x100": null,
       "own_bpm": null,
@@ -284,120 +86,24 @@
       "own_key_camelot": null,
       "own_key_openkey": null,
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_pwav": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
+      "rb_cues_db": [
+        {
+          "in_ms": 1000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
       ],
-      "rb_pwv2": null,
-      "rb_pwv3": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
-      ],
-      "rb_pwv4_luminance": null,
-      "rb_pwv5": null,
-      "rb_pwv6": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      },
-      "rb_pwv7": null,
-      "own_preview": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
-      ],
-      "own_detail": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
-      ],
-      "own_triband": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      }
+      "rb_cue_db": true,
+      "rb_cues_pcob": [],
+      "rb_cues_pco2": []
     },
     {
-      "stable_id": "wave-preview-reversed",
+      "stable_id": "cue-db-missing",
       "present": true,
       "rb_bpm_x100": null,
       "own_bpm": null,
@@ -405,120 +111,24 @@
       "own_key_camelot": null,
       "own_key_openkey": null,
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_pwav": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
+      "rb_cue_db": false,
+      "own_cues": [
+        {
+          "in_ms": 3000,
+          "kind": "hot",
+          "index": null,
+          "name": "intro",
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
       ],
-      "rb_pwv2": null,
-      "rb_pwv3": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
-      ],
-      "rb_pwv4_luminance": null,
-      "rb_pwv5": null,
-      "rb_pwv6": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      },
-      "rb_pwv7": null,
-      "own_preview": [
-        0.8,
-        0.7,
-        0.6,
-        0.5,
-        0.4,
-        0.3,
-        0.2,
-        0.1
-      ],
-      "own_detail": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
-      ],
-      "own_triband": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      }
+      "rb_cues_pcob": [],
+      "rb_cues_pco2": []
     },
     {
-      "stable_id": "wave-no-own",
+      "stable_id": "cue-anlz-pcob-exact",
       "present": true,
       "rb_bpm_x100": null,
       "own_bpm": null,
@@ -526,71 +136,42 @@
       "own_key_camelot": null,
       "own_key_openkey": null,
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_pwav": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
+      "rb_cue_db": false,
+      "own_cues": [
+        {
+          "in_ms": 2000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
       ],
-      "rb_pwv2": null,
-      "rb_pwv3": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
+      "rb_cues_pcob": [
+        {
+          "in_ms": 2000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
       ],
-      "rb_pwv4_luminance": null,
-      "rb_pwv5": null,
-      "rb_pwv6": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      },
-      "rb_pwv7": null,
-      "own_preview": null,
-      "own_detail": null,
-      "own_triband": null
+      "rb_cues_pco2": [
+        {
+          "in_ms": 2000,
+          "kind": "hot",
+          "index": 0,
+          "name": "drop",
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
+      ]
     },
     {
-      "stable_id": "wave-unreadable-ext",
+      "stable_id": "cue-anlz-unreadable-ext",
       "present": true,
       "rb_bpm_x100": null,
       "own_bpm": null,
@@ -598,120 +179,32 @@
       "own_key_camelot": null,
       "own_key_openkey": null,
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": false,
       "rb_pvdi": false,
-      "rb_pwav": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
+      "rb_cue_db": false,
+      "own_cues": [
+        {
+          "in_ms": 2000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
       ],
-      "rb_pwv2": null,
-      "rb_pwv3": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
-      ],
-      "rb_pwv4_luminance": null,
-      "rb_pwv5": null,
-      "rb_pwv6": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      },
-      "rb_pwv7": null,
-      "own_preview": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
-      ],
-      "own_detail": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
-      ],
-      "own_triband": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      }
+      "rb_cues_pcob": [
+        {
+          "in_ms": 2000,
+          "kind": "hot",
+          "index": 0,
+          "name": null,
+          "color_rgb": null,
+          "loop_length_msec": null
+        }
+      ]
     },
     {
-      "stable_id": "wave-missing-preview",
+      "stable_id": "cue-anlz-empty",
       "present": true,
       "rb_bpm_x100": null,
       "own_bpm": null,
@@ -719,431 +212,12 @@
       "own_key_camelot": null,
       "own_key_openkey": null,
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
-      "rb_pwav": null,
-      "rb_pwv2": null,
-      "rb_pwv3": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
-      ],
-      "rb_pwv4_luminance": null,
-      "rb_pwv5": null,
-      "rb_pwv6": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      },
-      "rb_pwv7": null,
-      "own_preview": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
-      ],
-      "own_detail": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
-      ],
-      "own_triband": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      }
-    },
-    {
-      "stable_id": "wave-missing-triband",
-      "present": true,
-      "rb_bpm_x100": null,
-      "own_bpm": null,
-      "rb_key_scale_name": null,
-      "own_key_camelot": null,
-      "own_key_openkey": null,
-      "rb_pssi": false,
       "rb_cue_db": false,
-      "rb_ext_readable": true,
-      "rb_pvdi": false,
-      "rb_pwav": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
-      ],
-      "rb_pwv2": null,
-      "rb_pwv3": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
-      ],
-      "rb_pwv4_luminance": null,
-      "rb_pwv5": null,
-      "rb_pwv6": null,
-      "rb_pwv7": null,
-      "own_preview": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
-      ],
-      "own_detail": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
-      ],
-      "own_triband": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      }
-    },
-    {
-      "stable_id": "wave-missing-detail",
-      "present": true,
-      "rb_bpm_x100": null,
-      "own_bpm": null,
-      "rb_key_scale_name": null,
-      "own_key_camelot": null,
-      "own_key_openkey": null,
-      "rb_pssi": false,
-      "rb_cue_db": false,
-      "rb_ext_readable": true,
-      "rb_pvdi": false,
-      "rb_pwav": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
-      ],
-      "rb_pwv2": null,
-      "rb_pwv3": null,
-      "rb_pwv4_luminance": null,
-      "rb_pwv5": null,
-      "rb_pwv6": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      },
-      "rb_pwv7": null,
-      "own_preview": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
-      ],
-      "own_detail": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
-      ],
-      "own_triband": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      }
-    },
-    {
-      "stable_id": "wave-triband-partial",
-      "present": true,
-      "rb_bpm_x100": null,
-      "own_bpm": null,
-      "rb_key_scale_name": null,
-      "own_key_camelot": null,
-      "own_key_openkey": null,
-      "rb_pssi": false,
-      "rb_cue_db": false,
-      "rb_ext_readable": true,
-      "rb_pvdi": false,
-      "rb_pwav": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
-      ],
-      "rb_pwv2": null,
-      "rb_pwv3": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
-      ],
-      "rb_pwv4_luminance": null,
-      "rb_pwv5": null,
-      "rb_pwv6": {
-        "low": [
-          0.1,
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9,
-          1.0
-        ]
-      },
-      "rb_pwv7": null,
-      "own_preview": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8
-      ],
-      "own_detail": [
-        0.2,
-        0.28,
-        0.36,
-        0.44,
-        0.52,
-        0.6,
-        0.68,
-        0.76
-      ],
-      "own_triband": {
-        "low": [
-          0.9,
-          0.85,
-          0.8,
-          0.75,
-          0.7,
-          0.65,
-          0.6,
-          0.55
-        ],
-        "mid": [
-          0.2,
-          0.3,
-          0.4,
-          0.5,
-          0.6,
-          0.7,
-          0.8,
-          0.9
-        ],
-        "high": [
-          0.05,
-          0.07,
-          0.09,
-          0.11,
-          0.13,
-          0.15,
-          0.17,
-          0.19
-        ]
-      }
+      "own_cues": [],
+      "rb_cues_pcob": [],
+      "rb_cues_pco2": []
     },
     {
       "stable_id": "absent-audio",
@@ -1154,9 +228,9 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false
+      "rb_pvdi": false,
+      "rb_cue_db": false
     }
   ],
   "round": 1

@@ -12,7 +12,7 @@ from tests.parity.payloads import (
     _ramp,
     _triband,
     payload,
-    round1_fixture,
+    round1_waveform_fixture,
     track,
 )
 
@@ -242,7 +242,7 @@ def test_pwv4_rgb_trap_field_is_ignored() -> None:
 
 
 def test_denominators_are_fixture_counts_not_library_totals() -> None:
-    report = score_payload(round1_fixture())
+    report = score_payload(round1_waveform_fixture())
     for lane in ("waveform_preview", "waveform_detail", "waveform_triband"):
         figure = report.figure(lane)
         assert figure.denominator_n not in {
@@ -254,7 +254,7 @@ def test_denominators_are_fixture_counts_not_library_totals() -> None:
 
 
 def test_render_report_names_waveform_lanes_and_median_r() -> None:
-    text = render_report(score_payload(round1_fixture()))
+    text = render_report(score_payload(round1_waveform_fixture()))
     assert MEASURED_AT in text
     assert "waveform_preview" in text
     assert "waveform_detail" in text
@@ -265,7 +265,7 @@ def test_render_report_names_waveform_lanes_and_median_r() -> None:
 
 
 def test_triband_partial_match_is_disagreement_not_exact() -> None:
-    report = score_payload(round1_fixture())
+    report = score_payload(round1_waveform_fixture())
     triband = report.figure("waveform_triband")
     assert "wave-triband-partial" in triband.disagree_ids
     assert "wave-triband-partial" not in triband.agree_ids

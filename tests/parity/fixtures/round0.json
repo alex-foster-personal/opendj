@@ -16,9 +16,9 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false
+      "rb_pvdi": false,
+      "rb_cue_db": false
     },
     {
       "stable_id": "exact-key-c",
@@ -29,9 +29,9 @@
       "own_key_camelot": "8B",
       "own_key_openkey": "1d",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false
+      "rb_pvdi": false,
+      "rb_cue_db": false
     },
     {
       "stable_id": "bpm-within-0.1",
@@ -42,9 +42,9 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false
+      "rb_pvdi": false,
+      "rb_cue_db": false
     },
     {
       "stable_id": "bpm-octave-half",
@@ -55,9 +55,9 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false
+      "rb_pvdi": false,
+      "rb_cue_db": false
     },
     {
       "stable_id": "key-relative",
@@ -68,9 +68,9 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false
+      "rb_pvdi": false,
+      "rb_cue_db": false
     },
     {
       "stable_id": "missing-rb-bpm",
@@ -81,9 +81,9 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false
+      "rb_pvdi": false,
+      "rb_cue_db": false
     },
     {
       "stable_id": "missing-rb-key",
@@ -94,9 +94,9 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false
+      "rb_pvdi": false,
+      "rb_cue_db": false
     },
     {
       "stable_id": "no-own-bpm",
@@ -107,9 +107,9 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false
+      "rb_pvdi": false,
+      "rb_cue_db": false
     },
     {
       "stable_id": "no-own-key",
@@ -120,9 +120,9 @@
       "own_key_camelot": null,
       "own_key_openkey": null,
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false
+      "rb_pvdi": false,
+      "rb_cue_db": false
     },
     {
       "stable_id": "ungradable-key-all",
@@ -133,9 +133,9 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false
+      "rb_pvdi": false,
+      "rb_cue_db": false
     },
     {
       "stable_id": "absent-audio",
@@ -146,9 +146,10 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false
+      "rb_pvdi": false,
+      "rb_cue_db": false
     }
-  ]
+  ],
+  "round": 0
 }

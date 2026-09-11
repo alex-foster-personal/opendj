@@ -69,6 +69,12 @@ class SyncResult:
     #: ``None`` means the hub did not report the field (an older build),
     #: which is surfaced as unknown and never coerced to 0.
     hub_quarantined: int | None = None
+    #: True when a HOSTED hub refused this machine's push with 403
+    #: ``entitlement_not_in_plan`` (owner lapsed to ``read_only``). The pull
+    #: still ran, so ``pulled``/``applied`` are real; this machine's own
+    #: edits did not leave it and are offered again next sync. The digest
+    #: compare was skipped: it cannot agree while the hub refuses writes.
+    push_refused: bool = False
     #: Phase timings from :mod:`apps.sync_hub.sync_timing`, when instrumented.
     timings: SyncTimings | None = None
 
