@@ -95,6 +95,7 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
     ("apps/desktop/wdio.conf.ts", "const EMBEDDED_WEBDRIVER_PORT = 4455;", 4455),
     ("apps/desktop/mcp/smoke.ts", "const WEBDRIVER_PORT = 4456;", 4456),
     ("apps/webui/frontend/tests/e2e/vite.play-analytics.config.ts", "port: 5214,", 5214),
+    ("apps/webui/frontend/tests/e2e/vite.library-wheel.config.ts", "port: 5228,", 5228),
     (
         "apps/webui/frontend/tests/e2e/playwright.desktop-setup.config.ts",
         "export const SETUP_PAGE_PORT = 5216;",
@@ -201,6 +202,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         "apps/webui/frontend/tests/e2e/playwright.play-analytics.config.ts",
         "--port 9414",
         9414,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/playwright.library-wheel.config.ts",
+        "--port 9428",
+        9428,
     ),
     (
         "apps/webui/frontend/tests/e2e/playwright.desktop-setup.config.ts",

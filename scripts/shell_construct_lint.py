@@ -1,5 +1,5 @@
 """
-shell_construct_lint.py -- ban three shell constructs that answer a question
+shell_construct_lint.py -- ban four shell constructs that answer a question
 nobody asked.
 
 Each construct below returns a PLAUSIBLE VALUE WITH NO ERROR when it is wrong.
@@ -34,6 +34,12 @@ REG  S-03 Flag an unbraced `"$VAR:<modifier>"`, where the character after the
           [if `git cat-file -e "$SHA:apps/x"` appears then the run exits 1]
           [if it is written `"${SHA}:apps/x"` then the run exits 0]
           [if the colon is followed by a digit (`$HOST:8080`) then exits 0]
+REG  S-05 Flag `$?` read after a command substitution completed in the same
+          command: bash and zsh report the substitution's status (date: 0).
+          Scanner and measurements: scripts/shell_construct_lint_status.py.
+          [if `echo "[$(date)] rc=$?"` appears then the run exits 1]
+          [if it is written `rc=$?; echo "[$(date)] rc=$rc"` then exits 0]
+          [if a separator (`|| status=$?`) precedes the read then exits 0]
 REG  S-04 Refuse to report a clean scan over an empty file set: a count-based
           check needs a floor, because zero is both a value and an error
           signature (.claude/rules/verification.md).
@@ -80,7 +86,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+from scripts.shell_construct_lint_status import status_reads_after_substitution
+
+REPO =Path(__file__).resolve().parent.parent
 
 
 class CFG:
@@ -125,6 +133,11 @@ RULES: dict[str, str] = {
         "An unbraced \"$VAR:x\" where x is a zsh history modifier mangles or eats "
         "the path, so the command answers a different question with exit 0. Brace "
         "it: \"${VAR}:path\"."
+    ),
+    "status-after-substitution": (
+        "`$?` read after a $(...) or `...` in the same command reports the "
+        "substitution's status (usually 0), not the previous command's. Capture "
+        "it first: rc=$?; echo \"$(date) rc=$rc\"."
     ),
 }
 
@@ -420,6 +433,16 @@ def _check_gh_api_arg(lines: list[LogicalLine], path: Path) -> list[Violation]:
     return out
 
 
+def _check_status_after_substitution(
+    lines: list[LogicalLine], path: Path
+) -> list[Violation]:
+    return [
+        Violation(path, line.physical(i), "status-after-substitution", line.code)
+        for line in lines
+        for i in status_reads_after_substitution(line.code, heredoc_body=line.heredoc_body)
+    ]
+
+
 def _modifier_pattern() -> re.Pattern[str]:
     mods = re.escape(CFG.ZSH_MODIFIERS)
     return re.compile(rf"\$(?:[A-Za-z_][A-Za-z0-9_]*|\d):[{mods}]")
@@ -512,6 +535,7 @@ def lint_file(path: Path) -> list[Violation]:
         *_check_pipeline_status(lines, path),
         *_check_gh_api_arg(lines, path),
         *_check_zsh_modifier(lines, path),
+        *_check_status_after_substitution(lines, path),
     ]
 
 
