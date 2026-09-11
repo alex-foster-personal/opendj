@@ -7948,6 +7948,11 @@ export interface components {
              * @default false
              */
             hide_todo_settings: boolean;
+            /**
+             * Jog Radial Waveform
+             * @default false
+             */
+            jog_radial_waveform: boolean;
             level_calibration?: components["schemas"]["LevelCalibrationOut"];
             /**
              * Show Agent Pins
@@ -7975,6 +7980,8 @@ export interface components {
             } | null;
             /** Hide Todo Settings */
             hide_todo_settings?: boolean | null;
+            /** Jog Radial Waveform */
+            jog_radial_waveform?: boolean | null;
             level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
