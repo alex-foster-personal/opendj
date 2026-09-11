@@ -39,6 +39,9 @@ Acceptance tests:
   is 503 whose message contains the path, [else ⛔️].
 - [if] no manifest env is set inside a git checkout [then] the response is
   200 with source=repo and the checkout's real dirty flag, [else ⛔️].
+- [if] no manifest env is set inside a git checkout [then] the response also
+  carries ``app_version`` from ``tauri.conf.json``, the semver the updater
+  compares, [else ⛔️].
 """
 
 from __future__ import annotations
@@ -59,6 +62,7 @@ from apps.engine_core.config import ENGINE_VERSION
 
 MANIFEST_ENV: str = "OPENDJ_PAYLOAD_MANIFEST"
 BUILD_INFO_PATH: str = "/api/v1/build-info"
+TAURI_CONF_REL: Path = Path("apps/desktop/src-tauri/tauri.conf.json")
 
 #: The error code a caller branches on when this engine cannot state what it
 #: is. Spelled once, so the /build-info body and every route that DERIVES
@@ -222,6 +226,35 @@ def head_time_as_utc(raw: str) -> str:
     return committed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _tauri_app_version(repo_root: Path) -> str:
+    """The semver the updater compares, read from the desktop shell config.
+
+    A repo checkout has no payload manifest, but the update channel still needs
+    the same version string ``tauri-plugin-updater`` will compare. Reading it
+    from ``tauri.conf.json`` keeps the two halves aligned without inventing a
+    second source.
+    """
+    conf_path = repo_root / TAURI_CONF_REL
+    if not conf_path.is_file():
+        raise BuildInfoUnavailable(
+            f"no payload manifest and {conf_path} is missing, so this checkout "
+            "cannot name the app version the updater compares"
+        )
+    try:
+        conf = json.loads(conf_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise BuildInfoUnavailable(
+            f"{conf_path} could not be read as JSON: {exc}"
+        ) from exc
+    raw_version = conf.get("version")
+    if not isinstance(raw_version, str) or raw_version.strip() == "":
+        raise BuildInfoUnavailable(
+            f"{conf_path} has no string 'version' field, so this checkout "
+            "cannot name the app version the updater compares"
+        )
+    return raw_version.strip()
+
+
 def _from_repo(repo_root: Path) -> BuildInfoOut:
     if shutil.which("git") is None:
         raise BuildInfoUnavailable(
@@ -240,6 +273,7 @@ def _from_repo(repo_root: Path) -> BuildInfoOut:
             _git(repo_root, "log", "-1", f"--format={HEAD_TIME_FORMAT}")
         ),
         built_at_kind="head-commit",
+        app_version=_tauri_app_version(repo_root),
     )
 
 
