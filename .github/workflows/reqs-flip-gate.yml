@@ -102,7 +102,7 @@ jobs:
           if [ -d "$ws/.git" ]; then
             live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
             if [ -z "$live" ]; then
-              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -name '*.lock' -type f -print -delete | wc -l)"
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
             else
               echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
             fi
