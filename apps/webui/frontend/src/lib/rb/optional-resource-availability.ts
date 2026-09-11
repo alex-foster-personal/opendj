@@ -6,6 +6,7 @@ export type OptionalResourceCaps = {
 	lyrics: boolean | 'unknown';
 	autoCues: boolean | 'unknown';
 	stems: boolean | 'unknown';
+	artwork: boolean | null | 'unknown';
 };
 
 type StoreGlobal = {
@@ -26,6 +27,7 @@ export function rememberOptionalResources(
 		lyrics?: boolean;
 		autoCues?: boolean;
 		stems?: boolean;
+		artwork?: boolean | null;
 	}
 ): void {
 	const prev = _store().get(stableId) ?? {};
@@ -39,6 +41,9 @@ export function rememberOptionalResources(
 	if (typeof partial.stems === 'boolean') {
 		next.stems = partial.stems;
 	}
+	if (partial.artwork === true || partial.artwork === false || partial.artwork === null) {
+		next.artwork = partial.artwork;
+	}
 	_store().set(stableId, next);
 }
 
@@ -47,8 +52,16 @@ export function optionalResources(stableId: string): OptionalResourceCaps {
 	return {
 		lyrics: caps?.lyrics ?? 'unknown',
 		autoCues: caps?.autoCues ?? 'unknown',
-		stems: caps?.stems ?? 'unknown'
+		stems: caps?.stems ?? 'unknown',
+		artwork:
+			caps !== undefined && 'artwork' in caps ? (caps.artwork as boolean | null) : 'unknown'
 	};
+}
+
+/** Fetch artwork unless the cap is a known miss (`false`) or reader-unavailable (`null`). */
+export function shouldFetchArtwork(stableId: string): boolean {
+	const cap = optionalResources(stableId).artwork;
+	return cap !== false && cap !== null;
 }
 
 /** Unit tests only. */

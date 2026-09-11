@@ -68,13 +68,43 @@ test('remember and read optional resource caps', () => {
 	assert.deepEqual(availability.optionalResources('sid-1'), {
 		lyrics: false,
 		autoCues: true,
-		stems: false
+		stems: false,
+		artwork: 'unknown'
 	});
 	assert.deepEqual(availability.optionalResources('sid-2'), {
 		lyrics: 'unknown',
 		autoCues: 'unknown',
-		stems: 'unknown'
+		stems: 'unknown',
+		artwork: 'unknown'
 	});
+});
+
+test('remember and read artwork caps including null', () => {
+	availability.resetOptionalResourcesForTests();
+	availability.rememberOptionalResources('art-true', { artwork: true });
+	availability.rememberOptionalResources('art-false', { artwork: false });
+	availability.rememberOptionalResources('art-null', { artwork: null });
+	assert.equal(availability.optionalResources('art-true').artwork, true);
+	assert.equal(availability.optionalResources('art-false').artwork, false);
+	assert.equal(availability.optionalResources('art-null').artwork, null);
+	assert.equal(availability.optionalResources('art-missing').artwork, 'unknown');
+});
+
+test('omitting artwork does not remember null', () => {
+	availability.resetOptionalResourcesForTests();
+	availability.rememberOptionalResources('lyrics-only', { lyrics: false });
+	assert.equal(availability.optionalResources('lyrics-only').artwork, 'unknown');
+});
+
+test('shouldFetchArtwork skips false and null, fetches unknown and true', () => {
+	availability.resetOptionalResourcesForTests();
+	availability.rememberOptionalResources('art-true', { artwork: true });
+	availability.rememberOptionalResources('art-false', { artwork: false });
+	availability.rememberOptionalResources('art-null', { artwork: null });
+	assert.equal(availability.shouldFetchArtwork('art-true'), true);
+	assert.equal(availability.shouldFetchArtwork('unknown-art'), true);
+	assert.equal(availability.shouldFetchArtwork('art-false'), false);
+	assert.equal(availability.shouldFetchArtwork('art-null'), false);
 });
 
 test('fetchTrackLyrics skips fetch when lyrics remembered absent', async () => {

@@ -16,11 +16,6 @@
       "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/auto-cues returns 404"
     },
     {
-      "signature": "http-503:GET:/api/v1/tracks/<hash>/artwork",
-      "issue": "#1872",
-      "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/artwork returns 503"
-    },
-    {
       "signature": "console.error:Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
       "issue": "#1873",
       "reason": "AutoPlay hunt: console.error 503 Service Unavailable while mixing"

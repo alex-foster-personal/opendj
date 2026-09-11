@@ -1,7 +1,8 @@
-"""TrackOut optional-resource flags must predict absent lyrics, auto-cues, stems."""
+"""TrackOut optional-resource flags must predict absent lyrics, auto-cues, stems, artwork."""
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -53,6 +54,7 @@ def test_track_out_optional_resource_flags_on_empty_track(
     assert body["lyrics_available"] is False
     assert body["auto_cues_available"] is False
     assert body["stems_available"] is False
+    assert body["artwork_available"] is False
 
     lyrics_response = flags_client.get("/api/v1/tracks/empty-track/lyrics")
     assert lyrics_response.status_code == 404
@@ -90,3 +92,39 @@ def test_track_out_lyrics_available_when_cache_file_exists(
 
     assert response.status_code == 200
     assert response.json()["lyrics_available"] is True
+
+
+@pytest.mark.requires_mutagen
+def test_track_out_artwork_available_false_for_audio_without_picture(
+    flags_client: TestClient, tmp_path: Path
+) -> None:
+    fixture = (
+        Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-320.mp3"
+    )
+    audio_path = tmp_path / "no-art.mp3"
+    shutil.copy2(fixture, audio_path)
+    state_dir = tmp_path / "state"
+    state_db_path = state_dir / "state.db"
+    connection = state_db.open_rw(state_db_path)
+    connection.execute(
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, file_path, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            "no-art-track",
+            "inferred",
+            "No Art",
+            str(audio_path),
+            "2026-01-01T00:00:00Z",
+            "2026-01-01T00:00:00Z",
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+    response = flags_client.get("/api/v1/tracks/no-art-track")
+
+    assert response.status_code == 200
+    assert response.json()["artwork_available"] is False
+
+    artwork = flags_client.get("/api/v1/tracks/no-art-track/artwork")
+    assert artwork.status_code == 404

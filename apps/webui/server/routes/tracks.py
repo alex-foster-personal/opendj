@@ -18,7 +18,6 @@ from ..backend import ConflictError, StateBackend, Track, TrackFilter
 from ..deps import get_read_state, get_write_state
 from ..errors import precondition_required
 from ..etag import compute_etag
-from ..stem_artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
 from ..models import (
     LyricsUnavailableOut,
     ProvenanceOut,
@@ -29,6 +28,8 @@ from ..models import (
     TrackPatch,
     TracksPage,
 )
+from ..rb_vendor_pkg.track_rows import _artwork_facts
+from ..stem_artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
 
@@ -52,6 +53,15 @@ def _has_rb_mapping(stable_id: str) -> bool:
     """Same criteria build_track_rows uses: a live vendor mapping AND a live
     djmdContent row (rb_vendor.bulk_rb_meta yields a row only for both)."""
     return stable_id in rb_vendor.bulk_rb_meta([stable_id])
+
+
+def _rb_mapping_and_artwork(
+    stable_id: str, file_path: str | None
+) -> tuple[bool, bool | None]:
+    """One bulk_rb_meta for both has_rb_mapping and listing's artwork facts."""
+    meta_map = rb_vendor.bulk_rb_meta([stable_id])
+    artwork_available, _status = _artwork_facts(meta_map.get(stable_id), file_path)
+    return stable_id in meta_map, artwork_available
 
 
 def _data_dir_from_state_db(state_db_path: Path) -> Path:
@@ -126,6 +136,7 @@ def _track_to_out(
     lyrics_available: bool,
     auto_cues_available: bool,
     stems_available: bool,
+    artwork_available: bool | None,
 ) -> TrackOut:
     prov_out = {
         k: ProvenanceOut(
@@ -158,6 +169,7 @@ def _track_to_out(
         lyrics_available=lyrics_available,
         auto_cues_available=auto_cues_available,
         stems_available=stems_available,
+        artwork_available=artwork_available,
     )
 
 
@@ -210,6 +222,7 @@ def list_tracks(
             lyrics_available=lyrics_by_sid[track.stable_id],
             auto_cues_available=auto_cues_by_sid[track.stable_id],
             stems_available=_stems_available_from_summary(row["stems"]),
+            artwork_available=row["artwork_available"],
         ).model_dump()
         base["play_count"] = int(row.get("play_count") or 0)
         items.append(
@@ -222,7 +235,6 @@ def list_tracks(
                 quality=row["quality"],
                 vocals=row["vocals"],
                 stems=row["stems"],
-                artwork_available=row["artwork_available"],
                 artwork_status=row["artwork_status"],
                 energy=row["energy"],
                 energy_source=row["energy_source"],
@@ -285,12 +297,16 @@ def get_track(
         analysis_db_path=_analysis_db_path(request),
         stems=stems,
     )
+    has_rb_mapping, artwork_available = _rb_mapping_and_artwork(
+        stable_id, track.file_path
+    )
     return _track_to_out(
         track,
-        has_rb_mapping=_has_rb_mapping(stable_id),
+        has_rb_mapping=has_rb_mapping,
         lyrics_available=lyrics,
         auto_cues_available=auto_cues,
         stems_available=stems_avail,
+        artwork_available=artwork_available,
     )
 
 
@@ -341,10 +357,14 @@ def patch_track(
         analysis_db_path=_analysis_db_path(request),
         stems=stems,
     )
+    has_rb_mapping, artwork_available = _rb_mapping_and_artwork(
+        stable_id, updated.file_path
+    )
     return _track_to_out(
         updated,
-        has_rb_mapping=_has_rb_mapping(stable_id),
+        has_rb_mapping=has_rb_mapping,
         lyrics_available=lyrics,
         auto_cues_available=auto_cues,
         stems_available=stems_avail,
+        artwork_available=artwork_available,
     )

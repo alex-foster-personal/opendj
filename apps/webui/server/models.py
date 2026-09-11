@@ -57,6 +57,12 @@ class TrackOut(BaseModel):
     lyrics_available: bool
     auto_cues_available: bool
     stems_available: bool
+    # Same tri-state as RbMetaOut / listing: True = GET /artwork would 200,
+    # False = would 404 ARTWORK_NOT_FOUND, None = would 503
+    # ARTWORK_READER_UNAVAILABLE. Deck-load GET /tracks/{sid} carries this so
+    # the browser can skip the img GET (same job as has_rb_mapping /
+    # lyrics_available).
+    artwork_available: bool | None
 
 
 class QualityOut(BaseModel):
@@ -113,7 +119,7 @@ class TrackListItemOut(TrackOut):
     stems: dict[str, Any]
     # Artwork facts are computed in the listing's existing bulk row assembly,
     # so TrackTable does not depend on IntersectionObserver hydration.
-    artwork_available: bool | None
+    # artwork_available is inherited from TrackOut (same tri-state).
     artwork_status: Literal["ok", "no_image_path", "unresolved", "file_missing"]
     # Display-only MIK value. Null means the browser must render an empty
     # Energy cell and use energy_reason rather than inventing a number.
