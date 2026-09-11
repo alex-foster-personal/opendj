@@ -33,6 +33,7 @@
  *   library-prefetch-audio      - sampled row-select audio ArrayBuffer warm
  */
 import { recordPerfTiming } from '$lib/rb/perf-event-log';
+import { completeLibraryUsable } from '$lib/client-telemetry';
 
 // ------------------------------------------------------- filter debounce
 
@@ -162,6 +163,7 @@ export function recordLibraryLoadTiming(
 		fetch_ms: Math.round(args.fetchMs),
 		rows: args.rows
 	});
+	completeLibraryUsable({ source });
 }
 
 /** One completed whole-collection FTS query. `total` rides along because the

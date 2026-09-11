@@ -22,10 +22,11 @@ test('the status chip has off, syncing, ok and error render states', () => {
 	}
 });
 
-test('the chip carries the complete status object in its hover title', () => {
+test('the chip carries an explanatory hover title derived from status', () => {
 	assert.match(CHIP, /const title = \$derived\.by\(/);
 	assert.match(CHIP, /title=\{title\}/);
 	assert.match(CHIP, /Click to open recent results\./);
+	assert.match(CHIP, /status\?\.last_push_at/);
 });
 
 test('clicking the chip opens the five-result detail instead of a dead badge', () => {

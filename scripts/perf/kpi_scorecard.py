@@ -61,6 +61,7 @@ _MAP = _REPO_ROOT / "docs" / "perf" / "kpi-map.json"
 _LEDGER = _REPO_ROOT / "docs" / "perf" / "kpi-ledger.json"
 
 UNMEASURED = "UNMEASURED"
+UNKNOWN = "UNKNOWN"
 
 # Reading selection/validation (Reading, newest_reading, age_in_days, the
 # _classify_required_reading family) lives in kpi_readings.py; imported above
@@ -77,6 +78,7 @@ class Score:
     readings: tuple[Reading, ...]
     age_days: int | None
     note: str
+    capture_method: str = ""
 
 
 # ---------------------------------------------------------------- scoring
@@ -197,8 +199,18 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
             reasons = _missing_rejected_reasons(missing, rejected)
             if reasons:
                 note = ". ".join(reasons) + ". " + note
+            absent = str(cfg.get("absent_verdict") or UNMEASURED)
             scores.append(
-                Score(sid, cfg["title"], cfg.get("class", "?"), UNMEASURED, readings, None, note)
+                Score(
+                    sid,
+                    cfg["title"],
+                    cfg.get("class", "?"),
+                    absent,
+                    readings,
+                    None,
+                    note,
+                    str(cfg.get("capture_method") or ""),
+                )
             )
             continue
 
@@ -223,6 +235,7 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
                 readings,
                 max(ages) if ages else None,
                 note,
+                str(cfg.get("capture_method") or ""),
             )
         )
     return scores
@@ -239,30 +252,40 @@ def render(scores: list[Score], max_stale_days: int | None) -> list[str]:
         if max_stale_days is not None and s.age_days is not None and s.age_days > max_stale_days:
             stale = "  STALE"
         lines.append(f"{s.scenario:4} {s.ux_class:5} {s.verdict:11} {age:>5}  {s.title}{stale}")
+        method = s.capture_method
         for r in s.readings:
             if r.measured:
                 cohort = f", capture={r.capture_id}" if r.capture_id else ""
+                method_suffix = f"  method={method or r.source}"
                 lines.append(
-                    f"       {r.kpi} = {r.value} {r.unit}  "
+                    f"       {r.kpi} = {r.value} {r.unit}{method_suffix}  "
                     f"({r.date}, {r.machine}, {r.source}{cohort})"
                 )
                 if r.note:
                     lines.append(f"         note: {r.note}")
             elif r.superseded:
                 lines.append(f"       {r.kpi} = SUPERSEDED, not scored")
+            elif s.verdict == UNKNOWN and method:
+                lines.append(f"       {r.kpi} = UNKNOWN  method={method}")
             else:
                 lines.append(f"       {r.kpi} = never recorded")
         if s.note:
-            label = "WHY UNMEASURED" if s.verdict == UNMEASURED else "READ THIS WITH THE VERDICT"
+            if s.verdict == UNMEASURED:
+                label = "WHY UNMEASURED"
+            elif s.verdict == UNKNOWN:
+                label = "WHY UNKNOWN"
+            else:
+                label = "READ THIS WITH THE VERDICT"
             lines.append(f"       {label}: {s.note}")
     counts: dict[str, int] = {}
     for s in scores:
         counts[s.verdict] = counts.get(s.verdict, 0) + 1
     lines.append("")
     lines.append("  " + ", ".join(f"{n} {v}" for v, n in sorted(counts.items())))
+    unscoreable = counts.get(UNMEASURED, 0) + counts.get(UNKNOWN, 0)
     lines.append(
-        f"  {counts.get(UNMEASURED, 0)} of {len(scores)} UX scenarios cannot be scored at all. "
-        "An UNMEASURED scenario is not a passing one."
+        f"  {unscoreable} of {len(scores)} UX scenarios cannot be scored at all. "
+        f"An {UNMEASURED} or {UNKNOWN} scenario is not a passing one."
     )
     return lines
 
@@ -280,6 +303,7 @@ def _score_to_json(s: Score) -> dict:
         "age_days": s.age_days,
         "title": s.title,
         "note": s.note,
+        "capture_method": s.capture_method,
         "readings": [
             {
                 "kpi": r.kpi,

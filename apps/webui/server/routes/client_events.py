@@ -7,7 +7,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Request
@@ -18,8 +18,10 @@ from ..client_logs import DEFAULT_LOG_DIR, append_json_record, daily_log_path
 router = APIRouter(prefix="/client-events", tags=["client-events"])
 log = logging.getLogger(__name__)
 
+_PERF_SPAN_NAMES: frozenset[str] = frozenset({"login-submit-to-library-usable"})
 
-class ClientEventIn(BaseModel):
+
+class PageViewIn(BaseModel):
     client_event_id: str = Field(min_length=1, max_length=128)
     kind: Literal["page-view"]
     url: str = Field(min_length=1, max_length=4096)
@@ -52,6 +54,26 @@ class ClientEventIn(BaseModel):
         return value
 
 
+class PerfSpanIn(BaseModel):
+    client_event_id: str = Field(min_length=1, max_length=128)
+    kind: Literal["perf-span"]
+    name: str = Field(min_length=1, max_length=128)
+    duration_ms: float = Field(ge=0, le=86_400_000)
+    method: str = Field(min_length=1, max_length=256)
+    stages: dict[str, float] | None = None
+    client_timestamp: str = Field(max_length=128)
+
+    @field_validator("name")
+    @classmethod
+    def name_must_be_allowlisted(cls, value: str) -> str:
+        if value not in _PERF_SPAN_NAMES:
+            raise ValueError(f"perf-span name {value!r} is not allowlisted")
+        return value
+
+
+ClientEventIn = Annotated[PageViewIn | PerfSpanIn, Field(discriminator="kind")]
+
+
 class ClientEventOut(BaseModel):
     event_id: str
     stored: bool
@@ -82,12 +104,13 @@ def capture_client_event(payload: ClientEventIn, request: Request) -> ClientEven
     path = daily_log_path(log_dir, "webui-visitors", time.gmtime())
     stored = append_json_record(path, record)
     if stored:
+        label = payload.path if payload.kind == "page-view" else payload.name
         log.info(
             "visitor %s %s %s %s (details: %s)",
             event_id,
             payload.kind,
             record["client_ip"],
-            payload.path,
+            label,
             path,
         )
     else:

@@ -11,6 +11,7 @@
  * moves.
  */
 import { API_BASE } from './api';
+import { markLoginNavigate, markLoginSubmit } from './client-telemetry';
 
 export interface AuthUser {
 	google_sub: string;
@@ -89,6 +90,7 @@ export async function refreshUser(): Promise<void> {
  * message is the provisioning runbook.
  */
 export async function startLogin(): Promise<LoginStart> {
+	markLoginSubmit();
 	const response = await authFetch('/api/v1/auth/login', {
 		method: 'POST',
 		body: JSON.stringify({ origin: window.location.origin })
@@ -96,7 +98,9 @@ export async function startLogin(): Promise<LoginStart> {
 	if (!response.ok) {
 		throw new Error(await errorMessage(response, `could not start sign-in (${response.status})`));
 	}
-	return (await response.json()) as LoginStart;
+	const payload = (await response.json()) as LoginStart;
+	markLoginNavigate();
+	return payload;
 }
 
 /** Drop the session server-side, then clear it locally. */

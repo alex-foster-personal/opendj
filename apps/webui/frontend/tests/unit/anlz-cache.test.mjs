@@ -641,7 +641,15 @@ test('a wrong-source /anlz response is discarded, not cached, when it disagrees 
 		});
 		isolatedCache.analysisSourceState.features.beatgrid = 'rekordbox';
 		isolatedCache.ensureAnlz('mismatched-track');
-		await new Promise((resolve) => setTimeout(resolve, 200));
+		{
+			const deadline = Date.now() + 5000;
+			for (;;) {
+				const entry = isolatedCache.getAnlzEntry('mismatched-track');
+				if (entry === undefined || entry.status !== 'loading') break;
+				if (Date.now() > deadline) throw new Error('mismatched-track fetch never settled');
+				await new Promise((resolve) => setTimeout(resolve, 5));
+			}
+		}
 		assert.equal(
 			isolatedCache.getAnlzEntry('mismatched-track'),
 			undefined,
