@@ -44,8 +44,12 @@
 	// {error, message, ...} bodies (ErrorBody, not the detail envelope),
 	// so the mapping below reads them off ApiError.body.
 	import { ApiError, api, unwrap } from '$lib/api/client';
+	import { DECK_IDS } from '$lib/player/constants';
+	import { getDeckState } from '$lib/player/state.svelte';
+	import { pushPlayed } from '$lib/rb/peak-play-timeline';
 	import { visibleRationaleTags } from '$lib/rb/suggest-tags';
 	import ControlExplainer from './deck/ControlExplainer.svelte';
+	import PeakPressureCoach from './PeakPressureCoach.svelte';
 
 	// Pin 946e04da2d0d: several of these chevrons sit edge to edge, so a fast
 	// pointer skim across the strip would otherwise flash a popover per tile.
@@ -71,6 +75,15 @@
 		context_source: string;
 		context_size: number;
 		candidates: SuggestionWire[];
+		pressure: {
+			score: number;
+			cue: 'keep_building' | 'hold' | 'release' | 'unknown';
+			scored_tracks: number;
+			skipped_unknown: number;
+			cue_label: string;
+			advisory: string;
+			limitation: string;
+		};
 	}
 	interface InsufficientWire {
 		error: string;
@@ -129,10 +142,25 @@
 
 	let state: StripState = $state({ kind: 'idle' });
 	let requestSeq = 0; // stale-response guard
+	let localSessionIds: string[] = $state([]);
+	const prevDeckIds: Record<number, string | null> = {};
+
+	$effect(() => {
+		if (sessionIds.length > 0) return;
+		for (const deckId of DECK_IDS) {
+			const currentId = getDeckState(deckId).stable_id;
+			const previousId = prevDeckIds[deckId] ?? null;
+			if (previousId !== null && currentId !== previousId) {
+				localSessionIds = pushPlayed(localSessionIds, previousId);
+			}
+			prevDeckIds[deckId] = currentId;
+		}
+	});
 
 	$effect(() => {
 		const sid = stableId;
-		const session = [...sessionIds];
+		const session =
+			sessionIds.length > 0 ? [...sessionIds] : [...localSessionIds];
 		const seq = ++requestSeq;
 		if (sid === null) {
 			state = { kind: 'idle' };
@@ -209,6 +237,9 @@
 
 <section class="strip" aria-label="suggested next tracks">
 	<span class="head">NEXT</span>
+	{#if state.kind === 'loaded' && state.data.pressure.cue !== 'unknown'}
+		<PeakPressureCoach cue={state.data.pressure.cue} cueLabel={state.data.pressure.cue_label} />
+	{/if}
 	{#if state.kind === 'idle'}
 		<span class="dim">load a track on deck 1 for suggestions</span>
 	{:else if state.kind === 'loading'}
