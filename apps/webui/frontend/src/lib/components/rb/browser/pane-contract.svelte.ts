@@ -74,8 +74,6 @@ export interface BrowserRow extends Pick<TrackRow, 'key_status' | 'key_reason' |
 	/** Inline streaming flag (playlist rows only, contract 4); null =
 	 * not provided inline -> fall back to rb_meta. */
 	is_streaming: boolean | null;
-	/** LIBUX-07: our own audio in non-local storage. Absent/false = local
-	 * or unknown; the glyph renders only when this is true. */
 	is_remote?: boolean;
 	/** Spotify-unmatched placeholder (light green row). True when the
 	 * row is a synthetic spotify-pending track or wire spotify_pending. */
