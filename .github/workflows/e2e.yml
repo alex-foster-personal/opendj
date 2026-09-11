@@ -551,7 +551,7 @@ jobs:
       # -- TIER 1a-bis: cross-browser deck-load smoke (#770) -------------------
       - name: Deck-load smoke (chromium + webkit, production build)
         working-directory: apps/webui/frontend
-        if: ${{ !cancelled() }}
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
         # Separate step, same engine-served artifact and fixture library as
         # the step above (webServer boots fresh per `playwright test`
         # invocation, so this pays one more ~1s engine boot -- everything

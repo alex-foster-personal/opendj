@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Download the CI workflow's shared production frontend artifact for this commit.
 #
-# Polls until the CI workflow uploads production-frontend-<sha> or the wait budget
-# expires. Never runs pnpm build locally.
+# Polls the repository artifact index until production-frontend-<sha> exists or the
+# wait budget expires. Never runs pnpm build locally.
 #
 # Pinned by tests/scripts/test_ci_frontend_build_artifact.py.
 set -euo pipefail
@@ -22,23 +22,21 @@ fi
 
 deadline=$(( $(date +%s) + MAX_WAIT_S ))
 while [ "$(date +%s)" -lt "$deadline" ]; do
-  run_id="$(
+  artifact_id="$(
     gh api -H "Accept: application/vnd.github+json" \
-      "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${SHA}&status=completed&per_page=10" \
-      --jq '.workflow_runs[] | select(.conclusion=="success") | .id' | head -n1
+      "repos/${REPO}/actions/artifacts?name=${ARTIFACT_NAME}&per_page=5" \
+      --jq ".artifacts[] | select(.expired==false and .name==\"${ARTIFACT_NAME}\") | .id" | head -n1
   )"
-  if [ -n "$run_id" ]; then
-    art_id="$(
-      gh api "repos/${REPO}/actions/runs/${run_id}/artifacts" \
-        --jq ".artifacts[] | select(.name==\"${ARTIFACT_NAME}\") | .id" | head -n1
-    )"
-    if [ -n "$art_id" ]; then
-      mkdir -p "$DEST"
-      find "$DEST" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-      gh run download "$run_id" -n "$ARTIFACT_NAME" -D "$DEST"
-      "${ROOT}/scripts/ci_frontend_build_assert.sh" "$SHA" "$DEST"
-      exit 0
-    fi
+  if [ -n "$artifact_id" ]; then
+    tmp_zip="$(mktemp -t mdt-frontend-artifact.XXXXXX.zip)"
+    trap 'rm -f "$tmp_zip"' EXIT
+    gh api -H "Accept: application/vnd.github+json" \
+      "repos/${REPO}/actions/artifacts/${artifact_id}/zip" >"$tmp_zip"
+    mkdir -p "$DEST"
+    find "$DEST" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    unzip -qo "$tmp_zip" -d "$DEST"
+    "${ROOT}/scripts/ci_frontend_build_assert.sh" "$SHA" "$DEST"
+    exit 0
   fi
   sleep "$POLL_S"
 done
