@@ -1,6 +1,7 @@
 """Operator actions on a sync hub or spoke, as functions and as a CLI.
 
     uv run python -m apps.sync_hub sync         --data-dir DIR --hub URL [--name N]
+    uv run python -m apps.sync_hub status       --data-dir DIR
     uv run python -m apps.sync_hub generation   --data-dir DIR
     uv run python -m apps.sync_hub rotate       --data-dir DIR
     uv run python -m apps.sync_hub prune        --data-dir DIR [--changelog T]
@@ -12,13 +13,17 @@
                                                 [--name N]
     uv run python -m apps.sync_hub fleet        --data-dir DIR [--json]
 
-Seven operations:
+Eight operations:
 
 * **sync** runs one spoke round trip against ``--hub`` (round 3 finding R7).
   Nothing outside pytest called ``run_sync`` before -- the whole spoke
   protocol, and the retention prune it depends on, was library code with no
-  operator or agent entry point. This is the agent-native-parity twin of the
-  ``/cloudsync`` UI's own sync button.
+  operator or agent entry point. Its HTTP twin is ``POST
+  /api/v1/cloudsync/sync`` (``apps/webui/server/routes/cloudsync_ops.py``),
+  which calls :func:`sync` itself. The ``/cloudsync`` page has no sync button
+  yet (plan W17).
+* **status** prints the CloudSync status object, including the journal every
+  :func:`sync` writes; its HTTP twin is ``GET /api/v1/cloudsync/status``.
 * **prune** bounds a changelog that had no retention at all (round 2 finding
   N6) -- one row per synced-table write, forever. It only ever drops entries
   that a NEWER entry for the same row supersedes, so the pull loses no
@@ -30,7 +35,8 @@ Seven operations:
 * **generation** prints the current token.
 * **grant** mints one single-use enrollment credential on this hub, for a
   user who has signed in through the webui. Hub-local, because minting a
-  credential is an act of hub authority.
+  credential is an act of hub authority. HTTP twin: ``POST
+  /api/v1/cloudsync/enrollment-grants`` (loopback-only, hub-only).
 * **enroll** is the DEV half of ``specs/design_decision_12.md``: the
   formalized single method for adding a machine to cloudsync. It is a thin
   shell over ``POST /api/v1/sync/enroll`` -- it opens no database and holds
@@ -38,7 +44,8 @@ Seven operations:
   in-app path will use. Idempotent: a re-run says "already enrolled".
 * **fleet** prints who owns which machine on this hub, and how many
   machines are unowned. That count is what an operator closes before
-  enrollment is ever enforced.
+  enrollment is ever enforced. HTTP twin: ``GET /api/v1/cloudsync/fleet``,
+  which returns exactly ``fleet --json``.
 
 Every UI/daemon action in this repo has a CLI twin (the agent-native parity
 rule); these are the twin the sync surface will match.

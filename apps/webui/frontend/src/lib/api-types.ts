@@ -776,6 +776,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cloudsync/enrollment-grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mint Enrollment Grant
+         * @description Mint one single-use grant on this hub. The token is returned once and
+         *     never logged; only its sha256 reaches the database.
+         */
+        post: operations["mint_enrollment_grant_api_v1_cloudsync_enrollment_grants_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/fleet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fleet
+         * @description Exactly ``fleet --json``: the one function both entry points call.
+         */
+        get: operations["get_fleet_api_v1_cloudsync_fleet_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cloudsync/machines": {
         parameters: {
             query?: never;
@@ -869,6 +910,26 @@ export interface paths {
         get: operations["get_status_api_v1_cloudsync_status_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Sync Round
+         * @description One spoke round trip against ``hub_url``, journaled for ``/status``.
+         */
+        post: operations["run_sync_round_api_v1_cloudsync_sync_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5247,6 +5308,45 @@ export interface components {
             sandboxed: boolean;
         };
         /**
+         * FleetMachineOut
+         * @description One row of ``fleet --json``. ``extra=forbid`` so a field the shared
+         *     function adds fails loudly here instead of silently vanishing from HTTP.
+         */
+        FleetMachineOut: {
+            /** Enrolled At */
+            enrolled_at: string | null;
+            /** Enrolled Via */
+            enrolled_via: string | null;
+            /** Machine Id */
+            machine_id: string;
+            /** Name */
+            name: string;
+            /** Owner Email */
+            owner_email: string | null;
+            /** Owner Google Sub */
+            owner_google_sub: string | null;
+            /** Row Hub Machine Id */
+            row_hub_machine_id: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "owned" | "unowned" | "foreign";
+        };
+        /** FleetOut */
+        FleetOut: {
+            /** Foreign */
+            foreign: number;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Machines */
+            machines: components["schemas"]["FleetMachineOut"][];
+            /** Owned */
+            owned: number;
+            /** Unowned */
+            unowned: number;
+        };
+        /**
          * FolderImportIn
          * @description Point at one or more folders of audio files. No rekordbox involved.
          */
@@ -5353,6 +5453,35 @@ export interface components {
             stable_id: string;
             /** Tier */
             tier: string;
+        };
+        /** GrantIn */
+        GrantIn: {
+            /**
+             * Owner Email
+             * @description email of a user who has signed in on this hub (CLI --owner)
+             */
+            owner_email: string;
+            /**
+             * Ttl Seconds
+             * @description how long the grant stays redeemable (CLI --ttl-seconds)
+             * @default 900
+             */
+            ttl_seconds: number;
+        };
+        /**
+         * GrantOut
+         * @description The raw token exists in this response and nowhere else; only its
+         *     sha256 is stored. Redeem with ``python -m apps.sync_hub enroll``.
+         */
+        GrantOut: {
+            /** Created At */
+            created_at: string;
+            /** Expires At */
+            expires_at: string;
+            /** Owner Email */
+            owner_email: string;
+            /** Token */
+            token: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -6216,6 +6345,20 @@ export interface components {
         MyTagSweepOut: {
             /** Tracks Updated */
             tracks_updated: number;
+        };
+        /** OpsErrorBody */
+        OpsErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * OpsErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        OpsErrorResponse: {
+            detail: components["schemas"]["OpsErrorBody"];
         };
         /** OverviewOut */
         OverviewOut: {
@@ -8048,6 +8191,57 @@ export interface components {
              * @enum {string}
              */
             mode: "pinned" | "cached" | "stream" | "excluded";
+        };
+        /** SyncRunIn */
+        SyncRunIn: {
+            /**
+             * Hub Url
+             * @description the hub base URL, e.g. http://hub.tailnet:8686 (CLI --hub)
+             */
+            hub_url: string;
+            /**
+             * Name
+             * @description this machine's display name; the hostname when omitted (CLI --name)
+             */
+            name?: string | null;
+        };
+        /**
+         * SyncRunOut
+         * @description What one ``run_sync`` observed. Every count is observed, none inferred.
+         *
+         *     ``digest_inconclusive`` True is the CLI's exit code 4: rows moved but the
+         *     post-sync digest compare excluded rows, so agreement was NOT verified.
+         *     ``hub_quarantined`` None means the hub did not report it (unknown, not 0).
+         */
+        SyncRunOut: {
+            /** Accepted */
+            accepted: number;
+            /** Applied */
+            applied: number;
+            /** Digest Inconclusive */
+            digest_inconclusive: boolean;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Hub Quarantined */
+            hub_quarantined: number | null;
+            /** Hub Restore Detected */
+            hub_restore_detected: boolean;
+            /** Hub Seq */
+            hub_seq: number;
+            /** Machine Id */
+            machine_id: string;
+            /** Pulled */
+            pulled: number;
+            /** Pushed */
+            pushed: number;
+            /** Quarantined Incoming */
+            quarantined_incoming: number;
+            /** Quarantined Rows */
+            quarantined_rows: number;
+            /** Rejected */
+            rejected: number;
+            /** Rounds */
+            rounds: number;
         };
         /** SyncSnapshotIn */
         SyncSnapshotIn: {
@@ -10448,6 +10642,104 @@ export interface operations {
             };
         };
     };
+    mint_enrollment_grant_api_v1_cloudsync_enrollment_grants_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrantIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrantOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description No signed-in user on this hub has that email; none is created. code: CLOUDSYNC_GRANT_OWNER_UNKNOWN. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description This machine is not a hub (MDT_IS_HUB is not 1); a grant is an act of hub authority. code: CLOUDSYNC_NOT_A_HUB. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description MDT_IS_HUB holds a value other than 1, 0 or empty. code: CLOUDSYNC_HUB_FLAG_INVALID. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+        };
+    };
+    get_fleet_api_v1_cloudsync_fleet_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+        };
+    };
     list_machines_api_v1_cloudsync_machines_get: {
         parameters: {
             query?: never;
@@ -10632,6 +10924,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CloudSyncStatusOut"];
+                };
+            };
+        };
+    };
+    run_sync_round_api_v1_cloudsync_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncRunIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncRunOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description run_sync raised an error it does not declare (a defect). Journaled as error by maintenance.sync; the body is the server's plain 500, not an OpsErrorResponse. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The hub was unreachable or answered with something unusable. code: CLOUDSYNC_HUB_UNREACHABLE. Journaled as error. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
                 };
             };
         };
