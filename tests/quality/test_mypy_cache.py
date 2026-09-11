@@ -14,10 +14,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _mypy_error_total(metrics: list[qg.Metric]) -> int:
-    return sum(
-        m.value
-        for m in metrics
-        if m.key in ("mypy.errors_apps", "mypy.errors_tests", "mypy.errors_scripts")
+    return int(
+        sum(
+            m.value
+            for m in metrics
+            if m.key in ("mypy.errors_apps", "mypy.errors_tests", "mypy.errors_scripts")
+        )
     )
 
 
@@ -26,6 +28,7 @@ def _run_eval_mypy() -> list[qg.Metric]:
         return qg._eval_mypy()
     except RuntimeError as exc:
         pytest.skip(f"UNAVAILABLE: real mypy could not run: {exc}")
+    raise AssertionError("unreachable")
 
 
 @pytest.mark.slow

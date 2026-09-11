@@ -34,14 +34,14 @@ def config_identity() -> str:
     """Stable fingerprint of the mypy pin and scored config block."""
     pin = MYPY_REQS.read_text(encoding="utf-8").strip()
     config = json.dumps(_mypy_config_block(), sort_keys=True, separators=(",", ":"))
-    digest = hashlib.sha256(f"{pin}\n{config}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(f"{pin}\n{config}".encode()).hexdigest()
     return digest[:16]
 
 
 def _full_cache_key() -> str:
     pin = MYPY_REQS.read_text(encoding="utf-8").strip()
     config = json.dumps(_mypy_config_block(), sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(f"{pin}\n{config}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{pin}\n{config}".encode()).hexdigest()
 
 
 def _default_cache_dir() -> Path:

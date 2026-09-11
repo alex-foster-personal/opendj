@@ -35,6 +35,27 @@ def test_quality_job_persists_mypy_cache_before_the_ratchet() -> None:
     assert "${RUNNER_NAME" in run
 
 
+def test_fast_lane_ignores_slow_mypy_cache_acceptance() -> None:
+    doc = yaml.safe_load((WORKFLOWS / "ci.yml").read_text(encoding="utf-8"))
+    run = next(
+        step["run"]
+        for step in doc["jobs"]["test"]["steps"]
+        if ".venv/bin/pytest" in (step.get("run") or "")
+    )
+    assert "--ignore=tests/quality/test_mypy_cache.py" in run, (
+        "slow mypy cache acceptance belongs in the quality job, not a fast shard"
+    )
+
+
+def test_quality_job_runs_mypy_cache_acceptance_after_warming_cache() -> None:
+    steps = _quality_job()["steps"]
+    names = [step.get("name") for step in steps]
+    cache_idx = names.index(CACHE_STEP)
+    accept_idx = names.index("mypy cache acceptance (slow)")
+    ratchet_idx = names.index("Quality ratchet")
+    assert cache_idx < accept_idx < ratchet_idx
+
+
 def test_quality_ratchet_step_does_not_inline_a_workspace_cache_dir() -> None:
     run = next(
         step["run"]
