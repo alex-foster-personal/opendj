@@ -339,7 +339,10 @@ def test_a_weekly_reading_below_the_mark_or_stale_leaves_allow_standing(tmp_path
         fixture = _copy_fixture(tmp_path / pct)
         _write_seven_day(fixture, "acct-green", pct, stamp)
         out = _run(_env(fixture, _home(tmp_path / pct, token_profile=True))).stdout
-        assert "account lane=frontend-hotspots account=acct-green five_hour_pct=42 age_s=300 gate=allow" in out, (pct, stamp)
+        assert (
+            "account lane=frontend-hotspots account=acct-green five_hour_pct=42 "
+            "age_s=300 gate=allow" in out
+        ), (pct, stamp)
 
 
 def test_flip_gate_refuses_when_account_rotation_is_absent_entirely(tmp_path):
