@@ -61,6 +61,7 @@ from apps.sync_hub import (
     capabilities,
     engine,
     enrollment,
+    entitlement_gate,
     generation,
     protocol,
     service_credentials,
@@ -280,6 +281,15 @@ def _generation(request: Request, conn: sqlite3.Connection) -> str:
         ) from exc
 
 
+def _gate(
+    request: Request, conn: sqlite3.Connection, machine_id: str, op: entitlement_gate.Operation
+) -> None:
+    """The hosted-hub entitlement check; returns at once on a self-hosted hub."""
+    entitlement_gate.require(
+        request, conn, machine_id=machine_id, operation=op, data_dir=lambda: _data_dir(request)
+    )
+
+
 def _apply_error(exc: engine.SyncApplyError) -> HTTPException:
     return HTTPException(
         status_code=409,
@@ -410,6 +420,7 @@ def enroll(
         **service_storage.PUSH_STORAGE_RESPONSES,
         **_auth("push"),
         **SYNC_VERSION_RESPONSES,
+        **entitlement_gate.refusals("push"),
     },
 )
 def push(request: Request, payload: PushRequest) -> PushResponse:
@@ -432,6 +443,7 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
     with _hub_conn(request) as conn:
         _require_credential(request, conn, payload.machine_id, "push")
         _require_registered(conn, payload.machine_id)
+        _gate(request, conn, payload.machine_id, "write")
         try:
             with _transaction(conn):
                 engine.merge_machines(conn, fleet, caller_id=payload.machine_id)
@@ -462,7 +474,11 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
         )
 
 
-@router.get("/pull", response_model=PullResponse, responses=_auth("pull"))
+@router.get(
+    "/pull",
+    response_model=PullResponse,
+    responses={**_auth("pull"), **entitlement_gate.refusals("pull")},
+)
 def pull(
     request: Request,
     machine_id: str = Query(min_length=1, description="the calling spoke"),
@@ -489,6 +505,7 @@ def pull(
     with _hub_conn(request) as conn:
         _require_credential(request, conn, machine_id, "pull")
         _require_registered(conn, machine_id)
+        _gate(request, conn, machine_id, "read")
         try:
             batch = engine.hub_changes_since(conn, since_seq, limit=limit)
             _refuse_unless_capable(capabilities_, "pull", service_shortfall.pull_shortfall(batch))
@@ -540,6 +557,7 @@ def status(
             machines=machines,
             row_counts=counts,
             hub_generation=_generation(request, conn),
+            **entitlement_gate.status_fields(request),
         )
 
 

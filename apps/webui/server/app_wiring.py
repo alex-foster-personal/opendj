@@ -24,6 +24,7 @@ from apps.feature_flags import FlagStore, load_flags
 from apps.play_analytics.api import router as play_analytics_router
 from apps.sets.api import router as sets_router
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
+from apps.sync_hub import hosted_config as sync_hub_hosted_config
 from apps.sync_hub.service import router as sync_hub_router
 from apps.webui.port_config import (
     PortConfigError,
@@ -240,6 +241,8 @@ def _bind_core_state(
     app.state.state_db_path = state_db_path
     app.state.analysis_db_path = state_db_path
     app.state.usb_simulation_enabled = usb_volumes_sim_routes.simulation_enabled()
+    # MDT_SYNC_HUB_HOSTED: off unless "1"; hosted mode fails fast right here.
+    sync_hub_hosted_config.configure(app, os.environ, db_path=Path(state_db_path))
 
 
 def _bind_feature_state(

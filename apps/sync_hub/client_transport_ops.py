@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.state import schema as state_schema
-from apps.sync_hub import capabilities, engine, protocol, wire_version
+from apps.sync_hub import capabilities, client_refusal, engine, protocol, wire_version
 from apps.sync_hub.transport import API_PREFIX, HubTransport, SyncTransportError
 
 #: What this build advertises on every request that can be answered
@@ -136,6 +136,10 @@ class _PushOutcome:
     #: Rows of OURS the hub refused because ITS local copy carries a stamp it
     #: cannot order. ``None`` means the hub did not report.
     hub_quarantined: int | None = None
+    #: True when the hub answered a push request with 403
+    #: ``entitlement_not_in_plan`` (:mod:`apps.sync_hub.client_refusal`).
+    #: The batches before it are counted; nothing after it was sent.
+    refused: bool = False
 
 
 @dataclass(frozen=True)
@@ -177,17 +181,29 @@ def _push_in_batches(
     reported: list[Any] = []
     wire_fleet = [machine.to_wire() for machine in fleet]
     for chunk in _batched(rows, batch_rows):
-        payload = channel.post(
-            f"{API_PREFIX}/push",
-            {
-                "machine_id": machine_id,
-                "schema_version": state_schema.SCHEMA_VERSION,
-                "wire_version": wire_version.WIRE_VERSION,
-                "rows": [change.to_wire() for change in chunk],
-                "machines": wire_fleet,
-                "capabilities": list(_ADVERTISED),
-            },
-        )
+        try:
+            payload = channel.post(
+                f"{API_PREFIX}/push",
+                {
+                    "machine_id": machine_id,
+                    "schema_version": state_schema.SCHEMA_VERSION,
+                    "wire_version": wire_version.WIRE_VERSION,
+                    "rows": [change.to_wire() for change in chunk],
+                    "machines": wire_fleet,
+                    "capabilities": list(_ADVERTISED),
+                },
+            )
+        except SyncTransportError as exc:
+            if not client_refusal.is_plan_refusal(exc):
+                raise
+            client_refusal.log_push_refused(exc, unsent=len(rows) - accepted - rejected)
+            return _PushOutcome(
+                accepted=accepted,
+                rejected=rejected,
+                requests=requests + 1,
+                hub_quarantined=_total_reported(reported),
+                refused=True,
+            )
         accepted += _int_from(payload, "accepted", "push")
         rejected += _int_from(payload, "rejected", "push")
         reported.append(payload.get("quarantined"))

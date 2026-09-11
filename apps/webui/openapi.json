@@ -5017,6 +5017,49 @@
         "title": "FolderScanOut",
         "type": "object"
       },
+      "GateErrorBody": {
+        "description": "The refusal. ``ui_title`` is present only on a plan refusal (ENT-02).",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ui_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ui Title"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "GateErrorBody",
+        "type": "object"
+      },
+      "GateErrorResponse": {
+        "description": "FastAPI wraps an ``HTTPException`` detail under ``detail``.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/GateErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "GateErrorResponse",
+        "type": "object"
+      },
       "GeneralNoteOut": {
         "properties": {
           "build": {
@@ -11985,6 +12028,21 @@
       },
       "StatusResponse": {
         "properties": {
+          "entitlement_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entitlement Provider"
+          },
+          "hosted": {
+            "title": "Hosted",
+            "type": "boolean"
+          },
           "hub_generation": {
             "title": "Hub Generation",
             "type": "string"
@@ -12027,7 +12085,9 @@
           "seq",
           "machines",
           "row_counts",
-          "hub_generation"
+          "hub_generation",
+          "hosted",
+          "entitlement_provider"
         ],
         "title": "StatusResponse",
         "type": "object"
@@ -23931,6 +23991,16 @@
           "401": {
             "description": "pull refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateErrorResponse"
+                }
+              }
+            },
+            "description": "HOSTED hubs only. pull is refused with entitlement_not_in_plan when the calling machine's owner is archived (never read_only: a lapsed user can always pull), or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -23942,7 +24012,14 @@
             "description": "Validation Error"
           },
           "503": {
-            "description": "pull refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateErrorResponse"
+                }
+              }
+            },
+            "description": "HOSTED hubs only. pull cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER)."
           }
         },
         "summary": "Pull",
@@ -23979,6 +24056,16 @@
           "401": {
             "description": "push refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateErrorResponse"
+                }
+              }
+            },
+            "description": "HOSTED hubs only. push is refused with entitlement_not_in_plan when the calling machine's owner is read_only or archived, or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors."
+          },
           "409": {
             "content": {
               "application/json": {
@@ -24000,7 +24087,14 @@
             "description": "Validation Error"
           },
           "503": {
-            "description": "push refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateErrorResponse"
+                }
+              }
+            },
+            "description": "HOSTED hubs only. push cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER)."
           },
           "507": {
             "content": {

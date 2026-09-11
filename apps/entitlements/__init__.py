@@ -1,9 +1,16 @@
 """THE entitlement seam: the only way code asks what an account may do.
 
-Public interface, and deliberately only two functions (ENT-01):
+Public interface, and deliberately only two questions (ENT-01):
 
-    entitlements.has(feature_id)   -> bool
-    entitlements.quota(feature_id) -> int | None
+    entitlements.has(feature_id, *, subject=None, source=None)   -> bool
+    entitlements.quota(feature_id, *, subject=None, source=None) -> int | None
+
+``subject`` (a Google sub) and ``source`` (an :class:`EntitlementSource`) are
+keyword-only and both default to None, which is the shipped inert answer:
+entitled, unlimited. A server-side check point that must tell ``read_only``
+apart from ``archived`` asks :func:`standing`, the lifecycle-aware read both
+of the above are projections of (see :mod:`apps.entitlements.lifecycle`). A
+source is NEVER consulted with ``subject=None``; that raises instead.
 
 Everything else exported here is the REFUSAL SHAPE (code, message, ui_title)
 and the plan vocabulary, so a route can report a refusal without inventing
@@ -39,6 +46,7 @@ billing-owned and persistent.
 from __future__ import annotations
 
 from apps.entitlements.catalog import FEATURES, FEATURES_BY_ID, Feature
+from apps.entitlements.lifecycle import LifecycleState, Operation
 from apps.entitlements.resolver import (
     NOT_IN_PLAN_CODE,
     NOT_IN_PLAN_MESSAGE,
@@ -51,6 +59,12 @@ from apps.entitlements.resolver import (
     current_plan,
     has,
     quota,
+    standing,
+)
+from apps.entitlements.source import (
+    EntitlementSource,
+    Standing,
+    StaticEntitlementSource,
 )
 
 __all__ = [
@@ -62,10 +76,16 @@ __all__ = [
     "UI_REFUSAL_TITLE",
     "UNGATED_PLAN",
     "EntitlementProviderError",
+    "EntitlementSource",
     "Feature",
+    "LifecycleState",
+    "Operation",
     "Plan",
+    "Standing",
+    "StaticEntitlementSource",
     "configured_provider",
     "current_plan",
     "has",
     "quota",
+    "standing",
 ]

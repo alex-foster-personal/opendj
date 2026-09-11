@@ -24,7 +24,40 @@ DEFAULT_TIMEOUT_S: float = 30.0
 
 
 class SyncTransportError(RuntimeError):
-    """The hub was unreachable or answered with something unusable."""
+    """The hub was unreachable or answered with something unusable.
+
+    ``status_code`` and ``code`` are set only when the hub ANSWERED with a
+    non-2xx: the HTTP status and the ``detail.code`` of its JSON body. Both
+    stay None for an unreachable hub or a body with no code, which a caller
+    must read as "not a declared refusal", never as any particular one.
+    """
+
+    def __init__(
+        self, message: str, *, status_code: int | None = None, code: str | None = None
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+
+
+def _detail_code(body: str) -> str | None:
+    """The ``detail.code`` FastAPI wraps a declared refusal in, when present."""
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    detail = parsed.get("detail") if isinstance(parsed, dict) else None
+    code = detail.get("code") if isinstance(detail, dict) else None
+    return code if isinstance(code, str) else None
+
+
+def refused(label: str, status_code: int, body: str) -> SyncTransportError:
+    """The error for a non-2xx answer. Shared by every :class:`HubTransport`."""
+    return SyncTransportError(
+        f"{label} -> HTTP {status_code}: {body}",
+        status_code=status_code,
+        code=_detail_code(body),
+    )
 
 
 # ----- transport -----------------------------------------------------------
@@ -79,9 +112,8 @@ class HttpTransport:
                 body = response.read()
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
-            raise SyncTransportError(
-                f"{request.get_method()} {request.full_url} -> HTTP "
-                f"{exc.code}: {detail}"
+            raise refused(
+                f"{request.get_method()} {request.full_url}", exc.code, detail
             ) from exc
         except urllib.error.URLError as exc:
             raise SyncTransportError(
@@ -121,4 +153,5 @@ __all__ = [
     "HttpTransport",
     "HubTransport",
     "SyncTransportError",
+    "refused",
 ]

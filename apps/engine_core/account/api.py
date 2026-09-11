@@ -363,7 +363,9 @@ def read_account(request: Request) -> AccountOut:
             )
         ),
         plan=PlanOut.of(current_plan()),
-        authorisation_enforced=False,
+        # Derived, not hardcoded (plan X6): enforcement exists only once a
+        # provider does, and configured_provider() raises for any named one.
+        authorisation_enforced=configured_provider() is not None,
         authorisation_note=IDENTITY_NOT_AUTHORISATION,
         local_data=_local_data(_state_db_path(request)),
         privacy_policy_url=PRIVACY_POLICY_URL,

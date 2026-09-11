@@ -225,6 +225,11 @@ class StatusResponse(BaseModel):
     machines: list[MachineModel]
     row_counts: dict[str, int]
     hub_generation: str
+    #: True only on a HOSTED hub (``MDT_SYNC_HUB_HOSTED=1``), which checks
+    #: each caller's owner against ``entitlement_provider``. A self-hosted
+    #: hub reports False and None: it never consults a source.
+    hosted: bool
+    entitlement_provider: str | None
 
 
 class DigestResponse(BaseModel):

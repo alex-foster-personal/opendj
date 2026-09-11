@@ -19,7 +19,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from apps.sync_hub import client
+from apps.sync_hub import transport
 
 
 class TestClientTransport:
@@ -43,9 +43,7 @@ class TestClientTransport:
 
     def _decoded(self, response: Any, label: str) -> dict[str, Any]:
         if response.status_code >= 400:
-            raise client.SyncTransportError(
-                f"{label} -> HTTP {response.status_code}: {response.text}"
-            )
+            raise transport.refused(label, response.status_code, response.text)
         return dict(response.json())
 
     def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
