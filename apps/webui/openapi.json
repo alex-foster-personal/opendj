@@ -3273,6 +3273,13 @@
             "title": "Page",
             "type": "string"
           },
+          "replies": {
+            "items": {
+              "$ref": "#/components/schemas/CommentReplyOut"
+            },
+            "title": "Replies",
+            "type": "array"
+          },
           "status": {
             "anyOf": [
               {
@@ -3319,6 +3326,83 @@
           "build"
         ],
         "title": "CommentOut",
+        "type": "object"
+      },
+      "CommentReplyIn": {
+        "properties": {
+          "agent_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Kind"
+          },
+          "author": {
+            "default": "operator",
+            "enum": [
+              "operator",
+              "agent"
+            ],
+            "title": "Author",
+            "type": "string"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "CommentReplyIn",
+        "type": "object"
+      },
+      "CommentReplyOut": {
+        "properties": {
+          "agent_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Kind"
+          },
+          "author": {
+            "enum": [
+              "operator",
+              "agent"
+            ],
+            "title": "Author",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "author",
+          "text",
+          "created_at"
+        ],
+        "title": "CommentReplyOut",
         "type": "object"
       },
       "CommentUpdateIn": {
@@ -19487,6 +19571,59 @@
           }
         },
         "summary": "Follow On Comment",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/comments/{comment_id}/replies": {
+      "post": {
+        "description": "Appends a follow-up comment on the same pin without creating a second marker. This is not POST /follow-on, which opens a new pin at the same anchor only after the parent is fixed or merged. The agent_note scalar remains the latest agent lifecycle note; PATCH of agent_note also appends an agent reply unless it duplicates the last agent turn.",
+        "operationId": "add_reply_api_v1_feedback_comments__comment_id__replies_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "title": "Comment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentReplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Append a follow-up on the same pin",
         "tags": [
           "feedback"
         ]

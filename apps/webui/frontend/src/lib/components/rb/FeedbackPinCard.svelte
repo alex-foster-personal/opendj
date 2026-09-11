@@ -2,6 +2,12 @@
 	import { pinBodyPos, pinBodyStyle, pinIsDone, pinStatus } from '$lib/rb/feedback';
 	import { pinVisualState } from '$lib/rb/feedback-pin-partial';
 	import { linkifyAgentNote } from '$lib/rb/feedback';
+	import {
+		clearPinReplyDraft,
+		persistPinReplyDraft,
+		readPinReplyDraft
+	} from '$lib/rb/feedback-pin-reply-draft';
+	import { pinThread } from '$lib/rb/feedback-pin-thread';
 	import { API_BASE } from '$lib/api';
 	import type { FeedbackPin } from '$lib/rb/feedback-store.svelte';
 
@@ -9,17 +15,21 @@
 		pin,
 		onclose,
 		onarchive,
-		onfollowon
+		onfollowon,
+		onreply
 	}: {
 		pin: FeedbackPin;
 		onclose: () => void;
 		onarchive: () => void | Promise<void>;
 		onfollowon: () => void;
+		onreply: (text: string) => Promise<FeedbackPin | null>;
 	} = $props();
 
 	let pinBodyElement: HTMLDivElement | null = $state(null);
 	let lightboxElement: HTMLDivElement | null = $state(null);
 	let lightboxOpen = $state(false);
+	let replyText = $state('');
+	let replySaving = $state(false);
 
 	/** Set once the card's REAL size is measured; null until then and again
 	 * whenever a DIFFERENT pin's body reuses this same mounted instance
@@ -36,6 +46,8 @@
 		const pos = measuredPos;
 		return pos !== null ? `left:${pos.x}px;top:${pos.y}px` : pinBodyStyle(pin);
 	});
+
+	const thread = $derived(pinThread(pin));
 
 	/** Re-clamp against the card's REAL measured size, not the guess. Runs
 	 * once pinBodyElement mounts, again whenever `pin` changes (a different
@@ -58,6 +70,7 @@
 		void pin;
 		measuredPos = null;
 		lightboxOpen = false;
+		replyText = readPinReplyDraft(localStorage, pin.id);
 		if (pinBodyElement !== null) _reposition();
 	});
 
@@ -74,7 +87,24 @@
 		const target = event.target;
 		if (!(target instanceof Node)) return;
 		if (pinBodyElement?.contains(target) || lightboxElement?.contains(target)) return;
+		persistPinReplyDraft(localStorage, pin.id, replyText, () => {});
 		onclose();
+	}
+
+	function handleReplyInput(): void {
+		persistPinReplyDraft(localStorage, pin.id, replyText, () => {});
+	}
+
+	async function submitReply(): Promise<void> {
+		const text = replyText.trim();
+		if (text === '' || replySaving) return;
+		replySaving = true;
+		const updated = await onreply(text);
+		replySaving = false;
+		if (updated !== null) {
+			replyText = '';
+			clearPinReplyDraft(localStorage, pin.id, () => {});
+		}
 	}
 </script>
 
@@ -94,7 +124,27 @@
 	<p class="fb-hint">
 		{pinStatus(pin)}{pinVisualState(pin) === 'partial' ? ' (partial)' : ''} - {pin.created_at}
 	</p>
-	<p class="fb-body-text">{pin.text}</p>
+	{#each thread as turn (turn.id)}
+		{#if turn.kind === 'opening'}
+			<p class="fb-body-text">{turn.text}</p>
+		{:else}
+			<p class="fb-note" title={turn.author === 'operator' ? 'Your follow-up' : 'What an agent did about this pin'}>
+				{#if turn.author === 'operator'}
+					<span class="fb-reply-label">You: </span>
+				{/if}
+				{#each linkifyAgentNote(turn.text) as segment, i (i)}
+					{#if segment.type === 'link'}
+						<a
+							href={segment.value}
+							target="_blank"
+							rel="noreferrer noopener"
+							onclick={(e) => e.stopPropagation()}>{segment.value}</a
+						>
+					{:else}{segment.value}{/if}
+				{/each}
+			</p>
+		{/if}
+	{/each}
 	{#if pin.attachment}
 		<button
 			type="button"
@@ -112,20 +162,6 @@
 			/>
 		</button>
 	{/if}
-	{#if pin.agent_note}
-		<p class="fb-note" title="What an agent did about this pin">
-			{#each linkifyAgentNote(pin.agent_note) as segment, i (i)}
-				{#if segment.type === 'link'}
-					<a
-						href={segment.value}
-						target="_blank"
-						rel="noreferrer noopener"
-						onclick={(e) => e.stopPropagation()}>{segment.value}</a
-					>
-				{:else}{segment.value}{/if}
-			{/each}
-		</p>
-	{/if}
 	{#if pin.issue_url}
 		<a
 			class="fb-issue-link"
@@ -135,7 +171,29 @@
 			title="Opens in the default browser">{pin.issue_url}</a
 		>
 	{/if}
+	<textarea
+		class="fb-reply"
+		rows="2"
+		aria-label="Follow-up comment"
+		placeholder="Add a follow-up on this pin"
+		bind:value={replyText}
+		oninput={handleReplyInput}
+		onkeydown={(e) => {
+			if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+				e.preventDefault();
+				void submitReply();
+			}
+		}}
+	></textarea>
 	<div class="fb-row-btns">
+		<button
+			type="button"
+			class="fb-mini"
+			title="Add a follow-up on this pin"
+			aria-label="Add follow-up comment"
+			disabled={replySaving || replyText.trim() === ''}
+			onclick={() => void submitReply()}>Reply</button
+		>
 		{#if pinIsDone(pin)}
 			<button
 				type="button"
@@ -200,6 +258,7 @@
 	}
 	.fb-body-text {
 		margin: 2px 0 0;
+		user-select: text;
 	}
 	.fb-attachment-btn {
 		display: block;
@@ -228,6 +287,23 @@
 	.fb-note a {
 		color: var(--rb-accent);
 		word-break: break-all;
+	}
+	.fb-reply-label {
+		color: var(--rb-text);
+	}
+	.fb-reply {
+		display: block;
+		width: 100%;
+		margin-top: 4px;
+		padding: 4px;
+		box-sizing: border-box;
+		background: #11151a;
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+		color: var(--rb-text);
+		font: inherit;
+		resize: vertical;
+		user-select: text;
 	}
 	.fb-issue-link {
 		display: block;

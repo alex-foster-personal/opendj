@@ -61,12 +61,13 @@ _TODOS_FILE = "review-todos.json"
 _COMMENTS_FILE = "comments.json"
 _GENERAL_FILE = "general-note.json"
 
-# Every read/modify/write of comments.json, in THIS module and feedback_pins.py,
-# holds this lock (issue #914 review, Wed 2 Sep 2026: a per-endpoint lock only
-# serialized single-pin archives against each other, so a PATCH or follow-on
-# could still race a concurrent archive - both report success and one write is
-# silently lost, since FastAPI runs sync handlers in a threadpool). One lock
-# for one file, held for the whole read-modify-write, not one lock per route.
+# Every read/modify/write of comments.json, in THIS module, feedback_pins.py,
+# and feedback_replies.py, holds this lock (issue #914 review, Wed 2 Sep 2026:
+# a per-endpoint lock only serialized single-pin archives against each other,
+# so a PATCH or follow-on could still race a concurrent archive - both report
+# success and one write is silently lost, since FastAPI runs sync handlers in a
+# threadpool). One lock for one file, held for the whole read-modify-write, not
+# one lock per route.
 _COMMENTS_LOCK = threading.Lock()
 
 # Mirrors apps.engine_core.build_info.BUILD_IDENTITY_STATE_ATTR. Spelled here
@@ -154,6 +155,24 @@ class AttachmentOut(BaseModel):
     url: str
 
 
+class CommentReplyOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    author: Literal["operator", "agent"]
+    text: str
+    created_at: str
+    agent_kind: str | None = None
+
+
+class CommentReplyIn(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    text: str = Field(min_length=1)
+    author: Literal["operator", "agent"] = "operator"
+    agent_kind: str | None = None
+
+
 class CommentOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -179,6 +198,8 @@ class CommentOut(BaseModel):
     # Screenshot pasted into the pin (issue #1333): absent until one is
     # uploaded through POST /feedback/comments/{id}/attachment.
     attachment: AttachmentOut | None = None
+    # Pin follow-up thread (issue #905): absent or empty on pins before FB-13.
+    replies: list[CommentReplyOut] = Field(default_factory=list)
 
 
 class CommentListOut(BaseModel):

@@ -1515,6 +1515,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feedback/comments/{comment_id}/replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Append a follow-up on the same pin
+         * @description Appends a follow-up comment on the same pin without creating a second marker. This is not POST /follow-on, which opens a new pin at the same anchor only after the parent is fixed or merged. The agent_note scalar remains the latest agent lifecycle note; PATCH of agent_note also appends an agent reply unless it duplicates the last agent turn.
+         */
+        post: operations["add_reply_api_v1_feedback_comments__comment_id__replies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/general": {
         parameters: {
             query?: never;
@@ -5080,6 +5100,8 @@ export interface components {
             issue_url?: string | null;
             /** Page */
             page: string;
+            /** Replies */
+            replies?: components["schemas"]["CommentReplyOut"][];
             /** Status */
             status?: string | null;
             /** Text */
@@ -5090,6 +5112,35 @@ export interface components {
             x_pct: number;
             /** Y Pct */
             y_pct: number;
+        };
+        /** CommentReplyIn */
+        CommentReplyIn: {
+            /** Agent Kind */
+            agent_kind?: string | null;
+            /**
+             * Author
+             * @default operator
+             * @enum {string}
+             */
+            author: "operator" | "agent";
+            /** Text */
+            text: string;
+        };
+        /** CommentReplyOut */
+        CommentReplyOut: {
+            /** Agent Kind */
+            agent_kind?: string | null;
+            /**
+             * Author
+             * @enum {string}
+             */
+            author: "operator" | "agent";
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
         };
         /** CommentUpdateIn */
         CommentUpdateIn: {
@@ -12654,6 +12705,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_reply_api_v1_feedback_comments__comment_id__replies_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentReplyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
