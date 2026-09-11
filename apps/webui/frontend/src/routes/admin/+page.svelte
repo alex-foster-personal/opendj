@@ -29,10 +29,17 @@
 	import QualityRatchet from './QualityRatchet.svelte';
 	import RunNotes from './RunNotes.svelte';
 	import TipLayer from './TipLayer.svelte';
-	import { fetchKpiLedger, type KpiLedger } from './kpi-api';
+	import {
+		fetchKpiLedger,
+		fetchPerfKpiLedger,
+		type KpiLedger,
+		type PerfKpiLedger
+	} from './kpi-api';
 
 	let ledger = $state<KpiLedger | null>(null);
 	let error = $state<string | null>(null);
+	let perf = $state<PerfKpiLedger | null>(null);
+	let perfError = $state<string | null>(null);
 
 	// ----- tabs --------------------------------------------------------------
 	let setupBusy = $state(false);
@@ -55,12 +62,18 @@
 	const metrics = $derived(ledger ? Object.entries(ledger.kpis) : []);
 	const latestRun = $derived(ledger ? ledger.snapshots[ledger.snapshots.length - 1] : null);
 
-	onMount(async () => {
-		try {
-			ledger = await fetchKpiLedger();
-		} catch (exc) {
-			error = exc instanceof Error ? exc.message : String(exc);
-		}
+	const perfMetrics = $derived(perf ? Object.entries(perf.kpis) : []);
+
+	// Independent loads: one ledger failing must not blank the other's cards.
+	onMount(() => {
+		fetchKpiLedger().then(
+			(loaded) => (ledger = loaded),
+			(exc) => (error = exc instanceof Error ? exc.message : String(exc))
+		);
+		fetchPerfKpiLedger().then(
+			(loaded) => (perf = loaded),
+			(exc) => (perfError = exc instanceof Error ? exc.message : String(exc))
+		);
 	});
 </script>
 
@@ -142,6 +155,52 @@
 	{/if}
 </section>
 
+<section class="panel perf-panel">
+	<h3>Performance KPIs</h3>
+	{#if perfError}
+		<div class="fatal">
+			LOAD FAILED
+
+			{perfError}
+
+			The daemon serves these cards from docs/perf/kpi-ledger.json and docs/perf/kpi-cards.json via
+			GET /api/v1/bench/perf-kpi.
+		</div>
+	{:else if !perf}
+		<p class="sub">Loading perf ledger...</p>
+	{:else}
+		<p class="sub">
+			The openDJ latency and RAM program, tracked since <strong>{perf.sinceLabel}</strong>, the first
+			perf measurement. Same cards as above: the big number is the latest reading, the arrow is the
+			move since the previous one, and the sparkline is every reading since then, one step per
+			measurement round. Cards that have moved come first.
+		</p>
+		<p class="note">
+			Withheld and superseded readings are gaps, not numbers. Whether each UX scenario meets its
+			budget is a separate question: <code>just perf-kpis</code> scores them, and most still read
+			UNMEASURED.
+		</p>
+		{#if perf.undeclared.length > 0}
+			<p class="warn" title="Declare these in docs/perf/kpi-cards.json with a label, direction and title.">
+				UNDECLARED: {perf.undeclared.join(', ')} - recorded in the ledger but not shown, because no card
+				says which way is better.
+			</p>
+		{/if}
+		<div class="grid">
+			{#each perfMetrics as [metric, kpi] (metric)}
+				<KpiTile {metric} {kpi} snapshots={perf.snapshots} />
+			{/each}
+		</div>
+
+		<RunNotes kpis={perf.kpis} snapshots={perf.snapshots} />
+
+		<p class="footer">
+			{perfMetrics.length} KPI(s) over {perf.snapshots.length} measurement round(s). Append with
+			<code>scripts/perf/kpi_ledger_append.py</code>.
+		</p>
+	{/if}
+</section>
+
 <QualityRatchet />
 
 <!-- PREFLIGHT-01 (#771): read-only, always-live-polling reference. Same
@@ -218,6 +277,15 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
 		gap: 0.75rem;
+	}
+	.perf-panel {
+		margin-top: 2rem;
+	}
+	.warn {
+		color: var(--danger);
+		font-size: 0.8rem;
+		font-weight: 600;
+		margin: 0 0 1rem 0;
 	}
 	.footer {
 		color: var(--muted);

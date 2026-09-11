@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
+from pydantic import BaseModel, Field
 
 from apps.lyrics import cache as lyrics_cache
 from apps.shared import audio_quality
@@ -18,7 +19,6 @@ from ..backend import ConflictError, StateBackend, Track, TrackFilter
 from ..deps import get_read_state, get_write_state
 from ..errors import precondition_required
 from ..etag import compute_etag
-from ..stem_artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
 from ..models import (
     LyricsUnavailableOut,
     ProvenanceOut,
@@ -29,6 +29,9 @@ from ..models import (
     TrackPatch,
     TracksPage,
 )
+from ..rb_vendor_pkg.track_rows import _artwork_facts
+from ..stem_artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
+from .ingest_job import valid_lyrics_ids
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
 
@@ -52,6 +55,15 @@ def _has_rb_mapping(stable_id: str) -> bool:
     """Same criteria build_track_rows uses: a live vendor mapping AND a live
     djmdContent row (rb_vendor.bulk_rb_meta yields a row only for both)."""
     return stable_id in rb_vendor.bulk_rb_meta([stable_id])
+
+
+def _rb_mapping_and_artwork(
+    stable_id: str, file_path: str | None
+) -> tuple[bool, bool | None]:
+    """One bulk_rb_meta for both has_rb_mapping and listing's artwork facts."""
+    meta_map = rb_vendor.bulk_rb_meta([stable_id])
+    artwork_available, _status = _artwork_facts(meta_map.get(stable_id), file_path)
+    return stable_id in meta_map, artwork_available
 
 
 def _data_dir_from_state_db(state_db_path: Path) -> Path:
@@ -126,6 +138,7 @@ def _track_to_out(
     lyrics_available: bool,
     auto_cues_available: bool,
     stems_available: bool,
+    artwork_available: bool | None,
 ) -> TrackOut:
     prov_out = {
         k: ProvenanceOut(
@@ -158,6 +171,7 @@ def _track_to_out(
         lyrics_available=lyrics_available,
         auto_cues_available=auto_cues_available,
         stems_available=stems_available,
+        artwork_available=artwork_available,
     )
 
 
@@ -210,6 +224,7 @@ def list_tracks(
             lyrics_available=lyrics_by_sid[track.stable_id],
             auto_cues_available=auto_cues_by_sid[track.stable_id],
             stems_available=_stems_available_from_summary(row["stems"]),
+            artwork_available=row["artwork_available"],
         ).model_dump()
         base["play_count"] = int(row.get("play_count") or 0)
         items.append(
@@ -222,7 +237,6 @@ def list_tracks(
                 quality=row["quality"],
                 vocals=row["vocals"],
                 stems=row["stems"],
-                artwork_available=row["artwork_available"],
                 artwork_status=row["artwork_status"],
                 energy=row["energy"],
                 energy_source=row["energy_source"],
@@ -237,6 +251,20 @@ def list_tracks(
 def get_quality_ladder() -> list[QualityRungOut]:
     """The six venue rungs, so the UI legend is not a second copy of them."""
     return [QualityRungOut(**rung) for rung in audio_quality.ladder()]
+
+
+class LyricsCachedIdsOut(BaseModel):
+    """Stable ids with a valid on-disk lyrics-cache entry."""
+
+    stable_ids: list[str] = Field(default_factory=list)
+
+
+@router.get("/lyrics-cached-ids", response_model=LyricsCachedIdsOut)
+def get_lyrics_cached_ids(request: Request) -> LyricsCachedIdsOut:
+    """List cached lyric timelines so the UI can skip explicit cache-miss reads."""
+    state_db_path = Path(request.app.state.state_db_path)
+    done, _corrupt = valid_lyrics_ids(lyrics_cache.cache_dir(state_db_path.parent.parent))
+    return LyricsCachedIdsOut(stable_ids=sorted(done))
 
 
 @router.get(
@@ -285,12 +313,16 @@ def get_track(
         analysis_db_path=_analysis_db_path(request),
         stems=stems,
     )
+    has_rb_mapping, artwork_available = _rb_mapping_and_artwork(
+        stable_id, track.file_path
+    )
     return _track_to_out(
         track,
-        has_rb_mapping=_has_rb_mapping(stable_id),
+        has_rb_mapping=has_rb_mapping,
         lyrics_available=lyrics,
         auto_cues_available=auto_cues,
         stems_available=stems_avail,
+        artwork_available=artwork_available,
     )
 
 
@@ -341,10 +373,14 @@ def patch_track(
         analysis_db_path=_analysis_db_path(request),
         stems=stems,
     )
+    has_rb_mapping, artwork_available = _rb_mapping_and_artwork(
+        stable_id, updated.file_path
+    )
     return _track_to_out(
         updated,
-        has_rb_mapping=_has_rb_mapping(stable_id),
+        has_rb_mapping=has_rb_mapping,
         lyrics_available=lyrics,
         auto_cues_available=auto_cues,
         stems_available=stems_avail,
+        artwork_available=artwork_available,
     )

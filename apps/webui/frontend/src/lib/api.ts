@@ -26,7 +26,7 @@ import { BOOT_COALESCE_TTL_MS, requestCoalescer } from './api/request-coalescer'
 import { rememberOptionalResources } from './rb/optional-resource-availability';
 
 export { API_BASE } from './api/client';
-export { api, unwrap, ApiError } from './api/client';
+export { api, unwrap, ApiError, RbApiError } from './api/client';
 
 /** The documented `/api/v1/tracks` filter set. `listTracks` keeps its open
  * `Record` signature (call sites pass filter bags straight through), so the
@@ -117,6 +117,7 @@ function _rememberTrackOptionalResources(track: Track): void {
 		lyrics?: boolean;
 		autoCues?: boolean;
 		stems?: boolean;
+		artwork?: boolean | null;
 	} = {};
 	if (typeof track.lyrics_available === 'boolean') {
 		partial.lyrics = track.lyrics_available;
@@ -126,6 +127,9 @@ function _rememberTrackOptionalResources(track: Track): void {
 	}
 	if (typeof track.stems_available === 'boolean') {
 		partial.stems = track.stems_available;
+	}
+	if ('artwork_available' in track) {
+		partial.artwork = track.artwork_available;
 	}
 	if (Object.keys(partial).length > 0) {
 		rememberOptionalResources(track.stable_id, partial);

@@ -1,6 +1,7 @@
 """Operator actions on a sync hub or spoke, as functions and as a CLI.
 
     uv run python -m apps.sync_hub sync         --data-dir DIR --hub URL [--name N]
+    uv run python -m apps.sync_hub status       --data-dir DIR
     uv run python -m apps.sync_hub generation   --data-dir DIR
     uv run python -m apps.sync_hub rotate       --data-dir DIR
     uv run python -m apps.sync_hub prune        --data-dir DIR [--changelog T]
@@ -11,14 +12,20 @@
                                                 (--grant TOKEN | --grant-file F)
                                                 [--name N]
     uv run python -m apps.sync_hub fleet        --data-dir DIR [--json]
+    uv run python -m apps.sync_hub policy <verb> --data-dir DIR ...  (see maintenance_policy)
 
-Seven operations:
+Eight operations, plus ``policy`` (per-machine sync policy, its own module
+:mod:`apps.sync_hub.maintenance_policy`, dry-run by default, exit 0/1/3/4):
 
 * **sync** runs one spoke round trip against ``--hub`` (round 3 finding R7).
   Nothing outside pytest called ``run_sync`` before -- the whole spoke
   protocol, and the retention prune it depends on, was library code with no
-  operator or agent entry point. This is the agent-native-parity twin of the
-  ``/cloudsync`` UI's own sync button.
+  operator or agent entry point. Its HTTP twin is ``POST
+  /api/v1/cloudsync/sync`` (``apps/webui/server/routes/cloudsync_ops.py``),
+  which calls :func:`sync` itself. The ``/cloudsync`` page has no sync button
+  yet (plan W17).
+* **status** prints the CloudSync status object, including the journal every
+  :func:`sync` writes; its HTTP twin is ``GET /api/v1/cloudsync/status``.
 * **prune** bounds a changelog that had no retention at all (round 2 finding
   N6) -- one row per synced-table write, forever. It only ever drops entries
   that a NEWER entry for the same row supersedes, so the pull loses no
@@ -30,7 +37,8 @@ Seven operations:
 * **generation** prints the current token.
 * **grant** mints one single-use enrollment credential on this hub, for a
   user who has signed in through the webui. Hub-local, because minting a
-  credential is an act of hub authority.
+  credential is an act of hub authority. HTTP twin: ``POST
+  /api/v1/cloudsync/enrollment-grants`` (loopback-only, hub-only).
 * **enroll** is the DEV half of ``specs/design_decision_12.md``: the
   formalized single method for adding a machine to cloudsync. It is a thin
   shell over ``POST /api/v1/sync/enroll`` -- it opens no database and holds
@@ -38,7 +46,8 @@ Seven operations:
   in-app path will use. Idempotent: a re-run says "already enrolled".
 * **fleet** prints who owns which machine on this hub, and how many
   machines are unowned. That count is what an operator closes before
-  enrollment is ever enforced.
+  enrollment is ever enforced. HTTP twin: ``GET /api/v1/cloudsync/fleet``,
+  which returns exactly ``fleet --json``.
 
 Every UI/daemon action in this repo has a CLI twin (the agent-native parity
 rule); these are the twin the sync surface will match.
@@ -48,6 +57,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -59,6 +69,7 @@ from apps.sync_hub import (
     enrollment_credentials,
     generation,
     maintenance_enroll,
+    maintenance_policy,
 )
 from apps.sync_hub import status as sync_status
 
@@ -276,9 +287,10 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "a token from `python -m apps.sync_hub grant` on the hub. The "
-            "other credential kind, google_id_token, is the in-app path and "
-            "is not yet resolvable by the hub. Prefer --grant-file: an "
-            "argument is readable in /proc and lands in shell history."
+            "other credential kind, google_id_token, is the in-app path: "
+            "POST it to /api/v1/sync/enroll on a hub configured with the "
+            "OAuth client id. Prefer --grant-file: an argument is readable "
+            "in /proc and lands in shell history."
         ),
     )
     grant_source.add_argument(
@@ -305,6 +317,7 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print the same readout as JSON (agent parity with the UI)",
     )
+    maintenance_policy.add_policy_parser(subcommands, common)
     return parser
 
 
@@ -419,7 +432,7 @@ def _print_fleet(args: argparse.Namespace) -> None:
 #: and exiting 0. Named here, not in the test, so "every registered
 #: subcommand is dispatched" can be re-derived from the module instead of
 #: from a list a test author kept up to date by hand.
-EXIT_CODE_COMMANDS: frozenset[str] = frozenset({"sync", "status"})
+EXIT_CODE_COMMANDS: frozenset[str] = frozenset({"sync", "status", "policy"})
 
 
 PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
@@ -432,13 +445,26 @@ PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
 }
 
 
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
+    """argparse exits 2 on a usage error; ``policy`` documents 1, so remap it there."""
+    try:
+        return _parser().parse_args(argv)
+    except SystemExit as exc:
+        tokens = sys.argv[1:] if argv is None else argv
+        if exc.code == 2 and maintenance_policy.is_policy_argv(tokens):
+            raise SystemExit(maintenance_policy.EXIT_USAGE) from exc
+        raise
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run one subcommand. Returns a process exit code."""
-    args = _parser().parse_args(argv)
+    args = _parse_args(argv)
     if args.command == "sync":
         return _report_sync(sync(args.data_dir, args.hub, name=args.name))
     if args.command == "status":
         return _report_status(sync_status.read_status(args.data_dir))
+    if args.command == "policy":
+        return maintenance_policy.run(args)
     # Everything below prints and exits 0; the two above own their own codes.
     handler = PRINTING_COMMANDS.get(args.command)
     if handler is None:

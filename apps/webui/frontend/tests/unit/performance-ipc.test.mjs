@@ -515,10 +515,12 @@ test('key controls validate through IPC and round-trip serializable shift state'
 	}
 });
 
+// requirement: PREF-02
 test('vibe meter uses thumb glyphs and routes every mark through the typed dispatcher', async () => {
 	const source = await readFile(new URL('../../src/lib/components/rb/VibeMeter.svelte', import.meta.url), 'utf8');
 	assert.match(source, /recordFeedback\('bad', event\)/);
 	assert.match(source, /event\.shiftKey \? 'great' : 'good'/);
+	assert.match(source, /type: 'feedback_mark'/);
 	assert.doesNotMatch(source, /voteVibe\(/);
 	assert.match(source, /M5 2\.2h5\.1/);
 });
@@ -1155,7 +1157,9 @@ test('load play intent is strictly validated, immediate, and visible to agents',
 	assert.match(source, /type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean/);
 	assert.match(source, /_exactKeys\(record, \['type', 'deck', 'generation', 'desired_play'\]\)/);
 	assert.match(source, /generation must be a positive safe integer/);
-	assert.match(source, /command\.type === 'load_play_intent'[\s\S]{0,120}return null/);
+	// Any number of sibling types may share the load_play_intent early-return group; a fixed
+	// character window broke when PREF-02 appended feedback_mark to it (main red, Fri 11 Sep 2026).
+	assert.match(source, /command\.type === 'load_play_intent'(?:\s*\|\| command\.type === '[a-z_]+')*\s*\)\s*\{\s*return null;/);
 	assert.match(source, /load_play_intent: Record<DeckId, \{ generation: number; desired_play: boolean \} \| null>/);
 });
 

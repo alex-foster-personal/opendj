@@ -285,12 +285,18 @@ test('null artwork availability identifies an unavailable reader without request
 	await page.route(/\/api\/v1\/tracks(?:\?.*)?$/, (route) =>
 		route.fulfill({ json: { items: [TRACK], next_cursor: null } })
 	);
+	// Wave rows gate per-track lyrics reads on this index (#1869, LYRICS-06).
+	await page.route('**/api/v1/tracks/lyrics-cached-ids', (route) =>
+		route.fulfill({ json: { stable_ids: [] } })
+	);
 
 	// The boot scheduler's own deferred families (boot-scheduler.ts, PERF-R6).
 	// None of these are the artwork reader path this test is about; they are
 	// mocked here purely so the deferred burst is a known, harmless quantity
 	// rather than something the catch-all route above has to guess at.
-	await page.route('**/api/v1/auth/me', (route) => route.fulfill({ status: 401, json: {} }));
+	await page.route('**/api/v1/auth/me', (route) =>
+		route.fulfill({ status: 200, json: { signed_in: false, user: null } })
+	);
 	await page.route('**/api/v1/build-info', (route) => route.fulfill({ status: 404, json: {} }));
 	await page.route('**/api/v1/feedback/todos', (route) => route.fulfill({ json: { todos: [] } }));
 	await page.route('**/api/v1/feedback/comments', (route) => route.fulfill({ json: { comments: [] } }));

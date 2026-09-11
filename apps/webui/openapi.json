@@ -1114,6 +1114,421 @@
         "title": "AutoSyncOut",
         "type": "object"
       },
+      "BackfillBatchIn": {
+        "properties": {
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch_id"
+        ],
+        "title": "BackfillBatchIn",
+        "type": "object"
+      },
+      "BackfillBatchListOut": {
+        "properties": {
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/BackfillBatchSummaryOut"
+            },
+            "title": "Batches",
+            "type": "array"
+          }
+        },
+        "required": [
+          "batches"
+        ],
+        "title": "BackfillBatchListOut",
+        "type": "object"
+      },
+      "BackfillBatchSummaryOut": {
+        "description": "One batch without its items.",
+        "properties": {
+          "band": {
+            "description": "under_20_min, 20_to_45_min, over_45_min, or empty",
+            "title": "Band",
+            "type": "string"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "state": {
+            "description": "queued, running, cancelled or done",
+            "title": "State",
+            "type": "string"
+          },
+          "workers": {
+            "description": "Concurrency the admission rule chose from the LONGEST ADMITTED track, never from core count",
+            "title": "Workers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "state",
+          "workers",
+          "band",
+          "created_at",
+          "counts"
+        ],
+        "title": "BackfillBatchSummaryOut",
+        "type": "object"
+      },
+      "BackfillCancelOut": {
+        "properties": {
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "cancelled": {
+            "description": "Open items (pending and in flight) cancelled",
+            "title": "Cancelled",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "cancelled"
+        ],
+        "title": "BackfillCancelOut",
+        "type": "object"
+      },
+      "BackfillEnqueueIn": {
+        "properties": {
+          "backend": {
+            "description": "Producer to run, own_<lane>.<producer>",
+            "title": "Backend",
+            "type": "string"
+          },
+          "lane": {
+            "description": "beatgrid, key, waveform, loudness or vocal",
+            "title": "Lane",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why this batch exists",
+            "title": "Note"
+          },
+          "stable_ids": {
+            "description": "Tracks to (re)analyze",
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids",
+          "lane",
+          "backend"
+        ],
+        "title": "BackfillEnqueueIn",
+        "type": "object"
+      },
+      "BackfillEnqueueOut": {
+        "description": "The plan. ``offered = admitted + refused``, always.",
+        "properties": {
+          "admitted": {
+            "title": "Admitted",
+            "type": "integer"
+          },
+          "band": {
+            "title": "Band",
+            "type": "string"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "memory_model": {
+            "$ref": "#/components/schemas/BackfillMemoryModelOut"
+          },
+          "offered": {
+            "title": "Offered",
+            "type": "integer"
+          },
+          "refused": {
+            "title": "Refused",
+            "type": "integer"
+          },
+          "workers": {
+            "title": "Workers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "offered",
+          "admitted",
+          "refused",
+          "workers",
+          "band",
+          "memory_model"
+        ],
+        "title": "BackfillEnqueueOut",
+        "type": "object"
+      },
+      "BackfillItemOut": {
+        "description": "One (track, lane) of work and its state.\n\nNamed apart from ``routes/queues.py``'s ``QueueItemOut`` (the M3 triage\nqueues) for the reason its neighbour ``routes/analysis_queue.py`` states:\ntwo Pydantic models sharing a name collapse into ONE OpenAPI schema and\nthe loser is served under the winner's shape. That collision really\nhappened here on the first openapi dump, and it is silent -- the schema\nstill validates, it just describes the wrong thing.",
+        "properties": {
+          "attempts": {
+            "description": "Claims so far; a kill-and-resume shows 2",
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "backend": {
+            "title": "Backend",
+            "type": "string"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Audio length the admission rule budgeted with",
+            "title": "Duration S"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          },
+          "predicted_peak_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "floor + slope x minutes under the batch model",
+            "title": "Predicted Peak Mb"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Named cause for a refusal, a failure, or a skip",
+            "title": "Reason"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "state": {
+            "description": "pending, running, done, skipped, failed, refused, cancelled, or deferred (path vanished; retryable on resume)",
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "lane",
+          "backend",
+          "state",
+          "attempts"
+        ],
+        "title": "BackfillItemOut",
+        "type": "object"
+      },
+      "BackfillMemoryModelOut": {
+        "description": "The measured peak-RSS model a batch was budgeted under.\n\nCarried on every response rather than assumed, because the floor and\nslope are MEASURED numbers for one producer version. A report that says\n\"budgeted at 330 MB + 68 MB/min\" without saying where that was measured\nis quoting a remembered figure.",
+        "properties": {
+          "backend": {
+            "description": "Producer the model was measured on",
+            "title": "Backend",
+            "type": "string"
+          },
+          "floor_mb": {
+            "description": "Predicted peak RSS at zero length, MB",
+            "title": "Floor Mb",
+            "type": "number"
+          },
+          "measured_on": {
+            "description": "Host, method and date of the measurement",
+            "title": "Measured On",
+            "type": "string"
+          },
+          "producer_version": {
+            "description": "Version it was measured at",
+            "title": "Producer Version",
+            "type": "string"
+          },
+          "slope_mb_per_min": {
+            "description": "Extra peak RSS per audio minute, MB",
+            "title": "Slope Mb Per Min",
+            "type": "number"
+          },
+          "source": {
+            "description": "Document the measurement is recorded in",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "backend",
+          "producer_version",
+          "floor_mb",
+          "slope_mb_per_min",
+          "measured_on",
+          "source"
+        ],
+        "title": "BackfillMemoryModelOut",
+        "type": "object"
+      },
+      "BackfillProgressOut": {
+        "description": "Aggregate + per-item progress. ``counts`` carries every state's zero.",
+        "properties": {
+          "band": {
+            "title": "Band",
+            "type": "string"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BackfillItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "memory_model": {
+            "additionalProperties": true,
+            "title": "Memory Model",
+            "type": "object"
+          },
+          "settled": {
+            "description": "done + skipped + failed + refused",
+            "title": "Settled",
+            "type": "integer"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workers": {
+            "title": "Workers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "state",
+          "workers",
+          "band",
+          "memory_model",
+          "counts",
+          "total",
+          "settled",
+          "created_at",
+          "updated_at",
+          "items"
+        ],
+        "title": "BackfillProgressOut",
+        "type": "object"
+      },
+      "BackfillResumeOut": {
+        "properties": {
+          "band": {
+            "title": "Band",
+            "type": "string"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "requeued": {
+            "description": "Items put back in the queue",
+            "title": "Requeued",
+            "type": "integer"
+          },
+          "workers": {
+            "description": "Concurrency re-planned from what is LEFT",
+            "title": "Workers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "requeued",
+          "workers",
+          "band",
+          "counts"
+        ],
+        "title": "BackfillResumeOut",
+        "type": "object"
+      },
       "BeatgridFallbackOut": {
         "properties": {
           "anlz_available": {
@@ -1722,6 +2137,45 @@
           "content"
         ],
         "title": "ChatMessage",
+        "type": "object"
+      },
+      "CheckedViolationOut": {
+        "additionalProperties": false,
+        "properties": {
+          "blocking": {
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "introduced": {
+            "title": "Introduced",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule_id",
+          "severity",
+          "subject",
+          "message",
+          "introduced",
+          "blocking"
+        ],
+        "title": "CheckedViolationOut",
         "type": "object"
       },
       "ClientErrorIn": {
@@ -3883,6 +4337,133 @@
         "title": "FlagsOut",
         "type": "object"
       },
+      "FleetMachineOut": {
+        "additionalProperties": false,
+        "description": "One row of ``fleet --json``. ``extra=forbid`` so a field the shared\nfunction adds fails loudly here instead of silently vanishing from HTTP.",
+        "properties": {
+          "enrolled_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enrolled At"
+          },
+          "enrolled_via": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enrolled Via"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Email"
+          },
+          "owner_google_sub": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Google Sub"
+          },
+          "row_hub_machine_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Hub Machine Id"
+          },
+          "state": {
+            "enum": [
+              "owned",
+              "unowned",
+              "foreign"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "name",
+          "state",
+          "owner_google_sub",
+          "owner_email",
+          "row_hub_machine_id",
+          "enrolled_at",
+          "enrolled_via"
+        ],
+        "title": "FleetMachineOut",
+        "type": "object"
+      },
+      "FleetOut": {
+        "additionalProperties": false,
+        "properties": {
+          "foreign": {
+            "title": "Foreign",
+            "type": "integer"
+          },
+          "hub_machine_id": {
+            "title": "Hub Machine Id",
+            "type": "string"
+          },
+          "machines": {
+            "items": {
+              "$ref": "#/components/schemas/FleetMachineOut"
+            },
+            "title": "Machines",
+            "type": "array"
+          },
+          "owned": {
+            "title": "Owned",
+            "type": "integer"
+          },
+          "unowned": {
+            "title": "Unowned",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hub_machine_id",
+          "machines",
+          "owned",
+          "unowned",
+          "foreign"
+        ],
+        "title": "FleetOut",
+        "type": "object"
+      },
       "FolderImportIn": {
         "description": "Point at one or more folders of audio files. No rekordbox involved.",
         "properties": {
@@ -4115,6 +4696,59 @@
           "tier"
         ],
         "title": "GenerateIn",
+        "type": "object"
+      },
+      "GrantIn": {
+        "additionalProperties": false,
+        "properties": {
+          "owner_email": {
+            "description": "email of a user who has signed in on this hub (CLI --owner)",
+            "minLength": 1,
+            "title": "Owner Email",
+            "type": "string"
+          },
+          "ttl_seconds": {
+            "default": 900,
+            "description": "how long the grant stays redeemable (CLI --ttl-seconds)",
+            "exclusiveMinimum": 0.0,
+            "maximum": 3600.0,
+            "title": "Ttl Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "owner_email"
+        ],
+        "title": "GrantIn",
+        "type": "object"
+      },
+      "GrantOut": {
+        "description": "The raw token exists in this response and nowhere else; only its\nsha256 is stored. Redeem with ``python -m apps.sync_hub enroll``.",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "owner_email": {
+            "title": "Owner Email",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "owner_email",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "GrantOut",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -4668,6 +5302,38 @@
         "title": "HotCueSlotOut",
         "type": "object"
       },
+      "HubStorageErrorBody": {
+        "description": "The ``detail`` object a storage-full push carries.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "HubStorageErrorBody",
+        "type": "object"
+      },
+      "HubStorageErrorResponse": {
+        "description": "FastAPI wraps an ``HTTPException`` detail under ``detail``.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/HubStorageErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "HubStorageErrorResponse",
+        "type": "object"
+      },
       "JobIn": {
         "properties": {
           "external_ref": {
@@ -4875,6 +5541,25 @@
         "title": "JobOut",
         "type": "object"
       },
+      "KindDefaultIn": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_kind": {
+            "title": "Asset Kind",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_kind",
+          "mode"
+        ],
+        "title": "KindDefaultIn",
+        "type": "object"
+      },
       "LabelRequest": {
         "description": "Body for the relabel endpoint.",
         "properties": {
@@ -5072,6 +5757,203 @@
           }
         },
         "title": "LevelCalibrationOut",
+        "type": "object"
+      },
+      "LibraryJobEnqueueIn": {
+        "properties": {
+          "lane": {
+            "enum": [
+              "stems",
+              "lyrics"
+            ],
+            "title": "Lane",
+            "type": "string"
+          },
+          "placement": {
+            "default": "next",
+            "enum": [
+              "next",
+              "tail"
+            ],
+            "title": "Placement",
+            "type": "string"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "lane",
+          "stable_ids"
+        ],
+        "title": "LibraryJobEnqueueIn",
+        "type": "object"
+      },
+      "LibraryJobEnqueueOut": {
+        "properties": {
+          "already_running": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Already Running",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryJobItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lane",
+          "items",
+          "already_running"
+        ],
+        "title": "LibraryJobEnqueueOut",
+        "type": "object"
+      },
+      "LibraryJobItemOut": {
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "enqueued_at": {
+            "title": "Enqueued At",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lane",
+          "stable_id",
+          "state",
+          "reason",
+          "detail",
+          "position",
+          "attempts",
+          "enqueued_at",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "LibraryJobItemOut",
+        "type": "object"
+      },
+      "LibraryJobListOut": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryJobItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lane",
+          "items",
+          "counts"
+        ],
+        "title": "LibraryJobListOut",
+        "type": "object"
+      },
+      "LibraryJobReorderIn": {
+        "properties": {
+          "before_stable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Stable Id"
+          }
+        },
+        "title": "LibraryJobReorderIn",
         "type": "object"
       },
       "LibraryReadinessCounts": {
@@ -5425,6 +6307,20 @@
         "title": "LyricLineOut",
         "type": "object"
       },
+      "LyricsCachedIdsOut": {
+        "description": "Stable ids with a valid on-disk lyrics-cache entry.",
+        "properties": {
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "title": "LyricsCachedIdsOut",
+        "type": "object"
+      },
       "LyricsUnavailableOut": {
         "description": "The explicit cache-miss response for one track's lyrics timeline.",
         "properties": {
@@ -5599,6 +6495,30 @@
       },
       "MeOut": {
         "properties": {
+          "signed_in": {
+            "title": "Signed In",
+            "type": "boolean"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MeUserOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "signed_in",
+          "user"
+        ],
+        "title": "MeOut",
+        "type": "object"
+      },
+      "MeUserOut": {
+        "properties": {
           "avatar_url": {
             "anyOf": [
               {
@@ -5641,7 +6561,7 @@
           "avatar_url",
           "created_at"
         ],
-        "title": "MeOut",
+        "title": "MeUserOut",
         "type": "object"
       },
       "MemberOut": {
@@ -6193,6 +7113,37 @@
           "tracks_updated"
         ],
         "title": "MyTagSweepOut",
+        "type": "object"
+      },
+      "OpsErrorBody": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "OpsErrorBody",
+        "type": "object"
+      },
+      "OpsErrorResponse": {
+        "description": "FastAPI wraps an ``HTTPException`` detail under ``detail``.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/OpsErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "OpsErrorResponse",
         "type": "object"
       },
       "OverviewOut": {
@@ -6915,6 +7866,30 @@
         "title": "PermissionsOut",
         "type": "object"
       },
+      "PinCellIn": {
+        "additionalProperties": false,
+        "properties": {
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "playlist_id",
+          "mode"
+        ],
+        "title": "PinCellIn",
+        "type": "object"
+      },
       "PinEnvironmentOut": {
         "description": "Non-personal runtime facts needed to reproduce a pinned UI defect.\n\n``machine`` and ``release_version`` are already exposed by the running\ndaemon's settings/health surfaces. The browser contributes only its UI\nkind and viewport dimensions: no username, user agent, URL query, or\nother new personal data enters the pin store.",
         "properties": {
@@ -6951,6 +7926,104 @@
           "release_version"
         ],
         "title": "PinEnvironmentOut",
+        "type": "object"
+      },
+      "PinKeyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "playlist_id"
+        ],
+        "title": "PinKeyIn",
+        "type": "object"
+      },
+      "PlanEntryOut": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table",
+          "machine_id",
+          "key",
+          "action",
+          "before",
+          "after"
+        ],
+        "title": "PlanEntryOut",
         "type": "object"
       },
       "PlanModel": {
@@ -7806,6 +8879,181 @@
           "updated_at"
         ],
         "title": "PlaylistWriteOut",
+        "type": "object"
+      },
+      "PolicyApplyIn": {
+        "additionalProperties": false,
+        "description": "``POST /policies/apply``. Dry-run unless ``dry_run`` is false, like the CLI's ``--live``.",
+        "properties": {
+          "changes": {
+            "$ref": "#/components/schemas/PolicyChangesIn"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "changes"
+        ],
+        "title": "PolicyApplyIn",
+        "type": "object"
+      },
+      "PolicyCellIn": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_kind": {
+            "title": "Asset Kind",
+            "type": "string"
+          },
+          "cache_budget_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Budget Mb"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "asset_kind",
+          "mode"
+        ],
+        "title": "PolicyCellIn",
+        "type": "object"
+      },
+      "PolicyChangesIn": {
+        "additionalProperties": false,
+        "description": "A change set. Every list is optional; an empty body validates the stored fleet.",
+        "properties": {
+          "defaults": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/KindDefaultIn"
+            },
+            "title": "Defaults",
+            "type": "array"
+          },
+          "excluded_tables": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Excluded Tables",
+            "type": "array"
+          },
+          "pins": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PinCellIn"
+            },
+            "title": "Pins",
+            "type": "array"
+          },
+          "policies": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PolicyCellIn"
+            },
+            "title": "Policies",
+            "type": "array"
+          },
+          "removed_pins": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PinKeyIn"
+            },
+            "title": "Removed Pins",
+            "type": "array"
+          },
+          "removed_policies": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PolicyKeyIn"
+            },
+            "title": "Removed Policies",
+            "type": "array"
+          }
+        },
+        "title": "PolicyChangesIn",
+        "type": "object"
+      },
+      "PolicyKeyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_kind": {
+            "title": "Asset Kind",
+            "type": "string"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "asset_kind"
+        ],
+        "title": "PolicyKeyIn",
+        "type": "object"
+      },
+      "PolicyOutcomeOut": {
+        "additionalProperties": false,
+        "description": ":meth:`apps.sync_hub.policy_store.PolicyOutcome.to_wire`, typed.",
+        "properties": {
+          "author_machine_id": {
+            "title": "Author Machine Id",
+            "type": "string"
+          },
+          "blocking": {
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "measurable": {
+            "title": "Measurable",
+            "type": "boolean"
+          },
+          "plan": {
+            "items": {
+              "$ref": "#/components/schemas/PlanEntryOut"
+            },
+            "title": "Plan",
+            "type": "array"
+          },
+          "violations": {
+            "items": {
+              "$ref": "#/components/schemas/CheckedViolationOut"
+            },
+            "title": "Violations",
+            "type": "array"
+          },
+          "written": {
+            "title": "Written",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "author_machine_id",
+          "measurable",
+          "blocking",
+          "written",
+          "plan",
+          "violations"
+        ],
+        "title": "PolicyOutcomeOut",
         "type": "object"
       },
       "PreflightCheckOut": {
@@ -10415,6 +11663,37 @@
         "title": "StemTierOut",
         "type": "object"
       },
+      "StemUnavailableOut": {
+        "description": "HTTP 200 empty-state: no stored bundle for this stable_id.",
+        "properties": {
+          "code": {
+            "const": "STEM_BUNDLE_NOT_FOUND",
+            "default": "STEM_BUNDLE_NOT_FOUND",
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "unavailable",
+            "default": "unavailable",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "message"
+        ],
+        "title": "StemUnavailableOut",
+        "type": "object"
+      },
       "StemsPlanOut": {
         "description": "What separating this library at this tier would take.",
         "properties": {
@@ -10911,6 +12190,122 @@
           "mode"
         ],
         "title": "SyncPolicyPut",
+        "type": "object"
+      },
+      "SyncRunIn": {
+        "additionalProperties": false,
+        "properties": {
+          "hub_url": {
+            "description": "the hub base URL, e.g. http://hub.tailnet:8686 (CLI --hub)",
+            "minLength": 1,
+            "pattern": "^https?://",
+            "title": "Hub Url",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "this machine's display name; the hostname when omitted (CLI --name)",
+            "title": "Name"
+          }
+        },
+        "required": [
+          "hub_url"
+        ],
+        "title": "SyncRunIn",
+        "type": "object"
+      },
+      "SyncRunOut": {
+        "description": "What one ``run_sync`` observed. Every count is observed, none inferred.\n\n``digest_inconclusive`` True is the CLI's exit code 4: rows moved but the\npost-sync digest compare excluded rows, so agreement was NOT verified.\n``hub_quarantined`` None means the hub did not report it (unknown, not 0).",
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "digest_inconclusive": {
+            "title": "Digest Inconclusive",
+            "type": "boolean"
+          },
+          "hub_machine_id": {
+            "title": "Hub Machine Id",
+            "type": "string"
+          },
+          "hub_quarantined": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Quarantined"
+          },
+          "hub_restore_detected": {
+            "title": "Hub Restore Detected",
+            "type": "boolean"
+          },
+          "hub_seq": {
+            "title": "Hub Seq",
+            "type": "integer"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "pulled": {
+            "title": "Pulled",
+            "type": "integer"
+          },
+          "pushed": {
+            "title": "Pushed",
+            "type": "integer"
+          },
+          "quarantined_incoming": {
+            "title": "Quarantined Incoming",
+            "type": "integer"
+          },
+          "quarantined_rows": {
+            "title": "Quarantined Rows",
+            "type": "integer"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "rounds": {
+            "title": "Rounds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "machine_id",
+          "hub_machine_id",
+          "pushed",
+          "accepted",
+          "rejected",
+          "pulled",
+          "applied",
+          "hub_seq",
+          "rounds",
+          "hub_restore_detected",
+          "quarantined_rows",
+          "quarantined_incoming",
+          "hub_quarantined",
+          "digest_inconclusive"
+        ],
+        "title": "SyncRunOut",
         "type": "object"
       },
       "SyncSnapshotIn": {
@@ -11780,13 +13175,13 @@
           "lyrics_available",
           "auto_cues_available",
           "stems_available",
+          "artwork_available",
           "preview_b64",
           "preview_max",
           "file_exists",
           "quality",
           "vocals",
           "stems",
-          "artwork_available",
           "artwork_status",
           "energy",
           "energy_source",
@@ -11846,6 +13241,17 @@
               }
             ],
             "title": "Artist"
+          },
+          "artwork_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Available"
           },
           "auto_cues_available": {
             "title": "Auto Cues Available",
@@ -11992,7 +13398,8 @@
           "has_rb_mapping",
           "lyrics_available",
           "auto_cues_available",
-          "stems_available"
+          "stems_available",
+          "artwork_available"
         ],
         "title": "TrackOut",
         "type": "object"
@@ -14736,6 +16143,237 @@
         ]
       }
     },
+    "/api/v1/analysis/backfill/batches": {
+      "get": {
+        "operationId": "list_backfill_batches_api_v1_analysis_backfill_batches_get",
+        "parameters": [
+          {
+            "description": "Newest first",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Newest first",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillBatchListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Backfill Batches",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis/backfill/cancel": {
+      "post": {
+        "description": "Cancel pending AND in-flight items. Terminal ones are left alone.",
+        "operationId": "cancel_backfill_api_v1_analysis_backfill_cancel_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackfillBatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillCancelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Backfill",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis/backfill/enqueue": {
+      "post": {
+        "description": "Plan a batch: admission rule, worker count, band, refusals by name.",
+        "operationId": "enqueue_backfill_api_v1_analysis_backfill_enqueue_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackfillEnqueueIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillEnqueueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enqueue Backfill",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis/backfill/progress": {
+      "get": {
+        "operationId": "get_backfill_progress_api_v1_analysis_backfill_progress_get",
+        "parameters": [
+          {
+            "description": "Batch to report on",
+            "in": "query",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "description": "Batch to report on",
+              "title": "Batch Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cap on listed items. Never caps the reported counts.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "description": "Cap on listed items. Never caps the reported counts.",
+              "maximum": 1000,
+              "minimum": 0,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillProgressOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Backfill Progress",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis/backfill/resume": {
+      "post": {
+        "description": "Put cancelled and abandoned items back; re-plan from what is LEFT.",
+        "operationId": "resume_backfill_api_v1_analysis_backfill_resume_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackfillBatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillResumeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Backfill",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
     "/api/v1/analysis/source": {
       "get": {
         "operationId": "get_analysis_source_api_v1_analysis_source_get",
@@ -14983,7 +16621,7 @@
     },
     "/api/v1/auth/me": {
       "get": {
-        "description": "The signed-in user, or 401. The bauble polls this on mount.",
+        "description": "Who is signed in.\n\nAlways HTTP 200. Signed-out is identity, not a fault: the bauble polls\nthis on mount, Chromium logs every 4xx, and the AutoPlay hunt treats\n4xx as a finding. Destructive routes that need a user still 401.",
         "operationId": "whoami_api_v1_auth_me_get",
         "responses": {
           "200": {
@@ -15021,6 +16659,30 @@
           }
         },
         "summary": "Get Kpi Ledger",
+        "tags": [
+          "bench"
+        ]
+      }
+    },
+    "/api/v1/bench/perf-kpi": {
+      "get": {
+        "description": "The perf ledger as cards: same kpis + snapshots shape as /bench/kpi.\n\nOne snapshot per (date, round), in date order, so the sparkline runs from\nthe first perf measurement to the latest. Cards with the most real readings\ncome first: the ones that have actually travelled lead the panel.",
+        "operationId": "get_perf_kpi_ledger_api_v1_bench_perf_kpi_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Perf Kpi Ledger Api V1 Bench Perf Kpi Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Perf Kpi Ledger",
         "tags": [
           "bench"
         ]
@@ -15393,6 +17055,150 @@
         ]
       }
     },
+    "/api/v1/cloudsync/data-classes": {
+      "get": {
+        "description": "Every class of data and how it syncs (``policy classes`` twin).",
+        "operationId": "get_data_classes_api_v1_cloudsync_data_classes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "title": "Response Get Data Classes Api V1 Cloudsync Data Classes Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Data Classes",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/enrollment-grants": {
+      "post": {
+        "description": "Mint one single-use grant on this hub. The token is returned once and\nnever logged; only its sha256 reaches the database.",
+        "operationId": "mint_enrollment_grant_api_v1_cloudsync_enrollment_grants_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "No signed-in user on this hub has that email; none is created. code: CLOUDSYNC_GRANT_OWNER_UNKNOWN."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "This machine is not a hub (MDT_IS_HUB is not 1); a grant is an act of hub authority. code: CLOUDSYNC_NOT_A_HUB."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "MDT_IS_HUB holds a value other than 1, 0 or empty. code: CLOUDSYNC_HUB_FLAG_INVALID."
+          }
+        },
+        "summary": "Mint Enrollment Grant",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/fleet": {
+      "get": {
+        "description": "Exactly ``fleet --json``: the one function both entry points call.",
+        "operationId": "get_fleet_api_v1_cloudsync_fleet_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          }
+        },
+        "summary": "Get Fleet",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
     "/api/v1/cloudsync/machines": {
       "get": {
         "operationId": "list_machines_api_v1_cloudsync_machines_get",
@@ -15492,7 +17298,7 @@
         ]
       },
       "put": {
-        "description": "Upsert one pin THROUGH the stamp chokepoint. See :func:`put_policy`.",
+        "description": "Upsert one pin through the policy gate. See :func:`put_policy`.",
         "operationId": "put_playlist_pin_api_v1_cloudsync_playlist_pins_put",
         "requestBody": {
           "content": {
@@ -15513,7 +17319,13 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "The stored pin"
+          },
+          "404": {
+            "description": "MACHINE_NOT_FOUND or PLAYLIST_NOT_FOUND; nothing written"
+          },
+          "409": {
+            "description": "POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written"
           },
           "422": {
             "content": {
@@ -15585,7 +17397,7 @@
         ]
       },
       "put": {
-        "description": "Upsert one policy cell THROUGH the stamp chokepoint.\n\nRound 2 finding N1a: this endpoint stamped the row correctly but skipped\n``local_changelog``, so the edit was never offered to the hub and the\nmachine then failed its post-sync digest compare on ``sync_policies``\nforever. Changing one policy in the config UI stopped that machine\nsyncing anything at all.",
+        "description": "Upsert one policy cell through the policy gate (``policy set --live`` twin).\n\n``apps.sync_hub.policy_store`` stamps the row and its ``local_changelog``\nentry in one transaction (round 2 finding N1a: a write with no changelog\nentry is never offered to the hub) and answers 409 when the change\nintroduces an error-severity violation, writing nothing.",
         "operationId": "put_policy_api_v1_cloudsync_policies_put",
         "requestBody": {
           "content": {
@@ -15606,7 +17418,13 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "The stored cell"
+          },
+          "404": {
+            "description": "MACHINE_NOT_FOUND; nothing written"
+          },
+          "409": {
+            "description": "POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written"
           },
           "422": {
             "content": {
@@ -15620,6 +17438,203 @@
           }
         },
         "summary": "Put Policy",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/policies/apply": {
+      "post": {
+        "description": "Gate the change set and, unless ``dry_run``, write it in one transaction.",
+        "operationId": "apply_policies_api_v1_cloudsync_policies_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyApplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOutcomeOut"
+                }
+              }
+            },
+            "description": "Gated; written is true only when dry_run is false"
+          },
+          "404": {
+            "description": "MACHINE_NOT_FOUND or PLAYLIST_NOT_FOUND or POLICY_NOT_FOUND or PIN_NOT_FOUND; nothing written"
+          },
+          "409": {
+            "description": "POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Policies",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/policies/plan": {
+      "post": {
+        "description": "Rows ``body`` would touch, with the gate's verdict. Never writes.",
+        "operationId": "plan_policies_api_v1_cloudsync_policies_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyChangesIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOutcomeOut"
+                }
+              }
+            },
+            "description": "The rows the change set would touch; CLI exit 3 when blocking"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Plan Policies",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/policies/validate": {
+      "post": {
+        "description": "The fleet with ``body`` applied, judged. No body judges the stored fleet\n(``policy validate`` without ``--proposal``).",
+        "operationId": "validate_policies_api_v1_cloudsync_policies_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PolicyChangesIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOutcomeOut"
+                }
+              }
+            },
+            "description": "The fleet with the change set applied, judged; CLI exit 3 on any error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Policies",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/policies/{machine_id}/{asset_kind}": {
+      "delete": {
+        "description": "Unset one cell: a synced tombstone (``policy unset --live`` twin).",
+        "operationId": "delete_policy_api_v1_cloudsync_policies__machine_id___asset_kind__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "title": "Machine Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_kind",
+            "required": true,
+            "schema": {
+              "title": "Asset Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOutcomeOut"
+                }
+              }
+            },
+            "description": "The cell is tombstoned and will sync"
+          },
+          "404": {
+            "description": "MACHINE_NOT_FOUND or POLICY_NOT_FOUND; nothing written"
+          },
+          "409": {
+            "description": "POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Policy",
         "tags": [
           "cloudsync"
         ]
@@ -15641,6 +17656,81 @@
           }
         },
         "summary": "Get Status",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/sync": {
+      "post": {
+        "description": "One spoke round trip against ``hub_url``, journaled for ``/status``.",
+        "operationId": "run_sync_round_api_v1_cloudsync_sync_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncRunIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "run_sync raised an error it does not declare (a defect). Journaled as error by maintenance.sync; the body is the server's plain 500, not an OpsErrorResponse."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The hub was unreachable or answered with something unusable. code: CLOUDSYNC_HUB_UNREACHABLE. Journaled as error."
+          }
+        },
+        "summary": "Run Sync Round",
         "tags": [
           "cloudsync"
         ]
@@ -17331,6 +19421,233 @@
         ]
       }
     },
+    "/api/v1/library-jobs": {
+      "get": {
+        "operationId": "list_library_jobs_api_v1_library_jobs_get",
+        "parameters": [
+          {
+            "description": "stems or lyrics",
+            "in": "query",
+            "name": "lane",
+            "required": true,
+            "schema": {
+              "description": "stems or lyrics",
+              "enum": [
+                "stems",
+                "lyrics"
+              ],
+              "title": "Lane",
+              "type": "string"
+            }
+          },
+          {
+            "description": "settled to include terminals",
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "settled to include terminals",
+              "title": "Include"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryJobListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Library Jobs",
+        "tags": [
+          "library-jobs"
+        ]
+      }
+    },
+    "/api/v1/library-jobs/enqueue": {
+      "post": {
+        "operationId": "enqueue_library_jobs_api_v1_library_jobs_enqueue_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryJobEnqueueIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryJobEnqueueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enqueue Library Jobs",
+        "tags": [
+          "library-jobs"
+        ]
+      }
+    },
+    "/api/v1/library-jobs/{lane}/{stable_id}": {
+      "patch": {
+        "operationId": "reorder_library_job_api_v1_library_jobs__lane___stable_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lane",
+            "required": true,
+            "schema": {
+              "enum": [
+                "stems",
+                "lyrics"
+              ],
+              "title": "Lane",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryJobReorderIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryJobItemOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reorder Library Job",
+        "tags": [
+          "library-jobs"
+        ]
+      }
+    },
+    "/api/v1/library-jobs/{lane}/{stable_id}/cancel": {
+      "post": {
+        "operationId": "cancel_library_job_api_v1_library_jobs__lane___stable_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lane",
+            "required": true,
+            "schema": {
+              "enum": [
+                "stems",
+                "lyrics"
+              ],
+              "title": "Lane",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryJobItemOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Library Job",
+        "tags": [
+          "library-jobs"
+        ]
+      }
+    },
     "/api/v1/library/readiness": {
       "get": {
         "description": "Per-present-track readiness across beatgrid, waveform, stems, analysis, sync.\n\nRequirements (mini-PRD):\n  READY-01: GET /api/v1/library/readiness reports per-present-track and\n  aggregate readiness. Counts use the present (materialized local audio)\n  denominator, never all tracks rows.\n    [if] a track's file is not materialized [then] it is absent from\n    present, items, and every count\n    [if] a present track has no PQTZ, no own beatgrid lane ok, and no\n    usable downbeats_s [then] counts.beatgrid_missing includes it and an\n    axis=beatgrid item names it\n    [if] a present track has a stems directory that load_stem_bundle\n    rejects and no valid bundle in any configured root [then]\n    stems == corrupt on the item and both counts.stems_corrupt and\n    /ingest/coverage corrupt.stems are >= 1\n    [if] limit is 1 and many present tracks are not ready [then] items\n    has 1 row and counts.not_ready is still the full population\n    [if] a present track has a validateBeatGrid-passing grid [then]\n    sync_compatible is true without anyone engaging Beat Sync",
@@ -18163,7 +20480,7 @@
     },
     "/api/v1/performance/telemetry/pressure": {
       "get": {
-        "description": "What the machine is under right now, cheap enough to poll.\n\nTHE conditions half of a trustworthy timing row. The browser stamps this\nonto every deck-load row (see the frontend's machine-pressure.ts) so a\nlatency number carries the machine state it was measured under instead of\nleaving a later reader to guess, which is how the register ended up with a\nwaveform decode recorded at both 0.73 s and 7.53 s for the same work.\n\nRead-only, and deliberately NOT a process walk: this is sysctl, getloadavg\nand vm_stat, never the `ps` table that `/processes` reads out of the\nprobe's log. It is served from a short shared cache and every response\nstates the age of the sample it is handing back, so a caller can tell a\nfresh reading from a five-second-old one rather than assuming.\n\nAgent-native: `curl $ENGINE/api/v1/performance/telemetry/pressure`.\n\nFields, all optional and all absent rather than zero when unreadable:\n`load_avg_1m` (1-minute kernel load average), `mem_free_mb` (free physical\nmemory, `vm_stat` Pages free only, not the wider reclaimable figure),\n`swap_used_mb` (swap in use), `cache_age_ms` (age of this sample).\n`available` is false, with a `reason`, when nothing could be measured --\nnotably inside the packaged app, whose payload stages `apps` and not\n`scripts`.",
+        "description": "What the machine is under right now, cheap enough to poll.",
         "operationId": "machine_pressure_api_v1_performance_telemetry_pressure_get",
         "responses": {
           "200": {
@@ -20676,7 +22993,7 @@
             },
             "description": "Validation Error"
           },
-          "501": {
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -20684,7 +23001,7 @@
                 }
               }
             },
-            "description": "The credential KIND is real and reserved but not built yet. code: SYNC_ENROLL_KIND_UNAVAILABLE."
+            "description": "The credential KIND is real but this hub cannot resolve it right now: for google_id_token, no OAuth client id is configured or Google's signing keys are unreachable. Never answered with an unverified acceptance. code: SYNC_ENROLL_KIND_UNAVAILABLE."
           }
         },
         "summary": "Enroll",
@@ -20856,6 +23173,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "507": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubStorageErrorResponse"
+                }
+              }
+            },
+            "description": "The hub sqlite database cannot take the write. code: SYNC_HUB_STORAGE."
           }
         },
         "summary": "Push",
@@ -21150,6 +23477,28 @@
         ]
       }
     },
+    "/api/v1/tracks/lyrics-cached-ids": {
+      "get": {
+        "description": "List cached lyric timelines so the UI can skip explicit cache-miss reads.",
+        "operationId": "get_lyrics_cached_ids_api_v1_tracks_lyrics_cached_ids_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsCachedIdsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyrics Cached Ids",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
     "/api/v1/tracks/quality-ladder": {
       "get": {
         "description": "The six venue rungs, so the UI legend is not a second copy of them.",
@@ -21430,7 +23779,7 @@
     },
     "/api/v1/tracks/{stable_id}/auto-cues": {
       "get": {
-        "description": "PROPOSED hot cues from apps.analysis (META-04). Never committed cues.",
+        "description": "PROPOSED hot cues from apps.analysis (META-04). Never committed cues.\n\nReturns HTTP 200 with ``proposals: []`` and ``backend=\"none\"`` when the\ntrack is in the library but has no analysis row yet. Unknown stable_id\nand unmatched ``?backend=`` still 404 with ``ANALYSIS_NOT_FOUND``.",
         "operationId": "get_auto_cues_api_v1_tracks__stable_id__auto_cues_get",
         "parameters": [
           {
@@ -21919,7 +24268,7 @@
     },
     "/api/v1/tracks/{stable_id}/stems": {
       "get": {
-        "description": "Return a stored v1 manifest only after all four files prove alignment.",
+        "description": "Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.",
         "operationId": "get_stem_manifest_api_v1_tracks__stable_id__stems_get",
         "parameters": [
           {
@@ -21937,7 +24286,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StemManifestOut"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/StemManifestOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StemUnavailableOut"
+                    }
+                  ],
+                  "title": "Response Get Stem Manifest Api V1 Tracks  Stable Id  Stems Get"
                 }
               }
             },

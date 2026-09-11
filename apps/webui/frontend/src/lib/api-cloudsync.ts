@@ -18,7 +18,7 @@
 
 import type { Client } from 'openapi-fetch';
 
-import { api, unwrap } from './api/client';
+import { ApiError, api, unwrap } from './api/client';
 
 // ----------------------------------------------------------- types
 
@@ -172,6 +172,24 @@ export async function listPolicies(machineId?: string): Promise<SyncPolicy[]> {
 
 export async function putPolicy(body: SyncPolicyPutBody): Promise<SyncPolicy> {
 	return unwrap(cloudSyncApi.PUT('/api/v1/cloudsync/policies', { body }));
+}
+
+/** One gate verdict from a 409 POLICY_VIOLATION body (`detail.outcome.violations`). */
+interface PolicyViolation {
+	subject: string;
+	message: string;
+	blocking: boolean;
+}
+
+/** A toast-ready message for a failed policy write. A 409 POLICY_VIOLATION
+ * names each blocking violation (`subject: message`), so the user sees WHY the
+ * gate refused; any other failure keeps the API's own message. */
+export function policyErrorMessage(exc: unknown): string {
+	if (!(exc instanceof ApiError)) return exc instanceof Error ? exc.message : String(exc);
+	const body = exc.body as { detail?: { outcome?: { violations?: PolicyViolation[] } } } | null;
+	const blocking = (body?.detail?.outcome?.violations ?? []).filter((v) => v.blocking);
+	if (exc.code !== 'POLICY_VIOLATION' || blocking.length === 0) return exc.message;
+	return blocking.map((v) => `${v.subject}: ${v.message}`).join('; ');
 }
 
 export async function listPlaylistPins(machineId?: string): Promise<PlaylistPin[]> {

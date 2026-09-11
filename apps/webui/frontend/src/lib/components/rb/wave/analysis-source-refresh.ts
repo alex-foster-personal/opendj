@@ -216,10 +216,10 @@ export async function refreshAnalysisSourceDecks(
 	if (isSuperseded()) return null;
 	// Merge each staged fetch onto whatever payload is CURRENTLY live for its
 	// track, keeping only the fields this switch is actually authoritative
-	// for: `beatgrid`, `beatgrid_source`, `beatgrid_own_unavailable_reason`
-	// (the only fields `_resolve_beatgrid_source` in rb_assets.py ever
-	// mutates - cues/waveform/phrases/performance_hints/local_waveform are
-	// assembled once, upstream of the source branch, and never vary with it).
+	// for: `beatgrid`, `beatgrid_source`, `beatgrid_own_unavailable_reason`,
+	// `waveform`, and `phrases` (waveform varies with the waveform lane;
+	// phrases must stay in sync with the server so an emptied PSSI list is
+	// visible on a loaded deck).
 	// A concurrent hot-cue write (`refreshHotCues`, audio-engine.svelte.ts:
 	// 3053-3054) can publish newer cues/loop data onto a holder's deck.anlz
 	// and the shared cache WHILE this staged `/anlz` fetch is still in
@@ -248,7 +248,9 @@ export async function refreshAnalysisSourceDecks(
 						...base,
 						beatgrid: fresh.beatgrid,
 						beatgrid_source: fresh.beatgrid_source,
-						beatgrid_own_unavailable_reason: fresh.beatgrid_own_unavailable_reason
+						beatgrid_own_unavailable_reason: fresh.beatgrid_own_unavailable_reason,
+						waveform: fresh.waveform,
+						phrases: fresh.phrases
 					};
 		return { stableId, holders, anlz, track };
 	});

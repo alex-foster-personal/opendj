@@ -43,7 +43,10 @@ class CloudSyncStatusOut(BaseModel):
     recent_results: list[RecentResultOut]
 
 
-def _data_dir(request: Request) -> Path:
+def data_dir_for_request(request: Request) -> Path:
+    """The data dir (``<data-dir>/state/state.db``) this daemon's CloudSync
+    journal and operator actions live in. Shared with ``cloudsync_ops`` so a
+    sync it runs journals exactly where ``/status`` reads."""
     db_path = Path(str(request.app.state.state_db_path))
     return db_path.resolve().parent.parent
 
@@ -51,7 +54,9 @@ def _data_dir(request: Request) -> Path:
 @router.get("/status", response_model=CloudSyncStatusOut)
 def get_status(request: Request) -> CloudSyncStatusOut:
     try:
-        return CloudSyncStatusOut(**sync_status.read_status(_data_dir(request)).to_wire())
+        return CloudSyncStatusOut(
+            **sync_status.read_status(data_dir_for_request(request)).to_wire()
+        )
     except sync_status.CloudSyncStatusError as exc:
         raise HTTPException(status_code=500, detail={
             "code": "CLOUDSYNC_STATUS_UNREADABLE", "message": str(exc),

@@ -45,6 +45,11 @@ CASES: dict[str, tuple[str, int, tuple[str, ...]]] = {
     ),
     "gh-api-arg": ("bad_gh_api_arg.sh", 1, ("good_gh_api_arg.sh",)),
     "zsh-modifier-path": ("bad_zsh_modifier.sh", 2, ("good_zsh_modifier.sh",)),
+    "status-after-substitution": (
+        "bad_status_after_substitution.sh",
+        3,
+        ("good_status_after_substitution.sh",),
+    ),
 }
 
 # rule -> (removal: every instance of the construct deleted,
@@ -68,6 +73,23 @@ MUTATIONS: dict[str, tuple[Edits, Edits]] = {
         # different modifier letter (:a absolute-path -> :t tail), so every
         # observable value changes while the construct stays what it was.
         [('"$SHA:apps/webui/server/app.py"', '"$COMMIT:tests/scripts/app.py"')],
+    ),
+    "status-after-substitution": (
+        # All three instances captured first, the shipped fix.
+        [
+            ('echo "[$(date', 'rc=$?; echo "[$(date'),
+            ("returned rc=$?", "returned rc=$rc"),
+            ('echo "`date +%s` rc=${?}"', 'rc=$?; echo "`date +%s` rc=${rc}"'),
+            ("stamp=$(date +%s) rc=$?", "rc=$? stamp=$(date +%s)"),
+        ],
+        # Cosmetics only: a different command inside each substitution and a
+        # different variable name, so the logged text changes and the order of
+        # substitution-then-status does not.
+        [
+            ("date '+%H:%M:%S'", "hostname"),
+            ("`date +%s`", "`uname -n`"),
+            ("stamp=$(date +%s) rc=$?", "host=$(uname -n) status=$?"),
+        ],
     ),
 }
 
