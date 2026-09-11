@@ -3,7 +3,7 @@
 	// tempo plus its playable min/max range. Fetches the track fresh on open
 	// (etag for CAS + current values) rather than trusting a possibly-stale
 	// row prop - this is an infrequent action, not a hot path.
-	import { getTrack, patchTrack, ConflictError, type Track } from '$lib/api';
+	import { getTrack, patchTrack, ConflictError } from '$lib/api';
 	import { pushToast } from '$lib/stores.svelte';
 
 	let {
