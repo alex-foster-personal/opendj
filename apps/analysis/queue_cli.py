@@ -51,7 +51,7 @@ from rich.console import Console
 from rich.table import Table
 
 from . import queue as queue_api
-from . import queue_store, queue_targets
+from . import queue_store, queue_targets, queue_user_cli
 from .backends import get_backend
 from .backends.base import AnalyzerBackend
 from .queue_runner import drain, run_batch
@@ -401,6 +401,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("list", help="recent batches")
     p.add_argument("--limit", type=int, default=20)
     p.set_defaults(func=cmd_list)
+    queue_user_cli.add_user_parsers(sub)
     return parser
 
 

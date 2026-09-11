@@ -126,6 +126,10 @@ NATIVE_ANALYSIS_COLUMN_DOCS: dict[str, dict[str, str]] = {
         "Runner holding the claim. NULL for anything not in flight, which "
         "is what makes an abandoned claim identifiable after a kill."
     ),
+    "position": (
+        "User-lane dispatch order among pending items (PERFBATCH-05). "
+        "Analysis backfill still claims by enqueued_at; default 0."
+    ),
 },
 "analysis_stale": {
     "stable_id": "Track whose record went stale.",
