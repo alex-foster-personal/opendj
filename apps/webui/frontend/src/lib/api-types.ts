@@ -505,7 +505,11 @@ export interface paths {
         };
         /**
          * Whoami
-         * @description The signed-in user, or 401. The bauble polls this on mount.
+         * @description Who is signed in.
+         *
+         *     Always HTTP 200. Signed-out is identity, not a fault: the bauble polls
+         *     this on mount, Chromium logs every 4xx, and the AutoPlay hunt treats
+         *     4xx as a finding. Destructive routes that need a user still 401.
          */
         get: operations["whoami_api_v1_auth_me_get"];
         put?: never;
@@ -5492,6 +5496,12 @@ export interface components {
         };
         /** MeOut */
         MeOut: {
+            /** Signed In */
+            signed_in: boolean;
+            user: components["schemas"]["MeUserOut"] | null;
+        };
+        /** MeUserOut */
+        MeUserOut: {
             /** Avatar Url */
             avatar_url: string | null;
             /** Created At */
@@ -7820,6 +7830,8 @@ export interface components {
             album?: string | null;
             /** Artist */
             artist?: string | null;
+            /** Artwork Available */
+            artwork_available: boolean | null;
             /** Auto Cues Available */
             auto_cues_available: boolean;
             /** Bpm */

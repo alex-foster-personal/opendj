@@ -1,11 +1,6 @@
 {
   "entries": [
     {
-      "signature": "http-502:GET:/api/v1/update/check",
-      "issue": "#1867",
-      "reason": "AutoPlay hunt: GET /api/v1/update/check returns 502"
-    },
-    {
       "signature": "http-404:GET:/api/v1/tracks/<hash>/lyrics",
       "issue": "#1869",
       "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/lyrics returns 404"
@@ -21,19 +16,9 @@
       "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/artwork returns 503"
     },
     {
-      "signature": "console.error:Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
-      "issue": "#1873",
-      "reason": "AutoPlay hunt: console.error 503 Service Unavailable while mixing"
-    },
-    {
       "signature": "http-404:GET:/api/v1/tracks/<hash>/stems",
       "issue": "#1874",
       "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/stems returns 404"
-    },
-    {
-      "signature": "http-401:GET:/api/v1/auth/me",
-      "issue": "#1875",
-      "reason": "AutoPlay hunt: GET /api/v1/auth/me returns 401"
     },
     {
       "signature": "console.error:Failed to load resource: the server responded with a status of 401 (Unauthorized)",

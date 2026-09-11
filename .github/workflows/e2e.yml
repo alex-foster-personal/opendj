@@ -321,7 +321,7 @@ jobs:
         # The engine imports pyrekordbox, which links libsqlcipher at runtime.
         # Ubuntu noble ships the runtime .so inside libsqlcipher-dev.
         run: |
-          scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev'
+          scripts/ci_apt_present.sh libsqlcipher-dev || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev'
 
       - name: Install Python deps into the project venv
         # `uv sync`, NOT `uv run --no-sync`. The webkit config boots the engine
@@ -478,7 +478,7 @@ jobs:
         # samples. It does NOT fake the audio graph: decode, the worklet and
         # the analyser all still run for real, which is what the suite measures.
         run: |
-          scripts/ci_host_lock.sh packages sudo env -C / apt-get install -y pulseaudio
+          scripts/ci_apt_present.sh pulseaudio || scripts/ci_host_lock.sh packages sudo env -C / apt-get install -y pulseaudio
           # Setup and restore both run under the pulse-sink host lock: the server
           # is shared by every job of this user on the host, and the ownership
           # check plus the mutation must be one critical section. See the script.
@@ -901,7 +901,7 @@ jobs:
         # throwaway library. Without it that suite fails on a missing binary,
         # which reads as a product failure and is not one.
         run: |
-          scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev ffmpeg'
+          scripts/ci_apt_present.sh libsqlcipher-dev ffmpeg || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev ffmpeg'
 
       - name: Install Python deps into the project venv
         run: uv sync
@@ -952,7 +952,7 @@ jobs:
         # samples. It does NOT fake the audio graph: decode, the worklet and
         # the analyser all still run for real, which is what the suite measures.
         run: |
-          scripts/ci_host_lock.sh packages sudo env -C / apt-get install -y pulseaudio
+          scripts/ci_apt_present.sh pulseaudio || scripts/ci_host_lock.sh packages sudo env -C / apt-get install -y pulseaudio
           # Setup and restore both run under the pulse-sink host lock: the server
           # is shared by every job of this user on the host, and the ownership
           # check plus the mutation must be one critical section. See the script.
