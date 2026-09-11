@@ -23,6 +23,7 @@ import { optionalResources } from './optional-resource-availability';
 import type { AnlzCue, AnlzData } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
+import type { LyricsRowSummary } from './lyrics/types';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
 export {
@@ -383,6 +384,9 @@ export interface PlaylistTrackRowWire {
 	has_rb_mapping: boolean;
 	artwork_available: boolean | null;
 	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
+	lyrics?: LyricsRowSummary | null;
+	is_remix?: boolean | null;
+	is_radio_edit?: boolean | null;
 }
 
 /** `tracks` is Omit-ed off `PlaylistDetail` rather than narrowed, because the
@@ -527,6 +531,9 @@ export type TrackListItemWire = Track & {
 	has_rb_mapping: boolean;
 	artwork_available: boolean | null;
 	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
+	lyrics?: LyricsRowSummary | null;
+	is_remix?: boolean | null;
+	is_radio_edit?: boolean | null;
 };
 
 export interface TracksPageHydrated {

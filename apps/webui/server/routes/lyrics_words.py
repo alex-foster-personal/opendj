@@ -140,6 +140,7 @@ def _verdict_out(verdict: store.LyricVerdict) -> CoverageVerdictOut:
         stable_id=verdict.stable_id,
         verdict=verdict.verdict,
         effective_verdict=verdict.effective,
+        effective=verdict.effective,
         coverage_pct=verdict.coverage_pct,
         source=verdict.source,
         language_iso3=verdict.language_iso3,

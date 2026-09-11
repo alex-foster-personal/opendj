@@ -53,6 +53,8 @@ WRAPPED_FIELDS: frozenset[str] = frozenset(
         "tags",
         "genre",
         "comments",
+        # PREF-01: {"regular": float|None, "min": float|None, "max": float|None}.
+        "tempo_pref",
     }
 )
 

@@ -85,6 +85,7 @@ export default defineConfig({
 		'**/autoplay-stall-browser.spec.ts', // playwright.autoplay-stall-gate.config.ts (real backend)
 		'**/performance-*.spec.ts', // playwright.performance.config.ts (real library)
 		'**/kpi-login-capture.spec.ts', // playwright.kpi-capture.config.ts (S13 login KPI capture; operator-only)
+		'**/kpi-s2-capture.spec.ts', // playwright.kpi-s2-capture.config.ts (S2 press-to-audible KPI capture; operator-only)
 		'**/meter-artifact.spec.ts', // playwright.meter-artifact.config.ts (built artifact)
 		'**/preflight-gate.spec.ts', // playwright.preflight-gate.config.ts (two real backends)
 		'**/cloudsync-ui.spec.ts', // playwright.cloudsync-ui.config.ts (real hub + spoke engines)
@@ -97,6 +98,7 @@ export default defineConfig({
 		'**/library-wheel.spec.ts', // playwright.library-wheel.config.ts (real engine, genre fixture)
 		'**/rekordbox-writeback-disabled.spec.ts', // playwright.rekordbox-gate.config.ts
 		'**/hot-cue-mapping-gate.spec.ts', // playwright.hotcue-mapping-gate.config.ts (real backend, fixture library)
+		'**/lyrics-words.spec.ts', // playwright.lyrics-words.config.ts (real backend, words fixture)
 		'**/stems-progress.spec.ts', // playwright.stems.config.ts (engine + ffmpeg)
 		'**/library-jobs-ordering.spec.ts', // playwright.library-jobs.config.ts (dry runner)
 		'**/stretch-artifact.spec.ts', // playwright.stretch-artifact.config.ts (built artifact)

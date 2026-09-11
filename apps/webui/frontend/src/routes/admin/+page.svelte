@@ -26,6 +26,10 @@
 	import { RUN_SETUP_TITLE, runSetup, runSetupBlocked } from '$lib/setup/run-setup';
 	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
 	import KpiTile from './KpiTile.svelte';
+	import LyricJobs from './LyricJobs.svelte';
+	import LyricSourceOrder from './LyricSourceOrder.svelte';
+	import LyricTriage from './LyricTriage.svelte';
+	import LyricsKpiPanel from './LyricsKpiPanel.svelte';
 	import QualityRatchet from './QualityRatchet.svelte';
 	import RunNotes from './RunNotes.svelte';
 	import TipLayer from './TipLayer.svelte';
@@ -106,6 +110,31 @@
 		<span class="admin-tab-err" title={setupError}>{setupError}</span>
 	{/if}
 </div>
+
+<section class="panel" id="lyrics-generator">
+	<h3>Lyrics generator</h3>
+	<p class="sub">
+		The generator pipeline runs offline: stems (vocal separation) -&gt; alignment (word timings)
+		-&gt; witness (independent ASR cross-check) -&gt; ingest into state.db. Order the lyric sources
+		below to steer where the text comes from, and queue per-track generation here or from the
+		library right-click menu.
+	</p>
+	<LyricSourceOrder />
+	<hr />
+	<LyricJobs />
+</section>
+
+<section class="panel">
+	<h3>Lyric triage</h3>
+	<p class="sub">
+		Review and repair: the tracks whose lyrics deserve human eyes first, ranked most suspect
+		first. Click a row to open the track page with the full lyric panel; use the override buttons
+		to record your verdict - an override beats the computed one everywhere.
+	</p>
+	<LyricTriage />
+</section>
+
+<LyricsKpiPanel />
 
 <section class="panel">
 	<h3>Demucs farm KPI ledger</h3>

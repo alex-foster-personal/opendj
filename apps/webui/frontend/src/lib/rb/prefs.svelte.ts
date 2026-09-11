@@ -59,9 +59,15 @@ export interface RbUiPrefs {
 	/** When true, every transport relocate (including master) uses BAR
 	 * phase-preserving sync so bar 1 stays aligned across synced decks. */
 	beat_sync_max: boolean;
-	/** Library list: keep only tracks appropriate as next (Camelot + BPM
+/** Library list: keep only tracks appropriate as next (Camelot + BPM
 	 * window vs master / loaded reference). Toggle with Tab. */
 	next_only_filter: boolean;
+	/** Library list: keep only remixes (title-marker heuristic, backend
+	 * is_remix; the lyric repair signal joins it after the library run). */
+	remixes_filter: boolean;
+	/** Library list: keep only tracks with real word-level lyrics spanning
+	 * more than 5 derived lines (pane-contract VOCALS_FILTER_MIN_LINES). */
+	vocals_filter: boolean;
 	/** Persisted independently so either collapsed rail entry can restore its panel. */
 	next_panel_collapsed: boolean;
 	recommended_panel_collapsed: boolean;
@@ -155,6 +161,8 @@ const DEFAULTS: RbUiPrefs = {
 	library_density: 'compact',
 	beat_sync_max: true,
 	next_only_filter: false,
+	remixes_filter: false,
+	vocals_filter: false,
 	next_panel_collapsed: false,
 	recommended_panel_collapsed: false,
 	auto_play_enabled: true,
@@ -236,6 +244,14 @@ function _load(): RbUiPrefs {
 			`${STORAGE_KEY}: malformed prefs blob (next_only_filter is not a boolean) - ` +
 				'clear the localStorage key to recover'
 		);
+	}
+	for (const key of ['remixes_filter', 'vocals_filter'] as const) {
+		if (parsed[key] !== undefined && typeof parsed[key] !== 'boolean') {
+			throw new Error(
+				`${STORAGE_KEY}: malformed prefs blob (${key} is not a boolean) - ` +
+					'clear the key or fix the value'
+			);
+		}
 	}
 	if (parsed.next_panel_collapsed !== undefined && typeof parsed.next_panel_collapsed !== 'boolean') {
 		throw new Error(
@@ -363,6 +379,8 @@ function _load(): RbUiPrefs {
 		library_density: density ?? DEFAULTS.library_density,
 		beat_sync_max: parsed.beat_sync_max ?? DEFAULTS.beat_sync_max,
 		next_only_filter: parsed.next_only_filter ?? DEFAULTS.next_only_filter,
+		remixes_filter: parsed.remixes_filter ?? DEFAULTS.remixes_filter,
+		vocals_filter: parsed.vocals_filter ?? DEFAULTS.vocals_filter,
 		next_panel_collapsed: parsed.next_panel_collapsed ?? DEFAULTS.next_panel_collapsed,
 		recommended_panel_collapsed:
 			parsed.recommended_panel_collapsed ?? DEFAULTS.recommended_panel_collapsed,
@@ -487,6 +505,16 @@ export function setLibraryPanelCollapsed(panel: LibraryPanel, collapsed: boolean
 
 export function toggleNextOnlyFilter(): void {
 	setNextOnlyFilter(!uiPrefs.next_only_filter);
+}
+
+export function setRemixesFilter(next: boolean): void {
+	uiPrefs.remixes_filter = next;
+	_persist();
+}
+
+export function setVocalsFilter(next: boolean): void {
+	uiPrefs.vocals_filter = next;
+	_persist();
 }
 
 export function setTheme(next: UiTheme): void {
