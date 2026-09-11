@@ -37,3 +37,23 @@ export function activeLyricLineIndex(lines: TimedLyricLine[], positionMs: number
 	}
 	return activeIndex;
 }
+
+/** Lines whose timestamps fall inside a loop in/out window (inclusive). */
+export function lyricLinesSpanningRange(
+	lines: readonly LyricLine[],
+	inMs: number,
+	outMs: number
+): LyricLine[] {
+	if (outMs < inMs) return [];
+	let startIndex = activeLyricLineIndex(lines, inMs);
+	if (startIndex < 0) {
+		startIndex = lines.findIndex((line) => line.start_ms >= inMs);
+		if (startIndex < 0) return [];
+	}
+	const spanning: LyricLine[] = [];
+	for (let index = startIndex; index < lines.length; index += 1) {
+		if (lines[index].start_ms > outMs) break;
+		spanning.push(lines[index]);
+	}
+	return spanning;
+}

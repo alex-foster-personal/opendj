@@ -40,6 +40,14 @@ PIPELINE_PREFIXES: tuple[str, ...] = (
     "apps/webui/frontend/src/lib/components/rb/wave/lyrics-fetch.svelte.ts",
 )
 
+# Install-time machine capability (LATENCY-04) is not a stems/lyrics throughput
+# or latency pipeline mutation: it benchmarks once, persists a JSON record, and
+# exposes a read-only route. PERFBATCH-02/03 still apply to real pipeline edits.
+PIPELINE_EXEMPT: tuple[str, ...] = (
+    "apps/stems/live_capability.py",
+    "apps/stems/live_capability_api.py",
+)
+
 MEASUREMENT_ONLY_PREFIXES: tuple[str, ...] = (
     "scripts/perf/",
     "tests/perf/",
@@ -66,7 +74,12 @@ def _matches_prefix(path: str, prefixes: tuple[str, ...]) -> bool:
 
 
 def pipeline_mutation_paths(paths: list[str]) -> list[str]:
-    return [path for path in paths if _matches_prefix(path, PIPELINE_PREFIXES)]
+    return [
+        path
+        for path in paths
+        if _matches_prefix(path, PIPELINE_PREFIXES)
+        and not _matches_prefix(path, PIPELINE_EXEMPT)
+    ]
 
 
 def idle_marker(body: str) -> bool:

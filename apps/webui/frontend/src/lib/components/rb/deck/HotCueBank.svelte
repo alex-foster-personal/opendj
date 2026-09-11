@@ -21,7 +21,7 @@
 	// defaults true (deck-state-types.ts), so that flag alone cannot gate
 	// this case. Same inert-with-tooltip treatment, gated on stable_id
 	// instead (issue #804).
-	import type { HotCueMutation } from '$lib/rb/api-rb';
+	import { fetchTrackLyrics, type HotCueMutation } from '$lib/rb/api-rb';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { hotCueTitle } from '$lib/rb/hot-cue-label';
@@ -29,6 +29,7 @@
 	import { proposalTitle, visibleProposalForSlot } from '$lib/rb/auto-cue-proposals';
 	import { ensureAutoCues, getAutoCuesEntry } from './auto-cues-cache.svelte';
 	import HotCueProposalLabel from './HotCueProposalLabel.svelte';
+	import { createLyricsFetchState } from '../wave/lyrics-fetch.svelte';
 
 	const MAPPING_TIP = 'cues need a rekordbox mapping';
 	const NOT_LOADED_TIP = 'no track loaded - nothing to save';
@@ -68,6 +69,7 @@
 		const sid = deck.stable_id;
 		if (sid !== null) ensureAutoCues(sid);
 	});
+	const lyricsState = createLyricsFetchState(() => deck.stable_id, fetchTrackLyrics);
 	const filledSlots = $derived(new Set(deck.hot_cues.map((c) => c.slot)));
 	const proposalFor = $derived.by(() => {
 		const sid = deck.stable_id;
@@ -280,7 +282,7 @@
 											? `${proposalTitle(visible.kind, visible.time_s)} - click to save the current position`
 											: 'empty hot cue slot - click to save the current position'
 										: MAPPING_TIP
-								: hotCueTitle(entry.cue, deck.anlz?.beatgrid.beats ?? [])}
+								: hotCueTitle(entry.cue, deck.anlz?.beatgrid.beats ?? [], lyricsState.lyrics?.lines ?? [])}
 							onclick={(e) => onSlotClick(entry, e.timeStamp)}
 						>
 							<span class="letter">{entry.slot}</span>

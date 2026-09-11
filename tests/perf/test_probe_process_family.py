@@ -214,6 +214,7 @@ def test_two_webcontents_inside_the_cluster_window_are_kept_not_refused() -> Non
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_opendj_process_name_uses_the_setproctitle_token() -> None:
+    """[if] a command line carries a setproctitle --name [then] name parser returns, [else stop]."""
     assert (
         opendj_process_name("opendj-engine --name opendj-engine --port 8585 [/usr/bin/python3]")
         == "opendj-engine"
@@ -227,16 +228,19 @@ def test_opendj_process_name_uses_the_setproctitle_token() -> None:
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_opendj_desktop_shell_is_named_from_the_executable() -> None:
+    """[if] the command is the Open DJ desktop [then] name parser returns, [else stop]."""
     assert opendj_process_name(SHELL_CMD) == "opendj-desktop"
 
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_webkit_helper_is_unnamed() -> None:
+    """[if] the command is a WebKit helper binary [then] name parser returns, [else stop]."""
     assert opendj_process_name(WEBCONTENT_CMD) == "unnamed"
 
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_associate_still_includes_unnamed_webkit_members() -> None:
+    """[if] a single shell owns a WebKit cluster [then] family resolver keeps, [else stop]."""
     shell = _shell(100)
     webcontent = _webcontent(300)
     gpu = _gpu(301)
