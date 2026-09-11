@@ -6069,6 +6069,20 @@
         "title": "LyricLineOut",
         "type": "object"
       },
+      "LyricsCachedIdsOut": {
+        "description": "Stable ids with a valid on-disk lyrics-cache entry.",
+        "properties": {
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "title": "LyricsCachedIdsOut",
+        "type": "object"
+      },
       "LyricsUnavailableOut": {
         "description": "The explicit cache-miss response for one track's lyrics timeline.",
         "properties": {
@@ -22348,6 +22362,28 @@
           }
         },
         "summary": "List Tracks",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
+    "/api/v1/tracks/lyrics-cached-ids": {
+      "get": {
+        "description": "List cached lyric timelines so the UI can skip explicit cache-miss reads.",
+        "operationId": "get_lyrics_cached_ids_api_v1_tracks_lyrics_cached_ids_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsCachedIdsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyrics Cached Ids",
         "tags": [
           "tracks"
         ]
