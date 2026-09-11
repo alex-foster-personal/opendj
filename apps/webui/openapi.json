@@ -22669,7 +22669,7 @@
     },
     "/api/v1/tracks/{stable_id}/auto-cues": {
       "get": {
-        "description": "PROPOSED hot cues from apps.analysis (META-04). Never committed cues.",
+        "description": "PROPOSED hot cues from apps.analysis (META-04). Never committed cues.\n\nReturns HTTP 200 with ``proposals: []`` and ``backend=\"none\"`` when the\ntrack is in the library but has no analysis row yet. Unknown stable_id\nand unmatched ``?backend=`` still 404 with ``ANALYSIS_NOT_FOUND``.",
         "operationId": "get_auto_cues_api_v1_tracks__stable_id__auto_cues_get",
         "parameters": [
           {
