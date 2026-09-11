@@ -254,6 +254,126 @@ def prepare_command(args: argparse.Namespace, runner: CommandRunner) -> int:
     return 0
 
 
+def _remote_branch_sha(runner: CommandRunner, checkout: Path, branch: str) -> str | None:
+    result = runner.run(
+        ["git", "ls-remote", "--heads", "origin", f"refs/heads/{branch}"],
+        cwd=checkout,
+    )
+    line = result.stdout.strip().splitlines()
+    if not line:
+        return None
+    return line[0].split()[0]
+
+
+def _existing_pr(runner: CommandRunner, target: str, branch: str) -> dict[str, Any] | None:
+    result = runner.run(
+        ["gh", "pr", "view", branch, "--repo", target, "--json", "number,url"],
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    payload = json.loads(result.stdout)
+    return {"number": int(payload["number"]), "url": payload["url"]}
+
+
+def _ensure_pushed_case(
+    runner: CommandRunner,
+    campaign: dict[str, Any],
+    case: dict[str, Any],
+    checkout: Path,
+) -> str:
+    if _remote_branch_sha(runner, checkout, case["branch"]):
+        runner.run(["git", "fetch", "origin", case["branch"]], cwd=checkout)
+        runner.run(
+            ["git", "switch", "--force-create", case["branch"], "FETCH_HEAD"],
+            cwd=checkout,
+        )
+        return runner.run(["git", "rev-parse", "HEAD"], cwd=checkout).stdout.strip()
+
+    runner.run(
+        ["git", "switch", "--force-create", case["branch"], campaign["base_branch"]],
+        cwd=checkout,
+    )
+    write_json(
+        checkout / case["marker"],
+        {
+            "case_id": case["id"],
+            "run_id": campaign["run_id"],
+            "purpose": "harmless PR fan-out for occasional CI evaluation",
+            "expected_workflows": campaign["expected_workflows"],
+        },
+    )
+    runner.run(["git", "add", case["marker"]], cwd=checkout)
+    runner.run(
+        [
+            "git",
+            "-c",
+            "user.name=AF CI Eval Suite",
+            "-c",
+            "user.email=ci-eval@users.noreply.github.com",
+            "commit",
+            "-m",
+            case["title"],
+        ],
+        cwd=checkout,
+    )
+    head_sha = runner.run(["git", "rev-parse", "HEAD"], cwd=checkout).stdout.strip()
+    runner.run(["git", "push", "-u", "origin", case["branch"]], cwd=checkout)
+    return head_sha
+
+
+def _upsert_pushed_pr_row(
+    campaign: dict[str, Any], case: dict[str, Any], head_sha: str
+) -> dict[str, Any]:
+    prs = campaign.setdefault("prs", [])
+    for row in prs:
+        if row["case_id"] == case["id"]:
+            row["branch"] = case["branch"]
+            row["head_sha"] = head_sha
+            return row
+    row = {"case_id": case["id"], "branch": case["branch"], "head_sha": head_sha}
+    prs.append(row)
+    return row
+
+
+def _create_or_reuse_pr(
+    runner: CommandRunner, campaign: dict[str, Any], case: dict[str, Any]
+) -> tuple[int, str]:
+    existing = _existing_pr(runner, campaign["target_repository"], case["branch"])
+    if existing:
+        return existing["number"], existing["url"]
+    body = (
+        f"Disposable CI evaluation case `{case['id']}` for `{campaign['run_id']}`.\n\n"
+        "No product behavior changes. Keep this PR open until the campaign report is complete."
+    )
+    created = runner.run(
+        [
+            "gh",
+            "pr",
+            "create",
+            "--repo",
+            campaign["target_repository"],
+            "--base",
+            campaign["base_branch"],
+            "--head",
+            case["branch"],
+            "--title",
+            case["title"],
+            "--body",
+            body,
+        ]
+    )
+    pr_url = created.stdout.strip().splitlines()[-1]
+    match = re.search(r"/(\d+)$", pr_url)
+    if not match:
+        raise CampaignError(f"could not parse PR URL from gh output: {pr_url!r}")
+    return int(match.group(1)), pr_url
+
+
+def _fully_submitted_prs(prs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [row for row in prs if row.get("number") and row.get("url")]
+
+
 def submit_command(args: argparse.Namespace, runner: CommandRunner) -> int:
     campaign = load_manifest(args.manifest)
     require_live_confirmation(args, campaign)
@@ -267,76 +387,21 @@ def submit_command(args: argparse.Namespace, runner: CommandRunner) -> int:
 
     submitted = {row["case_id"]: row for row in campaign.get("prs") or []}
     for case in campaign["cases"]:
-        if case["id"] in submitted:
+        existing = submitted.get(case["id"])
+        if existing and existing.get("number"):
             continue
-        runner.run(
-            ["git", "switch", "--force-create", case["branch"], campaign["base_branch"]],
-            cwd=checkout,
-        )
-        marker = checkout / case["marker"]
-        write_json(
-            marker,
-            {
-                "case_id": case["id"],
-                "run_id": campaign["run_id"],
-                "purpose": "harmless PR fan-out for occasional CI evaluation",
-                "expected_workflows": campaign["expected_workflows"],
-            },
-        )
-        runner.run(["git", "add", case["marker"]], cwd=checkout)
-        runner.run(
-            [
-                "git",
-                "-c",
-                "user.name=AF CI Eval Suite",
-                "-c",
-                "user.email=ci-eval@users.noreply.github.com",
-                "commit",
-                "-m",
-                case["title"],
-            ],
-            cwd=checkout,
-        )
-        head_sha = runner.run(["git", "rev-parse", "HEAD"], cwd=checkout).stdout.strip()
-        runner.run(["git", "push", "-u", "origin", case["branch"]], cwd=checkout)
-        body = (
-            f"Disposable CI evaluation case `{case['id']}` for `{campaign['run_id']}`.\n\n"
-            "No product behavior changes. Keep this PR open until the campaign report is complete."
-        )
-        created = runner.run(
-            [
-                "gh",
-                "pr",
-                "create",
-                "--repo",
-                campaign["target_repository"],
-                "--base",
-                campaign["base_branch"],
-                "--head",
-                case["branch"],
-                "--title",
-                case["title"],
-                "--body",
-                body,
-            ]
-        )
-        pr_url = created.stdout.strip().splitlines()[-1]
-        match = re.search(r"/(\d+)$", pr_url)
-        if not match:
-            raise CampaignError(f"could not parse PR URL from gh output: {pr_url!r}")
-        row = {
-            "case_id": case["id"],
-            "branch": case["branch"],
-            "head_sha": head_sha,
-            "number": int(match.group(1)),
-            "url": pr_url,
-        }
-        campaign.setdefault("prs", []).append(row)
+        head_sha = _ensure_pushed_case(runner, campaign, case, checkout)
+        row = _upsert_pushed_pr_row(campaign, case, head_sha)
         submitted[case["id"]] = row
         write_json(args.manifest, campaign)
+        number, url = _create_or_reuse_pr(runner, campaign, case)
+        row["number"] = number
+        row["url"] = url
+        write_json(args.manifest, campaign)
 
-    if len(campaign["prs"]) != CASE_COUNT:
-        raise CampaignError(f"expected {CASE_COUNT} submitted PRs, got {len(campaign['prs'])}")
+    complete = _fully_submitted_prs(campaign.get("prs") or [])
+    if len(complete) != CASE_COUNT:
+        raise CampaignError(f"expected {CASE_COUNT} submitted PRs, got {len(complete)}")
     campaign["state"] = "submitted"
     campaign["submitted_at"] = datetime.now(UTC).isoformat()
     write_json(args.manifest, campaign)

@@ -32,6 +32,7 @@ class PlayedTrack:
     key_camelot: str | None
     energy: int | None
     played_at: datetime
+    tags: tuple[str, ...] = ()
 
 
 Source = Literal[

@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-dj.org/schema/0.2/open-dj.schema.json",
+  "title": "open-dj v0.2 library schema",
+  "description": "Root schema for open-dj v0.2 documents.",
+  "type": "object",
+  "properties": {
+    "schema_version": { "const": "0.2" },
+    "kind": { "enum": ["library", "track", "playlist", "session"] },
+    "tracks":    { "type": "array", "items": { "$ref": "#/$defs/Track" } },
+    "playlists": { "type": "array", "items": { "$ref": "#/$defs/Playlist" } },
+    "pairings":  { "type": "array", "items": { "$ref": "#/$defs/Pairing" } },
+    "sessions":  { "type": "array", "items": { "$ref": "#/$defs/Session" } }
+  },
+  "required": ["schema_version", "kind"],
+  "patternProperties": { "^x_[a-z0-9][a-z0-9_]*$": {} },
+  "unevaluatedProperties": false,
+  "$defs": {
+    "ProvenanceValue": {
+      "title": "ProvenanceValue",
+      "type": "object",
+      "required": ["value", "source", "modified_at"],
+      "properties": {
+        "value": {},
+        "source": {
+          "enum": ["mik", "rekordbox", "djay", "serato", "traktor",
+                    "open-dj-tool", "manual", "inferred"]
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "modified_at": { "type": "string", "format": "date-time" }
+      },
+      "patternProperties": { "^x_[a-z0-9][a-z0-9_]*$": {} },
+      "additionalProperties": true
+    },
+    "Track": {
+      "title": "Track",
+      "type": "object",
+      "required": ["track_id", "title", "artists", "duration_ms",
+                   "file_path", "content_hash"],
+      "properties": {
+        "track_id":     { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "title":        { "type": "string" },
+        "artists":      { "type": "array", "items": { "type": "string" } },
+        "album":        { "type": "string" },
+        "isrc":         { "type": "string", "pattern": "^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$" },
+        "duration_ms":  { "type": "integer", "minimum": 0 },
+        "file_path":    { "type": "string" },
+        "content_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "size_bytes":   { "type": "integer", "minimum": 0 },
+        "bpm":          { "$ref": "#/$defs/ProvenanceValue" },
+        "key":          { "$ref": "#/$defs/ProvenanceValue" },
+        "energy":       { "$ref": "#/$defs/ProvenanceValue" },
+        "rating":       { "$ref": "#/$defs/ProvenanceValue" },
+        "cue_points":   { "type": "array", "items": { "$ref": "#/$defs/CuePoint" } },
+        "beatgrid":     { "$ref": "#/$defs/BeatGrid" },
+        "vendor_ids":   {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "patternProperties": { "^x_[a-z0-9][a-z0-9_]*$": {} },
+      "additionalProperties": false
+    },
+    "CuePoint": {
+      "title": "CuePoint",
+      "type": "object",
+      "required": ["position_ms", "type"],
+      "properties": {
+        "position_ms": { "type": "integer", "minimum": 0 },
+        "type": {
+          "enum": ["hot", "memory", "loop_in", "loop_out",
+                    "grid", "fade_in", "fade_out", "load"]
+        },
+        "slot":      { "type": "integer", "minimum": 0, "maximum": 31 },
+        "name":      { "type": "string" },
+        "color":     { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+        "length_ms": { "type": "integer", "minimum": 0 },
+        "source":    { "$ref": "#/$defs/ProvenanceValue" }
+      },
+      "patternProperties": { "^x_[a-z0-9][a-z0-9_]*$": {} },
+      "additionalProperties": false
+    },
+    "BeatGrid": {
+      "title": "BeatGrid",
+      "type": "object",
+      "required": ["origin_ms", "bpm"],
+      "properties": {
+        "origin_ms": { "type": "number" },
+        "bpm":       { "type": "number", "minimum": 1 },
+        "version":   { "type": "integer", "minimum": 1, "default": 1 },
+        "algorithm": { "enum": ["constant", "variable", "manual", "unknown"] },
+        "beats": {
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "source":    { "$ref": "#/$defs/ProvenanceValue" }
+      },
+      "patternProperties": { "^x_[a-z0-9][a-z0-9_]*$": {} },
+      "additionalProperties": false
+    },
+    "Playlist": {
+      "title": "Playlist",
+      "type": "object",
+      "required": ["playlist_id", "name", "tracks_ordered"],
+      "properties": {
+        "playlist_id":    { "type": "string" },
+        "parent_id":      { "type": "string" },
+        "name":           { "type": "string" },
+        "tracks_ordered": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+        },
+        "play_orders": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PlayOrder" }
+        }
+      },
+      "patternProperties": { "^x_[a-z0-9][a-z0-9_]*$": {} },
+      "additionalProperties": false
+    },
+    "PlayOrder": {
+      "title": "PlayOrder",
+      "type": "object",
+      "required": ["name", "entries"],
+      "properties": {
+        "name": { "type": "string" },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["track_id", "position"],
+            "properties": {
+              "track_id":     { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+              "position":     { "type": "integer", "minimum": 0 },
+              "target_key":   { "type": "string" },
+              "target_tempo": { "type": "number" },
+              "key_sync":     { "type": "boolean" }
+            },
+            "patternProperties": { "^x_[a-z0-9][a-z0-9_]*$": {} },
+            "additionalProperties": false
+          }
+        }
+      },
+      "patternProperties": { "^x_[a-z0-9][a-z0-9_]*$": {} },
+      "additionalProperties": false
+    },
+    "Pairing": {
+      "title": "Pairing",
+      "type": "object",
+      "required": ["from_track_id", "to_track_id", "direction", "source"],
+      "properties": {
+        "from_track_id": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "to_track_id":   { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "direction":     { "enum": ["into", "out_of", "either"] },
+        "source":        { "enum": ["manual", "learned", "ai"] },
+        "notes":         { "type": "string" },
+        "confidence":    { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "patternProperties": { "^x_[a-z0-9][a-z0-9_]*$": {} },
+      "additionalProperties": false
+    },
+    "Session": {
+      "title": "Session",
+      "type": "object",
+      "required": ["session_id", "started_at", "events"],
+      "properties": {
+        "session_id":  { "type": "string" },
+        "name":        { "type": "string" },
+        "started_at":  { "type": "string", "format": "date-time" },
+        "ended_at":    { "type": "string", "format": "date-time" },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["timestamp", "deck", "action"],
+            "properties": {
+              "timestamp": { "type": "string", "format": "date-time" },
+              "deck":      { "type": "integer", "minimum": 1 },
+              "track_id":  { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+              "action":    { "enum": ["load","play","pause","cue","seek",
+                                       "fader","eq","fx","tempo"] },
+              "value":     {}
+            },
+            "patternProperties": { "^x_[a-z0-9][a-z0-9_]*$": {} },
+            "additionalProperties": false
+          }
+        },
+        "transitions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Transition" }
+        }
+      },
+      "patternProperties": { "^x_[a-z0-9][a-z0-9_]*$": {} },
+      "additionalProperties": false
+    },
+    "Transition": {
+      "title": "Transition",
+      "type": "object",
+      "required": ["at", "from_deck", "to_deck", "class"],
+      "properties": {
+        "at":            { "type": "string", "format": "date-time" },
+        "from_deck":     { "type": "integer" },
+        "to_deck":       { "type": "integer" },
+        "from_track_id": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "to_track_id":   { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "class":         { "enum": ["cut","blend","filter_sweep","fx","quick_double"] },
+        "duration_ms":   { "type": "integer", "minimum": 0 }
+      },
+      "patternProperties": { "^x_[a-z0-9][a-z0-9_]*$": {} },
+      "additionalProperties": false
+    }
+  }
+}

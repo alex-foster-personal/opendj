@@ -136,6 +136,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         5324,
     ),
     (
+        "apps/webui/frontend/tests/e2e/vite.autoplay-error-hunt.config.ts",
+        "export const AUTOPLAY_HUNT_FRONTEND_PORT = 5326;",
+        5326,
+    ),
+    (
         "apps/webui/frontend/tests/e2e/vite.rekordbox-gate.config.ts",
         "export const REKORDBOX_GATE_E2E_PORT = 5399;",
         5399,
@@ -181,6 +186,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         "apps/webui/frontend/tests/e2e/vite.autoplay-stall-gate.config.ts",
         "export const AUTOPLAY_STALL_GATE_API_PORT = 8699;",
         8699,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/vite.autoplay-error-hunt.config.ts",
+        "export const AUTOPLAY_HUNT_API_PORT = 8703;",
+        8703,
     ),
     (
         "apps/webui/frontend/tests/e2e/stems-e2e-endpoints.ts",

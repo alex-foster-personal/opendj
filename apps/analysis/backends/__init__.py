@@ -44,6 +44,10 @@ NONSHIPPABLE_BACKENDS: dict[str, str] = {
 #: ``tests/analysis_beatgrid/test_backfill_write.py``.
 OWN_BEATGRID_BACKEND: str = "own_beatgrid.backfill"
 
+#: The own key backfill producer, spelled out for the identical reason and
+#: held equal by ``tests/analysis_key/test_backfill_write.py``.
+OWN_KEY_BACKEND: str = "own_key.backfill"
+
 #: What ``DEFAULT_BACKEND`` needs importable at runtime. Kept in step with
 #: ``LibrosaBackend._require_deps``, which raises BackendNotAvailable on the
 #: same names; a test asserts the two agree.
@@ -91,12 +95,15 @@ def get_backend(name: str) -> type[AnalyzerBackend]:
             from . import mik
         elif name == OWN_BEATGRID_BACKEND:
             from . import own_beatgrid
+        elif name == OWN_KEY_BACKEND:
+            from . import own_key
         else:
             from . import (
                 librosa,  # noqa: F401
                 librosa_madmom,  # noqa: F401
                 mik,  # noqa: F401
                 own_beatgrid,  # noqa: F401
+                own_key,  # noqa: F401
             )
     try:
         return BACKENDS[name]
@@ -114,6 +121,7 @@ __all__ = [
     "NONSHIPPABLE_BACKENDS",
     "NONSHIPPABLE_ENV",
     "OWN_BEATGRID_BACKEND",
+    "OWN_KEY_BACKEND",
     "default_backend_installed",
     "get_backend",
     "register",

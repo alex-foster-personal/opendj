@@ -6605,6 +6605,69 @@
         "title": "PassiveActivityOut",
         "type": "object"
       },
+      "PeakPressureIn": {
+        "properties": {
+          "session_ids": {
+            "description": "Recently played stable_ids, oldest first, most-recent last. Unknown ids are a 404, not silently dropped.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Session Ids",
+            "type": "array"
+          }
+        },
+        "title": "PeakPressureIn",
+        "type": "object"
+      },
+      "PeakPressureOut": {
+        "properties": {
+          "advisory": {
+            "title": "Advisory",
+            "type": "string"
+          },
+          "cue": {
+            "enum": [
+              "keep_building",
+              "hold",
+              "release",
+              "unknown"
+            ],
+            "title": "Cue",
+            "type": "string"
+          },
+          "cue_label": {
+            "title": "Cue Label",
+            "type": "string"
+          },
+          "limitation": {
+            "title": "Limitation",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "scored_tracks": {
+            "title": "Scored Tracks",
+            "type": "integer"
+          },
+          "skipped_unknown": {
+            "title": "Skipped Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "score",
+          "cue",
+          "scored_tracks",
+          "skipped_unknown",
+          "cue_label",
+          "advisory",
+          "limitation"
+        ],
+        "title": "PeakPressureOut",
+        "type": "object"
+      },
       "PendingTrackOut": {
         "description": "One persisted, unmatched Spotify playlist entry.",
         "properties": {
@@ -10290,6 +10353,23 @@
             "title": "Estimate Usd",
             "type": "number"
           },
+          "executor": {
+            "description": "modal farm or local on-device worker",
+            "title": "Executor",
+            "type": "string"
+          },
+          "local_refusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "why local stems are inert on this build; null when allowed",
+            "title": "Local Refusal"
+          },
           "pending": {
             "description": "audio on disk, no bundle yet: the work",
             "title": "Pending",
@@ -10339,6 +10419,7 @@
         "required": [
           "tier",
           "tier_name",
+          "executor",
           "total",
           "pending",
           "ready",
@@ -10450,13 +10531,17 @@
           },
           "current": {
             "$ref": "#/components/schemas/CopilotTrackOut"
+          },
+          "pressure": {
+            "$ref": "#/components/schemas/PeakPressureOut"
           }
         },
         "required": [
           "current",
           "context_source",
           "context_size",
-          "candidates"
+          "candidates",
+          "pressure"
         ],
         "title": "SuggestNextOut",
         "type": "object"
@@ -15561,6 +15646,57 @@
         ]
       }
     },
+    "/api/v1/copilot/peak-pressure": {
+      "post": {
+        "operationId": "peak_pressure_route_api_v1_copilot_peak_pressure_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeakPressureIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeakPressureOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "unknown session id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Peak Pressure Route",
+        "tags": [
+          "copilot"
+        ]
+      }
+    },
     "/api/v1/copilot/suggest-next": {
       "post": {
         "operationId": "suggest_next_route_api_v1_copilot_suggest_next_post",
@@ -20191,13 +20327,13 @@
         "operationId": "get_stems_plan_api_v1_stems_plan_get",
         "parameters": [
           {
-            "description": "Modal rung: S, M or L",
+            "description": "Modal rung S/M/L, or LOCAL when local-only",
             "in": "query",
             "name": "tier",
             "required": false,
             "schema": {
               "default": "M",
-              "description": "Modal rung: S, M or L",
+              "description": "Modal rung S/M/L, or LOCAL when local-only",
               "title": "Tier",
               "type": "string"
             }

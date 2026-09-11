@@ -19,6 +19,7 @@ from apps.shared.harmonic import TrackFeature
 
 from .candidates import filter_candidates
 from .explainer_stub import explain as _stub_explain
+from .peak_pressure import PeakPlay, apply_pressure_prior, compute_peak_pressure
 from .rank_stage1 import ScoredCandidate, rank_stage1
 from .rank_stage2 import rerank_with_pairings
 from .session_context import PlayedTrack, SessionContext
@@ -50,6 +51,8 @@ def _rationale_tags(sc: ScoredCandidate) -> list[str]:
     for src in ("manual", "learned", "ai"):
         if r.get(f"pair_{src}"):
             tags.append(f"pair_{src}")
+    if r.get("pressure_release"):
+        tags.append("release_a_little")
     return tags
 
 
@@ -108,6 +111,16 @@ def suggest_next(
     stage2 = rerank_with_pairings(
         conn=conn, current_stable_id=current_stable_id, stage1=stage1
     )
+    peak_plays = [
+        PeakPlay(
+            stable_id=p.stable_id,
+            energy=p.energy,
+            tags=p.tags,
+        )
+        for p in context.recent
+    ]
+    pressure = compute_peak_pressure(peak_plays)
+    stage2 = apply_pressure_prior(stage2, pressure)
     top = stage2[:top_n]
 
     out: list[RankedSuggestion] = []
