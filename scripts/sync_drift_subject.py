@@ -61,6 +61,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from apps.analysis import store as analysis_store
+from apps.analysis import queue_stale as analysis_queue_stale
+from apps.analysis import queue_store as analysis_queue_store
 from apps.database import generate_agents_md
 from apps.dedup import schema as dedup_schema
 from apps.engine_core.store import schema as engine_schema
@@ -275,6 +277,24 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
     Authority(
         "apps/analysis/store.py",
         lambda conn, _path: analysis_store._ensure_analysis_tables(conn),
+    ),
+    # The backfill queue, additive on the same state.db. Production reaches
+    # it from two places -- the analysis_backfill routes and apps.analysis
+    # .queue_cli -- and both call this one function, so one authority covers
+    # both call sites.
+    Authority(
+        "apps/analysis/queue_store.py",
+        lambda conn, _path: analysis_queue_store.ensure_queue_tables(conn),
+    ),
+    # analysis_stale is a SEPARATE FILE'S table, and ensure_queue_tables above
+    # already runs its DDL. Listed anyway, and run directly, because the
+    # declaration this list is compared against reads files: a file calling
+    # itself an authority that nothing here provisions is exactly the hole
+    # test_every_state_authority_is_declared_as_one exists to refuse. Both
+    # statements are IF NOT EXISTS, so running it twice provisions once.
+    Authority(
+        "apps/analysis/queue_stale.py",
+        lambda conn, _path: analysis_queue_stale.ensure_stale_table(conn),
     ),
     Authority(
         "apps/shared/pairings/schema_sql.py",
