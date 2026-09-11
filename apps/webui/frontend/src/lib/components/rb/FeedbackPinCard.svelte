@@ -61,6 +61,11 @@
 	/** An outside pointer closes only this reopened card. The widget owns a
 	 * separate new-pin draft, so it remains intact. Pointerdown precedes a
 	 * marker click, letting another marker reopen its own card immediately. */
+	/** FBSYNC-05: a pin synced from another machine carries its screenshot's
+	 * metadata but not its bytes, so the image 404s here. Keyed on the
+	 * attachment id so a card reused for another pin starts clean. */
+	let unsyncedAttachmentId = $state<string | null>(null);
+
 	function handleOutsidePinPointerDown(event: PointerEvent): void {
 		const target = event.target;
 		if (!(target instanceof Node) || pinBodyElement?.contains(target)) return;
@@ -81,12 +86,19 @@
 		{pinStatus(pin)}{pinVisualState(pin) === 'partial' ? ' (partial)' : ''} - {pin.created_at}
 	</p>
 	<p class="fb-body-text">{pin.text}</p>
-	{#if pin.attachment}
+	{#if pin.attachment && unsyncedAttachmentId === pin.attachment.id}
+		<p class="fb-hint fb-attachment-unsynced" data-testid="fb-attachment-unsynced">
+			Screenshot not on this machine: pin sync carries attachment details, not the image
+			yet.
+		</p>
+	{:else if pin.attachment}
+		{@const attachmentId = pin.attachment.id}
 		<img
 			class="fb-attachment-img"
 			src={`${API_BASE}${pin.attachment.url}`}
 			alt="Pasted screenshot"
 			title={`${pin.attachment.content_type}, ${(pin.attachment.size_bytes / 1024).toFixed(0)} KB`}
+			onerror={() => (unsyncedAttachmentId = attachmentId)}
 		/>
 	{/if}
 	{#if pin.agent_note}

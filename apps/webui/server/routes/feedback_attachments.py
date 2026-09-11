@@ -235,6 +235,26 @@ def get_attachment(attachment_id: str, request: Request) -> FileResponse:
     """Stream a stored attachment's bytes back - the agent-native fetch half."""
     path = _find_attachment_file(request, attachment_id)
     if path is None:
+        # FBSYNC-05: a pin synced from another machine carries its attachment
+        # METADATA but not the bytes, so a pin here can name a file this
+        # machine never received. That is a known sync gap, not a missing
+        # upload, and the answer says which one it is.
+        referenced = any(
+            (comment.get("attachment") or {}).get("id") == attachment_id
+            for comment in _load(_dir(request) / _COMMENTS_FILE, "comments")
+        )
+        if referenced:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "ATTACHMENT_BYTES_NOT_SYNCED",
+                    "message": (
+                        f"attachment {attachment_id!r} belongs to a pin synced from "
+                        f"another machine; CloudSync carries attachment metadata but "
+                        f"not the image bytes yet (FBSYNC-05)"
+                    ),
+                },
+            )
         raise HTTPException(
             status_code=404,
             detail={
