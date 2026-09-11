@@ -35,6 +35,7 @@ stays indistinguishable from legitimate use forever.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import secrets
 import sqlite3
@@ -45,6 +46,8 @@ from typing import ClassVar
 from apps.shared.state import sync_stamp
 from apps.sync_hub import google_id_token
 from apps.sync_hub.enrollment import OwnerIdentity
+
+log = logging.getLogger(__name__)
 
 GRANT_TABLE: str = "enrollment_grants"
 
@@ -338,18 +341,20 @@ def _redeem_grant(
             f"enroll long afterwards needs a new grant rather than the old "
             f"token."
         )
-    if redeemed_at is not None:
-        if str(redeemed_machine_id) != machine_id:
-            raise EnrollmentCredentialError(
-                f"this enrollment grant was already redeemed by machine "
-                f"{redeemed_machine_id}. Grants are single use; mint a fresh "
-                f"one for {machine_id}."
-            )
-    else:
-        conn.execute(
-            f"UPDATE {GRANT_TABLE} SET redeemed_at = ?, redeemed_machine_id = ? "
-            f"WHERE grant_token_sha256 = ?",
-            (stamp, machine_id, token_hash),
+    if redeemed_at is None:
+        redeemed_machine_id = _claim_unspent_grant(conn, token_hash, machine_id, stamp)
+    if str(redeemed_machine_id) != machine_id:
+        # The winner's id goes to the hub log only: the refusal reaches
+        # whoever holds the token, and a leaked, spent grant must not tell
+        # its holder which machine spent it.
+        log.warning(
+            "refused grant re-presentation by machine %s: already redeemed by machine %s",
+            machine_id,
+            redeemed_machine_id,
+        )
+        raise EnrollmentCredentialError(
+            f"this enrollment grant was already redeemed by another machine. "
+            f"Grants are single use; mint a fresh one for {machine_id}."
         )
 
     user = conn.execute(
@@ -362,6 +367,39 @@ def _redeem_grant(
             f"hub; the account was deleted. Nothing can be enrolled to them."
         )
     return OwnerIdentity(google_sub=str(user[0]), email=str(user[1]))
+
+
+def _claim_unspent_grant(
+    conn: sqlite3.Connection, token_hash: str, machine_id: str, stamp: str
+) -> str:
+    """Spend an unspent grant for ``machine_id``; return the machine holding it.
+
+    A conditional UPDATE rather than trusting the earlier SELECT: SQLite
+    evaluates ``redeemed_at IS NULL`` under the write lock, so of two callers
+    that both READ the grant as unspent, exactly one claims it (rowcount 1).
+    The other matches zero rows and re-reads the redeemer, so its refusal
+    names the machine that actually won. Before this guard the second UPDATE
+    overwrote the first's claim and both machines resolved an owner, for any
+    caller that did not already hold the write lock when it read the grant
+    (tests/cloudsync/test_enrollment_grant_race.py).
+    """
+    claimed = conn.execute(
+        f"UPDATE {GRANT_TABLE} SET redeemed_at = ?, redeemed_machine_id = ? "
+        f"WHERE grant_token_sha256 = ? AND redeemed_at IS NULL",
+        (stamp, machine_id, token_hash),
+    ).rowcount
+    if claimed == 1:
+        return machine_id
+    row = conn.execute(
+        f"SELECT redeemed_machine_id FROM {GRANT_TABLE} WHERE grant_token_sha256 = ?",
+        (token_hash,),
+    ).fetchone()
+    if row is None or row[0] is None:
+        raise EnrollmentCredentialError(
+            "this enrollment grant changed while it was being redeemed and "
+            "now names no redeeming machine; mint a fresh one on the hub."
+        )
+    return str(row[0])
 
 
 __all__ = [

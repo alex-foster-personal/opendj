@@ -136,6 +136,10 @@ pytest-xdist>=3.6
 # .github/workflows/ci.yml). Balanced by the committed `.test_durations`;
 # without the plugin every shard would run the whole suite.
 pytest-split>=0.10
+# Stateful property testing for the CloudSync fleet simulation (plan W18,
+# tests/cloudsync/test_sim_property.py). Same spec as the pyproject ``dev``
+# extra; without it here every CI shard dies collecting that module.
+hypothesis>=6.100,<7
 # Ed25519 for the dmg preflight's updater-key verification (item H). Declared
 # here as well as in the pyproject ``dev`` extra so the environment CI builds
 # matches the one we claim to support, and so the release gate never has to
