@@ -40,8 +40,6 @@
 
 import {
 	freeQuietly,
-	forgetPool,
-	pooledCount,
 	returnDecoder,
 	takeDecoder,
 	warmPool
@@ -55,32 +53,16 @@ import { flacStreamSampleRate, isFlacContainer } from './flac-header';
 import { isMpegContainer, mpegStreamSampleRate } from './mpeg-header';
 import {
 	claimLane,
-	forceLane,
-	type DecodeLane,
+	isMpegRungShipped,
 	type LaneClaim,
-	LANE_MARGIN,
-	loadsInFlight,
 	releaseLane,
-	resetLane,
 	settleContextOnMainThread,
 	settledLane,
-	trialing,
 	type StemDecodeCodec
 } from './stem-decode-lane';
 
-export type { DecodedStemAudio, StemFlacDecoder, StemFlacDecoderFactory };
-export { LANE_MARGIN, isFlacContainer };
-
-/**
- * PERF-STEMDEC-03 ship gate. False until a live bench run records LSB
- * agreement and a lane win; while false, MPEG bytes stay on `decodeAudioData`.
- */
-let _mpegRungShipped = false;
-
-/** Tests and the live bench call this; production stays false until the rung ships. */
-export function setMpegRungShipped(shipped: boolean): void {
-	_mpegRungShipped = shipped;
-}
+export type { DecodedStemAudio, StemFlacDecoderFactory };
+export { isFlacContainer };
 
 /** Why a part did NOT take the worker path. `null` means it did. */
 export type StemDecodeRefusal =
@@ -238,7 +220,7 @@ export async function decodeStemParts<P extends string>(
 function _partCodec(bytes: ArrayBuffer | undefined): StemDecodeCodec | null {
 	if (bytes === undefined) return null;
 	if (isFlacContainer(bytes)) return 'flac';
-	if (_mpegRungShipped && isMpegContainer(bytes)) return 'mpeg';
+	if (isMpegRungShipped() && isMpegContainer(bytes)) return 'mpeg';
 	return null;
 }
 
@@ -326,19 +308,3 @@ export function stemDecodeLabels(reports: readonly StemPartDecodeReport[]): Reco
 	};
 }
 
-export const stemDecodeSession = {
-	lane: (width: number, codec: StemDecodeCodec = 'flac'): DecodeLane | null =>
-		settledLane(width, codec),
-	pooled: (codec: StemDecodeCodec = 'flac'): number => pooledCount(codec),
-	forceLane: (lane: DecodeLane): void => {
-		forceLane(lane);
-	},
-	resetPool: (codec?: StemDecodeCodec): void => {
-		forgetPool(codec);
-	},
-	resetLane: (): void => {
-		resetLane();
-	},
-	trialing: (): boolean => trialing(),
-	loadsInFlight: (): number => loadsInFlight()
-};

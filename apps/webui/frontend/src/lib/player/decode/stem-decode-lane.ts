@@ -7,6 +7,8 @@
  * demucs4 load.
  */
 
+import { forgetPool, pooledCount } from './flac-decoder-pool';
+
 export type DecodeLane = 'workers' | 'main-thread';
 export type StemDecodeCodec = 'flac' | 'mpeg';
 
@@ -131,3 +133,35 @@ export function loadsInFlight(): number {
 export function settleContextOnMainThread(): void {
 	_contextLane = 'main-thread';
 }
+
+/** PERF-STEMDEC-03 ship gate. False until a live bench run records LSB agreement and a lane win. */
+let _mpegRungShipped = false;
+
+export function isMpegRungShipped(): boolean {
+	return _mpegRungShipped;
+}
+
+export function setMpegRungShipped(shipped: boolean): void {
+	_mpegRungShipped = shipped;
+}
+
+/** Test and live-bench surface for lane trial plus decoder pool state. */
+export const stemDecodeSession = {
+	lane: (width: number, codec: StemDecodeCodec = 'flac'): DecodeLane | null =>
+		settledLane(width, codec),
+	pooled: (codec: StemDecodeCodec = 'flac'): number => pooledCount(codec),
+	forceLane: (lane: DecodeLane): void => {
+		forceLane(lane);
+	},
+	resetPool: (codec?: StemDecodeCodec): void => {
+		forgetPool(codec);
+	},
+	resetLane: (): void => {
+		resetLane();
+	},
+	trialing: (): boolean => trialing(),
+	loadsInFlight: (): number => loadsInFlight(),
+	setMpegRungShipped: (shipped: boolean): void => {
+		setMpegRungShipped(shipped);
+	}
+};

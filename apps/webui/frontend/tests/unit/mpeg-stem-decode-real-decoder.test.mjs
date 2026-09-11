@@ -98,18 +98,18 @@ before(async () => {
 		assert.equal(createHash('sha256').update(bytes).digest('hex'), fixture.sha256);
 	}
 	mp3Bytes = new Uint8Array(await readFile(PINNED_FIXTURES[0].path));
-	decode = await loadTypeScriptModule('src/lib/player/decode/flac-stem-decode.ts');
+	decode = await loadTypeScriptModule('tests/live/stem-decode-harness-entry.ts');
 });
 
 beforeEach(() => {
-	decode.setMpegRungShipped(true);
+	decode.stemDecodeSession.setMpegRungShipped(true);
 	decode.stemDecodeSession.resetPool();
 	decode.stemDecodeSession.resetLane();
 	decode.stemDecodeSession.forceLane('workers');
 });
 
 after(async () => {
-	decode.setMpegRungShipped(false);
+	decode.stemDecodeSession.setMpegRungShipped(false);
 	decode.stemDecodeSession.resetPool();
 	await Promise.all(made.map((decoder) => decoder.free()));
 	made.length = 0;

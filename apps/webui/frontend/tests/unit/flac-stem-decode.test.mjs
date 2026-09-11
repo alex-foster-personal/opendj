@@ -36,7 +36,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 let decode;
 
 before(async () => {
-	decode = await loadTypeScriptModule('src/lib/player/decode/flac-stem-decode.ts');
+	decode = await loadTypeScriptModule('tests/live/stem-decode-harness-entry.ts');
 });
 
 // The pool is module state by design (it holds real workers across loads), so
@@ -1241,11 +1241,11 @@ import { fileURLToPath } from 'node:url';
 
 function withMpegRung(testFn) {
 	return async (t) => {
-		decode.setMpegRungShipped(true);
+		decode.stemDecodeSession.setMpegRungShipped(true);
 		try {
 			await testFn(t);
 		} finally {
-			decode.setMpegRungShipped(false);
+			decode.stemDecodeSession.setMpegRungShipped(false);
 		}
 	};
 }

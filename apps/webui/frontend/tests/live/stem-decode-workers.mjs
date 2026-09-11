@@ -112,7 +112,7 @@ async function bundleModule() {
 		const proc = spawn(
 			path.join(FRONTEND, 'node_modules/.bin/esbuild'),
 			[
-				path.join(FRONTEND, 'src/lib/player/decode/flac-stem-decode.ts'),
+				path.join(FRONTEND, 'tests/live/stem-decode-harness-entry.ts'),
 				'--bundle',
 				'--format=esm',
 				'--target=safari16',

@@ -169,7 +169,7 @@ before(async () => {
 	}
 	flacBytes = new Uint8Array(await readFile(REAL_FLAC));
 	wavBytes = new Uint8Array(await readFile(REAL_WAV));
-	decode = await loadTypeScriptModule('src/lib/player/decode/flac-stem-decode.ts');
+	decode = await loadTypeScriptModule('tests/live/stem-decode-harness-entry.ts');
 });
 
 beforeEach(() => {

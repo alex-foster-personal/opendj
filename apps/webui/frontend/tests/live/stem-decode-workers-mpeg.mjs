@@ -47,7 +47,7 @@ async function bundleModule() {
 		const proc = spawn(
 			path.join(FRONTEND, 'node_modules/.bin/esbuild'),
 			[
-				path.join(FRONTEND, 'src/lib/player/decode/flac-stem-decode.ts'),
+				path.join(FRONTEND, 'tests/live/stem-decode-harness-entry.ts'),
 				'--bundle',
 				'--format=esm',
 				'--target=safari16',
@@ -164,7 +164,7 @@ async function main() {
 		const result = await page.evaluate(
 			async ({ parts, lsb, margin }) => {
 				const decode = await import('/decode.mjs');
-				decode.setMpegRungShipped(true);
+				decode.stemDecodeSession.setMpegRungShipped(true);
 				const ctx = new OfflineAudioContext(2, 1, 44100);
 				const fresh = async () => {
 					const entries = await Promise.all(
