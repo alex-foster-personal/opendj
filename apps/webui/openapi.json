@@ -1940,96 +1940,6 @@
         "title": "ClientErrorTriageOut",
         "type": "object"
       },
-      "ClientEventIn": {
-        "properties": {
-          "client_event_id": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Client Event Id",
-            "type": "string"
-          },
-          "client_timestamp": {
-            "maxLength": 128,
-            "title": "Client Timestamp",
-            "type": "string"
-          },
-          "kind": {
-            "const": "page-view",
-            "title": "Kind",
-            "type": "string"
-          },
-          "language": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Language"
-          },
-          "path": {
-            "maxLength": 2048,
-            "minLength": 1,
-            "title": "Path",
-            "type": "string"
-          },
-          "referrer": {
-            "anyOf": [
-              {
-                "maxLength": 4096,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Referrer"
-          },
-          "secure_context": {
-            "title": "Secure Context",
-            "type": "boolean"
-          },
-          "url": {
-            "maxLength": 4096,
-            "minLength": 1,
-            "title": "Url",
-            "type": "string"
-          },
-          "user_agent": {
-            "maxLength": 2048,
-            "title": "User Agent",
-            "type": "string"
-          },
-          "viewport_height": {
-            "maximum": 100000.0,
-            "minimum": 0.0,
-            "title": "Viewport Height",
-            "type": "integer"
-          },
-          "viewport_width": {
-            "maximum": 100000.0,
-            "minimum": 0.0,
-            "title": "Viewport Width",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "client_event_id",
-          "kind",
-          "url",
-          "path",
-          "client_timestamp",
-          "user_agent",
-          "secure_context",
-          "viewport_width",
-          "viewport_height"
-        ],
-        "title": "ClientEventIn",
-        "type": "object"
-      },
       "ClientEventOut": {
         "properties": {
           "event_id": {
@@ -6306,6 +6216,96 @@
         "title": "OverviewOut",
         "type": "object"
       },
+      "PageViewIn": {
+        "properties": {
+          "client_event_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Event Id",
+            "type": "string"
+          },
+          "client_timestamp": {
+            "maxLength": 128,
+            "title": "Client Timestamp",
+            "type": "string"
+          },
+          "kind": {
+            "const": "page-view",
+            "title": "Kind",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "referrer": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrer"
+          },
+          "secure_context": {
+            "title": "Secure Context",
+            "type": "boolean"
+          },
+          "url": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          },
+          "user_agent": {
+            "maxLength": 2048,
+            "title": "User Agent",
+            "type": "string"
+          },
+          "viewport_height": {
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Viewport Height",
+            "type": "integer"
+          },
+          "viewport_width": {
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Viewport Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_event_id",
+          "kind",
+          "url",
+          "path",
+          "client_timestamp",
+          "user_agent",
+          "secure_context",
+          "viewport_width",
+          "viewport_height"
+        ],
+        "title": "PageViewIn",
+        "type": "object"
+      },
       "PairingCreate": {
         "properties": {
           "direction": {
@@ -6693,6 +6693,68 @@
           "added_at"
         ],
         "title": "PendingTrackOut",
+        "type": "object"
+      },
+      "PerfSpanIn": {
+        "properties": {
+          "client_event_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Event Id",
+            "type": "string"
+          },
+          "client_timestamp": {
+            "maxLength": 128,
+            "title": "Client Timestamp",
+            "type": "string"
+          },
+          "duration_ms": {
+            "maximum": 86400000.0,
+            "minimum": 0.0,
+            "title": "Duration Ms",
+            "type": "number"
+          },
+          "kind": {
+            "const": "perf-span",
+            "title": "Kind",
+            "type": "string"
+          },
+          "method": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Method",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "stages": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stages"
+          }
+        },
+        "required": [
+          "client_event_id",
+          "kind",
+          "name",
+          "duration_ms",
+          "method",
+          "client_timestamp"
+        ],
+        "title": "PerfSpanIn",
         "type": "object"
       },
       "PerformanceFeedbackMarkIn": {
@@ -15061,7 +15123,22 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ClientEventIn"
+                "discriminator": {
+                  "mapping": {
+                    "page-view": "#/components/schemas/PageViewIn",
+                    "perf-span": "#/components/schemas/PerfSpanIn"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/PageViewIn"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PerfSpanIn"
+                  }
+                ],
+                "title": "Payload"
               }
             }
           },
