@@ -119,6 +119,20 @@ class QualityRungOut(BaseModel):
     blurb: str
 
 
+class LyricsRowSummaryOut(BaseModel):
+    """Per-row karaoke verdict summary for library listings."""
+
+    verdict: str
+    effective: str
+    n_words: int | None = None
+    n_lines: int | None = None
+    has_words: bool
+    pct_witness_red: float | None = None
+    source: str | None = None
+    language_iso3: str | None = None
+    override: str | None = None
+
+
 class TrackListItemOut(TrackOut):
     """TrackOut + parity row fields (shared API contract item 1).
 
@@ -154,6 +168,9 @@ class TrackListItemOut(TrackOut):
     energy: int | None
     energy_source: Literal["mik"] | None
     energy_reason: str
+    lyrics: LyricsRowSummaryOut | None = None
+    is_remix: bool = False
+    is_radio_edit: bool = False
 
 
 class LyricLineOut(BaseModel):
@@ -266,6 +283,9 @@ class TrackRowOut(BaseModel):
     key_reason: str | None
     loudness_status: Literal["ok", "failed", "missing"]
     loudness_reason: str | None
+    lyrics: LyricsRowSummaryOut | None = None
+    is_remix: bool = False
+    is_radio_edit: bool = False
 
 
 class PlaylistDetail(BaseModel):

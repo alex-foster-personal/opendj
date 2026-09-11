@@ -210,3 +210,5 @@ export async function fetchAllPages<T>(
 	});
 	return out;
 }
+
+export { createRowVisibilityObserver } from './observe-row';

@@ -496,6 +496,9 @@ def test_tracks_evaluates_rule_and_hydrates_rows(client, state_db_path):
         "play_count",
         "vocals",
         "stems",
+        "lyrics",
+        "is_remix",
+        "is_radio_edit",
     ):
         assert field in row, f"TrackRowOut parity missing {field}"
     assert row["title"] == "Oxide"

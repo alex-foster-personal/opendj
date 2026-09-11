@@ -3636,6 +3636,11 @@
             "description": "share of the track the vocal stem carries energy",
             "title": "Coverage Pct"
           },
+          "effective": {
+            "description": "same as effective_verdict; kept for clients that read .effective",
+            "title": "Effective",
+            "type": "string"
+          },
           "effective_verdict": {
             "description": "what to act on: the human override if set, else verdict",
             "title": "Effective Verdict",
@@ -3762,6 +3767,7 @@
           "stable_id",
           "verdict",
           "effective_verdict",
+          "effective",
           "has_words",
           "pipeline_version",
           "computed_at",
@@ -7605,6 +7611,96 @@
         "title": "LyricsPurgeOut",
         "type": "object"
       },
+      "LyricsRowSummaryOut": {
+        "description": "Per-row karaoke verdict summary for library listings.",
+        "properties": {
+          "effective": {
+            "title": "Effective",
+            "type": "string"
+          },
+          "has_words": {
+            "title": "Has Words",
+            "type": "boolean"
+          },
+          "language_iso3": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language Iso3"
+          },
+          "n_lines": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Lines"
+          },
+          "n_words": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Words"
+          },
+          "override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override"
+          },
+          "pct_witness_red": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct Witness Red"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "effective",
+          "has_words"
+        ],
+        "title": "LyricsRowSummaryOut",
+        "type": "object"
+      },
       "LyricsUnavailableOut": {
         "description": "The explicit cache-miss response for one track's lyrics timeline.",
         "properties": {
@@ -8059,6 +8155,52 @@
           "dest"
         ],
         "title": "MembershipTransferOut",
+        "type": "object"
+      },
+      "MetadataShareRequest": {
+        "description": "Explicit acknowledgement that the resulting web view excludes audio.",
+        "properties": {
+          "confirm_metadata_only": {
+            "const": true,
+            "title": "Confirm Metadata Only",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirm_metadata_only"
+        ],
+        "title": "MetadataShareRequest",
+        "type": "object"
+      },
+      "MetadataShareResponse": {
+        "description": "A browser URL for the non-audio set history presentation.",
+        "properties": {
+          "content": {
+            "const": "metadata_only",
+            "title": "Content",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "share_state": {
+            "const": "shared_cloud",
+            "title": "Share State",
+            "type": "string"
+          },
+          "share_url": {
+            "title": "Share Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "share_state",
+          "share_url",
+          "content"
+        ],
+        "title": "MetadataShareResponse",
         "type": "object"
       },
       "MixerChannelMarkOut": {
@@ -12067,6 +12209,16 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
           "is_remote": {
             "default": false,
             "title": "Is Remote",
@@ -12126,6 +12278,16 @@
             ],
             "title": "Loudness Status",
             "type": "string"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "match_context": {
             "title": "Match Context",
@@ -14535,6 +14697,16 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
           "is_remote": {
             "default": false,
             "title": "Is Remote",
@@ -14561,6 +14733,16 @@
               }
             ],
             "title": "Last Played At"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "lyrics_available": {
             "title": "Lyrics Available",
@@ -15109,6 +15291,16 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
           "is_remote": {
             "default": false,
             "title": "Is Remote",
@@ -15168,6 +15360,16 @@
             ],
             "title": "Loudness Status",
             "type": "string"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "play_count": {
             "default": 0,
@@ -17290,6 +17492,100 @@
           }
         },
         "summary": "Api Audio",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}/share": {
+      "get": {
+        "description": "Get an existing metadata-only share link for a finalized published set.",
+        "operationId": "api_get_metadata_share_api_sets__session_id__share_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataShareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Metadata Share",
+        "tags": [
+          "sets"
+        ]
+      },
+      "post": {
+        "description": "Publish timeline metadata after explicit acknowledgement, never MP3 audio.",
+        "operationId": "api_publish_metadata_share_api_sets__session_id__share_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataShareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataShareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Publish Metadata Share",
         "tags": [
           "sets"
         ]
