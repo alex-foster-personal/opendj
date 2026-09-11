@@ -56,12 +56,13 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
 	return fallback;
 }
 
-/** Ask the daemon who is signed in. A 401 is the signed-out answer, not a failure. */
+/** Ask the daemon who is signed in. Signed-out is identity, not a failure. */
 export async function refreshUser(): Promise<void> {
 	auth.loading = true;
 	try {
 		const response = await authFetch('/api/v1/auth/me');
 		if (response.status === 401) {
+			// Older daemons and e2e stubs may still answer 401; treat as signed out.
 			auth.user = null;
 			auth.error = null;
 			return;
@@ -71,7 +72,16 @@ export async function refreshUser(): Promise<void> {
 			auth.error = await errorMessage(response, `sign-in check failed (${response.status})`);
 			return;
 		}
-		auth.user = (await response.json()) as AuthUser;
+		const body = (await response.json()) as {
+			signed_in?: boolean;
+			user?: AuthUser | null;
+		};
+		if (body.signed_in === false || body.user == null) {
+			auth.user = null;
+			auth.error = null;
+			return;
+		}
+		auth.user = body.user as AuthUser;
 		auth.error = null;
 	} catch (exc) {
 		auth.user = null;
