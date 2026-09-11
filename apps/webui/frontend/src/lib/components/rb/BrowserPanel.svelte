@@ -158,6 +158,7 @@
 		PlaylistDragPayload,
 		SortKey
 	} from './browser/pane-contract.svelte';
+	import { clearSelection, pruneSelection } from './browser/pane-row-selection';
 	import PlaylistTree from './browser/PlaylistTree.svelte';
 	import {
 		fetchMissingTrackRows,
@@ -1164,10 +1165,7 @@
 			}
 			_setSearchNow(snap.search);
 			if (snap.selected_id !== null) p.select(snap.selected_id, false);
-			else {
-				p.selected_id = null;
-				p.selected_ids = [];
-			}
+			else clearSelection(p);
 			p.rememberScroll(snap.scroll_top);
 			navEpoch += 1;
 			genreFilterUntil = /^genre:/i.test(snap.search) ? Date.now() + GENRE_WINDOW_MS : 0;
@@ -1334,11 +1332,7 @@
 				p.rows = result.rows;
 				p.truncated = result.truncated;
 				p.etag = result.etag;
-				// A selection pointing at a row the change deleted cannot
-				// survive; everything still present stays selected.
-				const present = new Set(result.rows.map((row) => row.stable_id));
-				p.selected_ids = p.selected_ids.filter((id) => present.has(id));
-				if (p.selected_id !== null && !present.has(p.selected_id)) p.selected_id = null;
+				pruneSelection(p, result.rows);
 			} catch (exc) {
 				console.error(
 					`[library-refresh] pane ${requestedPlaylistId} refresh failed: ${String(exc)}`
@@ -2234,16 +2228,20 @@
 	// event is absent for the column-view lane's plain click (ColumnBrowser
 	// has no multi-select concept) - treated as a non-extending single
 	// select, same as a modifier-less TrackTable click.
-	function selectRow(row: Pick<BrowserRow, 'stable_id'>, event?: MouseEvent): void {
+	function selectRow(
+		row: Pick<BrowserRow, 'stable_id'> & { order?: number },
+		event?: MouseEvent
+	): void {
 		_noteLibraryInteraction();
 		const p = panes[activePane];
 		if (p.selected_id !== row.stable_id) _pushNav();
 		const extend = event !== undefined && (event.metaKey || event.ctrlKey);
 		const range = event !== undefined && event.shiftKey;
-		const orderedIds = range
-			? renderedRows.map((r) => r.stable_id)
-			: [];
-		p.select(row.stable_id, extend, range, orderedIds);
+		const orderedIds = range ? renderedRows.map((r) => r.stable_id) : [];
+		const orderedRows = range
+			? renderedRows.map((r) => ({ stable_id: r.stable_id, order: r.order }))
+			: undefined;
+		p.select(row.stable_id, extend, range, orderedIds, row.order, orderedRows);
 		// Warm /anlz so a subsequent deck load shares the in-flight fetch.
 		// Selecting an unmapped row is the only place OUR ffmpeg decode ever
 		// runs (issue #735); the strip-adoption effect below picks up the
@@ -2379,10 +2377,7 @@
 			}
 			p.setSearch(snap.search);
 			if (snap.selected_id !== null) p.select(snap.selected_id, false);
-			else {
-				p.selected_id = null;
-				p.selected_ids = [];
-			}
+			else clearSelection(p);
 			p.rememberScroll(snap.scroll_top);
 			navEpoch += 1;
 		} finally {
@@ -2792,6 +2787,7 @@
 			bodyOverlay={libraryLoadOverlay}
 			{provider}
 			selectedIds={pane.selected_ids}
+			selectedOrders={pane.selected_orders}
 			{loadedIds}
 			{vocalsById}
 			sortKey={pane.sort_key}

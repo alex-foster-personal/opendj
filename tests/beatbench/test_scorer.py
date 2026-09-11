@@ -20,17 +20,21 @@ import math
 
 import pytest
 
+from apps.analysis_bench.scorers import beatgrid_lane
 from apps.analysis_bench.scorers.beatgrid import (
     BEAT_TOLERANCE_S,
     SCORER_VERSION,
+    WEIGHTS_NOT_RELEASED,
     classify_tempo_relation,
     grid_is_dynamic,
+    partition_counts,
     percentile,
     score_bpm,
     score_downbeats,
     score_positions,
     window_slice,
 )
+from scripts.beatbench import report as beatgrid_report
 
 # ----- Synthetic grid builders -------------------------------------------
 
@@ -280,3 +284,111 @@ def test_scorer_version_is_pinned() -> None:
     """If the version is not a concrete string then rounds cannot be compared."""
     assert isinstance(SCORER_VERSION, str) and SCORER_VERSION
     assert math.isclose(BEAT_TOLERANCE_S, 0.070)
+
+
+# ----- Fixture triples and eval-time partition (#2046) --------------------
+
+
+def _fixture_triples(times: list[float], bpms: float | list[float]) -> list[list]:
+    """Compact ``[n, t, bpm]`` ref_beats as fixtures carry them."""
+    bpm_list = bpms if isinstance(bpms, list) else [bpms] * len(times)
+    return [[(i % 4) + 1, round(t, 3), round(b, 2)] for i, (t, b) in enumerate(zip(times, bpm_list, strict=False))]
+
+
+def _minimal_fixture(
+    *,
+    is_dynamic: bool,
+    ref_beats: list[list],
+    stable_id: str = "t1",
+) -> dict:
+    return {
+        "stable_id": stable_id,
+        "is_dynamic": is_dynamic,
+        "ref_beats": ref_beats,
+        "rb_bpm": ref_beats[0][2],
+        "score_start_s": 0.0,
+        "score_end_s": 9999.0,
+        "window_start_s": 0.0,
+    }
+
+
+def test_grid_is_dynamic_accepts_fixture_triples() -> None:
+    """If fixture triples are rejected then eval-time scoring on real fixtures raises."""
+    constant = _fixture_triples(click_grid(128.0, 40), 128.0)
+    two_tempi = _fixture_triples(click_grid(128.0, 40), [128.0] * 20 + [130.0] * 20)
+    assert grid_is_dynamic(constant) is False
+    assert grid_is_dynamic(two_tempi) is True
+
+
+def test_partition_counts_ignore_lying_stored_flag() -> None:
+    """If the stored is_dynamic flag drives the split then the re-count is wrong."""
+    constant = _fixture_triples(click_grid(128.0, 60), 128.0)
+    two_tempi = _fixture_triples(click_grid(128.0, 60), [128.0] * 30 + [130.0] * 30)
+    fixtures = [
+        _minimal_fixture(is_dynamic=True, ref_beats=constant, stable_id="lies-fixed"),
+        _minimal_fixture(is_dynamic=False, ref_beats=two_tempi, stable_id="lies-dynamic"),
+    ]
+    n_fixed, n_dynamic = partition_counts([f["ref_beats"] for f in fixtures])
+    assert (n_fixed, n_dynamic) == (1, 1)
+    assert 138 not in (n_fixed, n_dynamic)
+
+
+def test_fixed_and_dynamic_averages_are_not_blended() -> None:
+    """If dynamic rows fold into the fixed average then the lane figure is misleading."""
+    fixed_times = click_grid(120.0, 60)
+    ramp_times = ramp_grid(120.0, 140.0, 60)
+    ramp_bpms = [60.0 / (ramp_times[i + 1] - ramp_times[i]) for i in range(len(ramp_times) - 1)]
+    ramp_bpms.append(140.0)
+    fixed_fixture = _minimal_fixture(
+        is_dynamic=False,
+        ref_beats=_fixture_triples(fixed_times, 120.0),
+        stable_id="fixed-track",
+    )
+    dynamic_fixture = _minimal_fixture(
+        is_dynamic=True,
+        ref_beats=_fixture_triples(ramp_times, ramp_bpms),
+        stable_id="dynamic-track",
+    )
+    perfect = {"beats": fixed_times, "downbeats": None, "native_bpm": 120.0}
+    rows = [
+        beatgrid_report.score_track(fixed_fixture, perfect),
+        beatgrid_report.score_track(dynamic_fixture, perfect),
+    ]
+    rows = [r for r in rows if r is not None]
+    fixed_cell = beatgrid_report.aggregate([r for r in rows if not r["is_dynamic"]])
+    dynamic_cell = beatgrid_report.aggregate([r for r in rows if r["is_dynamic"]])
+    assert fixed_cell["n"] == 1
+    assert dynamic_cell["n"] == 1
+    assert fixed_cell["f_measure_mean"] == pytest.approx(1.0)
+    assert dynamic_cell["f_measure_mean"] < 0.9
+    blended = (fixed_cell["f_measure_mean"] + dynamic_cell["f_measure_mean"]) / 2
+    assert fixed_cell["f_measure_mean"] != pytest.approx(blended)
+    assert dynamic_cell["f_measure_mean"] != pytest.approx(blended)
+
+
+def test_rendered_table_shows_weights_not_released() -> None:
+    """If masked-diffusion Beat This! is omitted or shows as n=0 then the table hides absence."""
+    cells = [("librosa", {"n": 1, "bpm_exact_0_01_pct": 0.0, "bpm_within_0_1_pct": 0.0,
+                          "bpm_within_1_0_pct": 0.0, "octave_half_pct": 0.0, "octave_double_pct": 0.0,
+                          "f_measure_mean": 0.5, "f_measure_shifted_mean": 0.5,
+                          "cmlt_mean": None, "amlt_mean": None, "n_continuity_scored": 0,
+                          "raw_p50_ms": None, "raw_p95_ms": None,
+                          "shifted_p50_ms": None, "shifted_p95_ms": None,
+                          "downbeat_agreement_mean": None}, {"emits_downbeats": False})]
+    md = "\n".join(beatgrid_report.render_table("fixed grids", cells))
+    assert "Masked Diffusion Beat This!" in md
+    assert WEIGHTS_NOT_RELEASED in md
+    assert "| Masked Diffusion Beat This! | 0 |" not in md
+
+    lane_md = beatgrid_lane.render_table({
+        "arms": {
+            "librosa": {
+                "role": "negative_control",
+                "fixed": cells[0][1],
+                "dynamic": {"n": 0},
+                "emits_downbeats": False,
+            },
+        },
+    })
+    assert "Masked Diffusion Beat This!" in lane_md
+    assert WEIGHTS_NOT_RELEASED in lane_md

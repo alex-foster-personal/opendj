@@ -43,8 +43,30 @@ def test_score_onsets_rejects_length_mismatch() -> None:
 def test_score_onsets_rejects_empty_and_nan() -> None:
     with pytest.raises(ValueError, match="no words"):
         score_onsets([], [])
-    with pytest.raises(ValueError, match="NaN"):
+    with pytest.raises(ValueError, match="finite track second"):
         score_onsets([1.0], [math.nan])
+
+
+def test_score_onsets_rejects_non_finite_and_negative_onsets() -> None:
+    with pytest.raises(ValueError, match="finite track second"):
+        score_onsets([1.0], [float("inf")])
+    with pytest.raises(ValueError, match="finite track second"):
+        score_onsets([1.0], [float("-inf")])
+    with pytest.raises(ValueError, match="finite track second"):
+        score_onsets([-0.1], [0.0])
+    with pytest.raises(ValueError, match="finite track second"):
+        score_onsets([0.0], [-0.1])
+    score_onsets([0.0], [0.0])
+
+
+def test_aggregate_pooled_quantiles_are_not_weighted_medians() -> None:
+    zeros = score_onsets([0.0] * 100, [0.0] * 100)
+    catastrophe = score_onsets([0.0], [100.0])
+    pooled = aggregate([zeros, catastrophe])
+    assert pooled.n_words == 101
+    assert pooled.median_abs_error_s == pytest.approx(0.0)
+    assert pooled.p95_abs_error_s == pytest.approx(0.0)
+    # n-weighted mean of per-song medians would be ~0.990; that must not return
 
 
 def test_aggregate_word_pools_the_mean() -> None:

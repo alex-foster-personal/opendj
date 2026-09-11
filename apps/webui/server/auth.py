@@ -147,6 +147,7 @@ class PendingLogin:
     state: str
     code_verifier: str
     redirect_uri: str
+    return_to: str
     created_at: float
 
 
@@ -163,12 +164,13 @@ class PendingLoginStore:
         self._ttl = ttl_seconds
         self._entries: dict[str, PendingLogin] = {}
 
-    def create(self, redirect_uri: str) -> PendingLogin:
+    def create(self, redirect_uri: str, return_to: str = "/") -> PendingLogin:
         self._purge_expired()
         pending = PendingLogin(
             state=secrets.token_urlsafe(32),
             code_verifier=secrets.token_urlsafe(64),
             redirect_uri=redirect_uri,
+            return_to=return_to,
             created_at=time.monotonic(),
         )
         self._entries[pending.state] = pending
