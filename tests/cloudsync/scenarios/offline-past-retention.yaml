@@ -1,0 +1,72 @@
+name: offline-past-retention
+description: >
+  Spoke B goes dark while A edits one track three times. The hub then prunes
+  its changelog 45 days in the future with no row floor, which is longer
+  than the 30-day default window, so every SUPERSEDED entry for that track
+  goes. B reconnects after the prune. The retention invariant is that a
+  prune never drops a row's NEWEST entry, so B must still receive A's
+  latest edit, with nothing lost and no restore false positive.
+
+machines:
+  - id: hub
+    role: hub
+  - id: spoke-a
+    role: spoke
+  - id: spoke-b
+    role: spoke
+
+seed:
+  tracks:
+    - stable_id: trk-1
+      title: original
+      "on": [spoke-a, spoke-b]
+
+steps:
+  - "on": spoke-a
+    action: sync
+  - "on": spoke-b
+    action: sync
+  - "on": spoke-b
+    action: partition
+    args: { state: offline }
+
+  - "on": spoke-a
+    action: edit
+    args: { table: tracks, stable_id: trk-1, set: { title: first pass } }
+  - "on": spoke-a
+    action: sync
+    args: { expect: { accepted: 1 } }
+  - "on": spoke-a
+    action: edit
+    args: { table: tracks, stable_id: trk-1, set: { title: second pass } }
+  - "on": spoke-a
+    action: sync
+    args: { expect: { accepted: 1 } }
+  - "on": spoke-a
+    action: edit
+    args: { table: tracks, stable_id: trk-1, set: { title: third pass } }
+  - "on": spoke-a
+    action: sync
+    args: { expect: { accepted: 1 } }
+
+  # Seed entry plus first and second pass are superseded; third pass stays.
+  - "on": hub
+    action: prune
+    args: { keep_days: 30, keep_rows: 0, advance_days: 45, expect_deleted: 3 }
+
+  - "on": spoke-b
+    action: partition
+    args: { state: online }
+  - "on": spoke-b
+    action: sync
+    args: { expect: { applied: 1 } }
+  - "on": spoke-b
+    action: assert_converged
+    args:
+      table: tracks
+      pk: { stable_id: trk-1 }
+      field: title
+      equals: third pass
+
+expected:
+  digest_converged: true

@@ -1,0 +1,55 @@
+name: rename-machine
+description: >
+  Spoke A is renamed and syncs. The hub takes the new name, because a
+  machine is authoritative about its OWN registry row. Peer B keeps the OLD
+  name even after syncing, because a spoke only learns about peers it has
+  never met from the hub's snapshot and never rewrites one it already knows
+  (round 3 finding R1). That staleness is round 4 finding C2, pinned here as
+  the accepted current behavior, not as a design.
+
+machines:
+  - id: hub
+    role: hub
+  - id: spoke-a
+    role: spoke
+  - id: spoke-b
+    role: spoke
+
+seed:
+  tracks:
+    - stable_id: trk-1
+      title: original
+      "on": [spoke-a, spoke-b]
+
+steps:
+  - "on": spoke-a
+    action: sync
+  - "on": spoke-b
+    action: sync
+
+  - "on": spoke-a
+    action: rename_machine
+    args: { name: spoke-a-renamed }
+  - "on": spoke-a
+    action: sync
+
+  - "on": hub
+    action: assert_converged
+    args:
+      table: machines
+      pk: { machine_id: "@spoke-a" }
+      field: name
+      equals: spoke-a-renamed
+
+  - "on": spoke-b
+    action: sync
+  - "on": spoke-b
+    action: assert_converged
+    args:
+      table: machines
+      pk: { machine_id: "@spoke-a" }
+      field: name
+      equals: spoke-a
+
+expected:
+  digest_converged: true
