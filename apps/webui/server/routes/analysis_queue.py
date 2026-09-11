@@ -40,18 +40,19 @@ Requirements (mini-PRD):
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Request
+from typing import Literal
+
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from ..analysis_autostart import AutoAnalyzeState
 from . import ingest
+from .ingest_scope import ORDERABLE_ANALYSIS_KINDS
 
 router = APIRouter(prefix="/analysis-queue", tags=["analysis"])
 
 MAX_ITEMS: int = 1000
 DEFAULT_ITEMS: int = 200
-
-
 class AnalysisQueueItemOut(BaseModel):
     """One queued track. ``file_path`` is what the runner decodes.
 
@@ -87,6 +88,16 @@ class AnalysisQueueOut(BaseModel):
     items: list[AnalysisQueueItemOut]
     job: ingest.RefreshStatusOut
     auto: AutoAnalyzeOut
+
+
+class AnalysisOrderOut(BaseModel):
+    stable_id: str
+    kind: str
+    phase: Literal["queued", "running", "done", "error"]
+
+
+class AnalysisOrdersOut(BaseModel):
+    items: list[AnalysisOrderOut]
 
 
 def _auto_state(request: Request) -> AutoAnalyzeState:
@@ -134,13 +145,50 @@ def run_analysis_queue(request: Request) -> ingest.RefreshStatusOut:
     return ingest.start_refresh(request, ingest.RefreshIn(scope="unmapped"))
 
 
+@router.post("/orders/{stable_id}/{kind}", response_model=AnalysisOrderOut, status_code=202)
+def order_track_analysis(request: Request, stable_id: str, kind: str) -> AnalysisOrderOut:
+    """Order one real analysis CLI run through the same single refresh slot."""
+    if kind not in ORDERABLE_ANALYSIS_KINDS:
+        raise HTTPException(422, f"analysis kind cannot be ordered: {kind!r}")
+    with ingest._job_lock:
+        job = ingest._JOBS.current
+        if job is not None and job.phase in ingest.ACTIVE_PHASES:
+            if job.scope == "track" and job.analysis_orders == {stable_id: kind}:
+                return AnalysisOrderOut(stable_id=stable_id, kind=kind, phase=job.phase)
+            raise HTTPException(409, "a refresh job is already running")
+        ingest.validate_track_order_target(stable_id)
+        status = ingest.start_refresh(
+            request, ingest.RefreshIn(scope="track", stable_id=stable_id, analysis_kind=kind)
+        )
+    return AnalysisOrderOut(stable_id=stable_id, kind=kind, phase=status.phase)
+
+
+@router.get("/orders/{stable_id}", response_model=AnalysisOrdersOut)
+def get_track_analysis_orders(stable_id: str) -> AnalysisOrdersOut:
+    """Current shared-job state for a track, readable by UI and HTTP agents."""
+    job = ingest._JOBS.current
+    if job is None or stable_id not in job.analysis_orders:
+        return AnalysisOrdersOut(items=[])
+    return AnalysisOrdersOut(
+        items=[AnalysisOrderOut(
+            stable_id=stable_id,
+            kind=job.analysis_orders[stable_id],
+            phase=job.phase,
+        )]
+    )
+
+
 __all__ = [
     "DEFAULT_ITEMS",
     "MAX_ITEMS",
+    "AnalysisOrderOut",
+    "AnalysisOrdersOut",
     "AnalysisQueueItemOut",
     "AnalysisQueueOut",
     "AutoAnalyzeOut",
     "get_analysis_queue",
+    "get_track_analysis_orders",
+    "order_track_analysis",
     "router",
     "run_analysis_queue",
 ]

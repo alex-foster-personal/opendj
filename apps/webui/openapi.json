@@ -457,6 +457,51 @@
         "title": "AlignmentOut",
         "type": "object"
       },
+      "AnalysisOrderOut": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "phase": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "error"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "kind",
+          "phase"
+        ],
+        "title": "AnalysisOrderOut",
+        "type": "object"
+      },
+      "AnalysisOrdersOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AnalysisOrderOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AnalysisOrdersOut",
+        "type": "object"
+      },
       "AnalysisQueueItemOut": {
         "description": "One queued track. ``file_path`` is what the runner decodes.\n\nNamed apart from ``models.QueueItemOut`` (the M3 triage queues) on\npurpose: two Pydantic models sharing a name collapse into one OpenAPI\nschema, and the loser is served under the winner's shape.",
         "properties": {
@@ -8630,7 +8675,25 @@
         "type": "object"
       },
       "RefreshIn": {
+        "description": "One refresh scope, including the explicit analysis-grid track order.",
         "properties": {
+          "analysis_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "vocals",
+                  "beatgrid",
+                  "key",
+                  "stems"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Kind"
+          },
           "batch_dir": {
             "anyOf": [
               {
@@ -8646,16 +8709,29 @@
             "default": "library",
             "enum": [
               "library",
-              "unmapped"
+              "unmapped",
+              "track"
             ],
             "title": "Scope",
             "type": "string"
+          },
+          "stable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Id"
           }
         },
         "title": "RefreshIn",
         "type": "object"
       },
       "RefreshStatusOut": {
+        "description": "The one-slot job's public, serializable state.",
         "properties": {
           "current_step": {
             "anyOf": [
@@ -14255,6 +14331,101 @@
           }
         },
         "summary": "Get Analysis Queue",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis-queue/orders/{stable_id}": {
+      "get": {
+        "description": "Current shared-job state for a track, readable by UI and HTTP agents.",
+        "operationId": "get_track_analysis_orders_api_v1_analysis_queue_orders__stable_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisOrdersOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Analysis Orders",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis-queue/orders/{stable_id}/{kind}": {
+      "post": {
+        "description": "Order one real analysis CLI run through the same single refresh slot.",
+        "operationId": "order_track_analysis_api_v1_analysis_queue_orders__stable_id___kind__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisOrderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Order Track Analysis",
         "tags": [
           "analysis"
         ]

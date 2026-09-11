@@ -10,7 +10,7 @@ import { test, expect } from '@playwright/test';
 //    reports the staged file.
 
 test.describe('refresh analysis button', () => {
-	test('hover shows coverage popover, click runs a refresh to done', async ({ page }) => {
+	test('hover shows coverage popover and reports the real refresh result', async ({ page }) => {
 		// This fixture intentionally has no Rekordbox master database or stem
 		// artifacts. Configure the real ingest endpoint for its runnable analysis
 		// step before exercising the top-bar control, rather than asking the
@@ -64,6 +64,7 @@ test.describe('refresh analysis button', () => {
 				['[ingest-refresh] job log at failure:', ...(body.log_tail ?? [])].join('\n')
 			);
 		}
+		await expect(pop).toContainText('done');
 		await expect(pop).not.toContainText('error', { timeout: 1_000 });
 	});
 });

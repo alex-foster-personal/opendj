@@ -67,15 +67,15 @@ test('AnalysisDotsPopover.svelte order() guards against double-fire and re-entra
 	);
 });
 
-test('AnalysisDotsPopover.svelte discloses the library-wide scope of "order" honestly', () => {
-	// The queued-toast text moved to analysis-order.ts with the rest of the
-	// confirmation decision (see the delegation test above) - checked at
-	// its real home, not duplicated back into the component.
-	const src = readFileSync(path.join(__dirname, '../../src/lib/rb/analysis-order.ts'), 'utf8');
-	assert.ok(
-		src.includes('Queued library-wide'),
-		'must not imply a per-track queue the backend cannot actually do'
-	);
+test('AnalysisDotsPopover.svelte orders through the track-scoped HTTP client', () => {
+	const src = readFileSync(path.join(componentsDir, 'AnalysisDotsPopover.svelte'), 'utf8');
+	assert.ok(src.includes('orderTrackAnalysis'), 'must use the shared track order client');
+	assert.ok(src.includes('getTrackAnalysisOrders'), 'must read agent-created track orders');
+});
+
+test('AnalysisDotsPopover.svelte derives coverage states through the shared job helper', () => {
+	const src = readFileSync(path.join(componentsDir, 'AnalysisDotsPopover.svelte'), 'utf8');
+	assert.ok(src.includes('analysisStatus('), 'must show the same queued/running state as job progress');
 });
 
 test('AnalysisDotsPopover.svelte states unavailability when there is no track', () => {

@@ -37,8 +37,8 @@ const { runAnalysisOrder, RbApiError } = await loadTypeScriptModule('src/lib/rb/
 
 function harness() {
 	const calls = { upsertJob: 0, toasts: [] };
-	const deps = (startIngestRefresh) => ({
-		startIngestRefresh,
+	const deps = (orderTrackAnalysis) => ({
+		orderTrackAnalysis,
 		upsertJob: () => {
 			calls.upsertJob += 1;
 		},
@@ -49,30 +49,19 @@ function harness() {
 	return { calls, deps };
 }
 
-test('runAnalysisOrder never calls upsertJob when the response excludes the step', async () => {
+test('runAnalysisOrder records the phase returned by the track-order command', async () => {
 	const { calls, deps } = harness();
-	await runAnalysisOrder('vocals', 'vocals', deps(async () => ({ steps: ['analysis'] })));
-
-	assert.equal(calls.upsertJob, 0, 'an excluded response must never be reported as queued');
-	assert.equal(calls.toasts.length, 1);
-	assert.equal(calls.toasts[0].kind, 'error');
-	assert.match(calls.toasts[0].message, /does not include it/);
-});
-
-test('runAnalysisOrder calls upsertJob exactly once when the response includes the step', async () => {
-	const { calls, deps } = harness();
-	await runAnalysisOrder('vocals', 'vocals', deps(async () => ({ steps: ['vocals', 'analysis'] })));
+	await runAnalysisOrder('vocals', deps(async () => ({ stable_id: 'track-a', kind: 'vocals', phase: 'queued' })));
 
 	assert.equal(calls.upsertJob, 1);
 	assert.equal(calls.toasts.length, 1);
 	assert.equal(calls.toasts[0].kind, 'info');
-	assert.match(calls.toasts[0].message, /Queued library-wide/);
+	assert.match(calls.toasts[0].message, /Queued vocals analysis for this track/);
 });
 
 test('runAnalysisOrder reports a 409 without ever queuing', async () => {
 	const { calls, deps } = harness();
 	await runAnalysisOrder(
-		'vocals',
 		'vocals',
 		deps(async () => {
 			throw new RbApiError(409, 'conflict', 'conflict');
@@ -88,7 +77,6 @@ test('runAnalysisOrder reports a 422 without ever queuing', async () => {
 	const { calls, deps } = harness();
 	await runAnalysisOrder(
 		'vocals',
-		'vocals',
 		deps(async () => {
 			throw new RbApiError(422, 'unconfigured', 'unconfigured');
 		})
@@ -96,13 +84,12 @@ test('runAnalysisOrder reports a 422 without ever queuing', async () => {
 
 	assert.equal(calls.upsertJob, 0);
 	assert.equal(calls.toasts[0].kind, 'error');
-	assert.match(calls.toasts[0].message, /configure the ingest modal/);
+	assert.match(calls.toasts[0].message, /configure ingest first/);
 });
 
 test('runAnalysisOrder reports any other failure without ever queuing', async () => {
 	const { calls, deps } = harness();
 	await runAnalysisOrder(
-		'vocals',
 		'vocals',
 		deps(async () => {
 			throw new Error('network down');
