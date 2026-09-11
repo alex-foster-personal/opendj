@@ -177,9 +177,7 @@ def required_error_rows(
         )
     if "S12" in scenarios:
         rows.extend(
-            error_row(
-                kpi=kpi, unit=S12_UNIT, method=S12_METHOD, meta=meta, reason=reason
-            )
+            error_row(kpi=kpi, unit=S12_UNIT, method=S12_METHOD, meta=meta, reason=reason)
             for kpi in S12_REQUIRED
         )
     return rows
@@ -220,9 +218,7 @@ def has_error_row(rows: Sequence[dict[str, Any]]) -> bool:
     return any(row.get("status") == "error" for row in rows)
 
 
-def required_numeric_present(
-    scenarios: Sequence[str], rows: Sequence[dict[str, Any]]
-) -> bool:
+def required_numeric_present(scenarios: Sequence[str], rows: Sequence[dict[str, Any]]) -> bool:
     found: set[str] = set()
     for row in rows:
         if row.get("status") == "error":

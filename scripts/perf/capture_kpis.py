@@ -110,8 +110,7 @@ def parse_scenarios(raw: str) -> list[str] | None:
     unknown = [item for item in parts if item not in KNOWN_SCENARIOS]
     if unknown:
         print(
-            f"[ERROR] unknown scenario {', '.join(unknown)}. "
-            f"Known: {', '.join(KNOWN_SCENARIOS)}",
+            f"[ERROR] unknown scenario {', '.join(unknown)}. Known: {', '.join(KNOWN_SCENARIOS)}",
             file=sys.stderr,
         )
         return None
@@ -194,11 +193,7 @@ def _run_http_scenarios(
             large=args.track_large,
             stemmed=args.track_stemmed,
         )
-        rows.extend(
-            capture_s5.capture(
-                engine=engine, meta=meta, tracks=tracks, data_dir=data_dir
-            )
-        )
+        rows.extend(capture_s5.capture(engine=engine, meta=meta, tracks=tracks, data_dir=data_dir))
     if "S12" in scenarios:
         rows.extend(
             capture_s12.capture(

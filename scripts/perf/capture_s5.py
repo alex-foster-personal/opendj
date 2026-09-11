@@ -110,9 +110,7 @@ def _require_audio(status: int, headers: Any, body: bytes, stable_id: str) -> No
     code = _detail_code(body)
     if code in {"TRACK_NOT_FOUND", "AUDIO_FILE_MISSING"}:
         raise ProbeError(f"{code} for {stable_id} (HTTP {status})")
-    raise ProbeError(
-        f"/audio for {stable_id} returned HTTP {status} content-type={ctype!r}"
-    )
+    raise ProbeError(f"/audio for {stable_id} returned HTTP {status} content-type={ctype!r}")
 
 
 def _require_anlz(status: int, body: bytes, stable_id: str) -> None:
@@ -198,15 +196,11 @@ def _bucket(results: list[dict[str, Any]], state: str) -> list[list[float]]:
 
 
 def _ids_note(results: list[dict[str, Any]]) -> str:
-    parts = [
-        f"{item['role']}={item['stable_id']}:{item['bytes']}B" for item in results
-    ]
+    parts = [f"{item['role']}={item['stable_id']}:{item['bytes']}B" for item in results]
     return " ".join(parts)
 
 
-def _state_note(
-    state: str, results: list[dict[str, Any]], n: int, points: int
-) -> str:
+def _state_note(state: str, results: list[dict[str, Any]], n: int, points: int) -> str:
     cache_label = "miss" if state == "cold" else "hit"
     return (
         f"{state}; n={n}; points={points}; anlz_cache={cache_label}; "

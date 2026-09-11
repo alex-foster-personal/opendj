@@ -213,9 +213,7 @@ def test_empty_cfg_and_missing_hub_are_error_rows() -> None:
     assert s5[0]["value"] is None
     assert s5[0]["status"] == "error"
     assert "CFG track small is empty" in s5[0]["note"]
-    s12 = capture_s12(
-        hub_url=None, meta=meta, data_dir=Path("/tmp"), track_count=1
-    )
+    s12 = capture_s12(hub_url=None, meta=meta, data_dir=Path("/tmp"), track_count=1)
     assert all(row["value"] is None for row in s12)
     assert all(row["status"] == "error" for row in s12)
     assert "missing hub" in s12[0]["note"].lower() or "--hub" in s12[0]["note"]

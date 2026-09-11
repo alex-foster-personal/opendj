@@ -30,9 +30,7 @@ from scripts.perf.capture_kpi_ledger import (
 
 def _s12_error(meta: CaptureMeta, reason: str) -> list[dict[str, Any]]:
     return [
-        error_row(
-            kpi=kpi, unit=S12_UNIT, method=S12_METHOD, meta=meta, reason=reason
-        )
+        error_row(kpi=kpi, unit=S12_UNIT, method=S12_METHOD, meta=meta, reason=reason)
         for kpi in S12_REQUIRED
     ]
 
@@ -86,9 +84,7 @@ def _noop_ok(result: Any) -> bool:
     )
 
 
-def _phase_rows(
-    meta: CaptureMeta, first: Any, track_count: int
-) -> list[dict[str, Any]]:
+def _phase_rows(meta: CaptureMeta, first: Any, track_count: int) -> list[dict[str, Any]]:
     timings = first.timings
     note = f"kind=first; denominator={track_count} tracks; sha={meta.sha}"
     return [
@@ -142,32 +138,23 @@ def _sync_pair(
     try:
         first = run_sync(tmp_path, hub_url, name=spoke_name)
     except Exception as exc:
-        return _s12_error(
-            meta, f"run_sync first raised {type(exc).__name__}: {exc}"
-        )
+        return _s12_error(meta, f"run_sync first raised {type(exc).__name__}: {exc}")
     if not _first_ok(first):
         return _s12_error(meta, _kind_reason("first", first))
     try:
         noop = run_sync(tmp_path, hub_url, name=spoke_name)
     except Exception as exc:
-        return _s12_error(
-            meta, f"run_sync noop raised {type(exc).__name__}: {exc}"
-        )
+        return _s12_error(meta, f"run_sync noop raised {type(exc).__name__}: {exc}")
     if not _noop_ok(noop):
         return _s12_error(meta, _kind_reason("noop", noop))
     return _success_rows(meta, first, noop, track_count)
 
 
-def _preflight(
-    hub_url: str | None, data_dir: Path | None, track_count: int | None
-) -> str | None:
+def _preflight(hub_url: str | None, data_dir: Path | None, track_count: int | None) -> str | None:
     if not hub_url:
         return "S12 requires --hub; missing hub URL"
     if data_dir is None:
-        return (
-            "data-dir could not be resolved from health.state_db.path; "
-            "pass --data-dir"
-        )
+        return "data-dir could not be resolved from health.state_db.path; pass --data-dir"
     if track_count is None:
         return "health.state_db.tracks is missing"
     return None
