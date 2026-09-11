@@ -79,6 +79,8 @@ concurrency:
 
 permissions:
   contents: read
+  # Cross-workflow artifact download from ci.yml (issue #1513).
+  actions: read
 
 env:
   # apps.shared.library_mode refuses to import on non-darwin platforms without
