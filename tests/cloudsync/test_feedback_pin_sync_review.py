@@ -159,6 +159,36 @@ def test_a_field_this_build_does_not_know_survives_the_round_trip_and_stops_chur
         assert states == {"synced"}, (engine.name, states)
 
 
+@pytest.mark.requirement("FBSYNC-02")
+def test_a_late_store_copy_at_the_same_instant_defers_to_the_synced_row(
+    air: Engine, silver: Engine
+) -> None:
+    """[if] a late store copy ties a synced row [then] the synced row stays, [else stop]."""
+    # The machine with the GREATER id gets the late copy: that is the order in
+    # which breaking the tie on the local id would re-export it under its own
+    # name and overwrite the synced copy on every machine.
+    hi, lo = (air, silver) if air.machine_id() > silver.machine_id() else (silver, air)
+    shared = "dddd00000004"
+    lo.seed(_pin_doc(shared, "the synced copy", _T_NEW, lo.name))
+    lo.sync()
+    hi.sync()
+    assert hi.pins()[shared]["text"] == "the synced copy"
+
+    # The one-off merge of the old per-machine stores drops a different copy
+    # of the same pin, stamped at the same instant, into hi's store.
+    hi.seed(_pin_doc(shared, "a late store copy", _T_NEW, hi.name))
+    hi.sync()
+    lo.sync()
+    hi.sync()
+
+    for engine in (hi, lo):
+        assert engine.pins()[shared]["text"] == "the synced copy", engine.name
+        row = engine.row(shared)
+        assert row is not None and row[2] == lo.machine_id(), (
+            f"{engine.name}: the tie was re-exported under the late machine's id"
+        )
+
+
 # ----- P2-1: torn writes -----------------------------------------------------
 
 
