@@ -217,3 +217,27 @@ test('re-requesting a ready track does not refetch it', async () => {
 
 	assert.equal(cache.audioPrefetchStatus('r1'), 'ready', 'a cache hit must not re-hit the network');
 });
+
+// ---------------------------------------------------------- clear (PERFMODE-05)
+
+test('clearAudioPrefetchCache drops ready count and bytes to zero', async () => {
+	const cache = await freshCache();
+	for (const id of ['c1', 'c2', 'c3', 'c4']) {
+		serve(id, 64 * 1024);
+		assert.equal(await prefetchAndSettle(cache, id), 'ready');
+	}
+	assert.equal(cache.audioPrefetchReadyCount(), 4);
+	assert.ok(cache.audioPrefetchReadyBytes() > 0);
+
+	cache.clearAudioPrefetchCache();
+	assert.equal(cache.audioPrefetchReadyCount(), 0);
+	assert.equal(cache.audioPrefetchReadyBytes(), 0);
+});
+
+test('ensureAudioPrefetch still works after clearAudioPrefetchCache', async () => {
+	const cache = await freshCache();
+	serve('after-clear', 4096);
+	cache.clearAudioPrefetchCache();
+	assert.equal(await prefetchAndSettle(cache, 'after-clear'), 'ready');
+	assert.equal(cache.audioPrefetchReadyCount(), 1);
+});
