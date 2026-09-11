@@ -25,6 +25,7 @@ from apps.shared.state.writer import StateWriter
 from apps.webui.server.backend import ConflictError, NotFoundError
 from apps.webui.server.playlist_history import (
     HISTORY_LIMIT,
+    EditOp,
     PlaylistEditCommand,
     PlaylistHistoryEmptyError,
     PlaylistSnapshot,
@@ -69,7 +70,7 @@ def _snap(
 
 
 def _cmd(
-    op: str,
+    op: EditOp,
     *,
     command_id: str = "aa",
     before: PlaylistSnapshot | None = None,
@@ -140,8 +141,9 @@ def test_invert_table_and_labels() -> None:
         "rename", before=_snap(name="Warmup"), after=_snap(name="Peak"),
     )
     assert invert(renamed)[0] == "rename"
-    assert invert(renamed)[1] is not None
-    assert invert(renamed)[1].name == "Warmup"
+    renamed_before = invert(renamed)[1]
+    assert renamed_before is not None
+    assert renamed_before.name == "Warmup"
     assert label_for(renamed) == "Rename 'Warmup' to 'Peak'"
 
     members = _cmd(
@@ -150,7 +152,9 @@ def test_invert_table_and_labels() -> None:
         after=_snap(items=["t-002", "t-001"]),
     )
     assert invert(members)[0] == "memberships"
-    assert invert(members)[1].items == ["t-001"]
+    members_before = invert(members)[1]
+    assert members_before is not None
+    assert members_before.items == ["t-001"]
     assert label_for(members) == "Edit tracks in 'Warmup'"
 
     deleted = _cmd("delete", before=_snap(name="Doomed", items=["t-001"]))
