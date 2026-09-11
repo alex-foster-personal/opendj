@@ -97,6 +97,7 @@ export default defineConfig({
 		'**/rekordbox-writeback-disabled.spec.ts', // playwright.rekordbox-gate.config.ts
 		'**/hot-cue-mapping-gate.spec.ts', // playwright.hotcue-mapping-gate.config.ts (real backend, fixture library)
 		'**/stems-progress.spec.ts', // playwright.stems.config.ts (engine + ffmpeg)
+		'**/library-jobs-ordering.spec.ts', // playwright.library-jobs.config.ts (dry runner)
 		'**/stretch-artifact.spec.ts', // playwright.stretch-artifact.config.ts (built artifact)
 		'**/stretch-quality.spec.ts', // playwright.stretch-quality.config.ts (no server)
 		'**/full-reload-gate.spec.ts', // playwright.full-reload-gate.config.ts (own vite instance, r3920753724)
