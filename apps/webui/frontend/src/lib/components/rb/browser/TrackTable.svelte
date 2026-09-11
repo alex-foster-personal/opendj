@@ -45,6 +45,7 @@
 	import AutoPlayRankCell from './AutoPlayRankCell.svelte';
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
 	import { columnExplainer } from './column-explainer-placement';
+	import LyricColumn from './LyricColumn.svelte';
 	import PreviewStrip from './PreviewStrip.svelte';
 	import QualityBadge from '../QualityBadge.svelte';
 	import RatingStars from './RatingStars.svelte';
@@ -53,11 +54,11 @@
 	import VocalAnalyzeButton from './VocalAnalyzeButton.svelte';
 	import {
 		computeVirtualWindow,
+		createRowVisibilityObserver,
 		TRACK_TABLE_THEAD_PX,
 		masterFoldVisibility,
 		scrollTopForRowIndex
 	} from './virtual-window';
-	import { createRowVisibilityObserver } from './observe-row';
 	import {
 		ANALYSIS_COLORS,
 		jobProgress,
@@ -608,6 +609,10 @@
 	// ----- AUTOPLAY-COL helpers ---------------------------------------------
 	let hoveredApId = $state<string | null>(null);
 	const autoPlayMode = $derived(describeAutoPlayMode(uiPrefs).mode);
+	const showLyricsCol = $derived(uiPrefs.lyrics_library_col && uiPrefs.lyrics_global);
+	const colCount = $derived(
+		(autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT) + (showLyricsCol ? 1 : 0)
+	);
 
 	function _autoPlayRank(stableId: string): number | null {
 		return autoPlayOrder.rankOf.get(stableId) ?? null;
@@ -644,7 +649,10 @@
 	 * to redistribute - narrower than the wrap just leaves blank space to the
 	 * right, same as any wrap wider than its content. */
 	const tableWidthPx = $derived(
-		Object.values(colWidths).reduce((sum, w) => sum + w, 0)
+		Object.entries(colWidths).reduce(
+			(sum, [id, w]) => sum + (id === 'lyrics' && !showLyricsCol ? 0 : w),
+			0
+		)
 	);
 
 	// ------------------------------------------- per-pane scroll cursor
@@ -1016,6 +1024,9 @@
 				<col style={`width:${colWidths.energy}px`} />
 				<col style={`width:${colWidths.genre}px`} />
 				<col style={`width:${colWidths.stems}px`} />
+				{#if showLyricsCol}
+					<col style={`width:${colWidths.lyrics}px`} />
+				{/if}
 			</colgroup>
 			<thead bind:clientHeight={theadHeightPx}>
 				<tr>
@@ -1285,12 +1296,15 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
+					{#if showLyricsCol}
+						{@render sortableTh('lyrics', 'Lyrics', 'lyrics')}
+					{/if}
 				</tr>
 			</thead>
 			<tbody>
 				{#if windowInfo.topPad > 0}
 					<tr class="tt-spacer" style={`height:${windowInfo.topPad}px`} aria-hidden="true">
-						<td colspan={autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT}></td>
+						<td colspan={colCount}></td>
 					</tr>
 				{/if}
 				{#each visibleRows as row, i (`${row.stable_id}:${row.order}`)}
@@ -1460,6 +1474,8 @@
 								duration_ms={row.duration_ms}
 								revealed={row.revealed}
 								nowRatio={_nowRatioFor(row.stable_id)}
+								stable_id={row.stable_id}
+								enabled={row.lyrics?.has_words === true}
 								onseek={(ratio) => onpreviewseek?.(row, ratio)}
 							/>
 						</td>
@@ -1621,11 +1637,14 @@
 							<StemTags stems={row.stems} />
 							<VocalAnalyzeButton stableId={row.stable_id} stems={row.stems} />
 						</td>
+						{#if showLyricsCol}
+							<LyricColumn {row} />
+						{/if}
 					</tr>
 				{/each}
 				{#if windowInfo.bottomPad > 0}
 					<tr class="tt-spacer" style={`height:${windowInfo.bottomPad}px`} aria-hidden="true">
-						<td colspan={autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT}></td>
+						<td colspan={colCount}></td>
 					</tr>
 				{/if}
 			</tbody>

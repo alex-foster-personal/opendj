@@ -20,12 +20,14 @@ import {
 } from './deck-layout-prefs';
 import { makeJogRadialWaveformSetters } from './jog-radial-prefs';
 import { makeLevelCalibrationSetters } from './level-calibration-prefs';
+import { LYRICS_PREF_DEFAULTS, makeLyricsPrefSetters, validateLyricsPrefFields, type LyricsLoadStrategy } from './lyrics-prefs';
 import { createDiskPrefsSync, makePrefsHydrator } from './prefs-hydrate';
 import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLibrary } from './prefs-fields';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
+export { type LyricsLoadStrategy } from './lyrics-prefs';
 export type { AutoSyncPrefs, LastPlaylistPref } from './prefs-types';
 
 const STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
@@ -57,9 +59,15 @@ export interface RbUiPrefs {
 	/** When true, every transport relocate (including master) uses BAR
 	 * phase-preserving sync so bar 1 stays aligned across synced decks. */
 	beat_sync_max: boolean;
-	/** Library list: keep only tracks appropriate as next (Camelot + BPM
+/** Library list: keep only tracks appropriate as next (Camelot + BPM
 	 * window vs master / loaded reference). Toggle with Tab. */
 	next_only_filter: boolean;
+	/** Library list: keep only remixes (title-marker heuristic, backend
+	 * is_remix; the lyric repair signal joins it after the library run). */
+	remixes_filter: boolean;
+	/** Library list: keep only tracks with real word-level lyrics spanning
+	 * more than 5 derived lines (pane-contract VOCALS_FILTER_MIN_LINES). */
+	vocals_filter: boolean;
 	/** Persisted independently so either collapsed rail entry can restore its panel. */
 	next_panel_collapsed: boolean;
 	recommended_panel_collapsed: boolean;
@@ -133,6 +141,18 @@ export interface RbUiPrefs {
 	/** Transition duration in ms when deck_layout_animate is true. */
 	deck_layout_duration_ms: DeckLayoutDurationMs;
 	level_calibration: LevelCalibrationPrefs;
+	/** Master switch (TopBar LYR) for every lyric overlay. */
+	lyrics_global: boolean;
+	/** Lyrics column in the library table (hover tip carries the text). */
+	lyrics_library_col: boolean;
+	/** Word readout + click-to-audition while hover-scrubbing a preview strip. */
+	lyrics_hover_scrub: boolean;
+	/** When the library pulls word timings into memory. */
+	lyrics_load_strategy: LyricsLoadStrategy;
+	/** The word-lane gate: word lanes over the main deck waveforms (D13.4). */
+	lyrics_waveform_overlay: boolean;
+	/** Current lyric line under the deck hot cues. */
+	lyrics_deck_line: boolean;
 }
 
 const DEFAULTS: RbUiPrefs = {
@@ -141,6 +161,8 @@ const DEFAULTS: RbUiPrefs = {
 	library_density: 'compact',
 	beat_sync_max: true,
 	next_only_filter: false,
+	remixes_filter: false,
+	vocals_filter: false,
 	next_panel_collapsed: false,
 	recommended_panel_collapsed: false,
 	auto_play_enabled: true,
@@ -161,7 +183,8 @@ const DEFAULTS: RbUiPrefs = {
 	deck_layout: 'more',
 	deck_layout_animate: true,
 	deck_layout_duration_ms: 200,
-	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false }
+	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false },
+	...LYRICS_PREF_DEFAULTS
 };
 
 // ----------------------------------------------------------- _helpers
@@ -221,6 +244,14 @@ function _load(): RbUiPrefs {
 			`${STORAGE_KEY}: malformed prefs blob (next_only_filter is not a boolean) - ` +
 				'clear the localStorage key to recover'
 		);
+	}
+	for (const key of ['remixes_filter', 'vocals_filter'] as const) {
+		if (parsed[key] !== undefined && typeof parsed[key] !== 'boolean') {
+			throw new Error(
+				`${STORAGE_KEY}: malformed prefs blob (${key} is not a boolean) - ` +
+					'clear the key or fix the value'
+			);
+		}
 	}
 	if (parsed.next_panel_collapsed !== undefined && typeof parsed.next_panel_collapsed !== 'boolean') {
 		throw new Error(
@@ -348,6 +379,8 @@ function _load(): RbUiPrefs {
 		library_density: density ?? DEFAULTS.library_density,
 		beat_sync_max: parsed.beat_sync_max ?? DEFAULTS.beat_sync_max,
 		next_only_filter: parsed.next_only_filter ?? DEFAULTS.next_only_filter,
+		remixes_filter: parsed.remixes_filter ?? DEFAULTS.remixes_filter,
+		vocals_filter: parsed.vocals_filter ?? DEFAULTS.vocals_filter,
 		next_panel_collapsed: parsed.next_panel_collapsed ?? DEFAULTS.next_panel_collapsed,
 		recommended_panel_collapsed:
 			parsed.recommended_panel_collapsed ?? DEFAULTS.recommended_panel_collapsed,
@@ -372,7 +405,9 @@ function _load(): RbUiPrefs {
 		deck_layout: deckLayout ?? DEFAULTS.deck_layout,
 		deck_layout_animate: deckLayoutAnimate ?? DEFAULTS.deck_layout_animate,
 		deck_layout_duration_ms: deckLayoutDurationMs ?? DEFAULTS.deck_layout_duration_ms,
-		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration)
+		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration),
+		...LYRICS_PREF_DEFAULTS,
+		...validateLyricsPrefFields(parsed, STORAGE_KEY)
 	};
 }
 
@@ -472,6 +507,16 @@ export function toggleNextOnlyFilter(): void {
 	setNextOnlyFilter(!uiPrefs.next_only_filter);
 }
 
+export function setRemixesFilter(next: boolean): void {
+	uiPrefs.remixes_filter = next;
+	_persist();
+}
+
+export function setVocalsFilter(next: boolean): void {
+	uiPrefs.vocals_filter = next;
+	_persist();
+}
+
 export function setTheme(next: UiTheme): void {
 	uiPrefs.theme = next;
 	_applyThemeDom(next);
@@ -514,6 +559,18 @@ export const {
 	setDeckLayoutAnimate,
 	setDeckLayoutDurationMs
 } = makeDeckLayoutSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
+
+/** The six karaoke lyric setters (PR-4 section C), built against this module's
+ * own uiPrefs/_persist/_syncDiskPrefs (lyrics-prefs.ts). */
+export const {
+	setLyricsGlobal,
+	toggleLyricsGlobal,
+	setLyricsLibraryCol,
+	setLyricsHoverScrub,
+	setLyricsLoadStrategy,
+	setLyricsWaveformOverlay,
+	setLyricsDeckLine
+} = makeLyricsPrefSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
 export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean): void {
 	uiPrefs.auto_sync[dest] = next;

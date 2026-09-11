@@ -16,7 +16,10 @@
  */
 import { getTrack } from '$lib/api';
 import { hasAnlzBeatgrid } from '$lib/rb/beatgrid-fallback';
-import { bumpAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
+import {
+	bumpAnlzFetchGeneration,
+	currentAnlzFetchGeneration
+} from '$lib/rb/anlz-fetch-generation';
 import type { AnlzData } from '$lib/rb/anlz-types';
 
 // rbx-lane BPM/key provenance is one of several concrete sources (rekordbox,
@@ -149,6 +152,7 @@ export async function refreshAnalysisSourceDecks(
 	// race to a newer one while its own fetches are in flight.
 	if (isSuperseded()) return null;
 	bumpAnlzFetchGeneration();
+	const generationAtBatch = currentAnlzFetchGeneration();
 	ports.invalidateAllAnlzCacheEntries();
 	const wanted = new Map<string, DeckId[]>();
 	for (const deck of deckIds) {
@@ -214,6 +218,7 @@ export async function refreshAnalysisSourceDecks(
 	// could ever detect the split because `deckFeatures` would still read as
 	// the winner's value (discussion_r3975326238 P1 BLOCKING).
 	if (isSuperseded()) return null;
+	if (currentAnlzFetchGeneration() !== generationAtBatch) return null;
 	// Merge each staged fetch onto whatever payload is CURRENTLY live for its
 	// track, keeping only the fields this switch is actually authoritative
 	// for: `beatgrid`, `beatgrid_source`, `beatgrid_own_unavailable_reason`,

@@ -95,6 +95,8 @@
 		setLibraryDensity,
 		setPlaylistTreeWidth,
 		setNextOnlyFilter,
+		setRemixesFilter,
+		setVocalsFilter,
 		uiPrefs,
 		PLAYLIST_TREE_WIDTH_MAX,
 		PLAYLIST_TREE_WIDTH_MIN
@@ -149,6 +151,8 @@
 		resolveBootPlaylist,
 		resolveNewTabIndex,
 		shouldRetryBootPane,
+		rowHasVocalLyrics,
+		rowIsRemix,
 		sortRows,
 		visibleRowsOf
 	} from './browser/pane-contract.svelte';
@@ -514,11 +518,22 @@
 		return null;
 	});
 
+	function _applyLibraryFilters(rows: BrowserRow[]): BrowserRow[] {
+		let out = rows;
+		if (uiPrefs.remixes_filter) out = out.filter(rowIsRemix);
+		if (uiPrefs.vocals_filter) out = out.filter(rowHasVocalLyrics);
+		return out;
+	}
+
 	function _applyNextOnly(rows: BrowserRow[]): BrowserRow[] {
 		if (!uiPrefs.next_only_filter) return rows;
 		const ref = nextOnlyRef;
 		if (ref === null) return rows;
 		return rows.filter((r) => isAppropriateNext(r, ref));
+	}
+
+	function _applyPaneFilters(rows: BrowserRow[]): BrowserRow[] {
+		return _applyNextOnly(_applyLibraryFilters(rows));
 	}
 
 	interface VisibleSearchResult {
@@ -542,7 +557,7 @@
 		// Find mode: keep full list (no filter); TrackTable highlights matches.
 		if (searchMode === 'find') {
 			return {
-				rows: _applyNextOnly(
+				rows: _applyPaneFilters(
 					sortRows(
 						filterRows(pane.rows, '', hideBrokenForActivePane),
 						pane.sort_key,
@@ -561,7 +576,7 @@
 				autoPlayRankOf
 			);
 			const fallback = resolveSearchFilterFallback(
-				_applyNextOnly(unfilteredRows),
+				_applyPaneFilters(unfilteredRows),
 				unfilteredRows,
 				_searchFilterNames(false)
 			);
@@ -569,7 +584,7 @@
 		}
 		const unfilteredRows = visibleRowsOf(pane, false, autoPlayRankOf);
 		const fallback = resolveSearchFilterFallback(
-			_applyNextOnly(visibleRowsOf(pane, hideBrokenForActivePane, autoPlayRankOf)),
+			_applyPaneFilters(visibleRowsOf(pane, hideBrokenForActivePane, autoPlayRankOf)),
 			unfilteredRows,
 			pane.search.trim() === '' ? [] : _searchFilterNames(true)
 		);
@@ -693,6 +708,10 @@
 			return nextOnlyRef === null
 				? 'next-only: load a track with key+BPM (master preferred) to filter'
 				: 'no appropriate next tracks in this list (Camelot + BPM ±6% or half/double ≤15)';
+		} else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.remixes_filter) {
+			return 'no remixes in this list (title markers: remix/bootleg/rework/VIP/edit)';
+		} else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.vocals_filter) {
+			return 'no tracks here with >5 lines of lyrics (Vocals filter)';
 		} else if (visibleRows.length === 0) return 'empty playlist';
 		else return null;
 	});
@@ -1644,7 +1663,10 @@
 			artwork_status: wire.artwork_status,
 			rb_meta: null,
 			revealed: false,
-			match_context: null
+			match_context: null,
+			lyrics: wire.lyrics ?? null,
+			is_remix: wire.is_remix ?? null,
+			is_radio_edit: wire.is_radio_edit ?? null
 		};
 	}
 
@@ -1690,7 +1712,10 @@
 			artwork_status: track.artwork_status,
 			rb_meta: null,
 			revealed: false,
-			match_context: null
+			match_context: null,
+			lyrics: track.lyrics ?? null,
+			is_remix: track.is_remix ?? null,
+			is_radio_edit: track.is_radio_edit ?? null
 		};
 	}
 
@@ -2708,6 +2733,28 @@
 					</svg>
 					<span>Broken</span>
 				</label>
+				<label
+					class="remixes-filter"
+					title="Keep only remixes: title version markers (remix / bootleg / rework / VIP / non-radio edit). The lyric repair signal joins this once the full-library alignment run lands"
+				>
+					<input
+						type="checkbox"
+						checked={uiPrefs.remixes_filter}
+						onchange={(e) => setRemixesFilter(e.currentTarget.checked)}
+					/>
+					<span>Remixes</span>
+				</label>
+				<label
+					class="vocals-filter"
+					title="Keep only tracks with real word-level lyrics spanning more than 5 lines; tracks not yet run through the lyric pipeline are excluded"
+				>
+					<input
+						type="checkbox"
+						checked={uiPrefs.vocals_filter}
+						onchange={(e) => setVocalsFilter(e.currentTarget.checked)}
+					/>
+					<span>Vocals</span>
+				</label>
 				<!--
 					pin 5e3ed689ad3a: this control used to live in `.search-options`,
 					which only renders while the search box is focused or non-empty, so
@@ -2878,22 +2925,6 @@
 			/>
 		{/if}
 	</div>
-	<div class="library-health" aria-label="library processing health">
-		{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
-			<button
-				type="button"
-				class:complete={dot.state === 'complete'}
-				class:incomplete={dot.state === 'incomplete'}
-				class:unavailable={dot.state === 'unavailable'}
-				class:error={dot.state === 'error'}
-				class="health-dot"
-				aria-label={`${dot.label}: ${dot.detail}`}
-			>
-				<span aria-hidden="true"></span>
-				<span class="health-popover" role="tooltip"><strong>{dot.label}</strong><br />{dot.detail}</span>
-			</button>
-		{/each}
-	</div>
 	<div class="bottom-bar">
 		<button
 			class="icon-btn rb-inert"
@@ -2909,6 +2940,26 @@
 		     (pin 571f4281ecea, the maintainer, Wed 2 Sep 2026). -->
 		<span class="wordmark">open dj</span>
 		<LibraryJobsChrome />
+		<div class="library-health" aria-label="library processing health">
+			{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
+				<button
+					type="button"
+					class:complete={dot.state === 'complete'}
+					class:incomplete={dot.state === 'incomplete'}
+					class:unavailable={dot.state === 'unavailable'}
+					class:error={dot.state === 'error'}
+					class="health-dot"
+					aria-label={`${dot.label}: ${dot.detail}`}
+				>
+					<span aria-hidden="true"></span>
+				</button>
+			{/each}
+			<div class="health-popover" role="tooltip">
+				{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
+					<p><strong>{dot.label}</strong><br />{dot.detail}</p>
+				{/each}
+			</div>
+		</div>
 		<!-- The build identity lives at the RIGHT end of this tray on
 		     /performance. It used to be position:fixed bottom-left, sitting on
 		     top of the connectivity dots. The root layout mounts it in the app
@@ -3077,7 +3128,9 @@
 		font-size: var(--rb-fs-label);
 	}
 	.hide-broken,
-	.next-only {
+	.next-only,
+	.remixes-filter,
+	.vocals-filter {
 		display: inline-flex;
 		align-items: center;
 		gap: 3px;
@@ -3087,11 +3140,15 @@
 		cursor: pointer;
 	}
 	.hide-broken:hover,
-	.next-only:hover {
+	.next-only:hover,
+	.remixes-filter:hover,
+	.vocals-filter:hover {
 		color: var(--rb-text);
 	}
 	.hide-broken input,
-	.next-only input {
+	.next-only input,
+	.remixes-filter input,
+	.vocals-filter input {
 		width: 10px;
 		height: 10px;
 		margin: 0;
@@ -3203,11 +3260,11 @@
 		text-overflow: ellipsis;
 	}
 	.library-health {
-		position: absolute;
-		right: 28px;
-		bottom: 22px;
+		position: relative;
 		display: flex;
+		align-items: center;
 		gap: 3px;
+		flex-shrink: 0;
 		z-index: 6;
 	}
 	.health-dot {
@@ -3238,7 +3295,7 @@
 		display: none;
 		position: absolute;
 		right: 0;
-		bottom: 16px;
+		bottom: calc(100% + 4px);
 		min-width: 180px;
 		max-width: 320px;
 		padding: 6px 8px;
@@ -3251,8 +3308,14 @@
 		white-space: normal;
 		box-shadow: 0 3px 10px rgb(0 0 0 / 40%);
 	}
-	.health-dot:hover .health-popover,
-	.health-dot:focus-visible .health-popover { display: block; }
+	.health-popover p {
+		margin: 0 0 4px;
+	}
+	.health-popover p:last-child {
+		margin-bottom: 0;
+	}
+	.library-health:hover .health-popover,
+	.library-health:focus-within .health-popover { display: block; }
 	.wordmark {
 		color: var(--rb-text-dim);
 		font-size: var(--rb-fs-label);

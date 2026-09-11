@@ -268,7 +268,7 @@ export interface PerformanceDeckSnapshot {
 	stems: StemDeckState;
 	loop: LoopState | null;
 	/** The saved SAFE slot is engine truth, so agents can verify a resize did
-	 * not leave a stale snapshot that natural-end recovery could restore. */
+	 * not leave a stale snapshot that out-crossing engage could restore. */
 	safety_loop: SafetyLoopSlot | null;
 	/** Loop cluster view state, so an agent that can drive the interval grid
 	 * can also read back which mode and window it landed on. */

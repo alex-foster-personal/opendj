@@ -57,6 +57,9 @@ def track(
     rb_cues_pco2: list[dict[str, Any]] | None = None,
     rb_ext_readable: bool = True,
     rb_pvdi: bool = False,
+    rb_vocal_regions: list[dict[str, float]] | None = None,
+    own_vocal_regions: list[dict[str, float]] | None = None,
+    duration_s: float | None = None,
 ) -> dict[str, Any]:
     """One library-shaped row. Absent fields stay explicit None, never defaulted later."""
     row: dict[str, Any] = {
@@ -70,6 +73,9 @@ def track(
         "rb_pssi": rb_pssi,
         "rb_ext_readable": rb_ext_readable,
         "rb_pvdi": rb_pvdi,
+        "rb_vocal_regions": rb_vocal_regions,
+        "own_vocal_regions": own_vocal_regions,
+        "duration_s": duration_s,
     }
     if rb_phrases is not None:
         row["rb_phrases"] = rb_phrases
@@ -112,6 +118,7 @@ def payload(
     }
     if round_n is not None:
         body["round"] = round_n
+        body["parity_round"] = round_n
     return body
 
 
@@ -248,6 +255,77 @@ def round1_fixture() -> dict[str, Any]:
     )
 
 
+def round1_vocal_fixture() -> dict[str, Any]:
+    """Round 1 vocal PVDI cases on the same BPM/Key rows as round 0."""
+    return payload(
+        [
+            track(
+                "exact-128",
+                rb_pvdi=True,
+                rb_vocal_regions=[{"start_s": 10.0, "end_s": 90.0}],
+                own_vocal_regions=[{"start_s": 10.5, "end_s": 89.5}],
+                duration_s=100.0,
+            ),
+            track(
+                "exact-key-c",
+                rb_key_scale_name="C",
+                own_key_camelot="8B",
+                own_key_openkey="1d",
+                rb_pvdi=True,
+                rb_vocal_regions=[],
+                own_vocal_regions=[],
+                duration_s=100.0,
+            ),
+            track(
+                "bpm-within-0.1",
+                own_bpm=128.08,
+                rb_pvdi=True,
+                rb_vocal_regions=[{"start_s": 0.0, "end_s": 30.0}],
+                own_vocal_regions=[{"start_s": 70.0, "end_s": 100.0}],
+                duration_s=100.0,
+            ),
+            track(
+                "bpm-octave-half",
+                own_bpm=64.0,
+                rb_pvdi=True,
+                rb_vocal_regions=[],
+                own_vocal_regions=[{"start_s": 20.0, "end_s": 80.0}],
+                duration_s=100.0,
+            ),
+            track(
+                "key-relative",
+                rb_key_scale_name="C",
+                own_key_camelot="8A",
+                own_key_openkey="1m",
+                rb_pvdi=True,
+                rb_vocal_regions=[{"start_s": 5.0, "end_s": 40.0}],
+                own_vocal_regions=[{"start_s": 6.0, "end_s": 38.0}],
+            ),
+            track("missing-rb-bpm", rb_bpm_x100=None, rb_pvdi=False),
+            track("missing-rb-key", rb_key_scale_name=None, rb_pvdi=False),
+            track(
+                "no-own-bpm",
+                own_bpm=None,
+                rb_pvdi=True,
+                rb_vocal_regions=[{"start_s": 5.0, "end_s": 50.0}],
+                own_vocal_regions=None,
+            ),
+            track(
+                "no-own-key",
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_pvdi=True,
+                rb_vocal_regions=[{"start_s": 15.0, "end_s": 60.0}],
+                own_vocal_regions=[{"start_s": 15.0, "end_s": 58.0}],
+                duration_s=100.0,
+            ),
+            track("ungradable-key-all", rb_key_scale_name="All", rb_pvdi=False),
+            track("absent-audio", present=False),
+        ],
+        round_n=1,
+    )
+
+
 _REFERENCE_PHRASES: list[dict[str, Any]] = [
     {"start_s": 0.0, "end_s": 16.0, "kind": 2, "mood": 2},
     {"start_s": 16.0, "end_s": 32.0, "kind": 4, "mood": 2},
@@ -337,5 +415,6 @@ def round1_phrase_fixture() -> dict[str, Any]:
                 rb_pssi=False,
                 own_phrases=_REFERENCE_PHRASES,
             ),
-        ]
+        ],
+        round_n=1,
     )

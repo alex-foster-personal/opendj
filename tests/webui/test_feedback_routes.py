@@ -260,6 +260,7 @@ def test_feedback_paths_present_in_openapi(fb: TestClient) -> None:
         "/api/v1/feedback/todos",
         "/api/v1/feedback/todos/{todo_id}",
         "/api/v1/feedback/comments",
+        "/api/v1/feedback/comments/{comment_id}/replies",
         "/api/v1/feedback/general",
         "/api/v1/feedback/archive",
     ):

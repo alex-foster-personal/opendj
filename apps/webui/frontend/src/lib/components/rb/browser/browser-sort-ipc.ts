@@ -10,6 +10,7 @@ const BROWSER_SORT_KEYS = [
 	'time',
 	'energy',
 	'genre',
+	'lyrics',
 	'autoplay'
 ] as const;
 

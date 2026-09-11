@@ -1,12 +1,35 @@
 <script lang="ts">
 	import type { Track } from '$lib/api';
-	let { track, selected = false, onclick }: { track: Track; selected?: boolean; onclick?: () => void } = $props();
+	let {
+		track,
+		selected = false,
+		onclick,
+		ontemporefedit
+	}: {
+		track: Track;
+		selected?: boolean;
+		onclick?: () => void;
+		ontemporefedit?: (stableId: string, x: number, y: number) => void;
+	} = $props();
+
+	function _openTempoPrefEdit(event: MouseEvent): void {
+		event.preventDefault();
+		event.stopPropagation();
+		ontemporefedit?.(track.stable_id, event.clientX, event.clientY);
+	}
 </script>
 
-<tr onclick={onclick} class:selected>
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<tr onclick={onclick} class:selected data-stable-id={track.stable_id}>
 	<td>{track.title ?? '(untitled)'}</td>
 	<td>{track.artist ?? ''}</td>
-	<td>{track.bpm ?? ''}</td>
+	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+	<td
+		class="c-bpm"
+		oncontextmenu={_openTempoPrefEdit}
+		title="right-click to set preferred tempo / playable range"
+	>{track.bpm ?? ''}</td>
 	<td>{track.key ?? ''}</td>
 	<td>
 		{#if track.rating != null}

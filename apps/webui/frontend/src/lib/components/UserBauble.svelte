@@ -1,6 +1,10 @@
 <!--
   Circular account bauble for the top-right of the app shell.
 
+  Sign-in is per browser profile: the session is an httpOnly cookie stored
+  only in this profile's jar, so another Chrome profile or Safari stays
+  signed out until the operator signs in there too.
+
   Signed out: a plain circle with a generic avatar outline. Clicking it
   starts Google sign-in and navigates to the consent screen.
 

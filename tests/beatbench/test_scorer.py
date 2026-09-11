@@ -16,16 +16,23 @@ Each test states its acceptance criterion in the form "if <scenario> then
 
 from __future__ import annotations
 
+import inspect
 import math
+from pathlib import Path
 
 import pytest
 
+from apps.analysis_bench import rounds
 from apps.analysis_bench.scorers import beatgrid_lane
 from apps.analysis_bench.scorers.beatgrid import (
     BEAT_TOLERANCE_S,
+    FIXED_TEMPO_F_REGRESSION_TOL,
     SCORER_VERSION,
     WEIGHTS_NOT_RELEASED,
+    FixedTempoFRegression,
+    apply_fixed_tempo_f_guard,
     classify_tempo_relation,
+    evaluate_fixed_tempo_f_shift,
     grid_is_dynamic,
     partition_counts,
     percentile,
@@ -392,3 +399,118 @@ def test_rendered_table_shows_weights_not_released() -> None:
     })
     assert "Masked Diffusion Beat This!" in lane_md
     assert WEIGHTS_NOT_RELEASED in lane_md
+
+
+# ----- Fixed-tempo F regression guard (NATIVE-01, issue #2053) -----------
+
+
+def _thin_as_raised_threshold(times: list[float], stride: int = 8) -> list[float]:
+    """Stand-in for raising the `minimal` keep-threshold: drop every stride-th beat."""
+    return [t for i, t in enumerate(times) if i % stride != 0]
+
+
+def _report(*, candidate_f: float, promotion_figure: float | None) -> dict:
+    payload = {
+        "lane": "beatgrid",
+        "scorer_version": SCORER_VERSION,
+        "bundle": {"lane": "beatgrid", "version": "v1", "bundle_id": "abc123"},
+        "table": "| candidate | n |\n|---|---|\n| beat_this | 1 |",
+        "arms": {
+            "beat_this": {"role": "candidate", "fixed": {"f_measure_mean": candidate_f}},
+            "truth_offset": {"role": "positive_control"},
+            "constant_128": {"role": "negative_control"},
+        },
+    }
+    if promotion_figure is not None:
+        payload["promotion_figure"] = promotion_figure
+    return payload
+
+
+@pytest.mark.requirement("NATIVE-01")
+def test_evaluate_shift_greater_than_tol_is_regression() -> None:
+    """[if] a minimal post-processor threshold change moves fixed-tempo F by more than 0.01 [then] the round records it as a regression and the promotion figure is not updated, [else stop]."""
+    shift = evaluate_fixed_tempo_f_shift(1.0, 0.989)
+    assert shift.is_regression is True
+    assert shift.delta == pytest.approx(0.011)
+
+
+@pytest.mark.requirement("NATIVE-01")
+def test_evaluate_shift_of_exactly_0_01_is_not_a_regression() -> None:
+    """[if] the change moves F by 0.01 or less [then] the round proceeds as today, [else stop]."""
+    shift = evaluate_fixed_tempo_f_shift(1.0, 0.99)
+    assert shift.is_regression is False
+    assert evaluate_fixed_tempo_f_shift(1.0, 1.0).is_regression is False
+
+
+@pytest.mark.requirement("NATIVE-01")
+def test_a_threshold_change_that_moves_fixed_f_by_more_than_0_01_is_a_regression(
+    tmp_path: Path,
+) -> None:
+    """[if] a minimal post-processor threshold change moves fixed-tempo F by more than 0.01 [then] the round records it as a regression and the promotion figure is not updated, [else stop]."""
+    ref = click_grid(128.0, 64)
+    baseline_f = score_positions(ref, ref).f_measure
+    mutated_f = score_positions(ref, _thin_as_raised_threshold(ref)).f_measure
+    assert abs(mutated_f - baseline_f) > FIXED_TEMPO_F_REGRESSION_TOL
+    report = _report(candidate_f=mutated_f, promotion_figure=baseline_f)
+    log = tmp_path / "log.md"
+    log.write_text("## Experiment log\n", encoding="utf-8")
+    before = log.read_text(encoding="utf-8")
+    with pytest.raises(rounds.RoundError) as excinfo:
+        rounds.append_round(log, "beatgrid", report, floor=2, host="test")
+    assert "regression" in str(excinfo.value).lower()
+    assert "promotion" in str(excinfo.value).lower()
+    assert report["promotion"]["regression"] is True
+    assert report["promotion"]["updated"] is False
+    assert report["promotion"]["fixed_tempo_f"] == pytest.approx(baseline_f)
+    assert report["promotion"]["delta"] > FIXED_TEMPO_F_REGRESSION_TOL
+    assert log.read_text(encoding="utf-8") == before
+
+
+@pytest.mark.requirement("NATIVE-01")
+def test_a_threshold_change_that_moves_fixed_f_by_at_most_0_01_proceeds(
+    tmp_path: Path,
+) -> None:
+    """[if] the change moves F by 0.01 or less [then] the round proceeds as today, [else stop]."""
+    log = tmp_path / "log.md"
+    log.write_text("## Experiment log\n", encoding="utf-8")
+
+    report_identical = _report(candidate_f=1.0, promotion_figure=1.0)
+    number = rounds.append_round(log, "beatgrid", report_identical, floor=2, host="test")
+    assert number == 2
+    assert "### beatgrid bench round 2" in log.read_text(encoding="utf-8")
+    assert report_identical["promotion"]["regression"] is False
+    assert report_identical["promotion"]["updated"] is True
+    assert report_identical["promotion"]["fixed_tempo_f"] == pytest.approx(1.0)
+
+    log.write_text("## Experiment log\n", encoding="utf-8")
+    report_boundary = _report(candidate_f=0.99, promotion_figure=1.0)
+    rounds.append_round(log, "beatgrid", report_boundary, floor=2, host="test")
+    assert report_boundary["promotion"]["regression"] is False
+    assert report_boundary["promotion"]["updated"] is True
+    assert report_boundary["promotion"]["fixed_tempo_f"] == pytest.approx(0.99)
+
+
+@pytest.mark.requirement("NATIVE-01")
+def test_without_a_promotion_figure_the_round_proceeds_as_today(tmp_path: Path) -> None:
+    """[if] the change moves F by 0.01 or less [then] the round proceeds as today, [else stop]."""
+    report = _report(candidate_f=0.5, promotion_figure=None)
+    log = tmp_path / "log.md"
+    log.write_text("## Experiment log\n", encoding="utf-8")
+    rounds.append_round(log, "beatgrid", report, floor=2, host="test")
+    assert "promotion" not in report
+
+
+@pytest.mark.requirement("NATIVE-01")
+def test_removing_the_fixed_tempo_f_guard_goes_red(tmp_path: Path) -> None:
+    """[if] the guard is removed [then] its test goes red (mutation control), [else stop]."""
+    ref = click_grid(128.0, 64)
+    baseline_f = score_positions(ref, ref).f_measure
+    mutated_f = score_positions(ref, _thin_as_raised_threshold(ref)).f_measure
+    report = _report(candidate_f=mutated_f, promotion_figure=baseline_f)
+    with pytest.raises(FixedTempoFRegression):
+        apply_fixed_tempo_f_guard(report)
+    source = inspect.getsource(evaluate_fixed_tempo_f_shift)
+    assert "FIXED_TEMPO_F_REGRESSION_TOL" in source
+    assert "is_regression" in source
+    posted = inspect.getsource(rounds.append_round)
+    assert "apply_fixed_tempo_f_guard" in posted
