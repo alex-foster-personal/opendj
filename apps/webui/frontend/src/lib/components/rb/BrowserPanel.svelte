@@ -31,11 +31,20 @@
 	import { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
 	import {
 		libraryHealthDot as _computeLibraryHealthDot,
-		type LibraryHealthDot,
+		type LibraryHealthDot
+	} from '$lib/rb/library-health-dots';
+	import {
 		plannedTitle,
 		anyDeckPlaying,
 		createPlayingGate,
-		resolveRowVocals
+		resolveRowVocals,
+		isAppropriateNext,
+		resolveSearchFilterFallback,
+		selectSearchFilterFallback,
+		enqueueLibraryJobsBatched,
+		libraryJobsStore,
+		LibraryJobsChrome,
+		type NextOnlyRef
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -56,10 +65,6 @@
 		recordLibraryLoadTiming
 	} from '$lib/rb/library-perf';
 	import type { FilterDebounce, FilterSettle } from '$lib/rb/library-perf';
-	import {
-		ANALYSIS_COLORS,
-		jobProgress
-	} from '$lib/rb/job-progress.svelte';
 	import {
 		dispatchPerformanceCommand,
 		registerPerformanceBrowserAdapter,
@@ -94,12 +99,6 @@
 		PLAYLIST_TREE_WIDTH_MAX,
 		PLAYLIST_TREE_WIDTH_MIN
 	} from '$lib/rb/prefs.svelte';
-	import {
-		isAppropriateNext,
-		resolveSearchFilterFallback,
-		selectSearchFilterFallback,
-		type NextOnlyRef
-	} from '$lib/rb/next-only-filter';
 	import { pushToast } from '$lib/stores.svelte';
 	import {
 		isCurrentBrowserSearch,
@@ -748,20 +747,28 @@
 		// FAST PATH: the engine tells us the moment a track changes, from any
 		// writer (this tab, another tab, the CLI, an agent). One targeted
 		// refetch, no idle polling.
-		// Every trigger here goes through `_libraryRefreshGate`, never through
+		// Pane-row refetches go through `_libraryRefreshGate`, never through
 		// `_refreshLibraryRowsOnce` directly: the gate decides WHEN a background
 		// refetch is allowed to run, and its coalescer guarantees it is only
-		// ever one refetch.
+		// ever one refetch. Playlist TREE names refresh immediately on
+		// `playlists` / resync (see the handlers below); that is cheap and is
+		// user-visible undo/redo state.
 		const unsubscribeTracks = subscribeKind('tracks', () => _libraryRefreshGate.request());
-		// Another tab or API client creating/deleting a playlist must not leave
-		// the "N playlists found" health-dot total stale until this tab does a
-		// local playlist op or a reload.
-		const unsubscribePlaylists = subscribeKind('playlists', () =>
-			_libraryRefreshGate.request()
-		);
+		// Tree names are user-visible undo/redo state (v1). The playing-gated
+		// full library refetch can be in flight, deferred, or throw after its
+		// GET /playlists snapshot, which left the history panel enabled while
+		// the renamed row never appeared (#1888). Refresh names immediately;
+		// the gate still refreshes pane membership and the health-dot total.
+		const unsubscribePlaylists = subscribeKind('playlists', () => {
+			void _refreshPlaylists();
+			_libraryRefreshGate.request();
+		});
 		// A resync means the bus knows it missed events but not which, so the
 		// only sound response is to refetch as if everything changed.
-		const unsubscribeResync = subscribeResync(() => _libraryRefreshGate.request());
+		const unsubscribeResync = subscribeResync(() => {
+			void _refreshPlaylists();
+			_libraryRefreshGate.request();
+		});
 		// DEGRADED PATH: the poll is deliberately kept, not deleted. When the
 		// WS is down (daemon restarting, engine built without the hub) it is
 		// the only thing keeping this pane honest. It is 60s rather than
@@ -1247,9 +1254,13 @@
 	}
 
 	async function _refreshPlaylists(): Promise<void> {
-		playlists = await listPlaylistsHydrated();
-		_playlistsWriteEpoch += 1;
-		await _sweepBlankPlaylists(playlists);
+		try {
+			playlists = await listPlaylistsHydrated();
+			_playlistsWriteEpoch += 1;
+			await _sweepBlankPlaylists(playlists);
+		} catch (exc) {
+			console.error(`[playlists] refresh failed: ${String(exc)}`);
+		}
 	}
 
 	/**
@@ -2790,6 +2801,8 @@
 			onrowvisible={rowVisible}
 			onremoverow={removeRow}
 			onreorder={reorderRows}
+			onstemsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'stems', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
+			onlyricsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'lyrics', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
 			ongenrefilter={genreFilter}
 			{genreFilterUntil}
 			searchQuery={pane.search}
@@ -2877,18 +2890,7 @@
 		<!-- This is our own app, not the vendor whose library format it reads
 		     (pin 571f4281ecea, the maintainer, Wed 2 Sep 2026). -->
 		<span class="wordmark">open dj</span>
-		{#if jobProgress.ribbon()}
-			{@const ribbon = jobProgress.ribbon()!}
-			<span
-				class="job-ribbon"
-				style={`--job:${ANALYSIS_COLORS[ribbon.kind]}; --pct:${Math.max(0.02, ribbon.progress)}`}
-				title={`${ribbon.label} offload`}
-				aria-label={ribbon.label}
-			>
-				<span class="job-ribbon-fill"></span>
-				<span class="job-ribbon-label">{ribbon.label}</span>
-			</span>
-		{/if}
+		<LibraryJobsChrome />
 		<!-- The build identity lives at the RIGHT end of this tray on
 		     /performance. It used to be position:fixed bottom-left, sitting on
 		     top of the connectivity dots. The root layout mounts it in the app

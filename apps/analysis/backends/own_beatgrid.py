@@ -183,7 +183,19 @@ def run_runner(audio_path: Path, checkpoint: Path, *, device: str) -> dict[str, 
                 f"beat_this_runner.py exited 0 but wrote no {out_path}; stdout "
                 f"tail: {completed.stdout.strip()[-400:]}"
             )
-        return json.loads(out_path.read_text(encoding="utf-8"))
+        try:
+            payload = json.loads(out_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise RunnerPayloadError(
+                f"beat_this_runner.py exited 0 but wrote JSON this backend cannot "
+                f"parse from {out_path}: {exc}"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise RunnerPayloadError(
+                f"beat_this_runner.py exited 0 but wrote a {type(payload).__name__}, "
+                "not an object"
+            )
+        return payload
 
 
 #-----------------------------------------------------------------------------

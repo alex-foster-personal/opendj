@@ -1,0 +1,58 @@
+{
+  "schema_version": 2,
+  "capture_implementation": "/tmp/capture.sh@0123456789abcdef0123456789abcdef01234567",
+  "hostname": "silver",
+  "library_scale": {
+    "present": false,
+    "reason": "library-scale fixture is absent; the 2-track bench is not a library-scale number",
+    "track_count": null
+  },
+  "machine_tag": "silver-squeeze-cpu-80",
+  "measured_app_build_sha": "0123456789abcdef0123456789abcdef01234567",
+  "captures": {
+    "after": {
+      "app_build_dirty": false,
+      "app_build_sha": "0123456789abcdef0123456789abcdef01234567",
+      "deck_load_ms": 100.0,
+      "frontend_build_dirty": false,
+      "frontend_build_sha": "0123456789abcdef0123456789abcdef01234567",
+      "ui_latency_ms": 20.0,
+      "xrun_boundary_ack": false,
+      "xrun_session_id": "session-1",
+      "xruns": 1
+    },
+    "baseline": {
+      "app_build_dirty": false,
+      "app_build_sha": "0123456789abcdef0123456789abcdef01234567",
+      "deck_load_ms": 100.0,
+      "frontend_build_dirty": false,
+      "frontend_build_sha": "0123456789abcdef0123456789abcdef01234567",
+      "ui_latency_ms": 20.0,
+      "xrun_boundary_ack": true,
+      "xrun_session_id": "session-1",
+      "xruns": 0
+    },
+    "during": {
+      "app_build_dirty": false,
+      "app_build_sha": "0123456789abcdef0123456789abcdef01234567",
+      "deck_load_ms": 100.0,
+      "frontend_build_dirty": false,
+      "frontend_build_sha": "0123456789abcdef0123456789abcdef01234567",
+      "ui_latency_ms": 20.0,
+      "xrun_boundary_ack": false,
+      "xrun_session_id": "session-1",
+      "xruns": 1
+    },
+    "pressure-end": {
+      "app_build_dirty": false,
+      "app_build_sha": "0123456789abcdef0123456789abcdef01234567",
+      "deck_load_ms": 100.0,
+      "frontend_build_dirty": false,
+      "frontend_build_sha": "0123456789abcdef0123456789abcdef01234567",
+      "ui_latency_ms": 20.0,
+      "xrun_boundary_ack": true,
+      "xrun_session_id": "session-1",
+      "xruns": 1
+    }
+  }
+}

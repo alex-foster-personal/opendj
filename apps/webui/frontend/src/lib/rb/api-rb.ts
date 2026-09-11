@@ -19,6 +19,7 @@ import type { components } from '$lib/api-types';
 import { api, unwrap } from '$lib/api/client';
 import { RbApiError } from './api-rb-error';
 import { currentAnlzFetchGeneration } from './anlz-fetch-generation';
+import { optionalResources } from './optional-resource-availability';
 import type { AnlzCue, AnlzData } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
@@ -125,6 +126,7 @@ function _parseTrackLyrics(raw: unknown, stableId: string): TrackLyrics {
 
 /** GET cached line-synced lyrics. A 404 is the explicit no-lyrics state. */
 export async function fetchTrackLyrics(stableId: string): Promise<TrackLyrics | null> {
+	if (optionalResources(stableId).lyrics === false) return null;
 	try {
 		return _parseTrackLyrics(
 			await _fetchJson<unknown>(`/api/v1/tracks/${encodeURIComponent(stableId)}/lyrics`),
@@ -862,13 +864,29 @@ function _validateStemManifest(raw: unknown, stableId: string): StemArtifactMani
 	return manifest as StemArtifactManifest;
 }
 
-/** Probe the optional precomputed artifact capability. A 404 is published as
- * explicit unavailable state; malformed or broken artifacts still reject. */
+/** Probe the optional precomputed artifact capability. A 404 or HTTP 200
+ * unavailable envelope is published as explicit unavailable state; malformed
+ * or broken artifacts still reject. */
 export async function probeStemArtifact(stableId: string): Promise<StemArtifactProbe> {
+	if (optionalResources(stableId).stems === false) {
+		return { status: 'unavailable', error: 'no stem bundle advertised' };
+	}
 	try {
 		const raw = await _fetchJson<unknown>(
 			`/api/v1/tracks/${encodeURIComponent(stableId)}/stems`
 		);
+		if (
+			typeof raw === 'object' &&
+			raw !== null &&
+			'status' in raw &&
+			(raw as { status: unknown }).status === 'unavailable'
+		) {
+			const code =
+				'code' in raw ? String((raw as { code: unknown }).code) : 'STEM_BUNDLE_NOT_FOUND';
+			const message =
+				'message' in raw ? String((raw as { message: unknown }).message) : 'no stem bundle';
+			return { status: 'unavailable', error: `${code}: ${message}` };
+		}
 		return { status: 'ready', manifest: _validateStemManifest(raw, stableId) };
 	} catch (error) {
 		if (error instanceof RbApiError && error.status === 404) {

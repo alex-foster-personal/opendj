@@ -369,6 +369,100 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analysis/backfill/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Backfill Batches */
+        get: operations["list_backfill_batches_api_v1_analysis_backfill_batches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis/backfill/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Backfill
+         * @description Cancel pending AND in-flight items. Terminal ones are left alone.
+         */
+        post: operations["cancel_backfill_api_v1_analysis_backfill_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis/backfill/enqueue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enqueue Backfill
+         * @description Plan a batch: admission rule, worker count, band, refusals by name.
+         */
+        post: operations["enqueue_backfill_api_v1_analysis_backfill_enqueue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis/backfill/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Backfill Progress */
+        get: operations["get_backfill_progress_api_v1_analysis_backfill_progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis/backfill/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Backfill
+         * @description Put cancelled and abandoned items back; re-plan from what is LEFT.
+         */
+        post: operations["resume_backfill_api_v1_analysis_backfill_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analysis/source": {
         parameters: {
             query?: never;
@@ -505,7 +599,11 @@ export interface paths {
         };
         /**
          * Whoami
-         * @description The signed-in user, or 401. The bauble polls this on mount.
+         * @description Who is signed in.
+         *
+         *     Always HTTP 200. Signed-out is identity, not a fault: the bauble polls
+         *     this on mount, Chromium logs every 4xx, and the AutoPlay hunt treats
+         *     4xx as a finding. Destructive routes that need a user still 401.
          */
         get: operations["whoami_api_v1_auth_me_get"];
         put?: never;
@@ -525,6 +623,30 @@ export interface paths {
         };
         /** Get Kpi Ledger */
         get: operations["get_kpi_ledger_api_v1_bench_kpi_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bench/perf-kpi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Perf Kpi Ledger
+         * @description The perf ledger as cards: same kpis + snapshots shape as /bench/kpi.
+         *
+         *     One snapshot per (date, round), in date order, so the sparkline runs from
+         *     the first perf measurement to the latest. Cards with the most real readings
+         *     come first: the ones that have actually travelled lead the panel.
+         */
+        get: operations["get_perf_kpi_ledger_api_v1_bench_perf_kpi_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1475,6 +1597,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Library Jobs */
+        get: operations["list_library_jobs_api_v1_library_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library-jobs/enqueue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue Library Jobs */
+        post: operations["enqueue_library_jobs_api_v1_library_jobs_enqueue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library-jobs/{lane}/{stable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Reorder Library Job */
+        patch: operations["reorder_library_job_api_v1_library_jobs__lane___stable_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/library-jobs/{lane}/{stable_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Library Job */
+        post: operations["cancel_library_job_api_v1_library_jobs__lane___stable_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/readiness": {
         parameters: {
             query?: never;
@@ -1737,28 +1927,6 @@ export interface paths {
         /**
          * Machine Pressure
          * @description What the machine is under right now, cheap enough to poll.
-         *
-         *     THE conditions half of a trustworthy timing row. The browser stamps this
-         *     onto every deck-load row (see the frontend's machine-pressure.ts) so a
-         *     latency number carries the machine state it was measured under instead of
-         *     leaving a later reader to guess, which is how the register ended up with a
-         *     waveform decode recorded at both 0.73 s and 7.53 s for the same work.
-         *
-         *     Read-only, and deliberately NOT a process walk: this is sysctl, getloadavg
-         *     and vm_stat, never the `ps` table that `/processes` reads out of the
-         *     probe's log. It is served from a short shared cache and every response
-         *     states the age of the sample it is handing back, so a caller can tell a
-         *     fresh reading from a five-second-old one rather than assuming.
-         *
-         *     Agent-native: `curl $ENGINE/api/v1/performance/telemetry/pressure`.
-         *
-         *     Fields, all optional and all absent rather than zero when unreadable:
-         *     `load_avg_1m` (1-minute kernel load average), `mem_free_mb` (free physical
-         *     memory, `vm_stat` Pages free only, not the wider reclaimable figure),
-         *     `swap_used_mb` (swap in use), `cache_age_ms` (age of this sample).
-         *     `available` is false, with a `reason`, when nothing could be measured --
-         *     notably inside the packaged app, whose payload stages `apps` and not
-         *     `scripts`.
          */
         get: operations["machine_pressure_api_v1_performance_telemetry_pressure_get"];
         put?: never;
@@ -2895,6 +3063,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/lyrics-cached-ids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Cached Ids
+         * @description List cached lyric timelines so the UI can skip explicit cache-miss reads.
+         */
+        get: operations["get_lyrics_cached_ids_api_v1_tracks_lyrics_cached_ids_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/quality-ladder": {
         parameters: {
             query?: never;
@@ -3165,7 +3353,7 @@ export interface paths {
         };
         /**
          * Get Stem Manifest
-         * @description Return a stored v1 manifest only after all four files prove alignment.
+         * @description Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.
          */
         get: operations["get_stem_manifest_api_v1_tracks__stable_id__stems_get"];
         put?: never;
@@ -3813,6 +4001,240 @@ export interface components {
              * @default false
              */
             rekordbox: boolean;
+        };
+        /** BackfillBatchIn */
+        BackfillBatchIn: {
+            /** Batch Id */
+            batch_id: string;
+        };
+        /** BackfillBatchListOut */
+        BackfillBatchListOut: {
+            /** Batches */
+            batches: components["schemas"]["BackfillBatchSummaryOut"][];
+        };
+        /**
+         * BackfillBatchSummaryOut
+         * @description One batch without its items.
+         */
+        BackfillBatchSummaryOut: {
+            /**
+             * Band
+             * @description under_20_min, 20_to_45_min, over_45_min, or empty
+             */
+            band: string;
+            /** Batch Id */
+            batch_id: string;
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** Created At */
+            created_at: string;
+            /** Note */
+            note?: string | null;
+            /**
+             * State
+             * @description queued, running, cancelled or done
+             */
+            state: string;
+            /**
+             * Workers
+             * @description Concurrency the admission rule chose from the LONGEST ADMITTED track, never from core count
+             */
+            workers: number;
+        };
+        /** BackfillCancelOut */
+        BackfillCancelOut: {
+            /** Batch Id */
+            batch_id: string;
+            /**
+             * Cancelled
+             * @description Open items (pending and in flight) cancelled
+             */
+            cancelled: number;
+        };
+        /** BackfillEnqueueIn */
+        BackfillEnqueueIn: {
+            /**
+             * Backend
+             * @description Producer to run, own_<lane>.<producer>
+             */
+            backend: string;
+            /**
+             * Lane
+             * @description beatgrid, key, waveform, loudness or vocal
+             */
+            lane: string;
+            /**
+             * Note
+             * @description Why this batch exists
+             */
+            note?: string | null;
+            /**
+             * Stable Ids
+             * @description Tracks to (re)analyze
+             */
+            stable_ids: string[];
+        };
+        /**
+         * BackfillEnqueueOut
+         * @description The plan. ``offered = admitted + refused``, always.
+         */
+        BackfillEnqueueOut: {
+            /** Admitted */
+            admitted: number;
+            /** Band */
+            band: string;
+            /** Batch Id */
+            batch_id: string;
+            memory_model: components["schemas"]["BackfillMemoryModelOut"];
+            /** Offered */
+            offered: number;
+            /** Refused */
+            refused: number;
+            /** Workers */
+            workers: number;
+        };
+        /**
+         * BackfillItemOut
+         * @description One (track, lane) of work and its state.
+         *
+         *     Named apart from ``routes/queues.py``'s ``QueueItemOut`` (the M3 triage
+         *     queues) for the reason its neighbour ``routes/analysis_queue.py`` states:
+         *     two Pydantic models sharing a name collapse into ONE OpenAPI schema and
+         *     the loser is served under the winner's shape. That collision really
+         *     happened here on the first openapi dump, and it is silent -- the schema
+         *     still validates, it just describes the wrong thing.
+         */
+        BackfillItemOut: {
+            /**
+             * Attempts
+             * @description Claims so far; a kill-and-resume shows 2
+             */
+            attempts: number;
+            /** Backend */
+            backend: string;
+            /**
+             * Duration S
+             * @description Audio length the admission rule budgeted with
+             */
+            duration_s?: number | null;
+            /** Lane */
+            lane: string;
+            /**
+             * Predicted Peak Mb
+             * @description floor + slope x minutes under the batch model
+             */
+            predicted_peak_mb?: number | null;
+            /**
+             * Reason
+             * @description Named cause for a refusal, a failure, or a skip
+             */
+            reason?: string | null;
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * State
+             * @description pending, running, done, skipped, failed, refused, cancelled, or deferred (path vanished; retryable on resume)
+             */
+            state: string;
+        };
+        /**
+         * BackfillMemoryModelOut
+         * @description The measured peak-RSS model a batch was budgeted under.
+         *
+         *     Carried on every response rather than assumed, because the floor and
+         *     slope are MEASURED numbers for one producer version. A report that says
+         *     "budgeted at 330 MB + 68 MB/min" without saying where that was measured
+         *     is quoting a remembered figure.
+         */
+        BackfillMemoryModelOut: {
+            /**
+             * Backend
+             * @description Producer the model was measured on
+             */
+            backend: string;
+            /**
+             * Floor Mb
+             * @description Predicted peak RSS at zero length, MB
+             */
+            floor_mb: number;
+            /**
+             * Measured On
+             * @description Host, method and date of the measurement
+             */
+            measured_on: string;
+            /**
+             * Producer Version
+             * @description Version it was measured at
+             */
+            producer_version: string;
+            /**
+             * Slope Mb Per Min
+             * @description Extra peak RSS per audio minute, MB
+             */
+            slope_mb_per_min: number;
+            /**
+             * Source
+             * @description Document the measurement is recorded in
+             */
+            source: string;
+        };
+        /**
+         * BackfillProgressOut
+         * @description Aggregate + per-item progress. ``counts`` carries every state's zero.
+         */
+        BackfillProgressOut: {
+            /** Band */
+            band: string;
+            /** Batch Id */
+            batch_id: string;
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** Created At */
+            created_at: string;
+            /** Items */
+            items: components["schemas"]["BackfillItemOut"][];
+            /** Memory Model */
+            memory_model: {
+                [key: string]: unknown;
+            };
+            /**
+             * Settled
+             * @description done + skipped + failed + refused
+             */
+            settled: number;
+            /** State */
+            state: string;
+            /** Total */
+            total: number;
+            /** Updated At */
+            updated_at: string;
+            /** Workers */
+            workers: number;
+        };
+        /** BackfillResumeOut */
+        BackfillResumeOut: {
+            /** Band */
+            band: string;
+            /** Batch Id */
+            batch_id: string;
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /**
+             * Requeued
+             * @description Items put back in the queue
+             */
+            requeued: number;
+            /**
+             * Workers
+             * @description Concurrency re-planned from what is LEFT
+             */
+            workers: number;
         };
         /** BeatgridFallbackOut */
         BeatgridFallbackOut: {
@@ -5117,6 +5539,23 @@ export interface components {
              */
             slot: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
         };
+        /**
+         * HubStorageErrorBody
+         * @description The ``detail`` object a storage-full push carries.
+         */
+        HubStorageErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * HubStorageErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        HubStorageErrorResponse: {
+            detail: components["schemas"]["HubStorageErrorBody"];
+        };
         /** JobIn */
         JobIn: {
             /** External Ref */
@@ -5288,6 +5727,70 @@ export interface components {
              */
             red_enabled: boolean;
         };
+        /** LibraryJobEnqueueIn */
+        LibraryJobEnqueueIn: {
+            /**
+             * Lane
+             * @enum {string}
+             */
+            lane: "stems" | "lyrics";
+            /**
+             * Placement
+             * @default next
+             * @enum {string}
+             */
+            placement: "next" | "tail";
+            /** Stable Ids */
+            stable_ids: string[];
+        };
+        /** LibraryJobEnqueueOut */
+        LibraryJobEnqueueOut: {
+            /** Already Running */
+            already_running: string[];
+            /** Items */
+            items: components["schemas"]["LibraryJobItemOut"][];
+            /** Lane */
+            lane: string;
+        };
+        /** LibraryJobItemOut */
+        LibraryJobItemOut: {
+            /** Attempts */
+            attempts: number;
+            /** Detail */
+            detail: string | null;
+            /** Enqueued At */
+            enqueued_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Lane */
+            lane: string;
+            /** Position */
+            position: number;
+            /** Reason */
+            reason: string | null;
+            /** Stable Id */
+            stable_id: string;
+            /** Started At */
+            started_at: string | null;
+            /** State */
+            state: string;
+        };
+        /** LibraryJobListOut */
+        LibraryJobListOut: {
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** Items */
+            items: components["schemas"]["LibraryJobItemOut"][];
+            /** Lane */
+            lane: string;
+        };
+        /** LibraryJobReorderIn */
+        LibraryJobReorderIn: {
+            /** Before Stable Id */
+            before_stable_id?: string | null;
+        };
         /**
          * LibraryReadinessCounts
          * @description Every field is a count over ``present``, never over ``total_tracks``.
@@ -5427,6 +5930,14 @@ export interface components {
             text: string;
         };
         /**
+         * LyricsCachedIdsOut
+         * @description Stable ids with a valid on-disk lyrics-cache entry.
+         */
+        LyricsCachedIdsOut: {
+            /** Stable Ids */
+            stable_ids?: string[];
+        };
+        /**
          * LyricsUnavailableOut
          * @description The explicit cache-miss response for one track's lyrics timeline.
          */
@@ -5496,6 +6007,12 @@ export interface components {
         };
         /** MeOut */
         MeOut: {
+            /** Signed In */
+            signed_in: boolean;
+            user: components["schemas"]["MeUserOut"] | null;
+        };
+        /** MeUserOut */
+        MeUserOut: {
             /** Avatar Url */
             avatar_url: string | null;
             /** Created At */
@@ -7302,6 +7819,28 @@ export interface components {
             where: string;
         };
         /**
+         * StemUnavailableOut
+         * @description HTTP 200 empty-state: no stored bundle for this stable_id.
+         */
+        StemUnavailableOut: {
+            /**
+             * Code
+             * @default STEM_BUNDLE_NOT_FOUND
+             * @constant
+             */
+            code: "STEM_BUNDLE_NOT_FOUND";
+            /** Message */
+            message: string;
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * Status
+             * @default unavailable
+             * @constant
+             */
+            status: "unavailable";
+        };
+        /**
          * StemsPlanOut
          * @description What separating this library at this tier would take.
          */
@@ -7732,6 +8271,8 @@ export interface components {
              * @enum {string}
              */
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
+            /** Auto Cues Available */
+            auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
             /** Created At */
@@ -7759,6 +8300,8 @@ export interface components {
             key?: string | null;
             /** Last Played At */
             last_played_at?: string | null;
+            /** Lyrics Available */
+            lyrics_available: boolean;
             /** Notes */
             notes?: string | null;
             /**
@@ -7786,6 +8329,8 @@ export interface components {
             stems: {
                 [key: string]: unknown;
             };
+            /** Stems Available */
+            stems_available: boolean;
             /**
              * Tags
              * @default []
@@ -7818,6 +8363,10 @@ export interface components {
             album?: string | null;
             /** Artist */
             artist?: string | null;
+            /** Artwork Available */
+            artwork_available: boolean | null;
+            /** Auto Cues Available */
+            auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
             /** Created At */
@@ -7832,6 +8381,8 @@ export interface components {
             key?: string | null;
             /** Last Played At */
             last_played_at?: string | null;
+            /** Lyrics Available */
+            lyrics_available: boolean;
             /** Notes */
             notes?: string | null;
             /**
@@ -7850,6 +8401,8 @@ export interface components {
             rating?: number | null;
             /** Stable Id */
             stable_id: string;
+            /** Stems Available */
+            stems_available: boolean;
             /**
              * Tags
              * @default []
@@ -9184,6 +9737,171 @@ export interface operations {
             };
         };
     };
+    list_backfill_batches_api_v1_analysis_backfill_batches_get: {
+        parameters: {
+            query?: {
+                /** @description Newest first */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillBatchListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_backfill_api_v1_analysis_backfill_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackfillBatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillCancelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enqueue_backfill_api_v1_analysis_backfill_enqueue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackfillEnqueueIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillEnqueueOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_backfill_progress_api_v1_analysis_backfill_progress_get: {
+        parameters: {
+            query: {
+                /** @description Batch to report on */
+                batch_id: string;
+                /** @description Cap on listed items. Never caps the reported counts. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillProgressOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_backfill_api_v1_analysis_backfill_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackfillBatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillResumeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_analysis_source_api_v1_analysis_source_get: {
         parameters: {
             query?: never;
@@ -9409,6 +10127,28 @@ export interface operations {
         };
     };
     get_kpi_ledger_api_v1_bench_kpi_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_perf_kpi_ledger_api_v1_bench_perf_kpi_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -11185,6 +11925,141 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_library_jobs_api_v1_library_jobs_get: {
+        parameters: {
+            query: {
+                /** @description stems or lyrics */
+                lane: "stems" | "lyrics";
+                /** @description settled to include terminals */
+                include?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryJobListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enqueue_library_jobs_api_v1_library_jobs_enqueue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LibraryJobEnqueueIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryJobEnqueueOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_library_job_api_v1_library_jobs__lane___stable_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lane: "stems" | "lyrics";
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LibraryJobReorderIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryJobItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_library_job_api_v1_library_jobs__lane___stable_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lane: "stems" | "lyrics";
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryJobItemOut"];
                 };
             };
             /** @description Validation Error */
@@ -13551,6 +14426,15 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description The hub sqlite database cannot take the write. code: SYNC_HUB_STORAGE. */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HubStorageErrorResponse"];
+                };
+            };
         };
     };
     status_api_v1_sync_status_get: {
@@ -13675,6 +14559,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lyrics_cached_ids_api_v1_tracks_lyrics_cached_ids_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsCachedIdsOut"];
                 };
             };
         };
@@ -14198,7 +15102,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StemManifestOut"];
+                    "application/json": components["schemas"]["StemManifestOut"] | components["schemas"]["StemUnavailableOut"];
                 };
             };
             /** @description Validation Error */

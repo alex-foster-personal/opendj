@@ -1114,6 +1114,421 @@
         "title": "AutoSyncOut",
         "type": "object"
       },
+      "BackfillBatchIn": {
+        "properties": {
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch_id"
+        ],
+        "title": "BackfillBatchIn",
+        "type": "object"
+      },
+      "BackfillBatchListOut": {
+        "properties": {
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/BackfillBatchSummaryOut"
+            },
+            "title": "Batches",
+            "type": "array"
+          }
+        },
+        "required": [
+          "batches"
+        ],
+        "title": "BackfillBatchListOut",
+        "type": "object"
+      },
+      "BackfillBatchSummaryOut": {
+        "description": "One batch without its items.",
+        "properties": {
+          "band": {
+            "description": "under_20_min, 20_to_45_min, over_45_min, or empty",
+            "title": "Band",
+            "type": "string"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "state": {
+            "description": "queued, running, cancelled or done",
+            "title": "State",
+            "type": "string"
+          },
+          "workers": {
+            "description": "Concurrency the admission rule chose from the LONGEST ADMITTED track, never from core count",
+            "title": "Workers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "state",
+          "workers",
+          "band",
+          "created_at",
+          "counts"
+        ],
+        "title": "BackfillBatchSummaryOut",
+        "type": "object"
+      },
+      "BackfillCancelOut": {
+        "properties": {
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "cancelled": {
+            "description": "Open items (pending and in flight) cancelled",
+            "title": "Cancelled",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "cancelled"
+        ],
+        "title": "BackfillCancelOut",
+        "type": "object"
+      },
+      "BackfillEnqueueIn": {
+        "properties": {
+          "backend": {
+            "description": "Producer to run, own_<lane>.<producer>",
+            "title": "Backend",
+            "type": "string"
+          },
+          "lane": {
+            "description": "beatgrid, key, waveform, loudness or vocal",
+            "title": "Lane",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why this batch exists",
+            "title": "Note"
+          },
+          "stable_ids": {
+            "description": "Tracks to (re)analyze",
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids",
+          "lane",
+          "backend"
+        ],
+        "title": "BackfillEnqueueIn",
+        "type": "object"
+      },
+      "BackfillEnqueueOut": {
+        "description": "The plan. ``offered = admitted + refused``, always.",
+        "properties": {
+          "admitted": {
+            "title": "Admitted",
+            "type": "integer"
+          },
+          "band": {
+            "title": "Band",
+            "type": "string"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "memory_model": {
+            "$ref": "#/components/schemas/BackfillMemoryModelOut"
+          },
+          "offered": {
+            "title": "Offered",
+            "type": "integer"
+          },
+          "refused": {
+            "title": "Refused",
+            "type": "integer"
+          },
+          "workers": {
+            "title": "Workers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "offered",
+          "admitted",
+          "refused",
+          "workers",
+          "band",
+          "memory_model"
+        ],
+        "title": "BackfillEnqueueOut",
+        "type": "object"
+      },
+      "BackfillItemOut": {
+        "description": "One (track, lane) of work and its state.\n\nNamed apart from ``routes/queues.py``'s ``QueueItemOut`` (the M3 triage\nqueues) for the reason its neighbour ``routes/analysis_queue.py`` states:\ntwo Pydantic models sharing a name collapse into ONE OpenAPI schema and\nthe loser is served under the winner's shape. That collision really\nhappened here on the first openapi dump, and it is silent -- the schema\nstill validates, it just describes the wrong thing.",
+        "properties": {
+          "attempts": {
+            "description": "Claims so far; a kill-and-resume shows 2",
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "backend": {
+            "title": "Backend",
+            "type": "string"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Audio length the admission rule budgeted with",
+            "title": "Duration S"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          },
+          "predicted_peak_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "floor + slope x minutes under the batch model",
+            "title": "Predicted Peak Mb"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Named cause for a refusal, a failure, or a skip",
+            "title": "Reason"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "state": {
+            "description": "pending, running, done, skipped, failed, refused, cancelled, or deferred (path vanished; retryable on resume)",
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "lane",
+          "backend",
+          "state",
+          "attempts"
+        ],
+        "title": "BackfillItemOut",
+        "type": "object"
+      },
+      "BackfillMemoryModelOut": {
+        "description": "The measured peak-RSS model a batch was budgeted under.\n\nCarried on every response rather than assumed, because the floor and\nslope are MEASURED numbers for one producer version. A report that says\n\"budgeted at 330 MB + 68 MB/min\" without saying where that was measured\nis quoting a remembered figure.",
+        "properties": {
+          "backend": {
+            "description": "Producer the model was measured on",
+            "title": "Backend",
+            "type": "string"
+          },
+          "floor_mb": {
+            "description": "Predicted peak RSS at zero length, MB",
+            "title": "Floor Mb",
+            "type": "number"
+          },
+          "measured_on": {
+            "description": "Host, method and date of the measurement",
+            "title": "Measured On",
+            "type": "string"
+          },
+          "producer_version": {
+            "description": "Version it was measured at",
+            "title": "Producer Version",
+            "type": "string"
+          },
+          "slope_mb_per_min": {
+            "description": "Extra peak RSS per audio minute, MB",
+            "title": "Slope Mb Per Min",
+            "type": "number"
+          },
+          "source": {
+            "description": "Document the measurement is recorded in",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "backend",
+          "producer_version",
+          "floor_mb",
+          "slope_mb_per_min",
+          "measured_on",
+          "source"
+        ],
+        "title": "BackfillMemoryModelOut",
+        "type": "object"
+      },
+      "BackfillProgressOut": {
+        "description": "Aggregate + per-item progress. ``counts`` carries every state's zero.",
+        "properties": {
+          "band": {
+            "title": "Band",
+            "type": "string"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BackfillItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "memory_model": {
+            "additionalProperties": true,
+            "title": "Memory Model",
+            "type": "object"
+          },
+          "settled": {
+            "description": "done + skipped + failed + refused",
+            "title": "Settled",
+            "type": "integer"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workers": {
+            "title": "Workers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "state",
+          "workers",
+          "band",
+          "memory_model",
+          "counts",
+          "total",
+          "settled",
+          "created_at",
+          "updated_at",
+          "items"
+        ],
+        "title": "BackfillProgressOut",
+        "type": "object"
+      },
+      "BackfillResumeOut": {
+        "properties": {
+          "band": {
+            "title": "Band",
+            "type": "string"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "requeued": {
+            "description": "Items put back in the queue",
+            "title": "Requeued",
+            "type": "integer"
+          },
+          "workers": {
+            "description": "Concurrency re-planned from what is LEFT",
+            "title": "Workers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "requeued",
+          "workers",
+          "band",
+          "counts"
+        ],
+        "title": "BackfillResumeOut",
+        "type": "object"
+      },
       "BeatgridFallbackOut": {
         "properties": {
           "anlz_available": {
@@ -4668,6 +5083,38 @@
         "title": "HotCueSlotOut",
         "type": "object"
       },
+      "HubStorageErrorBody": {
+        "description": "The ``detail`` object a storage-full push carries.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "HubStorageErrorBody",
+        "type": "object"
+      },
+      "HubStorageErrorResponse": {
+        "description": "FastAPI wraps an ``HTTPException`` detail under ``detail``.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/HubStorageErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "HubStorageErrorResponse",
+        "type": "object"
+      },
       "JobIn": {
         "properties": {
           "external_ref": {
@@ -5074,6 +5521,203 @@
         "title": "LevelCalibrationOut",
         "type": "object"
       },
+      "LibraryJobEnqueueIn": {
+        "properties": {
+          "lane": {
+            "enum": [
+              "stems",
+              "lyrics"
+            ],
+            "title": "Lane",
+            "type": "string"
+          },
+          "placement": {
+            "default": "next",
+            "enum": [
+              "next",
+              "tail"
+            ],
+            "title": "Placement",
+            "type": "string"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "lane",
+          "stable_ids"
+        ],
+        "title": "LibraryJobEnqueueIn",
+        "type": "object"
+      },
+      "LibraryJobEnqueueOut": {
+        "properties": {
+          "already_running": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Already Running",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryJobItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lane",
+          "items",
+          "already_running"
+        ],
+        "title": "LibraryJobEnqueueOut",
+        "type": "object"
+      },
+      "LibraryJobItemOut": {
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "enqueued_at": {
+            "title": "Enqueued At",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lane",
+          "stable_id",
+          "state",
+          "reason",
+          "detail",
+          "position",
+          "attempts",
+          "enqueued_at",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "LibraryJobItemOut",
+        "type": "object"
+      },
+      "LibraryJobListOut": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryJobItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lane",
+          "items",
+          "counts"
+        ],
+        "title": "LibraryJobListOut",
+        "type": "object"
+      },
+      "LibraryJobReorderIn": {
+        "properties": {
+          "before_stable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Stable Id"
+          }
+        },
+        "title": "LibraryJobReorderIn",
+        "type": "object"
+      },
       "LibraryReadinessCounts": {
         "description": "Every field is a count over ``present``, never over ``total_tracks``.",
         "properties": {
@@ -5425,6 +6069,20 @@
         "title": "LyricLineOut",
         "type": "object"
       },
+      "LyricsCachedIdsOut": {
+        "description": "Stable ids with a valid on-disk lyrics-cache entry.",
+        "properties": {
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "title": "LyricsCachedIdsOut",
+        "type": "object"
+      },
       "LyricsUnavailableOut": {
         "description": "The explicit cache-miss response for one track's lyrics timeline.",
         "properties": {
@@ -5599,6 +6257,30 @@
       },
       "MeOut": {
         "properties": {
+          "signed_in": {
+            "title": "Signed In",
+            "type": "boolean"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MeUserOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "signed_in",
+          "user"
+        ],
+        "title": "MeOut",
+        "type": "object"
+      },
+      "MeUserOut": {
+        "properties": {
           "avatar_url": {
             "anyOf": [
               {
@@ -5641,7 +6323,7 @@
           "avatar_url",
           "created_at"
         ],
-        "title": "MeOut",
+        "title": "MeUserOut",
         "type": "object"
       },
       "MemberOut": {
@@ -10415,6 +11097,37 @@
         "title": "StemTierOut",
         "type": "object"
       },
+      "StemUnavailableOut": {
+        "description": "HTTP 200 empty-state: no stored bundle for this stable_id.",
+        "properties": {
+          "code": {
+            "const": "STEM_BUNDLE_NOT_FOUND",
+            "default": "STEM_BUNDLE_NOT_FOUND",
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "unavailable",
+            "default": "unavailable",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "message"
+        ],
+        "title": "StemUnavailableOut",
+        "type": "object"
+      },
       "StemsPlanOut": {
         "description": "What separating this library at this tier would take.",
         "properties": {
@@ -11563,6 +12276,10 @@
             "title": "Artwork Status",
             "type": "string"
           },
+          "auto_cues_available": {
+            "title": "Auto Cues Available",
+            "type": "boolean"
+          },
           "bpm": {
             "anyOf": [
               {
@@ -11662,6 +12379,10 @@
             ],
             "title": "Last Played At"
           },
+          "lyrics_available": {
+            "title": "Lyrics Available",
+            "type": "boolean"
+          },
           "notes": {
             "anyOf": [
               {
@@ -11731,6 +12452,10 @@
             "title": "Stems",
             "type": "object"
           },
+          "stems_available": {
+            "title": "Stems Available",
+            "type": "boolean"
+          },
           "tags": {
             "default": [],
             "items": {
@@ -11765,13 +12490,16 @@
           "created_at",
           "updated_at",
           "has_rb_mapping",
+          "lyrics_available",
+          "auto_cues_available",
+          "stems_available",
+          "artwork_available",
           "preview_b64",
           "preview_max",
           "file_exists",
           "quality",
           "vocals",
           "stems",
-          "artwork_available",
           "artwork_status",
           "energy",
           "energy_source",
@@ -11831,6 +12559,21 @@
               }
             ],
             "title": "Artist"
+          },
+          "artwork_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Available"
+          },
+          "auto_cues_available": {
+            "title": "Auto Cues Available",
+            "type": "boolean"
           },
           "bpm": {
             "anyOf": [
@@ -11895,6 +12638,10 @@
             ],
             "title": "Last Played At"
           },
+          "lyrics_available": {
+            "title": "Lyrics Available",
+            "type": "boolean"
+          },
           "notes": {
             "anyOf": [
               {
@@ -11934,6 +12681,10 @@
             "title": "Stable Id",
             "type": "string"
           },
+          "stems_available": {
+            "title": "Stems Available",
+            "type": "boolean"
+          },
           "tags": {
             "default": [],
             "items": {
@@ -11962,7 +12713,11 @@
           "stable_id",
           "created_at",
           "updated_at",
-          "has_rb_mapping"
+          "has_rb_mapping",
+          "lyrics_available",
+          "auto_cues_available",
+          "stems_available",
+          "artwork_available"
         ],
         "title": "TrackOut",
         "type": "object"
@@ -14706,6 +15461,237 @@
         ]
       }
     },
+    "/api/v1/analysis/backfill/batches": {
+      "get": {
+        "operationId": "list_backfill_batches_api_v1_analysis_backfill_batches_get",
+        "parameters": [
+          {
+            "description": "Newest first",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Newest first",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillBatchListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Backfill Batches",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis/backfill/cancel": {
+      "post": {
+        "description": "Cancel pending AND in-flight items. Terminal ones are left alone.",
+        "operationId": "cancel_backfill_api_v1_analysis_backfill_cancel_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackfillBatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillCancelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Backfill",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis/backfill/enqueue": {
+      "post": {
+        "description": "Plan a batch: admission rule, worker count, band, refusals by name.",
+        "operationId": "enqueue_backfill_api_v1_analysis_backfill_enqueue_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackfillEnqueueIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillEnqueueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enqueue Backfill",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis/backfill/progress": {
+      "get": {
+        "operationId": "get_backfill_progress_api_v1_analysis_backfill_progress_get",
+        "parameters": [
+          {
+            "description": "Batch to report on",
+            "in": "query",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "description": "Batch to report on",
+              "title": "Batch Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cap on listed items. Never caps the reported counts.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "description": "Cap on listed items. Never caps the reported counts.",
+              "maximum": 1000,
+              "minimum": 0,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillProgressOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Backfill Progress",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis/backfill/resume": {
+      "post": {
+        "description": "Put cancelled and abandoned items back; re-plan from what is LEFT.",
+        "operationId": "resume_backfill_api_v1_analysis_backfill_resume_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackfillBatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillResumeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Backfill",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
     "/api/v1/analysis/source": {
       "get": {
         "operationId": "get_analysis_source_api_v1_analysis_source_get",
@@ -14953,7 +15939,7 @@
     },
     "/api/v1/auth/me": {
       "get": {
-        "description": "The signed-in user, or 401. The bauble polls this on mount.",
+        "description": "Who is signed in.\n\nAlways HTTP 200. Signed-out is identity, not a fault: the bauble polls\nthis on mount, Chromium logs every 4xx, and the AutoPlay hunt treats\n4xx as a finding. Destructive routes that need a user still 401.",
         "operationId": "whoami_api_v1_auth_me_get",
         "responses": {
           "200": {
@@ -14991,6 +15977,30 @@
           }
         },
         "summary": "Get Kpi Ledger",
+        "tags": [
+          "bench"
+        ]
+      }
+    },
+    "/api/v1/bench/perf-kpi": {
+      "get": {
+        "description": "The perf ledger as cards: same kpis + snapshots shape as /bench/kpi.\n\nOne snapshot per (date, round), in date order, so the sparkline runs from\nthe first perf measurement to the latest. Cards with the most real readings\ncome first: the ones that have actually travelled lead the panel.",
+        "operationId": "get_perf_kpi_ledger_api_v1_bench_perf_kpi_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Perf Kpi Ledger Api V1 Bench Perf Kpi Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Perf Kpi Ledger",
         "tags": [
           "bench"
         ]
@@ -17301,6 +18311,233 @@
         ]
       }
     },
+    "/api/v1/library-jobs": {
+      "get": {
+        "operationId": "list_library_jobs_api_v1_library_jobs_get",
+        "parameters": [
+          {
+            "description": "stems or lyrics",
+            "in": "query",
+            "name": "lane",
+            "required": true,
+            "schema": {
+              "description": "stems or lyrics",
+              "enum": [
+                "stems",
+                "lyrics"
+              ],
+              "title": "Lane",
+              "type": "string"
+            }
+          },
+          {
+            "description": "settled to include terminals",
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "settled to include terminals",
+              "title": "Include"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryJobListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Library Jobs",
+        "tags": [
+          "library-jobs"
+        ]
+      }
+    },
+    "/api/v1/library-jobs/enqueue": {
+      "post": {
+        "operationId": "enqueue_library_jobs_api_v1_library_jobs_enqueue_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryJobEnqueueIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryJobEnqueueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enqueue Library Jobs",
+        "tags": [
+          "library-jobs"
+        ]
+      }
+    },
+    "/api/v1/library-jobs/{lane}/{stable_id}": {
+      "patch": {
+        "operationId": "reorder_library_job_api_v1_library_jobs__lane___stable_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lane",
+            "required": true,
+            "schema": {
+              "enum": [
+                "stems",
+                "lyrics"
+              ],
+              "title": "Lane",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryJobReorderIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryJobItemOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reorder Library Job",
+        "tags": [
+          "library-jobs"
+        ]
+      }
+    },
+    "/api/v1/library-jobs/{lane}/{stable_id}/cancel": {
+      "post": {
+        "operationId": "cancel_library_job_api_v1_library_jobs__lane___stable_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lane",
+            "required": true,
+            "schema": {
+              "enum": [
+                "stems",
+                "lyrics"
+              ],
+              "title": "Lane",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryJobItemOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Library Job",
+        "tags": [
+          "library-jobs"
+        ]
+      }
+    },
     "/api/v1/library/readiness": {
       "get": {
         "description": "Per-present-track readiness across beatgrid, waveform, stems, analysis, sync.\n\nRequirements (mini-PRD):\n  READY-01: GET /api/v1/library/readiness reports per-present-track and\n  aggregate readiness. Counts use the present (materialized local audio)\n  denominator, never all tracks rows.\n    [if] a track's file is not materialized [then] it is absent from\n    present, items, and every count\n    [if] a present track has no PQTZ, no own beatgrid lane ok, and no\n    usable downbeats_s [then] counts.beatgrid_missing includes it and an\n    axis=beatgrid item names it\n    [if] a present track has a stems directory that load_stem_bundle\n    rejects and no valid bundle in any configured root [then]\n    stems == corrupt on the item and both counts.stems_corrupt and\n    /ingest/coverage corrupt.stems are >= 1\n    [if] limit is 1 and many present tracks are not ready [then] items\n    has 1 row and counts.not_ready is still the full population\n    [if] a present track has a validateBeatGrid-passing grid [then]\n    sync_compatible is true without anyone engaging Beat Sync",
@@ -18133,7 +19370,7 @@
     },
     "/api/v1/performance/telemetry/pressure": {
       "get": {
-        "description": "What the machine is under right now, cheap enough to poll.\n\nTHE conditions half of a trustworthy timing row. The browser stamps this\nonto every deck-load row (see the frontend's machine-pressure.ts) so a\nlatency number carries the machine state it was measured under instead of\nleaving a later reader to guess, which is how the register ended up with a\nwaveform decode recorded at both 0.73 s and 7.53 s for the same work.\n\nRead-only, and deliberately NOT a process walk: this is sysctl, getloadavg\nand vm_stat, never the `ps` table that `/processes` reads out of the\nprobe's log. It is served from a short shared cache and every response\nstates the age of the sample it is handing back, so a caller can tell a\nfresh reading from a five-second-old one rather than assuming.\n\nAgent-native: `curl $ENGINE/api/v1/performance/telemetry/pressure`.\n\nFields, all optional and all absent rather than zero when unreadable:\n`load_avg_1m` (1-minute kernel load average), `mem_free_mb` (free physical\nmemory, `vm_stat` Pages free only, not the wider reclaimable figure),\n`swap_used_mb` (swap in use), `cache_age_ms` (age of this sample).\n`available` is false, with a `reason`, when nothing could be measured --\nnotably inside the packaged app, whose payload stages `apps` and not\n`scripts`.",
+        "description": "What the machine is under right now, cheap enough to poll.",
         "operationId": "machine_pressure_api_v1_performance_telemetry_pressure_get",
         "responses": {
           "200": {
@@ -20826,6 +22063,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "507": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubStorageErrorResponse"
+                }
+              }
+            },
+            "description": "The hub sqlite database cannot take the write. code: SYNC_HUB_STORAGE."
           }
         },
         "summary": "Push",
@@ -21120,6 +22367,28 @@
         ]
       }
     },
+    "/api/v1/tracks/lyrics-cached-ids": {
+      "get": {
+        "description": "List cached lyric timelines so the UI can skip explicit cache-miss reads.",
+        "operationId": "get_lyrics_cached_ids_api_v1_tracks_lyrics_cached_ids_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsCachedIdsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyrics Cached Ids",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
     "/api/v1/tracks/quality-ladder": {
       "get": {
         "description": "The six venue rungs, so the UI legend is not a second copy of them.",
@@ -21400,7 +22669,7 @@
     },
     "/api/v1/tracks/{stable_id}/auto-cues": {
       "get": {
-        "description": "PROPOSED hot cues from apps.analysis (META-04). Never committed cues.\n\nReturns HTTP 200 with ``proposals: []`` and ``backend=\"none\"`` when the\ntrack is in the library but has no analysis row yet. Unknown stable_id\nand unmatched ``?backend=`` still 404 with ``ANALYSIS_NOT_FOUND``.",
+        "description": "PROPOSED hot cues from apps.analysis (META-04). Never committed cues.",
         "operationId": "get_auto_cues_api_v1_tracks__stable_id__auto_cues_get",
         "parameters": [
           {
@@ -21889,7 +23158,7 @@
     },
     "/api/v1/tracks/{stable_id}/stems": {
       "get": {
-        "description": "Return a stored v1 manifest only after all four files prove alignment.",
+        "description": "Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.",
         "operationId": "get_stem_manifest_api_v1_tracks__stable_id__stems_get",
         "parameters": [
           {
@@ -21907,7 +23176,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StemManifestOut"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/StemManifestOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StemUnavailableOut"
+                    }
+                  ],
+                  "title": "Response Get Stem Manifest Api V1 Tracks  Stable Id  Stems Get"
                 }
               }
             },

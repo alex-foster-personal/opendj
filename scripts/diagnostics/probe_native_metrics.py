@@ -275,6 +275,75 @@ def _load_average() -> dict[str, float]:
     }
 
 
+def _vm_stat_page_count(output: str, label: str) -> int | None:
+    match = re.search(rf"^{label}:\s+(\d+)\.", output, re.MULTILINE)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def vm_stat_churn_snapshot() -> dict[str, int] | None:
+    """Swap/compressor counters from ``vm_stat``, or None when unreadable."""
+
+    try:
+        output = run_text(["vm_stat"], timeout=2.0)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+    header = re.search(r"page size of (\d+) bytes", output)
+    if header is None:
+        return None
+    page_size = int(header.group(1))
+    swapins = _vm_stat_page_count(output, "Swapins")
+    swapouts = _vm_stat_page_count(output, "Swapouts")
+    decompressions = _vm_stat_page_count(output, "Decompressions")
+    compressor_pages = _vm_stat_page_count(output, "Pages stored in compressor")
+    if swapins is None or swapouts is None or decompressions is None:
+        return None
+    snapshot: dict[str, int] = {
+        "swapins": swapins,
+        "swapouts": swapouts,
+        "decompressions": decompressions,
+        "page_size": page_size,
+    }
+    if compressor_pages is not None:
+        snapshot["compressor_pages"] = compressor_pages
+    return snapshot
+
+
+def churn_metrics_from_snapshots(
+    prior: dict[str, int] | None,
+    current: dict[str, int],
+    elapsed_s: float,
+    *,
+    swap_weight: int = 10,
+) -> dict[str, float]:
+    """Delta churn between two ``vm_stat_churn_snapshot`` readings."""
+
+    if prior is None or elapsed_s <= 0:
+        return {}
+    swap_delta = (current["swapins"] - prior["swapins"]) + (
+        current["swapouts"] - prior["swapouts"]
+    )
+    decomp_delta = current["decompressions"] - prior["decompressions"]
+    swap_rate = swap_delta / elapsed_s
+    decomp_rate = decomp_delta / elapsed_s
+    result: dict[str, float] = {
+        "swap_rate": round(swap_rate, 3),
+        "decomp_rate": round(decomp_rate, 3),
+        "churn_score": round(swap_rate * swap_weight + decomp_rate, 3),
+    }
+    prior_pages = prior.get("compressor_pages")
+    current_pages = current.get("compressor_pages")
+    page_size = current.get("page_size")
+    if (
+        isinstance(prior_pages, int)
+        and isinstance(current_pages, int)
+        and isinstance(page_size, int)
+    ):
+        result["compressed_mb"] = round_mb(current_pages * page_size)
+    return result
+
+
 def _vm_stat_free_mb() -> dict[str, float]:
     """Free physical memory, from ``vm_stat``'s page counters.
 

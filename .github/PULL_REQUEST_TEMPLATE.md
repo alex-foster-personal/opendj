@@ -7,6 +7,12 @@ Why are these changes necessary?
 ## Requirement ID(s)
 Which requirement ID(s) from `REQUIREMENTS.md` are touched? (e.g., SYNC-01)
 
+## ADR
+ADR: <ADR-NNNN or 'none, because ...'>
+See `docs/decisions/README.md`. Required when the diff touches `apps/cloud/`,
+`apps/engine_core/`, `apps/webui/server/state*`, `.planning/REQUIREMENTS.md`,
+or a top-level dependency file.
+
 ## Tests added
 - [ ] List tests added or link to test files
 - [ ] No tests required because: ...

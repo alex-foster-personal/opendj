@@ -130,11 +130,17 @@ def fingerprint_footer(fingerprint: str) -> str:
 
 
 def file_findings(
-    findings: Iterable[Finding], *, run_id: str, priority: str, github: GitHub
+    findings: Iterable[Finding],
+    *,
+    run_id: str,
+    priority: str,
+    github: GitHub,
+    extra_labels: tuple[str, ...] = (),
 ) -> FilingResult:
     """File each distinct failed fingerprint once, or add its repeat observation."""
     _validate_run_id(run_id)
     queue_label = _priority_label(priority)
+    extras = _validate_extra_labels(extra_labels)
     unique_failures = _unique_failures(findings)
     created: list[int] = []
     commented: list[int] = []
@@ -144,9 +150,11 @@ def file_findings(
             github.comment(existing, f"seen again at {finding.sha}, run {run_id}")
             commented.append(existing)
             continue
-        labels = _issue_labels(finding, run_id, queue_label)
+        labels = _issue_labels(finding, run_id, queue_label, extras)
         github.ensure_label("redteam", "Red-team fleet finding")
         github.ensure_label(f"redteam-run:{run_id}", f"Red-team fleet run {run_id}")
+        for extra in extras:
+            github.ensure_label(extra, f"Red-team extra label {extra}")
         created.append(github.create_issue(_issue_title(finding), _issue_body(finding), labels))
     return FilingResult(created=tuple(created), commented=tuple(commented))
 
@@ -168,13 +176,37 @@ def _validate_run_id(run_id: str) -> None:
 
 
 def _priority_label(priority: str) -> str:
-    if priority not in {"p0", "p1"}:
-        raise ValueError("priority must be p0 or p1")
+    if priority not in {"p0", "p1", "p2"}:
+        raise ValueError("priority must be p0, p1, or p2")
     return f"queue:{priority}"
 
 
-def _issue_labels(finding: Finding, run_id: str, queue_label: str) -> tuple[str, ...]:
-    return ("bug", "redteam", f"redteam-run:{run_id}", "queue:ready", queue_label, finding.surface)
+def _validate_extra_labels(extra_labels: tuple[str, ...]) -> tuple[str, ...]:
+    if not isinstance(extra_labels, tuple):
+        raise TypeError("extra_labels must be a tuple of strings")
+    cleaned: list[str] = []
+    for label in extra_labels:
+        if not isinstance(label, str) or not label.strip():
+            raise ValueError("extra labels must be non-empty strings")
+        if "\n" in label or "\r" in label:
+            raise ValueError("extra labels must be one line")
+        if label not in cleaned:
+            cleaned.append(label)
+    return tuple(cleaned)
+
+
+def _issue_labels(
+    finding: Finding, run_id: str, queue_label: str, extra_labels: tuple[str, ...] = ()
+) -> tuple[str, ...]:
+    return (
+        "bug",
+        "redteam",
+        f"redteam-run:{run_id}",
+        "queue:ready",
+        queue_label,
+        finding.surface,
+        *extra_labels,
+    )
 
 
 def _issue_title(finding: Finding) -> str:
@@ -209,7 +241,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--index", required=True, type=Path, help="REDTEAM-03 run index.jsonl")
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--priority", required=True, choices=("p0", "p1"))
+    parser.add_argument("--priority", required=True, choices=("p0", "p1", "p2"))
+    parser.add_argument(
+        "--label",
+        action="append",
+        default=[],
+        dest="labels",
+        help="Extra labels on created issues (repeatable). Track (g) uses --label red-team.",
+    )
     parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
     arguments = parser.parse_args()
     result = file_findings(
@@ -217,6 +256,7 @@ def main() -> int:
         run_id=arguments.run_id,
         priority=arguments.priority,
         github=GhGitHub(arguments.repo),
+        extra_labels=tuple(arguments.labels),
     )
     print(json.dumps({"created": result.created, "commented": result.commented}))
     return 0

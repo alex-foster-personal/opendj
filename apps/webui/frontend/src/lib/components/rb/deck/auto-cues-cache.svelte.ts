@@ -8,6 +8,7 @@
  * .svelte.ts extension is REQUIRED for the $state rune (RECON-FRONTEND 10.1).
  */
 import { fetchAutoCues, RbApiError, type AutoCuesOut } from '$lib/rb/auto-cues-api';
+import { optionalResources } from '$lib/rb/optional-resource-availability';
 
 export type AutoCuesEntry =
 	| { status: 'loading' }
@@ -20,6 +21,10 @@ const _cache = $state<Record<string, AutoCuesEntry>>({});
  * MUTATES rune state - call from $effect, never from $derived. */
 export function ensureAutoCues(stable_id: string): void {
 	if (_cache[stable_id] !== undefined) return;
+	if (optionalResources(stable_id).autoCues === false) {
+		_cache[stable_id] = { status: 'error', code: 'ANALYSIS_NOT_FOUND' };
+		return;
+	}
 	_cache[stable_id] = { status: 'loading' };
 	void fetchAutoCues(stable_id).then(
 		(data: AutoCuesOut) => {

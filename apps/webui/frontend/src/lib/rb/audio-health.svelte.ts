@@ -21,11 +21,32 @@ const WARN_HZ = 45;
 const CRIT_HZ = 30;
 const SAMPLE_MS = 500;
 
+/** Locked aliases for tests and the PerfMeters monitor (issue #1984). */
+export const HZ_METER_OK_HZ = WARN_HZ;
+export const HZ_METER_CRIT_HZ = CRIT_HZ;
+export const HZ_METER_SAMPLE_MS = SAMPLE_MS;
+export const HZ_METER_MAX_ABS_ERROR_HZ = 2;
+
 let _ticks = 0;
 let _windowStart = 0;
 let _hz = $state<number | null>(null);
 let _level = $state<AudioHealthLevel>('idle');
+let _tickHzRaw = $state<number | null>(null);
+let _qualityOk = $state(true);
 let _samplerId: ReturnType<typeof setInterval> | null = null;
+
+export function presentationTickHz(ticks: number, elapsedMs: number): number {
+	if (elapsedMs <= 0) return 0;
+	return (ticks * 1000) / elapsedMs;
+}
+
+export function hzMeterAbsError(meterHz: number, tickHz: number): number {
+	return Math.abs(meterHz - tickHz);
+}
+
+export function hzMeterQualityOk(meterHz: number, tickHz: number): boolean {
+	return hzMeterAbsError(meterHz, tickHz) <= HZ_METER_MAX_ABS_ERROR_HZ;
+}
 
 /** Waveform paint cadence, not audio or device health. A stutter is a gap over
  * two 60 Hz frames (34ms) during a real visible waveform draw. The latest
@@ -103,11 +124,13 @@ function _ensureSampler(): void {
 		const now = performance.now();
 		const elapsed = now - _windowStart;
 		if (elapsed <= 0) return;
-		const hz = (_ticks * 1000) / elapsed;
+		const tickHz = presentationTickHz(_ticks, elapsed);
 		_ticks = 0;
 		_windowStart = now;
-		if (hz < 1) {
+		if (tickHz < 1) {
 			_hz = null;
+			_tickHzRaw = null;
+			_qualityOk = true;
 			_level = 'idle';
 			// Idle exit: a whole window with no engine ticks means nothing is
 			// audible. noteAudioPresentationTick re-arms on the next publish,
@@ -115,8 +138,10 @@ function _ensureSampler(): void {
 			_stopSampler();
 			return;
 		}
-		const rounded = Math.round(hz);
+		const rounded = Math.round(tickHz);
 		_hz = rounded;
+		_tickHzRaw = tickHz;
+		_qualityOk = hzMeterQualityOk(rounded, tickHz);
 		if (rounded < CRIT_HZ) _level = 'crit';
 		else if (rounded < WARN_HZ) _level = 'warn';
 		else _level = 'ok';
@@ -141,6 +166,23 @@ export function audioHealthHz(): number | null {
 
 export function audioHealthLevel(): AudioHealthLevel {
 	return _level;
+}
+
+export function audioHealthQuality(): {
+	ok: boolean;
+	meterHz: number | null;
+	tickHz: number | null;
+	absError: number | null;
+} {
+	if (_hz === null || _tickHzRaw === null) {
+		return { ok: true, meterHz: _hz, tickHz: _tickHzRaw, absError: null };
+	}
+	return {
+		ok: _qualityOk,
+		meterHz: _hz,
+		tickHz: _tickHzRaw,
+		absError: hzMeterAbsError(_hz, _tickHzRaw)
+	};
 }
 
 /** Hover copy for the TopBar Hz readout. */

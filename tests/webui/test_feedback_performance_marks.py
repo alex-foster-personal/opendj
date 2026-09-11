@@ -1,13 +1,19 @@
-"""Real route and disk regressions for durable performance-feedback marks."""
+"""Real route and disk regressions for durable performance-feedback marks.
+
+[if] a performance mark is posted [then] it is stored on disk and readable back, [else stop].
+"""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.webui.server.app import create_app
+
+pytestmark = pytest.mark.requirement("PREF-02")
 
 
 def _app(data_dir: Path) -> TestClient:
@@ -105,6 +111,28 @@ def test_performance_marks_read_a_pre_990_record_missing_filter(tmp_path: Path) 
         created = client.post("/api/v1/feedback/performance-marks", json=_mark(2))
         assert created.status_code == 201
         assert created.json()["count"] == 2
+
+
+def test_performance_marks_round_trip_eq_and_loop(tmp_path: Path) -> None:
+    mark = _mark(1)
+    mark["mixer"]["channels"][0]["eq_low"] = 0.2
+    mark["mixer"]["channels"][0]["eq_mid"] = 0.4
+    mark["mixer"]["channels"][0]["eq_high"] = 0.8
+    with _app(tmp_path / "data") as client:
+        created = client.post("/api/v1/feedback/performance-marks", json=mark)
+        assert created.status_code == 201
+        last = created.json()["last_mark"]
+        channel = last["mixer"]["channels"][0]
+        assert channel["eq_low"] == 0.2
+        assert channel["eq_mid"] == 0.4
+        assert channel["eq_high"] == 0.8
+        assert last["decks"][0]["loop"] == {"in_ms": 1000.0, "out_ms": 2000.0}
+
+        persisted = client.get("/api/v1/feedback/performance-marks").json()["last_mark"]
+        assert persisted["mixer"]["channels"][0]["eq_low"] == 0.2
+        assert persisted["mixer"]["channels"][0]["eq_mid"] == 0.4
+        assert persisted["mixer"]["channels"][0]["eq_high"] == 0.8
+        assert persisted["decks"][0]["loop"] == {"in_ms": 1000.0, "out_ms": 2000.0}
 
 
 def test_performance_marks_keep_the_newest_four_hundred(tmp_path: Path) -> None:

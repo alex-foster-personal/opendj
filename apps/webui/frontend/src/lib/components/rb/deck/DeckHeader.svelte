@@ -4,6 +4,10 @@
 	// KEY SYNC, key badge + semitone nudge arrows,
 	// BEAT SYNC and exclusive MASTER stacked at the right.
 	import { artworkUrl } from '$lib/rb/api-rb';
+	import {
+		optionalResources,
+		shouldFetchArtwork
+	} from '$lib/rb/optional-resource-availability';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 	import {
 		DECK_IDS,
@@ -47,8 +51,13 @@
 	} = $props();
 
 	let artworkFailed: boolean = $state(false);
+	const artworkCap = $derived(
+		deck.stable_id === null ? 'unknown' : optionalResources(deck.stable_id).artwork
+	);
 	const artSrc: string | null = $derived(
-		deck.stable_id === null ? null : artworkUrl(deck.stable_id, 'orig')
+		deck.stable_id === null || !shouldFetchArtwork(deck.stable_id)
+			? null
+			: artworkUrl(deck.stable_id, 'orig')
 	);
 	$effect(() => {
 		// Reset the failure flag whenever the artwork target changes.
@@ -251,7 +260,12 @@
 						}}
 					/>
 				{:else}
-					<span class="art placeholder"></span>
+					<span
+						class="art placeholder"
+						title={artworkCap === null
+							? 'artwork could not be checked (tag reader not installed in this build)'
+							: undefined}
+					></span>
 				{/if}
 				<span class="art-eject" aria-hidden="true">⏏</span>
 			</button>

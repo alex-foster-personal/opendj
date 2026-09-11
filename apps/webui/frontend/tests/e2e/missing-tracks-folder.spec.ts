@@ -161,6 +161,9 @@ async function stubPerformanceApis(page: Page): Promise<void> {
 	await page.route(/\/api\/v1\/tracks(?:\?.*)?$/, (route) =>
 		route.fulfill({ json: { items: [], next_cursor: null } })
 	);
+	await page.route('**/api/v1/tracks/lyrics-cached-ids', (route) =>
+		route.fulfill({ json: { stable_ids: [] } })
+	);
 	await page.route('**/api/v1/tracks/*/rb-meta**', (route) =>
 		route.fulfill({
 			json: {
@@ -172,7 +175,9 @@ async function stubPerformanceApis(page: Page): Promise<void> {
 			}
 		})
 	);
-	await page.route('**/api/v1/auth/me', (route) => route.fulfill({ status: 401, json: {} }));
+	await page.route('**/api/v1/auth/me', (route) =>
+		route.fulfill({ status: 200, json: { signed_in: false, user: null } })
+	);
 	await page.route('**/api/v1/build-info', (route) => route.fulfill({ status: 404, json: {} }));
 	await page.route('**/api/v1/feedback/todos', (route) => route.fulfill({ json: { todos: [] } }));
 	await page.route('**/api/v1/feedback/comments', (route) => route.fulfill({ json: { comments: [] } }));

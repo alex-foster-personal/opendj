@@ -1,0 +1,138 @@
+/**
+ * PLAY-09 / issue #1878: AutoPlay cannot stay armed with every deck stopped.
+ *
+ * [if] AutoPlay is armed and every deck has been stopped for AUTO_PLAY_IDLE_DISARM_MS
+ *   with no pending master promotion [then] the pref disarms [⛔️ if aria-pressed
+ *   stays true and the hunt records stall:autoplay-idle].
+ * [if] a PLAY-08 stall is visible when idle disarm fires [then] the stall banner
+ *   stays up [⛔️ if disarming deletes the explanation the room still needs].
+ * [if] a deck starts playing again before the threshold [then] AutoPlay stays armed
+ *   [⛔️ if a brief pause between tracks disarms the feature].
+ */
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { mock, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+
+import { installTimerProbe, loadRuneModule } from './load-rune-module.mjs';
+import { loadTypeScriptModule } from './load-typescript.mjs';
+
+const POLL_SETTLE_MS = 900;
+const ENTRY = [
+	"export { installAutoPlay } from '$lib/rb/auto-play.svelte';",
+	"export { setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';",
+	"export { deckStates } from '$lib/rb/audio-engine.svelte';",
+	"export { readAutoPlayStall, noteAutoPlayExhaustion } from '$lib/rb/autoplay-stall.svelte';",
+	"export { AUTO_PLAY_IDLE_DISARM_MS, resetAutoPlayIdleClock } from '$lib/rb/autoplay-idle';"
+].join('\n');
+
+function settle() {
+	return new Promise((resolve) => setTimeout(resolve, POLL_SETTLE_MS));
+}
+
+function stopEveryDeck(mod) {
+	for (const id of [1, 2, 3, 4]) {
+		mod.deckStates[id].playing = false;
+	}
+}
+
+let autoPlay;
+
+test.before(async () => {
+	autoPlay = await loadTypeScriptModule('src/lib/rb/autoplay-idle.ts');
+});
+
+test('shouldDisarmAutoPlayIdle waits for the hunt threshold', () => {
+	const { shouldDisarmAutoPlayIdle, AUTO_PLAY_IDLE_DISARM_MS } = autoPlay;
+	const base = {
+		enabled: true,
+		any_playing: false,
+		pending_master: false,
+		idle_since_ms: 1_000,
+		now_ms: 1_000 + AUTO_PLAY_IDLE_DISARM_MS - 1
+	};
+	assert.equal(shouldDisarmAutoPlayIdle(base), false);
+	assert.equal(
+		shouldDisarmAutoPlayIdle({ ...base, now_ms: 1_000 + AUTO_PLAY_IDLE_DISARM_MS }),
+		true
+	);
+	assert.equal(shouldDisarmAutoPlayIdle({ ...base, any_playing: true }), false);
+	assert.equal(shouldDisarmAutoPlayIdle({ ...base, pending_master: true }), false);
+	assert.equal(shouldDisarmAutoPlayIdle({ ...base, enabled: false }), false);
+});
+
+test('RUNNING it: idle disarm drops the pref after every deck stops', async () => {
+	mock.timers.enable({ apis: ['Date'] });
+	const probe = installTimerProbe();
+	let uninstall = null;
+	let mod = null;
+	try {
+		mod = await loadRuneModule(ENTRY);
+		uninstall = mod.installAutoPlay();
+		await probe.flush();
+		assert.equal(mod.uiPrefs.auto_play_enabled, true);
+		stopEveryDeck(mod);
+		await settle();
+		mock.timers.tick(mod.AUTO_PLAY_IDLE_DISARM_MS + 1);
+		await settle();
+		assert.equal(
+			mod.uiPrefs.auto_play_enabled,
+			false,
+			'armed AutoPlay with nothing playing must not outlive the idle threshold'
+		);
+	} finally {
+		if (uninstall !== null) uninstall();
+		mod?.resetAutoPlayIdleClock();
+		probe.restore();
+		mock.timers.reset();
+	}
+});
+
+test('RUNNING it: idle disarm keeps a PLAY-08 stall visible', async () => {
+	mock.timers.enable({ apis: ['Date'] });
+	const probe = installTimerProbe();
+	let uninstall = null;
+	let mod = null;
+	try {
+		mod = await loadRuneModule(ENTRY);
+		uninstall = mod.installAutoPlay();
+		await probe.flush();
+		mod.noteAutoPlayExhaustion({
+			source_stable_id: 'src-1',
+			reason: 'missing-audio',
+			blocked: [
+				{ stable_id: 'gone-1', key: '8A', bpm: 124, file_exists: false, title: 'Gone', artist: 'Bo' }
+			]
+		});
+		stopEveryDeck(mod);
+		await settle();
+		mock.timers.tick(mod.AUTO_PLAY_IDLE_DISARM_MS + 1);
+		await settle();
+		assert.equal(mod.uiPrefs.auto_play_enabled, false);
+		assert.notEqual(
+			mod.readAutoPlayStall(),
+			null,
+			'idle disarm must not delete the durable stop explanation'
+		);
+	} finally {
+		if (uninstall !== null) uninstall();
+		mod?.resetAutoPlayIdleClock();
+		probe.restore();
+		mock.timers.reset();
+	}
+});
+
+test('SHAPE GUARD: idle disarm calls setAutoPlayEnabled from the poll', () => {
+	const controller = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/auto-play.svelte.ts', import.meta.url)),
+		'utf8'
+	);
+	const idle = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/autoplay-idle.ts', import.meta.url)),
+		'utf8'
+	);
+	assert.match(controller, /planAutoPlayIdleDisarm\(/);
+	assert.match(controller, /idlePlan\.action === 'disarm'/);
+	assert.match(controller, /setAutoPlayEnabled\(false\)/);
+	assert.match(idle, /shouldDisarmAutoPlayIdle\(/);
+});

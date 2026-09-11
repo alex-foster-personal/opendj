@@ -1,4 +1,7 @@
-"""SetGoal pin field validation + JSON round-trip (SET-04)."""
+"""SetGoal pin field validation + JSON round-trip (SET-04).
+
+[if] SetGoal serializes pin fields [then] JSON round-trips them and path-shaped pins raise, [else stop].
+"""
 from __future__ import annotations
 
 import pytest

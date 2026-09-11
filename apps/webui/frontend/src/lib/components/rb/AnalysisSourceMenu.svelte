@@ -6,12 +6,12 @@
 	} from '$lib/rb/analysis-source.svelte';
 
 	let {
-		menuStyle,
+		style: menuStyle,
 		onPick,
 		onShow,
 		onClose
 	}: {
-		menuStyle: string;
+		style: string;
 		onPick: (feature: (typeof ANALYSIS_SOURCE_FEATURES)[number], source: AnalysisSource) => void;
 		onShow: () => void;
 		onClose: () => void;

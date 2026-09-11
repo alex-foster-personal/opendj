@@ -8,13 +8,18 @@ import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from ..client_logs import DEFAULT_LOG_DIR, append_json_record, daily_log_path
-from ..machine_pressure import read_machine_pressure
+from ..machine_pressure import (
+    live_process_family_state,
+    opendj_process_name,
+    read_machine_pressure,
+    valid_kernel_pressure_level,
+)
 
 router = APIRouter(prefix="/performance/telemetry", tags=["performance-telemetry"])
 log = logging.getLogger(__name__)
@@ -25,8 +30,6 @@ DEFAULT_PROCESS_LOG_DIRS = (
 )
 MAX_PROCESS_RECORD_BYTES = 512 * 1024
 FRESH_PROCESS_SAMPLE_SECONDS = 45.0
-# Allowlist, not a denylist: the probe record carries command lines and PIDs,
-# and only these four aggregate numbers are safe to hand back to the browser.
 SAFE_TOTAL_KEYS = frozenset(
     {
         "physical_footprint_mb",
@@ -35,8 +38,6 @@ SAFE_TOTAL_KEYS = frozenset(
         "process_count",
     }
 )
-
-
 class DeckPerformanceSample(BaseModel):
     deck_id: Literal[1, 2, 3, 4]
     stable_id: str | None = Field(default=None, max_length=64)
@@ -92,6 +93,7 @@ def capture_client_performance(
         "event_id": event_id,
         "received_at": _received_at(),
         **payload.model_dump(),
+        "pressure": read_machine_pressure(),
     }
     log_dir = Path(
         getattr(request.app.state, "performance_log_dir", DEFAULT_LOG_DIR)
@@ -149,8 +151,6 @@ def _timestamp_age_seconds(value: object) -> float | None:
 
 
 def _footprint_by_role(processes: object) -> dict[str, float]:
-    """Per-role megabytes only: the command strings never leave the probe log."""
-
     by_role: dict[str, float] = {}
     if not isinstance(processes, list):
         return by_role
@@ -165,8 +165,6 @@ def _footprint_by_role(processes: object) -> dict[str, float]:
 
 
 def _safe_totals(totals: object) -> dict[str, float]:
-    """Allowlisted numeric totals, so a probe schema change cannot widen this."""
-
     if not isinstance(totals, dict):
         return {}
     return {
@@ -176,11 +174,47 @@ def _safe_totals(totals: object) -> dict[str, float]:
     }
 
 
-def _kernel_pressure_level(machine: object) -> int | None:
-    if not isinstance(machine, dict):
-        return None
-    level = machine.get("kernel_memory_pressure_level")
-    return level if isinstance(level, int) else None
+def _jsonl_member(process: dict[str, object]) -> dict[str, object]:
+    command = process.get("command")
+    name = opendj_process_name(command) if isinstance(command, str) else "unnamed"
+    member: dict[str, object] = {"name": name}
+    footprint = process.get("physical_footprint_mb")
+    if isinstance(footprint, (int, float)):
+        member["physical_footprint_mb"] = round(float(footprint), 1)
+    role = process.get("role")
+    if isinstance(role, str):
+        member["role"] = role
+    return member
+
+
+def _merge_members(
+    live_members: list[dict[str, Any]],
+    live_pids: set[int],
+    jsonl_processes: object,
+) -> list[dict[str, object]]:
+    members: list[dict[str, object]] = [dict(member) for member in live_members]
+    if not isinstance(jsonl_processes, list):
+        return members
+    for process in jsonl_processes:
+        if not isinstance(process, dict):
+            continue
+        pid = process.get("pid")
+        if isinstance(pid, int) and pid in live_pids:
+            continue
+        members.append(_jsonl_member(process))
+    return members
+
+
+def _pressure_overlay_fields(pressure: dict[str, object]) -> dict[str, object]:
+    overlay: dict[str, object] = {}
+    kernel = valid_kernel_pressure_level(pressure.get("kernel_memory_pressure_level"))
+    if kernel is not None:
+        overlay["kernel_memory_pressure_level"] = kernel
+    for key in ("churn_score", "band", "sample_interval_ms"):
+        value = pressure.get(key)
+        if value is not None:
+            overlay[key] = value
+    return overlay
 
 
 @router.get("/processes")
@@ -192,48 +226,40 @@ def latest_process_telemetry(request: Request) -> dict[str, object]:
     )
     log_dirs = tuple(Path(directory) for directory in configured)
     record = _latest_process_record(log_dirs)
-    if record is None:
+    live_members, live_pids = live_process_family_state()
+    pressure = read_machine_pressure()
+
+    if not live_members and record is None:
         return {
             "available": False,
-            "reason": "native process probe has not written a sample",
+            "reason": (
+                "no live opendj-* processes and native process probe has not written a sample"
+            ),
         }
-    age = _timestamp_age_seconds(record.get("timestamp"))
-    return {
+
+    body: dict[str, object] = {
         "available": True,
-        "timestamp": record.get("timestamp"),
-        "age_seconds": None if age is None else round(age, 3),
-        "stale": age is None or age > FRESH_PROCESS_SAMPLE_SECONDS,
-        "totals": _safe_totals(record.get("totals")),
-        "by_role_mb": _footprint_by_role(record.get("processes")),
-        "kernel_memory_pressure_level": _kernel_pressure_level(record.get("machine")),
+        "members": _merge_members(
+            live_members,
+            live_pids,
+            record.get("processes") if record else None,
+        ),
     }
+    body.update(_pressure_overlay_fields(pressure))
+
+    if record is not None:
+        age = _timestamp_age_seconds(record.get("timestamp"))
+        body["timestamp"] = record.get("timestamp")
+        body["age_seconds"] = None if age is None else round(age, 3)
+        body["stale"] = age is None or age > FRESH_PROCESS_SAMPLE_SECONDS
+        body["totals"] = _safe_totals(record.get("totals"))
+        body["by_role_mb"] = _footprint_by_role(record.get("processes"))
+
+    return body
 
 
 @router.get("/pressure")
 def machine_pressure() -> dict[str, object]:
-    """What the machine is under right now, cheap enough to poll.
-
-    THE conditions half of a trustworthy timing row. The browser stamps this
-    onto every deck-load row (see the frontend's machine-pressure.ts) so a
-    latency number carries the machine state it was measured under instead of
-    leaving a later reader to guess, which is how the register ended up with a
-    waveform decode recorded at both 0.73 s and 7.53 s for the same work.
-
-    Read-only, and deliberately NOT a process walk: this is sysctl, getloadavg
-    and vm_stat, never the `ps` table that `/processes` reads out of the
-    probe's log. It is served from a short shared cache and every response
-    states the age of the sample it is handing back, so a caller can tell a
-    fresh reading from a five-second-old one rather than assuming.
-
-    Agent-native: `curl $ENGINE/api/v1/performance/telemetry/pressure`.
-
-    Fields, all optional and all absent rather than zero when unreadable:
-    `load_avg_1m` (1-minute kernel load average), `mem_free_mb` (free physical
-    memory, `vm_stat` Pages free only, not the wider reclaimable figure),
-    `swap_used_mb` (swap in use), `cache_age_ms` (age of this sample).
-    `available` is false, with a `reason`, when nothing could be measured --
-    notably inside the packaged app, whose payload stages `apps` and not
-    `scripts`.
-    """
+    """What the machine is under right now, cheap enough to poll."""
 
     return read_machine_pressure()

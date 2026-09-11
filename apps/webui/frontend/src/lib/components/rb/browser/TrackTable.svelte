@@ -110,8 +110,10 @@
 			{ id: 'bulk-edit', label: `Bulk edit (${selected.length})` }, { id: 'find-replace', label: 'Find/replace' },
 			{ id: 'mytag', label: 'My Tag editor' }, { id: 'relocate', label: 'Relocate' },
 			{ id: 'finder', label: 'Show in Finder' }, { id: 'copy-path', label: 'Copy path' },
-			{ id: 'analyze', label: 'Analyze' }, { id: 'stems-generate', label: 'Stems - generate' },
-			{ id: 'stems-open', label: 'Stems - open' }, { id: 'lyrics', label: 'Lyrics' },
+			{ id: 'analyze', label: 'Analyze' },
+			{ id: 'stems-generate', label: 'Stems: do next', run: onstemsdonext ? () => onstemsdonext(selected) : undefined },
+			{ id: 'stems-open', label: 'Stems - open' },
+			{ id: 'lyrics', label: 'Lyrics: do next', run: onlyricsdonext ? () => onlyricsdonext(selected) : undefined },
 			{ id: 'offline', label: 'Mark offline' }, { id: 'cloud-only', label: 'Cloud-only' },
 			{ id: 'remove-playlist', label: 'Remove from playlist', run: removable ? () => onremoverow?.(row) : undefined },
 			{ id: 'remove-library', label: 'Remove from library' }
@@ -292,7 +294,9 @@
 		 * knows nothing about what is in it, so this stays a pure row
 		 * renderer; the one thing it contributes is the offset, which only
 		 * it can measure. */
-		bodyOverlay = undefined as Snippet | undefined
+		bodyOverlay = undefined as Snippet | undefined,
+		onstemsdonext = undefined as ((stableIds: string[]) => void) | undefined,
+		onlyricsdonext = undefined as ((stableIds: string[]) => void) | undefined
 	}: {
 		/** Read contract: { rows, total, truncated, fetchWindow } - see
 		 * pane-contract.svelte.ts. */
@@ -359,6 +363,8 @@
 		 * toast channel, so the panel says it (pins 8ba0b15d975b /
 		 * 72be3e505510: a silent refusal reads as a broken feature). */
 		onrefused?: (reason: string) => void;
+		onstemsdonext?: (stableIds: string[]) => void;
+		onlyricsdonext?: (stableIds: string[]) => void;
 		/** Genre chip / post-filter gestures. */
 		ongenrefilter?: (mode: 'strict' | 'loose' | 'clear' | 'undo', tag?: string) => void;
 		/** Epoch ms until which library dbl/triple remap to clear/undo. */
@@ -1402,18 +1408,31 @@
 							<td class="c-autoplay">
 								{#if _autoPlayRank(row.stable_id) !== null}
 									{@const rank = _autoPlayRank(row.stable_id)!}
-									<AutoPlayRankCell
-										stableId={row.stable_id}
-										{rank}
-										isHot={hoveredApId === row.stable_id}
-										onHover={(id) => {
-											if (id === null) {
-												if (hoveredApId === row.stable_id) hoveredApId = null;
-											} else {
-												hoveredApId = id;
-											}
+									<!-- svelte-ignore a11y_no_static_element_interactions -->
+									<span
+										title={`AutoPlay queue position ${rank}: hand off after ${rank - 1} more, from the current AutoPlay view`}
+										onpointerenter={() => (hoveredApId = row.stable_id)}
+										onpointerleave={() => {
+											if (hoveredApId === row.stable_id) hoveredApId = null;
 										}}
-									/>
+										onfocus={() => (hoveredApId = row.stable_id)}
+										onblur={() => {
+											if (hoveredApId === row.stable_id) hoveredApId = null;
+										}}
+									>
+										<AutoPlayRankCell
+											stableId={row.stable_id}
+											{rank}
+											isHot={hoveredApId === row.stable_id}
+											onHover={(id) => {
+												if (id === null) {
+													if (hoveredApId === row.stable_id) hoveredApId = null;
+												} else {
+													hoveredApId = id;
+												}
+											}}
+										/>
+									</span>
 								{/if}
 							</td>
 						{/if}
