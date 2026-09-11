@@ -16,7 +16,7 @@ import socket
 import sqlite3
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from scripts.bench.kpi_derive import RUN_GAP_S
@@ -93,7 +93,7 @@ class PublicationWindow:
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
 
 def remaining_present_without(present_ids: frozenset[str], have: frozenset[str]) -> frozenset[str]:
@@ -285,11 +285,12 @@ def capture_snapshot(
     capture_id: str,
     machine: str,
     now: str,
-    availability: Availability | None | object = ...,
+    availability: Availability | None = None,
 ) -> WaitSnapshot:
     data_dir = Path(data_dir)
-    if availability is ...:
-        availability = probe_availability(data_dir / "state" / "state.db", now)
+    resolved = availability
+    if resolved is None:
+        resolved = probe_availability(data_dir / "state" / "state.db", now)
     stems_window = publication_window(
         _mtime_jsons(data_dir / "state" / "vocal-cache", require_container_s=True)
     )
@@ -301,7 +302,7 @@ def capture_snapshot(
         rate_kpi="stems_queue_throughput_per_h",
         window=stems_window,
         capture_id=capture_id,
-        availability=availability,
+        availability=resolved,
         extra="stems publication window from vocal-cache container_s entries",
     )
     lyrics_wall, lyrics_rate = _rate_figures(
@@ -309,10 +310,10 @@ def capture_snapshot(
         rate_kpi="lyrics_queue_throughput_per_h",
         window=lyrics_window,
         capture_id=capture_id,
-        availability=availability,
+        availability=resolved,
         extra="lyrics publication window from lyrics-cache mtimes",
     )
-    if availability is None:
+    if resolved is None:
         stems_eta = _withheld(
             "stems_library_eta_s",
             capture_id,
@@ -324,17 +325,17 @@ def capture_snapshot(
             _denom_note(None, "library-scale ETA withheld; remaining needs present ids"),
         )
     else:
-        stems_left = stems_remaining_present(data_dir, availability)
+        stems_left = stems_remaining_present(data_dir, resolved)
         stems_per_s = None if stems_window is None else stems_window.n / stems_window.wall_s
         stems_eta = _eta_figure(
             "stems_library_eta_s",
             remaining=len(stems_left),
             tracks_per_s=stems_per_s,
             capture_id=capture_id,
-            availability=availability,
+            availability=resolved,
             extra=f"remaining_present_without_bundle={len(stems_left)}",
         )
-        lyrics_left = lyrics_remaining_present(data_dir, availability)
+        lyrics_left = lyrics_remaining_present(data_dir, resolved)
         fetch_per_s = None if lyrics_window is None else lyrics_window.n / lyrics_window.wall_s
         eta_s, extra = lyrics_side.eta_seconds(
             len(lyrics_left),
@@ -343,14 +344,14 @@ def capture_snapshot(
         )
         if eta_s is None:
             lyrics_eta = _withheld(
-                "lyrics_library_eta_s", capture_id, _denom_note(availability, extra)
+                "lyrics_library_eta_s", capture_id, _denom_note(resolved, extra)
             )
         else:
             lyrics_eta = _numeric(
                 "lyrics_library_eta_s",
                 round(eta_s, 1),
                 capture_id,
-                _denom_note(availability, extra),
+                _denom_note(resolved, extra),
             )
     figures = (stems_wall, stems_rate, stems_eta, lyrics_wall, lyrics_rate, lyrics_eta)
     snapshot = WaitSnapshot(capture_id, machine, now, figures)

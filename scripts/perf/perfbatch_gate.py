@@ -60,13 +60,13 @@ _QUALITY = re.compile(
 )
 
 
+def _matches_prefix(path: str, prefixes: tuple[str, ...]) -> bool:
+    normalized = path.replace("\\", "/")
+    return any(normalized == prefix or normalized.startswith(prefix) for prefix in prefixes)
+
+
 def pipeline_mutation_paths(paths: list[str]) -> list[str]:
-    hits: list[str] = []
-    for path in paths:
-        normalized = path.replace("\\", "/")
-        if any(normalized == prefix or normalized.startswith(prefix) for prefix in PIPELINE_PREFIXES):
-            hits.append(path)
-    return hits
+    return [path for path in paths if _matches_prefix(path, PIPELINE_PREFIXES)]
 
 
 def idle_marker(body: str) -> bool:
@@ -120,7 +120,8 @@ def local_diff_names(repo_root: Path = REPO_ROOT, base: str = DEFAULT_BASE) -> l
             check=False,
         )
         if proc.returncode != 0:
-            raise RuntimeError(f"{' '.join(argv)} failed rc={proc.returncode}: {proc.stderr.strip()}")
+            detail = proc.stderr.strip()
+            raise RuntimeError(f"{' '.join(argv)} failed rc={proc.returncode}: {detail}")
         names.update(line.strip() for line in proc.stdout.splitlines() if line.strip())
     return sorted(names)
 
@@ -167,29 +168,17 @@ def main(
 
     if args.pr:
         try:
-            pr = fetch(args.pr, args.repo) if fetch is not pr_view else fetch(args.pr)
-        except TypeError:
-            try:
-                pr = fetch(args.pr)
-            except Exception as exc:
-                print(f"[perfbatch-gate] UNKNOWN: could not read PR #{args.pr} ({exc})", file=sys.stderr)
-                return 2
+            pr = fetch(args.pr, args.repo)
         except Exception as exc:
-            print(f"[perfbatch-gate] UNKNOWN: could not read PR #{args.pr} ({exc})", file=sys.stderr)
+            print(
+                f"[perfbatch-gate] UNKNOWN: could not read PR #{args.pr} ({exc})",
+                file=sys.stderr,
+            )
             return 2
         pr_body = body if body is not None else (pr.get("body") or "")
         if paths is None:
             try:
-                paths = fetch_files(args.pr, args.repo) if fetch_files is not pr_diff_names else fetch_files(args.pr)
-            except TypeError:
-                try:
-                    paths = fetch_files(args.pr)
-                except Exception as exc:
-                    print(
-                        f"[perfbatch-gate] UNKNOWN: could not list PR #{args.pr} files ({exc})",
-                        file=sys.stderr,
-                    )
-                    return 2
+                paths = fetch_files(args.pr, args.repo)
             except Exception as exc:
                 print(
                     f"[perfbatch-gate] UNKNOWN: could not list PR #{args.pr} files ({exc})",
