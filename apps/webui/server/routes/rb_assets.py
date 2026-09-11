@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from apps.analysis import canonical, selection
 from apps.analysis.record import AnalysisRecord
+from apps.shared import platform_paths
 
 from .. import rb_vendor
 from ..backend import StateBackend
@@ -513,15 +514,18 @@ def _local_rb_meta(stable_id: str) -> RbMetaOut:
     quality = rb_vendor.bulk_quality(
         [stable_id], {stable_id: file_path}, {stable_id: duration_ms}
     )[stable_id]
+    file_exists = rb_vendor.bulk_availability(
+        [stable_id], {stable_id: file_path}, {}
+    )[stable_id]
     return RbMetaOut(
         stable_id=stable_id,
         vendor="local",
         vendor_id=None,
         folder_path=file_path,
-        file_exists=rb_vendor.bulk_availability(
-            [stable_id], {stable_id: file_path}, {}
-        )[stable_id],
-        is_streaming=rb_vendor.is_streaming_path(file_path),
+        file_exists=file_exists,
+        is_streaming=platform_paths.is_streaming_row(
+            file_path, file_exists=file_exists
+        ),
         genre=genre,
         comment=comment,
         duration_s=duration_ms // 1000 if duration_ms is not None else None,
@@ -551,12 +555,14 @@ def get_track_rb_meta(
         # as get_track_anlz's fallback. A whole locally-imported library would
         # otherwise 404 once per visible row (console noise, no information).
         return _local_rb_meta(stable_id)
-    is_streaming = rb_vendor.is_streaming_path(content.folder_path)
-    # Same residency gate as bulk listings (dataless stubs == missing).
-    file_exists = False
-    if content.folder_path is not None and not is_streaming:
-        sizes = rb_vendor.bulk_file_size([content.folder_path])
-        file_exists = sizes.get(content.folder_path) is not None
+    file_exists = rb_vendor.bulk_availability(
+        [stable_id],
+        {stable_id: content.folder_path},
+        {},
+    )[stable_id]
+    is_streaming = platform_paths.is_streaming_row(
+        content.folder_path, file_exists=file_exists
+    )
     artwork_available = (
         content.image_path is not None
         and rb_vendor.resolve_share_path(content.image_path).is_file()
