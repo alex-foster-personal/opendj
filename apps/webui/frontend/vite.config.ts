@@ -66,7 +66,15 @@ export default defineConfig(({ command, mode }) => {
 						strictPort: true,
 						allowedHosts: resolveAllowedHosts(process.env, rootEnv),
 						proxy: {
-							'/api': devConfig.apiProxyTarget
+							// ws: true is load-bearing. Playlist undo/redo and every
+							// other library.changed consumer sit on /api/v1/events;
+							// without the upgrade the tree never hears a rename
+							// (#1888) and the history panel never enables undo.
+							'/api': {
+								target: devConfig.apiProxyTarget,
+								changeOrigin: true,
+								ws: true
+							}
 						}
 					}
 				})

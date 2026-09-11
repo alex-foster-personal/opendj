@@ -1,19 +1,9 @@
 {
   "entries": [
     {
-      "signature": "http-502:GET:/api/v1/update/check",
-      "issue": "#1867",
-      "reason": "AutoPlay hunt: GET /api/v1/update/check returns 502"
-    },
-    {
       "signature": "http-404:GET:/api/v1/tracks/<hash>/lyrics",
       "issue": "#1869",
       "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/lyrics returns 404"
-    },
-    {
-      "signature": "console.error:Failed to load resource: the server responded with a status of 404 (Not Found)",
-      "issue": "#1870",
-      "reason": "AutoPlay hunt: console.error 404 Not Found while mixing"
     },
     {
       "signature": "http-404:GET:/api/v1/tracks/<hash>/auto-cues",
@@ -21,34 +11,9 @@
       "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/auto-cues returns 404"
     },
     {
-      "signature": "http-503:GET:/api/v1/tracks/<hash>/artwork",
-      "issue": "#1872",
-      "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/artwork returns 503"
-    },
-    {
-      "signature": "console.error:Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
-      "issue": "#1873",
-      "reason": "AutoPlay hunt: console.error 503 Service Unavailable while mixing"
-    },
-    {
-      "signature": "http-404:GET:/api/v1/tracks/<hash>/stems",
-      "issue": "#1874",
-      "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/stems returns 404"
-    },
-    {
-      "signature": "http-401:GET:/api/v1/auth/me",
-      "issue": "#1875",
-      "reason": "AutoPlay hunt: GET /api/v1/auth/me returns 401"
-    },
-    {
       "signature": "console.error:Failed to load resource: the server responded with a status of 401 (Unauthorized)",
       "issue": "#1876",
       "reason": "AutoPlay hunt: console.error 401 Unauthorized while mixing"
-    },
-    {
-      "signature": "console.error:[perf-event] xrun: <n> xrun(s) in <n>ms over <n> audio callbacks; worst gap <n>ms against a <n>ms late-callback threshold (<n> parked gap(s) excluded, clock=date)",
-      "issue": "#1877",
-      "reason": "AutoPlay hunt: audio xruns while AutoPlay and mixing run"
     }
   ]
 }

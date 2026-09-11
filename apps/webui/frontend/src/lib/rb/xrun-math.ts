@@ -294,3 +294,24 @@ export function xrunReportMessage(report: XrunReport): string {
 		`(${report.parked} parked gap(s) excluded, clock=${report.clock})`
 	);
 }
+
+/**
+ * Console / client-error escalation severity for one window that already has
+ * xruns. Not a new gap class: `classifyGapMs` still counts a 30ms stall as
+ * one xrun. LIVE-01 (`tests/live/ui-mirror-invariants.mjs` `MAX_XRUN_RATE`)
+ * already accepts a playing-app rate below this; the AutoPlay hunt (#1877)
+ * was treating every isolated late callback as `console.error`.
+ *
+ * Must match `MAX_XRUN_RATE` in tests/live/ui-mirror-invariants.mjs.
+ */
+export const XRUN_ERROR_RATE = 0.01;
+
+export function xrunWindowSeverity(
+	report: Pick<XrunReport, 'xruns' | 'callbacks'>
+): 'error' | 'warn' {
+	if (!(report.xruns > 0)) {
+		throw new RangeError('xrunWindowSeverity is only for windows that contain xruns');
+	}
+	if (!(report.callbacks > 0)) return 'error';
+	return report.xruns / report.callbacks >= XRUN_ERROR_RATE ? 'error' : 'warn';
+}

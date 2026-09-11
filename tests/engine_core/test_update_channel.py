@@ -73,7 +73,7 @@ def _identity(app_version: str | None = RUNNING_VERSION) -> BuildIdentity:
     )
 
 
-def _repo_identity() -> BuildIdentity:
+def _repo_identity(app_version: str | None = RUNNING_VERSION) -> BuildIdentity:
     return BuildIdentity(
         info=BuildInfoOut(
             source="repo",
@@ -84,7 +84,7 @@ def _repo_identity() -> BuildIdentity:
             git_dirty=False,
             built_at_utc="2026-08-31T12:00:00Z",
             built_at_kind="head-commit",
-            app_version=RUNNING_VERSION,
+            app_version=app_version,
         ),
         failure=None,
     )
