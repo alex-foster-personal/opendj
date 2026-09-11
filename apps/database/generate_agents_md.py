@@ -19,13 +19,11 @@ verbatim founding brief. This module produces the copy that travels with a
 specific machine's live DB file and is regenerated whenever migrations run,
 so it can never go stale the way a hand-maintained doc can.
 
-No module-level dependency on :mod:`apps.shared.state.db` on purpose: that
-module is a layer BELOW ``apps.database``. ``open_rw`` locally imports
-:func:`apps.database.regenerate_agents_md_if_writable` after migrations
-(see ``apps/database/__init__.py``). A module-level import here in the
-other direction would be a circular import; :func:`main` -- the only place
-this module actually needs a live connection opener -- imports it locally
-instead.
+``open_rw`` locally imports :func:`apps.database.regenerate_agents_md_if_writable`
+after migrations (see ``apps/database/__init__.py``). This module must not
+import :mod:`apps.shared.state.db` in return -- even inside :func:`main` --
+because that pair is a package cycle the quality gate counts
+(``python.package_cycles``). The CLI opens sqlite read-only itself.
 """
 
 from __future__ import annotations
@@ -307,14 +305,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> None:
-    # Local import: see the module docstring -- avoids a circular import
-    # with apps.shared.state.db, which is meant to import THIS package.
-    from apps.shared.state import db as state_db
-
     args = _parse_args(argv)
     db_path = Path(args.data_dir) / "state" / "state.db"
-    conn = state_db.open_ro(db_path)
+    if not db_path.exists():
+        raise FileNotFoundError(
+            f"state DB not found at {db_path}; pass the data root that "
+            "contains state/state.db (the parent of state/, not the db file)."
+        )
+    # Open sqlite here, not via apps.shared.state.db.open_ro: open_rw now
+    # imports this package, so importing db from here would close a
+    # database <-> shared package cycle. This CLI only introspects.
+    uri = f"file:{db_path}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, isolation_level=None)
     try:
+        conn.execute("PRAGMA query_only = ON")
         out_path = Path(args.data_dir) / "state" / "AGENTS.md"
         write_agents_md(conn, out_path)
         print(f"wrote {out_path}")
