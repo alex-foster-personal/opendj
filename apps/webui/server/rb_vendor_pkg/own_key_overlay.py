@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.analysis.canonical import key_lane_stale_but_unpromoted
+
 from .own_lane_store import (
     SOURCE_OWN,
     canonical_lane_result,
