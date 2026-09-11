@@ -284,6 +284,12 @@ def _tier_choices() -> tuple[str, ...]:
     return TIER_ORDER
 
 
+def _default_tier() -> str:
+    from apps.stems.tiers import DEFAULT_TIER
+
+    return DEFAULT_TIER
+
+
 _TIER_CHOICES = _tier_choices()
 
 
@@ -413,6 +419,64 @@ def cmd_estimate(args: argparse.Namespace) -> int:
     return 0
 
 
+ENGINE_URL_ENV = "MDT_ENGINE_URL"
+DEFAULT_ENGINE_URL = "http://127.0.0.1:9400"
+
+
+def _engine_url() -> str:
+    return os.environ.get(ENGINE_URL_ENV, DEFAULT_ENGINE_URL).rstrip("/")
+
+
+def _post_json(path: str, body: dict[str, Any]) -> dict[str, Any]:
+    import json
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(
+        f"{_engine_url()}{path}",
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise SystemExit(f"engine POST {path} failed ({exc.code}): {detail}") from exc
+
+
+def cmd_separate(args: argparse.Namespace) -> int:
+    """Enqueue stems.separate via the engine jobs API (agent-native parity)."""
+    from apps.stems.job import JOB_KIND
+
+    payload: dict[str, Any] = {"tier": args.tier}
+    if args.scope:
+        payload["scope"] = args.scope
+    elif args.stable_id:
+        payload["stable_ids"] = list(args.stable_id)
+    else:
+        raise SystemExit("error: pass --stable-id (repeatable) or --scope pending")
+    if args.data_dir is not None:
+        payload["data_dir"] = str(args.data_dir)
+    job = _post_json("/api/v1/jobs", {"kind": JOB_KIND, "payload": payload})
+    if args.json:
+        print(json.dumps(job, indent=2))
+    else:
+        print(f"enqueued job {job['id']} kind={job['kind']} status={job['status']}")
+    return 0
+
+
+def cmd_cancel(args: argparse.Namespace) -> int:
+    """Cancel a running stems job via POST /api/v1/jobs/{id}/cancel."""
+    job = _post_json(f"/api/v1/jobs/{args.job_id}/cancel", {})
+    if args.json:
+        print(json.dumps(job, indent=2))
+    else:
+        print(f"cancelled job {job['id']} status={job['status']}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m apps.stems")
     common = argparse.ArgumentParser(add_help=False)
@@ -465,6 +529,26 @@ def build_parser() -> argparse.ArgumentParser:
     est.add_argument("--gpu", default=None, help="override the card")
     est.add_argument("--json", action="store_true")
     est.set_defaults(func=cmd_estimate)
+
+    sep = sub.add_parser(
+        "separate",
+        parents=[common],
+        help="enqueue stems.separate on the engine (POST /api/v1/jobs)",
+    )
+    sep.add_argument("--stable-id", action="append", dest="stable_id", default=None)
+    sep.add_argument("--scope", choices=("pending",), default=None)
+    sep.add_argument("--tier", choices=_TIER_CHOICES, default=_default_tier())
+    sep.add_argument("--json", action="store_true")
+    sep.set_defaults(func=cmd_separate)
+
+    cancel = sub.add_parser(
+        "cancel",
+        help="cancel a running engine job (POST /api/v1/jobs/{id}/cancel)",
+    )
+    cancel.add_argument("--job-id", required=True)
+    cancel.add_argument("--json", action="store_true")
+    cancel.set_defaults(func=cmd_cancel)
+
     return p
 
 

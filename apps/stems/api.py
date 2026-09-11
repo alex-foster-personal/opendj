@@ -68,6 +68,7 @@ class StemsPlanOut(BaseModel):
 
     tier: str
     tier_name: str
+    executor: str = Field(description="modal farm or local on-device worker")
     # THE DENOMINATOR, spelled out. pending + ready + unavailable == total.
     total: int = Field(description="library rows carrying a file path")
     pending: int = Field(description="audio on disk, no bundle yet: the work")
@@ -85,6 +86,10 @@ class StemsPlanOut(BaseModel):
     transport_refusal: str | None = Field(
         default=None,
         description="why a run cannot start on this build; null when it can",
+    )
+    local_refusal: str | None = Field(
+        default=None,
+        description="why local stems are inert on this build; null when allowed",
     )
 
 
@@ -138,12 +143,30 @@ def _data_dir(request: Request) -> Path:
 @router.get("/plan", response_model=StemsPlanOut)
 def get_stems_plan(
     request: Request,
-    tier: Annotated[str, Query(description="Modal rung: S, M or L")] = DEFAULT_TIER,
+    tier: Annotated[
+        str,
+        Query(description="Modal rung S/M/L, or LOCAL when local-only"),
+    ] = DEFAULT_TIER,
 ) -> dict[str, Any]:
-    if tier not in MODAL_TIER_KEYS:
+    from apps.stems.local_gate import local_stems_gate
+    from apps.stems.routing import (
+        EXECUTOR_LOCAL,
+        EXECUTOR_MODAL,
+        effective_tier,
+        resolve_stems_executor,
+    )
+
+    executor = resolve_stems_executor()
+    tier = effective_tier(tier, executor)
+    if executor == EXECUTOR_MODAL and tier not in MODAL_TIER_KEYS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"tier {tier!r} is not a Modal tier; known: {list(MODAL_TIER_KEYS)}",
+        )
+    if executor == EXECUTOR_LOCAL and tier != "LOCAL":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="local executor requires tier LOCAL",
         )
     from apps.stems.tiers import get_tier
 
@@ -156,24 +179,27 @@ def get_stems_plan(
         ) from exc
 
     durations = buckets.pending_durations_s()
-    try:
-        seconds = estimate_batch_seconds(durations, tier)
-        usd = sum(estimate_usd(duration, tier) for duration in durations)
-    except ThroughputNotMeasured as exc:
-        # An unmeasured pair is a real gap, and a plausible-looking number
-        # here would be spent money justified by a guess.
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-        ) from exc
-
-    # The counts are reported even when the transport is refused: "217 tracks
-    # would need stems, and this build cannot run them" is a more useful truth
-    # than hiding the work behind the refusal.
-    transport, transport_refusal = stems_transport_state()
+    local_refusal: str | None = None
+    if executor == EXECUTOR_LOCAL:
+        seconds = 0.0
+        usd = 0.0
+        transport = "local"
+        transport_refusal = None
+        local_refusal = local_stems_gate()
+    else:
+        try:
+            seconds = estimate_batch_seconds(durations, tier)
+            usd = sum(estimate_usd(duration, tier) for duration in durations)
+        except ThroughputNotMeasured as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+            ) from exc
+        transport, transport_refusal = stems_transport_state()
 
     return {
         "tier": tier,
         "tier_name": get_tier(tier).name,
+        "executor": executor,
         "total": buckets.total,
         "pending": len(buckets.pending),
         "ready": len(buckets.ready),
@@ -182,6 +208,7 @@ def get_stems_plan(
         "estimate_usd": round(usd, 4),
         "transport": transport,
         "transport_refusal": transport_refusal,
+        "local_refusal": local_refusal,
     }
 
 
