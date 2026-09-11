@@ -1,11 +1,6 @@
 {
   "entries": [
     {
-      "signature": "http-502:GET:/api/v1/update/check",
-      "issue": "#1867",
-      "reason": "AutoPlay hunt: GET /api/v1/update/check returns 502"
-    },
-    {
       "signature": "http-404:GET:/api/v1/tracks/<hash>/lyrics",
       "issue": "#1869",
       "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/lyrics returns 404"
