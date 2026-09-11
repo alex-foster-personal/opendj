@@ -25,6 +25,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from apps.analysis.backends.base import BackendNotAvailable
 from apps.analysis.depends_on import DEPENDS_ON_KEY, dependency_identity
 from apps.analysis.lanes import LaneResult
 from apps.analysis.record import AnalysisRecord
@@ -131,6 +132,24 @@ class BeatgridProbeV1:
         )
 
 
+class UnavailableBeatgridProbe(BeatgridProbeV1):
+    """A producer whose capability is missing on THIS host.
+
+    Real backends raise ``BackendNotAvailable`` for a missing dependency
+    closure, model or resampler -- a fact about the machine, not about the
+    track. Every remaining item in the batch would meet it too, which is
+    exactly why the runner must not write it as a per-track verdict.
+    """
+
+    @classmethod
+    def analyze(cls, path: Path, stable_id: str) -> AnalysisRecord:
+        _mark(stable_id, f"{cls.name}@unavailable")
+        raise BackendNotAvailable(
+            "own_beatgrid.backfill needs the analysis extra, which is not "
+            "installed on this host"
+        )
+
+
 class BeatgridProbeV2(BeatgridProbeV1):
     """The same producer after a version bump. Different grid content."""
 
@@ -219,4 +238,5 @@ __all__ = [
     "BeatgridProbeV1",
     "BeatgridProbeV2",
     "KeyProbeV1",
+    "UnavailableBeatgridProbe",
 ]

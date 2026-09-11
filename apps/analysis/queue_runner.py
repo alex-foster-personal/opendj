@@ -60,6 +60,10 @@ class RunSummary:
     completed: int = 0
     skipped: int = 0
     failed: int = 0
+    #: Results thrown away because `/cancel` took the claim while the worker
+    #: was still analyzing. Counted, never folded into completed or failed:
+    #: the work happened and its output was deliberately discarded.
+    discarded_on_cancel: int = 0
     cancelled_midway: bool = False
     cascade_outcomes: list[CascadeOutcome] = field(default_factory=list)
     cascade_batch_id: str | None = None
@@ -102,12 +106,19 @@ def _commit_record(
     batch_id: str,
     item: queue_store.QueueItem,
     record: AnalysisRecord,
-) -> list[CascadeOutcome]:
+    runner_id: str,
+) -> list[CascadeOutcome] | None:
     """Write the record and finish the item in ONE transaction.
 
     Returns the cascade outcomes the write produced, computed inside the
     same transaction so a dependent lane can never be left un-re-queued by a
     crash between the write and the cascade.
+
+    Returns ``None`` when the claim was taken away while the worker was
+    analyzing -- a live ``/cancel`` -- and the whole transaction is rolled
+    back. The record is discarded rather than written: a cancel that the
+    worker's own settlement could undo is not a cancel, and the item would
+    read ``done`` to a ``resume`` that must revisit it.
     """
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -136,13 +147,17 @@ def _commit_record(
                 lane=item.lane,
                 dependency_record=record,
             )
-        queue_store.finish_item(
+        settled = queue_store.finish_item(
             conn,
             batch_id=batch_id,
             stable_id=item.stable_id,
             lane=item.lane,
             state=queue_store.ITEM_DONE,
+            claimed_by=runner_id,
         )
+        if not settled:
+            conn.execute("ROLLBACK")
+            return None
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
@@ -189,14 +204,19 @@ def _fill_pool(
         if item is None:
             return
         if _already_current(ctx.conn, item, ctx.backend_name, ctx.version):
-            queue_store.finish_item(
+            settled = queue_store.finish_item(
                 ctx.conn,
                 batch_id=ctx.batch_id,
                 stable_id=item.stable_id,
                 lane=item.lane,
                 state=queue_store.ITEM_SKIPPED,
                 reason=queue_store.SKIP_ALREADY_CURRENT,
+                claimed_by=ctx.runner_id,
             )
+            if not settled:
+                # Cancelled between the claim and the skip check. Same rule
+                # as a finished worker: the cancel wins.
+                continue
             ctx.summary.skipped += 1
             if ctx.on_item is not None:
                 ctx.on_item(item, queue_store.ITEM_SKIPPED)
@@ -208,20 +228,58 @@ def _fill_pool(
         ] = item
 
 
+#: ``analyze_one`` crosses a process boundary, so a per-track failure arrives
+#: as ``"<ExceptionName>: <message>"`` and not as the exception. This is the
+#: one class of failure in that string that is about the MACHINE rather than
+#: the track: the analysis dependency closure, a model or a resampler is
+#: absent, and every remaining item in the batch would meet it too. Recording
+#: it per track would write a capability fault as a terminal per-track verdict
+#: that ``resume`` can never undo.
+_BACKEND_UNAVAILABLE: str = "BackendNotAvailable:"
+
+
+class BackendUnavailable(QueueError):
+    """The batch stopped because the backend itself is not installable here.
+
+    Separate from :class:`QueueError` so a caller can tell "this host cannot
+    run this producer, fix the host and resume" from "this batch is
+    malformed". Nothing is marked failed: the item that met it is back in
+    ``pending`` and the rest were never attempted.
+    """
+
+
 def _settle_one(
     ctx: _RunContext, fut: Future, item: queue_store.QueueItem
 ) -> None:
     """Turn one finished future into a terminal item state."""
     _, record, error = fut.result()
     if error is not None:
-        queue_store.finish_item(
+        if error.startswith(_BACKEND_UNAVAILABLE):
+            # Every sibling claim goes back too. They meet the same missing
+            # capability, and a claim left `running` is only recovered by a
+            # fresh-process takeover -- which is not what `resume` does, so
+            # the batch would look permanently half-held.
+            released = queue_store.release_running_items(ctx.conn, ctx.batch_id)
+            queue_store.set_batch_state(
+                ctx.conn, ctx.batch_id, queue_store.BATCH_QUEUED
+            )
+            raise BackendUnavailable(
+                f"backend {ctx.backend_name!r} is not available on this host, "
+                f"so batch {ctx.batch_id} stopped with {released} item(s) "
+                f"returned to pending and nothing marked failed: {error}"
+            )
+        settled = queue_store.finish_item(
             ctx.conn,
             batch_id=ctx.batch_id,
             stable_id=item.stable_id,
             lane=item.lane,
             state=queue_store.ITEM_FAILED,
             reason=error,
+            claimed_by=ctx.runner_id,
         )
+        if not settled:
+            ctx.summary.discarded_on_cancel += 1
+            return
         ctx.summary.failed += 1
         if ctx.on_item is not None:
             ctx.on_item(item, queue_store.ITEM_FAILED)
@@ -231,9 +289,20 @@ def _settle_one(
             f"analyze_one returned neither a record nor an error for "
             f"{item.stable_id}/{item.lane}"
         )
-    ctx.summary.cascade_outcomes.extend(
-        _commit_record(ctx.conn, batch_id=ctx.batch_id, item=item, record=record)
+    outcomes = _commit_record(
+        ctx.conn,
+        batch_id=ctx.batch_id,
+        item=item,
+        record=record,
+        runner_id=ctx.runner_id,
     )
+    if outcomes is None:
+        # Cancelled while this worker was analyzing. The record was rolled
+        # back with the settlement, so the item stays cancelled and a resume
+        # runs it again rather than reading a done it never asked for.
+        ctx.summary.discarded_on_cancel += 1
+        return
+    ctx.summary.cascade_outcomes.extend(outcomes)
     ctx.summary.completed += 1
     if ctx.on_item is not None:
         ctx.on_item(item, queue_store.ITEM_DONE)
@@ -435,6 +504,7 @@ def pid_is_alive(pid: int) -> bool:
 
 
 __all__ = [
+    "BackendUnavailable",
     "RunSummary",
     "drain",
     "pid_is_alive",

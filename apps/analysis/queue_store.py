@@ -463,20 +463,37 @@ def finish_item(
     lane: str,
     state: str,
     reason: str | None = None,
-) -> None:
+    claimed_by: str | None = None,
+) -> bool:
     """Move a claimed item to a terminal state. Caller owns the transaction.
 
     Deliberately takes no lock of its own: the runner calls this INSIDE the
     same transaction as the record write, so a kill can never land between
     "the record is committed" and "the item is done".
+
+    ``claimed_by`` narrows the update to an item that is STILL ``running``
+    under that runner id, and is how a live cancel survives a worker that
+    finishes a moment later. Without it the update matches on
+    (batch, stable_id, lane) alone, so `/cancel` moves an in-flight item to
+    ``cancelled`` and the worker's own settlement moves it straight back to
+    ``done`` -- cancellation that does not cancel, and an item ``resume``
+    will never revisit because it reads as terminal.
+
+    Returns whether a row moved. ``False`` means the claim was taken away
+    (cancelled, or released to another runner) and the caller must discard
+    the result rather than record it.
     """
     if state not in ITEM_STATES:
         raise ValueError(f"unknown item state {state!r}; states are {ITEM_STATES}")
-    conn.execute(
+    sql = (
         "UPDATE analysis_queue_item SET state = ?, reason = ?, finished_at = ?, "
-        "runner_id = NULL WHERE batch_id = ? AND stable_id = ? AND lane = ?",
-        (state, reason, _now_iso(), batch_id, stable_id, lane),
+        "runner_id = NULL WHERE batch_id = ? AND stable_id = ? AND lane = ?"
     )
+    params: list[Any] = [state, reason, _now_iso(), batch_id, stable_id, lane]
+    if claimed_by is not None:
+        sql += " AND state = ? AND runner_id = ?"
+        params += [ITEM_RUNNING, claimed_by]
+    return conn.execute(sql, params).rowcount == 1
 
 
 def release_running_items(conn: sqlite3.Connection, batch_id: str) -> int:
