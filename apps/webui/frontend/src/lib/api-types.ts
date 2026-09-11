@@ -169,6 +169,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sets/{session_id}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Get Metadata Share
+         * @description Get an existing metadata-only share link for a finalized published set.
+         */
+        get: operations["api_get_metadata_share_api_sets__session_id__share_get"];
+        put?: never;
+        /**
+         * Api Publish Metadata Share
+         * @description Publish timeline metadata after explicit acknowledgement, never MP3 audio.
+         */
+        post: operations["api_publish_metadata_share_api_sets__session_id__share_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sets/{session_id}/soundcloud-export": {
         parameters: {
             query?: never;
@@ -5436,6 +5460,11 @@ export interface components {
              */
             coverage_pct?: number | null;
             /**
+             * Effective
+             * @description same as effective_verdict; kept for clients that read .effective
+             */
+            effective: string;
+            /**
              * Effective Verdict
              * @description what to act on: the human override if set, else verdict
              */
@@ -5667,6 +5696,8 @@ export interface components {
             contract_rev: string;
             /** Engine Version */
             engine_version: string;
+            /** Google Oauth Configured */
+            google_oauth_configured: boolean;
             state_db: components["schemas"]["HealthStateDb"];
             /**
              * Status
@@ -7096,6 +7127,30 @@ export interface components {
             stable_ids: string[];
         };
         /**
+         * LyricsRowSummaryOut
+         * @description Per-row karaoke verdict summary for library listings.
+         */
+        LyricsRowSummaryOut: {
+            /** Effective */
+            effective: string;
+            /** Has Words */
+            has_words: boolean;
+            /** Language Iso3 */
+            language_iso3?: string | null;
+            /** N Lines */
+            n_lines?: number | null;
+            /** N Words */
+            n_words?: number | null;
+            /** Override */
+            override?: string | null;
+            /** Pct Witness Red */
+            pct_witness_red?: number | null;
+            /** Source */
+            source?: string | null;
+            /** Verdict */
+            verdict: string;
+        };
+        /**
          * LyricsUnavailableOut
          * @description The explicit cache-miss response for one track's lyrics timeline.
          */
@@ -7238,6 +7293,37 @@ export interface components {
         MembershipTransferOut: {
             dest: components["schemas"]["PlaylistWriteOut"];
             source?: components["schemas"]["PlaylistWriteOut"] | null;
+        };
+        /**
+         * MetadataShareRequest
+         * @description Explicit acknowledgement that the resulting web view excludes audio.
+         */
+        MetadataShareRequest: {
+            /**
+             * Confirm Metadata Only
+             * @constant
+             */
+            confirm_metadata_only: true;
+        };
+        /**
+         * MetadataShareResponse
+         * @description A browser URL for the non-audio set history presentation.
+         */
+        MetadataShareResponse: {
+            /**
+             * Content
+             * @constant
+             */
+            content: "metadata_only";
+            /** Session Id */
+            session_id: string;
+            /**
+             * Share State
+             * @constant
+             */
+            share_state: "shared_cloud";
+            /** Share Url */
+            share_url: string;
         };
         /** MixerChannelMarkOut */
         MixerChannelMarkOut: {
@@ -8741,6 +8827,16 @@ export interface components {
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
              * Is Remote
              * @default false
              */
@@ -8763,6 +8859,7 @@ export interface components {
              * @enum {string}
              */
             loudness_status: "ok" | "failed" | "missing";
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Match Context */
             match_context: string;
             /**
@@ -9519,6 +9616,31 @@ export interface components {
             sync_mode: "bar" | "beat";
         };
         /**
+         * TempoPrefOut
+         * @description PREF-01: a track's user-set preferred tempo plus its playable range.
+         *
+         *     Any of the three may be null (unset). Never fabricated on read - a track
+         *     with no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,
+         *     not this shape with all-null members (see sqlite_backend._row_to_track).
+         */
+        TempoPrefOut: {
+            /** Max */
+            max?: number | null;
+            /** Min */
+            min?: number | null;
+            /** Regular */
+            regular?: number | null;
+        };
+        /** TempoPrefPatch */
+        TempoPrefPatch: {
+            /** Max */
+            max?: number | null;
+            /** Min */
+            min?: number | null;
+            /** Regular */
+            regular?: number | null;
+        };
+        /**
          * TierEstimateOut
          * @description Cost of one track at one tier. ``measured`` false means we do not know.
          */
@@ -9691,6 +9813,16 @@ export interface components {
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
              * Is Remote
              * @default false
              */
@@ -9699,6 +9831,7 @@ export interface components {
             key?: string | null;
             /** Last Played At */
             last_played_at?: string | null;
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Lyrics Available */
             lyrics_available: boolean;
             /** Notes */
@@ -9735,6 +9868,7 @@ export interface components {
              * @default []
              */
             tags: string[];
+            tempo_pref?: components["schemas"]["TempoPrefOut"] | null;
             /** Title */
             title?: string | null;
             /** Updated At */
@@ -9807,6 +9941,7 @@ export interface components {
              * @default []
              */
             tags: string[];
+            tempo_pref?: components["schemas"]["TempoPrefOut"] | null;
             /** Title */
             title?: string | null;
             /** Updated At */
@@ -9822,6 +9957,7 @@ export interface components {
             tags_add?: string[] | null;
             /** Tags Remove */
             tags_remove?: string[] | null;
+            tempo_pref?: components["schemas"]["TempoPrefPatch"] | null;
         };
         /**
          * TrackRowOut
@@ -9865,6 +10001,16 @@ export interface components {
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
              * Is Remote
              * @default false
              */
@@ -9887,6 +10033,7 @@ export interface components {
              * @enum {string}
              */
             loudness_status: "ok" | "failed" | "missing";
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /**
              * Play Count
              * @default 0
@@ -10813,6 +10960,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_get_metadata_share_api_sets__session_id__share_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataShareResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_publish_metadata_share_api_sets__session_id__share_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MetadataShareRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataShareResponse"];
                 };
             };
             /** @description Validation Error */

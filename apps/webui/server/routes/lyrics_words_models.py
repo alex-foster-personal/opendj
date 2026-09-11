@@ -80,6 +80,9 @@ class CoverageVerdictOut(BaseModel):
     effective_verdict: str = Field(
         description="what to act on: the human override if set, else verdict"
     )
+    effective: str = Field(
+        description="same as effective_verdict; kept for clients that read .effective"
+    )
     coverage_pct: float | None = Field(
         default=None, description="share of the track the vocal stem carries energy"
     )

@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     path = Path(args.payload)
     payload = json.loads(path.read_text(encoding="utf-8"))
     report = score_payload(payload)
-    round_n = int(payload.get("round", 1))
+    round_n = int(payload.get("round", payload.get("parity_round", 1)))
     text = render_report(report, round_n=round_n)
     sys.stdout.write(text if text.endswith("\n") else text + "\n")
     return 0
