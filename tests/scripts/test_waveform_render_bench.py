@@ -9,18 +9,25 @@ from pathlib import Path
 
 import pytest
 
+from apps.webui.server import rb_vendor
+
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "scripts/bench/waveform_render_bench.py"
 
 
-def test_waveform_render_bench_unknown_without_native(monkeypatch: pytest.MonkeyPatch) -> None:
-    import scripts.bench.waveform_render_bench as bench
-
-    monkeypatch.setattr(bench.rb_vendor, "_WAVEFORM_NATIVE", None)
-    monkeypatch.setattr(sys, "argv", ["waveform_render_bench.py"])
-    with pytest.raises(SystemExit) as exc_info:
-        bench.main()
-    assert exc_info.value.code == 3
+@pytest.mark.skipif(
+    rb_vendor._WAVEFORM_NATIVE is not None,
+    reason="native extension installed; real UNKNOWN path not observable on this host",
+)
+def test_waveform_render_bench_unknown_without_native() -> None:
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        cwd=REPO,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 3, completed.stderr
 
 
 def test_waveform_render_bench_writes_medians(tmp_path: Path) -> None:

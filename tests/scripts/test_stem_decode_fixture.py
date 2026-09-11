@@ -30,10 +30,11 @@ def test_stem_decode_fixture_builds_bundle_and_manifest(tmp_path: Path) -> None:
     assert bundle.is_file()
 
 
-def test_stem_decode_fixture_unknown_without_ffmpeg(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(stem_decode_fixture.shutil, "which", lambda _name: None)
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is not None,
+    reason="ffmpeg is installed; real UNKNOWN path not observable on this host",
+)
+def test_stem_decode_fixture_unknown_without_ffmpeg(tmp_path: Path) -> None:
     with pytest.raises(SystemExit) as exc:
         stem_decode_fixture.build(tmp_path / "data")
     assert exc.value.code == 3

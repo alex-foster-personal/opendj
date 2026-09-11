@@ -779,7 +779,9 @@ jobs:
         run: uv sync --extra dev
 
       - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6190aa5fb88a88ee71c12769924bbe63a9ab152e # 1.96.0
+        with:
+          toolchain: "1.96.0"
 
       - name: Install waveform native extension
         run: |

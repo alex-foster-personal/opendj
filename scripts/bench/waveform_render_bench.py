@@ -68,6 +68,18 @@ def _git_sha() -> str:
     return completed.stdout.strip()
 
 
+def _rust_toolchain() -> str:
+    completed = subprocess.run(
+        ["rustc", "--version"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return "UNKNOWN"
+    return completed.stdout.strip()
+
+
 def _fixture_bands() -> dict[str, np.ndarray]:
     """Deterministic tri-band arrays sized like a detail ANLZ band set."""
     bands: dict[str, np.ndarray] = {}
@@ -160,6 +172,7 @@ def main() -> int:
     report = {
         "host": _host_identity(),
         "git_sha": _git_sha(),
+        "rust_toolchain": _rust_toolchain(),
         "denominator": (
             f"one synthetic tri-band payload ({BAND_LENGTH} columns/band) materialized "
             f"to {args.points} points by _rb_waveform_native.bands_payload, "
