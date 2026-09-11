@@ -20,14 +20,11 @@ from apps.parity.lanes import (
 )
 
 _UNGRADABLE_REASON: dict[str, str] = {
-    "phrase": "missing_pssi",
     "vocal": "missing_pvdi",
 }
 
 
 def _ungradable_pred(lane: str) -> Callable[[dict[str, Any]], bool]:
-    if lane == "phrase":
-        return lambda row: not row.get("rb_pssi")
     if lane == "vocal":
         return lambda row: not row.get("rb_pvdi")
     return lambda _row: False

@@ -6,8 +6,15 @@ import csv
 import sys
 from pathlib import Path
 
+from apps.analysis.selection import SelectionError
 from apps.shared import paths
 from apps.shared.rekordbox_writeback import require_writeback_enabled
+from apps.sync.analysis_writeback_diff import (
+    UnpromotedLaneError,
+    WRITEBACK_FIELDS,
+    WRITEBACK_LANES,
+    dry_run as writeback_dry_run,
+)
 from apps.sync.djay_writer import (
     patch_color_index,
     patch_key_signature_index,
@@ -63,7 +70,7 @@ def _load_diff(path: Path) -> list[dict]:
         return list(csv.DictReader(fp))
 
 
-def dry_run(rows: list[dict]) -> int:
+def _csv_resolution_summary(rows: list[dict]) -> int:
     if not rows:
         print("[apply_analysis] no rows in analysis-diff.csv (dry-run).")
         return 0
@@ -77,6 +84,25 @@ def dry_run(rows: list[dict]) -> int:
         summary = ", ".join(f"{k}={v}" for k, v in sorted(per_field[field].items()))
         print(f"  {field}: {summary}")
     return 0
+
+
+def dry_run(
+    *,
+    state_db: Path | None = None,
+    rb_db: Path | None = None,
+    lanes: tuple[str, ...] = WRITEBACK_LANES,
+    fields: tuple[str, ...] | None = None,
+    only_tracks: set[str] | None = None,
+) -> int:
+    """Write-back dry-run planner (read-only rekordbox + state)."""
+    resolved_fields = fields or tuple(WRITEBACK_FIELDS)
+    return writeback_dry_run(
+        state_db=state_db or paths.STATE_DB,
+        rb_db=rb_db or paths.REKORDBOX_PLAIN_DB,
+        lanes=lanes,
+        fields=resolved_fields,
+        only_tracks=only_tracks,
+    )
 
 
 def _camelot_to_djay_key_idx(camelot: str) -> int | None:
@@ -360,12 +386,17 @@ def live_run(
     return 0
 
 
+_LIVE_DEFAULT_FIELDS = "bpm,manual_bpm,key_camelot,energy,tags"
+_WRITEBACK_DEFAULT_FIELDS = "bpm,key,loudness_lufs,loudness_dbtp"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="apps.sync.apply_analysis")
     parser.add_argument(
         "--diff-csv",
         type=Path,
-        default=paths.DATA_DIR / "sync" / "analysis-diff.csv",
+        default=None,
+        help="SYNC-05 rb-vs-djay CSV resolution summary (not the no-flag default).",
     )
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--bulk", action="store_true")
@@ -373,7 +404,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--fields",
         type=str,
-        default="bpm,manual_bpm,key_camelot,energy,tags",
+        default="",
+        help="Comma-separated fields; default depends on --live.",
+    )
+    parser.add_argument(
+        "--lanes",
+        type=str,
+        default=",".join(WRITEBACK_LANES),
+        help="Write-back dry-run lanes (ignored with --live).",
+    )
+    parser.add_argument(
+        "--state-db",
+        type=Path,
+        default=paths.STATE_DB,
+        help="State DB for write-back dry-run (ignored with --live).",
+    )
+    parser.add_argument(
+        "--rb-db",
+        type=Path,
+        default=paths.REKORDBOX_PLAIN_DB,
+        help="Rekordbox plain working copy for write-back dry-run (ignored with --live).",
     )
     parser.add_argument(
         "--i-understand-the-risks",
@@ -390,17 +440,51 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    rows = _load_diff(args.diff_csv)
+    fields_raw = args.fields.strip()
+    if fields_raw:
+        fields_list = tuple(f.strip() for f in fields_raw.split(",") if f.strip())
+    elif args.live:
+        fields_list = tuple(
+            f.strip() for f in _LIVE_DEFAULT_FIELDS.split(",") if f.strip()
+        )
+    else:
+        fields_list = tuple(
+            f.strip() for f in _WRITEBACK_DEFAULT_FIELDS.split(",") if f.strip()
+        )
+
+    only_tracks: set[str] | None = None
+    if args.tracks:
+        only_tracks = {t.strip() for t in args.tracks.split(",") if t.strip()}
+
     if not args.live:
-        return dry_run(rows)
+        if args.diff_csv is not None:
+            return _csv_resolution_summary(_load_diff(args.diff_csv))
+        lanes = tuple(l.strip() for l in args.lanes.split(",") if l.strip())
+        try:
+            return dry_run(
+                state_db=args.state_db,
+                rb_db=args.rb_db,
+                lanes=lanes,
+                fields=fields_list,
+                only_tracks=only_tracks,
+            )
+        except UnpromotedLaneError as e:
+            print(f"[apply_analysis] {e}", file=sys.stderr)
+            return 2
+        except SelectionError as e:
+            print(f"[apply_analysis] {e}", file=sys.stderr)
+            return 2
+        except FileNotFoundError as e:
+            print(f"[apply_analysis] {e}", file=sys.stderr)
+            return 2
+
+    csv_path = args.diff_csv or (paths.DATA_DIR / "sync" / "analysis-diff.csv")
+    rows = _load_diff(csv_path)
     if args.bulk and not args.i_understand_the_risks:
         print("[apply_analysis] --bulk requires --i-understand-the-risks", file=sys.stderr)
         return 2
 
-    fields = {f.strip() for f in args.fields.split(",") if f.strip()}
-    only_tracks: set[str] | None = None
-    if args.tracks:
-        only_tracks = {t.strip() for t in args.tracks.split(",") if t.strip()}
+    fields = set(fields_list)
 
     from apps.sync.safety import (
         mark_cautious_success,
@@ -442,4 +526,4 @@ if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
 
 
-__all__ = ["dry_run", "live_run", "main"]
+__all__ = ["UnpromotedLaneError", "dry_run", "live_run", "main"]

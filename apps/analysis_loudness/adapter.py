@@ -23,9 +23,7 @@ from pathlib import Path
 
 from apps.loudness.scan import SCAN_TIMEOUT_S, LoudnessError, require_ffmpeg, scan_file
 
-_RMS_PATTERN = re.compile(
-    r"^.*RMS level dB:\s*(-?\d+(?:\.\d+)?|-inf)\s*$", re.M
-)
+_RMS_PATTERN = re.compile(r"^.*RMS level dB:\s*(-?\d+(?:\.\d+)?|-inf)\s*$", re.M)
 
 
 @dataclass(frozen=True)
@@ -75,14 +73,16 @@ def _scan_whole_file_rms(path: Path, binary: str) -> float:
     return float("-inf") if raw == "-inf" else float(raw)
 
 
-def analyze_file(path: Path) -> LoudnessAnalysis:
+def analyze_file(path: Path, *, binary: str | None = None) -> LoudnessAnalysis:
     """Measure native loudness values for ``path`` with the shipped scanner.
 
     Resolves ffmpeg once and shares it across both passes: a PATH change
     between them would otherwise let the R128 and RMS measurements come from
-    two different ffmpeg binaries.
+    two different ffmpeg binaries. Callers that already resolved ffmpeg
+    (the ``AnalyzerBackend`` wrapper) pass that executable in so R128, RMS
+    and the record-metadata decode cannot drift.
     """
-    binary = require_ffmpeg()
+    binary = binary or require_ffmpeg()
     scan = scan_file(path, binary=binary)
     return LoudnessAnalysis(
         integrated_lufs=scan.integrated_lufs,

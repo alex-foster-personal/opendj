@@ -46,6 +46,9 @@ class LaneFigure:
     within_1_0_n: int | None = None
     related_n: int | None = None
     mirex_mean: float | None = None
+    boundary_f_0_5: float | None = None
+    boundary_f_3_0: float | None = None
+    label_acc: float | None = None
     failed_own_n: int = 0
     no_own_n: int = 0
     at_parity: bool = False
@@ -100,6 +103,9 @@ class LaneFigure:
             "within_1_0_n": self.within_1_0_n,
             "related_n": self.related_n,
             "mirex_mean": self.mirex_mean,
+            "boundary_f_0_5": self.boundary_f_0_5,
+            "boundary_f_3_0": self.boundary_f_3_0,
+            "label_acc": self.label_acc,
             "failed_own_n": self.failed_own_n,
             "no_own_n": self.no_own_n,
             "at_parity": self.at_parity,

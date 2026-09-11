@@ -39,12 +39,12 @@ const urlSuffixImports = {
  * one place (for example, once per child process spawned) can esbuild it
  * once and reuse the text, rather than paying a full compile per use.
  */
-export async function bundleTypeScriptModule(relativePath, { viteApiBase } = {}) {
+export async function bundleTypeScriptModule(relativePath, { viteApiBase, alias = {} } = {}) {
 	const absolutePath = fileURLToPath(new URL(`../../${relativePath}`, import.meta.url));
 	const result = await build({
 		entryPoints: [absolutePath],
 		absWorkingDir: FRONTEND_ROOT,
-		alias: { $lib: LIB_ROOT },
+		alias: { $lib: LIB_ROOT, ...alias },
 		bundle: true,
 		define: {
 			'$state': 'globalThis.__musicDjToolsTestState',

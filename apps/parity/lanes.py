@@ -33,6 +33,7 @@ SCORED_THIS_ROUND: Final[tuple[str, ...]] = (
     "waveform_preview",
     "waveform_detail",
     "waveform_triband",
+    "phrase",
     "cues_db",
     "cues_anlz",
 )
@@ -40,10 +41,6 @@ DELEGATED_THIS_ROUND: Final[tuple[str, ...]] = ("beatgrid", "downbeat")
 
 # Follow-up issue bodies start `Part k of 5 of #1520`. This PR is part 1.
 REMAINING_REASON: Final[dict[str, str]] = {
-    "phrase": (
-        "Part 3 of 5 of #1520: phrase (ANLZ PSSI). "
-        "Tracks with no PSSI are ungradable; phrase never uses the beatgrid pool."
-    ),
     "vocal": (
         "Part 5 of 5 of #1520: vocal (ANLZ PVDI). "
         "Tracks with no PVDI fourcc are ungradable."

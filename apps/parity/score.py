@@ -13,6 +13,7 @@ from apps.parity.cues import refuse_forbidden_cue_banklist_keys, score_cues_anlz
 from apps.parity.figure import LaneFigure, ParityThresholdNotCalibrated
 from apps.parity.key import score_key
 from apps.parity.lanes import DELEGATED_THIS_ROUND, LANE_IDS, SCORED_THIS_ROUND
+from apps.parity.phrase import score_phrase
 from apps.parity.remaining import classify_remaining
 from apps.parity.waveform import score_waveform
 
@@ -81,6 +82,8 @@ def score_payload(payload: dict[str, Any]) -> ParityReport:
             figures.append(score_key(rows, measured_at=measured_at))
         elif lane in {"waveform_preview", "waveform_detail", "waveform_triband"}:
             figures.append(score_waveform(lane, rows, measured_at=measured_at))
+        elif lane == "phrase":
+            figures.append(score_phrase(rows, measured_at=measured_at))
         elif lane == "cues_db":
             figures.append(score_cues_db(rows, measured_at=measured_at))
         elif lane == "cues_anlz":
@@ -148,6 +151,25 @@ def render_report(report: ParityReport, *, round_n: int | None = None) -> str:
             )
         if figure.lane in {"waveform_preview", "waveform_detail", "waveform_triband"}:
             notes = _waveform_notes(figure)
+        if figure.lane == "phrase" and figure.status == "scored":
+            if figure.scored_n > 0:
+                notes = (
+                    f"boundary F@0.5s {figure.boundary_f_0_5:.3f} of {figure.scored_n} scored; "
+                    f"F@3.0s {figure.boundary_f_3_0:.3f}; kind acc {figure.label_acc:.3f}. "
+                    "Reporting bands, not a threshold. Denominator is PSSI-present tracks "
+                    "in this fixture, never the beatgrid pool."
+                )
+            elif figure.denominator_n == 0:
+                missing = figure.ungradable.get("missing_pssi", 0)
+                notes = (
+                    f"no PSSI in this fixture; missing_pssi {missing}. "
+                    "Phrase denominator is PSSI-present tracks, never the beatgrid pool."
+                )
+            else:
+                notes = (
+                    f"no own phrase analysis on {figure.no_own_n} PSSI-present tracks. "
+                    "Native phrase producer is v2; reporting the wait, not a miss."
+                )
         if figure.lane == "cues_db" and figure.status == "scored":
             matched = figure.details.get("matched_cues_n", 0)
             rb_cues = figure.details.get("rb_cues_n", 0)

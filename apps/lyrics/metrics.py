@@ -21,9 +21,17 @@ class OnsetErrorReport:
     median_abs_error_s: float
     p95_abs_error_s: float
     within: dict[float, float]  # tolerance_s -> fraction of onsets within it
+    abs_errors: tuple[float, ...]  # per-word |pred-ref| values for pooling
 
 
 #-----------------------------------------------------------------------------
+
+
+def _validate_onset(value: float, role: str, index: int) -> None:
+    if not math.isfinite(value) or value < 0:
+        raise ValueError(
+            f"{role} onset at word row {index} must be a finite track second >= 0"
+        )
 
 
 def _p95(sorted_values: list[float]) -> float:
@@ -41,9 +49,12 @@ def score_onsets(ref_starts_s: list[float], pred_starts_s: list[float]) -> Onset
         )
     if not ref_starts_s:
         raise ValueError("no words to score")
-    abs_errors = sorted(abs(r - p) for r, p in zip(ref_starts_s, pred_starts_s, strict=True))
-    if any(math.isnan(e) for e in abs_errors):
-        raise ValueError("NaN onset in ref or pred")
+    abs_errors_list: list[float] = []
+    for index, (ref, pred) in enumerate(zip(ref_starts_s, pred_starts_s, strict=True)):
+        _validate_onset(ref, "reference", index)
+        _validate_onset(pred, "predicted", index)
+        abs_errors_list.append(abs(ref - pred))
+    abs_errors = sorted(abs_errors_list)
     return OnsetErrorReport(
         n_words=len(abs_errors),
         mean_abs_error_s=statistics.fmean(abs_errors),
@@ -52,24 +63,29 @@ def score_onsets(ref_starts_s: list[float], pred_starts_s: list[float]) -> Onset
         within={
             tol: sum(1 for e in abs_errors if e <= tol) / len(abs_errors) for tol in TOLERANCES_S
         },
+        abs_errors=tuple(abs_errors_list),
     )
 
 
 def aggregate(reports: list[OnsetErrorReport]) -> OnsetErrorReport:
-    """Word-pooled aggregate across songs (every word counts once, long songs weigh more)."""
+    """Word-pooled aggregate across songs (every word counts once, long songs weigh more).
+
+    Mean, median, p95, and within are computed from the pooled raw per-word errors.
+    """
     if not reports:
         raise ValueError("no reports to aggregate")
-    n = sum(r.n_words for r in reports)
-    # Pooled mean/within are exact from per-song stats; median/p95 are approximated by the
-    # n-weighted mean of per-song values (exact pooling would need raw errors).
+    pooled = [error for report in reports for error in report.abs_errors]
+    sorted_errors = sorted(pooled)
+    n = len(pooled)
     return OnsetErrorReport(
         n_words=n,
-        mean_abs_error_s=sum(r.mean_abs_error_s * r.n_words for r in reports) / n,
-        median_abs_error_s=sum(r.median_abs_error_s * r.n_words for r in reports) / n,
-        p95_abs_error_s=sum(r.p95_abs_error_s * r.n_words for r in reports) / n,
+        mean_abs_error_s=statistics.fmean(pooled),
+        median_abs_error_s=statistics.median(pooled),
+        p95_abs_error_s=_p95(sorted_errors),
         within={
-            tol: sum(r.within[tol] * r.n_words for r in reports) / n for tol in TOLERANCES_S
+            tol: sum(1 for error in pooled if error <= tol) / n for tol in TOLERANCES_S
         },
+        abs_errors=tuple(pooled),
     )
 
 

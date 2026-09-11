@@ -16,9 +16,14 @@ import argparse
 import subprocess
 from pathlib import Path
 
-from scripts.perf.perf_kpi_config import LEDGER_PR_BRANCH, LEDGER_PR_TITLE, load_config
+from scripts.perf.perf_kpi_config import LEDGER_PR_BRANCH, LEDGER_PR_TITLE, REPO_ROOT, load_config
 from scripts.perf.perf_kpi_health import HealthConfig, build_restart_command, run_health_tick
-from scripts.perf.perf_kpi_nightly import default_probe, run_nightly
+from scripts.perf.perf_kpi_nightly import (
+    acquire_nightly_engine,
+    default_probe,
+    run_nightly,
+    stop_scratch_engine,
+)
 
 REPOSITORY = "maintainer/music-dj-tools"
 
@@ -57,18 +62,23 @@ def cmd_health(config) -> int:
 
 
 def cmd_nightly(config, *, base_url: str | None, skip_pr: bool) -> int:
-    port = config.scratch_port
-    url = base_url or f"http://127.0.0.1:{port}"
-    outcome = run_nightly(
-        config,
-        base_url=url,
-        git_sha=_git_sha(config.ledger_path.parents[2]),
-        probe=default_probe,
-        file_issue=True,
-    )
-    if not skip_pr:
-        update_ledger_pr(config.ledger_path.parents[2])
-    return outcome.exit_code
+    url, proc, _log_path, prep_code = acquire_nightly_engine(config, base_url=base_url)
+    if prep_code != 0:
+        return prep_code
+    try:
+        outcome = run_nightly(
+            config,
+            base_url=url,
+            git_sha=_git_sha(REPO_ROOT),
+            probe=default_probe,
+            file_issue=not skip_pr,
+        )
+        if not skip_pr:
+            update_ledger_pr(REPO_ROOT)
+        return outcome.exit_code
+    finally:
+        if proc is not None:
+            stop_scratch_engine(proc)
 
 
 def update_ledger_pr(repo_root: Path) -> None:

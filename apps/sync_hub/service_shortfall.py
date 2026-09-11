@@ -22,6 +22,12 @@ def push_shortfall(result: engine.ApplyResult, offered: int) -> str | None:
     """What ``push`` held back, or None when it decided every offered row."""
     if not result.quarantined:
         return None
+    if result.identity_conflicts and not result.faults:
+        return (
+            f"{result.quarantined} of the {offered} offered row(s) share a "
+            f"content identity with a stored row but their identity signals "
+            f"disagree; neither row was collapsed."
+        )
     return (
         f"{result.quarantined} of the {offered} offered row(s) met a local "
         f"row this hub cannot order "

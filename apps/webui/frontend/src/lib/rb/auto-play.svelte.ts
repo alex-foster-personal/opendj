@@ -33,7 +33,6 @@ import {
 	handoffFailureIsRetryable,
 	getAutoPlayFeedEpoch,
 	getAutoPlayPlaylist,
-	getAutoPlayPlaylistRevision,
 	registerAutoPlayRankProvider,
 	remainingAutoPlayCandidates,
 	pickFollowerDeck,
@@ -41,14 +40,19 @@ import {
 	pickSourceDeck,
 	remainingMs,
 	shouldTriggerAutoPlay,
-	simulateAutoPlayChain,
 	tempoBoundsFromPitchRange,
 	type AutoPlayDeckSnap,
 	type AutoPlayHandoffPhase,
-	type AutoPlayMasterPromotion,
-	chartedOrderKey
+	type AutoPlayMasterPromotion
 } from '$lib/rb/auto-play';
-import { planAutoPlayIdleDisarm, resetAutoPlayIdleClock } from '$lib/rb/autoplay-idle';
+import { clearChartedAutoPlayOrder, refreshChartedAutoPlayOrder } from '$lib/rb/auto-play-chart-order';
+import { applyAutoPlayIdleDisarmAction, planAutoPlayIdleDisarm, resetAutoPlayIdleClock } from '$lib/rb/autoplay-idle';
+import {
+	isSilenceRecovering,
+	noteAutoPlayFollowerPlayDispatched,
+	resetAutoPlaySilenceRecovery,
+	resolveAutoPlaySourceForTick
+} from '$lib/rb/autoplay-silence-recover';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';
 import { pushToast } from '$lib/stores.svelte';
@@ -57,7 +61,6 @@ import {
 	autoPlayOrder,
 	clearAutoPlayOrder,
 	clearAutoPlayQueue,
-	publishAutoPlayOrder
 } from '$lib/rb/autoplay-queue.svelte';
 import { autoPlayExhaustionToast, autoPlayStallReason } from '$lib/rb/autoplay-stall';
 import { applyAutoPlayBeatSyncDecision } from '$lib/rb/auto-play-phase-lock';
@@ -73,13 +76,6 @@ import { AutoPlayHandoffError } from '$lib/rb/auto-play-handoff-error';
 import type { DeckId } from '$lib/rb/deck-slots';
 
 const POLL_MS = 250;
-/**
- * Rows of upcoming order the library column charts. The picker itself only ever
- * needs the next track; walking the whole playlist under maximize_reach cost
- * 6.9 s per simulation on 8558 rows (Wed 2 Sep 2026), so the column shows the
- * near future and ranks beyond it are simply absent.
- */
-const CHARTED_ORDER_HORIZON = 64;
 /** Failed load/play attempts per source track before stopping. */
 const MAX_HANDOFF_ATTEMPTS = 3;
 
@@ -93,8 +89,7 @@ let _playedFeedEpoch = -1;
 /** Epoch whose non-empty feed exhausted this source without committing a load. */
 let _exhaustedFeedEpoch: number | null = null;
 /** Inputs of the last charted-order simulation; equal key = skip the tick's simulate. */
-let _chartedOrderKey: string | null = null;
-/** Candidates that failed load/play; cleared when playlist membership changes. */
+const _chartKeyRef = { current: null as string | null };
 let _unplayableIds = new Set<string>();
 /**
  * Candidates that failed to LOAD for the current source, by id.
@@ -122,10 +117,8 @@ let _disarmRetainStall = false;
 
 export { autoPlayOrder } from '$lib/rb/autoplay-queue.svelte';
 
-/** Clear a published chart and its memo together, so recovery always re-plans. */
 function _clearChartedOrder(): void {
-	_chartedOrderKey = null;
-	publishAutoPlayOrder([]);
+	clearChartedAutoPlayOrder(_chartKeyRef);
 }
 
 function _refreshChartedOrder(
@@ -133,54 +126,15 @@ function _refreshChartedOrder(
 	snaps: readonly AutoPlayDeckSnap[],
 	excludeIds: ReadonlySet<string>
 ): void {
-	if (!uiPrefs.auto_play_enabled || source === null || source.stable_id === null) {
-		_clearChartedOrder();
-		return;
-	}
-	_syncPlayedSet();
-	const follower = pickFollowerDeck(snaps, source.id);
-	if (follower === null) {
-		_clearChartedOrder();
-		return;
-	}
-	const followerPitchRange = pitchRanges[follower];
-	const bounds = tempoBoundsFromPitchRange(followerPitchRange);
-	// The poll fires every 250 ms; simulating the chain over the open playlist
-	// is O(rows^2) (1.5 s on 8558 rows). Nothing about the order can change
-	// unless one of these inputs did, so an unchanged key is a no-op tick.
-	const key = chartedOrderKey({
-		feed_epoch: _playedFeedEpoch,
-		playlist_revision: getAutoPlayPlaylistRevision(),
-		source_stable_id: source.stable_id,
-		source_key: deckStates[source.id].key,
-		source_bpm: deckStates[source.id].bpm,
-		enforce_play_order: uiPrefs.auto_play_enforce_order,
-		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach,
-		min_tempo_ratio: bounds.min,
-		max_tempo_ratio: bounds.max,
-		exclude_ids: excludeIds,
-		played_ids: _playedIds,
-		follower_deck: follower,
-		follower_pitch_range: followerPitchRange
+	refreshChartedAutoPlayOrder({
+		source,
+		snaps,
+		excludeIds,
+		playedFeedEpoch: _playedFeedEpoch,
+		playedIds: _playedIds,
+		chartKey: _chartKeyRef,
+		syncPlayedSet: _syncPlayedSet
 	});
-	if (key === _chartedOrderKey) return;
-	_chartedOrderKey = key;
-	const full = simulateAutoPlayChain({
-		select_next: pickNextStableId,
-		playlist: getAutoPlayPlaylist(),
-		start_stable_id: source.stable_id,
-		start_key: deckStates[source.id].key,
-		start_bpm: deckStates[source.id].bpm,
-		enforce_play_order: uiPrefs.auto_play_enforce_order,
-		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach,
-		min_tempo_ratio: bounds.min,
-		max_tempo_ratio: bounds.max,
-		exclude_ids: excludeIds,
-		played_ids: _playedIds,
-		max_chain_length: CHARTED_ORDER_HORIZON + 1
-	});
-	// Upcoming only - source is already playing, not "next".
-	publishAutoPlayOrder(full.slice(1));
 }
 
 /**
@@ -245,6 +199,7 @@ async function _handoff(source: AutoPlayDeckSnap, follower: DeckId, nextId: stri
 		const syncSkip = await applyAutoPlayBeatSyncDecision(source, follower);
 		if (syncSkip !== null) pushToast(syncSkip, 'info');
 		await dispatchPerformanceCommand({ type: 'play', deck: follower, playing: true });
+		noteAutoPlayFollowerPlayDispatched();
 	} catch (error: unknown) {
 		throw new AutoPlayHandoffError('commit', error);
 	}
@@ -277,6 +232,7 @@ async function _promoteMaster(): Promise<void> {
 	if (decision === 'wait') return;
 	if (decision === 'drop') {
 		_pendingMaster = null;
+		resetAutoPlaySilenceRecovery();
 		return;
 	}
 	if (decision === 'promote') {
@@ -317,16 +273,21 @@ async function _tick(): Promise<void> {
 		enabled: uiPrefs.auto_play_enabled,
 		snaps,
 		pending_master: _pendingMaster !== null,
+		silence_recovering: isSilenceRecovering(),
 		now_ms: Date.now(),
 		stall_active: readAutoPlayStall() !== null
 	});
-	if (idlePlan.action === 'disarm') {
-		_disarmRetainStall = idlePlan.retain_stall;
-		setAutoPlayEnabled(false);
+	if (
+		applyAutoPlayIdleDisarmAction(idlePlan, (retainStall) => {
+			_disarmRetainStall = retainStall;
+			setAutoPlayEnabled(false);
+		}) === 'disarmed'
+	) {
 		return;
 	}
 
-	const source = pickSourceDeck(snaps);
+	const resolved = resolveAutoPlaySourceForTick(snaps, pickSourceDeck);
+	const source = resolved.source;
 	if (source === null || source.stable_id === null) {
 		// Row 1, but NOT while a promotion is still settling: between the old
 		// master being demoted and the new one being flagged there is a poll or
@@ -348,7 +309,8 @@ async function _tick(): Promise<void> {
 	const excludeIds = autoPlayExcludeIds(source.id, snaps, _claimedIds, _unplayableIds);
 	_refreshChartedOrder(source, snaps, excludeIds);
 
-	const rem = remainingMs(source.position_ms, source.duration_ms);
+	const rem =
+		resolved.remainingOverride ?? remainingMs(source.position_ms, source.duration_ms);
 	// min(constant, duration/2): a track shorter than the constant window must
 	// not arm at t=0 (it used to load the next track over its own first beat).
 	const windowMs = effectiveAutoPlayThresholdMs(source.duration_ms);
@@ -557,12 +519,12 @@ export function installAutoPlay(): () => void {
 				// PLAY-05: activation creates the inspectable queue before the
 				// first poll has a master track from which to calculate handoffs.
 				activateAutoPlayQueue();
-				_chartedOrderKey = null;
+				_chartKeyRef.current = null;
 				clearAutoPlayOrder();
 				_startPoll();
 			} else {
 				_stopPoll();
-				_chartedOrderKey = null;
+				_chartKeyRef.current = null;
 				clearAutoPlayOrder();
 				clearAutoPlayQueue();
 				if (!_disarmRetainStall) {
@@ -586,6 +548,7 @@ export function installAutoPlay(): () => void {
 		_pendingMaster = null;
 		_promoting = false;
 		resetAutoPlayIdleClock();
+		resetAutoPlaySilenceRecovery();
 		_disarmRetainStall = false;
 		_claimedIds = new Set();
 		_playedIds = new Set();

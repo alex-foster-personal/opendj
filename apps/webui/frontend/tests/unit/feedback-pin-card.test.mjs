@@ -74,6 +74,14 @@ test('the pin marker is a focusable button, not a span', () => {
 	assert.match(markers, /onclick=\{\(\) => onopen\(pin\)\}/);
 });
 
+test('the reopened card has a follow-up composer wired through pinThread', () => {
+	assert.match(card, /pinThread/);
+	assert.match(card, /class="fb-reply"/);
+	assert.match(card, /aria-label="Follow-up comment"/);
+	assert.match(card, /aria-label="Add follow-up comment"/);
+	assert.doesNotMatch(card, /\/follow-on/, 'the reply composer must not call follow-on');
+});
+
 test('the pin opens a real dialog, not just a native title', () => {
 	// #858 kept a native `title` as a quick hover preview, but the full text
 	// is also reachable through a clickable, selectable body (fb-pin-body) -
