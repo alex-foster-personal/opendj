@@ -645,6 +645,20 @@ jobs:
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5321 8696 -- \
             pnpm exec playwright test --config tests/e2e/playwright.comment-hotkey-gate.config.ts --output test-results/comment-hotkey-gate
 
+      # -- AutoPlay stall-banner gate, real backend + fixture library --------
+      # Same PREFLIGHT-01 library-attached reason as comment-hotkey: without
+      # a fixture library, /performance parks on "Starting up" and the banner
+      # never mounts. Own ports 5324/8699. Host lock because eight e2e jobs
+      # share a host. Issue #1659: a gate that never runs is the original
+      # defect one level up.
+      - name: AutoPlay stall-banner gate - real backend, fixture library
+        working-directory: apps/webui/frontend
+        if: ${{ !cancelled() }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" autoplay-stall-gate \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5324 8699 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.autoplay-stall-gate.config.ts --output test-results/autoplay-stall-gate
+
       - name: Root Playwright suite (real engine + Vite)
         working-directory: apps/webui/frontend
         # `test:e2e` fixes a pair reserved for this suite, builds its own

@@ -1,0 +1,375 @@
+{
+  "rubric_version": 1,
+  "rubric_path": "ops/quality/rubric/v1.yaml",
+  "scored_at": "2026-09-11T06:05:17.335113+00:00",
+  "commit": "9ecdadf770834ab957b40afa1379c2cf365f4839",
+  "surfaces": [
+    {
+      "id": "spec",
+      "root": "open-dj",
+      "dimensions": [
+        {
+          "id": "xref.integrity",
+          "score": 0,
+          "max": 5,
+          "findings": [
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/README.md",
+              "href": "../LICENSE",
+              "detail": "resolves outside surface root"
+            },
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/README.md",
+              "href": "../apps/open_dj/",
+              "detail": "resolves outside surface root"
+            },
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/adapters/djay.md",
+              "href": "../../apps/open_dj/adapters/djay.py",
+              "detail": "resolves outside surface root"
+            },
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/adapters/djay.md",
+              "href": "../../apps/open_dj/adapters/djay.py",
+              "detail": "resolves outside surface root"
+            },
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/adapters/rekordbox.md",
+              "href": "../../apps/open_dj/adapters/rekordbox.py",
+              "detail": "resolves outside surface root"
+            },
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/adapters/rekordbox.md",
+              "href": "../../apps/open_dj/adapters/rekordbox.py",
+              "detail": "resolves outside surface root"
+            },
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/adapters/rekordbox.md",
+              "href": "../../apps/sync/apply_ratings.py",
+              "detail": "resolves outside surface root"
+            },
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/adapters/rekordbox.md",
+              "href": "../../apps/sync/playlist_apply.py",
+              "detail": "resolves outside surface root"
+            },
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/adapters/serato.md",
+              "href": "../../apps/adapters/serato/",
+              "detail": "resolves outside surface root"
+            },
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/adapters/serato.md",
+              "href": "../../apps/adapters/serato/capabilities.py",
+              "detail": "resolves outside surface root"
+            },
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/adapters/serato.md",
+              "href": "../../apps/adapters/serato/geob.py",
+              "detail": "resolves outside surface root"
+            },
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/adapters/traktor.md",
+              "href": "../../apps/adapters/traktor/",
+              "detail": "resolves outside surface root"
+            },
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/adapters/traktor.md",
+              "href": "../../apps/adapters/traktor/mappers.py",
+              "detail": "resolves outside surface root"
+            },
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/conformance/HOWTO.md",
+              "href": "../../apps/open_dj/schema.py",
+              "detail": "resolves outside surface root"
+            },
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/conformance/HOWTO.md",
+              "href": "../../tests/fixtures/conformance/",
+              "detail": "resolves outside surface root"
+            },
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/conformance/HOWTO.md",
+              "href": "../../tests/test_conformance.py",
+              "detail": "resolves outside surface root"
+            },
+            {
+              "code": "B1",
+              "class": "relative_link_escapes_surface",
+              "path": "open-dj/conformance/HOWTO.md",
+              "href": "../../tests/test_conformance.py",
+              "detail": "resolves outside surface root"
+            }
+          ]
+        },
+        {
+          "id": "citation.resolves",
+          "score": 0,
+          "max": 5,
+          "findings": [
+            {
+              "code": "B2",
+              "class": "citation_github_missing",
+              "path": "open-dj/LICENCES.md",
+              "href": "https://github.com/GuillaumeDua/pyserato",
+              "detail": "gh api repos lookup failed"
+            },
+            {
+              "code": "B2",
+              "class": "citation_github_missing",
+              "path": "open-dj/LICENCES.md",
+              "href": "https://github.com/HoldenVR/triseratops",
+              "detail": "gh api repos lookup failed"
+            },
+            {
+              "code": "B2",
+              "class": "citation_placeholder",
+              "path": "open-dj/LICENCES.md",
+              "href": "https://github.com/example/gpl-serato",
+              "detail": "placeholder GitHub owner or repo"
+            }
+          ]
+        },
+        {
+          "id": "docs.tree_agreement",
+          "score": 3,
+          "max": 5,
+          "findings": [
+            {
+              "code": null,
+              "class": "docs_claim_disagrees_with_tree",
+              "path": "open-dj/README.md",
+              "detail": "README says v0.3 adds Serato but adapters/serato.md exists"
+            }
+          ]
+        },
+        {
+          "id": "version.drift",
+          "score": 1,
+          "max": 5,
+          "findings": [
+            {
+              "code": null,
+              "class": "version_readme_changelog_mismatch",
+              "path": "open-dj/README.md",
+              "detail": "README advertises v0.3 not reflected in CHANGELOG"
+            },
+            {
+              "code": null,
+              "class": "version_schema_readme_mismatch",
+              "path": "open-dj/schema/v0.2/open-dj.schema.json",
+              "detail": "schema $id does not match README version v0.3"
+            }
+          ]
+        },
+        {
+          "id": "schema.id_policy",
+          "score": 2,
+          "max": 5,
+          "findings": [
+            {
+              "code": "B3",
+              "class": "schema_id_host_unresolved",
+              "path": "open-dj/schema/v0.2/open-dj.schema.json",
+              "href": "https://open-dj.org/schema/0.2/open-dj.schema.json",
+              "detail": "$id host open-dj.org lacks naming-authority policy"
+            }
+          ]
+        },
+        {
+          "id": "source_of_truth.unique",
+          "score": 2,
+          "max": 5,
+          "findings": [
+            {
+              "code": "B5",
+              "class": "competing_corpora",
+              "path": "open-dj",
+              "detail": "competing corpus roots: conformance/corpus-0.2, open-dj/conformance/corpus-0.2, tests/fixtures/conformance"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "python_cli",
+      "root": "apps/open_dj",
+      "dimensions": [
+        {
+          "id": "xref.integrity",
+          "score": 0,
+          "max": 5,
+          "findings": [
+            {
+              "code": null,
+              "class": "probe_unscorable",
+              "path": "apps/open_dj",
+              "detail": "no markdown files to scan"
+            }
+          ]
+        },
+        {
+          "id": "citation.resolves",
+          "score": 5,
+          "max": 5,
+          "findings": []
+        },
+        {
+          "id": "docs.tree_agreement",
+          "score": 5,
+          "max": 5,
+          "findings": []
+        },
+        {
+          "id": "version.drift",
+          "score": 5,
+          "max": 5,
+          "findings": []
+        },
+        {
+          "id": "typed.public_surface",
+          "score": 2,
+          "max": 5,
+          "findings": [
+            {
+              "code": null,
+              "class": "missing_py_typed",
+              "path": "apps/open_dj",
+              "detail": "py.typed marker missing"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "vendor_adapter",
+      "root": "apps/adapters",
+      "dimensions": [
+        {
+          "id": "xref.integrity",
+          "score": 0,
+          "max": 5,
+          "findings": [
+            {
+              "code": null,
+              "class": "probe_unscorable",
+              "path": "apps/adapters",
+              "detail": "no markdown files to scan"
+            }
+          ]
+        },
+        {
+          "id": "citation.resolves",
+          "score": 5,
+          "max": 5,
+          "findings": []
+        },
+        {
+          "id": "docs.tree_agreement",
+          "score": 5,
+          "max": 5,
+          "findings": []
+        },
+        {
+          "id": "version.drift",
+          "score": 5,
+          "max": 5,
+          "findings": []
+        },
+        {
+          "id": "format.doc_beside_parser",
+          "score": 2,
+          "max": 5,
+          "findings": [
+            {
+              "code": null,
+              "class": "missing_format_doc",
+              "path": "apps/adapters/rekordbox",
+              "detail": "no format documentation markdown for rekordbox"
+            },
+            {
+              "code": null,
+              "class": "missing_format_doc",
+              "path": "apps/adapters/serato",
+              "detail": "no format documentation markdown for serato"
+            },
+            {
+              "code": null,
+              "class": "missing_format_doc",
+              "path": "apps/adapters/traktor",
+              "detail": "no format documentation markdown for traktor"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "svelte_ui",
+      "root": "apps/webui/frontend",
+      "dimensions": [
+        {
+          "id": "xref.integrity",
+          "score": 5,
+          "max": 5,
+          "findings": []
+        },
+        {
+          "id": "citation.resolves",
+          "score": 5,
+          "max": 5,
+          "findings": []
+        },
+        {
+          "id": "docs.tree_agreement",
+          "score": 5,
+          "max": 5,
+          "findings": []
+        },
+        {
+          "id": "version.drift",
+          "score": 5,
+          "max": 5,
+          "findings": []
+        },
+        {
+          "id": "types.generated_contract",
+          "score": 5,
+          "max": 5,
+          "findings": []
+        }
+      ]
+    }
+  ]
+}

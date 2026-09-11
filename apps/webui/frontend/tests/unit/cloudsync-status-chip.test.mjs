@@ -23,8 +23,9 @@ test('the status chip has off, syncing, ok and error render states', () => {
 });
 
 test('the chip carries an explanatory hover title derived from status', () => {
-	assert.match(CHIP, /const title = \$derived\.by/);
+	assert.match(CHIP, /const title = \$derived\.by\(/);
 	assert.match(CHIP, /title=\{title\}/);
+	assert.match(CHIP, /Click to open recent results\./);
 	assert.match(CHIP, /status\?\.last_push_at/);
 });
 

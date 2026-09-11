@@ -813,6 +813,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/copilot/peak-pressure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Peak Pressure Route */
+        post: operations["peak_pressure_route_api_v1_copilot_peak_pressure_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/copilot/suggest-next": {
         parameters: {
             query?: never;
@@ -5824,6 +5841,34 @@ export interface components {
             /** Seconds Since Last Request */
             seconds_since_last_request: number | null;
         };
+        /** PeakPressureIn */
+        PeakPressureIn: {
+            /**
+             * Session Ids
+             * @description Recently played stable_ids, oldest first, most-recent last. Unknown ids are a 404, not silently dropped.
+             */
+            session_ids?: string[];
+        };
+        /** PeakPressureOut */
+        PeakPressureOut: {
+            /** Advisory */
+            advisory: string;
+            /**
+             * Cue
+             * @enum {string}
+             */
+            cue: "keep_building" | "hold" | "release" | "unknown";
+            /** Cue Label */
+            cue_label: string;
+            /** Limitation */
+            limitation: string;
+            /** Score */
+            score: number;
+            /** Scored Tracks */
+            scored_tracks: number;
+            /** Skipped Unknown */
+            skipped_unknown: number;
+        };
         /**
          * PendingTrackOut
          * @description One persisted, unmatched Spotify playlist entry.
@@ -7336,6 +7381,7 @@ export interface components {
             /** Context Source */
             context_source: string;
             current: components["schemas"]["CopilotTrackOut"];
+            pressure: components["schemas"]["PeakPressureOut"];
         };
         /**
          * SuggestedSourcesOut
@@ -9873,6 +9919,48 @@ export interface operations {
                     "application/json": {
                         [key: string]: boolean;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    peak_pressure_route_api_v1_copilot_peak_pressure_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PeakPressureIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeakPressureOut"];
+                };
+            };
+            /** @description unknown session id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Validation Error */

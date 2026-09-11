@@ -5,7 +5,8 @@ CONTRACT (downstream ``play-it-sort-action`` builds against this):
   POST /api/v1/copilot/suggest-next
     body:  SuggestNextIn  {stable_id, session_ids?, top_n?, explain?}
     200:   SuggestNextOut {current, context_source, context_size,
-                           candidates: [SuggestionOut]}
+                           candidates: [SuggestionOut],
+                           pressure: PeakPressureOut}
     404:   ErrorBody {error: "not_found", message}   (unknown stable_id or
            unknown session_ids entry -- message names the id(s))
     422:   ErrorBody {error: "insufficient_data", message,
@@ -15,7 +16,12 @@ CONTRACT (downstream ``play-it-sort-action`` builds against this):
            fields the harmonic ranker cannot score without). ``energy``
            is reported in ``missing`` when absent but does not alone
            trigger the 422: the engine documents energy as optional and
-           the sqlite backend does not yet project it (see note below).
+           missing energy yields ``unknown`` pressure rather than a 422.
+
+  POST /api/v1/copilot/peak-pressure
+    body:  PeakPressureIn {session_ids}
+    200:   PeakPressureOut
+    404:   ErrorBody {error: "not_found", message}
 
 Semantics:
 
@@ -34,10 +40,9 @@ Semantics:
   * Keys are normalised via :func:`key_to_camelot`; an unparseable key
     is treated as missing (surfaces in the 422 when it is the current
     track's key).
-  * KNOWN GAP (fail-fast surfaced, not hidden): ``SqliteBackend`` does
-    not project the ``energy`` EAV field into ``Track`` yet, so
-    ``energy`` is None on the sqlite path until ``_EAV_FIELDS`` gains
-    it. The engine scores missing energy as neutral.
+  * Energy comes from track provenance (``_EAV_FIELDS`` includes
+    ``energy``). Missing energy is optional and yields ``unknown``
+    pressure rather than a 422.
 
 Imports the dj_copilot engine directly (no subprocess), mirroring
 ``apps/dj_copilot/cli.py``'s suggest-next path.
@@ -45,12 +50,14 @@ Imports the dj_copilot engine directly (no subprocess), mirroring
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from apps.dj_copilot.peak_pressure import PeakPlay, compute_peak_pressure
 from apps.dj_copilot.play_it import InsufficientDataError
 from apps.dj_copilot.session_context import PlayedTrack, SessionContext
 from apps.dj_copilot.suggester import RankedSuggestion, suggest_next
@@ -61,6 +68,7 @@ from ..deps import get_read_state
 from ..errors import ErrorBody
 
 router = APIRouter(prefix="/copilot", tags=["copilot"])
+_read_state = Depends(get_read_state)
 
 
 # --- request / response models (defined here; models.py is integrator-owned)
@@ -95,11 +103,32 @@ class SuggestionOut(CopilotTrackOut):
     explain_text: str | None
 
 
+class PeakPressureOut(BaseModel):
+    score: float
+    cue: Literal["keep_building", "hold", "release", "unknown"]
+    scored_tracks: int
+    skipped_unknown: int
+    cue_label: str
+    advisory: str
+    limitation: str
+
+
+class PeakPressureIn(BaseModel):
+    session_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Recently played stable_ids, oldest first, most-recent last. "
+            "Unknown ids are a 404, not silently dropped."
+        ),
+    )
+
+
 class SuggestNextOut(BaseModel):
     current: CopilotTrackOut
     context_source: str
     context_size: int
     candidates: list[SuggestionOut]
+    pressure: PeakPressureOut
 
 
 # ----------------------------------------------------------- _helpers
@@ -240,6 +269,30 @@ def _suggestion_to_out(
     )
 
 
+def _plays_from_tracks(tracks: list[Track]) -> list[PeakPlay]:
+    return [
+        PeakPlay(
+            stable_id=t.stable_id,
+            energy=_energy_of(t),
+            tags=tuple(t.tags or ()),
+        )
+        for t in tracks
+    ]
+
+
+def _pressure_out(session_tracks: list[Track]) -> PeakPressureOut:
+    result = compute_peak_pressure(_plays_from_tracks(session_tracks))
+    return PeakPressureOut(
+        score=result.score,
+        cue=result.cue,
+        scored_tracks=result.scored_tracks,
+        skipped_unknown=result.skipped_unknown,
+        cue_label=result.cue_label,
+        advisory=result.advisory,
+        limitation=result.limitation,
+    )
+
+
 # ----------------------------------------------------------- route
 
 
@@ -253,7 +306,7 @@ def _suggestion_to_out(
 )
 def suggest_next_route(
     body: SuggestNextIn,
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = _read_state,
 ) -> SuggestNextOut | JSONResponse:
     # Unknown current track -> NotFoundError -> 404 via app handler.
     current_track = backend.get_track(body.stable_id)
@@ -272,7 +325,7 @@ def suggest_next_route(
             ).model_dump(),
         )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if session_tracks:
         context = SessionContext(
             recent=[
@@ -283,6 +336,7 @@ def suggest_next_route(
                     key_camelot=_camelot_or_none(t.key),
                     energy=_energy_of(t),
                     played_at=now,
+                    tags=tuple(t.tags or ()),
                 )
                 for t in session_tracks
             ],
@@ -315,4 +369,20 @@ def suggest_next_route(
             _suggestion_to_out(s, titles[s.stable_id].title)
             for s in suggestions
         ],
+        pressure=_pressure_out(session_tracks),
     )
+
+
+@router.post(
+    "/peak-pressure",
+    response_model=PeakPressureOut,
+    responses={
+        404: {"model": ErrorBody, "description": "unknown session id"},
+    },
+)
+def peak_pressure_route(
+    body: PeakPressureIn,
+    backend: StateBackend = _read_state,
+) -> PeakPressureOut | JSONResponse:
+    session_tracks = _resolve_session_tracks(backend, body.session_ids)
+    return _pressure_out(session_tracks)
