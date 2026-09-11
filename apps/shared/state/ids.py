@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from typing import Literal
 
 ISRC_PATTERN: re.Pattern[str] = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$")
@@ -76,7 +77,8 @@ def stable_id(
             "stable_id requires ISRC, a (fingerprint, duration, size) triple, "
             "or an abs_path+mtime pair; none were provided."
         )
-    path_str = abs_path if abs_path is not None else ""
+    raw_path = abs_path if abs_path is not None else ""
+    path_str = unicodedata.normalize("NFC", raw_path).casefold()
     mtime_val = mtime if mtime is not None else 0.0
     material = f"{path_str}|{mtime_val}"
     digest = hashlib.sha1(material.encode("utf-8")).hexdigest()

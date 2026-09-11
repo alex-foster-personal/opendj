@@ -22,8 +22,11 @@ Contract notes for downstream builders
   tells the client whether the authoritative rekordbox grid also exists
   (prefer ``/anlz`` when it does).
 * Fail-fast: 404s are explicit ``{"code", "message"}`` details (same
-  shape as rb_vendor.not_found). A grid is never invented - no analysis
-  downbeats and no ANLZ means 404, not a synthesised guess.
+  shape as rb_vendor.not_found). ``/auto-cues`` returns HTTP 200 with
+  ``proposals: []`` and ``backend="none"`` when the track is in the
+  library but has no analysis row yet (no proposals, not an error).
+  ``/beatgrid-fallback`` never invents a grid - no analysis downbeats
+  and no ANLZ means 404, not a synthesised guess.
 
 Test injection points (mirrors the ``lock_status_fn`` pattern in deps.py):
   * ``app.state.analysis_db_path``  -> Path of the state DB to read
@@ -48,12 +51,14 @@ from apps.analysis.record import AnalysisRecord
 from apps.shared.paths import STATE_DB
 
 from .. import rb_vendor
-from ..backend import StateBackend
+from ..backend import NotFoundError, StateBackend
 from ..deps import get_read_state
 
 router = APIRouter(prefix="/tracks", tags=["analysis"])
 
 AUTO_CUES_SOURCE: str = "apps.analysis.auto_cues"
+UNANALYZED_BACKEND: str = "none"
+UNANALYZED_BACKEND_VERSION: str = "none"
 BEATGRID_SOURCE: str = "apps.analysis"
 BEATS_PER_BAR: int = 4          # 4/4 assumed, matching ANLZ PQTZ n=1..4
 _MIN_BEAT_INTERVAL_S: float = 0.05   # < 50 ms/beat (1200 BPM) = corrupt record
@@ -239,6 +244,25 @@ def _anlz_available(request: Request, stable_id: str) -> bool:
     return _default_anlz_available(stable_id)
 
 
+def _empty_auto_cues(stable_id: str) -> AutoCuesOut:
+    return AutoCuesOut(
+        stable_id=stable_id,
+        source=AUTO_CUES_SOURCE,
+        backend=UNANALYZED_BACKEND,
+        backend_version=UNANALYZED_BACKEND_VERSION,
+        proposals=[],
+    )
+
+
+def _track_in_library(backend: StateBackend, stable_id: str) -> bool:
+    try:
+        backend.get_track(stable_id)
+    except NotFoundError:
+        return False
+    else:
+        return True
+
+
 def _invalid_record(stable_id: str, message: str) -> HTTPException:
     return HTTPException(
         status_code=500,
@@ -301,9 +325,16 @@ def get_auto_cues(
     ),
     _backend: StateBackend = Depends(get_read_state),
 ) -> AutoCuesOut:
-    """PROPOSED hot cues from apps.analysis (META-04). Never committed cues."""
+    """PROPOSED hot cues from apps.analysis (META-04). Never committed cues.
+
+    Returns HTTP 200 with ``proposals: []`` and ``backend="none"`` when the
+    track is in the library but has no analysis row yet. Unknown stable_id
+    and unmatched ``?backend=`` still 404 with ``ANALYSIS_NOT_FOUND``.
+    """
     record = _load_latest_record(_analysis_db_path(request), stable_id, backend)
     if record is None:
+        if backend is None and _track_in_library(_backend, stable_id):
+            return _empty_auto_cues(stable_id)
         raise rb_vendor.not_found(
             "ANALYSIS_NOT_FOUND",
             f"no apps.analysis record for stable_id {stable_id}"

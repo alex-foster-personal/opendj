@@ -67,6 +67,7 @@ from apps.sync_hub import (
     protocol,
     service_enroll,
     service_shortfall,
+    service_storage,
 )
 from apps.sync_hub.service_models import (
     DigestResponse,
@@ -385,7 +386,11 @@ def enroll(
             raise _apply_error(exc) from exc
 
 
-@router.post("/push", response_model=PushResponse)
+@router.post(
+    "/push",
+    response_model=PushResponse,
+    responses=service_storage.PUSH_STORAGE_RESPONSES,
+)
 def push(request: Request, payload: PushRequest) -> PushResponse:
     """Merge offered rows under last-writer-wins; append to ``hub_changelog``.
 
@@ -417,13 +422,16 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
                     "push",
                     service_shortfall.push_shortfall(result, len(changes)),
                 )
+            # After COMMIT: observe must stay outside the writing transaction
+            # (existing comment on _generation). Catch OperationalError here
+            # too so a SQLITE_FULL on current_seq is 507, not a bare 500.
+            _generation(request, conn)
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
         except protocol.SyncProtocolError as exc:
             raise _protocol_error(exc) from exc
-        # After the COMMIT: the anchor records the greatest seq this hub has
-        # ever reported, and it must never sit above what the DB holds.
-        _generation(request, conn)
+        except sqlite3.OperationalError as exc:
+            service_storage.raise_for_operational_error(exc)
         return PushResponse(
             accepted=result.accepted,
             rejected=result.rejected,

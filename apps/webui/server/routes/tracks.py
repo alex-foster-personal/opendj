@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
+from pydantic import BaseModel, Field
 
 from apps.lyrics import cache as lyrics_cache
 from apps.shared import audio_quality
@@ -30,6 +31,7 @@ from ..models import (
 )
 from ..rb_vendor_pkg.track_rows import _artwork_facts
 from ..stem_artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
+from .ingest_job import valid_lyrics_ids
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
 
@@ -249,6 +251,20 @@ def list_tracks(
 def get_quality_ladder() -> list[QualityRungOut]:
     """The six venue rungs, so the UI legend is not a second copy of them."""
     return [QualityRungOut(**rung) for rung in audio_quality.ladder()]
+
+
+class LyricsCachedIdsOut(BaseModel):
+    """Stable ids with a valid on-disk lyrics-cache entry."""
+
+    stable_ids: list[str] = Field(default_factory=list)
+
+
+@router.get("/lyrics-cached-ids", response_model=LyricsCachedIdsOut)
+def get_lyrics_cached_ids(request: Request) -> LyricsCachedIdsOut:
+    """List cached lyric timelines so the UI can skip explicit cache-miss reads."""
+    state_db_path = Path(request.app.state.state_db_path)
+    done, _corrupt = valid_lyrics_ids(lyrics_cache.cache_dir(state_db_path.parent.parent))
+    return LyricsCachedIdsOut(stable_ids=sorted(done))
 
 
 @router.get(

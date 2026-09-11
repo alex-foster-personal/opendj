@@ -180,14 +180,14 @@ test('the row-select prefetch caches emit sampled timings', () => {
 	);
 });
 
-test('the memory meter samples on a real 2s interval and goes through the model', () => {
+test('the memory meter samples through untrack and perfMeterSampleIntervalMs', () => {
 	const src = source('src/lib/components/rb/PerfMeters.svelte');
+	assert.match(src, /untrack\(_updateMemory\)/);
 	assert.match(
 		src,
-		/untrack\(_updateMemory\);\s*\n\s*const timer = setInterval\(\(\) => untrack\(_updateMemory\), 2000\);/,
+		/perfMeterSampleIntervalMs/,
 		'without untrack the reactive reads inside _updateMemory make the effect ' +
-			'tear down and recreate the interval on every cache mutation, so the ' +
-			'"sampled every 2s" contract is a comment rather than a fact'
+			'tear down and recreate the interval on every cache mutation'
 	);
 	assert.match(
 		src,

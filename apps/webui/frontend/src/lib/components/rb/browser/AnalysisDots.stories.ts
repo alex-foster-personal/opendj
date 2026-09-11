@@ -60,7 +60,7 @@ export const FullCoverage: Story = {
 			phrase: true,
 			loudness: true,
 			stems: true,
-			other: true
+			lyrics: true
 		},
 		mode: 'coverage'
 	}

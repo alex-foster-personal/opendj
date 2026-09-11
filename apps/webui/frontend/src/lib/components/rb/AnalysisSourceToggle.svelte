@@ -21,7 +21,7 @@
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 
 	type MenuComponent = Component<{
-		menuStyle: string;
+		style: string;
 		onPick: (feature: (typeof ANALYSIS_SOURCE_FEATURES)[number], source: AnalysisSource) => void;
 		onShow: () => void;
 		onClose: () => void;
@@ -110,7 +110,7 @@
 	{#if menuOpen && menuComponent !== null}
 		<svelte:component
 			this={menuComponent}
-			{menuStyle}
+			style={menuStyle}
 			onPick={_pick}
 			onShow={_show}
 			onClose={() => (menuOpen = false)}

@@ -222,6 +222,18 @@ jobs:
             name_offenders "$remaining"
             exit 1
           }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
 
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17), matching ci.yml.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -679,6 +691,14 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm test:e2e --output test-results/root-playwright
 
+      - name: Library jobs ordering (chromium, dry runner)
+        working-directory: apps/webui/frontend
+        if: ${{ !cancelled() }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" library-jobs \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8704 5277 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.library-jobs.config.ts --output test-results/library-jobs
+
       - name: Restore the PulseAudio server (unload our null sink, previous default back)
         # Always, even after a red suite: the server may be the host's shared,
         # long-lived one, and the next job (or anything else on the host) must
@@ -821,6 +841,18 @@ jobs:
             name_offenders "$remaining"
             exit 1
           }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -1014,6 +1046,21 @@ jobs:
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" play-analytics \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 9414 5214 -- \
             pnpm exec playwright test --config tests/e2e/playwright.play-analytics.config.ts
+
+      - name: Extended - library wheel
+        working-directory: apps/webui/frontend
+        # Real engine over a throwaway genre-family fixture (state.db +
+        # master.plain.db). The root deckload library has no vendor mapping
+        # and 503s this route, so this suite is the UI evidence for LIBUX-06.
+        # Fixed loopback port (see the vite/playwright config it names) on a
+        # host that runs up to eight e2e jobs at once: hold the per-suite host
+        # lock so a second copy of this step WAITS instead of dying on
+        # 'is already used'. Same reason as the webkit-deckload steps.
+        if: ${{ !cancelled() }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" library-wheel \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 9428 5228 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.library-wheel.config.ts
 
       - name: Extended - stretch artifact (chromium + webkit)
         working-directory: apps/webui/frontend

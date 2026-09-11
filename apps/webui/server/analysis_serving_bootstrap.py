@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from apps.analysis.serving_lanes import SERVING_LANES, register_serving_lane
 
-_LANDED_LANES: tuple[str, ...] = ("beatgrid", "key")
+_LANDED_LANES: tuple[str, ...] = ("beatgrid", "key", "waveform")
 
 
 def ensure_analysis_serving_lanes() -> None:

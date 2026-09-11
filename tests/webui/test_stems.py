@@ -12,6 +12,8 @@ Mini-PRD
 * [if] a declared stem escapes the bundle or differs in WAV sample rate,
   frames, or channels [then \u26d4] the API must reject it and never stream
   the file.
+* [if] no bundle exists [then] the manifest GET is HTTP 200 unavailable
+  and the part GET is still 404.
 """
 from __future__ import annotations
 
@@ -127,15 +129,40 @@ def test_explicit_remote_roots_never_fall_back_to_a_local_bundle(
     with _client_with_roots(local, (remote,)) as client:
         missing = client.get("/api/v1/tracks/track-001/stems")
 
-    assert missing.status_code == 404
-    assert str(remote) in missing.json()["detail"]["message"]
-    assert str(local) not in missing.json()["detail"]["message"]
+    assert missing.status_code == 200
+    assert missing.json()["status"] == "unavailable"
+    assert missing.json()["code"] == "STEM_BUNDLE_NOT_FOUND"
+    assert str(remote) in missing.json()["message"]
+    assert str(local) not in missing.json()["message"]
 
     _bundle(remote)
     with _client_with_roots(local, (remote,)) as client:
         available = client.get("/api/v1/tracks/track-001/stems")
 
     assert available.status_code == 200
+    assert available.json()["schema"] == 1
+    assert available.json()["stable_id"] == "track-001"
+
+
+def test_missing_bundle_manifest_is_200_unavailable(tmp_path: Path) -> None:
+    """An empty store is an explicit unavailable envelope, not a 404."""
+    with _client(tmp_path) as client:
+        response = client.get("/api/v1/tracks/track-001/stems")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "unavailable"
+    assert body["code"] == "STEM_BUNDLE_NOT_FOUND"
+    assert body["stable_id"] == "track-001"
+
+
+def test_missing_bundle_part_still_404s(tmp_path: Path) -> None:
+    """A missing part file is still a missing resource."""
+    with _client(tmp_path) as client:
+        response = client.get("/api/v1/tracks/track-001/stems/vocals")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "STEM_BUNDLE_NOT_FOUND"
 
 
 def test_production_app_registers_stem_artifact_contract() -> None:

@@ -95,6 +95,7 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
     ("apps/desktop/wdio.conf.ts", "const EMBEDDED_WEBDRIVER_PORT = 4455;", 4455),
     ("apps/desktop/mcp/smoke.ts", "const WEBDRIVER_PORT = 4456;", 4456),
     ("apps/webui/frontend/tests/e2e/vite.play-analytics.config.ts", "port: 5214,", 5214),
+    ("apps/webui/frontend/tests/e2e/vite.library-wheel.config.ts", "port: 5228,", 5228),
     (
         "apps/webui/frontend/tests/e2e/playwright.desktop-setup.config.ts",
         "export const SETUP_PAGE_PORT = 5216;",
@@ -104,6 +105,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         "apps/webui/frontend/tests/e2e/vite.performance.config.ts",
         "const DEFAULT_FRONTEND_BASE = 'http://127.0.0.1:5273';",
         5273,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/library-jobs-e2e-endpoints.ts",
+        "export const LIBRARY_JOBS_E2E_FRONTEND_PORT = 5277;",
+        5277,
     ),
     (
         "apps/webui/frontend/tests/e2e/playwright.stretch-artifact.config.ts",
@@ -193,6 +199,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         8703,
     ),
     (
+        "apps/webui/frontend/tests/e2e/library-jobs-e2e-endpoints.ts",
+        "export const LIBRARY_JOBS_E2E_BACKEND_PORT = 8704;",
+        8704,
+    ),
+    (
         "apps/webui/frontend/tests/e2e/stems-e2e-endpoints.ts",
         "const DEFAULT_FRONTEND_PORT = 9408;",
         9408,
@@ -201,6 +212,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         "apps/webui/frontend/tests/e2e/playwright.play-analytics.config.ts",
         "--port 9414",
         9414,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/playwright.library-wheel.config.ts",
+        "--port 9428",
+        9428,
     ),
     (
         "apps/webui/frontend/tests/e2e/playwright.desktop-setup.config.ts",

@@ -8,6 +8,8 @@
  *   signed-in operator looks signed out
  * - if HTTP 401 is treated as an error then older daemons and e2e stubs break
  * - if HTTP 503 is swallowed then a missing OAuth config looks like sign-out
+ * - if the signed-out probe is HTTP 401 then Chromium logs console.error
+ *   Failed to load resource during AutoPlay/mixing (#1876)
  */
 
 import assert from 'node:assert/strict';
@@ -35,14 +37,18 @@ function mockFetch(handler) {
 }
 
 test('HTTP 200 signed-out clears user without error', async () => {
-	mockFetch(async () =>
-		new Response(JSON.stringify({ signed_in: false, user: null }), {
+	const paths = [];
+	mockFetch(async (input) => {
+		paths.push(String(input));
+		return new Response(JSON.stringify({ signed_in: false, user: null }), {
 			status: 200,
 			headers: { 'content-type': 'application/json' }
-		})
-	);
+		});
+	});
 	const mod = await loadTypeScriptModule('src/lib/auth.svelte.ts');
 	await mod.refreshUser();
+	assert.equal(paths.length, 1);
+	assert.match(paths[0], /\/api\/v1\/auth\/me$/);
 	assert.equal(mod.auth.user, null);
 	assert.equal(mod.auth.error, null);
 	assert.equal(mod.auth.loading, false);
