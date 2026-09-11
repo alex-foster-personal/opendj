@@ -11780,13 +11780,13 @@
           "lyrics_available",
           "auto_cues_available",
           "stems_available",
+          "artwork_available",
           "preview_b64",
           "preview_max",
           "file_exists",
           "quality",
           "vocals",
           "stems",
-          "artwork_available",
           "artwork_status",
           "energy",
           "energy_source",
@@ -11846,6 +11846,17 @@
               }
             ],
             "title": "Artist"
+          },
+          "artwork_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Available"
           },
           "auto_cues_available": {
             "title": "Auto Cues Available",
@@ -11992,7 +12003,8 @@
           "has_rb_mapping",
           "lyrics_available",
           "auto_cues_available",
-          "stems_available"
+          "stems_available",
+          "artwork_available"
         ],
         "title": "TrackOut",
         "type": "object"

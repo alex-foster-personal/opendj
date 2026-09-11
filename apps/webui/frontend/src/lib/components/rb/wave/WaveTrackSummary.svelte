@@ -2,6 +2,7 @@
 	// Compact track identity in a waveform gutter. Artwork failures and empty
 	// decks have named slates so either state cannot be mistaken for a blank.
 	import { artworkUrl } from '$lib/rb/api-rb';
+	import { shouldFetchArtwork } from '$lib/rb/optional-resource-availability';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 
 	const { deck }: { deck: DeckState } = $props();
@@ -10,7 +11,11 @@
 		if (deck.title === null) throw new Error(`loaded deck ${deck.stable_id} is missing a title`);
 		return deck.title;
 	});
-	const artworkSrc = $derived(deck.stable_id === null ? null : artworkUrl(deck.stable_id, 's'));
+	const artworkSrc = $derived(
+		deck.stable_id !== null && shouldFetchArtwork(deck.stable_id)
+			? artworkUrl(deck.stable_id, 's')
+			: null
+	);
 	let artworkFailed = $state(false);
 	let artworkLoaded = $state(false);
 	let trackNameEl = $state<HTMLSpanElement | null>(null);
