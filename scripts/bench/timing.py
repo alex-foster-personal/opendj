@@ -16,13 +16,10 @@ gate needs.
 
 WHAT IT IS NOT: perfectly load-invariant. CPU time measures time ON the CPU, and
 contention makes the same instruction stream genuinely occupy the CPU longer
-through shared-cache thrashing and SMT siblings. Measured on a 4-vCPU
-ubuntu-latest runner under 6x oversubscription, one fixed workload moved 12.3 ->
-22.9ms of CPU (1.87x) while its wall time moved 12.3 -> 119.3ms (9.71x). So the
-honest claim is that this instrument is roughly an ORDER OF MAGNITUDE less
-load-sensitive than elapsed time, not that it is immune, and the regression test
-pins that relative claim rather than an absolute drift number it would have to
-keep re-tuning per machine.
+through shared-cache thrashing and SMT siblings. It is therefore incorrect to
+assert a CPU-to-wall-time ratio on a shared runner. The regression cover tests
+the clock selection directly: a sleeping process consumes almost no CPU time,
+regardless of other work on the host.
 
 WHAT IT DOES NOT MEASURE, stated so nobody re-gates on the wrong half:
 
@@ -38,8 +35,6 @@ WHAT IT DOES NOT MEASURE, stated so nobody re-gates on the wrong half:
 Acceptance tests (tests/scripts/test_bench_timing.py):
   [if] a call sleeps rather than computes
        [then] its cpu_ms is near zero while its wall_ms is the full stall
-  [if] the box is loaded with competing CPU hogs
-       [then] cpu_ms holds while wall_ms inflates
   [if] an arm is timed N times
        [then] it was called exactly N times and the arm order alternated
 """
@@ -67,8 +62,8 @@ class Sample:
 
 def time_call(call: Callable[[], object]) -> Sample:
     """Time one call on process CPU time and on wall time."""
-    cpu_started = time.process_time_ns()
     wall_started = time.perf_counter_ns()
+    cpu_started = time.process_time_ns()
     call()
     cpu_ns = time.process_time_ns() - cpu_started
     wall_ns = time.perf_counter_ns() - wall_started
