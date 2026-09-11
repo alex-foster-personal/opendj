@@ -2,7 +2,7 @@
  * pin be1b8f94f167 (reopened): the browser-sources health dots must be
  * horizontal, bottom-right (done in #1051), and cover FOUR coverage signals -
  * library health, vocals completion, stems completion, and lyrics
- * completion - each hoverable to its own full label+detail popover.
+ * completion.
  *
  * pin a66ee132a14e: e03dc164d ("move the status dots to the bottom right")
  * carried only the library signal across into this row and silently dropped
@@ -14,18 +14,18 @@
  * #1051 shipped library/vocals/stems but the reopen found vocal detection
  * is not proof lyric analysis ran: this proves a real, distinct lyrics dot
  * exists (backed by GET /ingest/coverage's "lyrics" key, itself backed by
- * the real per-track apps/lyrics cache, not vocals) and that every dot's
- * hover popover repeats its own label, not a shared/generic one.
+ * the real per-track apps/lyrics cache, not vocals).
+ *
+ * issue #2076 supersedes the per-dot distinct-popover hover contract from
+ * pin be1b8f94f167: hovering any dot reveals one shared popover listing all
+ * six checks, and the cluster lives inside the bottom tray (.bottom-bar).
  *
  * WHAT THIS EXISTS TO CATCH. A unit test can fake IngestCoverage and never
- * notice the dot never actually renders, that two dots share one popover
- * (so hovering one leaks another's detail), or that the dots collapsed
- * back to four because the restored liveness dots got dropped again. It
- * must also fail if the coverage REQUEST itself is broken (a missing key, a
- * 500, a frontend/backend contract mismatch) rather than accepting six
- * "error" dots as if that were a passing layout check - and it must fail
- * if the group is anchored to the bottom-LEFT instead of the right, since
- * checking only "lower half" cannot tell those apart.
+ * notice the dot never actually renders, or that the dots collapsed back to
+ * four because the restored liveness dots got dropped again. It must also
+ * fail if the coverage REQUEST itself is broken (a missing key, a 500, a
+ * frontend/backend contract mismatch) rather than accepting six "error" dots
+ * as if that were a passing layout check.
  *
  * Acceptance:
  *   [if] fewer than 6 .health-dot buttons render          [then STOP] a
@@ -35,14 +35,14 @@
  *        coverage contract is broken, not merely slow
  *   [if] a dot's aria-label is missing or generic          [then STOP] the
  *        per-dot label is not real
- *   [if] hovering a dot does not reveal ITS OWN popover text
- *        (label + detail) distinct from the other dots     [then STOP] the
- *        "repeated w labels" hover requirement is unmet
+ *   [if] hovering any dot does not reveal the shared popover with all six
+ *        labels                                           [then STOP] the
+ *        unified health hover requirement is unmet
+ *   [if] any dot is not inside .bottom-bar                 [then STOP] the
+ *        cluster regressed to floating above the NEXT row
  *   [if] the dots are not laid out left-to-right (increasing x), in the
- *        panel's lower half, AND within tolerance of the panel's RIGHT
- *        edge                                              [then STOP] the
- *        horizontal bottom-right layout regressed (lower-half alone
- *        cannot distinguish bottom-right from bottom-left)
+ *        panel's lower half                               [then STOP] the
+ *        horizontal bottom layout regressed
  */
 import { expect, test } from '@playwright/test';
 
@@ -55,13 +55,7 @@ const EXPECTED_LABELS = [
 	'Lyrics completion'
 ];
 
-// How close the last dot's right edge must sit to the panel's right edge.
-// Generous enough to tolerate the dot's own small hit target and the
-// container's padding, tight enough that "moved to the opposite side"
-// cannot pass.
-const RIGHT_EDGE_TOLERANCE_PX = 60;
-
-test('browser-sources health dots cover library/vocals/stems/lyrics with per-dot hover detail', async ({
+test('browser-sources health dots cover library/vocals/stems/lyrics with shared hover detail in the bottom tray', async ({
 	page
 }) => {
 	const coverageResponse = page.waitForResponse((response) =>
@@ -123,6 +117,13 @@ test('browser-sources health dots cover library/vocals/stems/lyrics with per-dot
 		expect(ariaLabels.some((label) => label.startsWith(`${expectedLabel}:`))).toBe(true);
 	}
 
+	// Every dot must live inside the bottom tray, not float above NEXT/RECC.
+	for (let i = 0; i < EXPECTED_LABELS.length; i++) {
+		expect(
+			await dots.nth(i).evaluate((el) => el.closest('.bottom-bar') !== null)
+		).toBe(true);
+	}
+
 	// Horizontal, left-to-right layout.
 	const boxes = await dots.evaluateAll((elements) =>
 		elements.map((el) => el.getBoundingClientRect().x)
@@ -131,35 +132,38 @@ test('browser-sources health dots cover library/vocals/stems/lyrics with per-dot
 		expect(boxes[i]).toBeGreaterThan(boxes[i - 1]);
 	}
 
-	// Bottom-RIGHT of the browser panel: every dot in the lower half AND the
-	// last dot's right edge within tolerance of the panel's right edge -
-	// checking only "lower half" would also pass a bottom-LEFT layout.
+	// Lower half of the browser panel.
 	const panelBox = await page.locator('.rb-browser').evaluate((el) => el.getBoundingClientRect());
 	const dotBoxes = await dots.evaluateAll((elements) =>
 		elements.map((el) => {
 			const r = el.getBoundingClientRect();
-			return { top: r.top, right: r.right };
+			return { top: r.top };
 		})
 	);
 	for (const box of dotBoxes) {
 		expect(box.top).toBeGreaterThan(panelBox.top + (panelBox.bottom - panelBox.top) / 2);
 	}
-	const lastDotRight = dotBoxes[dotBoxes.length - 1].right;
-	expect(panelBox.right - lastDotRight).toBeGreaterThanOrEqual(0);
-	expect(panelBox.right - lastDotRight).toBeLessThanOrEqual(RIGHT_EDGE_TOLERANCE_PX);
 
-	// Hover reveals a DISTINCT popover per dot - label repeated, not shared.
-	for (let i = 0; i < EXPECTED_LABELS.length; i++) {
-		const dot = dots.nth(i);
-		await dot.hover();
-		const popover = dot.locator('.health-popover');
-		await expect(popover).toBeVisible();
-		await expect(popover.locator('strong')).toHaveText(EXPECTED_LABELS[i]);
-		const popoverText = await popover.textContent();
-		expect(popoverText).toContain(EXPECTED_LABELS[i]);
-		// Moving off hides it again, proving each is its own toggle rather
-		// than one popover that got repositioned.
-		await page.mouse.move(0, 0);
-		await expect(popover).toBeHidden();
+	// Hover any dot reveals the one shared popover with all six labels.
+	const sharedPopover = page.locator('.library-health .health-popover');
+
+	await dots.nth(0).hover();
+	await expect(sharedPopover).toBeVisible();
+	const firstHoverText = await sharedPopover.textContent();
+	for (const expectedLabel of EXPECTED_LABELS) {
+		expect(firstHoverText).toContain(expectedLabel);
 	}
+
+	await page.mouse.move(0, 0);
+	await expect(sharedPopover).toBeHidden();
+
+	await dots.nth(EXPECTED_LABELS.length - 1).hover();
+	await expect(sharedPopover).toBeVisible();
+	const lastHoverText = await sharedPopover.textContent();
+	for (const expectedLabel of EXPECTED_LABELS) {
+		expect(lastHoverText).toContain(expectedLabel);
+	}
+
+	await page.mouse.move(0, 0);
+	await expect(sharedPopover).toBeHidden();
 });

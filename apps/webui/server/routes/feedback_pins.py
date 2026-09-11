@@ -36,6 +36,7 @@ from .feedback import (
     _now,
     _save,
 )
+from .feedback_replies import append_agent_note_to_replies
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
@@ -147,7 +148,11 @@ def update_comment(comment_id: str, body: CommentUpdateIn, request: Request) -> 
             # must leave the store exactly as it was: comments.json is read
             # back through CommentOut on every list, so one unvalidated write
             # would make GET /comments fail for every pin, not just this one.
-            merged = {**item, **changes, "updated_at": _now()}
+            now = _now()
+            merged = {**item, **changes, "updated_at": now}
+            agent_note = changes.get("agent_note")
+            if isinstance(agent_note, str) and agent_note.strip() != "":
+                append_agent_note_to_replies(merged, agent_note, now)
             validated = CommentOut.model_validate(merged)
             items[i] = validated.model_dump()
             _save(path, "comments", items)

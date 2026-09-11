@@ -80,10 +80,60 @@ def test_run_nightly_appends_and_flags_ceiling(tmp_path: Path) -> None:
     assert outcome.exit_code == 3
     assert outcome.breaches
     doc = json.loads(ledger.read_text(encoding="utf-8"))
-    assert doc["entries"][-1]["git_sha"] == "deadbeef"
+    nightly_rows = [
+        row
+        for row in doc["entries"]
+        if row.get("source") == "scripts/perf/perf_kpi_job.py nightly"
+        and row.get("git_sha") == "deadbeef"
+    ]
+    assert nightly_rows
+    assert any(row["kpi"] == "deck_load_anlz_warm_median_ms_small_mp3" for row in nightly_rows)
     history = state_dir / "history.jsonl"
     assert history.exists()
     assert "ceiling_breach" in history.read_text(encoding="utf-8")
+
+
+def test_run_nightly_unknown_ceiling_without_history(tmp_path: Path) -> None:
+    """If there is no trailing median then nightly exits zero and logs ceiling_unknown."""
+    ledger = tmp_path / "kpi-ledger.json"
+    ledger.write_text(
+        json.dumps({"schema_version": 2, "entries": []}),
+        encoding="utf-8",
+    )
+    state_dir = tmp_path / "state"
+    config = PerfKpiConfig(
+        ledger_path=ledger,
+        state_dir=state_dir,
+        health_log=state_dir / "health.jsonl",
+        history_log=state_dir / "history.jsonl",
+        health_state=state_dir / "health-state.json",
+        preview_health_url="http://127.0.0.1:8728/api/v1/health",
+        preview_engine_label="com.af.opendj-preview-engine",
+        scratch_port=8699,
+        samples=3,
+        machine="air",
+        tracks=(TrackProfile("small_mp3", "sid-small", "small"),),
+    )
+
+    def probe(_base: str, path: str) -> tuple[int, float]:
+        if path.endswith("/anlz"):
+            return 200, 80.0
+        return 200, 50.0
+
+    outcome = run_nightly(
+        config,
+        base_url="http://127.0.0.1:8699",
+        git_sha="deadbeef",
+        probe=probe,
+        today=__import__("datetime").date(2026, 9, 11),
+        file_issue=False,
+    )
+    assert outcome.exit_code == 0
+    assert outcome.breaches == []
+    assert outcome.unknowns
+    history = (state_dir / "history.jsonl").read_text(encoding="utf-8")
+    assert "ceiling_unknown" in history
+    assert "no trailing 7-day median" in history
 
 
 def test_find_ceiling_ignores_audio_legs() -> None:

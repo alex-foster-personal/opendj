@@ -1,0 +1,500 @@
+"""CLOUDSYNC-07: collapse the same audio under two ``tracks`` primary keys.
+
+Path-tier (``inferred``) ``stable_id`` is minted from a local path and mtime,
+so it is never a merge key. Merge identity is ``content_hash`` first, then a
+normalizable ISRC, then a fingerprint-tier ``stable_id`` (already a global
+PK, so ordinary LWW covers it).
+
+When an incoming ``tracks`` row shares a content identity with a stored row
+under a different PK, the merge keeps one survivor (deterministic LWW, with
+the smaller PK as the tie-break so both peers converge), remaps every child
+that REFERENCES ``tracks(stable_id)`` onto that survivor, and drops the
+loser. Conflicting identity signals quarantine the incoming row rather than
+silently duplicating or silently collapsing.
+
+Do not add ``tracks`` to :data:`apps.sync_hub.protocol_common.NATURAL_KEYS`.
+That path hard-deletes UNIQUE-index collisions; children of ``tracks`` would
+CASCADE or orphan. This module is the dedicated collapse-then-remap path.
+"""
+from __future__ import annotations
+
+import logging
+import re
+import sqlite3
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any, Literal
+
+from apps.shared.state.ids import normalise_isrc
+from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
+from apps.sync_hub import protocol
+from apps.sync_hub.engine_common import (
+    CHANGELOG_TABLES,
+    HUB_CHANGELOG_TABLE,
+    SyncApplyError,
+)
+from apps.sync_hub.protocol import MEMBERSHIP_TABLE, SPEC_BY_TABLE, RowChange
+
+log = logging.getLogger("apps.sync_hub.engine")
+
+_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+Kind = Literal["none", "conflict", "incoming_wins", "incoming_loses"]
+
+
+class SyncIdentityPreflightError(RuntimeError):
+    """First-sync refused: inferred-tier rows still lack content identity."""
+
+
+@dataclass(frozen=True)
+class IdentityDecision:
+    """What content identity says about one incoming ``tracks`` row.
+
+    ``kind == "none"`` means there is no different-PK stored row sharing a
+    merge key, so ordinary PK LWW proceeds. ``stored_pks`` are the different
+    PKs that matched; ``survivor_pk`` is set when the incoming row loses.
+    """
+
+    kind: Kind
+    stored_pks: tuple[str, ...] = ()
+    survivor_pk: str | None = None
+
+
+@dataclass(frozen=True)
+class _StoredMatch:
+    pk: str
+    content_hash: str | None
+    isrc: str | None
+    sort_key: tuple[str, str]
+
+
+def _ident(name: str) -> str:
+    """Allowlist a SQL identifier before interpolating it into a PRAGMA."""
+    if not _IDENT.match(name):
+        raise SyncApplyError(
+            f"refusing to interpolate {name!r} as a SQL identifier"
+        )
+    return name
+
+
+def _as_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _incoming_beats(
+    change: RowChange, stored_key: tuple[str, str], stored_pk: str
+) -> bool:
+    """Same LWW rule as natural-key duplicates: sort key, then smaller PK."""
+    if change.sort_key != stored_key:
+        return change.sort_key > stored_key
+    return change.pk < (stored_pk,)
+
+
+def _signals_conflict(incoming: Mapping[str, Any], stored: _StoredMatch) -> bool:
+    """True when two rows share one identity key but disagree on another.
+
+    Same ``content_hash`` with two normalizable ISRCs, or the same
+    normalizable ISRC with two ``content_hash`` values. Either is a silent
+    dup or a silent collapse if we guessed.
+    """
+    incoming_hash = _as_text(incoming.get("content_hash"))
+    stored_hash = _as_text(stored.content_hash)
+    incoming_isrc = normalise_isrc(_as_text(incoming.get("isrc")))
+    stored_isrc = normalise_isrc(_as_text(stored.isrc))
+    if incoming_hash and stored_hash and incoming_hash == stored_hash:
+        return bool(incoming_isrc and stored_isrc and incoming_isrc != stored_isrc)
+    if incoming_isrc and stored_isrc and incoming_isrc == stored_isrc:
+        return bool(incoming_hash and stored_hash and incoming_hash != stored_hash)
+    return False
+
+
+def _matches_by_hash(
+    conn: sqlite3.Connection, incoming_pk: str, content_hash: str
+) -> list[_StoredMatch]:
+    rows = conn.execute(
+        """
+        SELECT stable_id, content_hash, isrc, updated_at, origin_device_id
+        FROM tracks
+        WHERE content_hash = ? AND stable_id != ?
+        """,
+        (content_hash, incoming_pk),
+    ).fetchall()
+    return [_match_from_row(row) for row in rows]
+
+
+def _matches_by_isrc(
+    conn: sqlite3.Connection, incoming_pk: str, isrc: str, raw_isrc: str | None
+) -> list[_StoredMatch]:
+    rows = conn.execute(
+        """
+        SELECT stable_id, content_hash, isrc, updated_at, origin_device_id
+        FROM tracks
+        WHERE stable_id != ?
+          AND isrc IS NOT NULL
+          AND (isrc = ? OR upper(isrc) = ?)
+        """,
+        (incoming_pk, raw_isrc or isrc, isrc),
+    ).fetchall()
+    return [
+        match
+        for match in (_match_from_row(row) for row in rows)
+        if normalise_isrc(_as_text(match.isrc)) == isrc
+    ]
+
+
+def _match_from_row(row: Sequence[Any]) -> _StoredMatch:
+    return _StoredMatch(
+        pk=str(row[0]),
+        content_hash=_as_text(row[1]),
+        isrc=_as_text(row[2]),
+        sort_key=protocol.lww_key(
+            {protocol.UPDATED_AT: row[3], protocol.ORIGIN_DEVICE_ID: row[4]}
+        ),
+    )
+
+
+def _find_matches(
+    conn: sqlite3.Connection, change: RowChange
+) -> list[_StoredMatch]:
+    incoming_pk = change.pk[0]
+    content_hash = _as_text(change.values.get("content_hash"))
+    if content_hash:
+        return _matches_by_hash(conn, incoming_pk, content_hash)
+    isrc = normalise_isrc(_as_text(change.values.get("isrc")))
+    if isrc:
+        return _matches_by_isrc(
+            conn, incoming_pk, isrc, _as_text(change.values.get("isrc"))
+        )
+    return []
+
+
+def resolve_track_identity(
+    conn: sqlite3.Connection, change: RowChange
+) -> IdentityDecision:
+    """Decide content identity for an incoming ``tracks`` row.
+
+    Fingerprint-tier PKs are already global; this function only fires for a
+    different stored PK sharing ``content_hash`` or a normalizable ISRC.
+    Path-tier ``stable_id`` is ignored on purpose.
+    """
+    if change.table != "tracks":
+        return IdentityDecision(kind="none")
+    matches = _find_matches(conn, change)
+    if not matches:
+        return IdentityDecision(kind="none")
+    stored_pks = tuple(match.pk for match in matches)
+    if any(_signals_conflict(change.values, match) for match in matches):
+        return IdentityDecision(kind="conflict", stored_pks=stored_pks)
+    if all(_incoming_beats(change, match.sort_key, match.pk) for match in matches):
+        return IdentityDecision(kind="incoming_wins", stored_pks=stored_pks)
+    champion = max(
+        matches,
+        key=lambda match: (match.sort_key, _invert_pk(match.pk)),
+    )
+    return IdentityDecision(
+        kind="incoming_loses",
+        stored_pks=stored_pks,
+        survivor_pk=champion.pk,
+    )
+
+
+def _invert_pk(pk: str) -> str:
+    """Sort key so ``max`` prefers the smaller PK on a stamp tie.
+
+    LWW on equality keeps the smaller PK (both peers must converge on the
+    same survivor). ``max`` over ``(sort_key, invert)`` does that without
+    a custom comparator.
+    """
+    return "".join(chr(255 - ord(ch)) for ch in pk)
+
+
+def rewrite_incoming_change(
+    change: RowChange, remap: Mapping[str, str]
+) -> RowChange:
+    """Rewrite loser PKs in a later row of the same batch onto the survivor.
+
+    Incoming children of a losing ``tracks`` row still name the loser's
+    ``stable_id``. Applying them as-is is a FOREIGN KEY 409. Rewriting them
+    onto the survivor is what lets both machines' locations land.
+    """
+    if not remap:
+        return change
+    values = dict(change.values)
+    pk = list(change.pk)
+    rewritten = False
+    old = _as_text(values.get("stable_id"))
+    if old is not None and old in remap:
+        values["stable_id"] = remap[old]
+        rewritten = True
+        spec = SPEC_BY_TABLE.get(change.table)
+        if spec is not None:
+            for index, column in enumerate(spec.pk):
+                if column == "stable_id":
+                    pk[index] = remap[old]
+    members = change.members
+    if members is not None:
+        new_members: list[dict[str, Any]] = []
+        for member in members:
+            item = dict(member)
+            member_id = _as_text(item.get("stable_id"))
+            if member_id is not None and member_id in remap:
+                item["stable_id"] = remap[member_id]
+                rewritten = True
+            new_members.append(item)
+        members = tuple(new_members)
+    if not rewritten:
+        return change
+    return RowChange(
+        table=change.table,
+        pk=tuple(pk),
+        values=values,
+        members=members,
+    )
+
+
+def names_held_parent(change: RowChange, held: set[str]) -> bool:
+    """True when this row (or its membership bundle) names a held track PK."""
+    if not held:
+        return False
+    sid = _as_text(change.values.get("stable_id"))
+    if sid is not None and sid in held:
+        return True
+    if change.members:
+        return any(
+            (_as_text(member.get("stable_id")) or "") in held
+            for member in change.members
+        )
+    return False
+
+
+def _child_tables(conn: sqlite3.Connection) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Tables whose FK ``from`` column is ``stable_id`` referencing ``tracks``."""
+    found: list[tuple[str, tuple[str, ...]]] = []
+    for (name,) in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY 1"
+    ):
+        table = str(name)
+        if not _IDENT.match(table) or table == "tracks":
+            continue
+        fks = conn.execute(f"PRAGMA foreign_key_list({table})").fetchall()
+        if not any(fk[2] == "tracks" and fk[3] == "stable_id" for fk in fks):
+            continue
+        pk = tuple(
+            str(row[1])
+            for row in conn.execute(f"PRAGMA table_info({table})")
+            if row[5]
+        )
+        found.append((table, pk))
+    return tuple(found)
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> tuple[str, ...]:
+    return tuple(
+        str(row[1])
+        for row in conn.execute(f"PRAGMA table_info({_ident(table)})")
+    )
+
+
+def _prune_child_changelog(
+    conn: sqlite3.Connection, table: str, loser_pks: Sequence[Sequence[Any]]
+) -> None:
+    if table not in SPEC_BY_TABLE and table != MEMBERSHIP_TABLE:
+        return
+    for pk in loser_pks:
+        row_pk = protocol.encode_row_pk(tuple(str(part) for part in pk))
+        for changelog in (HUB_CHANGELOG_TABLE, LOCAL_CHANGELOG_TABLE):
+            if changelog not in CHANGELOG_TABLES:
+                continue
+            conn.execute(
+                f"DELETE FROM {changelog} WHERE table_name = ? AND row_pk = ?",
+                (table, row_pk),
+            )
+
+
+def _remap_pk_includes_stable_id(
+    conn: sqlite3.Connection,
+    table: str,
+    columns: Sequence[str],
+    pk: Sequence[str],
+    loser: str,
+    survivor: str,
+) -> None:
+    loser_pks = conn.execute(
+        f"SELECT {', '.join(_ident(column) for column in pk)} "
+        f"FROM {_ident(table)} WHERE stable_id = ?",
+        (loser,),
+    ).fetchall()
+    select_list = ", ".join(
+        "?" if column == "stable_id" else _ident(column) for column in columns
+    )
+    conn.execute(
+        f"INSERT OR IGNORE INTO {_ident(table)} "
+        f"({', '.join(_ident(column) for column in columns)}) "
+        f"SELECT {select_list} FROM {_ident(table)} WHERE stable_id = ?",
+        (survivor, loser),
+    )
+    conn.execute(
+        f"DELETE FROM {_ident(table)} WHERE stable_id = ?", (loser,)
+    )
+    _prune_child_changelog(conn, table, loser_pks)
+
+
+def _remap_locations(conn: sqlite3.Connection, loser: str, survivor: str) -> None:
+    rows = conn.execute(
+        """
+        SELECT location_id, machine_id, kind, file_path, remote_url
+        FROM track_locations WHERE stable_id = ?
+        """,
+        (loser,),
+    ).fetchall()
+    for location_id, machine_id, kind, file_path, remote_url in rows:
+        conflict = conn.execute(
+            """
+            SELECT location_id FROM track_locations
+            WHERE stable_id = ?
+              AND (machine_id IS ? OR (machine_id IS NULL AND ? IS NULL))
+              AND kind = ?
+              AND (
+                    (file_path IS NOT NULL AND file_path = ?)
+                 OR (remote_url IS NOT NULL AND remote_url = ?)
+              )
+              AND location_id != ?
+            """,
+            (
+                survivor,
+                machine_id,
+                machine_id,
+                kind,
+                file_path,
+                remote_url,
+                location_id,
+            ),
+        ).fetchone()
+        if conflict is not None:
+            conn.execute(
+                "DELETE FROM track_locations WHERE location_id = ?",
+                (location_id,),
+            )
+            continue
+        conn.execute(
+            "UPDATE track_locations SET stable_id = ? WHERE location_id = ?",
+            (survivor, location_id),
+        )
+
+
+def _remap_memberships(conn: sqlite3.Connection, loser: str, survivor: str) -> None:
+    playlist_ids = [
+        str(row[0])
+        for row in conn.execute(
+            "SELECT DISTINCT playlist_id FROM playlist_memberships "
+            "WHERE stable_id = ?",
+            (loser,),
+        )
+    ]
+    for playlist_id in playlist_ids:
+        already = conn.execute(
+            "SELECT 1 FROM playlist_memberships "
+            "WHERE playlist_id = ? AND stable_id = ? LIMIT 1",
+            (playlist_id, survivor),
+        ).fetchone()
+        if already is not None:
+            conn.execute(
+                "DELETE FROM playlist_memberships "
+                "WHERE playlist_id = ? AND stable_id = ?",
+                (playlist_id, loser),
+            )
+            continue
+        conn.execute(
+            "UPDATE playlist_memberships SET stable_id = ? "
+            "WHERE playlist_id = ? AND stable_id = ?",
+            (survivor, playlist_id, loser),
+        )
+
+
+def _remap_update(
+    conn: sqlite3.Connection, table: str, loser: str, survivor: str
+) -> None:
+    conn.execute("SAVEPOINT remap_sid")
+    try:
+        conn.execute(
+            f"UPDATE {_ident(table)} SET stable_id = ? WHERE stable_id = ?",
+            (survivor, loser),
+        )
+    except sqlite3.IntegrityError:
+        conn.execute("ROLLBACK TO remap_sid")
+        conn.execute(
+            f"DELETE FROM {_ident(table)} WHERE stable_id = ?", (loser,)
+        )
+    conn.execute("RELEASE remap_sid")
+
+
+def remap_track_children(
+    conn: sqlite3.Connection, loser: str, survivor: str
+) -> None:
+    """Point every ``tracks(stable_id)`` child at ``survivor``, then the loser
+    row can be dropped without CASCADE-deleting those children."""
+    if loser == survivor:
+        return
+    for table, pk in _child_tables(conn):
+        if table == "track_locations":
+            _remap_locations(conn, loser, survivor)
+            continue
+        if table == MEMBERSHIP_TABLE:
+            _remap_memberships(conn, loser, survivor)
+            continue
+        columns = _table_columns(conn, table)
+        if "stable_id" in pk:
+            _remap_pk_includes_stable_id(
+                conn, table, columns, pk, loser, survivor
+            )
+            continue
+        _remap_update(conn, table, loser, survivor)
+
+
+def unsyncable_inferred_pks(conn: sqlite3.Connection) -> tuple[str, ...]:
+    """Live inferred-tier ``tracks`` rows with no ``content_hash`` and no ISRC."""
+    rows = conn.execute(
+        """
+        SELECT stable_id, isrc FROM tracks
+        WHERE deleted_at IS NULL
+          AND stable_id_tier = 'inferred'
+          AND (content_hash IS NULL OR content_hash = '')
+        """
+    ).fetchall()
+    return tuple(
+        str(pk)
+        for pk, isrc in rows
+        if normalise_isrc(_as_text(isrc)) is None
+    )
+
+
+def assert_identity_ready(conn: sqlite3.Connection) -> None:
+    """Refuse to start a sync while inferred-tier rows still lack identity.
+
+    A PK-only merge of those rows duplicates overlapping recordings across
+    independently ingested libraries (CLOUDSYNC-07).
+    """
+    unsyncable = unsyncable_inferred_pks(conn)
+    if not unsyncable:
+        return
+    raise SyncIdentityPreflightError(
+        f"{len(unsyncable)} live inferred-tier tracks row(s) have no "
+        f"content_hash and no normalizable ISRC; first-sync would duplicate "
+        f"overlapping recordings. Backfill with `python -m "
+        f"apps.shared.state.backfill_content_hash --live` before syncing."
+    )
+
+
+__all__ = [
+    "IdentityDecision",
+    "SyncIdentityPreflightError",
+    "assert_identity_ready",
+    "names_held_parent",
+    "remap_track_children",
+    "resolve_track_identity",
+    "rewrite_incoming_change",
+    "unsyncable_inferred_pks",
+]

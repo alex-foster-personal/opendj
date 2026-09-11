@@ -8,7 +8,7 @@
 	 * issue #928).
 	 */
 	import { tick } from 'svelte';
-	import { pinStyle, type PinDraft } from '$lib/rb/feedback';
+	import { pinBodyPos, pinBodyStyle, type PinDraft } from '$lib/rb/feedback';
 	import {
 		addPin,
 		addPinWithAttachment,
@@ -47,6 +47,8 @@
 	} = $props();
 
 	let pinDraftTextarea: HTMLTextAreaElement | null = $state(null);
+	let bubbleElement: HTMLDivElement | null = $state(null);
+	let measuredPos: { x: number; y: number } | null = $state(null);
 	// r3919761150: guards against Cmd/Ctrl+Enter key-repeat re-entering
 	// savePinDraft once per keydown while the first POST is still in flight.
 	let savingPinDraft = $state(false);
@@ -62,11 +64,36 @@
 	 * that failed at Save - never a silent drop (issue #1333 acceptance). */
 	let attachmentError: string | null = $state(null);
 
+	const bodyStyle = $derived.by(() => {
+		if (pinDraft === null) return '';
+		const pos = measuredPos;
+		return pos !== null ? `left:${pos.x}px;top:${pos.y}px` : pinBodyStyle(pinDraft.point);
+	});
+
+	function _reposition(): void {
+		if (bubbleElement === null || pinDraft === null) return;
+		const rect = bubbleElement.getBoundingClientRect();
+		measuredPos = pinBodyPos(
+			pinDraft.point,
+			{ w: rect.width, h: rect.height },
+			{ w: window.innerWidth, h: window.innerHeight }
+		);
+	}
+
 	$effect(() => {
 		if (pinDraft === null) {
 			pendingAttachment = null;
 			attachmentError = null;
 		}
+	});
+
+	$effect(() => {
+		void pinDraft;
+		void pinDraft?.text;
+		void pendingAttachment;
+		void attachmentError;
+		measuredPos = null;
+		void tick().then(() => _reposition());
 	});
 
 	function handlePaste(e: ClipboardEvent): void {
@@ -237,9 +264,17 @@
 	}
 </script>
 
+<svelte:window onresize={_reposition} />
+
 <!-- pin text bubble -->
 {#if pinDraft !== null}
-	<div class="fb-bubble" style={pinStyle(pinDraft.point)} role="dialog" aria-label="New comment pin">
+	<div
+		class="fb-bubble"
+		style={bodyStyle}
+		role="dialog"
+		aria-label="New comment pin"
+		bind:this={bubbleElement}
+	>
 		{#if pinDraft.followOn !== null}
 			<p class="fb-hint" title="Sent through the dedicated follow-on endpoint; the reference below is generated server-side">{pinDraft.followOn.label}</p>
 		{/if}
@@ -290,6 +325,8 @@
 		position: fixed;
 		z-index: 310;
 		width: 200px;
+		max-height: 320px;
+		overflow-y: auto;
 		padding: 6px;
 		background: #0a0c0f;
 		border: 1px solid var(--rb-border);
@@ -299,6 +336,9 @@
 
 	.fb-bubble-text {
 		width: 100%;
+		max-height: 100%;
+		overflow-y: auto;
+		overflow-wrap: anywhere;
 		box-sizing: border-box;
 		background: var(--rb-inset);
 		border: 1px solid var(--rb-border);
