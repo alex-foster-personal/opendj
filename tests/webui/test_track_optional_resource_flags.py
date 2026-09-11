@@ -18,12 +18,16 @@ from apps.webui.server.sqlite_backend import SqliteBackend
 
 
 @pytest.fixture
-def flags_client(tmp_path: Path) -> Iterator[TestClient]:
+def flags_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     state_dir = tmp_path / "state"
     state_dir.mkdir()
     state_db_path = state_dir / "state.db"
     connection = state_db.open_rw(state_db_path)
     connection.close()
+    # GET /artwork reads rb_config.STATE_DB, not the TestClient backend.
+    # Without this, a missing default STATE_DB 500s STATE_DB_UNAVAILABLE.
+    monkeypatch.setattr(rb_config, "STATE_DB", state_db_path)
+    monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", tmp_path / "absent.db")
     app = create_app(
         backend=SqliteBackend(state_db_path),
         bind_host="127.0.0.1",
