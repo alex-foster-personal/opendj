@@ -1168,7 +1168,7 @@ jobs:
             ${{ runner.temp }}/dependency-audit.json
             ${{ runner.temp }}/dependency-audit.txt
           if-no-files-found: warn
-          retention-days: 3
+          retention-days: 2
 
   dependency-audit-report:
     name: dependency audit ledger (row 8)
