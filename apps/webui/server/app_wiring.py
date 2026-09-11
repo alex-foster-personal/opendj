@@ -31,7 +31,7 @@ from apps.webui.port_config import (
     resolve_frontend_port,
 )
 
-from . import analysis_autostart, lyric_index_autostart
+from . import analysis_autostart, library_jobs_autostart, lyric_index_autostart
 from .backend import (
     BackendError,
     ConflictError,
@@ -46,6 +46,7 @@ from .errors import (
     handle_rekordbox_writeback_disabled,
 )
 from .routes import analysis as analysis_routes
+from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
 from .routes import analysis_source as analysis_source_routes
 from .routes import auth as auth_routes
@@ -67,6 +68,7 @@ from .routes import health as health_routes
 from .routes import ingest as ingest_routes
 from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
+from .routes import library_jobs as library_jobs_routes
 from .routes import lyrics_search as lyrics_search_routes
 from .routes import mytag as mytag_routes
 from .routes import pairing_capture as pairing_capture_routes
@@ -184,8 +186,29 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
             lyric_watcher = build_lyric_index_watcher(app)
             app.state.lyric_index_watcher = lyric_watcher
         lyric_watcher.start()
+        jobs_watcher = getattr(app.state, "library_jobs_watcher", None)
+        if jobs_watcher is None:
+            from pathlib import Path
+
+            db = Path(app.state.state_db_path)
+            data_dir = db.parent.parent if db.parent.name == "state" else db.parent
+            roots = getattr(app.state, "stem_roots", None)
+            stems_root = Path(roots[0]) if roots else data_dir / "state" / "stems"
+            jobs_state = getattr(app.state, "auto_user_jobs", None)
+            enabled = bool(jobs_state is not None and jobs_state.enabled)
+            jobs_watcher = library_jobs_autostart.LibraryJobsWatcher(
+                state_db=db,
+                stems_root=stems_root,
+                data_dir=data_dir,
+                enabled=enabled,
+            )
+            app.state.library_jobs_watcher = jobs_watcher
+        jobs_watcher.start()
         yield
     finally:
+        jobs_w = getattr(app.state, "library_jobs_watcher", None)
+        if jobs_w is not None:
+            jobs_w.stop()
         if lyric_watcher is not None:
             lyric_watcher.stop()
         watcher.stop()
@@ -382,7 +405,9 @@ def _mount_api_routers(app: FastAPI) -> None:
         relocate_routes.router,
         copilot_routes.router,
         analysis_routes.router,
+        analysis_backfill_routes.router,
         analysis_queue_routes.router,
+        library_jobs_routes.router,
         analysis_source_routes.router,
         auth_routes.router,
         ingest_routes.router,

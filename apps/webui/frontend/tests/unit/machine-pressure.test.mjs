@@ -325,6 +325,167 @@ test('the poll interval remains ten seconds', async () => {
 	stop();
 });
 
+test('pressureIsElevated is false on a null snapshot', () => {
+	assert.equal(pressure.pressureIsElevated(null), false);
+});
+
+test('kernel level 1 is not elevated', () => {
+	const snapshot = {
+		loadAvg1m: 1,
+		memFreeMb: null,
+		swapUsedMb: null,
+		kernelLevel: 1,
+		kernelMemoryPressureLevel: null,
+		churnScore: null,
+		swapRate: null,
+		decompRate: null,
+		band: null,
+		sampleIntervalMs: null,
+		compressedMb: null,
+		requestedAtMs: 1,
+		serverCacheAgeMs: 0
+	};
+	assert.equal(pressure.pressureIsElevated(snapshot), false);
+});
+
+test('kernel level 2 is elevated', () => {
+	const snapshot = {
+		loadAvg1m: 1,
+		memFreeMb: null,
+		swapUsedMb: null,
+		kernelLevel: 2,
+		kernelMemoryPressureLevel: 2,
+		churnScore: null,
+		swapRate: null,
+		decompRate: null,
+		band: null,
+		sampleIntervalMs: null,
+		compressedMb: null,
+		requestedAtMs: 1,
+		serverCacheAgeMs: 0
+	};
+	assert.equal(pressure.pressureIsElevated(snapshot), true);
+});
+
+test('churn 499 is not elevated without kernel', () => {
+	const snapshot = {
+		loadAvg1m: 1,
+		memFreeMb: null,
+		swapUsedMb: null,
+		kernelLevel: null,
+		kernelMemoryPressureLevel: null,
+		churnScore: 499,
+		swapRate: null,
+		decompRate: null,
+		band: null,
+		sampleIntervalMs: null,
+		compressedMb: null,
+		requestedAtMs: 1,
+		serverCacheAgeMs: 0
+	};
+	assert.equal(pressure.pressureIsElevated(snapshot), false);
+});
+
+test('churn 500 is elevated without kernel', () => {
+	const snapshot = {
+		loadAvg1m: 1,
+		memFreeMb: null,
+		swapUsedMb: null,
+		kernelLevel: null,
+		kernelMemoryPressureLevel: null,
+		churnScore: 500,
+		swapRate: null,
+		decompRate: null,
+		band: null,
+		sampleIntervalMs: null,
+		compressedMb: null,
+		requestedAtMs: 1,
+		serverCacheAgeMs: 0
+	};
+	assert.equal(pressure.pressureIsElevated(snapshot), true);
+});
+
+test('churn_score is computed from swap and decomp rates', async () => {
+	respond = () => ({
+		ok: true,
+		json: async () => ({
+			available: true,
+			load_avg_1m: 1,
+			swap_rate: 40,
+			decomp_rate: 100,
+			cache_age_ms: 0
+		})
+	});
+	const stop = pressure.startMachinePressurePolling(immediateBootScheduler());
+	await settle();
+	const snapshot = pressure.readMachinePressure();
+	assert.equal(snapshot.churnScore, 500);
+	assert.equal(pressure.pressureIsElevated(snapshot), true);
+	stop();
+});
+
+test('today engine body without kernel or churn is not elevated', async () => {
+	respond = () => ({
+		ok: true,
+		json: async () => ({
+			available: true,
+			load_avg_1m: 5.76,
+			mem_free_mb: 67.7,
+			swap_used_mb: 6535.4,
+			cache_age_ms: 250
+		})
+	});
+	const stop = pressure.startMachinePressurePolling(immediateBootScheduler());
+	await settle();
+	assert.equal(pressure.pressureIsElevated(pressure.readMachinePressure()), false);
+	stop();
+});
+
+test('kernel_level 0 is a real reading, not elevated', async () => {
+	respond = () => ({
+		ok: true,
+		json: async () => ({
+			available: true,
+			load_avg_1m: 1,
+			kernel_level: 0,
+			cache_age_ms: 0
+		})
+	});
+	const stop = pressure.startMachinePressurePolling(immediateBootScheduler());
+	await settle();
+	const snapshot = pressure.readMachinePressure();
+	assert.equal(snapshot.kernelLevel, 0);
+	assert.equal(pressure.pressureIsElevated(snapshot), false);
+	stop();
+});
+
+test('subscribeMachinePressure fires only on accepted stores', () => {
+	const seen = [];
+	const unsubscribe = pressure.subscribeMachinePressure((snapshot) =>
+		seen.push(snapshot.requestedAtMs)
+	);
+	const newer = {
+		loadAvg1m: 1,
+		memFreeMb: null,
+		swapUsedMb: null,
+		kernelLevel: null,
+		kernelMemoryPressureLevel: null,
+		churnScore: null,
+		swapRate: null,
+		decompRate: null,
+		band: null,
+		sampleIntervalMs: null,
+		compressedMb: null,
+		requestedAtMs: 200,
+		serverCacheAgeMs: 0
+	};
+	const older = { ...newer, requestedAtMs: 100 };
+	assert.equal(pressure.storeMachinePressure(newer), true);
+	assert.equal(pressure.storeMachinePressure(older), false);
+	assert.deepEqual(seen, [200]);
+	unsubscribe();
+});
+
 test('a page that goes hidden while the first poll is still queued does not poll when released', async () => {
 	// The boot window can outlast the tab's visible spell: the release is on
 	// the SCHEDULER's clock, not the page's, so by the time it fires the page

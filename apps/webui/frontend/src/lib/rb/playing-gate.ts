@@ -39,6 +39,7 @@
  */
 import { DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
 import { coalesce } from '$lib/rb/coalesce';
+import { S1_XRUN_DELTA_MAX, subscribeMachinePressure } from '$lib/rb/machine-pressure';
 import { recordPerfTiming } from '$lib/rb/perf-event-log';
 
 /**
@@ -99,7 +100,27 @@ const _scheduleWhenIdle: IdleScheduler = (task: () => void): void => {
 };
 
 /** What ended a deferral episode. Recorded as a ring label. */
-type GateResume = 'playback-stopped' | 'user-interaction';
+export type GateResume = 'playback-stopped' | 'user-interaction' | 'pressure-cleared';
+
+/** Ordered non-P0 jobs shed under pressure while a deck is playing (lowest priority first). */
+export const BACKGROUND_SHED_JOBS = [
+	'library-poll-cadence',
+	'background-workers',
+	'waveform-detail-bands',
+	'audio-prefetch-cache-caps',
+	'eager-stem-decode'
+] as const;
+
+export type BackgroundShedJobId = (typeof BACKGROUND_SHED_JOBS)[number];
+
+/** P0 paths that must never be registered on the shed list. */
+export const P0_NEVER_SHED = ['audio-callbacks', 'track-select', 'transport'] as const;
+
+/** Toast suggestion plumbing only: names actions, does not toggle them. */
+export const SHED_TOAST_SUGGESTIONS = [
+	{ action: '2-channel-mode', message: 'Suggest 2-channel mode' },
+	{ action: 'live-generation-off', message: 'Suggest live-generation off' }
+] as const;
 
 interface PlayingGateOptions {
 	/** The shed work. Coalesced by the gate, so releases never overlap. */
@@ -118,7 +139,7 @@ interface PlayingGate {
 	/** Background trigger: runs now when idle, is owed while a deck plays. */
 	request(): void;
 	/** Transport may have stopped - release the owed run if nothing is live. */
-	drain(): void;
+	drain(resumedBy?: GateResume): void;
 	/** The user touched the gated surface: release now, off the gesture path. */
 	flushOnInteraction(): void;
 	/** True while a release is owed. */
@@ -179,10 +200,10 @@ export function createPlayingGate(options: PlayingGateOptions): PlayingGate {
 			}
 			void trigger();
 		},
-		drain(): void {
+		drain(resumedBy: GateResume = 'playback-stopped'): void {
 			if (!pending) return;
 			if (options.isPlaying()) return;
-			_release('playback-stopped', false);
+			_release(resumedBy, false);
 		},
 		flushOnInteraction(): void {
 			// First line on purpose: this is wired to scroll and row-select, so
@@ -194,4 +215,147 @@ export function createPlayingGate(options: PlayingGateOptions): PlayingGate {
 			return pending;
 		}
 	};
+}
+
+interface BackgroundDemandShedJob {
+	id: BackgroundShedJobId;
+	run: () => Promise<void>;
+}
+
+interface BackgroundDemandShedOptions {
+	isPlaying: () => boolean;
+	pressureElevated: () => boolean;
+	readXruns: () => number;
+	jobs: ReadonlyArray<BackgroundDemandShedJob>;
+	notify?: (suggestion: { action: string; message: string }) => void;
+	schedule?: IdleScheduler;
+	now?: () => number;
+	record?: typeof recordPerfTiming;
+}
+
+interface BackgroundDemandShed {
+	request(id: BackgroundShedJobId): void;
+	sync(): void;
+	readonly pending: boolean;
+}
+
+function _assertShedJobId(id: string): void {
+	if ((P0_NEVER_SHED as readonly string[]).includes(id)) {
+		throw new Error(`P0 job ${id} cannot be shed`);
+	}
+	if (!(BACKGROUND_SHED_JOBS as readonly string[]).includes(id)) {
+		throw new Error(`Unknown shed job id: ${id}`);
+	}
+}
+
+/**
+ * Ordered background-demand shed keyed off pressure, xrun window delta, and
+ * live transport. Non-P0 work is owed while elevated, never dropped, and runs
+ * once coalesced when signals return to normal.
+ */
+export function createBackgroundDemandShed(
+	options: BackgroundDemandShedOptions
+): BackgroundDemandShed {
+	const jobRuns = new Map<BackgroundShedJobId, () => Promise<void>>();
+	for (const job of options.jobs) {
+		_assertShedJobId(job.id);
+		jobRuns.set(job.id, job.run);
+	}
+
+	const owed = new Set<BackgroundShedJobId>();
+	let xrunsAtPreviousSync = options.readXruns();
+	let wasDeferring = false;
+	let toastFiredThisEpisode = false;
+
+	const gate = createPlayingGate({
+		kind: 'background-demand-shed',
+		isPlaying: () => options.isPlaying() && _isElevated(),
+		run: async () => {
+			for (const id of BACKGROUND_SHED_JOBS) {
+				if (!owed.has(id)) continue;
+				const run = jobRuns.get(id);
+				if (run !== undefined) await run();
+				owed.delete(id);
+			}
+		},
+		schedule: options.schedule,
+		now: options.now,
+		record: options.record
+	});
+
+	function _xrunWindowDelta(): number {
+		return options.readXruns() - xrunsAtPreviousSync;
+	}
+
+	function _isElevated(): boolean {
+		return options.pressureElevated() || _xrunWindowDelta() > S1_XRUN_DELTA_MAX;
+	}
+
+	function _shouldDefer(): boolean {
+		return options.isPlaying() && _isElevated();
+	}
+
+	return {
+		request(id: BackgroundShedJobId): void {
+			_assertShedJobId(id);
+			if (_shouldDefer()) {
+				owed.add(id);
+				wasDeferring = true;
+				gate.request();
+				return;
+			}
+			const run = jobRuns.get(id);
+			if (run !== undefined) void run();
+		},
+		sync(): void {
+			const deferring = _shouldDefer();
+			if (deferring && !wasDeferring) {
+				if (!toastFiredThisEpisode) {
+					for (const suggestion of SHED_TOAST_SUGGESTIONS) {
+						options.notify?.(suggestion);
+					}
+					toastFiredThisEpisode = true;
+				}
+			}
+			if (!deferring) toastFiredThisEpisode = false;
+			if (wasDeferring && !deferring && (gate.pending || owed.size > 0)) {
+				gate.drain('pressure-cleared');
+			}
+			wasDeferring = deferring;
+			xrunsAtPreviousSync = options.readXruns();
+		},
+		get pending(): boolean {
+			return owed.size > 0 || gate.pending;
+		}
+	};
+}
+
+export interface StartBackgroundDemandShedOptions {
+	isPlaying?: () => boolean;
+	pressureElevated?: () => boolean;
+	readXruns?: () => number;
+	notify?: (suggestion: { action: string; message: string }) => void;
+	jobs?: ReadonlyArray<BackgroundDemandShedJob>;
+	schedule?: IdleScheduler;
+	now?: () => number;
+	record?: typeof recordPerfTiming;
+}
+
+/** Arm the pressure shed for the page lifetime. Returns teardown. */
+export function startBackgroundDemandShed(
+	options: StartBackgroundDemandShedOptions = {}
+): () => void {
+	const shed = createBackgroundDemandShed({
+		isPlaying: options.isPlaying ?? anyDeckPlaying,
+		pressureElevated: options.pressureElevated ?? ((): boolean => false),
+		readXruns: options.readXruns ?? ((): number => 0),
+		notify: options.notify,
+		jobs: options.jobs ?? [],
+		schedule: options.schedule,
+		now: options.now,
+		record: options.record
+	});
+	const unsubscribe = subscribeMachinePressure(() => shed.sync());
+	shed.sync();
+	return unsubscribe;
 }

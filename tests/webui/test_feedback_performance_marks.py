@@ -1,4 +1,7 @@
-"""Real route and disk regressions for durable performance-feedback marks."""
+"""Real route and disk regressions for durable performance-feedback marks.
+
+[if] a performance mark is posted [then] it is stored on disk and readable back, [else stop].
+"""
 
 from __future__ import annotations
 

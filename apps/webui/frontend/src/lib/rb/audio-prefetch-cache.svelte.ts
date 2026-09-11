@@ -200,3 +200,19 @@ export function audioPrefetchReadyCount(): number {
 export function audioPrefetchReadyBytes(): number {
 	return _readyBytesTotal();
 }
+
+/**
+ * Clear every prefetch entry and abort any in-flight fetch.
+ * Used by the PerfMeters monitor reset (PERFMODE-05).
+ */
+export function clearAudioPrefetchCache(): void {
+	if (_controller !== null) {
+		_controller.abort();
+		_controller = null;
+	}
+	_wanted = null;
+	_inflightSid = null;
+	for (const sid of Object.keys(_entries)) {
+		delete _entries[sid];
+	}
+}
