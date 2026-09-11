@@ -61,6 +61,20 @@ _RBX_FIELDS: frozenset[str] = frozenset({"bpm", "key"})
 # own value reports its canonical backend name instead.
 OWN_ANALYSIS_SOURCE = "own-analysis"
 
+# Lanes whose own producer has landed and may be selected over HTTP/UI.
+# Each producer package registers itself at import time; consumers read this
+# set through ``source_state`` and refuse ``own`` for anything absent from it.
+SERVING_LANES: set[str] = set()
+
+
+def register_serving_lane(lane: str) -> None:
+    """Record that ``lane`` has a serving own implementation on this process."""
+    check_lane(lane)
+    SERVING_LANES.add(lane)
+
+
+def serving_lanes() -> frozenset[str]:
+    return frozenset(SERVING_LANES)
 
 
 class SelectionError(ValueError):
@@ -356,7 +370,8 @@ def source_state(conn: sqlite3.Connection) -> dict[str, Any]:
                 "effective": toggles[lane] if toggles[lane] != "unset" else defaults[lane],
             }
             for lane in LANES
-        }
+        },
+        "serving": sorted(SERVING_LANES),
     }
 
 
@@ -544,6 +559,7 @@ __all__ = [
     "LANES",
     "OWN_ANALYSIS_SOURCE",
     "PROJECTION_FIELDS",
+    "SERVING_LANES",
     "SOURCES",
     "TOGGLE_STATES",
     "EffectiveField",
@@ -567,7 +583,9 @@ __all__ = [
     "get_toggle",
     "get_toggle_revision",
     "lane_for_field",
+    "register_serving_lane",
     "reset_toggles",
+    "serving_lanes",
     "set_default",
     "set_toggle",
     "source_state",

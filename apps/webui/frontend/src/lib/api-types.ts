@@ -3458,6 +3458,11 @@ export interface components {
              * @description The toggle value this PUT's `toggle` just displaced for `lane`, read and overwritten under the same lock acquisition. Null for a GET, or a PUT that did not set `toggle`. A client's own prior GET/PUT response can be stale by the time it issues a later PUT (a concurrent agent's write can land in between), so a compensating rollback must restore THIS value, not one read earlier over a separate round trip.
              */
             previous_toggle?: string | null;
+            /**
+             * Serving
+             * @description Selection lanes that currently have a serving own implementation on this daemon. Lanes absent from this list refuse PUT own.
+             */
+            serving: string[];
         };
         /**
          * AnalysisSourcePut
@@ -5388,7 +5393,10 @@ export interface components {
         };
         /** MembershipTransferIn */
         MembershipTransferIn: {
-            /** Mode */
+            /**
+             * Mode
+             * @enum {string}
+             */
             mode: "add" | "move";
             /** Source Etag */
             source_etag?: string | null;
@@ -6649,6 +6657,20 @@ export interface components {
             is_streaming: boolean;
             /** Key */
             key: string | null;
+            /** Key Reason */
+            key_reason: string | null;
+            /**
+             * Key Status
+             * @enum {string}
+             */
+            key_status: "ok" | "failed" | "missing";
+            /** Loudness Reason */
+            loudness_reason: string | null;
+            /**
+             * Loudness Status
+             * @enum {string}
+             */
+            loudness_status: "ok" | "failed" | "missing";
             /** Match Context */
             match_context: string;
             /**
@@ -7608,6 +7630,20 @@ export interface components {
             is_streaming: boolean;
             /** Key */
             key: string | null;
+            /** Key Reason */
+            key_reason: string | null;
+            /**
+             * Key Status
+             * @enum {string}
+             */
+            key_status: "ok" | "failed" | "missing";
+            /** Loudness Reason */
+            loudness_reason: string | null;
+            /**
+             * Loudness Status
+             * @enum {string}
+             */
+            loudness_status: "ok" | "failed" | "missing";
             /**
              * Play Count
              * @default 0

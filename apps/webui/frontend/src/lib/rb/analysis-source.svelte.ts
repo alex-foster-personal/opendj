@@ -46,7 +46,13 @@ export type { AnalysisSource, AnalysisSourceFeature };
 // This UI's feature id doubles as the backend's lane name (both "beatgrid"),
 // but the two vocabularies are declared independently on purpose: the wire
 // vocabulary here is UI-facing and predates apps.analysis.lanes.
-const _LANE_OF_FEATURE: Record<AnalysisSourceFeature, string> = { beatgrid: 'beatgrid' };
+const _LANE_OF_FEATURE: Record<AnalysisSourceFeature, string> = {
+	beatgrid: 'beatgrid',
+	key: 'key',
+	waveform: 'waveform',
+	loudness: 'loudness',
+	vocal: 'vocal'
+};
 
 const _UI_SOURCE_OF_EFFECTIVE: Record<string, AnalysisSource> = { rbx: 'rekordbox', own: 'own' };
 const _TOGGLE_OF_UI_SOURCE: Record<AnalysisSource, 'rbx' | 'own'> = { rekordbox: 'rbx', own: 'own' };
@@ -254,6 +260,7 @@ export async function loadAnalysisSource(): Promise<void> {
 /** The UI feature map from one wire body. */
 function _featuresOf(body: {
 	lanes: Record<string, { effective: string; toggle: string }>;
+	serving?: readonly string[];
 }): Record<string, AnalysisSource> {
 	const features: Record<string, AnalysisSource> = {};
 	for (const feature of ANALYSIS_SOURCE_FEATURES) {
@@ -261,6 +268,7 @@ function _featuresOf(body: {
 		if (lane === undefined) continue;
 		features[feature] = _UI_SOURCE_OF_EFFECTIVE[lane.effective];
 	}
+	analysisSourceState.serving = body.serving ?? [];
 	return features;
 }
 

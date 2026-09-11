@@ -20,8 +20,27 @@
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 
 	const FEATURE_LABEL: Record<string, string> = {
-		beatgrid: 'Beatgrid'
+		beatgrid: 'Beatgrid',
+		key: 'Key',
+		waveform: 'Waveform',
+		loudness: 'Loudness',
+		vocal: 'Vocal'
 	};
+
+	const UNSERVED_OWN_TIP: Record<string, string> = {
+		waveform: "waveform lane has no serving implementation yet",
+		vocal: "vocal lane has no serving implementation yet"
+	};
+
+	function _ownDisabled(feature: (typeof ANALYSIS_SOURCE_FEATURES)[number]): boolean {
+		const lane = feature;
+		return !analysisSourceState.serving.includes(lane);
+	}
+
+	function _ownTitle(feature: (typeof ANALYSIS_SOURCE_FEATURES)[number]): string {
+		if (!_ownDisabled(feature)) return 'Select own analysis for this lane';
+		return UNSERVED_OWN_TIP[feature] ?? `lane '${feature}' has no serving implementation yet`;
+	}
 
 	// Live-but-not-noisy, matching usb-tracker.svelte.ts / feedback-store.svelte.ts's
 	// POLL_MS. An agent driving PUT /api/v1/analysis/source directly (this
@@ -144,6 +163,8 @@
 						<button
 							type="button"
 							class:active={current === 'own'}
+							disabled={_ownDisabled(feature)}
+							title={_ownTitle(feature)}
 							onclick={() => _pick(feature, 'own')}
 						>
 							OWN
@@ -230,5 +251,9 @@
 	.src-seg button.active {
 		background: var(--rb-accent);
 		color: #0a0c0f;
+	}
+	.src-seg button:disabled {
+		opacity: 0.35;
+		cursor: not-allowed;
 	}
 </style>

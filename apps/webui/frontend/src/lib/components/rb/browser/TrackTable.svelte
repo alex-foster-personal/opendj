@@ -181,6 +181,20 @@
 		return base === undefined ? border : `${base};${border}`;
 	}
 
+	function keyCellInert(row: BrowserRow): boolean {
+		return row.key_status === 'failed' || row.key_status === 'missing';
+	}
+
+	function keyCellTitle(row: BrowserRow): string {
+		if (row.key_status === 'failed') {
+			return row.key_reason ?? 'key analysis failed';
+		}
+		if (row.key_status === 'missing') {
+			return row.key_reason ?? 'key not analyzed yet';
+		}
+		return `${camelotKeyHoverLabel(row.key) ?? 'Key not analyzed'} Dynamic key, musical mode, and chord progression analysis: not analyzed.`;
+	}
+
 	function bpmCellHeat(bpm: number | null) {
 		return classifyBpmHeat(bpm, masterBpm);
 	}
@@ -1452,15 +1466,20 @@
 						<td
 							class="c-key"
 							class:key-compat={keyCompat(row.key)}
+							class:key-inert={keyCellInert(row)}
 							style={keyCompatStyle(row.key)}
-							title={`${camelotKeyHoverLabel(row.key) ?? 'Key not analyzed'} Dynamic key, musical mode, and chord progression analysis: not analyzed.`}
+							title={keyCellTitle(row)}
 						>
-							{#snippet keyCharacters(text: string)}
-								{#each text as character}<span class:camelot-suffix={character === 'A' || character === 'B'}>{character}</span>{/each}
-							{/snippet}
-							{#each hl(row.key) as part, i (i)}
-								{#if part.hit}<mark class="find-hit">{@render keyCharacters(part.text)}</mark>{:else}{@render keyCharacters(part.text)}{/if}
-							{/each}
+							{#if row.key_status === 'failed' || row.key_status === 'missing'}
+								<span class="key-status">{row.key_status === 'failed' ? 'failed' : 'missing'}</span>
+							{:else}
+								{#snippet keyCharacters(text: string)}
+									{#each text as character}<span class:camelot-suffix={character === 'A' || character === 'B'}>{character}</span>{/each}
+								{/snippet}
+								{#each hl(row.key) as part, i (i)}
+									{#if part.hit}<mark class="find-hit">{@render keyCharacters(part.text)}</mark>{:else}{@render keyCharacters(part.text)}{/if}
+								{/each}
+							{/if}
 						</td>
 						<td
 							class="c-bpm"
@@ -2188,6 +2207,14 @@
 		border-radius: 2px;
 		padding-left: 4px;
 		padding-right: 4px;
+	}
+	.c-key.key-inert {
+		color: var(--rb-text-dim);
+		font-size: 0.85em;
+		text-transform: lowercase;
+	}
+	.key-status {
+		opacity: 0.85;
 	}
 	/* Sweet BPM: green wash only (no border). Half = purple wash. */
 	.c-bpm.bpm-sweet {

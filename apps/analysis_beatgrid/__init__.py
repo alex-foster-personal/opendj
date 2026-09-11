@@ -14,6 +14,7 @@ the changepoint detector and the bar-phase assignment be unit tested in the norm
 fast test lane instead of behind a heavy optional marker.
 """
 
+from apps.analysis.selection import register_serving_lane
 from apps.analysis_beatgrid.bar_phase import (
     BAR_BEATS,
     BarPhase,
@@ -33,6 +34,8 @@ from apps.analysis_beatgrid.tempo_change import (
     TempoMarker,
     detect_tempo_changes,
 )
+
+register_serving_lane("beatgrid")
 
 __all__ = [
     "BAR_BEATS",

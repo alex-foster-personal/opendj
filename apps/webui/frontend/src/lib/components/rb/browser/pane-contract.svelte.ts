@@ -56,6 +56,10 @@ export interface BrowserRow {
 	energy_source: 'mik' | null;
 	/** Honest reason shown when energy is null, never a fallback value. */
 	energy_reason: string;
+	key_status?: 'ok' | 'failed' | 'missing';
+	key_reason?: string | null;
+	loudness_status?: 'ok' | 'failed' | 'missing';
+	loudness_reason?: string | null;
 	/** '' for All Tracks rows (listing carries no ETag) - rating edits
 	 * lazily fetch one. Playlist rows carry it inline (contract 4). */
 	etag: string;

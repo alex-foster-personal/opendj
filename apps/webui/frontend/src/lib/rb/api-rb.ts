@@ -368,6 +368,10 @@ export interface PlaylistTrackRowWire {
 	energy: number | null;
 	energy_source: 'mik' | null;
 	energy_reason: string;
+	key_status?: 'ok' | 'failed' | 'missing';
+	key_reason?: string | null;
+	loudness_status?: 'ok' | 'failed' | 'missing';
+	loudness_reason?: string | null;
 	duration_ms: number | null;
 	genre: string | null;
 	comments: string | null;

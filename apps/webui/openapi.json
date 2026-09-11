@@ -558,10 +558,19 @@
             ],
             "description": "The toggle value this PUT's `toggle` just displaced for `lane`, read and overwritten under the same lock acquisition. Null for a GET, or a PUT that did not set `toggle`. A client's own prior GET/PUT response can be stale by the time it issues a later PUT (a concurrent agent's write can land in between), so a compensating rollback must restore THIS value, not one read earlier over a separate round trip.",
             "title": "Previous Toggle"
+          },
+          "serving": {
+            "description": "Selection lanes that currently have a serving own implementation on this daemon. Lanes absent from this list refuse PUT own.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Serving",
+            "type": "array"
           }
         },
         "required": [
-          "lanes"
+          "lanes",
+          "serving"
         ],
         "title": "AnalysisSourceOut",
         "type": "object"
@@ -9087,6 +9096,46 @@
             ],
             "title": "Key"
           },
+          "key_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Reason"
+          },
+          "key_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing"
+            ],
+            "title": "Key Status",
+            "type": "string"
+          },
+          "loudness_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Reason"
+          },
+          "loudness_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing"
+            ],
+            "title": "Loudness Status",
+            "type": "string"
+          },
           "match_context": {
             "title": "Match Context",
             "type": "string"
@@ -9187,6 +9236,10 @@
           "energy",
           "energy_source",
           "energy_reason",
+          "key_status",
+          "key_reason",
+          "loudness_status",
+          "loudness_reason",
           "match_context"
         ],
         "title": "SearchHit",
@@ -11667,6 +11720,46 @@
             ],
             "title": "Key"
           },
+          "key_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Reason"
+          },
+          "key_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing"
+            ],
+            "title": "Key Status",
+            "type": "string"
+          },
+          "loudness_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Reason"
+          },
+          "loudness_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing"
+            ],
+            "title": "Loudness Status",
+            "type": "string"
+          },
           "play_count": {
             "default": 0,
             "title": "Play Count",
@@ -11762,7 +11855,11 @@
           "artwork_status",
           "energy",
           "energy_source",
-          "energy_reason"
+          "energy_reason",
+          "key_status",
+          "key_reason",
+          "loudness_status",
+          "loudness_reason"
         ],
         "title": "TrackRowOut",
         "type": "object"
