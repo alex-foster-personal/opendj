@@ -30,6 +30,10 @@ export type FixtureManifest = {
 	empty_playlist_id: string;
 	autoplay_chain_playlist_id: string | null;
 	autoplay_chain_playlist_name: string | null;
+	autoplay_hunt_playlist_a_id?: string | null;
+	autoplay_hunt_playlist_a_name?: string | null;
+	autoplay_hunt_playlist_b_id?: string | null;
+	autoplay_hunt_playlist_b_name?: string | null;
 	tracks: FixtureTrack[];
 };
 
@@ -55,6 +59,18 @@ function _isFixtureManifest(value: unknown): value is FixtureManifest {
 			typeof manifest.autoplay_chain_playlist_id === 'string') &&
 		(manifest.autoplay_chain_playlist_name === null ||
 			typeof manifest.autoplay_chain_playlist_name === 'string') &&
+		(manifest.autoplay_hunt_playlist_a_id === undefined ||
+			manifest.autoplay_hunt_playlist_a_id === null ||
+			typeof manifest.autoplay_hunt_playlist_a_id === 'string') &&
+		(manifest.autoplay_hunt_playlist_a_name === undefined ||
+			manifest.autoplay_hunt_playlist_a_name === null ||
+			typeof manifest.autoplay_hunt_playlist_a_name === 'string') &&
+		(manifest.autoplay_hunt_playlist_b_id === undefined ||
+			manifest.autoplay_hunt_playlist_b_id === null ||
+			typeof manifest.autoplay_hunt_playlist_b_id === 'string') &&
+		(manifest.autoplay_hunt_playlist_b_name === undefined ||
+			manifest.autoplay_hunt_playlist_b_name === null ||
+			typeof manifest.autoplay_hunt_playlist_b_name === 'string') &&
 		Array.isArray(manifest.tracks) &&
 		manifest.tracks.every(_isFixtureTrack)
 	);
@@ -130,6 +146,54 @@ export function autoplayChainFixture(manifestPath: string): {
 	}
 	return {
 		playlistName: manifest.autoplay_chain_playlist_name,
+		stableIds: manifest.tracks.map((track) => track.stable_id)
+	};
+}
+
+export type AutoplayHuntPlaylist = {
+	id: string;
+	name: string;
+};
+
+/**
+ * The two dedicated hunt playlists and their member stable_ids, for the
+ * AutoPlay/mixing error hunt (#1853). Throws if the manifest was built
+ * without `--seed-autoplay-hunt` or came up short of 6 tracks.
+ */
+export function autoplayHuntFixture(manifestPath: string): {
+	playlistA: AutoplayHuntPlaylist;
+	playlistB: AutoplayHuntPlaylist;
+	stableIds: string[];
+} {
+	const manifest = readFixtureManifest(manifestPath);
+	const aId = manifest.autoplay_hunt_playlist_a_id;
+	const aName = manifest.autoplay_hunt_playlist_a_name;
+	const bId = manifest.autoplay_hunt_playlist_b_id;
+	const bName = manifest.autoplay_hunt_playlist_b_name;
+	if (
+		aId === undefined ||
+		aId === null ||
+		aName === undefined ||
+		aName === null ||
+		bId === undefined ||
+		bId === null ||
+		bName === undefined ||
+		bName === null
+	) {
+		throw new Error(
+			`fixture manifest at ${manifestPath} has no autoplay hunt playlists -- ` +
+				'the fixture must be built with --seed-autoplay-hunt'
+		);
+	}
+	if (manifest.tracks.length < 6) {
+		throw new Error(
+			`UNKNOWN: fixture manifest at ${manifestPath} has ${manifest.tracks.length} track(s), ` +
+				'need >= 6 for the AutoPlay/mixing error hunt'
+		);
+	}
+	return {
+		playlistA: { id: aId, name: aName },
+		playlistB: { id: bId, name: bName },
 		stableIds: manifest.tracks.map((track) => track.stable_id)
 	};
 }

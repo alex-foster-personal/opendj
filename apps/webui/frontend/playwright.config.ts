@@ -97,7 +97,8 @@ export default defineConfig({
 		'**/stretch-artifact.spec.ts', // playwright.stretch-artifact.config.ts (built artifact)
 		'**/stretch-quality.spec.ts', // playwright.stretch-quality.config.ts (no server)
 		'**/full-reload-gate.spec.ts', // playwright.full-reload-gate.config.ts (own vite instance, r3920753724)
-		'**/audio-soak.spec.ts' // playwright.audio-soak.config.ts (built artifact, MINUTES; `just test-audio-soak`)
+		'**/audio-soak.spec.ts', // playwright.audio-soak.config.ts (built artifact, MINUTES; `just test-audio-soak`)
+		'**/autoplay-error-hunt.spec.ts' // playwright.autoplay-error-hunt.config.ts (MINUTES; `just test-autoplay-hunt`)
 	],
 	fullyParallel: false,
 	workers: 1,
