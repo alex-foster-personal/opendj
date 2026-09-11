@@ -26,6 +26,11 @@ import {
 	type LibraryDensity,
 	type UiTheme
 } from '$lib/rb/prefs.svelte';
+import {
+	setWheelSensitivity,
+	wheelSensitivity,
+	type WheelInputKind
+} from '$lib/rb/wheel-adjust';
 
 export const ALLOWED_SETTING_KEYS = [
 	'theme',
@@ -45,7 +50,9 @@ export const ALLOWED_SETTING_KEYS = [
 	'auto_sync.djay',
 	'auto_sync.open_dj',
 	'confirm.delete_playlist',
-	'confirm.dblclick_load_play'
+	'confirm.dblclick_load_play',
+	'wheel_sensitivity.mouse',
+	'wheel_sensitivity.trackpad'
 ] as const;
 
 export type AllowedSettingKey = (typeof ALLOWED_SETTING_KEYS)[number];
@@ -94,6 +101,10 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.confirm.delete_playlist !== false;
 		case 'confirm.dblclick_load_play':
 			return uiPrefs.confirm.dblclick_load_play !== false;
+		case 'wheel_sensitivity.mouse':
+			return String(wheelSensitivity().mouse);
+		case 'wheel_sensitivity.trackpad':
+			return String(wheelSensitivity().trackpad);
 	}
 }
 
@@ -173,7 +184,27 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'confirm.dblclick_load_play':
 			setConfirmPref('dblclick_load_play', _asBool(value, key));
 			return;
+		case 'wheel_sensitivity.mouse':
+		case 'wheel_sensitivity.trackpad': {
+			// setWheelSensitivity owns the range check and throws RangeError
+			// outside (0, WHEEL_SENSITIVITY_MAX]; this only has to turn the
+			// control's string into a number, or refuse loudly.
+			const kind = key.slice('wheel_sensitivity.'.length) as WheelInputKind;
+			setWheelSensitivity(kind, _asFactor(value, key));
+			return;
+		}
 	}
+}
+
+function _asFactor(value: SettingValue, key: string): number {
+	if (typeof value !== 'string' || value.trim() === '') {
+		throw new Error(`${key} expects a number, got ${String(value)}`);
+	}
+	const parsed = Number(value);
+	if (!Number.isFinite(parsed)) {
+		throw new Error(`${key} expects a number, got ${String(value)}`);
+	}
+	return parsed;
 }
 
 function _asBool(value: SettingValue, key: string): boolean {
