@@ -81,6 +81,9 @@ export interface PlayItGoal {
 	peak_at_min?: number | null;
 	floor_energy?: number;
 	ceiling_energy?: number;
+	peak_pins?: string[];
+	opener_pins?: string[];
+	closer_pin?: string | null;
 }
 
 export type PlayItSolveOut = components['schemas']['PlayItSolveOut'];

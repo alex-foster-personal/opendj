@@ -15,9 +15,27 @@ _MIN_ENERGY: int = 1
 _MAX_ENERGY: int = 10
 
 
+def _normalize_pin_tuple(raw: tuple[str, ...] | list[str] | None) -> tuple[str, ...]:
+    if not raw:
+        return ()
+    out: list[str] = []
+    for item in raw:
+        if not isinstance(item, str):
+            raise ValueError(f"pin must be str, got {item!r}")
+        stripped = item.strip()
+        if not stripped:
+            raise ValueError("pin must not be empty")
+        if "/" in stripped or "\\" in stripped or stripped.startswith("."):
+            raise ValueError(f"pin must be stable_id, not path: {stripped!r}")
+        out.append(stripped)
+    if len(out) != len(set(out)):
+        raise ValueError(f"duplicate pin in role: {out!r}")
+    return tuple(out)
+
+
 @dataclass(slots=True)
 class SetGoal:
-    """Six-knob description of a desired set shape."""
+    """Six-knob description of a desired set shape plus optional track pins."""
 
     duration_min: int
     peak_at_min: int | None = None
@@ -25,8 +43,30 @@ class SetGoal:
     ceiling_energy: int = 9
     open_on_key: str | None = None
     close_on_energy: int | None = None
+    peak_pins: tuple[str, ...] = ()
+    opener_pins: tuple[str, ...] = ()
+    closer_pin: str | None = None
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "peak_pins", _normalize_pin_tuple(self.peak_pins))
+        object.__setattr__(
+            self, "opener_pins", _normalize_pin_tuple(self.opener_pins)
+        )
+        if self.closer_pin is not None:
+            closer = self.closer_pin.strip()
+            if not closer:
+                raise ValueError("closer_pin must not be empty")
+            if "/" in closer or "\\" in closer or closer.startswith("."):
+                raise ValueError(f"closer_pin must be stable_id, not path: {closer!r}")
+            object.__setattr__(self, "closer_pin", closer)
+        overlap = set(self.peak_pins) & set(self.opener_pins)
+        if self.closer_pin is not None:
+            overlap |= set(self.peak_pins) & {self.closer_pin}
+            overlap |= set(self.opener_pins) & {self.closer_pin}
+        if overlap:
+            raise ValueError(
+                f"stable_id may appear in at most one pin role: {sorted(overlap)!r}"
+            )
         if not isinstance(self.duration_min, int):
             raise ValueError(
                 f"duration_min must be int, got {self.duration_min!r}"
@@ -85,6 +125,9 @@ def set_goal_to_dict(g: SetGoal) -> dict[str, Any]:
 
 
 def set_goal_from_dict(d: dict[str, Any]) -> SetGoal:
+    peak_raw = d.get("peak_pins") or ()
+    opener_raw = d.get("opener_pins") or ()
+    closer = d.get("closer_pin")
     return SetGoal(
         duration_min=int(d["duration_min"]),
         peak_at_min=(
@@ -98,6 +141,9 @@ def set_goal_from_dict(d: dict[str, Any]) -> SetGoal:
             if d.get("close_on_energy") is None
             else int(d["close_on_energy"])
         ),
+        peak_pins=tuple(str(x) for x in peak_raw),
+        opener_pins=tuple(str(x) for x in opener_raw),
+        closer_pin=None if closer is None else str(closer),
     )
 
 

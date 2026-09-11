@@ -7103,6 +7103,17 @@
             "title": "Ceiling Energy",
             "type": "integer"
           },
+          "closer_pin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closer Pin"
+          },
           "duration_min": {
             "default": 60,
             "maximum": 240.0,
@@ -7117,6 +7128,13 @@
             "title": "Floor Energy",
             "type": "integer"
           },
+          "opener_pins": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Opener Pins",
+            "type": "array"
+          },
           "peak_at_min": {
             "anyOf": [
               {
@@ -7128,6 +7146,13 @@
               }
             ],
             "title": "Peak At Min"
+          },
+          "peak_pins": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Peak Pins",
+            "type": "array"
           }
         },
         "title": "PlayItGoalIn",
@@ -7264,6 +7289,22 @@
               }
             ],
             "title": "Key Camelot"
+          },
+          "pin_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "opener",
+                  "peak",
+                  "closer"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Role"
           },
           "position": {
             "title": "Position",
