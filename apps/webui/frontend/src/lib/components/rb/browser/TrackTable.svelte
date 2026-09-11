@@ -1402,18 +1402,31 @@
 							<td class="c-autoplay">
 								{#if _autoPlayRank(row.stable_id) !== null}
 									{@const rank = _autoPlayRank(row.stable_id)!}
-									<AutoPlayRankCell
-										stableId={row.stable_id}
-										{rank}
-										isHot={hoveredApId === row.stable_id}
-										onHover={(id) => {
-											if (id === null) {
-												if (hoveredApId === row.stable_id) hoveredApId = null;
-											} else {
-												hoveredApId = id;
-											}
+									<!-- svelte-ignore a11y_no_static_element_interactions -->
+									<span
+										title={`AutoPlay queue position ${rank}: hand off after ${rank - 1} more, from the current AutoPlay view`}
+										onpointerenter={() => (hoveredApId = row.stable_id)}
+										onpointerleave={() => {
+											if (hoveredApId === row.stable_id) hoveredApId = null;
 										}}
-									/>
+										onfocus={() => (hoveredApId = row.stable_id)}
+										onblur={() => {
+											if (hoveredApId === row.stable_id) hoveredApId = null;
+										}}
+									>
+										<AutoPlayRankCell
+											stableId={row.stable_id}
+											{rank}
+											isHot={hoveredApId === row.stable_id}
+											onHover={(id) => {
+												if (id === null) {
+													if (hoveredApId === row.stable_id) hoveredApId = null;
+												} else {
+													hoveredApId = id;
+												}
+											}}
+										/>
+									</span>
 								{/if}
 							</td>
 						{/if}
