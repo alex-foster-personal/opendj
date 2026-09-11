@@ -5599,6 +5599,30 @@
       },
       "MeOut": {
         "properties": {
+          "signed_in": {
+            "title": "Signed In",
+            "type": "boolean"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MeUserOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "signed_in",
+          "user"
+        ],
+        "title": "MeOut",
+        "type": "object"
+      },
+      "MeUserOut": {
+        "properties": {
           "avatar_url": {
             "anyOf": [
               {
@@ -5641,7 +5665,7 @@
           "avatar_url",
           "created_at"
         ],
-        "title": "MeOut",
+        "title": "MeUserOut",
         "type": "object"
       },
       "MemberOut": {
@@ -14983,7 +15007,7 @@
     },
     "/api/v1/auth/me": {
       "get": {
-        "description": "The signed-in user, or 401. The bauble polls this on mount.",
+        "description": "Who is signed in.\n\nAlways HTTP 200. Signed-out is identity, not a fault: the bauble polls\nthis on mount, Chromium logs every 4xx, and the AutoPlay hunt treats\n4xx as a finding. Destructive routes that need a user still 401.",
         "operationId": "whoami_api_v1_auth_me_get",
         "responses": {
           "200": {
