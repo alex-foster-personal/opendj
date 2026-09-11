@@ -70,9 +70,10 @@ import json
 import sqlite3
 import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Literal, Optional
+from typing import Any, Literal
 
 from apps.shared.state import db as _state_db
 from apps.shared.state.events import EventBus, FakeEventBus
@@ -123,7 +124,7 @@ class PlaylistStore:
         *,
         bus: EventBus | FakeEventBus | None = None,
         actor: str = "webui",
-        clock: Optional[Callable[..., Any]] = None,
+        clock: Callable[..., Any] | None = None,
     ) -> None:
         path = Path(state_db_path)
         if not path.is_file():
@@ -156,7 +157,7 @@ class PlaylistStore:
             self._writer.close()
             self._conn.close()
 
-    def __enter__(self) -> "PlaylistStore":
+    def __enter__(self) -> PlaylistStore:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -269,28 +270,23 @@ class PlaylistStore:
         live: PlaylistRow | None,
     ) -> PlaylistRow | None:
         if op == "delete":
-            if live is None:
-                return None
-            self.delete_playlist(
-                live.playlist_id, expected_etag=live.etag, record_edit=False,
-            )
+            if live is not None:
+                self.delete_playlist(
+                    live.playlist_id, expected_etag=live.etag, record_edit=False,
+                )
             return None
+        if snap is None:
+            raise BackendError(f"{op} inverse is missing the snapshot")
         if op == "create":
-            if snap is None:
-                raise BackendError("create inverse is missing the before snapshot")
             return self._restore_playlist(snap)
+        if live is None:
+            raise BackendError(f"{op} inverse is missing live row")
         if op == "rename":
-            if live is None or snap is None:
-                raise BackendError("rename inverse is missing live row or snapshot")
             return self.rename_playlist(
                 live.playlist_id, snap.name,
                 expected_etag=live.etag, record_edit=False,
             )
         if op == "memberships":
-            if live is None or snap is None:
-                raise BackendError(
-                    "memberships inverse is missing live row or snapshot"
-                )
             return self.replace_memberships(
                 live.playlist_id, list(snap.items),
                 expected_etag=live.etag, record_edit=False,
@@ -386,8 +382,8 @@ class PlaylistStore:
         self,
         playlist_id: str,
         *,
-        name: Optional[str] = None,
-        expected_etag: Optional[str] = None,
+        name: str | None = None,
+        expected_etag: str | None = None,
         record_edit: bool = True,
     ) -> PlaylistRow:
         """Copy name (or ``name``) + full membership into a new webui playlist.
@@ -588,4 +584,4 @@ class PlaylistStore:
             return command, current
 
 
-__all__ = ["PlaylistRow", "PlaylistStore", "WEBUI_VENDOR"]
+__all__ = ["WEBUI_VENDOR", "PlaylistRow", "PlaylistStore"]

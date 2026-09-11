@@ -8,7 +8,7 @@ the same cursor.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 HISTORY_LIMIT: int = 50
 
@@ -48,7 +48,7 @@ class PlaylistSnapshot:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "PlaylistSnapshot":
+    def from_dict(cls, data: dict[str, Any]) -> PlaylistSnapshot:
         return cls(
             playlist_id=data["playlist_id"],
             name=data["name"],
@@ -66,8 +66,8 @@ class PlaylistEditCommand:
     op: EditOp
     playlist_id: str
     ts: str
-    before: Optional[PlaylistSnapshot]
-    after: Optional[PlaylistSnapshot]
+    before: PlaylistSnapshot | None
+    after: PlaylistSnapshot | None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -80,7 +80,7 @@ class PlaylistEditCommand:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "PlaylistEditCommand":
+    def from_dict(cls, data: dict[str, Any]) -> PlaylistEditCommand:
         before_raw = data.get("before")
         after_raw = data.get("after")
         return cls(
@@ -122,44 +122,50 @@ def rebuild_stack(
     return stack, cursor
 
 
-def invert(command: PlaylistEditCommand) -> tuple[InverseOp, Optional[PlaylistSnapshot]]:
+_INVERSE_OP: dict[EditOp, InverseOp] = {
+    "create": "delete",
+    "duplicate": "delete",
+    "delete": "create",
+    "rename": "rename",
+    "memberships": "memberships",
+}
+
+_LABEL: dict[EditOp, str] = {
+    "create": "Create '{after}'",
+    "duplicate": "Duplicate '{after}'",
+    "rename": "Rename '{before}' to '{after}'",
+    "memberships": "Edit tracks in '{after}'",
+    "delete": "Delete '{before}'",
+}
+
+
+def _snap_name(snap: PlaylistSnapshot | None) -> str:
+    return "" if snap is None else snap.name
+
+
+def invert(command: PlaylistEditCommand) -> tuple[InverseOp, PlaylistSnapshot | None]:
     """Return the inverse op and the snapshot that op should apply."""
-    if command.op in ("create", "duplicate"):
-        return "delete", command.after
-    if command.op == "delete":
-        return "create", command.before
-    if command.op == "rename":
-        return "rename", command.before
-    if command.op == "memberships":
-        return "memberships", command.before
-    raise ValueError(f"unknown playlist edit op: {command.op!r}")
+    try:
+        inverse = _INVERSE_OP[command.op]
+    except KeyError as exc:
+        raise ValueError(f"unknown playlist edit op: {command.op!r}") from exc
+    snap = command.after if inverse == "delete" else command.before
+    return inverse, snap
 
 
 def label_for(command: PlaylistEditCommand) -> str:
     """Short ASCII label for the history panel."""
-    if command.op == "create":
-        name = command.after.name if command.after is not None else ""
-        return f"Create '{name}'"
-    if command.op == "duplicate":
-        name = command.after.name if command.after is not None else ""
-        return f"Duplicate '{name}'"
-    if command.op == "rename":
-        old = command.before.name if command.before is not None else ""
-        new = command.after.name if command.after is not None else ""
-        return f"Rename '{old}' to '{new}'"
-    if command.op == "memberships":
-        snap = command.after if command.after is not None else command.before
-        name = snap.name if snap is not None else ""
-        return f"Edit tracks in '{name}'"
-    if command.op == "delete":
-        name = command.before.name if command.before is not None else ""
-        return f"Delete '{name}'"
-    raise ValueError(f"unknown playlist edit op: {command.op!r}")
+    try:
+        template = _LABEL[command.op]
+    except KeyError as exc:
+        raise ValueError(f"unknown playlist edit op: {command.op!r}") from exc
+    after = command.after if command.after is not None else command.before
+    return template.format(before=_snap_name(command.before), after=_snap_name(after))
 
 
 def snapshots_match(
-    live: Optional[PlaylistSnapshot],
-    expected: Optional[PlaylistSnapshot],
+    live: PlaylistSnapshot | None,
+    expected: PlaylistSnapshot | None,
 ) -> bool:
     """True when live name + items + existence match ``expected``.
 

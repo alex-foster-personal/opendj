@@ -14,7 +14,7 @@ missing (same ``get_playlist_store`` as the write router).
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
@@ -24,11 +24,13 @@ from apps.shared.events import publish
 
 from ..backend import StateBackend
 from ..deps import get_write_state
-from ..playlist_history import PlaylistHistoryEmptyError
+from ..playlist_history import PlaylistEditCommand, PlaylistHistoryEmptyError
 from ..playlist_store import PlaylistRow, PlaylistStore
 from .playlist_write import PlaylistWriteOut, get_playlist_store
 
 router = APIRouter(prefix="/playlist-history", tags=["playlists-write"])
+StateDep = Annotated[StateBackend, Depends(get_write_state)]
+StoreDep = Annotated[PlaylistStore, Depends(get_playlist_store)]
 
 
 class HistoryEntryOut(BaseModel):
@@ -52,8 +54,8 @@ class HistoryApplyOut(BaseModel):
     op: str
     action: str
     playlist_id: str
-    current: Optional[PlaylistWriteOut] = None
-    etag: Optional[str] = None
+    current: PlaylistWriteOut | None = None
+    etag: str | None = None
     can_undo: bool
     can_redo: bool
 
@@ -75,10 +77,13 @@ def _empty(action: str) -> JSONResponse:
 
 
 def _apply_out(
-    command, current: PlaylistRow | None, action: str, store: PlaylistStore,
+    command: PlaylistEditCommand,
+    current: PlaylistRow | None,
+    action: str,
+    store: PlaylistStore,
 ) -> JSONResponse:
     hist = store.history()
-    payload: dict = {
+    payload: dict[str, Any] = {
         "command_id": command.command_id,
         "op": command.op,
         "action": action,
@@ -87,7 +92,7 @@ def _apply_out(
         "can_undo": hist["can_undo"],
         "can_redo": hist["can_redo"],
     }
-    headers = {}
+    headers: dict[str, str] = {}
     if current is not None:
         payload["etag"] = current.etag
         headers["ETag"] = current.etag
@@ -97,8 +102,8 @@ def _apply_out(
 
 @router.get("", response_model=HistoryGetOut)
 def get_playlist_history(
-    _backend: StateBackend = Depends(get_write_state),
-    store: PlaylistStore = Depends(get_playlist_store),
+    _backend: StateDep,
+    store: StoreDep,
 ) -> HistoryGetOut:
     hist = store.history()
     return HistoryGetOut(
@@ -112,9 +117,9 @@ def get_playlist_history(
 
 @router.post("/undo", response_model=HistoryApplyOut)
 def undo_playlist_edit(
-    _backend: StateBackend = Depends(get_write_state),
-    store: PlaylistStore = Depends(get_playlist_store),
-):
+    _backend: StateDep,
+    store: StoreDep,
+) -> JSONResponse:
     try:
         command, current = store.undo()
     except PlaylistHistoryEmptyError:
@@ -124,9 +129,9 @@ def undo_playlist_edit(
 
 @router.post("/redo", response_model=HistoryApplyOut)
 def redo_playlist_edit(
-    _backend: StateBackend = Depends(get_write_state),
-    store: PlaylistStore = Depends(get_playlist_store),
-):
+    _backend: StateDep,
+    store: StoreDep,
+) -> JSONResponse:
     try:
         command, current = store.redo()
     except PlaylistHistoryEmptyError:

@@ -11,6 +11,7 @@ import type { PerformanceCommand } from '../../src/lib/rb/performance-ipc.svelte
 
 const PREFS_STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 const TRACK_ROW = '[data-testid="track-row"]';
+const PLAYLIST_ROW = '[data-testid="playlist-row"]';
 
 async function _waitForIpc(page: Page): Promise<void> {
 	await page.waitForFunction(() => window.musicDjToolsPerformance !== undefined);
@@ -31,11 +32,22 @@ async function _openAllTracks(page: Page): Promise<void> {
 	await expect(page.locator(TRACK_ROW).first()).toBeVisible({ timeout: 30_000 });
 }
 
-async function _openPlaylist(page: Page, name: string): Promise<void> {
-	const row = page.getByText(name, { exact: true });
-	if (!(await row.isVisible())) {
-		await page.locator('.row.folder').filter({ hasText: 'Playlists' }).click();
+function _playlistRow(page: Page, name: string) {
+	return page.locator(PLAYLIST_ROW).filter({ has: page.getByText(name, { exact: true }) });
+}
+
+async function _ensurePlaylistsOpen(page: Page): Promise<void> {
+	const folder = page.getByTestId('playlist-folder');
+	const disclosure = folder.locator('.disclosure');
+	if (!(await disclosure.evaluate((el) => el.classList.contains('open')))) {
+		await folder.click();
 	}
+}
+
+async function _openPlaylist(page: Page, name: string): Promise<void> {
+	await _ensurePlaylistsOpen(page);
+	const row = _playlistRow(page, name);
+	await expect(row).toBeVisible({ timeout: 15_000 });
 	await row.click();
 }
 
@@ -49,6 +61,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('playlist undo/redo: mixed edits, panel, hotkey, reload, IPC', async ({ page }) => {
+	test.setTimeout(90_000);
 	const ids = (await _visibleStableIds(page)).slice(0, 2);
 	expect(ids.length, 'fixture library must have two tracks').toBeGreaterThanOrEqual(2);
 	const stamp = Date.now();
@@ -76,6 +89,8 @@ test('playlist undo/redo: mixed edits, panel, hotkey, reload, IPC', async ({ pag
 	const undoBtn = page.getByTestId('playlist-undo');
 	const redoBtn = page.getByTestId('playlist-redo');
 	await expect(undoBtn).toBeEnabled({ timeout: 15_000 });
+	await _ensurePlaylistsOpen(page);
+	await expect(_playlistRow(page, renamedName)).toBeVisible({ timeout: 15_000 });
 
 	await _openPlaylist(page, renamedName);
 	await expect.poll(async () => (await _visibleStableIds(page)).join('\0')).toBe(ids.join('\0'));

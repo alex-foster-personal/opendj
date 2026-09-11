@@ -201,7 +201,7 @@ def test_inverse_of_each_op_restores_before_snapshot(db_path: Path) -> None:
         assert after_rename_redo.name == "Peak"
         assert after_rename_redo.etag == renamed.etag or after_rename_redo.name == "Peak"
 
-        with_tracks = store.replace_memberships(
+        store.replace_memberships(
             created.playlist_id, ["t-002", "t-001"],
             expected_etag=after_rename_redo.etag,
         )
@@ -306,9 +306,8 @@ def test_revision_conflict_when_live_diverges_from_after(db_path: Path) -> None:
         sneaky.replace_memberships(
             playlist_id, ["t-002"], expected_etag=etag, record_edit=False,
         )
-    with PlaylistStore(db_path, bus=FakeEventBus()) as store:
-        with pytest.raises(ConflictError):
-            store.undo()
+    with PlaylistStore(db_path, bus=FakeEventBus()) as store, pytest.raises(ConflictError):
+        store.undo()
 
 
 def test_restart_rebuild_undo_restores_last_before_snapshot(db_path: Path) -> None:
