@@ -45,16 +45,7 @@ export type {
 
 export const RB_API_BASE: string = API_BASE;
 
-<<<<<<< HEAD
-// RbApiError lives beside its sibling ApiError in $lib/api/client, which is
-// the transport layer both error types describe. Re-exported here because 40
-// modules already import it from this path; moving the DEFINITION without
-// moving the import surface keeps this file the API client it is meant to be
-// rather than also the place errors are declared.
-export { RbApiError };
-=======
 export { RbApiError } from './api-rb-error';
->>>>>>> origin/main
 
 export type TrackLyrics = {
 	stable_id: string;
