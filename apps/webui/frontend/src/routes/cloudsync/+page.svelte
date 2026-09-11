@@ -17,6 +17,7 @@
 		listPlaylistPins,
 		listPolicies,
 		putPlaylistPin,
+		policyErrorMessage,
 		putPolicy,
 		type AssetKind,
 		type CloudMachine,
@@ -139,15 +140,16 @@
 	): Promise<void> {
 		const existing = policyFor(machineId, assetKind);
 		try {
+			// A budget applies only to 'cached' (the server's cache_budget rule).
 			const saved = await putPolicy({
 				machine_id: machineId,
 				asset_kind: assetKind,
 				mode,
-				cache_budget_mb: existing?.cache_budget_mb ?? null
+				cache_budget_mb: mode === 'cached' ? (existing?.cache_budget_mb ?? null) : null
 			});
 			upsertPolicy(saved);
 		} catch (exc) {
-			pushToast(`Failed to save policy: ${errorMessage(exc)}`, 'error');
+			pushToast(`Failed to save policy: ${policyErrorMessage(exc)}`, 'error');
 		}
 	}
 
@@ -156,13 +158,15 @@
 		assetKind: AssetKind,
 		raw: string
 	): Promise<void> {
-		const existing = policyFor(machineId, assetKind);
-		const mode = existing?.mode ?? 'stream';
+		if (policyFor(machineId, assetKind)?.mode !== 'cached') {
+			pushToast('Cache budget only applies in cached mode', 'error');
+			return;
+		}
 		let cacheBudgetMb: number | null = null;
 		if (raw.trim() !== '') {
 			const parsed = Number.parseInt(raw, 10);
-			if (!Number.isInteger(parsed) || parsed < 0) {
-				pushToast('Cache budget must be a whole number of MB, 0 or more', 'error');
+			if (!Number.isInteger(parsed) || parsed < 1) {
+				pushToast('Cache budget must be a whole number of MB, 1 or more', 'error');
 				return;
 			}
 			cacheBudgetMb = parsed;
@@ -171,12 +175,12 @@
 			const saved = await putPolicy({
 				machine_id: machineId,
 				asset_kind: assetKind,
-				mode,
+				mode: 'cached',
 				cache_budget_mb: cacheBudgetMb
 			});
 			upsertPolicy(saved);
 		} catch (exc) {
-			pushToast(`Failed to save cache budget: ${errorMessage(exc)}`, 'error');
+			pushToast(`Failed to save cache budget: ${policyErrorMessage(exc)}`, 'error');
 		}
 	}
 
@@ -285,7 +289,7 @@
 										<input
 											class="budget"
 											type="number"
-											min="0"
+											min="1"
 											step="1"
 											placeholder="MB"
 											disabled={(p?.mode ?? 'stream') !== 'cached'}

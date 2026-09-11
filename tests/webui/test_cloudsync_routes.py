@@ -284,8 +284,19 @@ def test_put_playlist_pin_unknown_machine_404s(client: TestClient):
 
 # ----------------------------------------------------------- overview
 
-def test_overview_counts_pinned_and_unhydrated(client: TestClient):
+def test_overview_counts_pinned_and_unhydrated(client: TestClient, state_db_path: Path):
     machine_id = _registered_machine_id(client)
+    # The seed rows carry no machine_id. A writable open claims them for this
+    # machine (open_rw's post-migration backfill), the way production does,
+    # so they count as THIS machine's copies.
+    claim = state_db.open_rw(state_db_path)
+    try:
+        claimed = claim.execute(
+            "SELECT COUNT(*) FROM track_locations WHERE machine_id = ?", (machine_id,)
+        ).fetchone()[0]
+    finally:
+        claim.close()
+    assert claimed == 2
     client.put("/api/v1/cloudsync/playlist-pins", json={
         "machine_id": machine_id, "playlist_id": "cs-pl-001", "mode": "pinned",
     })

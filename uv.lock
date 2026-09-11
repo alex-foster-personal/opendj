@@ -1240,6 +1240,7 @@ name = "music-dj-tools"
 version = "1.0.1"
 source = { editable = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "jsonschema", extra = ["format"] },
@@ -1249,6 +1250,7 @@ dependencies = [
     { name = "psutil" },
     { name = "pyacoustid" },
     { name = "pydantic" },
+    { name = "pyjwt", extra = ["crypto"] },
     { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'" },
     { name = "pyrekordbox" },
     { name = "python-multipart" },
@@ -1319,6 +1321,7 @@ voice = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", marker = "extra == 'cloud'", specifier = ">=1.34" },
+    { name = "cryptography", specifier = ">=42,<47" },
     { name = "cryptography", marker = "extra == 'dev'", specifier = ">=42,<47" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.28,<1" },
@@ -1339,6 +1342,7 @@ requires-dist = [
     { name = "pyacoustid", specifier = ">=1.3.0" },
     { name = "pydantic", specifier = ">=2.0,<3" },
     { name = "pyinstrument", marker = "extra == 'dev'", specifier = ">=5" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9,<3" },
     { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'", specifier = ">=10.0" },
     { name = "pyrekordbox", specifier = ">=0.4.4" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<9" },
@@ -1939,6 +1943,20 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/01/a5/43e397d6f1f2eecf8ac82e6c2ccb252493cfd413776bd094e4e770d4f762/pyinstrument-5.1.3-graalpy312-graalpy250_312_native-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:c8b8a126894ea5553a7a565f86e26ae3c56a7b0a7c73422fbd382de3a34a1480", size = 123272, upload-time = "2026-07-29T17:18:35.447Z" },
     { url = "https://files.pythonhosted.org/packages/2b/47/a51976758124654e18d1c11a2dcd6811a7a9c4e03f50d9ee8438e4fe6d20/pyinstrument-5.1.3-graalpy312-graalpy250_312_native-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:e72d5db0bdc8488eba396a5447bdc7ecff067cbd4d7ca8f1d7b862dae0e9c2f6", size = 122216, upload-time = "2026-07-29T17:18:36.748Z" },
     { url = "https://files.pythonhosted.org/packages/50/b2/f4708a7e1f7ad1777ed8b559b3ff08f1ed52059205c704d6e12bb941caa1/pyinstrument-5.1.3-graalpy312-graalpy250_312_native-win_amd64.whl", hash = "sha256:8f6d68350a2314222f85e32ccc519b69bcd41c82349e7b280ba5ebb473a5633a", size = 121850, upload-time = "2026-07-29T17:18:38.05Z" },
+]
+
+[[package]]
+name = "pyjwt"
+version = "2.13.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3b/81/58d0ac84e1ef3a3843791d6954d94c0b33d526c75eeb1efbce9d0a4c4077/pyjwt-2.13.0.tar.gz", hash = "sha256:41571c89ca91598c79e8ef18a2d07367d4810fbbd6f637794879baf1b7703423", size = 107515, upload-time = "2026-05-21T19:54:36.618Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a3/5e/ecf12fdb62546d64385c158514e9b2b671f7832108ef2ecd2020ce0af2d1/pyjwt-2.13.0-py3-none-any.whl", hash = "sha256:66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728", size = 31274, upload-time = "2026-05-21T19:54:35.362Z" },
+]
+
+[package.optional-dependencies]
+crypto = [
+    { name = "cryptography" },
 ]
 
 [[package]]

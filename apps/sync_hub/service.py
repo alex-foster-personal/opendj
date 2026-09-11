@@ -373,13 +373,16 @@ def enroll(
     """
     _require_schema_version(payload.schema_version)
     machine = _to_machines([payload.machine])[0]
+    # Before BEGIN: verification may fetch Google's JWKS, and an
+    # unauthenticated caller must never hold the write lock across that.
+    credential = service_enroll.verify_credential(payload.credential)
     with _hub_conn(request) as conn:
         try:
             with _transaction(conn):
                 return service_enroll.perform_enroll(
                     conn,
                     machine=machine,
-                    credential=payload.credential,
+                    credential=credential,
                     hub_machine_id=_hub_identity(request, conn),
                 )
         except engine.SyncApplyError as exc:
