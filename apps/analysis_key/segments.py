@@ -277,7 +277,6 @@ def _merge_short_runs(runs: list[_Run], *, floor: int) -> list[_Run]:
         if not short:
             break
         index = min(short, key=lambda i: (merged[i].width, i))
-        run = merged[index]
         if index == 0:
             target = 1
         elif index == len(merged) - 1:

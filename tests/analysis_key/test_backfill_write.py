@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import math
 import wave
+from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
@@ -80,7 +81,7 @@ def _write_triad_wav(path: Path, *, seconds: float, key: canon.Key, sr: int = 44
 
 
 @pytest.fixture
-def state_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def state_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """A fresh state DB, and the path every reader in this test resolves."""
     from apps.shared import paths as state_paths
 

@@ -25,7 +25,6 @@ there.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,10 +32,9 @@ import pytest
 
 from apps.adapters.rekordbox import config as rb_config
 from apps.analysis import selection
-from apps.analysis.backends.own_key import BACKEND_NAME, record_from_estimate
+from apps.analysis.backends.own_key import record_from_estimate
 from apps.analysis.store import open_conn, upsert_record
 from apps.analysis_key import canon, flags, profiles, segments
-from apps.analysis_key.version import PRODUCER_VERSION
 from apps.webui.server.rb_vendor_pkg import own_key_overlay as overlay_mod
 from apps.webui.server.rb_vendor_pkg import own_overlays
 

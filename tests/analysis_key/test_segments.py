@@ -143,7 +143,7 @@ def test_segments_are_contiguous_and_meet_in_time() -> None:
     chroma = _bar_chroma(_keys((C_MAJOR, 16), (F_SHARP_MAJOR, 16)))
     block = segments.segment_bars(chroma, grid, duration_s=64.0)
     assert len(block.segments) > 1
-    for previous, following in zip(block.segments, block.segments[1:]):
+    for previous, following in zip(block.segments, block.segments[1:], strict=False):
         assert following.start_bar == previous.end_bar
         assert following.start_s == pytest.approx(previous.end_s, abs=1e-9)
 

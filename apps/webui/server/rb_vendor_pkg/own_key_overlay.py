@@ -66,7 +66,7 @@ def _segments_block(result: Any, stable_id: str) -> dict[str, Any]:
         return {"status": result.status, "reason": result.reason, "segments": []}
     block = result.payload["segments"]
     if not isinstance(block, Mapping):
-        raise RuntimeError(
+        raise TypeError(
             f"own key record for {stable_id} carries a {type(block).__name__} "
             "segments block, not a mapping; the record contract requires one"
         )
