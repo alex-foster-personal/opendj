@@ -65,7 +65,6 @@ from .lanes import (
     semver_key,
     validate_lane_result,
 )
-from apps.analysis_beatgrid.activations import activations_ref
 
 EnergySource = Literal["mik", "inferred"]
 
@@ -262,6 +261,14 @@ def _iso_to_dt(s: str) -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return dt.astimezone(UTC)
+
+
+def __getattr__(name: str) -> object:
+    if name == "activations_ref":
+        from apps.analysis_beatgrid.activations import activations_ref
+
+        return activations_ref
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [

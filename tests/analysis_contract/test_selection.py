@@ -298,7 +298,7 @@ def test_persisting_a_default_on_an_in_memory_backend_is_refused(tmp_path) -> No
 def test_get_source_reports_every_lane(client) -> None:
     body = client.get("/api/v1/analysis/source").json()
     assert sorted(body["lanes"]) == sorted(LANES)
-    assert sorted(body["serving"]) == ["beatgrid", "key"]
+    assert sorted(body["serving"]) == ["beatgrid", "key", "waveform"]
     assert body["lanes"]["beatgrid"] == {
         "default": "rbx", "toggle": "unset", "toggle_revision": 0, "effective": "rbx",
     }
@@ -371,10 +371,10 @@ def test_a_stale_cas_refuses_the_whole_put_and_leaves_the_default_unpersisted(cl
 def test_put_own_on_an_unserved_lane_is_refused_with_409(client) -> None:
     put = client.put(
         "/api/v1/analysis/source",
-        json={"lane": "waveform", "toggle": "own"},
+        json={"lane": "loudness", "toggle": "own"},
     )
     assert put.status_code == 409, put.text
-    assert "waveform" in put.json()["detail"]["error"]
+    assert "loudness" in put.json()["detail"]["error"]
     assert "no serving implementation yet" in put.json()["detail"]["error"]
 
 

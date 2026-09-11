@@ -47,6 +47,15 @@ CHANGELOG_CLASSES: tuple[DataClass, ...] = (
         (fk("library-tracks"),),
     ),
     fixed(
+        "feedback-pins",
+        "Open DJ feedback pins",
+        state_tables("feedback_pins"),
+        "sync_hub_changelog",
+        "One synced row per feedback pin (FBSYNC-01, ADR-0013). Archiving "
+        f"stamps deleted_at on the row itself. {_LIBRARY_RULE}",
+        (),
+    ),
+    fixed(
         "library-playlists",
         "Playlists and crates",
         state_tables("playlists"),
@@ -161,6 +170,15 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
         "Hub-authoritative: a restored or hostile spoke must not push ownership "
         "(migrations_v9.py).",
         (fk("machines"), fk("sign-in-identity")),
+    ),
+    fixed(
+        "machine-credentials",
+        "Per-machine sync bearer credentials",
+        state_tables("machine_credentials"),
+        "machine_local",
+        "Hub-minted bearer hash (migration v11, ADR-0012 amendment). Never "
+        "synced: a credential in the changelog could be pushed by a hostile spoke.",
+        (fk("machines"),),
     ),
     fixed(
         "event-log",
