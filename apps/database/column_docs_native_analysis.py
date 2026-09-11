@@ -84,6 +84,14 @@ NATIVE_ANALYSIS_COLUMN_DOCS: dict[str, dict[str, str]] = {
         "an older batch claimed."
     ),
     "note": "Free text saying why the batch exists (bump, cascade, manual).",
+    "active_runner_id": (
+        "Runner id of the process currently holding the exclusive batch lease, "
+        "or NULL when no drain is active."
+    ),
+    "active_runner_pid": (
+        "OS pid of the live drain process holding the batch lease. A second "
+        "runner refuses takeover while this pid is alive."
+    ),
 },
 "analysis_queue_item": {
     "batch_id": "Owning batch. With stable_id and lane, the primary key.",
