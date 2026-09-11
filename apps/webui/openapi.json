@@ -10439,6 +10439,37 @@
         "title": "StemTierOut",
         "type": "object"
       },
+      "StemUnavailableOut": {
+        "description": "HTTP 200 empty-state: no stored bundle for this stable_id.",
+        "properties": {
+          "code": {
+            "const": "STEM_BUNDLE_NOT_FOUND",
+            "default": "STEM_BUNDLE_NOT_FOUND",
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "unavailable",
+            "default": "unavailable",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "message"
+        ],
+        "title": "StemUnavailableOut",
+        "type": "object"
+      },
       "StemsPlanOut": {
         "description": "What separating this library at this tier would take.",
         "properties": {
@@ -21979,7 +22010,7 @@
     },
     "/api/v1/tracks/{stable_id}/stems": {
       "get": {
-        "description": "Return a stored v1 manifest only after all four files prove alignment.",
+        "description": "Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.",
         "operationId": "get_stem_manifest_api_v1_tracks__stable_id__stems_get",
         "parameters": [
           {
@@ -21997,7 +22028,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StemManifestOut"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/StemManifestOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StemUnavailableOut"
+                    }
+                  ],
+                  "title": "Response Get Stem Manifest Api V1 Tracks  Stable Id  Stems Get"
                 }
               }
             },

@@ -3189,7 +3189,7 @@ export interface paths {
         };
         /**
          * Get Stem Manifest
-         * @description Return a stored v1 manifest only after all four files prove alignment.
+         * @description Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.
          */
         get: operations["get_stem_manifest_api_v1_tracks__stable_id__stems_get"];
         put?: never;
@@ -7330,6 +7330,28 @@ export interface components {
             unavailable_because: string;
             /** Where */
             where: string;
+        };
+        /**
+         * StemUnavailableOut
+         * @description HTTP 200 empty-state: no stored bundle for this stable_id.
+         */
+        StemUnavailableOut: {
+            /**
+             * Code
+             * @default STEM_BUNDLE_NOT_FOUND
+             * @constant
+             */
+            code: "STEM_BUNDLE_NOT_FOUND";
+            /** Message */
+            message: string;
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * Status
+             * @default unavailable
+             * @constant
+             */
+            status: "unavailable";
         };
         /**
          * StemsPlanOut
@@ -14264,7 +14286,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StemManifestOut"];
+                    "application/json": components["schemas"]["StemManifestOut"] | components["schemas"]["StemUnavailableOut"];
                 };
             };
             /** @description Validation Error */
