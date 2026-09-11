@@ -241,6 +241,9 @@ def list_tracks(
                 energy=row["energy"],
                 energy_source=row["energy_source"],
                 energy_reason=row["energy_reason"],
+                lyrics=row.get("lyrics"),
+                is_remix=bool(row.get("is_remix")),
+                is_radio_edit=bool(row.get("is_radio_edit")),
             )
         )
     return TracksPage(items=items, next_cursor=page.next_cursor)

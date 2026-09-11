@@ -631,6 +631,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bench/lyrics-kpi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Kpi Ledger
+         * @description The lyrics KPI ledger (scripts/bench/lyrics_kpi_ledger.json).
+         *
+         *     Read-only contract: appending stays a CLI action (lyrics_kpi_append.py).
+         *     Unlike /bench/kpi, a missing file is 404 naming the path.
+         */
+        get: operations["get_lyrics_kpi_ledger_api_v1_bench_lyrics_kpi_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bench/perf-kpi": {
         parameters: {
             query?: never;
@@ -1980,6 +2003,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lyrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Lyrics */
+        get: operations["list_lyrics_api_v1_lyrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lyrics/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Lyrics Config */
+        get: operations["get_lyrics_config_api_v1_lyrics_config_get"];
+        /** Put Lyrics Config */
+        put: operations["put_lyrics_config_api_v1_lyrics_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lyrics/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Lyric Jobs */
+        get: operations["get_lyric_jobs_api_v1_lyrics_jobs_get"];
+        put?: never;
+        /** Post Lyric Job */
+        post: operations["post_lyric_job_api_v1_lyrics_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lyrics/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Lyrics Purge */
+        post: operations["post_lyrics_purge_api_v1_lyrics_purge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/lyrics/search": {
         parameters: {
             query?: never;
@@ -1989,6 +2082,23 @@ export interface paths {
         };
         /** Search Lyrics */
         get: operations["search_lyrics_api_v1_lyrics_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lyrics/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lyrics Summary */
+        get: operations["lyrics_summary_api_v1_lyrics_summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3555,6 +3665,40 @@ export interface paths {
          * @description Read the real cached line timeline without fetching or inventing lyrics.
          */
         get: operations["get_track_lyrics_api_v1_tracks__stable_id__lyrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/lyrics/override": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Override */
+        put: operations["put_override_api_v1_tracks__stable_id__lyrics_override_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/lyrics/words": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Track Lyrics Words */
+        get: operations["get_track_lyrics_words_api_v1_tracks__stable_id__lyrics_words_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5152,6 +5296,60 @@ export interface components {
             /** Unreachable */
             unreachable: number;
         };
+        /** CoverageVerdictOut */
+        CoverageVerdictOut: {
+            /** Artist */
+            artist?: string | null;
+            /** Computed At */
+            computed_at: string;
+            /** Coverage Pct */
+            coverage_pct?: number | null;
+            /**
+             * Effective
+             * @description what to act on: override if set, else verdict
+             */
+            effective: string;
+            /**
+             * Has Words
+             * @description true when words_content_hash is set on the verdict row
+             */
+            has_words: boolean;
+            /** Language Iso3 */
+            language_iso3?: string | null;
+            /** N Lines */
+            n_lines?: number | null;
+            /** N Words */
+            n_words?: number | null;
+            /** Override */
+            override?: string | null;
+            /** Override Note */
+            override_note?: string | null;
+            /**
+             * Pct Witness Red
+             * @description share of words the independent ASR witness distrusts
+             */
+            pct_witness_red?: number | null;
+            /** Pipeline Version */
+            pipeline_version?: string | null;
+            /**
+             * Source
+             * @description lyric provider + match method
+             */
+            source?: string | null;
+            /** Stable Id */
+            stable_id: string;
+            /** Title */
+            title?: string | null;
+            /** Updated At */
+            updated_at: string;
+            /**
+             * Verdict
+             * @description computed verdict from stem vocal coverage
+             */
+            verdict: string;
+            /** Words Content Hash */
+            words_content_hash?: string | null;
+        };
         /** CredentialMachineOut */
         CredentialMachineOut: {
             /** Credential Minted At */
@@ -6113,6 +6311,92 @@ export interface components {
             /** Worker Started At */
             worker_started_at?: number | null;
         };
+        /**
+         * KaraokeLineOut
+         * @description One derived line (apps/lyrics/lines.py, the canonical grouping).
+         */
+        KaraokeLineOut: {
+            /** Band */
+            band: string;
+            /** End S */
+            end_s: number | null;
+            /** First Idx */
+            first_idx: number;
+            /** Last Idx */
+            last_idx: number;
+            /** N Judged */
+            n_judged: number;
+            /** N Red */
+            n_red: number;
+            /** N Words */
+            n_words: number;
+            /** Para Final */
+            para_final: boolean;
+            /**
+             * Quality
+             * @description share of witness-judged words NOT in the red classes; null when no word in the line was judged
+             */
+            quality?: number | null;
+            /** Start S */
+            start_s: number | null;
+            /** Text */
+            text: string;
+        };
+        /** KaraokeSummaryOut */
+        KaraokeSummaryOut: {
+            /**
+             * Counts
+             * @description effective-verdict histogram
+             */
+            counts: {
+                [key: string]: number;
+            };
+            /**
+             * No Lyrics Max Coverage
+             * @description calibrated band: at or below this stem vocal coverage a track is auto-stamped no-lyrics (novox round 0, pinned by test)
+             */
+            no_lyrics_max_coverage: number;
+            /** Sparse Max Coverage */
+            sparse_max_coverage: number;
+            /** Total */
+            total: number;
+        };
+        /** KaraokeTrackOut */
+        KaraokeTrackOut: {
+            /**
+             * Lines
+             * @description present only when requested with ?include=lines
+             */
+            lines?: components["schemas"]["KaraokeLineOut"][] | null;
+            verdict: components["schemas"]["CoverageVerdictOut"];
+            /** Words */
+            words: components["schemas"]["KaraokeWordOut"][];
+        };
+        /** KaraokeWordOut */
+        KaraokeWordOut: {
+            /** Asr Delta S */
+            asr_delta_s?: number | null;
+            /** End S */
+            end_s?: number | null;
+            /** Idx */
+            idx: number;
+            /**
+             * Line Final
+             * @default false
+             */
+            line_final: boolean;
+            /** Score */
+            score?: number | null;
+            /** Start S */
+            start_s?: number | null;
+            /**
+             * Witness
+             * @description ASR-witness verdict: agree/drift/unheard/unmatchable are shown normally; contradict/lost are the suspect classes.
+             */
+            witness?: string | null;
+            /** Word */
+            word: string;
+        };
         /** KindDefaultIn */
         KindDefaultIn: {
             /** Asset Kind */
@@ -6428,6 +6712,33 @@ export interface components {
             /** Out Ms */
             out_ms: number;
         };
+        /** LyricJobIn */
+        LyricJobIn: {
+            /**
+             * Kind
+             * @description analyze | lyricsync | stems
+             */
+            kind: string;
+            /** Note */
+            note?: string | null;
+            /** Stable Ids */
+            stable_ids: string[];
+        };
+        /** LyricJobOut */
+        LyricJobOut: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Note */
+            note: string | null;
+            /** Stable Ids */
+            stable_ids: string[];
+            /** Status */
+            status: string;
+            /** Ts */
+            ts: string;
+        };
         /**
          * LyricLineOut
          * @description One cache-backed line timestamp in integer track milliseconds.
@@ -6445,6 +6756,55 @@ export interface components {
         LyricsCachedIdsOut: {
             /** Stable Ids */
             stable_ids?: string[];
+        };
+        /** LyricsConfigIn */
+        LyricsConfigIn: {
+            /** Source Order */
+            source_order: string[];
+        };
+        /** LyricsConfigOut */
+        LyricsConfigOut: {
+            /**
+             * Is Default
+             * @description true while no operator has persisted a custom order
+             */
+            is_default: boolean;
+            /**
+             * Source Order
+             * @description lyric sources, strongest first; the pipeline's tie-break
+             */
+            source_order: string[];
+            /**
+             * Source Titles
+             * @description hover text per source (what the method actually does)
+             */
+            source_titles: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * LyricsRowSummaryOut
+         * @description Per-row karaoke verdict summary for library listings.
+         */
+        LyricsRowSummaryOut: {
+            /** Effective */
+            effective: string;
+            /** Has Words */
+            has_words: boolean;
+            /** Language Iso3 */
+            language_iso3?: string | null;
+            /** N Lines */
+            n_lines?: number | null;
+            /** N Words */
+            n_words?: number | null;
+            /** Override */
+            override?: string | null;
+            /** Pct Witness Red */
+            pct_witness_red?: number | null;
+            /** Source */
+            source?: string | null;
+            /** Verdict */
+            verdict: string;
         };
         /**
          * LyricsUnavailableOut
@@ -6744,6 +7104,16 @@ export interface components {
          */
         OpsErrorResponse: {
             detail: components["schemas"]["OpsErrorBody"];
+        };
+        /** OverrideIn */
+        OverrideIn: {
+            /** Note */
+            note?: string | null;
+            /**
+             * Override
+             * @description vocal|sparse|no-lyrics, or null to clear
+             */
+            override?: string | null;
         };
         /** OverviewOut */
         OverviewOut: {
@@ -7541,6 +7911,39 @@ export interface components {
              */
             skipped: number;
         };
+        /** PurgeIn */
+        PurgeIn: {
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
+            /** Source Prefix */
+            source_prefix: string;
+        };
+        /** PurgeOut */
+        PurgeOut: {
+            /** Dry Run */
+            dry_run: boolean;
+            /** Files Absent */
+            files_absent: number;
+            /** Files Removed */
+            files_removed: number;
+            /** Objects Absent */
+            objects_absent: number;
+            /** Objects Deleted */
+            objects_deleted: number;
+            /** R2 Skipped Reason */
+            r2_skipped_reason: string | null;
+            /** Rows Matched */
+            rows_matched: number;
+            /** Rows Tombstoned */
+            rows_tombstoned: number;
+            /** Source Prefix */
+            source_prefix: string;
+            /** Stable Ids */
+            stable_ids: string[];
+        };
         /** PushRequest */
         PushRequest: {
             /** Capabilities */
@@ -8079,6 +8482,16 @@ export interface components {
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
              * Is Remote
              * @default false
              */
@@ -8101,6 +8514,7 @@ export interface components {
              * @enum {string}
              */
             loudness_status: "ok" | "failed" | "missing";
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Match Context */
             match_context: string;
             /**
@@ -9029,6 +9443,16 @@ export interface components {
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
              * Is Remote
              * @default false
              */
@@ -9037,6 +9461,7 @@ export interface components {
             key?: string | null;
             /** Last Played At */
             last_played_at?: string | null;
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Lyrics Available */
             lyrics_available: boolean;
             /** Notes */
@@ -9203,6 +9628,16 @@ export interface components {
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
              * Is Remote
              * @default false
              */
@@ -9225,6 +9660,7 @@ export interface components {
              * @enum {string}
              */
             loudness_status: "ok" | "failed" | "missing";
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /**
              * Play Count
              * @default 0
@@ -10864,6 +11300,28 @@ export interface operations {
         };
     };
     get_kpi_ledger_api_v1_bench_kpi_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_lyrics_kpi_ledger_api_v1_bench_lyrics_kpi_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -13533,6 +13991,181 @@ export interface operations {
             };
         };
     };
+    list_lyrics_api_v1_lyrics_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                /** @description filter by effective verdict */
+                verdict?: string | null;
+                /** @description suspect|coverage|recent */
+                order?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoverageVerdictOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lyrics_config_api_v1_lyrics_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsConfigOut"];
+                };
+            };
+        };
+    };
+    put_lyrics_config_api_v1_lyrics_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LyricsConfigIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsConfigOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lyric_jobs_api_v1_lyrics_jobs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricJobOut"][];
+                };
+            };
+        };
+    };
+    post_lyric_job_api_v1_lyrics_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LyricJobIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricJobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_lyrics_purge_api_v1_lyrics_purge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurgeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurgeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     search_lyrics_api_v1_lyrics_search_get: {
         parameters: {
             query?: {
@@ -13563,6 +14196,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lyrics_summary_api_v1_lyrics_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KaraokeSummaryOut"];
                 };
             };
         };
@@ -16521,6 +17174,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LyricsUnavailableOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_override_api_v1_tracks__stable_id__lyrics_override_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverrideIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoverageVerdictOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_track_lyrics_words_api_v1_tracks__stable_id__lyrics_words_get: {
+        parameters: {
+            query?: {
+                /** @description 'lines' adds the derived line objects */
+                include?: string | null;
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KaraokeTrackOut"];
                 };
             };
             /** @description Validation Error */

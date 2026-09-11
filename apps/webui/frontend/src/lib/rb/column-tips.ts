@@ -16,7 +16,8 @@ export type LibraryColTipId =
 	| 'comments'
 	| 'time'
 	| 'energy'
-	| 'genre';
+	| 'genre'
+	| 'lyrics';
 
 /** Header explainers (plain text for native `title` tooltips). */
 export const COLUMN_TIPS: Record<LibraryColTipId, string> = {
@@ -36,7 +37,9 @@ export const COLUMN_TIPS: Record<LibraryColTipId, string> = {
 	time: 'Track duration (mm:ss).',
 	energy: 'Energy 1-9, imported from Mixed In Key. Empty means no readable Mixed In Key value is available; hover the cell for the reason.',
 	genre:
-		'Genres prioritize Rekordbox. Agents may enrich during enrich. User can edit the enrich prompt and choose Rbx vs Mixed In Key vs OpenDJ enriched (incl. version history) in config - WIP unfinished. Click a tag to filter; double = loose; triple = undo.'
+		'Genres prioritize Rekordbox. Agents may enrich during enrich. User can edit the enrich prompt and choose Rbx vs Mixed In Key vs OpenDJ enriched (incl. version history) in config - WIP unfinished. Click a tag to filter; double = loose; triple = undo.',
+	lyrics:
+		'Lyrics verdict glyph and witness sync percent. Hover for the licensed lyric tip when word timings are cached. Sort by effective verdict then coverage.'
 };
 
 /** Tip + optional sort suffix for a header `title`. */

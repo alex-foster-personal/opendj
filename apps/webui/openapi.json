@@ -3521,6 +3521,181 @@
         "title": "CoverageOut",
         "type": "object"
       },
+      "CoverageVerdictOut": {
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "computed_at": {
+            "title": "Computed At",
+            "type": "string"
+          },
+          "coverage_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Pct"
+          },
+          "effective": {
+            "description": "what to act on: override if set, else verdict",
+            "title": "Effective",
+            "type": "string"
+          },
+          "has_words": {
+            "description": "true when words_content_hash is set on the verdict row",
+            "title": "Has Words",
+            "type": "boolean"
+          },
+          "language_iso3": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language Iso3"
+          },
+          "n_lines": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Lines"
+          },
+          "n_words": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Words"
+          },
+          "override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override"
+          },
+          "override_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Note"
+          },
+          "pct_witness_red": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "share of words the independent ASR witness distrusts",
+            "title": "Pct Witness Red"
+          },
+          "pipeline_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pipeline Version"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "lyric provider + match method",
+            "title": "Source"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "verdict": {
+            "description": "computed verdict from stem vocal coverage",
+            "title": "Verdict",
+            "type": "string"
+          },
+          "words_content_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Words Content Hash"
+          }
+        },
+        "required": [
+          "stable_id",
+          "verdict",
+          "effective",
+          "has_words",
+          "computed_at",
+          "updated_at"
+        ],
+        "title": "CoverageVerdictOut",
+        "type": "object"
+      },
       "CredentialMachineOut": {
         "properties": {
           "credential_minted_at": {
@@ -5999,6 +6174,238 @@
         "title": "JobOut",
         "type": "object"
       },
+      "KaraokeLineOut": {
+        "description": "One derived line (apps/lyrics/lines.py, the canonical grouping).",
+        "properties": {
+          "band": {
+            "title": "Band",
+            "type": "string"
+          },
+          "end_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End S"
+          },
+          "first_idx": {
+            "title": "First Idx",
+            "type": "integer"
+          },
+          "last_idx": {
+            "title": "Last Idx",
+            "type": "integer"
+          },
+          "n_judged": {
+            "title": "N Judged",
+            "type": "integer"
+          },
+          "n_red": {
+            "title": "N Red",
+            "type": "integer"
+          },
+          "n_words": {
+            "title": "N Words",
+            "type": "integer"
+          },
+          "para_final": {
+            "title": "Para Final",
+            "type": "boolean"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "share of witness-judged words NOT in the red classes; null when no word in the line was judged",
+            "title": "Quality"
+          },
+          "start_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start S"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first_idx",
+          "last_idx",
+          "text",
+          "start_s",
+          "end_s",
+          "n_words",
+          "n_red",
+          "n_judged",
+          "band",
+          "para_final"
+        ],
+        "title": "KaraokeLineOut",
+        "type": "object"
+      },
+      "KaraokeSummaryOut": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "effective-verdict histogram",
+            "title": "Counts",
+            "type": "object"
+          },
+          "no_lyrics_max_coverage": {
+            "description": "calibrated band: at or below this stem vocal coverage a track is auto-stamped no-lyrics (novox round 0, pinned by test)",
+            "title": "No Lyrics Max Coverage",
+            "type": "number"
+          },
+          "sparse_max_coverage": {
+            "title": "Sparse Max Coverage",
+            "type": "number"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "counts",
+          "total",
+          "no_lyrics_max_coverage",
+          "sparse_max_coverage"
+        ],
+        "title": "KaraokeSummaryOut",
+        "type": "object"
+      },
+      "KaraokeTrackOut": {
+        "properties": {
+          "lines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/KaraokeLineOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "present only when requested with ?include=lines",
+            "title": "Lines"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/CoverageVerdictOut"
+          },
+          "words": {
+            "items": {
+              "$ref": "#/components/schemas/KaraokeWordOut"
+            },
+            "title": "Words",
+            "type": "array"
+          }
+        },
+        "required": [
+          "verdict",
+          "words"
+        ],
+        "title": "KaraokeTrackOut",
+        "type": "object"
+      },
+      "KaraokeWordOut": {
+        "properties": {
+          "asr_delta_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asr Delta S"
+          },
+          "end_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End S"
+          },
+          "idx": {
+            "title": "Idx",
+            "type": "integer"
+          },
+          "line_final": {
+            "default": false,
+            "title": "Line Final",
+            "type": "boolean"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "start_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start S"
+          },
+          "witness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ASR-witness verdict: agree/drift/unheard/unmatchable are shown normally; contradict/lost are the suspect classes.",
+            "title": "Witness"
+          },
+          "word": {
+            "title": "Word",
+            "type": "string"
+          }
+        },
+        "required": [
+          "idx",
+          "word"
+        ],
+        "title": "KaraokeWordOut",
+        "type": "object"
+      },
       "KindDefaultIn": {
         "additionalProperties": false,
         "properties": {
@@ -6755,6 +7162,87 @@
         "title": "LoopMarkOut",
         "type": "object"
       },
+      "LyricJobIn": {
+        "properties": {
+          "kind": {
+            "description": "analyze | lyricsync | stems",
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "stable_ids"
+        ],
+        "title": "LyricJobIn",
+        "type": "object"
+      },
+      "LyricJobOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ts",
+          "kind",
+          "stable_ids",
+          "status",
+          "note"
+        ],
+        "title": "LyricJobOut",
+        "type": "object"
+      },
       "LyricLineOut": {
         "description": "One cache-backed line timestamp in integer track milliseconds.",
         "properties": {
@@ -6788,6 +7276,144 @@
           }
         },
         "title": "LyricsCachedIdsOut",
+        "type": "object"
+      },
+      "LyricsConfigIn": {
+        "properties": {
+          "source_order": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Order",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_order"
+        ],
+        "title": "LyricsConfigIn",
+        "type": "object"
+      },
+      "LyricsConfigOut": {
+        "properties": {
+          "is_default": {
+            "description": "true while no operator has persisted a custom order",
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "source_order": {
+            "description": "lyric sources, strongest first; the pipeline's tie-break",
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Order",
+            "type": "array"
+          },
+          "source_titles": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "hover text per source (what the method actually does)",
+            "title": "Source Titles",
+            "type": "object"
+          }
+        },
+        "required": [
+          "source_order",
+          "source_titles",
+          "is_default"
+        ],
+        "title": "LyricsConfigOut",
+        "type": "object"
+      },
+      "LyricsRowSummaryOut": {
+        "description": "Per-row karaoke verdict summary for library listings.",
+        "properties": {
+          "effective": {
+            "title": "Effective",
+            "type": "string"
+          },
+          "has_words": {
+            "title": "Has Words",
+            "type": "boolean"
+          },
+          "language_iso3": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language Iso3"
+          },
+          "n_lines": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Lines"
+          },
+          "n_words": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Words"
+          },
+          "override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override"
+          },
+          "pct_witness_red": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct Witness Red"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "effective",
+          "has_words"
+        ],
+        "title": "LyricsRowSummaryOut",
         "type": "object"
       },
       "LyricsUnavailableOut": {
@@ -7627,6 +8253,35 @@
           "detail"
         ],
         "title": "OpsErrorResponse",
+        "type": "object"
+      },
+      "OverrideIn": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "vocal|sparse|no-lyrics, or null to clear",
+            "title": "Override"
+          }
+        },
+        "title": "OverrideIn",
         "type": "object"
       },
       "OverviewOut": {
@@ -9709,6 +10364,92 @@
         "title": "PullResponse",
         "type": "object"
       },
+      "PurgeIn": {
+        "properties": {
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "source_prefix": {
+            "title": "Source Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_prefix"
+        ],
+        "title": "PurgeIn",
+        "type": "object"
+      },
+      "PurgeOut": {
+        "properties": {
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "files_absent": {
+            "title": "Files Absent",
+            "type": "integer"
+          },
+          "files_removed": {
+            "title": "Files Removed",
+            "type": "integer"
+          },
+          "objects_absent": {
+            "title": "Objects Absent",
+            "type": "integer"
+          },
+          "objects_deleted": {
+            "title": "Objects Deleted",
+            "type": "integer"
+          },
+          "r2_skipped_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R2 Skipped Reason"
+          },
+          "rows_matched": {
+            "title": "Rows Matched",
+            "type": "integer"
+          },
+          "rows_tombstoned": {
+            "title": "Rows Tombstoned",
+            "type": "integer"
+          },
+          "source_prefix": {
+            "title": "Source Prefix",
+            "type": "string"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_prefix",
+          "dry_run",
+          "rows_matched",
+          "rows_tombstoned",
+          "files_removed",
+          "files_absent",
+          "objects_deleted",
+          "objects_absent",
+          "r2_skipped_reason",
+          "stable_ids"
+        ],
+        "title": "PurgeOut",
+        "type": "object"
+      },
       "PushRequest": {
         "properties": {
           "capabilities": {
@@ -11222,6 +11963,16 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
           "is_remote": {
             "default": false,
             "title": "Is Remote",
@@ -11281,6 +12032,16 @@
             ],
             "title": "Loudness Status",
             "type": "string"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "match_context": {
             "title": "Match Context",
@@ -13611,6 +14372,16 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
           "is_remote": {
             "default": false,
             "title": "Is Remote",
@@ -13637,6 +14408,16 @@
               }
             ],
             "title": "Last Played At"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "lyrics_available": {
             "title": "Lyrics Available",
@@ -14155,6 +14936,16 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
           "is_remote": {
             "default": false,
             "title": "Is Remote",
@@ -14214,6 +15005,16 @@
             ],
             "title": "Loudness Status",
             "type": "string"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "play_count": {
             "default": 0,
@@ -17236,6 +18037,30 @@
           }
         },
         "summary": "Get Kpi Ledger",
+        "tags": [
+          "bench"
+        ]
+      }
+    },
+    "/api/v1/bench/lyrics-kpi": {
+      "get": {
+        "description": "The lyrics KPI ledger (scripts/bench/lyrics_kpi_ledger.json).\n\nRead-only contract: appending stays a CLI action (lyrics_kpi_append.py).\nUnlike /bench/kpi, a missing file is 404 naming the path.",
+        "operationId": "get_lyrics_kpi_ledger_api_v1_bench_lyrics_kpi_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Lyrics Kpi Ledger Api V1 Bench Lyrics Kpi Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyrics Kpi Ledger",
         "tags": [
           "bench"
         ]
@@ -20656,6 +21481,261 @@
         ]
       }
     },
+    "/api/v1/lyrics": {
+      "get": {
+        "operationId": "list_lyrics_api_v1_lyrics_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "filter by effective verdict",
+            "in": "query",
+            "name": "verdict",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "filter by effective verdict",
+              "title": "Verdict"
+            }
+          },
+          {
+            "description": "suspect|coverage|recent",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "suspect",
+              "description": "suspect|coverage|recent",
+              "title": "Order",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CoverageVerdictOut"
+                  },
+                  "title": "Response List Lyrics Api V1 Lyrics Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Lyrics",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/config": {
+      "get": {
+        "operationId": "get_lyrics_config_api_v1_lyrics_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyrics Config",
+        "tags": [
+          "lyrics"
+        ]
+      },
+      "put": {
+        "operationId": "put_lyrics_config_api_v1_lyrics_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LyricsConfigIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Lyrics Config",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/jobs": {
+      "get": {
+        "operationId": "get_lyric_jobs_api_v1_lyrics_jobs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LyricJobOut"
+                  },
+                  "title": "Response Get Lyric Jobs Api V1 Lyrics Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyric Jobs",
+        "tags": [
+          "lyrics"
+        ]
+      },
+      "post": {
+        "operationId": "post_lyric_job_api_v1_lyrics_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LyricJobIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Lyric Job",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/purge": {
+      "post": {
+        "operationId": "post_lyrics_purge_api_v1_lyrics_purge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurgeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Lyrics Purge",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
     "/api/v1/lyrics/search": {
       "get": {
         "operationId": "search_lyrics_api_v1_lyrics_search_get",
@@ -20719,6 +21799,27 @@
           }
         },
         "summary": "Search Lyrics",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/summary": {
+      "get": {
+        "operationId": "lyrics_summary_api_v1_lyrics_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaraokeSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Lyrics Summary",
         "tags": [
           "lyrics"
         ]
@@ -25159,6 +26260,118 @@
         "summary": "Get Track Lyrics",
         "tags": [
           "tracks"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/lyrics/override": {
+      "put": {
+        "operationId": "put_override_api_v1_tracks__stable_id__lyrics_override_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageVerdictOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Override",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/lyrics/words": {
+      "get": {
+        "operationId": "get_track_lyrics_words_api_v1_tracks__stable_id__lyrics_words_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "'lines' adds the derived line objects",
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "'lines' adds the derived line objects",
+              "title": "Include"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaraokeTrackOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Lyrics Words",
+        "tags": [
+          "lyrics"
         ]
       }
     },
