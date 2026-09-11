@@ -7231,6 +7231,16 @@ export interface components {
              */
             estimate_usd: number;
             /**
+             * Executor
+             * @description modal farm or local on-device worker
+             */
+            executor: string;
+            /**
+             * Local Refusal
+             * @description why local stems are inert on this build; null when allowed
+             */
+            local_refusal?: string | null;
+            /**
              * Pending
              * @description audio on disk, no bundle yet: the work
              */
@@ -13115,7 +13125,7 @@ export interface operations {
     get_stems_plan_api_v1_stems_plan_get: {
         parameters: {
             query?: {
-                /** @description Modal rung: S, M or L */
+                /** @description Modal rung S/M/L, or LOCAL when local-only */
                 tier?: string;
             };
             header?: never;
