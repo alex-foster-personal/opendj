@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import wave
 from collections.abc import Iterator
 from pathlib import Path
@@ -17,12 +18,16 @@ from apps.webui.server.sqlite_backend import SqliteBackend
 
 
 @pytest.fixture
-def flags_client(tmp_path: Path) -> Iterator[TestClient]:
+def flags_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     state_dir = tmp_path / "state"
     state_dir.mkdir()
     state_db_path = state_dir / "state.db"
     connection = state_db.open_rw(state_db_path)
     connection.close()
+    # GET /artwork reads rb_config.STATE_DB, not the TestClient backend.
+    # Without this, a missing default STATE_DB 500s STATE_DB_UNAVAILABLE.
+    monkeypatch.setattr(rb_config, "STATE_DB", state_db_path)
+    monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", tmp_path / "absent.db")
     app = create_app(
         backend=SqliteBackend(state_db_path),
         bind_host="127.0.0.1",
@@ -93,6 +98,42 @@ def test_track_out_lyrics_available_when_cache_file_exists(
 
     assert response.status_code == 200
     assert response.json()["lyrics_available"] is True
+
+
+@pytest.mark.requires_mutagen
+def test_track_out_artwork_available_false_for_audio_without_picture(
+    flags_client: TestClient, tmp_path: Path
+) -> None:
+    fixture = (
+        Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-320.mp3"
+    )
+    audio_path = tmp_path / "no-art.mp3"
+    shutil.copy2(fixture, audio_path)
+    state_dir = tmp_path / "state"
+    state_db_path = state_dir / "state.db"
+    connection = state_db.open_rw(state_db_path)
+    connection.execute(
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, file_path, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            "no-art-track",
+            "inferred",
+            "No Art",
+            str(audio_path),
+            "2026-01-01T00:00:00Z",
+            "2026-01-01T00:00:00Z",
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+    response = flags_client.get("/api/v1/tracks/no-art-track")
+
+    assert response.status_code == 200
+    assert response.json()["artwork_available"] is False
+
+    artwork = flags_client.get("/api/v1/tracks/no-art-track/artwork")
+    assert artwork.status_code == 404
 
 
 def _write_wav(path: Path) -> None:

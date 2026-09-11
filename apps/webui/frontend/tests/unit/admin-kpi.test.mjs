@@ -459,3 +459,36 @@ test('run notes open on the newest run and are untracked against a refetch', () 
 		'a run with no note must say so rather than render invented commentary'
 	);
 });
+
+// Perf KPI cards: the second card set, fed by GET /api/v1/bench/perf-kpi.
+// - if the perf parse drops `undeclared` then an unlabeled KPI vanishes quietly
+// - if the perf section moves above the farm cards or below the ratchet then
+//   the dashboard order the maintainer asked for (farm, then perf) is lost
+
+test('the perf ledger parse keeps the start date and the undeclared list', () => {
+	const raw = {
+		since_label: 'Wed 22 Jul 2026',
+		undeclared: ['b'],
+		kpis: { a: { label: 'A', unit: 'ms', direction: 'lower_better', title: 'T' } },
+		snapshots: [{ ts: '2026-07-22', label: 'Wed 22 Jul 2026 - R1', values: { a: 220 }, notes: 'n' }]
+	};
+	const parsed = kpiApi._parsePerfLedgerForTests(raw);
+	assert.equal(parsed.sinceLabel, 'Wed 22 Jul 2026');
+	assert.deepEqual(parsed.undeclared, ['b']);
+	assert.equal(parsed.snapshots[0].values.a, 220);
+	assert.throws(
+		() => kpiApi._parsePerfLedgerForTests({ ...raw, undeclared: undefined }),
+		/undeclared/,
+		'a missing undeclared list must be an error, not an empty warning'
+	);
+});
+
+test('perf KPI cards are the second card set: after the farm cards, before the ratchet', () => {
+	const source = readFileSync(`${ADMIN}/+page.svelte`, 'utf8');
+	const farm = source.indexOf('<h3>Demucs farm KPI ledger</h3>');
+	const perf = source.indexOf('<h3>Performance KPIs</h3>');
+	const ratchet = source.indexOf('<QualityRatchet />');
+	assert.ok(farm > 0 && perf > farm && ratchet > perf, `order farm=${farm} perf=${perf} ratchet=${ratchet}`);
+	assert.match(source, /fetchPerfKpiLedger\(\)/);
+	assert.match(source, /perf\.sinceLabel/, 'the time period must be stated from the first measurement');
+});

@@ -1157,7 +1157,9 @@ test('load play intent is strictly validated, immediate, and visible to agents',
 	assert.match(source, /type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean/);
 	assert.match(source, /_exactKeys\(record, \['type', 'deck', 'generation', 'desired_play'\]\)/);
 	assert.match(source, /generation must be a positive safe integer/);
-	assert.match(source, /command\.type === 'load_play_intent'[\s\S]{0,120}return null/);
+	// Any number of sibling types may share the load_play_intent early-return group; a fixed
+	// character window broke when PREF-02 appended feedback_mark to it (main red, Fri 11 Sep 2026).
+	assert.match(source, /command\.type === 'load_play_intent'(?:\s*\|\| command\.type === '[a-z_]+')*\s*\)\s*\{\s*return null;/);
 	assert.match(source, /load_play_intent: Record<DeckId, \{ generation: number; desired_play: boolean \} \| null>/);
 });
 
