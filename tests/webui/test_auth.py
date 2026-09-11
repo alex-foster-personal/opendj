@@ -27,8 +27,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
+from fastapi import HTTPException
+
 from apps.webui.server import auth as auth_mod
 from apps.webui.server.app import create_app
+from apps.webui.server.routes import auth as auth_routes
 from apps.webui.server.auth import (
     SESSION_COOKIE_NAME,
     AuthConfigError,
@@ -354,6 +357,23 @@ def test_blank_credentials_count_as_missing() -> None:
         )
 
 
+def test_oauth_config_missing_env_returns_503_with_runbook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in (*auth_mod.CLIENT_ID_ENV_NAMES, *auth_mod.CLIENT_SECRET_ENV_NAMES):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(HTTPException) as excinfo:
+        auth_routes._oauth_config()
+    assert excinfo.value.status_code == 503
+    detail = excinfo.value.detail
+    assert detail["code"] == "AUTH_NOT_CONFIGURED"
+    message = detail["message"]
+    assert "OPENDJ_GOOGLE_OAUTH_CLIENT_ID" in message
+    assert "OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET" in message
+    assert "doppler run" in message
+    assert "Desktop app" in message
+
+
 def test_login_is_503_when_credentials_are_absent(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -361,7 +381,13 @@ def test_login_is_503_when_credentials_are_absent(
         monkeypatch.delenv(name, raising=False)
     response = client.post("/api/v1/auth/login", json={})
     assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "AUTH_NOT_CONFIGURED"
+    detail = response.json()["detail"]
+    assert detail["code"] == "AUTH_NOT_CONFIGURED"
+    message = detail["message"]
+    assert "OPENDJ_GOOGLE_OAUTH_CLIENT_ID" in message
+    assert "OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET" in message
+    assert "doppler run" in message
+    assert "Desktop app" in message
 
 
 def test_login_returns_a_consent_url_when_configured(

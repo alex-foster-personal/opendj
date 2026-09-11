@@ -1,6 +1,9 @@
 /**
  * PERFMODE-07 app-mode selector contract.
  *
+ * `/performance` remains the rekordbox Performance-mode UI route. The chooser
+ * label for that route is Gig (issue #2039). Route rename is out of scope.
+ *
  * A mode transition is a same-origin route, rather than private component
  * state. That makes the human menu and an agent's HTTP navigation identical.
  * A mode whose real feature contract does not exist stays fail-closed.
@@ -21,10 +24,10 @@ export interface AppMode {
 export const APP_MODES: readonly AppMode[] = [
 	{
 		id: 'performance',
-		label: 'Performance',
+		label: 'Gig',
 		href: '/performance',
 		thumbnail: 'decks',
-		description: 'Four-deck performance surface with the audio engine and live controls.',
+		description: 'Four-deck live surface with the audio engine and live controls.',
 		available: true
 	},
 	{

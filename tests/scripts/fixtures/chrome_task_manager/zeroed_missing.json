@@ -1,0 +1,21 @@
+{
+  "schema": "opendj.chrome-task-manager.v1",
+  "scenario": "idle",
+  "captured_at": "2026-09-11T17:00:00Z",
+  "processes": {
+    "renderer": {
+      "task": "Tab: Open DJ",
+      "memory_mb": 400.0
+    },
+    "gpu": {
+      "task": "GPU Process",
+      "cpu_percent": 5.0,
+      "memory_mb": 80.0
+    },
+    "browser": {
+      "task": "Browser",
+      "cpu_percent": 2.0,
+      "memory_mb": 100.0
+    }
+  }
+}

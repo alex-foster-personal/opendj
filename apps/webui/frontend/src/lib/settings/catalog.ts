@@ -345,6 +345,79 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	{
+		id: 'lyrics_global',
+		label: 'Lyrics overlays (master)',
+		group: 'performance',
+		keywords: ['lyrics', 'global', 'master', 'overlay', 'karaoke', 'hide', 'all'],
+		title: 'Master switch for every lyric overlay',
+		detail:
+			'One switch (also the LYR icon, top-left) that hides the waveform word lanes, deck lyric lines and scrub-hover words everywhere at once. Per-surface toggles below keep their state and return when this comes back on. The library Lyrics column is data, not an overlay - it has its own setting.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'lyrics_library_col',
+		label: 'Lyrics column',
+		group: 'library',
+		keywords: ['lyrics', 'column', 'karaoke', 'words', 'tooltip'],
+		title: 'Lyrics column in the library table',
+		detail:
+			'Adds a Lyrics column: verdict + sync quality at a glance, full text with line breaks and source on hover. Off removes the column and its hover fetches.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'lyrics_hover_scrub',
+		label: 'Lyric scrub on vocal bars',
+		group: 'library',
+		keywords: ['lyrics', 'scrub', 'hover', 'vocal', 'bars', 'preview'],
+		title: 'Word readout while hover-scrubbing a preview strip',
+		detail:
+			'Hovering the blue vocal bars shows the word under the pointer and lets you click a word to audition from it. Off keeps strips as plain seek bars.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'lyrics_load_strategy',
+		label: 'Lyric loading',
+		group: 'library',
+		keywords: ['lyrics', 'memory', 'performance', 'load', 'debounce', 'ram'],
+		title: 'When word timings are fetched into memory',
+		detail:
+			'A playlist of word timings is too heavy to preload. In-view loads rows as they scroll in (fastest hovers, most RAM); Hover waits for a 500ms hover (default); Off never loads in the library - deck and stage still load their own.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: 'hover', label: 'On hover (500ms)' },
+				{ value: 'in-view', label: 'Rows in view' },
+				{ value: 'off', label: 'Off in library' }
+			]
+		}
+	},
+	{
+		id: 'lyrics_waveform_overlay',
+		label: 'Waveform lyrics',
+		group: 'performance',
+		keywords: ['lyrics', 'waveform', 'overlay', 'deck', 'karaoke', 'lanes'],
+		title: 'Word lanes over the main deck waveforms',
+		detail:
+			'Draws upcoming words over each deck waveform, wrapping to a second lane when words overlap. Per-deck toggle lives on the waveform gutter; this is the global default.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'lyrics_deck_line',
+		label: 'Deck lyric line',
+		group: 'performance',
+		keywords: ['lyrics', 'deck', 'line', 'karaoke', 'now playing'],
+		title: 'Current lyric line in the deck panel',
+		detail:
+			'Shows the sounding line (and the inbound one when space allows) under the hot cues. Lines the witness distrusts render dimmed rather than confidently.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
 		id: 'hide_todo_settings',
 		label: 'Hide todo / grayed settings',
 		group: 'advanced',

@@ -9,6 +9,7 @@ import {
 	type DeckLayoutMode
 } from './deck-layout-prefs';
 import { makeDiskWriteChain } from './disk-write-chain';
+import { LYRICS_BOOLEAN_KEYS, LYRICS_LOAD_STRATEGIES, type LyricsLoadStrategy } from './lyrics-prefs';
 import { parseAutoSync, parseLevelCalibration } from './prefs-fields';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
 
@@ -30,6 +31,12 @@ export type DiskPrefsPatch = {
 	deck_layout_animate?: boolean;
 	deck_layout_duration_ms?: DeckLayoutDurationMs;
 	level_calibration?: LevelCalibrationPrefs;
+	lyrics_global?: boolean;
+	lyrics_library_col?: boolean;
+	lyrics_hover_scrub?: boolean;
+	lyrics_load_strategy?: LyricsLoadStrategy;
+	lyrics_waveform_overlay?: boolean;
+	lyrics_deck_line?: boolean;
 };
 
 async function _putDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
@@ -57,6 +64,24 @@ export interface PrefsHydrateTarget {
 	deck_layout_duration_ms: DeckLayoutDurationMs;
 	level_calibration: LevelCalibrationPrefs;
 	last_playlist: LastPlaylistPref | null;
+	lyrics_global: boolean;
+	lyrics_library_col: boolean;
+	lyrics_hover_scrub: boolean;
+	lyrics_load_strategy: LyricsLoadStrategy;
+	lyrics_waveform_overlay: boolean;
+	lyrics_deck_line: boolean;
+}
+
+/** The five boolean lyric prefs hydrate in one loop rather than five ifs. */
+function _hydrateLyrics(uiPrefs: PrefsHydrateTarget, body: DiskPrefsPatch): void {
+	for (const key of LYRICS_BOOLEAN_KEYS) {
+		const value = body[key];
+		if (typeof value === 'boolean') uiPrefs[key] = value;
+	}
+	const strategy = body.lyrics_load_strategy;
+	if (strategy !== undefined && (LYRICS_LOAD_STRATEGIES as readonly string[]).includes(strategy)) {
+		uiPrefs.lyrics_load_strategy = strategy;
+	}
 }
 
 export interface PrefsHydrateDeps {
@@ -114,6 +139,7 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 					defaults.level_calibration
 				);
 			}
+			_hydrateLyrics(uiPrefs, body);
 			persist();
 		} catch {
 			/* ignore */

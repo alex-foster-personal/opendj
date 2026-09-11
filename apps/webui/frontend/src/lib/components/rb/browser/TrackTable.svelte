@@ -103,7 +103,7 @@
 	let contextMenu = $state<{ x: number; y: number; row: BrowserRow } | null>(null);
 
 	function trackMenuItems(row: BrowserRow): ContextMenuItem[] {
-		const selected = selectedIds.includes(row.stable_id) ? selectedIds : [row.stable_id];
+		const selected = selectedOrderSet.has(row.order) ? selectedIds : [row.stable_id];
 		return [
 			...DECKS.map((deck) => ({ id: `load-${deck}`, label: `Load to deck ${deck}`, run: () => onloadrow(row, deck) })),
 			{ id: 'add-playlist', label: 'Add to playlist...' }, { id: 'edit', label: 'Edit' },
@@ -123,14 +123,14 @@
 	function openTrackMenu(event: MouseEvent, row: BrowserRow): void {
 		event.preventDefault();
 		event.stopPropagation();
-		if (!selectedIds.includes(row.stable_id)) onselectrow(row);
+		if (!selectedOrderSet.has(row.order)) onselectrow(row);
 		contextMenu = { x: event.clientX, y: event.clientY, row };
 	}
 
 	function onTrackKeydown(event: KeyboardEvent, row: BrowserRow): void {
 		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
 		event.preventDefault();
-		if (!selectedIds.includes(row.stable_id)) onselectrow(row);
+		if (!selectedOrderSet.has(row.order)) onselectrow(row);
 		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		contextMenu = { x: rect.left + 8, y: rect.top + 8, row };
 	}
@@ -259,6 +259,7 @@
 	let {
 		provider,
 		selectedIds,
+		selectedOrders,
 		loadedIds,
 		vocalsById,
 		sortKey,
@@ -302,6 +303,7 @@
 		 * pane-contract.svelte.ts. */
 		provider: RowProvider;
 		selectedIds: string[];
+		selectedOrders: number[];
 		loadedIds: Set<string>;
 		/** Vocals ALREADY known client-side (loaded decks / anlz cache) -
 		 * v1 scope: strips never fetch /anlz themselves (see BrowserPanel). */
@@ -466,7 +468,7 @@
 				}
 			}
 		}
-		if (!selectedIdSet.has(row.stable_id)) return;
+		if (!selectedOrderSet.has(row.order)) return;
 		if (dblclickGuardRowIds.has(row.stable_id)) return;
 		_armCorridorGrace(row.stable_id);
 	}
@@ -594,7 +596,7 @@
 			...autoMusicalWidths(current, musical, manuallyResizedColumns)
 		};
 	});
-	const selectedIdSet = $derived(new Set(selectedIds));
+	const selectedOrderSet = $derived(new Set(selectedOrders));
 	const rowHeight = $derived(
 		uiPrefs.library_density === 'cosy' ? ROW_HEIGHT_COSY : ROW_HEIGHT_COMPACT
 	);
@@ -732,6 +734,7 @@
 	const masterIndex = $derived(
 		masterStableId === null ? -1 : rows.findIndex((r) => r.stable_id === masterStableId)
 	);
+	const masterOrder = $derived(masterIndex < 0 ? null : (rows[masterIndex]?.order ?? null));
 	const masterFold = $derived.by((): 'above' | 'below' | null =>
 		masterFoldVisibility({
 			rowIndex: masterIndex,
@@ -848,7 +851,7 @@
 			return;
 		}
 		const ids =
-			selectedIds.includes(row.stable_id) && selectedIds.length > 1
+			selectedOrderSet.has(row.order) && selectedIds.length > 1
 				? selectedIds
 				: [row.stable_id];
 		// The MIME is still set for cross-app interop; drop targets accept on
@@ -1287,7 +1290,7 @@
 						data-stable-id={row.stable_id}
 						tabindex="0"
 						draggable="true"
-						class:rb-row-selected={selectedIdSet.has(row.stable_id)}
+						class:rb-row-selected={selectedOrderSet.has(row.order)}
 						class:rb-row-first={windowInfo.topPad === 0 && i === 0}
 						class:dblclick-guard-active={dblclickGuardRowIds.has(row.stable_id)}
 						class:corridor-grace-active={corridorGraceRowIds.has(row.stable_id)}
@@ -1296,7 +1299,7 @@
 						class:rb-row-spotify-pending={row.spotify_pending === true ||
 							row.stable_id.startsWith('spotify-pending:')}
 						class:loaded={loadedIds.has(row.stable_id)}
-						class:rb-row-master={masterStableId !== null && row.stable_id === masterStableId}
+						class:rb-row-master={masterOrder !== null && row.order === masterOrder}
 						class:rb-row-deck-hover={hoverStableId !== null &&
 							row.stable_id === hoverStableId &&
 							row.stable_id !== masterStableId}

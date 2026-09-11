@@ -470,6 +470,84 @@ def test_claim_keeps_its_pair_while_its_matching_engine_is_running(
         assert claim_ports(repo_root=repo_root, common_dir=common_dir, environ={}) == first
 
 
+@pytest.mark.requirement("INFRA-10")
+def test_claim_keeps_the_configured_pair_when_its_own_server_already_holds_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A vite config reload with no prior registry entry must not evict its own pair.
+
+    ``configured`` (the pair in ``.env``, or an explicit ``requested`` value) only
+    got the ``_backend_listener_matches_pair`` exemption when it also happened to
+    equal the REMEMBERED registry pair (``current``). When the registry has no
+    entry for this worktree yet, ``current`` is ``None`` and the claim fell
+    through to the ``elif configured`` branch, which bind-tested the pair with
+    no listener exemption at all. Since vite itself already holds the frontend
+    port, the bind test failed and the claim silently moved the worktree to a
+    fresh pair out from under its own running engine (observed on the Air's
+    preview worktree, ports 8728/9448 -> 8700/9420, Fri 11 Sep 2026).
+    """
+    repo_root = tmp_path / "repo-a"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+    configured = WebuiPorts(backend=BACKEND_POOL_START, frontend=FRONTEND_POOL_START)
+    monkeypatch.setattr(
+        "apps.webui.port_config._backend_listener_matches_pair",
+        lambda ports: ports == configured,
+    )
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as vite:
+        vite.bind(("127.0.0.1", configured.frontend))
+        vite.listen()
+        claimed = claim_ports(
+            repo_root=repo_root,
+            common_dir=common_dir,
+            environ={},
+            requested=configured,
+        )
+
+    assert claimed == configured
+
+
+@pytest.mark.requirement("INFRA-10")
+def test_claim_moves_off_the_configured_pair_when_a_foreign_process_holds_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The listener exemption must never cover a genuinely foreign process.
+
+    Same starting state as the sibling test above (no registry entry for this
+    worktree), but the process on the configured frontend port is NOT this
+    worktree's own backend: ``_backend_listener_matches_pair`` says so. The
+    claim must move the worktree to a different pair rather than trusting a
+    bind failure alone, exactly as it already does for the remembered-pair
+    path.
+    """
+    repo_root = tmp_path / "repo-a"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+    configured = WebuiPorts(backend=BACKEND_POOL_START, frontend=FRONTEND_POOL_START)
+    monkeypatch.setattr(
+        "apps.webui.port_config._backend_listener_matches_pair",
+        lambda ports: False,
+    )
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as foreign:
+        foreign.bind(("127.0.0.1", configured.frontend))
+        foreign.listen()
+        claimed = claim_ports(
+            repo_root=repo_root,
+            common_dir=common_dir,
+            environ={},
+            requested=configured,
+        )
+
+    assert claimed != configured
+    assert claimed.frontend != configured.frontend
+
+
 def test_two_runner_clones_with_distinct_lanes_never_select_the_same_pair(
     tmp_path: Path,
 ) -> None:

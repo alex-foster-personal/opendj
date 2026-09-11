@@ -68,6 +68,7 @@ from .routes import feedback as feedback_routes
 from .routes import feedback_attachments as feedback_attachments_routes
 from .routes import feedback_performance_marks as feedback_performance_marks_routes
 from .routes import feedback_pins as feedback_pins_routes
+from .routes import feedback_replies as feedback_replies_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
@@ -75,6 +76,7 @@ from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
 from .routes import library_jobs as library_jobs_routes
 from .routes import lyrics_search as lyrics_search_routes
+from .routes import lyrics_words as lyrics_words_routes
 from .routes import mytag as mytag_routes
 from .routes import pairing_capture as pairing_capture_routes
 from .routes import pairings as pairings_routes
@@ -398,6 +400,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         feedback_attachments_routes.router,
         feedback_performance_marks_routes.router,
         feedback_pins_routes.router,
+        feedback_replies_routes.router,
         share_routes.router,
         rb_assets_routes.router,
         search_routes.router,
@@ -421,6 +424,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         ingest_upload_routes.router,
         library_routes.router,
         lyrics_search_routes.router,
+        lyrics_words_routes.router,
         health_routes.router,
         preflight_routes.router,
         settings_routes.router,
