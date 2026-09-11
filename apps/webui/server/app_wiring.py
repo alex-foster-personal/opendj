@@ -46,6 +46,7 @@ from .errors import (
     handle_rekordbox_writeback_disabled,
 )
 from .routes import analysis as analysis_routes
+from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
 from .routes import analysis_source as analysis_source_routes
 from .routes import auth as auth_routes
@@ -382,6 +383,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         relocate_routes.router,
         copilot_routes.router,
         analysis_routes.router,
+        analysis_backfill_routes.router,
         analysis_queue_routes.router,
         analysis_source_routes.router,
         auth_routes.router,

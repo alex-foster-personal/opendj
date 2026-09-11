@@ -80,6 +80,26 @@ TABLE_DOCS: dict[str, str] = {
         "the only half of the source selection that survives a relaunch; the "
         "PARITY-02 dev toggle is in-memory and is deliberately not stored."
     ),
+    "analysis_queue_batch": (
+        "One enqueue call on the native-analysis v1 backfill queue, plus the "
+        "admission decision it was planned under: the worker count and band "
+        "the spec section 4 memory rule chose, and the measured memory model "
+        "those numbers came from. Written by apps.analysis.queue."
+    ),
+    "analysis_queue_item": (
+        "One (track, lane) of backfill work and its state: pending, running, "
+        "done, skipped, failed, refused or cancelled. The record write and "
+        "the move to done are ONE transaction, which is what makes a resume "
+        "after a process kill re-run an interrupted item exactly once and "
+        "never re-run a completed one."
+    ),
+    "analysis_stale": (
+        "Records whose DEPENDENCY moved underneath them (today only key -> "
+        "beatgrid). The row keeps its record but stops being eligible for "
+        "analysis_canonical until it is recomputed, so a key computed "
+        "against a superseded beatgrid never reads as canonical. Consulted "
+        "by apps.analysis.canonical._eligible_rows."
+    ),
     "analysis_field_verification": (
         "How each field was verified, stored next to the values it "
         "produced: cross-source agreement, a one-sided single-source "

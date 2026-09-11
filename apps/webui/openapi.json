@@ -1114,6 +1114,421 @@
         "title": "AutoSyncOut",
         "type": "object"
       },
+      "BackfillBatchIn": {
+        "properties": {
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch_id"
+        ],
+        "title": "BackfillBatchIn",
+        "type": "object"
+      },
+      "BackfillBatchListOut": {
+        "properties": {
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/BackfillBatchSummaryOut"
+            },
+            "title": "Batches",
+            "type": "array"
+          }
+        },
+        "required": [
+          "batches"
+        ],
+        "title": "BackfillBatchListOut",
+        "type": "object"
+      },
+      "BackfillBatchSummaryOut": {
+        "description": "One batch without its items.",
+        "properties": {
+          "band": {
+            "description": "under_20_min, 20_to_45_min, over_45_min, or empty",
+            "title": "Band",
+            "type": "string"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "state": {
+            "description": "queued, running, cancelled or done",
+            "title": "State",
+            "type": "string"
+          },
+          "workers": {
+            "description": "Concurrency the admission rule chose from the LONGEST ADMITTED track, never from core count",
+            "title": "Workers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "state",
+          "workers",
+          "band",
+          "created_at",
+          "counts"
+        ],
+        "title": "BackfillBatchSummaryOut",
+        "type": "object"
+      },
+      "BackfillCancelOut": {
+        "properties": {
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "cancelled": {
+            "description": "Open items (pending and in flight) cancelled",
+            "title": "Cancelled",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "cancelled"
+        ],
+        "title": "BackfillCancelOut",
+        "type": "object"
+      },
+      "BackfillEnqueueIn": {
+        "properties": {
+          "backend": {
+            "description": "Producer to run, own_<lane>.<producer>",
+            "title": "Backend",
+            "type": "string"
+          },
+          "lane": {
+            "description": "beatgrid, key, waveform, loudness or vocal",
+            "title": "Lane",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why this batch exists",
+            "title": "Note"
+          },
+          "stable_ids": {
+            "description": "Tracks to (re)analyze",
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids",
+          "lane",
+          "backend"
+        ],
+        "title": "BackfillEnqueueIn",
+        "type": "object"
+      },
+      "BackfillEnqueueOut": {
+        "description": "The plan. ``offered = admitted + refused``, always.",
+        "properties": {
+          "admitted": {
+            "title": "Admitted",
+            "type": "integer"
+          },
+          "band": {
+            "title": "Band",
+            "type": "string"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "memory_model": {
+            "$ref": "#/components/schemas/BackfillMemoryModelOut"
+          },
+          "offered": {
+            "title": "Offered",
+            "type": "integer"
+          },
+          "refused": {
+            "title": "Refused",
+            "type": "integer"
+          },
+          "workers": {
+            "title": "Workers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "offered",
+          "admitted",
+          "refused",
+          "workers",
+          "band",
+          "memory_model"
+        ],
+        "title": "BackfillEnqueueOut",
+        "type": "object"
+      },
+      "BackfillItemOut": {
+        "description": "One (track, lane) of work and its state.\n\nNamed apart from ``routes/queues.py``'s ``QueueItemOut`` (the M3 triage\nqueues) for the reason its neighbour ``routes/analysis_queue.py`` states:\ntwo Pydantic models sharing a name collapse into ONE OpenAPI schema and\nthe loser is served under the winner's shape. That collision really\nhappened here on the first openapi dump, and it is silent -- the schema\nstill validates, it just describes the wrong thing.",
+        "properties": {
+          "attempts": {
+            "description": "Claims so far; a kill-and-resume shows 2",
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "backend": {
+            "title": "Backend",
+            "type": "string"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Audio length the admission rule budgeted with",
+            "title": "Duration S"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          },
+          "predicted_peak_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "floor + slope x minutes under the batch model",
+            "title": "Predicted Peak Mb"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Named cause for a refusal, a failure, or a skip",
+            "title": "Reason"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "state": {
+            "description": "pending, running, done, skipped, failed, refused, cancelled, or deferred (path vanished; retryable on resume)",
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "lane",
+          "backend",
+          "state",
+          "attempts"
+        ],
+        "title": "BackfillItemOut",
+        "type": "object"
+      },
+      "BackfillMemoryModelOut": {
+        "description": "The measured peak-RSS model a batch was budgeted under.\n\nCarried on every response rather than assumed, because the floor and\nslope are MEASURED numbers for one producer version. A report that says\n\"budgeted at 330 MB + 68 MB/min\" without saying where that was measured\nis quoting a remembered figure.",
+        "properties": {
+          "backend": {
+            "description": "Producer the model was measured on",
+            "title": "Backend",
+            "type": "string"
+          },
+          "floor_mb": {
+            "description": "Predicted peak RSS at zero length, MB",
+            "title": "Floor Mb",
+            "type": "number"
+          },
+          "measured_on": {
+            "description": "Host, method and date of the measurement",
+            "title": "Measured On",
+            "type": "string"
+          },
+          "producer_version": {
+            "description": "Version it was measured at",
+            "title": "Producer Version",
+            "type": "string"
+          },
+          "slope_mb_per_min": {
+            "description": "Extra peak RSS per audio minute, MB",
+            "title": "Slope Mb Per Min",
+            "type": "number"
+          },
+          "source": {
+            "description": "Document the measurement is recorded in",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "backend",
+          "producer_version",
+          "floor_mb",
+          "slope_mb_per_min",
+          "measured_on",
+          "source"
+        ],
+        "title": "BackfillMemoryModelOut",
+        "type": "object"
+      },
+      "BackfillProgressOut": {
+        "description": "Aggregate + per-item progress. ``counts`` carries every state's zero.",
+        "properties": {
+          "band": {
+            "title": "Band",
+            "type": "string"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BackfillItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "memory_model": {
+            "additionalProperties": true,
+            "title": "Memory Model",
+            "type": "object"
+          },
+          "settled": {
+            "description": "done + skipped + failed + refused",
+            "title": "Settled",
+            "type": "integer"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workers": {
+            "title": "Workers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "state",
+          "workers",
+          "band",
+          "memory_model",
+          "counts",
+          "total",
+          "settled",
+          "created_at",
+          "updated_at",
+          "items"
+        ],
+        "title": "BackfillProgressOut",
+        "type": "object"
+      },
+      "BackfillResumeOut": {
+        "properties": {
+          "band": {
+            "title": "Band",
+            "type": "string"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "requeued": {
+            "description": "Items put back in the queue",
+            "title": "Requeued",
+            "type": "integer"
+          },
+          "workers": {
+            "description": "Concurrency re-planned from what is LEFT",
+            "title": "Workers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "requeued",
+          "workers",
+          "band",
+          "counts"
+        ],
+        "title": "BackfillResumeOut",
+        "type": "object"
+      },
       "BeatgridFallbackOut": {
         "properties": {
           "anlz_available": {
@@ -14767,6 +15182,237 @@
           }
         },
         "summary": "Run Analysis Queue",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis/backfill/batches": {
+      "get": {
+        "operationId": "list_backfill_batches_api_v1_analysis_backfill_batches_get",
+        "parameters": [
+          {
+            "description": "Newest first",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Newest first",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillBatchListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Backfill Batches",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis/backfill/cancel": {
+      "post": {
+        "description": "Cancel pending AND in-flight items. Terminal ones are left alone.",
+        "operationId": "cancel_backfill_api_v1_analysis_backfill_cancel_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackfillBatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillCancelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Backfill",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis/backfill/enqueue": {
+      "post": {
+        "description": "Plan a batch: admission rule, worker count, band, refusals by name.",
+        "operationId": "enqueue_backfill_api_v1_analysis_backfill_enqueue_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackfillEnqueueIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillEnqueueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enqueue Backfill",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis/backfill/progress": {
+      "get": {
+        "operationId": "get_backfill_progress_api_v1_analysis_backfill_progress_get",
+        "parameters": [
+          {
+            "description": "Batch to report on",
+            "in": "query",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "description": "Batch to report on",
+              "title": "Batch Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cap on listed items. Never caps the reported counts.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "description": "Cap on listed items. Never caps the reported counts.",
+              "maximum": 1000,
+              "minimum": 0,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillProgressOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Backfill Progress",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis/backfill/resume": {
+      "post": {
+        "description": "Put cancelled and abandoned items back; re-plan from what is LEFT.",
+        "operationId": "resume_backfill_api_v1_analysis_backfill_resume_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackfillBatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillResumeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Backfill",
         "tags": [
           "analysis"
         ]
