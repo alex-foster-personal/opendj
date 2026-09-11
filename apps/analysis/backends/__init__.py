@@ -103,8 +103,8 @@ def get_backend(name: str) -> type[AnalyzerBackend]:
                 librosa_madmom,  # noqa: F401
                 mik,  # noqa: F401
                 own_beatgrid,  # noqa: F401
-                own_loudness,  # noqa: F401
                 own_key,  # noqa: F401
+                own_loudness,  # noqa: F401
             )
     try:
         return BACKENDS[name]
