@@ -6,6 +6,7 @@ existing store path. Measurement stays in the loudness producer; this
 module only supplies record identity, the contract decode fingerprint,
 and the exception mapping the runner already classifies.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -58,9 +59,7 @@ def _load_loudness_producer() -> ModuleType:
     return importlib.import_module(".".join(("apps", "analysis_loudness")))
 
 
-def _run_with_bounded_stderr(
-    argv: list[str], timeout_s: float
-) -> tuple[int, str]:
+def _run_with_bounded_stderr(argv: list[str], timeout_s: float) -> tuple[int, str]:
     """Run argv, retaining only the last ``_STDERR_TAIL`` stderr bytes.
 
     A drain thread feeds a ``deque(maxlen=...)`` ring so a chatty decoder
@@ -88,9 +87,7 @@ def _run_with_bounded_stderr(
                 return
             tail.extend(chunk)
 
-    reader = threading.Thread(
-        target=_drain, name="own-loudness-stderr", daemon=True
-    )
+    reader = threading.Thread(target=_drain, name="own-loudness-stderr", daemon=True)
     reader.start()
     try:
         proc.wait(timeout=timeout_s)
@@ -162,12 +159,9 @@ def _fingerprint_decoded_pcm(path: Path, binary: str) -> tuple[str, float]:
         )
         if returncode != 0:
             if not path.exists():
-                raise TrackVanished(
-                    f"{path}: gone before decode: {stderr_tail}"
-                )
+                raise TrackVanished(f"{path}: gone before decode: {stderr_tail}")
             raise TrackUnreadable(
-                f"{path.name}: ffmpeg exited {returncode} decoding "
-                f"PCM fingerprint: {stderr_tail}"
+                f"{path.name}: ffmpeg exited {returncode} decoding PCM fingerprint: {stderr_tail}"
             )
         digest_hex, n_bytes = _hash_pcm_file(tmp_path)
     finally:
@@ -177,8 +171,7 @@ def _fingerprint_decoded_pcm(path: Path, binary: str) -> tuple[str, float]:
         raise TrackUnreadable(f"empty audio: {path.name}")
     if n_bytes % _FINGERPRINT_SAMPLE_WIDTH:
         raise TrackUnreadable(
-            f"{path.name}: decoded PCM is {n_bytes} bytes, not a whole "
-            "number of s16 samples"
+            f"{path.name}: decoded PCM is {n_bytes} bytes, not a whole number of s16 samples"
         )
     n_samples = n_bytes // _FINGERPRINT_SAMPLE_WIDTH
     duration_s = n_samples / float(_FINGERPRINT_SAMPLE_RATE_HZ)

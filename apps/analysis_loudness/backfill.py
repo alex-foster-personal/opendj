@@ -10,6 +10,7 @@ builds a v2 ``AnalysisRecord`` and registers under ``own_loudness.backfill``
 lives in :mod:`apps.analysis.backends.own_loudness`, selected through
 ``apps.analysis.run --backend own_loudness.backfill``.
 """
+
 from __future__ import annotations
 
 import math

@@ -2,6 +2,7 @@
 
 [if] own_loudness.backfill cannot be selected or cannot write a record [then] fail.
 """
+
 from __future__ import annotations
 
 import os
@@ -49,10 +50,17 @@ def _sine(path: Path) -> Path:
     _require_ffmpeg()
     subprocess.run(
         [
-            "ffmpeg", "-hide_banner", "-nostats", "-y",
-            "-f", "lavfi",
-            "-i", "aevalsrc=0.1*sin(2*PI*1000*t):d=5:s=44100",
-            "-c:a", "pcm_s16le", str(path),
+            "ffmpeg",
+            "-hide_banner",
+            "-nostats",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "aevalsrc=0.1*sin(2*PI*1000*t):d=5:s=44100",
+            "-c:a",
+            "pcm_s16le",
+            str(path),
         ],
         check=True,
         capture_output=True,
@@ -115,11 +123,16 @@ def test_cli_writes_v2_record_and_projects_loudness(tmp_path: Path) -> None:
     env = {**os.environ, "MDT_DATA_DIR": str(data_dir)}
     proc = subprocess.run(
         [
-            sys.executable, "-m", "apps.analysis.run",
-            "--backend", "own_loudness.backfill",
-            "--workers", "1",
+            sys.executable,
+            "-m",
+            "apps.analysis.run",
+            "--backend",
+            "own_loudness.backfill",
+            "--workers",
+            "1",
             "--all",
-            "--files", str(wav),
+            "--files",
+            str(wav),
         ],
         capture_output=True,
         text=True,
@@ -139,9 +152,7 @@ def test_cli_writes_v2_record_and_projects_loudness(tmp_path: Path) -> None:
     assert db_path.is_file()
     conn = sqlite3.connect(str(db_path))
     try:
-        row = conn.execute(
-            "SELECT backend, backend_version, record_json FROM analysis"
-        ).fetchone()
+        row = conn.execute("SELECT backend, backend_version, record_json FROM analysis").fetchone()
         assert row is not None
         backend, backend_version, record_json = row
         rec = AnalysisRecord.from_json(record_json)
@@ -173,12 +184,8 @@ def test_cli_writes_v2_record_and_projects_loudness(tmp_path: Path) -> None:
         }
         assert set(proj) == {"loudness_lufs", "loudness_dbtp"}
         direct = analyze_file(wav)
-        assert proj["loudness_lufs"] == pytest.approx(
-            direct.integrated_lufs, abs=_LUFS_TOLERANCE
-        )
-        assert proj["loudness_dbtp"] == pytest.approx(
-            direct.true_peak_dbtp, abs=_DBTP_TOLERANCE
-        )
+        assert proj["loudness_lufs"] == pytest.approx(direct.integrated_lufs, abs=_LUFS_TOLERANCE)
+        assert proj["loudness_dbtp"] == pytest.approx(direct.true_peak_dbtp, abs=_DBTP_TOLERANCE)
         assert rec.lanes["loudness"].payload["integrated_lufs"] == pytest.approx(
             direct.integrated_lufs, abs=_LUFS_TOLERANCE
         )

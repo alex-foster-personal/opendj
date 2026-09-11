@@ -23,9 +23,7 @@ from pathlib import Path
 
 from apps.loudness.scan import SCAN_TIMEOUT_S, LoudnessError, require_ffmpeg, scan_file
 
-_RMS_PATTERN = re.compile(
-    r"^.*RMS level dB:\s*(-?\d+(?:\.\d+)?|-inf)\s*$", re.M
-)
+_RMS_PATTERN = re.compile(r"^.*RMS level dB:\s*(-?\d+(?:\.\d+)?|-inf)\s*$", re.M)
 
 
 @dataclass(frozen=True)

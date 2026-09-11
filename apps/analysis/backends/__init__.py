@@ -1,4 +1,5 @@
 """Backend registry.  Backends call :func:`register` at import-time."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -59,10 +60,7 @@ def default_backend_installed() -> bool:
     build that ships without the ``analysis`` extra can decline to arm a loop
     whose every attempt would end in BackendNotAvailable.
     """
-    return all(
-        importlib.util.find_spec(name) is not None
-        for name in DEFAULT_BACKEND_MODULES
-    )
+    return all(importlib.util.find_spec(name) is not None for name in DEFAULT_BACKEND_MODULES)
 
 
 def register(name: str, cls: type[AnalyzerBackend]) -> None:
@@ -105,9 +103,7 @@ def get_backend(name: str) -> type[AnalyzerBackend]:
         return BACKENDS[name]
     except KeyError as exc:
         avail = ", ".join(sorted(BACKENDS)) or "<none>"
-        raise KeyError(
-            f"Unknown analyser backend {name!r}; available: {avail}"
-        ) from exc
+        raise KeyError(f"Unknown analyser backend {name!r}; available: {avail}") from exc
 
 
 __all__ = [
