@@ -277,6 +277,11 @@ test('_refreshLibraryRowsOnce calls the real fresh-repair read and bumps only it
 		/playlists = await listPlaylistsHydrated\(\);\s*_playlistsWriteEpoch \+= 1;\s*await _sweepBlankPlaylists\(playlists\);/,
 		'_refreshPlaylists must bump the PLAYLISTS epoch, not the health one, and sweep with its own fresh playlists'
 	);
+	assert.match(
+		source,
+		/async function _refreshPlaylists\(\): Promise<void> \{\s*try \{/,
+		'a failed playlist list fetch must not abort the coalesced library refresh or cancel its trailing pass'
+	);
 });
 
 /**
