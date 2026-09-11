@@ -40,7 +40,10 @@ def _complete_press(input_to_output_ms: float, *, output_latency_ms: float = 15.
         "stages": {
             "press_to_schedule_ms": 1.2,
             "scheduled_offset_ms": 8.0,
-            "input_to_audible_ms": round(input_to_output_ms - base_latency_ms - output_latency_ms + 8.0, 3),
+            "input_to_audible_ms": round(
+                input_to_output_ms - base_latency_ms - output_latency_ms + 8.0,
+                3,
+            ),
             "input_to_output_ms": input_to_output_ms,
             "base_latency_ms": base_latency_ms,
             "output_latency_ms": output_latency_ms,
@@ -128,7 +131,11 @@ def test_zero_floor_withheld() -> None:
         }
     ]
     rows = presses_to_ledger_rows(
-        {"ok": False, "reason": "audio context had not rendered or outputLatency is 0", "presses": presses},
+        {
+            "ok": False,
+            "reason": "audio context had not rendered or outputLatency is 0",
+            "presses": presses,
+        },
         _meta(),
         requested_presses=32,
     )
@@ -145,13 +152,21 @@ def test_load_span_and_armed_kinds_excluded() -> None:
         {
             "kind": "transport-schedule-press-load-span",
             "deck": 1,
-            "stages": {"input_to_output_ms": 5000.0, "base_latency_ms": 2.9, "output_latency_ms": 16.0},
+            "stages": {
+                "input_to_output_ms": 5000.0,
+                "base_latency_ms": 2.9,
+                "output_latency_ms": 16.0,
+            },
             "labels": {"latency_floor": "complete"},
         },
         {
             "kind": "transport-schedule-press-armed",
             "deck": 1,
-            "stages": {"input_to_output_ms": 4000.0, "base_latency_ms": 2.9, "output_latency_ms": 16.0},
+            "stages": {
+                "input_to_output_ms": 4000.0,
+                "base_latency_ms": 2.9,
+                "output_latency_ms": 16.0,
+            },
             "labels": {"latency_floor": "complete"},
         },
     ]
@@ -216,7 +231,7 @@ def test_cli_help_names_s2() -> None:
 
 @pytest.mark.requirement("PERF-KPI-S2")
 def test_scorecard_render_after_numeric_row() -> None:
-    """[if] a numeric audible row exists [then] render no longer says never recorded, [else stop]."""
+    """[if] a numeric audible row exists [then] render skips never recorded, [else stop]."""
     presses = [_complete_press(10.0 + index) for index in range(32)]
     rows = presses_to_ledger_rows(_happy_result(presses), _meta(), requested_presses=32)
     score = _score_one("S2", rows)

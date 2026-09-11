@@ -45,9 +45,7 @@ def counts_as_sample(press: dict[str, Any]) -> bool:
     if not _is_finite_positive(stages.get("output_latency_ms")):
         return False
     labels = press.get("labels")
-    if isinstance(labels, dict) and labels.get("latency_floor") != "complete":
-        return False
-    return True
+    return not (isinstance(labels, dict) and labels.get("latency_floor") != "complete")
 
 
 def filter_complete_presses(presses: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -65,7 +63,9 @@ def _method(engine: str) -> str:
     return S2_METHOD_TEMPLATE.format(engine=engine or "unknown")
 
 
-def withheld_rows(reason: str, meta: CaptureMeta, *, engine: str = "unknown") -> list[dict[str, Any]]:
+def withheld_rows(
+    reason: str, meta: CaptureMeta, *, engine: str = "unknown"
+) -> list[dict[str, Any]]:
     method = _method(engine)
     return [
         withheld_row(kpi=S2_KPI, unit=S2_UNIT, method=method, meta=meta, reason=reason),
@@ -87,7 +87,11 @@ def presses_to_ledger_rows(
             engine = raw_engine.strip()
 
     if result is None:
-        return withheld_rows("playwright capture did not write KPI_CAPTURE_RESULT", meta, engine=engine)
+        return withheld_rows(
+            "playwright capture did not write KPI_CAPTURE_RESULT",
+            meta,
+            engine=engine,
+        )
 
     if result.get("ok") is not True:
         reason = result.get("reason")

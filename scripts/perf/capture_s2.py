@@ -63,6 +63,7 @@ def _run_playwright_capture(
         env=env,
         capture_output=True,
         text=True,
+        check=False,
     )
     try:
         raw = Path(result_path).read_text(encoding="utf-8")
