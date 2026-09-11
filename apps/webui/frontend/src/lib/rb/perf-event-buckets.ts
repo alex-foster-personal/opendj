@@ -132,6 +132,7 @@ const BUDGETS: Record<PerfBucket, number> = {
  */
 const AUDIO_HEALTH_EXTRA_KINDS: ReadonlySet<string> = new Set([
 	'silent-while-playing',
+	'stranded-follower',
 	'presentation-clock-stalled',
 	'presentation-clock-recovered',
 	'presentation-tick-failed'

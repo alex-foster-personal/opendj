@@ -59,6 +59,7 @@ from typing import Any, Literal
 from apps.analysis_beatgrid.bar_phase import BAR_BEATS, assign_bar_phase
 from apps.analysis_beatgrid.bpm import estimate_bpm
 from apps.analysis_beatgrid.flags import evaluate_pulse
+from apps.analysis_beatgrid.activations import FPS as ACTIVATIONS_FPS
 from apps.analysis_beatgrid.tempo_change import detect_tempo_changes
 
 #: A tempo fit that produced no straight line at all. `estimate_bpm` returns
@@ -217,6 +218,25 @@ def _pulse_and_phase(
     return _PulseCheck(beats=beats, tempo=tempo, phase=phase)
 
 
+def _stamp_activations(result: Mapping[str, Any], payload: dict[str, Any]) -> None:
+    """Copy the retained-logits pointer onto an ok payload without stat()ing paths."""
+    activations_npz = result.get("activations_npz")
+    activations_blob = result.get("activations_blob")
+    if activations_npz or activations_blob:
+        fps_raw = result.get("fps", ACTIVATIONS_FPS)
+        fps = int(fps_raw)
+        if activations_blob is not None:
+            payload["activations"] = {"blob": activations_blob, "fps": fps}
+        else:
+            payload["activations"] = {"npz": activations_npz, "fps": fps}
+        return
+    if result.get("n_frames") is not None or result.get("beats"):
+        raise LanePayloadError(
+            "runner result produced logits but carries no activations_npz or "
+            "activations_blob pointer; producer contract drift"
+        )
+
+
 def build_beatgrid_lane(
     result: Mapping[str, Any], *, threshold: float
 ) -> BeatgridLane:
@@ -256,6 +276,7 @@ def build_beatgrid_lane(
         ],
         "static_grid_untrusted": changes.static_grid_untrusted,
     }
+    _stamp_activations(result, payload)
     return BeatgridLane(
         status="ok", reason=None, confidence=tempo.confidence, payload=payload
     )

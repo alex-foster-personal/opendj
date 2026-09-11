@@ -18,6 +18,8 @@
 	} = $props();
 
 	let pinBodyElement: HTMLDivElement | null = $state(null);
+	let lightboxElement: HTMLDivElement | null = $state(null);
+	let lightboxOpen = $state(false);
 
 	/** Set once the card's REAL size is measured; null until then and again
 	 * whenever a DIFFERENT pin's body reuses this same mounted instance
@@ -55,20 +57,32 @@
 		// frame rather than briefly showing the PREVIOUS pin's measured spot.
 		void pin;
 		measuredPos = null;
+		lightboxOpen = false;
 		if (pinBodyElement !== null) _reposition();
 	});
+
+	function handleLightboxKeydown(event: KeyboardEvent): void {
+		if (event.key !== 'Escape' || !lightboxOpen) return;
+		event.stopImmediatePropagation();
+		lightboxOpen = false;
+	}
 
 	/** An outside pointer closes only this reopened card. The widget owns a
 	 * separate new-pin draft, so it remains intact. Pointerdown precedes a
 	 * marker click, letting another marker reopen its own card immediately. */
 	function handleOutsidePinPointerDown(event: PointerEvent): void {
 		const target = event.target;
-		if (!(target instanceof Node) || pinBodyElement?.contains(target)) return;
+		if (!(target instanceof Node)) return;
+		if (pinBodyElement?.contains(target) || lightboxElement?.contains(target)) return;
 		onclose();
 	}
 </script>
 
-<svelte:window onpointerdowncapture={handleOutsidePinPointerDown} onresize={_reposition} />
+<svelte:window
+	onpointerdowncapture={handleOutsidePinPointerDown}
+	onresize={_reposition}
+	onkeydowncapture={handleLightboxKeydown}
+/>
 
 <div
 	class="fb-pin-body"
@@ -82,12 +96,21 @@
 	</p>
 	<p class="fb-body-text">{pin.text}</p>
 	{#if pin.attachment}
-		<img
-			class="fb-attachment-img"
-			src={`${API_BASE}${pin.attachment.url}`}
-			alt="Pasted screenshot"
-			title={`${pin.attachment.content_type}, ${(pin.attachment.size_bytes / 1024).toFixed(0)} KB`}
-		/>
+		<button
+			type="button"
+			class="fb-attachment-btn"
+			title={`${pin.attachment.content_type}, ${(pin.attachment.size_bytes / 1024).toFixed(0)} KB - click to enlarge`}
+			onclick={(event) => {
+				event.stopPropagation();
+				lightboxOpen = true;
+			}}
+		>
+			<img
+				class="fb-attachment-img"
+				src={`${API_BASE}${pin.attachment.url}`}
+				alt="Pasted screenshot"
+			/>
+		</button>
 	{/if}
 	{#if pin.agent_note}
 		<p class="fb-note" title="What an agent did about this pin">
@@ -137,6 +160,29 @@
 	</div>
 </div>
 
+{#if lightboxOpen && pin.attachment}
+	<div
+		class="fb-lightbox"
+		role="dialog"
+		aria-modal="true"
+		aria-label="Screenshot"
+		bind:this={lightboxElement}
+	>
+		<button
+			type="button"
+			class="fb-lightbox-close"
+			aria-label="Close screenshot"
+			title="Close screenshot"
+			onclick={() => (lightboxOpen = false)}>×</button
+		>
+		<img
+			class="fb-lightbox-img"
+			src={`${API_BASE}${pin.attachment.url}`}
+			alt="Pasted screenshot"
+		/>
+	</div>
+{/if}
+
 <style>
 	.fb-pin-body {
 		position: fixed;
@@ -155,12 +201,20 @@
 	.fb-body-text {
 		margin: 2px 0 0;
 	}
-	.fb-attachment-img {
+	.fb-attachment-btn {
 		display: block;
 		margin-top: 4px;
+		padding: 0;
+		border: none;
+		background: none;
+		cursor: pointer;
+	}
+	.fb-attachment-img {
+		display: block;
 		max-width: 100%;
 		border: 1px solid var(--rb-border);
 		border-radius: 2px;
+		cursor: pointer;
 	}
 	.fb-note {
 		margin: 4px 0 0;
@@ -180,5 +234,38 @@
 		margin-top: 4px;
 		color: var(--rb-accent);
 		word-break: break-all;
+	}
+	.fb-lightbox {
+		position: fixed;
+		inset: 0;
+		z-index: 320;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(0, 0, 0, 0.8);
+	}
+	.fb-lightbox-img {
+		max-width: 90vw;
+		max-height: 90vh;
+		object-fit: contain;
+	}
+	.fb-lightbox-close {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		width: 18px;
+		height: 18px;
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--rb-text-dim);
+		font-size: 16px;
+		line-height: 1;
+		cursor: pointer;
+	}
+	.fb-lightbox-close:hover,
+	.fb-lightbox-close:focus-visible {
+		color: var(--rb-text);
+		outline: none;
 	}
 </style>

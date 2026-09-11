@@ -309,7 +309,7 @@ def analyze_one(
     audio_path: str,
     frames_model: Audio2Frames,
     threshold: float,
-    activations_dir: str | None,
+    activations_dir: str,
 ) -> dict[str, Any]:
     started = time.time()
     signal, sample_rate = load_audio(audio_path)
@@ -329,25 +329,25 @@ def analyze_one(
     beat_s = beat_frames / FPS
     downbeat_s = _snap_downbeats_to_beats(beat_s, downbeat_frames / FPS)
 
-    activation_path = None
-    if activations_dir:
-        os.makedirs(activations_dir, exist_ok=True)
-        # The BASENAME alone collides: one run over two directories holding the
-        # same filename wrote both tracks to one npz, the second overwriting the
-        # first, while both JSON rows pointed at it. These are retained for
-        # later threshold sweeps, so a silently shared file is a sweep computed
-        # on the wrong activations (Codex P2 on PR #1514). The digest of the
-        # full path disambiguates and stays stable across runs; the readable
-        # stem is kept in front of it so the directory is still browsable.
-        stem = os.path.splitext(os.path.basename(audio_path))[0]
-        tag = hashlib.sha256(os.path.abspath(audio_path).encode("utf-8")).hexdigest()[:12]
-        activation_path = os.path.join(activations_dir, f"{stem}.{tag}.npz")
-        np.savez_compressed(
-            activation_path,
-            beat=beat_logits.detach().cpu().numpy().astype(np.float16),
-            downbeat=downbeat_logits.detach().cpu().numpy().astype(np.float16),
-            fps=np.int32(FPS),
-        )
+    os.makedirs(activations_dir, exist_ok=True)
+    # Keep in lockstep with `activations.activation_npz_name`; tested in
+    # `tests/analysis_beatgrid/test_activations.py`.
+    # The BASENAME alone collides: one run over two directories holding the
+    # same filename wrote both tracks to one npz, the second overwriting the
+    # first, while both JSON rows pointed at it. These are retained for
+    # later threshold sweeps, so a silently shared file is a sweep computed
+    # on the wrong activations (Codex P2 on PR #1514). The digest of the
+    # full path disambiguates and stays stable across runs; the readable
+    # stem is kept in front of it so the directory is still browsable.
+    stem = os.path.splitext(os.path.basename(audio_path))[0]
+    tag = hashlib.sha256(os.path.abspath(audio_path).encode("utf-8")).hexdigest()[:12]
+    activation_path = os.path.join(activations_dir, f"{stem}.{tag}.npz")
+    np.savez_compressed(
+        activation_path,
+        beat=beat_logits.detach().cpu().numpy().astype(np.float16),
+        downbeat=downbeat_logits.detach().cpu().numpy().astype(np.float16),
+        fps=np.int32(FPS),
+    )
 
     # The peak activation is the model's own confidence and is what
     # apps.analysis_beatgrid.flags.evaluate_pulse consumes. Reported as a
@@ -361,6 +361,7 @@ def analyze_one(
         "activation_peak": round(peak_probability, 6),
         "n_frames": int(beat_logits.shape[-1]),
         "activations_npz": activation_path,
+        "fps": FPS,
         "decode_fingerprint": decode_fingerprint,
         "sample_rate": int(sample_rate),
         "decode_s": round(decoded_s - started, 3),
@@ -519,7 +520,7 @@ def _analyze_all(
     paths: list[str],
     frames_model: Audio2Frames,
     threshold: float,
-    activations_dir: str | None,
+    activations_dir: str,
 ) -> tuple[dict[str, Any], float]:
     """Analyze every path, recording failures as rows. Returns `(results, wall_s)`.
 
@@ -591,8 +592,14 @@ def main() -> int:
     if args.verify_postprocessor:
         return verify_every(paths, frames_model)
 
+    activations_dir = args.activations_dir
+    if not activations_dir:
+        activations_dir = os.path.join(
+            os.path.dirname(os.path.abspath(args.out)), "activations"
+        )
+
     results, wall_s = _analyze_all(
-        paths, frames_model, args.threshold, args.activations_dir
+        paths, frames_model, args.threshold, activations_dir
     )
 
     peak_rss_mb = _peak_rss_mb() if args.measure_rss else None

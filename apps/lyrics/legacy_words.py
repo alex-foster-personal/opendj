@@ -18,7 +18,9 @@ judged the track then, not now).
 Rows arrive with ``resurrect=False``: legacy data cannot revive a track that a
 purge has already tombstoned on this machine.
 
-The legacy tables are DROPPED only when every row converted. A partial
+The legacy tables are DROPPED only when every row converted and
+``drop_legacy=True`` (the default). The D13.6 runbook passes
+``drop_legacy=False`` so the operator can verify before dropping. A partial
 migration keeps them, so the re-run has something to finish, and the counts
 say plainly how many rows are still there.
 """
@@ -195,6 +197,7 @@ def migrate_legacy_words(
     s3: asset_store.AssetS3Client | None,
     cfg: CloudConfig | None,
     dry_run: bool,
+    drop_legacy: bool = True,
 ) -> LegacyMigrationReport:
     """Convert every legacy row. Drops the legacy tables only on a clean sweep."""
     _require_legacy_tables(conn)
@@ -222,7 +225,12 @@ def migrate_legacy_words(
         else:
             convertible += 1
             wordless += int(not words)
-    complete = not dry_run and converted == len(legacy_rows)
+    complete = (
+        (not dry_run)
+        and drop_legacy
+        and converted == len(legacy_rows)
+        and not failures
+    )
     if complete:
         _drop_legacy_tables(conn)
     return LegacyMigrationReport(

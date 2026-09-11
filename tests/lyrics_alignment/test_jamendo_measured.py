@@ -28,6 +28,8 @@ from pathlib import Path
 
 import pytest
 
+from apps.shared.hashing import sha256_file
+from scripts.lyrics_alignment.fixtures import load_measured_fixture
 from scripts.lyrics_alignment.scorer import (
     SHIP_CATASTROPHE_RATE_MAX,
     SHIP_MEDAE_S_MAX,
@@ -38,6 +40,8 @@ from scripts.lyrics_alignment.scorer import (
 FIXTURE_PATH = (
     Path(__file__).parents[1] / "fixtures" / "lyrics_alignment" / "jamendo_round3a_measured.json"
 )
+FIXTURE_SHA256 = "sha256:76fa7ebd019e91173539ba88b1cf0f98a0b0b8fa971d0ca8f28273e22fc0affa"
+SHIP_TIER_PATH = Path(__file__).parents[1] / "fixtures" / "lyrics_alignment" / "ship_tier.json"
 RATCHET_TOLERANCE = 1e-9
 
 # The measured LYR-01 corpus row, Wed 9 Sep 2026: round3a best-of predictions
@@ -50,7 +54,7 @@ CORPUS_WORDS = 21580
 
 @pytest.fixture(scope="module")
 def fixture() -> dict:
-    return json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    return load_measured_fixture(FIXTURE_PATH, FIXTURE_SHA256)
 
 
 def test_every_track_reproduces_its_measured_score(fixture: dict) -> None:
@@ -129,3 +133,33 @@ def test_fixture_carries_timings_only(fixture: dict) -> None:
         assert all(
             isinstance(t, (int, float)) for t in track["reference_onsets_s"]
         ), track["track_id"]
+
+
+def test_measured_fixture_loader_rejects_checksum_mismatch() -> None:
+    with pytest.raises(ValueError, match="checksum.*does not match"):
+        load_measured_fixture(FIXTURE_PATH, "sha256:" + "0" * 64)
+
+
+def test_measured_fixture_loader_refuses_ship_tier() -> None:
+    with pytest.raises(ValueError, match="fixture_set"):
+        load_measured_fixture(SHIP_TIER_PATH, sha256_file(SHIP_TIER_PATH))
+
+
+def test_measured_fixture_loader_refuses_fabricated_payload(tmp_path: Path) -> None:
+    payload = {
+        "fixture_set": "lyrics-alignment-fabricated-v1",
+        "provenance": {"measured_utc": "2026-01-01T00:00:00+00:00", "scorer_version": "1.0.0"},
+        "corpus_measured": {"medae_s": 0.0},
+        "tracks": [
+            {
+                "track_id": "fixture-a",
+                "measured": {"medae_s": 0.0},
+                "reference_onsets_s": [0.0],
+                "predicted_onsets_s": [0.0],
+            }
+        ],
+    }
+    path = tmp_path / "fabricated.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="fixture_set"):
+        load_measured_fixture(path, sha256_file(path))

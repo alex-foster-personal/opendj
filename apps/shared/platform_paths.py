@@ -143,9 +143,20 @@ def is_streaming_uri(path: str | None) -> bool:
     An empty/None path is NOT a streaming URI -- it is an absent path. Wire
     fields that report "this track streams" (the browser read model's
     ``is_streaming``) must use this, or a track with no FolderPath at all
-    gets rendered as a Spotify row.
+    gets rendered as a Spotify row. Callers that also know ``file_exists``
+    must use :func:`is_streaming_row` instead.
     """
     return bool(path) and str(path).startswith(STREAMING_PREFIXES)
+
+
+def is_streaming_row(path: str | None, *, file_exists: bool) -> bool:
+    """True iff ``path`` is a streaming URI and no local file resolved.
+
+    Wire fields that claim a track streams (listing ``is_streaming``,
+    rb-meta ``is_streaming``) must use this. A pathless or stale
+    FolderPath with ``file_exists=true`` is a local row, not Spotify.
+    """
+    return (not file_exists) and is_streaming_uri(path)
 
 
 def is_unplayable_path(path: str | None) -> bool:

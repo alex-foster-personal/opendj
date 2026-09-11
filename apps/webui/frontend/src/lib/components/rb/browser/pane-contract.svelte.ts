@@ -31,6 +31,7 @@ import type { PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
 import type { RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
+import { applySelect } from './pane-row-selection';
 import type { SortDir, SortKey } from './browser-sort-ipc';
 export { installBrowserSortIpc } from './browser-sort-ipc';
 export type { SortDir, SortKey } from './browser-sort-ipc';
@@ -184,6 +185,10 @@ export class PaneStore {
 	selected_id = $state<string | null>(null);
 	/** Ordered multi-selection used by the edit-suite batch actions. */
 	selected_ids = $state<string[]>([]);
+	/** 1-based membership slot of the anchor row (issue #2075). */
+	selected_order = $state<number | null>(null);
+	/** Positional multi-selection for row highlight (unique per pane). */
+	selected_orders = $state<number[]>([]);
 	sort_key = $state<SortKey | null>(null);
 	sort_dir = $state<SortDir>(1);
 	/** True when the source fetch hit the row cap (truncation note). */
@@ -230,6 +235,8 @@ export class PaneStore {
 		this.error = null;
 		this.selected_id = null;
 		this.selected_ids = [];
+		this.selected_order = null;
+		this.selected_orders = [];
 		this.truncated = false;
 		this.scroll_top = 0;
 		this.etag = '';
@@ -315,30 +322,19 @@ export class PaneStore {
 	 */
 	select(
 		stable_id: string,
-		extend: boolean,
+		extend = false,
 		range = false,
-		ordered_ids: readonly string[] = []
+		ordered_ids: readonly string[] = [],
+		order?: number,
+		ordered_rows?: readonly { stable_id: string; order: number }[]
 	): void {
-		if (range) {
-			const anchor = this.selected_id;
-			const from = anchor === null ? -1 : ordered_ids.indexOf(anchor);
-			const to = ordered_ids.indexOf(stable_id);
-			if (from !== -1 && to !== -1) {
-				const lo = Math.min(from, to);
-				const hi = Math.max(from, to);
-				this.selected_ids = ordered_ids.slice(lo, hi + 1);
-				this.selected_id = stable_id;
-				return;
-			}
-		}
-		this.selected_id = stable_id;
-		if (extend) {
-			this.selected_ids = this.selected_ids.includes(stable_id)
-				? this.selected_ids.filter((id) => id !== stable_id)
-				: [...this.selected_ids, stable_id];
-		} else {
-			this.selected_ids = [stable_id];
-		}
+		const ordered =
+			ordered_rows ??
+			ordered_ids.map((id, i) => {
+				const row = this.rows.find((r) => r.stable_id === id);
+				return row ?? { stable_id: id, order: i + 1 };
+			});
+		applySelect(this, stable_id, extend, range, ordered, order);
 	}
 
 	setSearch(next: string): void {

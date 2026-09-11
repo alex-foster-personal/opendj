@@ -6698,6 +6698,17 @@
               }
             ],
             "title": "Origin"
+          },
+          "return_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return To"
           }
         },
         "title": "LoginIn",

@@ -1820,7 +1820,7 @@ function _tick(): void {
 			_commitPendingIfDue(deck);
 			const observation = _publishPresentedTransport(deck, outputTimestamp);
 			_updateSlipPosition(deck);
-			if (observation?.audible || observation?.transport_pending) anyTransport = true;
+			if (observation?.audible || observation?.transport_pending || deckStates[deck].playing || deckStates[deck].audible) anyTransport = true;
 		}
 		// Feed TopBar audio-Hz meter (presentation publish rate ~= game FPS).
 		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now());

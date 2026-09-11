@@ -103,6 +103,10 @@ BPM_LOOSE_TOL = 1.0
 # Float slack so a value sitting exactly on a boundary does not fail by 1 ulp.
 _EPS = 1e-9
 
+# A minimal post-processor threshold change should only move the dynamic partition;
+# fixed-tempo F moving more than this is a regression, not a ship.
+FIXED_TEMPO_F_REGRESSION_TOL = 0.01
+
 # A straight-line tempo fit needs at least this many beats to mean anything.
 MIN_BEATS_FOR_FIT = 4
 
@@ -155,22 +159,70 @@ def window_slice(times: Iterable[float], start_s: float, end_s: float) -> list[f
 
 # ----- Grid shape helpers -------------------------------------------------
 
+WEIGHTS_NOT_RELEASED = "weights-not-released"
 
-def grid_is_dynamic(beats: Sequence[dict[str, Any]]) -> bool:
+RESERVED_CANDIDATES: tuple[dict[str, str], ...] = (
+    {
+        "name": "masked_diffusion_beat_this",
+        "label": "Masked Diffusion Beat This!",
+        "status": WEIGHTS_NOT_RELEASED,
+    },
+)
+
+
+def _tempo_of(beat: Any) -> float:
+    """BPM from either a rekordbox dict beat or a fixture ``[n, t, bpm]`` triple."""
+    if isinstance(beat, dict):
+        return round(float(beat["bpm"]), 2)
+    return round(float(beat[2]), 2)
+
+
+def grid_is_dynamic(beats: Sequence[Any]) -> bool:
     """True when a rekordbox grid carries more than one tempo.
 
     Dynamic grids are the population that a fixed-BPM analyzer silently
     flatters itself on, so this predicate drives the fixed-vs-dynamic split
     that every table in the report is required to show.
+
+    Accepts both wire shapes: ``{..., "bpm": ...}`` dicts and fixture
+    ``[n, t, bpm]`` triples.
     """
     seen: list[float] = []
     for beat in beats:
-        bpm = round(float(beat["bpm"]), 2)
+        bpm = _tempo_of(beat)
         if not any(abs(bpm - s) < BPM_EXACT_TOL for s in seen):
             seen.append(bpm)
             if len(seen) > 1:
                 return True
     return False
+
+
+def eval_grid_is_dynamic(beats: Sequence[Any]) -> bool:
+    """Same as ``grid_is_dynamic``; name exists so call sites read as eval-time."""
+    return grid_is_dynamic(beats)
+
+
+def partition_counts(beats_by_track: Iterable[Sequence[Any]]) -> tuple[int, int]:
+    """``(n_fixed, n_dynamic)`` from eval-time ``grid_is_dynamic``, never a stored flag."""
+    n_fixed = n_dynamic = 0
+    for beats in beats_by_track:
+        if grid_is_dynamic(beats):
+            n_dynamic += 1
+        else:
+            n_fixed += 1
+    return n_fixed, n_dynamic
+
+
+def reserved_table_cells() -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
+    """Display-only rows for candidates registered but not runnable."""
+    return [
+        (
+            cand["label"],
+            {"n": 0, "status": WEIGHTS_NOT_RELEASED},
+            {"status": WEIGHTS_NOT_RELEASED, "emits_downbeats": False},
+        )
+        for cand in RESERVED_CANDIDATES
+    ]
 
 
 def downbeat_times(beats: Sequence[dict[str, Any]]) -> list[float]:
@@ -455,3 +507,73 @@ def score_downbeats(
                 matched += 1
                 break
     return DownbeatScore(True, len(ref), len(cand), matched, matched / len(ref))
+
+
+# ----- Fixed-tempo F regression guard ------------------------------------
+
+
+class FixedTempoFRegression(ValueError):
+    """Fixed-tempo F moved beyond tolerance; promotion figure must not update."""
+
+
+@dataclass(frozen=True)
+class FixedTempoFShift:
+    baseline_f: float
+    candidate_f: float
+    delta: float
+    is_regression: bool
+
+
+def evaluate_fixed_tempo_f_shift(baseline_f: float, candidate_f: float) -> FixedTempoFShift:
+    """Pure verdict: did fixed-tempo F move more than the regression tolerance?"""
+    baseline = float(baseline_f)
+    candidate = float(candidate_f)
+    delta = abs(candidate - baseline)
+    is_regression = delta > FIXED_TEMPO_F_REGRESSION_TOL + _EPS
+    return FixedTempoFShift(
+        baseline_f=baseline,
+        candidate_f=candidate,
+        delta=delta,
+        is_regression=is_regression,
+    )
+
+
+def _candidate_fixed_f(report: dict[str, Any]) -> float | None:
+    for arm in (report.get("arms") or {}).values():
+        if arm.get("role") != "candidate":
+            continue
+        fixed = arm.get("fixed") or {}
+        f_mean = fixed.get("f_measure_mean")
+        if f_mean is None:
+            continue
+        return float(f_mean)
+    return None
+
+
+def apply_fixed_tempo_f_guard(report: dict[str, Any]) -> dict[str, Any]:
+    """Stamp promotion metadata and refuse when fixed-tempo F regressed."""
+    baseline = report.get("promotion_figure")
+    if baseline is None:
+        return report
+    candidate_f = _candidate_fixed_f(report)
+    if candidate_f is None:
+        return report
+    shift = evaluate_fixed_tempo_f_shift(float(baseline), candidate_f)
+    if shift.is_regression:
+        report["promotion"] = {
+            "fixed_tempo_f": shift.baseline_f,
+            "updated": False,
+            "regression": True,
+            "delta": shift.delta,
+        }
+        raise FixedTempoFRegression(
+            f"fixed-tempo F regression: delta {shift.delta:.4f} exceeds tolerance "
+            f"{FIXED_TEMPO_F_REGRESSION_TOL}; promotion figure not updated"
+        )
+    report["promotion"] = {
+        "fixed_tempo_f": shift.candidate_f,
+        "updated": True,
+        "regression": False,
+        "delta": shift.delta,
+    }
+    return report
