@@ -49,12 +49,13 @@ export function rememberOptionalResources(
 
 export function optionalResources(stableId: string): OptionalResourceCaps {
 	const caps = _store().get(stableId);
+	const artwork: boolean | null | 'unknown' =
+		caps !== undefined && 'artwork' in caps ? (caps.artwork as boolean | null) : 'unknown';
 	return {
 		lyrics: caps?.lyrics ?? 'unknown',
 		autoCues: caps?.autoCues ?? 'unknown',
 		stems: caps?.stems ?? 'unknown',
-		artwork:
-			caps !== undefined && 'artwork' in caps ? (caps.artwork as boolean | null) : 'unknown'
+		artwork
 	};
 }
 
