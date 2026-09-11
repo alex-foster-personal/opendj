@@ -4239,6 +4239,34 @@ export interface components {
             /** Reason */
             reason: string | null;
         };
+        /**
+         * CloudSyncSchedulerOut
+         * @description The engine's CloudSync scheduler: is its thread alive, and what last failed.
+         *
+         *     ``not_armed``: this app never builds one (tests, non-daemon boots).
+         *     ``off``: armed, switch not on. ``misconfigured``: switched on but it could
+         *     not start (``reason`` says why); the engine booted regardless.
+         *     ``dead``: it was started and its thread is gone without ``stop()``.
+         */
+        CloudSyncSchedulerOut: {
+            /** Alive */
+            alive: boolean;
+            /** Last Error */
+            last_error: string | null;
+            /** Last Error At */
+            last_error_at: string | null;
+            /** Last Ok At */
+            last_ok_at: string | null;
+            /** Reason */
+            reason: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "not_armed" | "off" | "misconfigured" | "running" | "stopped" | "dead";
+            /** Ticks */
+            ticks: number;
+        };
         /** CloudSyncStatusOut */
         CloudSyncStatusOut: {
             /** Enabled */
@@ -4734,6 +4762,8 @@ export interface components {
             archived: number;
             /** Attachments Missing */
             attachments_missing: number;
+            /** Harvested */
+            harvested: number;
             /** Live */
             live: number;
             /** Pending Push */
@@ -4766,6 +4796,7 @@ export interface components {
             cloudsync: components["schemas"]["CloudSyncLinkOut"];
             /** Pins */
             pins: components["schemas"]["PinSyncOut"][];
+            scheduler: components["schemas"]["CloudSyncSchedulerOut"];
             store: components["schemas"]["FeedbackStoreSyncOut"];
         };
         /**
@@ -6104,7 +6135,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "synced" | "pending_push" | "unreconciled";
+            state: "synced" | "pending_push" | "unreconciled" | "harvested";
             /** Updated At */
             updated_at: string;
         };

@@ -2228,6 +2228,86 @@
         "title": "CloudSyncLinkOut",
         "type": "object"
       },
+      "CloudSyncSchedulerOut": {
+        "description": "The engine's CloudSync scheduler: is its thread alive, and what last failed.\n\n``not_armed``: this app never builds one (tests, non-daemon boots).\n``off``: armed, switch not on. ``misconfigured``: switched on but it could\nnot start (``reason`` says why); the engine booted regardless.\n``dead``: it was started and its thread is gone without ``stop()``.",
+        "properties": {
+          "alive": {
+            "title": "Alive",
+            "type": "boolean"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_error_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error At"
+          },
+          "last_ok_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Ok At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "state": {
+            "enum": [
+              "not_armed",
+              "off",
+              "misconfigured",
+              "running",
+              "stopped",
+              "dead"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "ticks": {
+            "title": "Ticks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "alive",
+          "reason",
+          "ticks",
+          "last_ok_at",
+          "last_error",
+          "last_error_at"
+        ],
+        "title": "CloudSyncSchedulerOut",
+        "type": "object"
+      },
       "CloudSyncStatusOut": {
         "properties": {
           "enabled": {
@@ -3603,6 +3683,10 @@
             "title": "Attachments Missing",
             "type": "integer"
           },
+          "harvested": {
+            "title": "Harvested",
+            "type": "integer"
+          },
           "live": {
             "title": "Live",
             "type": "integer"
@@ -3626,6 +3710,7 @@
           "synced",
           "pending_push",
           "unreconciled",
+          "harvested",
           "attachments_missing"
         ],
         "title": "FeedbackStoreSyncOut",
@@ -3685,6 +3770,9 @@
             "title": "Pins",
             "type": "array"
           },
+          "scheduler": {
+            "$ref": "#/components/schemas/CloudSyncSchedulerOut"
+          },
           "store": {
             "$ref": "#/components/schemas/FeedbackStoreSyncOut"
           }
@@ -3692,6 +3780,7 @@
         "required": [
           "store",
           "cloudsync",
+          "scheduler",
           "pins"
         ],
         "title": "FeedbackSyncStatusOut",
@@ -7189,7 +7278,8 @@
             "enum": [
               "synced",
               "pending_push",
-              "unreconciled"
+              "unreconciled",
+              "harvested"
             ],
             "title": "State",
             "type": "string"

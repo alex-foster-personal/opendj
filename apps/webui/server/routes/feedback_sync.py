@@ -66,7 +66,7 @@ class PinSyncOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     pin_id: str
-    state: Literal["synced", "pending_push", "unreconciled"]
+    state: Literal["synced", "pending_push", "unreconciled", "harvested"]
     archived: bool
     updated_at: str
     origin_device_id: str | None
@@ -81,7 +81,37 @@ class FeedbackStoreSyncOut(BaseModel):
     synced: int
     pending_push: int
     unreconciled: int
+    harvested: int
     attachments_missing: int
+
+
+SchedulerState = Literal["not_armed", "off", "misconfigured", "running", "stopped", "dead"]
+
+
+class CloudSyncSchedulerOut(BaseModel):
+    """The engine's CloudSync scheduler: is its thread alive, and what last failed.
+
+    ``not_armed``: this app never builds one (tests, non-daemon boots).
+    ``off``: armed, switch not on. ``misconfigured``: switched on but it could
+    not start (``reason`` says why); the engine booted regardless.
+    ``dead``: it was started and its thread is gone without ``stop()``.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    state: SchedulerState
+    alive: bool
+    reason: str | None
+    ticks: int
+    last_ok_at: str | None
+    last_error: str | None
+    last_error_at: str | None
+
+
+NOT_ARMED = CloudSyncSchedulerOut(
+    state="not_armed", alive=False, reason="this engine does not arm the CloudSync scheduler",
+    ticks=0, last_ok_at=None, last_error=None, last_error_at=None,
+)
 
 
 class CloudSyncLinkOut(BaseModel):
@@ -100,6 +130,7 @@ class FeedbackSyncStatusOut(BaseModel):
 
     store: FeedbackStoreSyncOut
     cloudsync: CloudSyncLinkOut
+    scheduler: CloudSyncSchedulerOut
     pins: list[PinSyncOut]
 
 
@@ -248,6 +279,7 @@ def _store_counts(statuses: list[PinSyncStatus]) -> FeedbackStoreSyncOut:
         synced=states["synced"],
         pending_push=states["pending_push"],
         unreconciled=states["unreconciled"],
+        harvested=states["harvested"],
         attachments_missing=sum(status.attachment_bytes == "missing" for status in statuses),
     )
 
@@ -274,7 +306,15 @@ def _only_pin(statuses: list[PinSyncStatus], pin_id: str) -> list[PinSyncStatus]
     return selected
 
 
-def feedback_sync_status(store: FeedbackStore, pin_id: str | None = None) -> FeedbackSyncStatusOut:
+def scheduler_status(app: FastAPI) -> CloudSyncSchedulerOut:
+    """The scheduler the lifespan retained on the app, or ``not_armed``."""
+    scheduler = getattr(app.state, "cloudsync_scheduler", None)
+    return NOT_ARMED if scheduler is None else scheduler.status()
+
+
+def feedback_sync_status(
+    store: FeedbackStore, scheduler: CloudSyncSchedulerOut, pin_id: str | None = None
+) -> FeedbackSyncStatusOut:
     conn = state_db.open_rw(store.state_db_path)
     try:
         statuses = pin_statuses(conn, store.feedback_root)
@@ -285,6 +325,7 @@ def feedback_sync_status(store: FeedbackStore, pin_id: str | None = None) -> Fee
     return FeedbackSyncStatusOut(
         store=_store_counts(statuses),
         cloudsync=_link_out(sync_status.read_status(store.data_dir)),
+        scheduler=scheduler,
         pins=[_pin_out(status) for status in statuses],
     )
 
@@ -303,12 +344,16 @@ def get_feedback_sync_status(
     request: Request, pin_id: str | None = Query(None)
 ) -> FeedbackSyncStatusOut:
     try:
-        return feedback_sync_status(store_for_app(request.app), pin_id)
+        return feedback_sync_status(
+            store_for_app(request.app), scheduler_status(request.app), pin_id
+        )
     except FeedbackSyncError as exc:
         raise exc.to_http() from exc
 
 
 __all__ = [
+    "NOT_ARMED",
+    "CloudSyncSchedulerOut",
     "FeedbackStore",
     "FeedbackSyncError",
     "FeedbackSyncOut",
