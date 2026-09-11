@@ -214,6 +214,72 @@ test('setLastPlaylist persists a change and skips an unchanged identity', async 
 	});
 });
 
+// -------------------------------------------------------- spotify_library pref
+
+test('a blob without spotify_library loads empty pin/recent lists', async () => {
+	_fakeWindow(JSON.stringify({ hide_broken_links: true }));
+	const prefs = await _loadPrefs();
+
+	assert.deepEqual(prefs.uiPrefs.spotify_library, { pinned_ids: [], recent_ids: [] });
+});
+
+test('a persisted spotify_library identity round-trips', async () => {
+	_fakeWindow(
+		JSON.stringify({
+			hide_broken_links: false,
+			spotify_library: { pinned_ids: ['pl-pin'], recent_ids: ['pl-recent', 'pl-older'] }
+		})
+	);
+	const prefs = await _loadPrefs();
+
+	assert.deepEqual(prefs.uiPrefs.spotify_library, {
+		pinned_ids: ['pl-pin'],
+		recent_ids: ['pl-recent', 'pl-older']
+	});
+});
+
+test('a malformed spotify_library throws rather than silently resetting', async () => {
+	const bad = ['nope', { pinned_ids: [1] }, { recent_ids: '' }];
+	for (const value of bad) {
+		_fakeWindow(JSON.stringify({ hide_broken_links: false, spotify_library: value }));
+		await assert.rejects(
+			async () => _loadPrefs(),
+			/spotify_library/,
+			`${JSON.stringify(value)} must be rejected loudly`
+		);
+		delete globalThis.window;
+	}
+});
+
+test('rememberSpotifyRecent persists prepend and skips rewrite when already first', async () => {
+	const store = _fakeWindow(JSON.stringify({ hide_broken_links: false }));
+	const prefs = await _loadPrefs();
+
+	prefs.rememberSpotifyRecent('pl-1');
+	assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).spotify_library.recent_ids, ['pl-1']);
+
+	prefs.rememberSpotifyRecent('pl-2');
+	assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).spotify_library.recent_ids, [
+		'pl-2',
+		'pl-1'
+	]);
+
+	store.set(STORAGE_KEY, 'SENTINEL-NOT-REWRITTEN');
+	prefs.rememberSpotifyRecent('pl-2');
+	assert.equal(store.get(STORAGE_KEY), 'SENTINEL-NOT-REWRITTEN');
+});
+
+test('toggleSpotifyPinned add then remove', async () => {
+	const store = _fakeWindow(JSON.stringify({ hide_broken_links: false }));
+	const prefs = await _loadPrefs();
+
+	prefs.toggleSpotifyPinned('pl-pin');
+	assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).spotify_library.pinned_ids, ['pl-pin']);
+
+	prefs.toggleSpotifyPinned('pl-pin');
+	assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).spotify_library.pinned_ids, []);
+});
+
 // ------------------------------------- playlist deck-membership tints (2ac3a0)
 
 function _pane(overrides = {}) {
@@ -289,6 +355,13 @@ test('All Tracks and blank panes never count toward playlist deck membership or 
 		_pane({ playlist_id: 'all', rows: [{ stable_id: 'a' }] }),
 		_pane({ playlist_id: null, rows: [{ stable_id: 'a' }] })
 	];
+	assert.equal(contract.derivePlaylistDeckMembership(panes, new Set(['a'])).size, 0);
+	assert.equal(contract.derivePlaylistPaneOpenCounts(panes).size, 0);
+});
+
+test('Missing Tracks never counts toward playlist deck membership or open counts', async () => {
+	const contract = await _loadContract();
+	const panes = [_pane({ playlist_id: 'missing', rows: [{ stable_id: 'a' }] })];
 	assert.equal(contract.derivePlaylistDeckMembership(panes, new Set(['a'])).size, 0);
 	assert.equal(contract.derivePlaylistPaneOpenCounts(panes).size, 0);
 });

@@ -222,6 +222,30 @@ def test_put_policy_invalid_mode_422s(client: TestClient):
     assert r.status_code == 422
 
 
+def test_put_policy_invalid_asset_kind_422s(client: TestClient):
+    """The AssetKind Literal is the HTTP-level vocabulary gate, before SQLite's CHECK."""
+    machine_id = _registered_machine_id(client)
+    r = client.put("/api/v1/cloudsync/policies", json={
+        "machine_id": machine_id, "asset_kind": "waveform_png", "mode": "pinned",
+    })
+    assert r.status_code == 422
+
+
+@pytest.mark.parametrize("asset_kind", ("lyrics_cache", "karaoke_words"))
+def test_put_policy_accepts_the_v9_asset_kinds(client: TestClient, asset_kind: str):
+    """Schema _V10 widened the sync_policies CHECK; the route must accept both new kinds."""
+    machine_id = _registered_machine_id(client)
+    put = client.put("/api/v1/cloudsync/policies", json={
+        "machine_id": machine_id, "asset_kind": asset_kind, "mode": "pinned",
+    })
+    assert put.status_code == 200, put.text
+    assert put.json()["asset_kind"] == asset_kind
+    listed = client.get(
+        "/api/v1/cloudsync/policies", params={"machine_id": machine_id}
+    ).json()
+    assert [row["asset_kind"] for row in listed] == [asset_kind]
+
+
 # ----------------------------------------------------------- playlist pins
 
 def test_put_playlist_pin_round_trips_with_name(client: TestClient):

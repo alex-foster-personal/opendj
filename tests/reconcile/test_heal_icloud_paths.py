@@ -19,7 +19,7 @@ def _track(**kwargs: object) -> rekordbox_db.RBTrack:
         artist="PALAZZO",
         album="",
         genre="",
-        folder_path="/Users/dev/Library/Mobile Documents/com~apple~CloudDocs/x/01 Hypnosis.mp3",
+        folder_path="/Users/user/Library/Mobile Documents/com~apple~CloudDocs/x/01 Hypnosis.mp3",
         file_path=None,
         is_streaming=False,
         bpm=None,
@@ -35,7 +35,7 @@ def _track(**kwargs: object) -> rekordbox_db.RBTrack:
 
 def test_classify_ready_unique_one_basename_plus_size() -> None:
     cand = locate.Candidate(
-        path=Path("/Users/dev/Music/Unravelling/01 Hypnosis.mp3"),
+        path=Path("/Users/user/Music/Unravelling/01 Hypnosis.mp3"),
         confidence=0.55,
         signals=["basename_exact", "size_match"],
     )
@@ -47,12 +47,12 @@ def test_classify_ready_unique_one_basename_plus_size() -> None:
 def test_classify_needs_confirm_when_two_unique_bar() -> None:
     cands = [
         locate.Candidate(
-            path=Path("/Users/dev/Music/a/01 Hypnosis.mp3"),
+            path=Path("/Users/user/Music/a/01 Hypnosis.mp3"),
             confidence=0.55,
             signals=["basename_exact", "size_match"],
         ),
         locate.Candidate(
-            path=Path("/Users/dev/Music/b/01 Hypnosis.mp3"),
+            path=Path("/Users/user/Music/b/01 Hypnosis.mp3"),
             confidence=0.55,
             signals=["basename_exact", "duration_match"],
         ),
@@ -64,7 +64,7 @@ def test_classify_needs_confirm_when_two_unique_bar() -> None:
 
 def test_classify_needs_confirm_basename_only() -> None:
     cand = locate.Candidate(
-        path=Path("/Users/dev/Music/01 Hypnosis.mp3"),
+        path=Path("/Users/user/Music/01 Hypnosis.mp3"),
         confidence=0.35,
         signals=["basename_exact"],
     )
@@ -135,7 +135,7 @@ def _heal_row(candidate: Path, **kwargs: object) -> heal.HealRow:
         title="Hypnosis",
         artist="PALAZZO",
         original_path=(
-            "/Users/dev/Library/Mobile Documents/com~apple~CloudDocs/x/01 Hypnosis.mp3"
+            "/Users/user/Library/Mobile Documents/com~apple~CloudDocs/x/01 Hypnosis.mp3"
         ),
         zone_reason="icloud_drive",
         status="ready_unique",

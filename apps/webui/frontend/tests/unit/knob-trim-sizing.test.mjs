@@ -79,7 +79,9 @@ test('ChannelStrip places TRIM halfway between its old size and the EQ dials', a
 	assert.equal(
 		Number(constMatch[1]),
 		EXPECTED_TRIM_SIZE,
-		'TRIM diameter must be halfway between its old 21px size and the 30px EQ dial'
+		'TRIM diameter must be halfway between its old 21px size and the 30px EQ dial - pin 246b0f5 ' +
+			'LESS mode uses a separate, smaller LESS_TRIM_SIZE (asserted below), so this MORE-mode ' +
+			'constant and value must stay exactly as MIXUX-03 shipped it'
 	);
 
 	// Each knob's own attribute span: content up to '/>' must never cross a
@@ -88,24 +90,80 @@ test('ChannelStrip places TRIM halfway between its old size and the EQ dials', a
 	// which is why this can't just be [^>]*.
 	const knobTag = (label) => new RegExp(`<Knob\\b(?:(?!/>)[\\s\\S])*?label="${label}"(?:(?!/>)[\\s\\S])*?/>`);
 
+	// Pin 246b0f5: LESS mode has to shrink TRIM/EQ to fit the shrunk deck-area
+	// row (see +page.svelte and CHANNEL_STRIP-LESS-FLOOR.test.mjs), so both
+	// now pass a `less`-derived variable instead of the bare MORE constant.
+	// The MORE-mode guarantee above (TRIM stays exactly halfway between 21
+	// and the 30px EQ dial, EQ dials stay the fixed default) is preserved
+	// BEHAVIORALLY, not textually: both derived variables fall back to the
+	// unchanged MORE constants (TRIM_SIZE, Knob's own 30px default) whenever
+	// `less` is false - asserted below by reading the `$derived(...)`
+	// definitions themselves, not just their names.
 	const trimKnobLine = src.match(knobTag('TRIM'));
 	assert.ok(trimKnobLine, 'TRIM Knob element not found');
-	assert.match(trimKnobLine[0], /size=\{TRIM_SIZE\}/, 'TRIM Knob must pass size={TRIM_SIZE}');
+	assert.match(trimKnobLine[0], /size=\{trimSize\}/, 'TRIM Knob must pass size={trimSize}');
+
+	const trimSizeDerived = src.match(/const trimSize = \$derived\(less \? LESS_TRIM_SIZE : TRIM_SIZE\);/);
+	assert.ok(
+		trimSizeDerived,
+		'trimSize must fall back to the unchanged MORE-mode TRIM_SIZE whenever less is false'
+	);
+	const lessTrimSizeMatch = src.match(/const LESS_TRIM_SIZE = (\d+(?:\.\d+)?);/);
+	assert.ok(lessTrimSizeMatch, 'expected a named LESS_TRIM_SIZE constant for pin 246b0f5 LESS mode');
+	assert.ok(
+		Number(lessTrimSizeMatch[1]) < EXPECTED_TRIM_SIZE,
+		'LESS_TRIM_SIZE must actually be smaller than MORE mode TRIM_SIZE, or LESS saves no height'
+	);
 
 	for (const label of ['HI', 'MID', 'LOW']) {
 		const knobLine = src.match(knobTag(label));
 		assert.ok(knobLine, `${label} Knob element not found`);
-		assert.doesNotMatch(
+		assert.match(
 			knobLine[0],
-			/size=\{/,
-			`${label} must stay at the Knob default size - it is the fixed reference EQ dial`
+			/size=\{eqSize\}/,
+			`${label} must pass size={eqSize} (pin 246b0f5) so LESS mode can shrink it`
 		);
 	}
+	// Was `$derived(less ? LESS_EQ_SIZE : undefined)` (falling through to
+	// Knob's own `size = 30` default) until Sol's CI type-check finding: with
+	// `exactOptionalPropertyTypes: true`, an explicit `size={undefined}` is
+	// not assignable to Knob's `size?: number` Props (undefined-the-value is
+	// distinct from the prop being absent) - see ChannelStrip.svelte's
+	// EQ_SIZE comment. EQ_SIZE is spelled out as the same 30px Knob already
+	// defaulted to, so this is a type-correctness fix, not a behavior change
+	// - asserted below by requiring EQ_SIZE to actually equal 30.
+	const eqSizeDerived = src.match(/const eqSize = \$derived\(less \? LESS_EQ_SIZE : EQ_SIZE\);/);
+	assert.ok(
+		eqSizeDerived,
+		'eqSize must fall back to EQ_SIZE whenever less is false, so HI/MID/LOW render at the ' +
+			"unchanged Knob default (30px) - the fixed reference EQ dial MIXUX-03's MORE-mode behavior depends on"
+	);
+	const eqSizeConstMatch = src.match(/const EQ_SIZE = (\d+(?:\.\d+)?);/);
+	assert.ok(eqSizeConstMatch, 'expected a named EQ_SIZE constant spelling out Knob\'s own default');
+	assert.equal(
+		Number(eqSizeConstMatch[1]),
+		30,
+		'EQ_SIZE must equal Knob.svelte\'s own default size (30), or MORE mode\'s EQ dials silently resize'
+	);
+	const lessEqSizeMatch = src.match(/const LESS_EQ_SIZE = (\d+(?:\.\d+)?);/);
+	assert.ok(lessEqSizeMatch, 'expected a named LESS_EQ_SIZE constant for pin 246b0f5 LESS mode');
+	assert.ok(
+		Number(lessEqSizeMatch[1]) < 30,
+		'LESS_EQ_SIZE must actually be smaller than the 30px EQ default, or LESS saves no height'
+	);
 });
 
-// Pin 8cabf5b1df1e:
-// [if] the strip renders its main-owned inert FILTER slot [then] it is 10% smaller than its 39px predecessor without claiming #492's Color-FX ownership [else ⛔️]
-test('ChannelStrip reduces only the current-main inert FILTER slot and leaves Color-FX ownership explicit', async () => {
+// Pin 8cabf5b1df1e, updated on the #1021 merge:
+// [if] the strip renders its FILTER slot [then] it is 10% smaller than its 39px predecessor AND it is the live dial issue #990 wired, not the inert stub [else ⛔️]
+//
+// main's version of this test asserted `inert` with the message "this branch
+// must not claim live FILTER DSP from PR #1021/#492". #1021 IS that live DSP,
+// so merging it is the event that guard was holding the slot for: the size
+// assertion (the part that is really about layout) is unchanged, and the
+// ownership assertion flips from "still a stub" to "wired, and wired to this
+// strip's own props" so it can still fail if the dial is ever cut back to a
+// decoration.
+test('ChannelStrip keeps the reduced FILTER slot size and renders it as a live dial', async () => {
 	const src = await readFile('src/lib/components/rb/mixer/ChannelStrip.svelte', 'utf8');
 	const constMatch = src.match(/const FILTER_SLOT_SIZE = (\d+(?:\.\d+)?);/);
 	assert.ok(constMatch, 'FILTER slot needs a named size rather than a magic number');
@@ -113,12 +171,26 @@ test('ChannelStrip reduces only the current-main inert FILTER slot and leaves Co
 
 	const knobTag = (label) => new RegExp(`<Knob\\b(?:(?!/>)[\\s\\S])*?label="${label}"(?:(?!/>)[\\s\\S])*?/>`);
 	const filterKnob = src.match(knobTag('FILTER'));
-	assert.ok(filterKnob, 'current-main FILTER Knob element not found');
-	assert.match(filterKnob[0], /size=\{FILTER_SLOT_SIZE\}/);
-	assert.match(filterKnob[0], /inert/, 'this branch must not claim live FILTER DSP from PR #1021/#492');
+	assert.ok(filterKnob, 'FILTER Knob element not found');
+	// Pin 2917b0eca218: FILTER is no longer unmounted in LESS, it is shrunk
+	// like TRIM and the EQs, so the Knob takes the derived `filterSize` and
+	// the MORE-mode constant is asserted through that derivation instead of
+	// on the tag. Both halves are checked, so a `filterSize` that stopped
+	// depending on FILTER_SLOT_SIZE would still be caught.
+	assert.match(filterKnob[0], /size=\{filterSize\}/);
 	assert.match(
 		src,
-		/Current main owns this inert FILTER slot's presentation only; PR #492 owns the live COLOR-FX replacement/,
-		'future slot ownership must stay explicit so the #492 merge can carry the size safely'
+		/const filterSize = \$derived\(less \? LESS_FILTER_SIZE : FILTER_SLOT_SIZE\);/,
+		'filterSize must resolve to FILTER_SLOT_SIZE in MORE and the shrunk size in LESS'
 	);
+	const lessFilterMatch = src.match(/const LESS_FILTER_SIZE = (\d+(?:\.\d+)?);/);
+	assert.ok(lessFilterMatch, 'LESS needs its own named FILTER size');
+	assert.ok(
+		Number(lessFilterMatch[1]) < EXPECTED_FILTER_SIZE,
+		`the LESS FILTER dial (${lessFilterMatch[1]}px) must be smaller than MORE's ` +
+			`${EXPECTED_FILTER_SIZE}px, or LESS is not compacting anything`
+	);
+	assert.match(filterKnob[0], /value=\{filter\}/, 'FILTER must read the strip\'s filter prop, not a frozen 0.5');
+	assert.match(filterKnob[0], /onchange=\{onfilter\}/, 'FILTER must emit changes, not sit inert');
+	assert.doesNotMatch(filterKnob[0], /\binert\b/, 'the inert stub is superseded by issue #990\'s live dial');
 });

@@ -51,6 +51,29 @@ def test_client_error_writes_full_details_to_separate_log(tmp_path: Path) -> Non
     assert record["received_at"].endswith("Z")
 
 
+def test_client_error_accepts_browser_capture_kinds(tmp_path: Path) -> None:
+    app = create_app(
+        backend=InMemoryBackend(),
+        mount_frontend=False,
+        enable_cors=False,
+        client_error_log_dir=tmp_path,
+    )
+    for kind in (
+        "console-error",
+        "console-warn",
+        "resource-error",
+        "csp-violation",
+        "webview-console",
+        "webview-navigation",
+    ):
+        payload = _payload()
+        payload["kind"] = kind
+        payload["client_event_id"] = f"{kind}-probe"
+        with TestClient(app) as client:
+            response = client.post("/api/v1/client-errors", json=payload)
+        assert response.status_code == 202, kind
+
+
 def test_client_error_rejects_unbounded_stack(tmp_path: Path) -> None:
     app = create_app(
         backend=InMemoryBackend(),

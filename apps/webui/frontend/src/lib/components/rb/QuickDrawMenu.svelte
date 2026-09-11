@@ -19,14 +19,19 @@
 	} from '$lib/rb/api-rb';
 	import { getTrack } from '$lib/api';
 	import { pushToast } from '$lib/stores.svelte';
+	import { vocalFixMenuItem } from './vocal-correction-menu';
 
 	type CtxItem = {
 		id: string;
 		label: string;
-		run: () => Promise<void>;
+		/** pressT0Ms is the triggering click's own event.timeStamp, Q1's
+		 * operator-felt press stamp - undefined for actions outside the P0
+		 * press paths (load, stems), which ignore it. */
+		run: (pressT0Ms?: number) => Promise<void>;
 		/** Inert rungs render dimmed and explain themselves on hover. */
 		disabled?: boolean;
 		title?: string;
+		testId?: string;
 	};
 	type Root = 'unload' | 'loop' | 'play';
 	type LoopLeaf = 'loop.start_8' | 'loop.exit';
@@ -130,7 +135,8 @@
 
 	function _contextItems(
 		target: EventTarget | null,
-		knownStableId: string | null = null
+		knownStableId: string | null = null,
+		event: MouseEvent | null = null
 	): CtxItem[] {
 		const stableId = knownStableId ?? _stableIdFromTarget(target);
 		if (stableId !== null) {
@@ -159,15 +165,19 @@
 			{
 				id: `unload-${deck}`,
 				label: `Unload CH${deck}`,
-				run: () => _runAction('unload', deck)
+				run: (pressT0Ms) => _runAction('unload', deck, pressT0Ms)
 			}
 		];
 		if (getDeckState(deck).loop !== null) {
 			items.push({
 				id: `exit-loop-${deck}`,
 				label: `Exit Loop CH${deck}`,
-				run: () => _runAction('loop.exit', deck)
+				run: (pressT0Ms) => _runAction('loop.exit', deck, pressT0Ms)
 			});
+		}
+		if (event !== null) {
+			const vocal = vocalFixMenuItem(event, target);
+			if (vocal !== null) items.unshift(vocal);
 		}
 		return items;
 	}
@@ -180,7 +190,7 @@
 		// Room for Unload/Play/Loop + mid tier + CH column.
 		x = Math.min(Math.max(e.clientX, 320), window.innerWidth - 160);
 		y = Math.min(Math.max(e.clientY, 8), window.innerHeight - 200);
-		ctx = _contextItems(t);
+		ctx = _contextItems(t, null, e);
 		root = 'unload';
 		loopLeaf = null;
 		setMenuHighlightStableId(_stableIdFromTarget(t));
@@ -202,7 +212,7 @@
 	function onMenuPointerLeave(e: PointerEvent): void {
 		if (!open || !leaveArmed) return;
 		const next = e.relatedTarget;
-		if (menuEl !== undefined && next instanceof Node && menuEl.contains(next)) return;
+		if (next instanceof Node && menuEl?.contains(next)) return;
 		_close();
 	}
 
@@ -210,15 +220,15 @@
 		if (e.key === 'Escape' && open) _close();
 	}
 
-	async function _runAction(id: QuickDrawActionId, deck: DeckId): Promise<void> {
+	async function _runAction(id: QuickDrawActionId, deck: DeckId, pressT0Ms?: number): Promise<void> {
 		_close();
-		await runPerformanceCommandFromUi(quickDrawCommand(id, deck));
+		await runPerformanceCommandFromUi(quickDrawCommand(id, deck), pressT0Ms);
 	}
 
-	async function _togglePlay(deck: DeckId): Promise<void> {
+	async function _togglePlay(deck: DeckId, pressT0Ms?: number): Promise<void> {
 		_close();
 		const playing = getDeckState(deck).playing;
-		await runPerformanceCommandFromUi({ type: 'play', deck, playing: !playing });
+		await runPerformanceCommandFromUi({ type: 'play', deck, playing: !playing }, pressT0Ms);
 	}
 
 	function _setRoot(next: Root): void {
@@ -229,7 +239,7 @@
 	onMount(() => {
 		const onPointerDown = (e: PointerEvent): void => {
 			if (!open) return;
-			if (menuEl !== undefined && e.target instanceof Node && menuEl.contains(e.target)) return;
+			if (e.target instanceof Node && menuEl?.contains(e.target)) return;
 			_close();
 		};
 		window.addEventListener('pointerdown', onPointerDown, true);
@@ -242,6 +252,7 @@
 {#if open}
 	<div
 		class="qd"
+		data-testid="quick-draw-menu"
 		style:left="{x}px"
 		style:top="{y}px"
 		bind:this={menuEl}
@@ -260,7 +271,7 @@
 								type="button"
 								class="qd-item qd-tall"
 								role="menuitem"
-								onclick={() => void _runAction('unload', deck)}
+								onclick={(e) => void _runAction('unload', deck, e.timeStamp)}
 							>
 								CH{deck}
 							</button>
@@ -273,7 +284,7 @@
 								type="button"
 								class="qd-item qd-tall"
 								role="menuitem"
-								onclick={() => void _togglePlay(deck)}
+								onclick={(e) => void _togglePlay(deck, e.timeStamp)}
 							>
 								{getDeckState(deck).playing ? 'Pause' : 'Play'} CH{deck}
 							</button>
@@ -288,7 +299,7 @@
 									type="button"
 									class="qd-item qd-tall"
 									role="menuitem"
-									onclick={() => void _runAction(leaf, deck)}
+									onclick={(e) => void _runAction(leaf, deck, e.timeStamp)}
 								>
 									CH{deck}
 								</button>
@@ -360,12 +371,13 @@
 						class="qd-item"
 						class:qd-inert={item.disabled === true}
 						role="menuitem"
+						data-testid={item.testId}
 						disabled={item.disabled === true}
 						title={item.title ?? null}
-						onclick={() => {
+						onclick={(e) => {
 							if (item.disabled === true) return;
 							_close();
-							void item.run();
+							void item.run(e.timeStamp);
 						}}
 					>
 						{item.label}

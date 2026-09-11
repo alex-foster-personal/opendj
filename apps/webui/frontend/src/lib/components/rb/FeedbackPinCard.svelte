@@ -2,6 +2,7 @@
 	import { pinBodyPos, pinBodyStyle, pinIsDone, pinStatus } from '$lib/rb/feedback';
 	import { pinVisualState } from '$lib/rb/feedback-pin-partial';
 	import { linkifyAgentNote } from '$lib/rb/feedback';
+	import { API_BASE } from '$lib/api';
 	import type { FeedbackPin } from '$lib/rb/feedback-store.svelte';
 
 	let {
@@ -80,6 +81,14 @@
 		{pinStatus(pin)}{pinVisualState(pin) === 'partial' ? ' (partial)' : ''} - {pin.created_at}
 	</p>
 	<p class="fb-body-text">{pin.text}</p>
+	{#if pin.attachment}
+		<img
+			class="fb-attachment-img"
+			src={`${API_BASE}${pin.attachment.url}`}
+			alt="Pasted screenshot"
+			title={`${pin.attachment.content_type}, ${(pin.attachment.size_bytes / 1024).toFixed(0)} KB`}
+		/>
+	{/if}
 	{#if pin.agent_note}
 		<p class="fb-note" title="What an agent did about this pin">
 			{#each linkifyAgentNote(pin.agent_note) as segment, i (i)}
@@ -145,6 +154,13 @@
 	}
 	.fb-body-text {
 		margin: 2px 0 0;
+	}
+	.fb-attachment-img {
+		display: block;
+		margin-top: 4px;
+		max-width: 100%;
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
 	}
 	.fb-note {
 		margin: 4px 0 0;

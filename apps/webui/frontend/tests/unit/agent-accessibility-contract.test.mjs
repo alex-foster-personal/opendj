@@ -61,3 +61,46 @@ test('MCP AX serialization includes pressed and numeric values', () => {
 	assert.ok(mcp.includes("el.getAttribute('aria-pressed')"), 'if stateOf omits aria-pressed then toggle state is invisible to MCP clients');
 	assert.ok(mcp.includes("el.getAttribute('aria-valuenow')"), 'if stateOf omits aria-valuenow then slider values are invisible to MCP clients');
 });
+
+// AGENT-09 (issue #1035): the two a11y wins from closed PR #372 that never
+// landed on trunk. Source-scan, matching this file's existing convention --
+// no jsdom/testing-library exists in this frontend package, so structural
+// position (not a rendered DOM) is what pins the regression.
+test('headphone "+ OUT" button is queryable by its accessible name', () => {
+	const headphones = source('src/lib/components/rb/mixer/HeadphoneCluster.svelte');
+	assert.ok(
+		headphones.includes('aria-label="ADD OUTPUT"'),
+		'if the +OUT button loses its aria-label then it has no accessible name distinct from its "+ OUT" glyph text'
+	);
+});
+
+test('deck unload control stays reachable when artwork is missing or fails to load', () => {
+	const deckHeader = source('src/lib/components/rb/deck/DeckHeader.svelte');
+
+	const trackGateIdx = deckHeader.indexOf('{#if deck.stable_id !== null}');
+	const artBtnIdx = deckHeader.indexOf('class="art-btn"');
+	const artworkGateIdx = deckHeader.indexOf('{#if artSrc !== null && !artworkFailed}');
+	const unloadClickIdx = deckHeader.indexOf('onclick={() => void onUnload()}');
+	const imgSrcIdx = deckHeader.indexOf('src={artSrc}');
+
+	assert.ok(
+		trackGateIdx !== -1 && artBtnIdx !== -1 && artworkGateIdx !== -1,
+		'if any of these markers disappear then the structure this test pins no longer exists'
+	);
+	assert.ok(
+		trackGateIdx < artBtnIdx,
+		'if the unload button is gated on artwork state again then a loaded deck with failed art has no unload control at all'
+	);
+	assert.ok(
+		artBtnIdx < artworkGateIdx,
+		'if artSrc/artworkFailed gate the whole button instead of just the img inside it then unload is unreachable whenever art fails'
+	);
+	assert.ok(
+		unloadClickIdx > artBtnIdx && unloadClickIdx < artworkGateIdx,
+		'if onUnload stops firing outside the artwork-present branch then a failed-art deck cannot be unloaded'
+	);
+	assert.ok(
+		imgSrcIdx > artworkGateIdx,
+		'if the real artwork <img> is removed then a present-artwork deck no longer renders its art unchanged'
+	);
+});

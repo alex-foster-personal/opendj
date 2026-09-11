@@ -44,7 +44,7 @@ def test_list_tracks_exposes_only_readable_mik_energy_with_provenance(client, se
             title="MIK",
             created_at=stamp,
             updated_at=stamp,
-            provenance={"energy": Provenance(7, "mik", 1.0, stamp)},
+            provenance={"energy": Provenance(7, "mik", 1.0, stamp, "ok")},
         )
     )
     seed_backend.seed_track(
@@ -53,7 +53,7 @@ def test_list_tracks_exposes_only_readable_mik_energy_with_provenance(client, se
             title="Computed",
             created_at=stamp,
             updated_at=stamp,
-            provenance={"energy": Provenance(8, "inferred", 1.0, stamp)},
+            provenance={"energy": Provenance(8, "inferred", 1.0, stamp, "ok")},
         )
     )
     seed_backend.seed_track(
@@ -62,7 +62,7 @@ def test_list_tracks_exposes_only_readable_mik_energy_with_provenance(client, se
             title="Ten",
             created_at=stamp,
             updated_at=stamp,
-            provenance={"energy": Provenance(10, "mik", 1.0, stamp)},
+            provenance={"energy": Provenance(10, "mik", 1.0, stamp, "ok")},
         )
     )
 

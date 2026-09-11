@@ -30,7 +30,7 @@
 import type { PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
-import type { RbMeta, TrackQuality } from '$lib/rb/library-types';
+import type { RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
 import type { SortDir, SortKey } from './browser-sort-ipc';
 export { installBrowserSortIpc } from './browser-sort-ipc';
 export type { SortDir, SortKey } from './browser-sort-ipc';
@@ -41,7 +41,7 @@ export type { SortDir, SortKey } from './browser-sort-ipc';
  * (shared contract points 1 + 4). Owned by the browser unit; lives here
  * (not types.ts, which is a frozen contract between the original build
  * units). */
-export interface BrowserRow {
+export interface BrowserRow extends Pick<TrackRow, 'key_status' | 'key_reason' | 'loudness_status' | 'loudness_reason'> {
 	stable_id: string;
 	/** 1-based membership position within the pane playlist (# column). */
 	order: number;
@@ -430,6 +430,42 @@ export function resolveBootPlaylist(args: {
 	if (args.known_playlist_ids.includes(remembered.playlist_id)) return remembered;
 	return ALL_TRACKS_CHOICE;
 }
+
+/**
+ * Whether a background library refresh should retry the boot pane restore.
+ *
+ * `_refreshLibraryRowsOnce`'s per-pane loop skips any pane whose
+ * `playlist_id` is still null ("a blank pane has nothing to refresh"), so a
+ * boot pane `_restoreBootPane()` left unclaimed - because the coalesced
+ * health read it saw was a stale, falsely-empty snapshot (see
+ * request-coalescer.ts's `forceInFlight: false` on the bus's first-ever
+ * open) - is never retried by anything else. This is that retry decision,
+ * kept pure and separate from `_refreshLibraryRowsOnce` so it is
+ * unit-testable through a real module load rather than a text-sliced copy of
+ * the Svelte component (PR #1656 review round 7).
+ *
+ * Retry whenever the boot pane is still unclaimed, UNLESS a pending Spotify
+ * deep link owns that blank state on purpose: `_init()` never calls
+ * `_restoreBootPane()` at all when `source === 'spotify'` with a selected
+ * id, so a still-null playlist_id there means the selection was not found
+ * (`spotifyPendingError`) - a deliberate error state a background refresh
+ * must not clobber with an arbitrary local playlist.
+ */
+export function shouldRetryBootPane(args: {
+	boot_pane_playlist_id: string | null;
+	source: 'collection' | 'spotify';
+	spotify_selected_id: string | null;
+}): boolean {
+	if (args.boot_pane_playlist_id !== null) return false;
+	return !(args.source === 'spotify' && args.spotify_selected_id !== null);
+}
+
+// ------------------------------------------------ boot health-read retries
+
+// Moved to `$lib/rb/health-boot-retry` (adding these two functions here
+// pushed this file past the 600-line file-size gate); re-exported so
+// BrowserPanel.svelte's import of this barrel file is unaffected.
+export { getHealthAtBoot, getHealthFreshWithRetry, reconcileBootSnapshot } from '$lib/rb/health-boot-retry';
 
 // -------------------------------------------- client search + sort pipeline
 

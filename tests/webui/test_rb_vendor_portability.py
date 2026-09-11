@@ -78,11 +78,11 @@ def _foreign_prefix() -> str:
     non-win32 (macOS AND Linux) treats a drive-letter/UNC path as foreign, and
     only win32 treats a POSIX-rooted path as foreign. Branching on IS_DARWIN
     instead read "not macOS" as "Windows", so on the Linux CI runner this handed
-    back ``/Users/dev/Music`` -- an ordinary native POSIX path there, not a
+    back ``/Users/user/Music`` -- an ordinary native POSIX path there, not a
     foreign one -- and both callers silently exercised the local-file-missing
     branch instead of the unmapped branch they assert on.
     """
-    prefix = "/Users/dev/Music" if pp.IS_WINDOWS else "D:/music-library"
+    prefix = "/Users/user/Music" if pp.IS_WINDOWS else "D:/music-library"
     # Fail loudly rather than let a future platform silently re-run these tests
     # against the wrong branch, which is precisely how the IS_DARWIN bug hid.
     assert pp._is_foreign_absolute(f"{prefix}/x.mp3"), (

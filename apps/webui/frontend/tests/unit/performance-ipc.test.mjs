@@ -57,9 +57,14 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_outputs_refresh' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_output_acquire' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_output_select', device_id: 'usb' }), ['headphone']);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'analysis_source', feature: 'beatgrid', source: 'own' }),
+		[1, 2, 3, 4, 'sync']
+	);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'key_nudge', deck: 4, semitones: -1 }), [4, 'sync']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'slip', deck: 4, enabled: true }), [4]);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'trim', deck: 2, value: 0.7 }), null);
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'filter', deck: 2, value: 0.7 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'crossfader', value: 0.3 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'pairing_snapshot_open' }), null);
 	assert.equal(
@@ -464,6 +469,24 @@ test('performanceDecksAwaitingPresentation names exactly the decks whose desired
 		[2, 4],
 		'only the decks whose acknowledged schedule revision has not crossed the presentation clock may be reported'
 	);
+});
+
+test('analysis-source commands are validated through the typed all-deck scheduler', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'analysis_source', feature: 'vocals', source: 'own' }),
+			/feature must be beatgrid/i
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'analysis_source', feature: 'beatgrid', source: 'invalid' }),
+			/source must be rekordbox or own/i
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
 });
 
 test('key controls validate through IPC and round-trip serializable shift state', async () => {
@@ -897,6 +920,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 	try {
 		await ipc.dispatchPerformanceCommand({ type: 'trim', deck: 2, value: 0.7 });
 		await ipc.dispatchPerformanceCommand({ type: 'eq', deck: 2, band: 'mid', value: 0.25 });
+		await ipc.dispatchPerformanceCommand({ type: 'filter', deck: 2, value: 0.9 });
 		await ipc.dispatchPerformanceCommand({ type: 'fader', deck: 2, value: 0.8 });
 		await ipc.dispatchPerformanceCommand({ type: 'assign', deck: 2, assign: 'THRU' });
 		await ipc.dispatchPerformanceCommand({ type: 'channel_cue', deck: 2, enabled: true });
@@ -927,6 +951,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				eq_high: 0.5,
 				eq_mid: 0.5,
 				eq_low: 0.5,
+				filter: 0.5,
 				fader: 1,
 				assign: 'A',
 				cue_enabled: false
@@ -937,6 +962,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				eq_high: 0.5,
 				eq_mid: 0.25,
 				eq_low: 0.5,
+				filter: 0.9,
 				fader: 0.8,
 				assign: 'THRU',
 				cue_enabled: true
@@ -947,6 +973,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				eq_high: 0.5,
 				eq_mid: 0.5,
 				eq_low: 0.5,
+				filter: 0.5,
 				fader: 1,
 				assign: 'A',
 				cue_enabled: false
@@ -957,6 +984,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				eq_high: 0.5,
 				eq_mid: 0.5,
 				eq_low: 0.5,
+				filter: 0.5,
 				fader: 1,
 				assign: 'B',
 				cue_enabled: false
@@ -966,6 +994,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 
 		await ipc.dispatchPerformanceCommand({ type: 'trim', deck: 2, value: 0.5 });
 		await ipc.dispatchPerformanceCommand({ type: 'eq', deck: 2, band: 'mid', value: 0.5 });
+		await ipc.dispatchPerformanceCommand({ type: 'filter', deck: 2, value: 0.5 });
 		await ipc.dispatchPerformanceCommand({ type: 'fader', deck: 2, value: 1 });
 		await ipc.dispatchPerformanceCommand({ type: 'assign', deck: 2, assign: 'B' });
 		await ipc.dispatchPerformanceCommand({ type: 'channel_cue', deck: 2, enabled: false });
@@ -1180,4 +1209,42 @@ test('pins_show_other_users is a registered performance command that refuses not
 		uninstall();
 		delete globalThis.window;
 	}
+});
+
+// PARITY-02, discussion_r3968214027 P1 BLOCKING: the SOURCE toggle is a real UI
+// control whose whole point is A/B testing rbx-vs-own, and every UI action needs
+// an agent-native counterpart. The WRITE half existed (the `analysis_source`
+// command), but an agent reading queryPerformanceState() saw no field for it, so
+// it could switch the source and never confirm which one was in effect - and
+// could not attribute a beatgrid/BPM readback to a lane at all.
+test('queryPerformanceState publishes transition from readTransition and defaults to idle', () => {
+	const source = readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
+	assert.match(source, /transition:\s*readTransition\(\)/);
+	assert.equal(ipc.queryPerformanceState().transition.state, 'idle');
+	assert.doesNotThrow(() => structuredClone(ipc.queryPerformanceState().transition));
+});
+
+test('queryPerformanceState reports the analysis source selection, as a snapshot not the live rune', () => {
+	pairing.analysisSourceState.features = { beatgrid: 'own' };
+
+	const state = pairing.queryPerformanceState();
+
+	assert.deepEqual(state.analysis_source, { beatgrid: 'own' });
+	// Real Svelte 5 wraps a $state object in a Proxy and structuredClone throws
+	// DataCloneError on one (see performance-ipc-pairing-clone.test.mjs), so the
+	// field has to be a rebuilt plain object. Identity is the check that bites
+	// under the test loader, where $state is an identity function.
+	assert.notEqual(
+		state.analysis_source,
+		pairing.analysisSourceState.features,
+		'handing back the live rune sends a Proxy across the IPC boundary'
+	);
+	assert.doesNotThrow(() => structuredClone(state.analysis_source));
+
+	state.analysis_source.beatgrid = 'rekordbox';
+	assert.equal(
+		pairing.analysisSourceState.features.beatgrid,
+		'own',
+		'an IPC consumer mutating its own snapshot must not write back into the toggle'
+	);
 });

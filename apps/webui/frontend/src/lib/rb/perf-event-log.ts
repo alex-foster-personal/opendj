@@ -24,6 +24,11 @@
  *    localStorage is coalesced onto a timer and forced on pagehide.
  */
 
+import { withinBudgets, type PerfEvent } from './perf-event-buckets';
+
+export { audioHealthFaultSeverity } from './perf-event-buckets';
+export type { PerfEvent } from './perf-event-buckets';
+
 /**
  * The perf kinds whose ERROR-severity rows leave this browser.
  *
@@ -33,16 +38,37 @@
  * would put roughly one POST per pointer sample on the wire, during a set, on
  * the same main thread as the audio the escalation exists to protect.
  *
- * These four are the audio-liveness kinds: each one means "the operator may be
+ * These are the audio-liveness kinds: each one means "the operator may be
  * hearing nothing, or seeing nothing move", and each is worth a round trip.
+ * `audio-output-rebind-failed` (Wed 9 Sep 2026) is a failed re-bind that was
+ * wired at `info` severity and stayed inside the browser.
+ * `audio-output-dead`/`audio-output-dead-persistent` (#1641,
+ * `outputLatency === 0`) and `output-device-unreachable` (#1642,
+ * `output-device-watchdog.ts`'s `getOutputTimestamp()` stall), both Thu 10
+ * Sep 2026, are device-level "no sound is leaving this machine" verdicts.
+ * `escalated-kinds-superset.test.mjs` reds on any `error`-severity kind
+ * absent from this set, so drift is CHECKED, not just corrected.
  */
-const ESCALATED_KINDS: ReadonlySet<string> = new Set([
-	'xrun',
-	'audio-context',
-	'silent-while-playing',
-	'presentation-clock-stalled',
-	'presentation-stalled'
-]);
+// ESCALATED_KINDS was here until Thu 10 Sep 2026, an eight-name allowlist that
+// _escalate consulted AFTER recordPerfEvent had already gated on
+// `severity === 'error'`. It could therefore only ever SUBTRACT: its whole
+// effect was to drop error-severity rows before they left the browser.
+//
+// It was removed rather than extended. An allowlist of values must be
+// maintained forever and rots silently between maintenances, and this one had
+// already rotted in both directions: `presentation-tick-failed` was recorded
+// at `error` by presentation-clock-report.ts, with a message saying the
+// waveform would have frozen over live audio, and was silently discarded here;
+// while `presentation-stalled` sat in the set and is emitted by nothing.
+//
+// The comment that used to live here claimed escalated-kinds-superset.test.mjs
+// "reds if any module records a kind at error severity that is absent from
+// this set". That test read exactly two files. A guard whose docstring says
+// "any module" and whose code says "these two" cannot fail for the case it
+// claims to cover, which is why a live escapee went unnoticed.
+//
+// The invariant now stands on its own: recorded at `error` means escalated.
+// There is no list to drift.
 
 /**
  * At most one escalation per kind per window.
@@ -63,18 +89,15 @@ const _lastEscalationAtMs = new Map<string, number>();
  * Where an escalated row goes, injected at client boot.
  *
  * THIS MODULE HAS NO IMPORTS, AND THAT IS A HARD PROPERTY, not a style
- * preference. It began as a pure module and a static import of
- * `reportClientError` was added here on Wed 2 Sep 2026 (the import statement is
- * deliberately not written out anywhere in this file: the quality gate's
- * dependency graph is built by scanning module TEXT, so a realistic import line
- * inside a comment is read as a real edge and reports a false cycle - which it
- * duly did). That import reaches `$lib/api/client.ts`, which evaluates
- * `import.meta.env.VITE_API_BASE` at module scope - and Playwright loads spec
- * files under plain Node, where `import.meta.env` is undefined. Every
+ * preference (the import statement that would prove it is deliberately not
+ * written out here: the quality gate's dependency graph scans module TEXT, so
+ * even a realistic import line inside a comment reads as a real edge). A
+ * static import of `reportClientError` was tried Wed 2 Sep 2026; it reaches
+ * `$lib/api/client.ts`, which evaluates `import.meta.env.VITE_API_BASE` at
+ * module scope, undefined under Playwright's plain-Node spec loader - every
  * Playwright config whose specs reach this module transitively died at CONFIG
- * LOAD with `TypeError: Cannot read properties of undefined` followed by
- * `Error: No tests found`, i.e. the gate reported zero tests rather than a
- * failure. A sink injected at boot keeps the escalation and keeps the purity.
+ * LOAD, reporting zero tests rather than a failure. A sink injected at boot
+ * keeps the escalation and keeps the purity.
  *
  * `null` is a legitimate state, not an error: unit tests, Playwright's Node
  * loader and any pre-boot code all run without a sink, and a row must never
@@ -82,6 +105,8 @@ const _lastEscalationAtMs = new Map<string, number>();
  */
 let _escalator: ((event: PerfEvent) => void) | null = null;
 let _warnedNoEscalator = false;
+/** One warning per session when the escalator itself throws. */
+let _warnedEscalatorThrew = false;
 
 /**
  * Point escalated rows at a sink. Called once, at client boot.
@@ -95,96 +120,34 @@ export function setPerfEventEscalator(sink: ((event: PerfEvent) => void) | null)
 	_escalator = sink;
 }
 
-export interface PerfEvent {
-	t: string;
-	kind: string;
-	deck: 1 | 2 | 3 | 4 | null;
-	message: string;
-	/** Present for timing rows (ms per stage). */
-	stages?: Record<string, number>;
-	/**
-	 * Non-numeric facts about the row, e.g. which stem layout a deck load
-	 * actually played. Optional and additive: rows written before this field
-	 * existed stay valid, and readers must treat it as possibly absent.
-	 *
-	 * Kept SEPARATE from `stages` rather than stringly-typed into it, because
-	 * `stages` is a ms-per-stage map and anything summing or charting it must
-	 * never trip over a value that is not a duration.
-	 */
-	labels?: Record<string, string>;
-	/**
-	 * Correlation id for rows that something on screen also shows.
-	 *
-	 * A toast prints this id and copies it to the clipboard, so the id here and
-	 * the id the user pasted into an issue are the same string by construction.
-	 * Without it, two identical `toast-error` rows ten minutes apart are
-	 * indistinguishable and the copied id refers to nothing.
-	 *
-	 * Optional and additive: rows written before this field existed stay valid,
-	 * and rows nothing displays (deck-load timings) have no id to carry.
-	 */
-	id?: string;
-}
-
 const STORAGE_KEY = 'mdt.perfEventLog';
+const DECK_STATE_STORAGE_KEY = 'mdt.deckState';
 
 /**
- * Per-kind budgets. The ring is still bounded at the sum of these, so the
- * flushed JSON cannot grow; what changed is WHO pays for a burst.
+ * The durable "all four decks were created empty" stamp, written once per page
+ * load.
  *
- * deck-load covers `deck-load sid=...` and `deck-load-fail`, i.e. the load KPI
- * __mdtLastLoads() reads. 16 rows is four full 4-deck loads.
- * transport-schedule is the latency instrument, and the noisy one: 16 rows is
- * the tail of one gesture, which is all a scheduled_offset_ms comparison needs.
- * Everything else (audio-context device floors, sync-failure, beat-sync-skip,
- * processor-latency-read-failed) is low volume and shares the remainder.
+ * The initial deck state is a CONSTANT, so recording it as four ring rows on
+ * every load spent shared-budget rows restating a fact and evicted real
+ * diagnostics. It lives here instead, as a single non-ring record the resource
+ * probe reads to tell "decks are unloaded" from "the ring has no deck-state
+ * evidence". `t` doubles as the reset gate: ring rows OLDER than it describe an
+ * earlier page session whose deck states this page-load reset discarded.
  */
-const DECK_LOAD_BUDGET = 16;
-const TRANSPORT_SCHEDULE_BUDGET = 16;
-const OTHER_BUDGET = 8;
+export interface DeckStateBaseline {
+	/** Shape version. */
+	v: 1;
+	/** ISO instant the four decks were created empty. */
+	t: string;
+	/** The decks that were empty at `t`. */
+	unloaded: [1, 2, 3, 4];
+}
 
 /** Trailing coalesce window for the localStorage write. */
 const FLUSH_DEBOUNCE_MS = 250;
 
-type PerfBucket = 'deck-load' | 'transport-schedule' | 'other';
 
-const BUDGETS: Record<PerfBucket, number> = {
-	'deck-load': DECK_LOAD_BUDGET,
-	'transport-schedule': TRANSPORT_SCHEDULE_BUDGET,
-	other: OTHER_BUDGET
-};
-
-/** Prefix match, because kinds carry a suffix (`deck-load sid=<id>`). */
-function _bucketOf(kind: string): PerfBucket {
-	if (kind.startsWith('deck-load')) return 'deck-load';
-	if (kind.startsWith('transport-schedule')) return 'transport-schedule';
-	return 'other';
-}
-
-/**
- * The newest rows each bucket is allowed to keep, still in chronological order.
- *
- * Walking from the newest backwards is what makes eviction oldest-first WITHIN a
- * bucket while leaving the other buckets untouched. The reverse at the end
- * restores the newest-last order that __mdtPerfLog() consumers rely on.
- */
-function _withinBudgets(events: readonly PerfEvent[]): PerfEvent[] {
-	const kept: PerfEvent[] = [];
-	const taken: Record<PerfBucket, number> = {
-		'deck-load': 0,
-		'transport-schedule': 0,
-		other: 0
-	};
-	for (let i = events.length - 1; i >= 0; i--) {
-		const bucket = _bucketOf(events[i].kind);
-		if (taken[bucket] >= BUDGETS[bucket]) continue;
-		taken[bucket] += 1;
-		kept.push(events[i]);
-	}
-	return kept.reverse();
-}
-
-let _events: PerfEvent[] = _withinBudgets(_readStorage());
+let _events: PerfEvent[] = withinBudgets(_readStorage());
 /** Rows appended since the durable copy was last written. */
 let _unflushed = false;
 let _flushArmed = false;
@@ -235,6 +198,30 @@ export function flushPerfEventLog(): void {
 }
 
 /**
+ * Record that the player's four decks were just created empty (page-load
+ * reset) as ONE durable baseline, not four ring rows.
+ *
+ * Call from the module that owns the empty deck states, once per page load.
+ * Written synchronously because it is one small write on the boot path, not a
+ * row on a gesture path; a missing baseline degrades to the probe reporting
+ * "no deck-state evidence", never to a fabricated clean unload.
+ */
+export function recordDeckStateBaseline(): void {
+	if (typeof localStorage === 'undefined') return;
+	const stamp: DeckStateBaseline = {
+		v: 1,
+		t: new Date().toISOString(),
+		unloaded: [1, 2, 3, 4]
+	};
+	try {
+		localStorage.setItem(DECK_STATE_STORAGE_KEY, JSON.stringify(stamp));
+	} catch {
+		// Private mode / quota: load/unload ring rows still describe state
+		// changes, and the probe already reports a missing baseline as such.
+	}
+}
+
+/**
  * A navigation can arrive between the last append and the pending timer, and
  * pagehide is the last event that reliably fires for both a reload and a
  * bfcache suspend. Installed lazily on the first append (a ring nobody writes
@@ -264,7 +251,7 @@ function _scheduleFlush(): void {
 }
 
 function _push(entry: PerfEvent): void {
-	_events = _withinBudgets([..._events, entry]);
+	_events = withinBudgets([..._events, entry]);
 	_unflushed = true;
 	_scheduleFlush();
 }
@@ -295,8 +282,31 @@ function _stageSummary(stages: Record<string, number>): string {
  * `reportClientError` owns its own durable retry queue, so a POST that fails
  * is retried on the next report or page load rather than lost.
  */
+/**
+ * Whether some OTHER path already owns this row's trip to the server.
+ *
+ * `pushToast` writes the ring row AND, for an error toast, sends its own
+ * `reportClientError` carrying the real `cause`, the toast id and whatever
+ * context the caller measured (deck-load stage timings, say). Escalating the
+ * ring row as well produces TWO reports of one failure, and the two cannot
+ * merge: `reportClientError` fingerprints on `kind:source:message`, and these
+ * differ in both `source` (`perf-event` vs `toast`) and message (the row's
+ * `kind: message` composition vs the cause's own). The richer of the two is
+ * the one a reader needs, and it is the one that arrives second.
+ *
+ * This is not the value-allowlist that used to live at the top of this file.
+ * That list enumerated which FAILURES deserved reporting, which is a judgement
+ * that rots. This is a structural fact about one kind PREFIX: rows named
+ * `toast-*` are written by a reporter that already reports. The invariant
+ * "recorded at error means escalated" is intact; what is refused is escalating
+ * it TWICE.
+ */
+function _hasOwnServerReport(kind: string): boolean {
+	return kind.startsWith('toast-');
+}
+
 function _escalate(entry: PerfEvent): void {
-	if (!ESCALATED_KINDS.has(entry.kind)) return;
+	if (_hasOwnServerReport(entry.kind)) return;
 	if (_escalator === null) {
 		// Once per session, not per row: a sustained dropout would otherwise turn
 		// a missing sink into its own console flood. The row is already in the
@@ -315,7 +325,26 @@ function _escalate(entry: PerfEvent): void {
 	const lastMs = _lastEscalationAtMs.get(entry.kind);
 	if (lastMs !== undefined && nowMs - lastMs < ESCALATION_WINDOW_MS) return;
 	_lastEscalationAtMs.set(entry.kind, nowMs);
-	_escalator(entry);
+	// The escalate path is the ERROR-REPORTING path. A throw here would
+	// propagate out of recordPerfEvent and into whichever module was in the
+	// middle of reporting a fault, turning a reportable problem into a crash at
+	// exactly the moment things are already going wrong. The row is already in
+	// the ring and on the console, so the local record survives either way.
+	//
+	// This is NOT a fallback that masks a failure: the reason is surfaced, once
+	// per session, on the same console the row itself went to. What is refused
+	// is letting the reporter take down the reported.
+	try {
+		_escalator(entry);
+	} catch (cause) {
+		if (!_warnedEscalatorThrew) {
+			_warnedEscalatorThrew = true;
+			console.warn(
+				`[perf-event] escalator threw for kind ${entry.kind}; rows stay in this browser. ` +
+					`The ring and the console still hold them. Cause: ${String(cause)}`
+			);
+		}
+	}
 }
 
 export function recordPerfEvent(
@@ -330,6 +359,7 @@ export function recordPerfEvent(
 		kind,
 		deck,
 		message,
+		severity,
 		...(id === undefined ? {} : { id })
 	};
 	_push(entry);
@@ -377,6 +407,11 @@ export function recordPerfTiming(
 		kind,
 		deck,
 		message,
+		// A timing row is a measurement, not a verdict: `audio-context` is the
+		// device floor, recorded whether or not anything is wrong. Stamped
+		// explicitly rather than left absent so it reads as MEASURED-healthy
+		// instead of unknown.
+		severity: 'info',
 		stages: { ...stages },
 		...(labels === undefined ? {} : { labels: { ...labels } })
 	});
@@ -474,15 +509,17 @@ function _stemLoadTelemetry(stems: StemLoadFacts): _StemLoadTelemetry {
  * `stages` is copied, never mutated: the engine snapshots it into DeckState
  * BEFORE the ring write, and a mutating recorder would make those two disagree
  * depending on statement order.
+ *
+ * `extraLabels` merges in facts this module has no business deriving; omitted, the row is unchanged from before this parameter existed.
  */
 export function recordDeckLoadTiming(
 	kind: string,
 	stages: Record<string, number>,
 	deck: 1 | 2 | 3 | 4 | null,
-	stems: StemLoadFacts
+	stems: StemLoadFacts, extraLabels?: Record<string, string>
 ): void {
 	const { stemmed, labels } = _stemLoadTelemetry(stems);
-	recordPerfTiming(kind, stemmed === null ? stages : { ...stages, stemmed }, deck, labels);
+	recordPerfTiming(kind, stemmed === null ? stages : { ...stages, stemmed }, deck, extraLabels === undefined ? labels : { ...labels, ...extraLabels });
 }
 
 export function readPerfEvents(): readonly PerfEvent[] {

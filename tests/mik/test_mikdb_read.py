@@ -21,7 +21,7 @@ def test_seconds_become_milliseconds(make_mik_store) -> None:
         [
             {
                 "name": "5 - A Track",
-                "path": "/Users/dev/a.mp3",
+                "path": "/Users/user/a.mp3",
                 "confidence": 0.9,
                 "segments": [(0.0, 60.4, 5), (60.4, 14.9, 8)],
             }
@@ -42,7 +42,7 @@ def test_segments_are_ordered_by_start_and_sequenced(make_mik_store) -> None:
     store = make_mik_store(
         [
             {
-                "path": "/Users/dev/a.mp3",
+                "path": "/Users/user/a.mp3",
                 "confidence": 0.9,
                 "segments": [(30.0, 10.0, 7), (0.0, 30.0, 4), (40.0, 5.0, 9)],
             }
@@ -69,7 +69,7 @@ def test_boundaries_are_rounded_not_durations(make_mik_store) -> None:
     store = make_mik_store(
         [
             {
-                "path": "/Users/dev/a.mp3",
+                "path": "/Users/user/a.mp3",
                 "confidence": 0.9,
                 "segments": [(0.0015, 0.0015, 5), (0.003, 0.0015, 6)],
             }
@@ -92,7 +92,7 @@ def test_no_overlap_across_a_long_synthetic_series(make_mik_store) -> None:
         segments.append((cursor, length, 1 + index % 9))
         cursor += length
     store = make_mik_store(
-        [{"path": "/Users/dev/a.mp3", "confidence": 0.9, "segments": segments}]
+        [{"path": "/Users/user/a.mp3", "confidence": 0.9, "segments": segments}]
     )
     songs, stats = mikdb.read_songs(mikdb.open_ro(store))
     got = songs[0].segments
@@ -114,7 +114,7 @@ def test_sub_frame_negative_start_is_clamped_and_counted(make_mik_store) -> None
     store = make_mik_store(
         [
             {
-                "path": "/Users/dev/a.mp3",
+                "path": "/Users/user/a.mp3",
                 "confidence": 0.9,
                 "segments": [(-0.0195, 60.0, 5)],
             }
@@ -135,7 +135,7 @@ def test_wildly_negative_start_is_rejected_not_clamped(make_mik_store) -> None:
     store = make_mik_store(
         [
             {
-                "path": "/Users/dev/a.mp3",
+                "path": "/Users/user/a.mp3",
                 "confidence": 0.9,
                 "segments": [(-30.0, 60.0, 5)],
             }
@@ -149,7 +149,7 @@ def test_wildly_negative_start_is_rejected_not_clamped(make_mik_store) -> None:
 
 def test_placeholder_key_and_zero_bpm_are_rejected(make_mik_store) -> None:
     store = make_mik_store(
-        [{"path": "/Users/dev/a.mp3", "key": "0", "tempo": 0.0, "confidence": 0.9}]
+        [{"path": "/Users/user/a.mp3", "key": "0", "tempo": 0.0, "confidence": 0.9}]
     )
     songs, stats = mikdb.read_songs(mikdb.open_ro(store))
     assert songs[0].key_camelot is None
@@ -160,7 +160,7 @@ def test_placeholder_key_and_zero_bpm_are_rejected(make_mik_store) -> None:
 
 def test_energy_outside_the_scale_is_rejected(make_mik_store) -> None:
     store = make_mik_store(
-        [{"path": "/Users/dev/a.mp3", "energy": 17.0, "confidence": 0.9}]
+        [{"path": "/Users/user/a.mp3", "energy": 17.0, "confidence": 0.9}]
     )
     songs, stats = mikdb.read_songs(mikdb.open_ro(store))
     assert songs[0].energy is None
@@ -169,7 +169,7 @@ def test_energy_outside_the_scale_is_rejected(make_mik_store) -> None:
 
 def test_multi_keysegment_store_raises(make_mik_store) -> None:
     """Flow's store has key TIMELINES; ZCONFIDENCE is then not a track scalar."""
-    store = make_mik_store([{"path": "/Users/dev/a.mp3", "confidence": 0.9}])
+    store = make_mik_store([{"path": "/Users/user/a.mp3", "confidence": 0.9}])
     conn = sqlite3.connect(store)
     conn.execute("INSERT INTO ZKEYSEGMENT(ZSONG, ZCONFIDENCE, ZKEY) VALUES (1, 0.5, '9A')")
     conn.commit()
@@ -179,7 +179,7 @@ def test_multi_keysegment_store_raises(make_mik_store) -> None:
 
 
 def test_missing_table_raises_with_the_upgrade_hint(make_mik_store) -> None:
-    store = make_mik_store([{"path": "/Users/dev/a.mp3"}])
+    store = make_mik_store([{"path": "/Users/user/a.mp3"}])
     conn = sqlite3.connect(store)
     conn.execute("DROP TABLE ZENERGYSEGMENT")
     conn.commit()
@@ -190,7 +190,7 @@ def test_missing_table_raises_with_the_upgrade_hint(make_mik_store) -> None:
 
 def test_open_ro_refuses_writes(make_mik_store) -> None:
     """If any MIK import path opens a .mikdb writable, that is broken."""
-    store = make_mik_store([{"path": "/Users/dev/a.mp3"}])
+    store = make_mik_store([{"path": "/Users/user/a.mp3"}])
     conn = mikdb.open_ro(store)
     with pytest.raises(sqlite3.OperationalError):
         conn.execute("UPDATE ZSONG SET ZENERGY = 1")
@@ -241,9 +241,9 @@ def test_zero_clipped_peaks_is_a_real_measurement_not_missing(
     """
     store = make_mik_store(
         [
-            {"path": "/Users/dev/a.mp3", "clipped_peaks": 0, "confidence": 0.9},
-            {"path": "/Users/dev/b.mp3", "clipped_peaks": 88680, "confidence": 0.9},
-            {"path": "/Users/dev/c.mp3", "clipped_peaks": None, "confidence": 0.9},
+            {"path": "/Users/user/a.mp3", "clipped_peaks": 0, "confidence": 0.9},
+            {"path": "/Users/user/b.mp3", "clipped_peaks": 88680, "confidence": 0.9},
+            {"path": "/Users/user/c.mp3", "clipped_peaks": None, "confidence": 0.9},
         ]
     )
     songs, stats = mikdb.read_songs(mikdb.open_ro(store))
@@ -256,7 +256,7 @@ def test_zero_loudness_and_zero_energy_are_not_treated_as_missing(
 ) -> None:
     """Same falsy-is-not-absent rule for the other numeric scalars."""
     store = make_mik_store(
-        [{"path": "/Users/dev/a.mp3", "volume": 0.0, "confidence": 0.0}]
+        [{"path": "/Users/user/a.mp3", "volume": 0.0, "confidence": 0.0}]
     )
     songs, _ = mikdb.read_songs(mikdb.open_ro(store))
     assert songs[0].loudness == 0.0

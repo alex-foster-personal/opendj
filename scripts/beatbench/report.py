@@ -36,39 +36,93 @@ reweighted by the real population counts, and it is labelled as such.
 from __future__ import annotations
 
 import argparse
-import itertools
 import json
+import os
 import statistics
 import sys
 import time
 from collections.abc import Sequence
 from typing import Any
 
-from scripts.beatbench.scorer import (
+from apps.analysis_bench.scorers.beatgrid import (
     BEAT_TOLERANCE_S,
     SCORER_VERSION,
+    least_squares_bpm,
     percentile,
     score_bpm,
+    score_continuity,
     score_downbeats,
     score_positions,
     window_slice,
 )
 
+# ----- Loading the question -----------------------------------------------
+
+
+def _join_truth(
+    manifest_path: str, manifest: dict[str, Any], missing: list[str]
+) -> dict[str, list]:
+    """Beats for `missing`, read from the truth file the manifest declares.
+
+    Raises rather than skipping: an unjoined fixture reaches `score_track` as an
+    empty grid, is dropped by its `len(ref_in) < 8` guard, and a half-joined
+    bundle then produces a table with a quietly smaller denominator.
+    """
+    truth_name = (manifest.get("reads") or {}).get("truth")
+    if not truth_name:
+        raise SystemExit(
+            f"[report] {len(missing)} fixtures in {manifest_path} carry no `ref_beats` "
+            "and the manifest declares no `reads.truth` file to join them from"
+        )
+    truth_path = os.path.join(os.path.dirname(os.path.abspath(manifest_path)), truth_name)
+    if not os.path.exists(truth_path):
+        raise SystemExit(f"[report] {manifest_path} points at {truth_path}, which is not there")
+
+    with open(truth_path, encoding="utf-8") as fh:
+        beats = json.load(fh)["beats"]
+    absent = [sid for sid in missing if sid not in beats]
+    if absent:
+        raise SystemExit(
+            f"[report] {truth_path} holds no beats for {len(absent)} of the "
+            f"{len(missing)} fixtures that need them, first {absent[0]}"
+        )
+    print(f"[report] joined {len(missing)} fixtures with truth from {truth_path}", flush=True)
+    return beats
+
+
+def load_fixtures(manifest_path: str) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """`(manifest, fixtures by stable id)` with the reference beats attached.
+
+    A BENCH manifest carries `ref_beats` inline. A portable BUNDLE does not:
+    `bundle.py` moves the grids into `rekordbox-truth.json` so a consuming host
+    can checksum the truth apart from the audio, which left the scorer indexing
+    a key that was not there. The join happens here so both shapes score alike.
+    """
+    with open(manifest_path, encoding="utf-8") as fh:
+        manifest = json.load(fh)
+    fixtures = {f["stable_id"]: f for f in manifest["fixtures"]}
+
+    missing = [sid for sid, fixture in fixtures.items() if "ref_beats" not in fixture]
+    if missing:
+        beats = _join_truth(manifest_path, manifest, missing)
+        for sid in missing:
+            fixtures[sid] = {**fixtures[sid], "ref_beats": beats[sid]}
+    return manifest, fixtures
+
+
 # ----- Per-track scoring --------------------------------------------------
 
 
 def _derive_bpm(times: Sequence[float]) -> float | None:
-    """Tempo from beat spacing: the one definition applied to every candidate.
+    """Tempo for one grid, from the scorer, so the ruler lives in exactly one file.
 
-    The median interval rather than the mean, so a single dropped or doubled
-    beat cannot drag the estimate.
+    Was `60 / median(inter-beat interval)` through scorer v1.0.0. That
+    estimator inherited each analyzer's frame quantization and understated
+    EVERY candidate's BPM columns; see `scorer.least_squares_bpm` for the
+    measurement that replaced it and specs/beat-mapping-bench.md round 0 for
+    the 47.0 vs 82.5 percent figure it moved.
     """
-    if len(times) < 3:
-        return None
-    gaps = [b - a for a, b in itertools.pairwise(times) if b > a]
-    if not gaps:
-        return None
-    return 60.0 / statistics.median(gaps)
+    return least_squares_bpm(times)
 
 
 def score_track(fixture: dict[str, Any], result: dict[str, Any]) -> dict[str, Any] | None:
@@ -101,6 +155,7 @@ def score_track(fixture: dict[str, Any], result: dict[str, Any]) -> dict[str, An
     bpm_stored = score_bpm(rb_stored, cand_bpm)
     bpm_window = score_bpm(rb_window, cand_bpm) if rb_window else None
     positions = score_positions(ref_in, cand_in)
+    continuity = score_continuity(ref_in, cand_in)
     downbeats = score_downbeats(ref_db_in, cand_db_in)
 
     return {
@@ -131,6 +186,7 @@ def score_track(fixture: dict[str, Any], result: dict[str, Any]) -> dict[str, An
             "n_candidate": positions.n_candidate,
             "beat_count_ratio": round(positions.beat_count_ratio, 4),
             "f_measure": round(positions.f_measure, 4),
+            "f_measure_shifted": round(positions.f_measure_shifted, 4),
             "raw_p50_ms": None if positions.raw_p50_ms is None else round(positions.raw_p50_ms, 2),
             "raw_p95_ms": None if positions.raw_p95_ms is None else round(positions.raw_p95_ms, 2),
             "global_shift_ms": None
@@ -142,6 +198,12 @@ def score_track(fixture: dict[str, Any], result: dict[str, Any]) -> dict[str, An
             "shifted_p95_ms": None
             if positions.shifted_p95_ms is None
             else round(positions.shifted_p95_ms, 2),
+        },
+        "continuity": {
+            "cmlc": None if continuity.cmlc is None else round(continuity.cmlc, 4),
+            "cmlt": None if continuity.cmlt is None else round(continuity.cmlt, 4),
+            "amlc": None if continuity.amlc is None else round(continuity.amlc, 4),
+            "amlt": None if continuity.amlt is None else round(continuity.amlt, 4),
         },
         "downbeats": {
             "supported": downbeats.supported,
@@ -168,6 +230,17 @@ def _pct(rows: list[dict], path: tuple[str, ...]) -> float | None:
     return 100.0 * hits / len(rows)
 
 
+def _mean_optional(rows: list[dict], section: str, field: str) -> float | None:
+    """Mean over the rows that HAVE the value, never over a substituted zero.
+
+    A candidate too sparse to score continuity on must shrink the denominator,
+    not post a zero: `n_continuity_scored` beside it is what names that
+    denominator so a reader can see how many rows the mean is over.
+    """
+    values = [r[section][field] for r in rows if r[section].get(field) is not None]
+    return statistics.fmean(values) if values else None
+
+
 def _median_of(rows: list[dict], section: str, field: str) -> float | None:
     values = [r[section][field] for r in rows if r[section].get(field) is not None]
     return percentile(values, 50)
@@ -192,6 +265,21 @@ def aggregate(rows: list[dict]) -> dict[str, Any]:
         / len(rows),
         "unrelated_pct": 100.0 * relations.count("none") / len(rows),
         "f_measure_mean": statistics.fmean(r["positions"]["f_measure"] for r in rows),
+        "f_measure_shifted_mean": statistics.fmean(
+            r["positions"]["f_measure_shifted"] for r in rows
+        ),
+        "cmlt_mean": _mean_optional(rows, "continuity", "cmlt"),
+        "amlt_mean": _mean_optional(rows, "continuity", "amlt"),
+        "cmlc_mean": _mean_optional(rows, "continuity", "cmlc"),
+        "amlc_mean": _mean_optional(rows, "continuity", "amlc"),
+        "n_continuity_scored": sum(
+            1 for r in rows if r["continuity"]["cmlt"] is not None
+        ),
+        "n_emitted_nothing": sum(1 for r in rows if r["positions"]["n_candidate"] == 0),
+        "n_under_half_reference": sum(
+            1 for r in rows if r["positions"]["beat_count_ratio"] < 0.5
+        ),
+        "beat_count_ratio_p50": _median_of(rows, "positions", "beat_count_ratio"),
         "raw_p50_ms": _median_of(rows, "positions", "raw_p50_ms"),
         "raw_p95_ms": _median_of(rows, "positions", "raw_p95_ms"),
         "shifted_p50_ms": _median_of(rows, "positions", "shifted_p50_ms"),
@@ -233,24 +321,33 @@ def _f(value: Any, spec: str = ".1f") -> str:
     return format(value, spec)
 
 
+def _unit(value: Any, spec: str, unit: str) -> str:
+    """A value with its unit, or a bare `n/a`: `n/as` and `n/ax` read like values."""
+    return "n/a" if value is None else f"{format(value, spec)}{unit}"
+
+
 def render_table(title: str, cells: list[tuple[str, dict, dict]]) -> list[str]:
     """One markdown table: a row per candidate for a single cell of the split."""
     head = (
         "| candidate | n | BPM exact | BPM <=0.1 | BPM <=1.0 | half | double | "
-        "F@70ms | raw p50 | raw p95 | shift p50 | shift p95 | downbeat |"
+        "F@70ms | F shifted | CMLt | AMLt | cont. n | raw p50 | raw p95 | "
+        "shift p50 | shift p95 | downbeat |"
     )
-    rule = "|" + "|".join(["---"] * 13) + "|"
+    rule = "|" + "|".join(["---"] * 17) + "|"
     lines = [f"### {title}", "", head, rule]
     for label, cell, meta in cells:
         if not cell.get("n"):
-            lines.append(f"| {label} | 0 |" + " n/a |" * 11)
+            lines.append(f"| {label} | 0 |" + " n/a |" * 15)
             continue
         db = "N/A" if not meta.get("emits_downbeats") else _f(cell["downbeat_agreement_mean"]) + "%"
         lines.append(
             f"| {label} | {cell['n']} | {_f(cell['bpm_exact_0_01_pct'])}% | "
             f"{_f(cell['bpm_within_0_1_pct'])}% | {_f(cell['bpm_within_1_0_pct'])}% | "
             f"{_f(cell['octave_half_pct'])}% | {_f(cell['octave_double_pct'])}% | "
-            f"{_f(cell['f_measure_mean'], '.3f')} | {_f(cell['raw_p50_ms'])} | "
+            f"{_f(cell['f_measure_mean'], '.3f')} | "
+            f"{_f(cell['f_measure_shifted_mean'], '.3f')} | "
+            f"{_f(cell['cmlt_mean'], '.3f')} | {_f(cell['amlt_mean'], '.3f')} | "
+            f"{cell['n_continuity_scored']} | {_f(cell['raw_p50_ms'])} | "
             f"{_f(cell['raw_p95_ms'])} | {_f(cell['shifted_p50_ms'])} | "
             f"{_f(cell['shifted_p95_ms'])} | {db} |"
         )
@@ -263,7 +360,7 @@ def render_report(payload: dict[str, Any]) -> str:
     den = man["denominator"]
     pop = man["population"]
     lines = [
-        "# Beat-mapping benchmark, round 0",
+        f"# Beat-mapping benchmark, round {payload['round']}",
         "",
         f"Generated {payload['generated_at']} with scorer v{payload['scorer_version']}, "
         f"beat tolerance {int(BEAT_TOLERANCE_S * 1000)} ms.",
@@ -272,14 +369,13 @@ def render_report(payload: dict[str, Any]) -> str:
         "The KPI is agreement with rekordbox, so every figure below is a distance from what "
         "rekordbox already believes, not an independent judgement of correctness.",
         "",
-        "> **KNOWN ARTIFACT, scorer v1.0.0: do not quote the BPM columns.** Candidate "
-        "tempo is derived as `60 / median(inter-beat interval)`. Quantized beat times "
-        "snap that median, so the derived BPM lands a clean 1.0 or 2.0 BPM off. "
-        "Re-deriving from the SAME beat times by least-squares fit moves beat_this from "
-        "47.0% to 82.5% within 1.0 BPM on fixed grids. Every BPM column below "
-        "understates every candidate. The position columns (F-measure, raw and shifted "
-        "offsets, downbeat agreement) come straight from raw beat times and are "
-        "unaffected. Fix is resume item 1 in specs/beat-mapping-bench.md.",
+        "> **Scorer v1.1.0 changed what three metrics MEAN**, so a figure here is "
+        "comparable with round 0 ONLY against round-0 artifacts rescored at v1.1.0, "
+        "never against the numbers printed in the round-0 report. Candidate tempo is "
+        "now a least-squares fit of beat time against beat index rather than the "
+        "median inter-beat interval, which quantization biased; CMLt and AMLt are new; "
+        "and F is reported shift-corrected alongside raw. See "
+        "specs/beat-mapping-bench.md.",
         "",
         "## Denominator",
         "",
@@ -310,7 +406,7 @@ def render_report(payload: dict[str, Any]) -> str:
         f"candidate reads identical bytes, scored with a {man['excerpt']['guard_s']:.0f}s guard "
         "band trimmed from each end.",
         "",
-        "## Round-0 table",
+        f"## Round-{payload['round']} table",
         "",
     ]
 
@@ -325,9 +421,23 @@ def render_report(payload: dict[str, Any]) -> str:
         "are octave errors, counted separately from misses because choosing the wrong metrical "
         "level is a different failure from losing the pulse. F@70ms is one-to-one beat agreement "
         "at the MIR-standard tolerance. raw p50/p95 are nearest-beat offsets in ms; shift p50/p95 "
-        "are the same after removing the best global shift, so raw-minus-shifted is constant "
+        "are the same after removing the MEDIAN signed offset, a lower bound on the best "
+        "achievable shift rather than the F-maximizing one, so raw-minus-shifted is constant "
         "phase error and shifted alone is jitter. downbeat is agreement with rekordbox bar-1 "
-        "beats, N/A where the analyzer has no downbeat concept.",
+        "beats, N/A where the analyzer has no downbeat concept. F shifted is the F-measure "
+        "after that same shift removal, so F versus F-shifted separates a wrong grid from a "
+        "right grid at the wrong phase. CMLt and AMLt are the MIR continuity metrics at the "
+        "standard 17.5 percent phase and period tolerances: CMLt counts beats that are "
+        "correct in BOTH phase and local tempo, and AMLt allows the four metrical "
+        "variations (double, off-beat, and the two half-tempo phases). AMLt minus CMLt is "
+        "therefore CONTINUITY RECOVERED BY THOSE ALLOWED VARIANTS, not a count or rate of "
+        "tracks with octave errors: both terms are fractional continuity scores, and the "
+        "off-beat variant means part of any gap is ordinary phase recovery rather than a "
+        "metrical-level mistake. Read it as an upper bound on level-and-phase disagreement, "
+        "and use the half and double columns for an actual classified octave rate. "
+        "cont. n is how many of the cell's tracks had enough "
+        "beats on both sides to score continuity at all, which is the denominator those two "
+        "columns divide by, NOT the cell's n.",
         "",
         "## Runtime",
         "",
@@ -338,18 +448,35 @@ def render_report(payload: dict[str, Any]) -> str:
     for cand in payload["candidates"]:
         rt = cand["runtime"]
         lines.append(
-            f"| {cand['label']} | {_f(rt.get('serial_p50_s'), '.2f')}s | "
-            f"{_f(rt.get('serial_realtime_factor'), '.1f')}x | "
-            f"{_f(rt.get('parallel_wall_s'), '.0f')}s | {rt.get('parallel_workers', 'n/a')} | "
+            f"| {cand['label']} | {_unit(rt.get('serial_p50_s'), '.2f', 's')} | "
+            f"{_unit(rt.get('serial_realtime_factor'), '.1f', 'x')} | "
+            f"{_unit(rt.get('parallel_wall_s'), '.0f', 's')} | "
+            f"{rt.get('parallel_workers', 'n/a')} | "
             f"{rt.get('full_corpus_estimate', 'n/a')} |"
         )
     lines += [
         "",
-        "Serial figures are measured one candidate at a time with a single worker and nothing "
-        "else running: that is the honest per-track cost. Parallel wall is the same full pass "
-        "with several workers, useful only for planning how long a batch takes. An earlier "
-        "measurement that ran all five candidates concurrently understated librosa by roughly "
-        "85x through CPU contention alone, which is why the two are reported separately.",
+        "A SERIAL FIGURE IS ONLY A MEASUREMENT ON A QUIET HOST, and `n/a` in these columns "
+        "means NOT MEASURED rather than zero or instant. Serial figures are meant to be taken "
+        "one candidate at a time, single worker, nothing else running; that is the only "
+        "condition under which they are the honest per-track cost. Round 0 measured contention "
+        "understating librosa by roughly 85x when five candidates ran concurrently, so a figure "
+        "from a loaded host is not a slower measurement, it is not a measurement. The round's "
+        "entry in specs/beat-mapping-bench.md is authoritative on the load actually carried. "
+        "Parallel wall is the same pass with several workers, useful only for planning batch "
+        "duration, under the same caveat.",
+    ]
+    # Stated only when TRUE of this round: a shared renderer must not hardcode
+    # one round's circumstances.
+    if all(c["runtime"].get("serial_realtime_factor") is None for c in payload["candidates"]):
+        lines += [
+            "",
+            "**This round published no serial figure and therefore no full-corpus estimate.** "
+            "Deliberate, not an omission: an estimate from a contended run would mis-size the "
+            "backfill while carrying the authority of a measured number. Re-run the serial "
+            "pass on a quiet host to fill these columns.",
+        ]
+    lines += [
         "",
         "## Licensing, which constrains the answer as much as accuracy does",
         "",
@@ -367,7 +494,7 @@ def render_report(payload: dict[str, Any]) -> str:
 # ----- Entry point --------------------------------------------------------
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--fixtures", required=True)
     ap.add_argument("--full", nargs="+", required=True, help="full-pass candidate JSONs")
@@ -375,11 +502,10 @@ def main() -> int:
     ap.add_argument("--out-md", required=True)
     ap.add_argument("--out-json", required=True)
     ap.add_argument("--corpus-tracks", type=int, default=10000)
-    args = ap.parse_args()
+    ap.add_argument("--round", type=int, required=True, help="experiment round this table is")
+    args = ap.parse_args(argv)
 
-    with open(args.fixtures, encoding="utf-8") as fh:
-        manifest = json.load(fh)
-    fixtures = {f["stable_id"]: f for f in manifest["fixtures"]}
+    manifest, fixtures = load_fixtures(args.fixtures)
 
     serial_by_name: dict[str, dict] = {}
     for path in args.serial:
@@ -411,6 +537,11 @@ def main() -> int:
             "version": full["candidate_version"],
             "license": full["license"],
             "shippable": full["shippable"],
+            # None for a candidate that loads no weights (librosa, the constant
+            # control). Present and non-null is what makes a model row's beats
+            # attributable to a specific file rather than to a checkpoint NAME,
+            # which is re-resolvable and therefore not provenance.
+            "model": full.get("model"),
             "emits_downbeats": full["emits_downbeats"],
             "fixed": fixed,
             "dynamic": dynamic,
@@ -433,7 +564,7 @@ def main() -> int:
 
     payload = {
         "schema": 1,
-        "round": 0,
+        "round": args.round,
         "scorer_version": SCORER_VERSION,
         "beat_tolerance_s": BEAT_TOLERANCE_S,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -456,9 +587,11 @@ def main() -> int:
     for cand in candidates:
         fixed, dyn = cand["fixed"], cand["dynamic"]
         print(
-            f"[report]   {cand['label']:34s} fixed F={fixed.get('f_measure_mean', 0):.3f} "
-            f"dyn F={dyn.get('f_measure_mean', 0):.3f} "
-            f"fixed BPM<=1.0 {fixed.get('bpm_within_1_0_pct', 0):.0f}%"
+            f"[report]   {cand['label']:24s} fixed F={fixed.get('f_measure_mean') or 0:.3f} "
+            f"CMLt={fixed.get('cmlt_mean') or 0:.3f} AMLt={fixed.get('amlt_mean') or 0:.3f} "
+            f"BPM<=1.0 {fixed.get('bpm_within_1_0_pct') or 0:.1f}% | "
+            f"dyn F={dyn.get('f_measure_mean') or 0:.3f} "
+            f"CMLt={dyn.get('cmlt_mean') or 0:.3f} AMLt={dyn.get('amlt_mean') or 0:.3f}"
         )
     return 0
 

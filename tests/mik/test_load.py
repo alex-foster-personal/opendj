@@ -57,9 +57,9 @@ def _load(
 def test_no_verdict_file_writes_nothing_at_all(
     state_conn: sqlite3.Connection, add_track, make_mik_store, data_dir: Path
 ) -> None:
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
     store = make_mik_store(
-        [{"path": "/Users/dev/x.mp3", "confidence": 0.9, "segments": [(0.0, 60.0, 5)]}]
+        [{"path": "/Users/user/x.mp3", "confidence": 0.9, "segments": [(0.0, 60.0, 5)]}]
     )
     plan, gate = _load(state_conn, store, data_dir)
     assert gate.file_present is False
@@ -83,9 +83,9 @@ def test_a_failed_field_is_blocked_while_a_passed_one_lands(
     data_dir: Path,
     write_verdicts,
 ) -> None:
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
     write_verdicts({"energy": "passed", "loudness": "failed"})
-    store = make_mik_store([{"path": "/Users/dev/x.mp3", "confidence": 0.9}])
+    store = make_mik_store([{"path": "/Users/user/x.mp3", "confidence": 0.9}])
     plan, _gate = _load(state_conn, store, data_dir)
     written = {write.field_name for write in plan.field_writes}
     assert written == {"energy"}
@@ -96,8 +96,8 @@ def test_a_failed_field_is_blocked_while_a_passed_one_lands(
 def test_override_lets_an_untested_field_through(
     state_conn: sqlite3.Connection, add_track, make_mik_store, data_dir: Path
 ) -> None:
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
-    store = make_mik_store([{"path": "/Users/dev/x.mp3", "confidence": 0.9}])
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
+    store = make_mik_store([{"path": "/Users/user/x.mp3", "confidence": 0.9}])
     plan, _gate = _load(state_conn, store, data_dir, allow_unverified=True)
     assert {write.field_name for write in plan.field_writes} >= {"energy", "loudness"}
 
@@ -114,7 +114,7 @@ def test_absent_audio_keeps_its_analysis_in_track_fields(
 ) -> None:
     """the maintainer's ask: grab the analysis for files we do not have, marked missing."""
     write_verdicts(ALL_PASSED)
-    add_track("a" * 40, file_path="/Users/dev/gone.mp3")
+    add_track("a" * 40, file_path="/Users/old/gone.mp3")
     avail.refresh(state_conn)
     assert (
         state_conn.execute(
@@ -125,7 +125,7 @@ def test_absent_audio_keeps_its_analysis_in_track_fields(
     store = make_mik_store(
         [
             {
-                "path": "/Users/dev/gone.mp3",
+                "path": "/Users/old/gone.mp3",
                 "confidence": 0.95,
                 "energy": 7.0,
                 "segments": [(0.0, 60.0, 5), (60.0, 30.0, 8)],
@@ -178,7 +178,7 @@ def test_unmatched_analysis_never_reaches_track_fields(
     store = make_mik_store(
         [
             {
-                "path": "/Users/dev/orphan.mp3",
+                "path": "/Users/old/orphan.mp3",
                 "name": "7 - Orphan",
                 "artist": "Nobody",
                 "confidence": 0.9,
@@ -207,7 +207,7 @@ def test_unmatched_analysis_never_reaches_track_fields(
         assert reason == "no_candidate"
         assert title == "Orphan"  # energy prefix stripped at import
         assert artist == "Nobody"
-        assert path == "/Users/dev/orphan.mp3"
+        assert path == "/Users/old/orphan.mp3"
         assert promoted is None
 
 
@@ -290,8 +290,8 @@ def test_promoted_row_is_not_reclaimed_by_a_later_match(
     would attach one MIK analysis to two identities and bypass
     ``PromotionConflict`` entirely."""
     write_verdicts(ALL_PASSED)
-    add_track("a" * 40, file_path="/Users/dev/promoted.mp3")
-    add_track("b" * 40, file_path="/Users/dev/rematched.mp3")
+    add_track("a" * 40, file_path="/Users/old/promoted.mp3")
+    add_track("b" * 40, file_path="/Users/old/rematched.mp3")
     state_conn.execute(
         "INSERT INTO unmatched_source_analysis(source, source_row_id, "
         "field_name, value_json, unmatched_reason, modified_at, imported_at, "
@@ -302,7 +302,7 @@ def test_promoted_row_is_not_reclaimed_by_a_later_match(
     )
     state_conn.commit()
     store = make_mik_store(
-        [{"path": "/Users/dev/rematched.mp3", "pk": 1, "confidence": 0.9}]
+        [{"path": "/Users/old/rematched.mp3", "pk": 1, "confidence": 0.9}]
     )
     plan, _gate = _load(state_conn, store, data_dir)
     written = {write.field_name for write in plan.field_writes if write.stable_id == "b" * 40}
@@ -331,8 +331,8 @@ def test_promotion_binding_on_one_field_protects_every_field_of_the_row(
     is the promoted track, not whichever field happens to have a recorded
     binding."""
     write_verdicts(ALL_PASSED)
-    add_track("a" * 40, file_path="/Users/dev/promoted.mp3")
-    add_track("b" * 40, file_path="/Users/dev/rematched.mp3")
+    add_track("a" * 40, file_path="/Users/old/promoted.mp3")
+    add_track("b" * 40, file_path="/Users/old/rematched.mp3")
     state_conn.execute(
         "INSERT INTO unmatched_source_analysis(source, source_row_id, "
         "field_name, value_json, unmatched_reason, modified_at, imported_at, "
@@ -345,7 +345,7 @@ def test_promotion_binding_on_one_field_protects_every_field_of_the_row(
     store = make_mik_store(
         [
             {
-                "path": "/Users/dev/rematched.mp3",
+                "path": "/Users/old/rematched.mp3",
                 "pk": 1,
                 "confidence": 0.95,
             }

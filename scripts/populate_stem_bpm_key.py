@@ -9,20 +9,42 @@ data/clubsauna_acapella_techno_100.jsonl (rank == the NNN prefix on each
 vocal file). Write those into track_fields so the Library/browser BPM + Key
 columns render and key-matching works. Source 'inferred' (derived from the
 source track, not measured on the stem). Fail-fast on any rank/title mismatch.
+
+MDT_ACAPELLA_VOCALS_DIR names this machine's unpacked acapella-pack vocals
+directory (#910: no personal path is hardcoded in tracked code). Required,
+and the directory must exist -- an unset or missing value fails fast rather
+than globbing zero files and silently doing nothing.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO = Path("/Users/dev/Music/music-dj-tools")
+REPO = Path(__file__).resolve().parents[1]
 DB = REPO / "data" / "state" / "state.db"
 JSONL = REPO / "data" / "clubsauna_acapella_techno_100.jsonl"
-VOCALS = Path("/Users/dev/Music/_incoming/clubsauna-acapella-techno-100/vocals")
+VOCALS_DIR_ENV = "MDT_ACAPELLA_VOCALS_DIR"
+
+
+def _vocals_dir() -> Path:
+    raw = os.environ.get(VOCALS_DIR_ENV)
+    if not raw:
+        raise RuntimeError(
+            f"{VOCALS_DIR_ENV} is not set -- export this machine's unpacked "
+            "acapella-pack vocals directory before running this script"
+        )
+    path = Path(raw)
+    if not path.is_dir():
+        raise FileNotFoundError(f"{VOCALS_DIR_ENV} does not exist: {path}")
+    return path
+
+
+VOCALS = _vocals_dir()
 FN = re.compile(r"^(\d{2,3})\s*-\s*(.*?)\s*-\s*vocals$")
 
 

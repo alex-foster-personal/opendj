@@ -25,6 +25,10 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { hotCueTitle } from '$lib/rb/hot-cue-label';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
+	import { proposalCaption, proposalTitle, visibleProposalForSlot } from '$lib/rb/auto-cue-proposals';
+	import { ensureAutoCues, getAutoCuesEntry } from './auto-cues-cache.svelte';
+	import HotCueProposalLabel from './HotCueProposalLabel.svelte';
 
 	const MAPPING_TIP = 'cues need a rekordbox mapping';
 	const NOT_LOADED_TIP = 'no track loaded - nothing to save';
@@ -36,20 +40,19 @@
 		onSave,
 		onRename,
 		onDelete,
-		onRestore,
-		inertTip
+		onRestore
 	}: {
 		deck: DeckState;
 		pending: boolean;
 		/** #884: slot-addressed, not a raw ms - lets the dispatcher honour
 		 * BeatSyncMax (arm for the deck's own next downbeat) instead of a plain
-		 * unconditional seek. */
-		onJump: (slot: HotCueSlot) => Promise<void>;
+		 * unconditional seek. pressT0Ms is the triggering click's own
+		 * event.timeStamp, Q1's operator-felt press stamp. */
+		onJump: (slot: HotCueSlot, pressT0Ms?: number) => Promise<void>;
 		onSave: (slot: HotCueSlot, comment?: string, fixedPositionMs?: number, quantizeFixedPosition?: boolean, expectedStableId?: string) => Promise<HotCueMutation>;
 		onRename: (slot: HotCueSlot, inMs: number, comment: string) => Promise<HotCueMutation>;
 		onDelete: (slot: HotCueSlot) => Promise<HotCueMutation>;
 		onRestore: (slot: HotCueSlot, revision: string, reversalId: string) => Promise<void>;
-		inertTip: string;
 	} = $props();
 
 	const SLOTS: HotCueSlot[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
@@ -60,6 +63,19 @@
 			cue: deck.hot_cues.find((c) => c.slot === slot) ?? null
 		}))
 	);
+
+	$effect(() => {
+		const sid = deck.stable_id;
+		if (sid !== null) ensureAutoCues(sid);
+	});
+	const filledSlots = $derived(new Set(deck.hot_cues.map((c) => c.slot)));
+	const proposalFor = $derived.by(() => {
+		const sid = deck.stable_id;
+		if (sid === null) return null;
+		const entry = getAutoCuesEntry(sid);
+		if (entry === undefined || entry.status !== 'ready') return null;
+		return entry.data.proposals;
+	});
 
 	// Local write-round-trip busy state, separate from `pending` (transport
 	// commands) so a save/clear in flight only disables its own slot. `pending`
@@ -98,9 +114,12 @@
 		};
 	}
 
-	async function onSlotClick(entry: { slot: HotCueSlot; cue: HotCue | null }): Promise<void> {
+	async function onSlotClick(
+		entry: { slot: HotCueSlot; cue: HotCue | null },
+		pressT0Ms?: number
+	): Promise<void> {
 		if (entry.cue !== null) {
-			await onJump(entry.slot);
+			await onJump(entry.slot, pressT0Ms);
 			return;
 		}
 		// Empty deck rows are inert (WaveRow.svelte precedent): has_rb_mapping
@@ -238,28 +257,36 @@
 				}}
 			>
 				{#each column as entry (entry.slot)}
+					{@const visible = proposalFor === null ? null : visibleProposalForSlot(entry.slot, filledSlots, proposalFor)}
 					<div class="slot-cell">
 						<button
 							class="slot"
 							class:filled={entry.cue !== null}
+							class:proposal={entry.cue === null && visible !== null}
 							class:loop={entry.cue !== null && entry.cue.is_loop}
 							class:inert-mapping={entry.cue === null &&
 								(deck.stable_id === null || !deck.has_rb_mapping)}
 							disabled={busySlot === entry.slot || renameSlot === entry.slot}
 							aria-busy={pending}
-							aria-label={`hot cue ${entry.slot} deck ${deck.deck_id}`}
+							aria-label={`hot cue ${entry.slot} deck ${deck.deck_id}${visible !== null ? ` ${proposalCaption(visible.kind)}` : ''}`}
 							data-testid={`hot-cue-${deck.deck_id}-${entry.slot}`}
 							data-performance-control="hot-cue"
+							data-proposal-kind={visible !== null ? visible.kind : undefined}
 							title={entry.cue === null
 								? deck.stable_id === null
 									? NOT_LOADED_TIP
 									: deck.has_rb_mapping
-										? 'empty hot cue slot - click to save the current position'
+										? visible !== null
+											? `${proposalTitle(visible.kind, visible.time_s)} - click to save the current position`
+											: 'empty hot cue slot - click to save the current position'
 										: MAPPING_TIP
 								: hotCueTitle(entry.cue, deck.anlz?.beatgrid.beats ?? [])}
-							onclick={() => onSlotClick(entry)}
+							onclick={(e) => onSlotClick(entry, e.timeStamp)}
 						>
 							<span class="letter">{entry.slot}</span>
+							{#if visible !== null}
+								<HotCueProposalLabel kind={visible.kind} />
+							{/if}
 							{#if entry.cue !== null}
 								<span class="cue-label">{entry.cue.comment ?? `CUE ${entry.slot}`}</span>
 								<span
@@ -362,7 +389,7 @@
 			</div>
 		{/each}
 	</div>
-	<button class="rb-lit-button rb-inert dropdown" disabled title={inertTip} aria-label={`hot cue menu deck ${deck.deck_id}`} data-testid={`hot-cue-menu-deck-${deck.deck_id}`}>
+	<button class="rb-lit-button rb-inert dropdown" disabled title={plannedTitle('hot-cue-menu')} aria-label={`hot cue menu deck ${deck.deck_id}`} data-testid={`hot-cue-menu-deck-${deck.deck_id}`}>
 		HOT CUE <span class="caret">&#9662;</span>
 	</button>
 	{#if undo !== null}
@@ -373,7 +400,7 @@
 		the very click that started the write and make the operator press UNDO
 		twice. Repeat presses are safe without it: undoLastMutation serializes
 		on the same busy-slot tail and the second one finds its token spent. -->
-		<button class="rb-lit-button undo" aria-busy={pending} aria-label={`undo hot cue deck ${deck.deck_id}`} data-testid={`undo-hot-cue-deck-${deck.deck_id}`} onclick={undoLastMutation}>
+		<button class="rb-lit-button undo" aria-busy={pending} aria-label={`undo hot cue deck ${deck.deck_id}`} title={`Undo last hot-cue change on slot ${undo.slot}`} data-testid={`undo-hot-cue-deck-${deck.deck_id}`} onclick={undoLastMutation}>
 			UNDO {undo.slot}
 		</button>
 	{/if}

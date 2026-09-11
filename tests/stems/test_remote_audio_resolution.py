@@ -13,7 +13,7 @@ def test_resolve_audio_path_uses_the_data_dirs_real_path_map(tmp_path: Path) -> 
     data_dir = tmp_path / "data"
     state_dir = data_dir / "state"
     state_dir.mkdir(parents=True)
-    source_root = Path("/Users/dev/Music")
+    source_root = Path("/Users/user/Music")
     crate_root = tmp_path / "crate"
     audio = crate_root / "Track.mp3"
     audio.parent.mkdir()

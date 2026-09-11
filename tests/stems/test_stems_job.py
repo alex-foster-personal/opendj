@@ -126,8 +126,8 @@ def test_argv_overlays_modal_rather_than_using_the_repo_venv() -> None:
     """if the overlay is dropped then the worker dies at `import modal`,
     because modal is deliberately absent from the repo venv"""
     argv = build_argv({"stable_ids": [SID_A], "tier": "M"})
-    assert argv[:5] == ["uv", "run", "--with", "modal", "python"]
-    assert argv[5].endswith("stems_modal_worker.py")
+    assert argv[:6] == ["uv", "run", "--no-sync", "--with", "modal", "python"]
+    assert argv[6].endswith("stems_modal_worker.py")
     assert "--stable-id" in argv and SID_A in argv
 
 

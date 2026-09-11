@@ -9,11 +9,33 @@
 	 */
 	import { tick } from 'svelte';
 	import { pinStyle, type PinDraft } from '$lib/rb/feedback';
-	import { addPin, submitFollowOn } from '$lib/rb/feedback-store.svelte';
+	import {
+		addPin,
+		addPinWithAttachment,
+		submitFollowOn,
+		submitFollowOnWithAttachment
+	} from '$lib/rb/feedback-store.svelte';
 	import { readShellBuild } from '$lib/rb/build-identity';
+	import { attachmentSizeRefusal, pastedImageFile } from '$lib/rb/feedback-pin-attachment';
+	import type { ClientErrorContext } from '$lib/client-error-reporting';
+
+	/** Signature of `$lib/stores.svelte`'s `pushToast`, taken as a prop
+	 * instead of imported directly: the parent (FeedbackWidget.svelte)
+	 * already imports the real store module, so threading its function
+	 * through here does not add a second importer to the fan-in ratchet
+	 * (frontend.max_fan_in) for no behavior change. */
+	type PushToast = (
+		message: string,
+		kind?: 'info' | 'error',
+		dismissMs?: number,
+		cause?: unknown,
+		context?: ClientErrorContext,
+		groupKey?: string
+	) => void;
 
 	let {
-		pinDraft = $bindable()
+		pinDraft = $bindable(),
+		pushToast
 	}: {
 		pinDraft:
 			| (PinDraft & {
@@ -21,12 +43,65 @@
 					followOn: { parentId: string; label: string } | null;
 			  })
 			| null;
+		pushToast: PushToast;
 	} = $props();
 
 	let pinDraftTextarea: HTMLTextAreaElement | null = $state(null);
 	// r3919761150: guards against Cmd/Ctrl+Enter key-repeat re-entering
 	// savePinDraft once per keydown while the first POST is still in flight.
 	let savingPinDraft = $state(false);
+
+	/** A screenshot pasted into the textarea, staged in memory until Save -
+	 * the pin needs a real id (issue #1333) before the attachment endpoint
+	 * has anything to attach it to. Not persisted with the rest of the draft:
+	 * a File cannot survive JSON.stringify, so a refresh mid-paste drops the
+	 * pending image exactly the way it would drop an unsaved clipboard paste
+	 * anywhere else - the typed text still persists as before. */
+	let pendingAttachment: File | null = $state(null);
+	/** Explicit refusal text for a paste rejected by size/type, or an upload
+	 * that failed at Save - never a silent drop (issue #1333 acceptance). */
+	let attachmentError: string | null = $state(null);
+
+	$effect(() => {
+		if (pinDraft === null) {
+			pendingAttachment = null;
+			attachmentError = null;
+		}
+	});
+
+	function handlePaste(e: ClipboardEvent): void {
+		const outcome = pastedImageFile(e.clipboardData?.items ? [...e.clipboardData.items] : null);
+		if (outcome.kind === 'none') return;
+		// Otherwise some browsers also paste a text/plain fallback (a file
+		// path or nothing useful) into the textarea alongside the image.
+		e.preventDefault();
+		switch (outcome.kind) {
+			case 'rejected':
+				// FB-11: a disallowed image type is refused with an explicit
+				// message, never silently dropped (PR #1425 P2).
+				attachmentError = `screenshot type "${outcome.type}" is not supported (use PNG, JPEG, GIF, or WEBP)`;
+				break;
+			case 'file': {
+				const refusal = attachmentSizeRefusal(outcome.file);
+				if (refusal !== null) {
+					attachmentError = refusal;
+					break;
+				}
+				pendingAttachment = outcome.file;
+				attachmentError = null;
+				break;
+			}
+			default: {
+				const _exhaustive: never = outcome;
+				throw new Error(`Unhandled PastedImageOutcome: ${JSON.stringify(_exhaustive)}`);
+			}
+		}
+	}
+
+	function removePendingAttachment(): void {
+		pendingAttachment = null;
+		attachmentError = null;
+	}
 
 	/** Imperative twin, called by the parent right after it arms a fresh
 	 * draft (startFollowOn / handlePlacementClick) - never from a restore on
@@ -56,13 +131,53 @@
 				// Always through the dedicated endpoint: the parent reference is
 				// server-generated from submitted.followOn.parentId, independent of
 				// whatever is (or is not) left in `text`.
-				const saved = await submitFollowOn(submitted.followOn.parentId, submittedText);
+				const followOnAttachment = pendingAttachment;
+				let saved: boolean;
+				if (followOnAttachment === null) {
+					saved = await submitFollowOn(submitted.followOn.parentId, submittedText);
+				} else {
+					// A screenshot staged in a follow-on draft must upload the same
+					// way an initial pin's does (PR #1425 P1 round 3): the earlier
+					// version returned here without ever reaching the attachment
+					// logic below, silently dropping the staged File.
+					const result = await submitFollowOnWithAttachment(
+						submitted.followOn.parentId,
+						submittedText,
+						followOnAttachment
+					);
+					switch (result.kind) {
+						case 'created':
+							saved = true;
+							pendingAttachment = null;
+							break;
+						case 'created-attachment-failed':
+							saved = true;
+							pushToast(
+								`follow-on saved, but the screenshot was not: ${result.reason}`,
+								'error',
+								undefined,
+								undefined,
+								{ source: 'feedback-pin-attachment' }
+							);
+							break;
+						case 'create-failed':
+							saved = false;
+							pushToast(`follow-on was not saved: ${result.reason}`, 'error', undefined, undefined, {
+								source: 'feedback-pin-attachment'
+							});
+							break;
+						default: {
+							const _exhaustive: never = result;
+							throw new Error(`Unhandled AddPinWithAttachmentResult: ${JSON.stringify(_exhaustive)}`);
+						}
+					}
+				}
 				if (saved && pinDraft === submitted && pinDraft.text.trim() === submittedText)
 					pinDraft = null;
 				return;
 			}
 			if (submittedText === '') return;
-			const saved = await addPin({
+			const pinBody = {
 				x_pct: submitted.point.x_pct,
 				y_pct: submitted.point.y_pct,
 				anchor: submitted.anchor,
@@ -72,7 +187,48 @@
 				viewport_width: submitted.viewport.width,
 				viewport_height: submitted.viewport.height,
 				author: 'operator'
-			});
+			} as const;
+			const attachment = pendingAttachment;
+			let saved: unknown;
+			if (attachment === null) {
+				saved = await addPin(pinBody);
+			} else {
+				const result = await addPinWithAttachment(pinBody, attachment);
+				switch (result.kind) {
+					case 'created':
+						saved = true;
+						pendingAttachment = null;
+						break;
+					case 'created-attachment-failed':
+						// The pin itself was created (issue #1333: a refused
+						// screenshot is not a reason to lose the typed text, and
+						// retrying Save here would otherwise create a SECOND pin
+						// for the same text) - only the attachment failed.
+						saved = true;
+						pushToast(
+							`comment pin saved, but the screenshot was not: ${result.reason}`,
+							'error',
+							undefined,
+							undefined,
+							{ source: 'feedback-pin-attachment' }
+						);
+						break;
+					case 'create-failed':
+						// Nothing was created at all - keep the draft (and the
+						// pending attachment) so the operator's typed comment is
+						// never silently lost, and report the real failure
+						// instead of a false "pin saved" toast (PR #1425 P1).
+						saved = false;
+						pushToast(`pin was not saved: ${result.reason}`, 'error', undefined, undefined, {
+							source: 'feedback-pin-attachment'
+						});
+						break;
+					default: {
+						const _exhaustive: never = result;
+						throw new Error(`Unhandled AddPinWithAttachmentResult: ${JSON.stringify(_exhaustive)}`);
+					}
+				}
+			}
 			if (saved && pinDraft === submitted && pinDraft.text.trim() === submittedText)
 				pinDraft = null;
 		} finally {
@@ -92,9 +248,10 @@
 		<textarea
 			class="fb-bubble-text"
 			rows="3"
-			placeholder="What is wrong / right here? (Cmd+Enter saves)"
+			placeholder="What is wrong / right here? (Cmd+Enter saves, paste a screenshot)"
 			bind:this={pinDraftTextarea}
 			bind:value={pinDraft.text}
+			onpaste={handlePaste}
 			onkeydown={(e) => {
 				if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
 					e.preventDefault();
@@ -102,6 +259,15 @@
 				}
 			}}
 		></textarea>
+		{#if pendingAttachment !== null}
+			<p class="fb-hint" title={`${pendingAttachment.type}, ${(pendingAttachment.size / 1024).toFixed(0)} KB - attached on Save`}>
+				screenshot: {pendingAttachment.name || 'pasted image'}
+				<button type="button" class="fb-mini" onclick={removePendingAttachment}>Remove</button>
+			</p>
+		{/if}
+		{#if attachmentError !== null}
+			<p class="fb-hint fb-attachment-error">{attachmentError}</p>
+		{/if}
 		{#if pinDraft.anchor !== null}
 			<p class="fb-hint" title="Best-effort nearest stable element under the click">near {pinDraft.anchor}</p>
 		{/if}
@@ -171,5 +337,9 @@
 	:global(.fb-hint) {
 		margin: 2px 0 0;
 		color: var(--rb-text-dim);
+	}
+
+	.fb-attachment-error {
+		color: var(--rb-orange);
 	}
 </style>

@@ -19,16 +19,18 @@ import {
 	type DeckLayoutDurationMs,
 	type DeckLayoutMode
 } from './deck-layout-prefs';
-import { parseAutoSync, parseLastPlaylist } from './prefs-fields';
-import type { AutoSyncPrefs, LastPlaylistPref } from './prefs-types';
+import { makeDiskWriteChain } from './disk-write-chain';
+import { makeLevelCalibrationSetters } from './level-calibration-prefs';
+import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLibrary } from './prefs-fields';
+import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
+import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
 export type { AutoSyncPrefs, LastPlaylistPref } from './prefs-types';
 
 const STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 
-/** Playlist tree width bounds in CSS pixels. Keep enough room for hierarchy
- * labels while preserving a useful track pane on compact displays. */
+/** Playlist tree width bounds in CSS pixels (220-520). */
 export const PLAYLIST_TREE_WIDTH_MIN = 220;
 export const PLAYLIST_TREE_WIDTH_MAX = 520;
 export const PLAYLIST_TREE_WIDTH_DEFAULT = 300;
@@ -48,9 +50,7 @@ export type AutoSyncDestination = 'rekordbox' | 'djay' | 'open_dj';
 export interface RbUiPrefs {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
-	/** FR-1: when true, missing-file tracks are hidden from every pane's
-	 * track list AND playlists with available_count == 0 are hidden from
-	 * the tree. Default OFF (broken rows render grayed-out but visible). */
+	/** FR-1: hide missing-file tracks and playlists with available_count == 0. Default OFF. */
 	hide_broken_links: boolean;
 	/** Track-table row height: compact = current tight rows; cosy = taller. */
 	library_density: LibraryDensity;
@@ -123,13 +123,14 @@ export interface RbUiPrefs {
 	 * never restored, so a stale number can never reach the screen.
 	 */
 	last_playlist: LastPlaylistPref | null;
+	spotify_library: SpotifyLibraryPref;
 	/** Pin 862cd3: MORE/LESS two-deck performance layout. Default 'more'. */
 	deck_layout: DeckLayoutMode;
-	/** Animate the deck_layout switch. Off = instant swap. prefers-reduced-motion
-	 * always forces 0ms regardless of this setting. */
+	/** Animate the deck_layout switch. Off = instant swap (reduced-motion always 0ms). */
 	deck_layout_animate: boolean;
 	/** Transition duration in ms when deck_layout_animate is true. */
 	deck_layout_duration_ms: DeckLayoutDurationMs;
+	level_calibration: LevelCalibrationPrefs;
 }
 
 const DEFAULTS: RbUiPrefs = {
@@ -153,9 +154,11 @@ const DEFAULTS: RbUiPrefs = {
 	show_agent_pins: true,
 	confirm: {},
 	last_playlist: null,
+	spotify_library: { pinned_ids: [], recent_ids: [] },
 	deck_layout: 'more',
 	deck_layout_animate: true,
-	deck_layout_duration_ms: 200
+	deck_layout_duration_ms: 200,
+	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false }
 };
 
 // ----------------------------------------------------------- _helpers
@@ -355,9 +358,11 @@ function _load(): RbUiPrefs {
 		show_agent_pins: parsed.show_agent_pins ?? DEFAULTS.show_agent_pins,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) },
 		last_playlist: lastPlaylist,
+		spotify_library: parseSpotifyLibrary(parsed.spotify_library, STORAGE_KEY),
 		deck_layout: deckLayout ?? DEFAULTS.deck_layout,
 		deck_layout_animate: deckLayoutAnimate ?? DEFAULTS.deck_layout_animate,
-		deck_layout_duration_ms: deckLayoutDurationMs ?? DEFAULTS.deck_layout_duration_ms
+		deck_layout_duration_ms: deckLayoutDurationMs ?? DEFAULTS.deck_layout_duration_ms,
+		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration)
 	};
 }
 
@@ -375,15 +380,19 @@ type DiskPrefsPatch = {
 	deck_layout?: DeckLayoutMode;
 	deck_layout_animate?: boolean;
 	deck_layout_duration_ms?: DeckLayoutDurationMs;
+	level_calibration?: LevelCalibrationPrefs;
 };
 
-async function _syncDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
+async function _putDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
 	try {
 		await api.PUT('/api/v1/ui-prefs', { body: patch });
 	} catch {
 		/* localStorage remains authoritative if daemon is down */
 	}
 }
+
+/** One shared write queue (issue #1578) - see disk-write-chain.ts. */
+const _syncDiskPrefs = makeDiskWriteChain<DiskPrefsPatch>(_putDiskPrefs);
 
 // -------------------------------------------------------- public API
 
@@ -432,6 +441,7 @@ export function setLastPlaylist(next: LastPlaylistPref | null): void {
 	_persist();
 }
 
+export const { toggleSpotifyPinned, rememberSpotifyRecent } = makeSpotifyLibrarySetters(uiPrefs, _persist);
 export function setLibraryDensity(next: LibraryDensity): void {
 	uiPrefs.library_density = next;
 	_persist();
@@ -524,6 +534,12 @@ export function setAutoSync(next: AutoSyncPrefs): void {
 	void _syncDiskPrefs({ auto_sync: { ...uiPrefs.auto_sync } });
 }
 
+export const { setLevelCalibrationCapture, setLevelCalibrationDisabled } = makeLevelCalibrationSetters(
+	uiPrefs,
+	_persist,
+	(patch) => void _syncDiskPrefs(patch)
+);
+
 /** Persist a confirm skip / remembered choice. Pass `undefined` to clear. */
 export function setConfirmPref<K extends keyof RbUiPrefs['confirm']>(
 	key: K,
@@ -541,17 +557,9 @@ export function setConfirmPref<K extends keyof RbUiPrefs['confirm']>(
 /** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */
 export async function hydrateConfirmPrefsFromDisk(): Promise<void> {
 	try {
-		const body = await unwrap(api.GET('/api/v1/ui-prefs')) as {
-			confirm?: RbUiPrefs['confirm'];
-			theme?: UiTheme;
-			hide_todo_settings?: boolean;
-			auto_sync?: AutoSyncPrefs;
-			technically_working_animate?: boolean;
-			show_agent_pins?: boolean;
-			deck_layout?: DeckLayoutMode;
-			deck_layout_animate?: boolean;
-			deck_layout_duration_ms?: DeckLayoutDurationMs;
-		};
+		// Same optional field set the setters below PUT, so it doubles as the GET
+		// response shape rather than duplicating a second inline type for it.
+		const body = (await unwrap(api.GET('/api/v1/ui-prefs'))) as DiskPrefsPatch;
 		if (body.confirm !== undefined) {
 			uiPrefs.confirm = { ...uiPrefs.confirm, ...body.confirm };
 		}
@@ -583,6 +591,8 @@ export async function hydrateConfirmPrefsFromDisk(): Promise<void> {
 		) {
 			uiPrefs.deck_layout_duration_ms = body.deck_layout_duration_ms;
 		}
+		if (body.level_calibration !== undefined && typeof body.level_calibration === 'object')
+			uiPrefs.level_calibration = parseLevelCalibration(body.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration);
 		_persist();
 	} catch {
 		/* ignore */

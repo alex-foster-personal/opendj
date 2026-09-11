@@ -4,7 +4,7 @@
 	// deck identity, artwork, and a readable track title. Empty deck is named,
 	// so its reserved artwork slot cannot read as a missing image.
 	// rAF repaints ONLY while this deck is playing or being scrubbed.
-	import { vocalsOf } from '$lib/rb/api-rb';
+	import { fetchTrackLyrics, vocalsOf } from '$lib/rb/api-rb';
 	import {
 		performanceCommandStatus,
 		runPerformanceCommandFromUi
@@ -29,6 +29,7 @@
 		withFallbackBeatgrid
 	} from '$lib/rb/beatgrid-fallback';
 	import { localDecodeFailureReason } from '$lib/rb/local-waveform-status';
+	import { analysisSourceState } from '$lib/rb/analysis-source.svelte';
 	import { noteWaveformPaintFrame, resetWaveformPaintCadence } from '$lib/rb/audio-health.svelte';
 	import {
 		foldPresentationSample,
@@ -60,6 +61,8 @@
 		waveSnapModeFromModifiers
 	} from './wave-scrub';
 	import WaveGutter from './WaveGutter.svelte';
+	import LyricsLane from './LyricsLane.svelte';
+	import { createLyricsFetchState } from './lyrics-fetch.svelte';
 
 	const { deckId }: { deckId: DeckId } = $props();
 
@@ -90,6 +93,8 @@
 		const token = registerAnlzConsumer(sid);
 		return () => unregisterAnlzConsumer(sid, token);
 	});
+	const lyricsState = createLyricsFetchState(() => deck.stable_id, fetchTrackLyrics);
+
 	const anlzData = $derived.by(() => resolveDisplayedAnlz(deck.anlz, deck.stable_id));
 	const anlzErrorCode = $derived.by(() => {
 		if (deck.anlz_error !== null) return deck.anlz_error;
@@ -115,7 +120,8 @@
 	const fallbackGate = $derived({
 		anlzErrorCode,
 		anlz: anlzData,
-		vendor: null
+		vendor: null,
+		effectiveSource: analysisSourceState.features.beatgrid
 	});
 	$effect(() => {
 		const sid = deck.stable_id;
@@ -240,7 +246,7 @@
 
 	$effect(() => {
 		const el = canvasEl;
-		if (el === undefined) return;
+		if (!el) return;
 		palette = readPalette(el); // throws if not under .perf-root
 		const observer = new ResizeObserver((entries) => {
 			const rect = entries[0].contentRect;
@@ -253,7 +259,7 @@
 
 	function draw(force = false): void {
 		const el = canvasEl;
-		if (el === undefined || palette === null || cssW === 0 || cssH === 0) return;
+		if (!el || palette === null || cssW === 0 || cssH === 0) return;
 		const paintPositionMs = _paintPositionMs();
 		const scrollPx = paintScrollPx(paintPositionMs, deck.duration_ms, cssW, WAVE_WINDOW_S, deck.pitch);
 		const visualInputs = [
@@ -462,7 +468,7 @@
 	class="rb-waverow"
 	class:secondary={deckId === 3 || deckId === 4}
 	class:deck-focus={deckHoverUi.deckId === deckId}
-	data-deck={deckId}
+	data-deck={deckId} data-wave-surface="row"
 	use:wheelAdjust={{
 		step: WHEEL_STEP.fader,
 		get: () => mixerState.channels[deckId].fader,
@@ -509,6 +515,7 @@ estimated from the render clock and may run ahead of what you hear."
 			onpointercancel={onPointerCancel}
 			onlostpointercapture={onLostPointerCapture}
 		></canvas>
+		<LyricsLane lyrics={lyricsState.lyrics} loadError={lyricsState.loadError} positionMs={_paintPositionMs()} pitch={deck.pitch} />
 		{#if deck.stable_id !== null && anlzErrorCode !== null && beatgridFallback === null}
 			<span class="anlz-state" title={anlzErrorCode}>
 				{anlzErrorCode === 'ANALYSIS_NOT_FOUND' ? 'NO ANALYSIS' : `ANLZ ERROR ${anlzErrorCode}`}
@@ -553,16 +560,17 @@ estimated from the render clock and may run ahead of what you hear."
 			background 50ms ease-out,
 			box-shadow 50ms ease-out;
 	}
-	/* Match mixer CH3/4: gutter/chrome use the same lighter fill as the canvas. */
+	/* Match mixer CH3/4 intent: 3/4 recede as the lighter fill. Solid, not
+	   mixer's translucent panel-raised mix, because the canvas is opaque. */
 	.rb-waverow.secondary {
-		background: #1a1f28;
+		background: var(--rb-waverow-secondary);
 	}
 	.rb-waverow.deck-focus {
 		background: color-mix(in srgb, rgba(255, 255, 255, 0.08) 50%, var(--rb-bg));
 		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
 	}
 	.rb-waverow.secondary.deck-focus {
-		background: color-mix(in srgb, rgba(255, 255, 255, 0.12) 100%, #1a1f28);
+		background: color-mix(in srgb, rgba(255, 255, 255, 0.12) 100%, var(--rb-waverow-secondary));
 	}
 	.canvas-wrap {
 		position: relative;

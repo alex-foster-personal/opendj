@@ -89,10 +89,15 @@ function computeRequiredLibraryPx() {
 	);
 	const cosyRowPx = Number(cosyRowMatch[1]);
 
+	// min-height since PR #1672: the header row wraps to a second line rather
+	// than letting `.list-panel`'s `overflow: hidden` eat its rightmost
+	// controls, so 24px is its FLOOR. The floor is what this reservation needs
+	// - a taller header costs library rows, which is the documented
+	// degradation, not a violated budget.
 	const paneHeaderMatch = firstMatch(
 		browserPanelSource,
-		/\.pane-header\s*{[^}]*height:\s*(\d+)px/,
-		'BrowserPanel .pane-header height'
+		/\.pane-header\s*{[^}]*min-height:\s*(\d+)px/,
+		'BrowserPanel .pane-header min-height floor'
 	);
 	const paneHeaderPx = Number(paneHeaderMatch[1]);
 
@@ -259,8 +264,17 @@ test('BrowserPanel .list-panel clips, so a short window cannot push the table of
 // therefore carry `minmax(<floor>px, ...)` so it can never be squeezed below
 // that floor by any reservation value above it - this derives the floor from
 // the comment's own per-deck/two-deck numbers (arithmetic self-consistency)
-// and asserts the CSS matches, rather than pinning a remembered 497.
-test('deck-area grid track has a minmax floor matching the documented two-deck-column height', () => {
+// and asserts the CSS is at least that, rather than pinning a remembered 497.
+//
+// Pin 246b0f5 / Sol P1 finding (comment 3963232872, BLOCKING): the same row
+// is ALSO `<Mixer />`'s row (`.deck-area`'s grid-template-areas), and MORE
+// mode's un-collapsed mixer content (30px EQs + FILTER, `flex-shrink: 0`)
+// needs MORE than the deck's own 497px - so the floor is no longer required
+// to equal columnPx exactly, only to be at least it (>=), same as LESS mode
+// already was allowed to exceed its own per-deck floor for the identical
+// mixer-driven reason. channel-strip-less-floor.test.mjs's "MORE floor" test
+// derives and checks the real mixer-driven number this floor must cover.
+test('deck-area grid track has a minmax floor at least the documented two-deck-column height', () => {
 	const pageSource = readFileSync(PAGE_PATH, 'utf8');
 
 	const perDeckMatch = firstMatch(
@@ -294,10 +308,9 @@ test('deck-area grid track has a minmax floor matching the documented two-deck-c
 	);
 	const deckFloorPx = Number(deckFloorMatch[1]);
 
-	assert.equal(
-		deckFloorPx,
-		columnPx,
-		`deck-area minmax floor (${deckFloorPx}) must equal the documented two-deck-column ` +
+	assert.ok(
+		deckFloorPx >= columnPx,
+		`deck-area minmax floor (${deckFloorPx}) must be at least the documented two-deck-column ` +
 			`height (${columnPx}) so LIBUX-01's library reservation can never clip deck controls`
 	);
 });
@@ -374,41 +387,81 @@ test('perf-root has PER-MODE row floors, and LESS reserves less than MORE by at 
 	const moreDeckFloor = deckFloorPx(moreBlock, 'MORE');
 	const lessDeckFloor = deckFloorPx(lessBlock, 'LESS');
 
-	// MORE is unchanged from before the pin: full 4-row wavestack, two-deck
-	// column floor.
+	// MORE's wavestack is unchanged from before the pin (full 4-row).
 	assert.equal(moreWavestackRows, 4, 'MORE mode must reserve all 4 wavestack rows');
-	assert.equal(
-		moreDeckFloor,
-		columnPx,
-		`MORE deck-area floor (${moreDeckFloor}) must equal the two-deck-column height (${columnPx})`
+	// Sol P1 finding (comment 3963232872, BLOCKING), round 1: MORE's
+	// deck-area floor used to equal columnPx exactly, because the deck
+	// column was the only thing sharing this grid row with a real height
+	// requirement. Round 1 grew it to 524px because MORE mode's
+	// un-collapsed mixer content (30px EQs + FILTER, `flex-shrink: 0`)
+	// needed more than the deck's own 497px. Round 3 then compacted the
+	// strip's own margins (see channel-strip-less-floor.test.mjs's "MORE
+	// floor" test) so that content fits back inside 497px, and restored the
+	// floor to exactly 497px - so `>= columnPx` now holds with the two
+	// equal, not because a mixer-driven number still exceeds it. The
+	// assertion is kept as `>=` rather than `==` so a future mixer-driven
+	// requirement can grow the floor again without failing this test.
+	assert.ok(
+		moreDeckFloor >= columnPx,
+		`MORE deck-area floor (${moreDeckFloor}) must be at least the two-deck-column height (${columnPx})`
 	);
 
 	// LESS only ever shows one deck per column (3/4 collapsed), so it needs
-	// only 2 wavestack rows and one deck's content-tight floor - not the
-	// two-deck column.
+	// only 2 wavestack rows.
 	assert.equal(lessWavestackRows, 2, 'LESS mode must reserve only 2 wavestack rows (decks 1/2)');
-	assert.equal(
-		lessDeckFloor,
-		perDeckPx,
-		`LESS deck-area floor (${lessDeckFloor}) must equal the one-deck height (${perDeckPx}), ` +
-			'not the two-deck column, since decks 3/4 are collapsed'
+	// Pin 246b0f5 (follow-on to 862cd3): the LESS deck-area floor used to
+	// equal perDeckPx exactly, because the deck column was the only thing
+	// sharing this grid row with a real height requirement. It no longer is
+	// - `<Mixer />` shares the SAME row (`.deck-area`'s grid-template-areas
+	// is 'decks-left mixer decks-right', one row), and pin 246b0f5 found the
+	// mixer's own LESS-mode content (decks 1/2's compacted channel strip,
+	// still un-collapsed - only strips 3/4's WIDTH goes to 0) needs MORE
+	// height than one deck panel alone, to avoid `.rb-mixer`'s
+	// `overflow: hidden` clipping the fader/level-meter/EQ/STEM controls off
+	// the bottom - exactly the maintainer's "you ddin't move the 1/2 levels" report.
+	// So the floor is now >= perDeckPx (the deck's own requirement is still
+	// respected) rather than exactly perDeckPx; the precise mixer-driven
+	// number (401, including the mixer's own chrome - Sol P1 finding,
+	// comment 3963232874) is pinned and derived from the real component CSS
+	// in channel-strip-less-floor.test.mjs, not duplicated here.
+	assert.ok(
+		lessDeckFloor >= perDeckPx,
+		`LESS deck-area floor (${lessDeckFloor}) must be at least the one-deck height (${perDeckPx}) ` +
+			'so decks 1/2 are never squeezed below their own content-tight floor'
 	);
 
 	// The library row is `minmax(0, 1fr)` in both modes (unchanged), so it
 	// picks up whatever the topbar/wavestack/deckarea rows above it do not
-	// reserve. Compare that reservation directly: LESS must reserve
-	// strictly less than MORE, by at least the height of the deck rows that
-	// collapsed (one deck column's worth) - the wavestack shrinking too only
-	// ever adds to that margin, never subtracts from it.
+	// reserve. Compare that reservation directly: LESS must still reserve
+	// meaningfully less than MORE (a real gain to the library), though pin
+	// 246b0f5 no longer guarantees a full collapsed-deck-column's worth -
+	// see the lessDeckFloor comment above. the maintainer's own words authorizing
+	// this trade: "probably a little bit more height taken from library ...
+	// but optimize it visually" (pin 246b0f5).
 	const moreReservedRows = moreWavestackRows * waverowPx + moreDeckFloor;
 	const lessReservedRows = lessWavestackRows * waverowPx + lessDeckFloor;
-	const collapsedDeckRowsPx = columnPx - perDeckPx;
+	const libraryGainPx = moreReservedRows - lessReservedRows;
 
+	// A bare `> 0` here would pass a 1px gain, which defeats the point of
+	// this test - it exists to catch a future change that shrinks LESS's
+	// library benefit back toward nothing. The achievable gain today is
+	// `(moreWavestackRows - lessWavestackRows) * waverowPx + (moreDeckFloor -
+	// lessDeckFloor)` = (4 - 2) * 43 + (497 - 401) = 182px (all four terms
+	// read from source above, not hand-typed; round 3 restored MORE's floor
+	// to the original 497px - see +page.svelte's LIBUX-01 comment - while
+	// keeping LESS's floor at 401px - issue #1578's fix, one px above the
+	// prior Sol-P1-fixed 400px, to also cover the R/M `.cal-controls` row -
+	// so this is neither the round-1 524/210 figures nor the original
+	// pre-pin 497/388 pair).
+	// MIN_LESS_LIBRARY_GAIN is pinned well under that (150px), leaving 32px
+	// of real headroom for a future legitimate shrink (e.g. a further
+	// mixer-height adjustment) while still catching a regression toward a
+	// token few-px "gain".
+	const MIN_LESS_LIBRARY_GAIN = 150;
 	assert.ok(
-		moreReservedRows - lessReservedRows >= collapsedDeckRowsPx,
-		`LESS must free up >= ${collapsedDeckRowsPx}px (one collapsed deck column) to the library ` +
-			`row versus MORE, but MORE reserves ${moreReservedRows}px and LESS reserves ` +
-			`${lessReservedRows}px (a difference of only ${moreReservedRows - lessReservedRows}px)`
+		libraryGainPx >= MIN_LESS_LIBRARY_GAIN,
+		`LESS must free at least ${MIN_LESS_LIBRARY_GAIN}px to the library versus MORE, but MORE ` +
+			`reserves ${moreReservedRows}px and LESS reserves ${lessReservedRows}px (gain ${libraryGainPx}px)`
 	);
 
 	// (a) Freeing space to the library is pointless if LESS's own ceiling

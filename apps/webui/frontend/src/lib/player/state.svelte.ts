@@ -19,6 +19,7 @@
  */
 
 import { playbackBpm } from '$lib/rb/beat-sync-math';
+import { recordDeckStateBaseline } from '$lib/rb/perf-event-log';
 import { unavailableStemDeckState } from '$lib/rb/stem-graph';
 import type { HotCueSlotState } from '$lib/rb/api-rb';
 import type { PitchRange } from '$lib/player/constants';
@@ -92,6 +93,7 @@ export function _defaultChannel(deck_id: DeckId): MixerChannelState {
 		eq_high: 0.5,
 		eq_mid: 0.5,
 		eq_low: 0.5,
+		filter: 0.5,
 		fader: 1,
 		// Screenshot assign-matrix default: odd decks -> bus A, even -> bus B.
 		assign: deck_id % 2 === 1 ? 'A' : 'B',
@@ -119,6 +121,13 @@ export const deckStates: Record<DeckId, DeckState> = $state({
 	3: _emptyDeckState(3),
 	4: _emptyDeckState(4)
 });
+
+// The four decks above are created empty on EVERY page load - a constant, not
+// an event. Recording it as four ring rows restated the fact each load and
+// evicted real diagnostics from the shared quiet budget, and a single unrelated
+// row could then evict a deck's only state row and blind the resource probe.
+// Record it once as a durable non-ring baseline instead.
+recordDeckStateBaseline();
 
 /** Explicit audio-load error per deck (backend code or decode message);
  * null = no failed load. DeckState has no audio-error field by contract,

@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Optional
 
-from apps.shared import fs_residency
+from apps.shared import fd_anchored_walk, fs_residency
 from apps.shared.library_mode import crate_root, is_mac_users_path
 
 # ----- Platform identity --------------------------------------------------
@@ -84,6 +84,7 @@ def refresh_share_root() -> Path:
     """Recompute :data:`SHARE_ROOT` after library-mode env is applied."""
     global SHARE_ROOT
     SHARE_ROOT = compute_share_root()
+    fd_anchored_walk.reset_root_anchors()
     return SHARE_ROOT
 
 
@@ -302,13 +303,13 @@ def resolve_local(path: Path) -> Path:
 
     A foreign-absolute path has no location on this machine, and
     ``Path.resolve`` does not say so -- on Windows it silently anchors a
-    drive-less ``/Users/dev`` to the current drive (``D:/Users/dev``), which
+    drive-less ``/Users/user`` to the current drive (``D:/Users/user``), which
     is a fabricated path that then compares unequal to the one the caller
     passed in. Foreign-absolute paths come back untouched; native ones
     resolve as before so symlinked roots still normalise.
 
     The Windows arm asks the Path, not its text: ``WindowsPath`` renders a
-    Mac ``/Users/dev`` as ``\\Users\\dev``, so the string test for a leading
+    Mac ``/Users/user`` as ``\\Users\\user``, so the string test for a leading
     ``/`` never sees it. Rooted-but-drive-less IS the condition -- that is
     exactly the path whose location depends on the current drive.
     """
@@ -366,7 +367,7 @@ def resolve_library_path(
     2. ``/PIONEER/...`` share-relative -> ``SHARE_ROOT / path.lstrip("/")``,
        reason "share".
     3. Remote mode + Mac ``/Users/...`` prefix: skip native (a leftover
-       ``/Users/dev`` tree on Linux must not win). Path-map only, or
+       ``/Users/user`` tree on Linux must not win). Path-map only, or
        ``resolved=None, reason="unmapped:remote"``.
     4. Absolute path native to THIS OS: if the file is materialised here,
        use it (reason "native"). If it is missing, apply :class:`PathMap`
@@ -444,8 +445,52 @@ def resolve_library_path(
     )
 
 
+# ----- fd-anchored share-root containment (TOCTOU fix, packet 9h-T1) ------
+#
+# The prior guard called ``candidate.resolve(strict=False)`` and THEN
+# checked ``is_relative_to(SHARE_ROOT)`` -- a directory inside SHARE_ROOT
+# could be replaced by a symlink pointing outside it between those two
+# filesystem-observing steps, or between the check and whatever opens the
+# file for real (the actual TOCTOU; PR #1271's ``AssetResolver`` memo only
+# narrowed that window to one request's lifetime). What replaces it, and
+# exactly how far it narrows that window (it does NOT close it for every
+# consumer -- see this PR's Residual Risk section), is documented in
+# :mod:`apps.shared.fd_anchored_walk`'s own docstring (split there to keep
+# this module under its own file-size ratchet -- Amendment 17: extraction,
+# never a shrink).
+
 def _contained_asset_path(mapped: MappedPath, candidate: Path) -> MappedPath:
     """Resolve an asset candidate and reject a share-root symlink escape."""
+    if mapped.reason == "share" and fd_anchored_walk.FD_ANCHORED_WALK_SUPPORTED:
+        # Try the lexical SHARE_ROOT first (what every first-call candidate
+        # is composed from, so the common case pays for no extra
+        # .resolve() walk); fall back to the resolved form only for a
+        # derived-sibling candidate built from a prior fd-walk's canonical
+        # result, which can differ lexically when SHARE_ROOT itself sits
+        # behind a symlink.
+        for root in (SHARE_ROOT, SHARE_ROOT.resolve()):
+            try:
+                resolved = fd_anchored_walk.resolve_under_root(candidate, root)
+            except ValueError:
+                continue
+            except fd_anchored_walk.RootIdentityChanged as exc:
+                fd_anchored_walk.log_root_identity_changed(exc)
+                return MappedPath(mapped.original, None, False, "unsafe:root-identity-changed")
+            except OSError:
+                break
+            return MappedPath(
+                original=mapped.original,
+                resolved=resolved,
+                mapped=mapped.mapped,
+                reason=mapped.reason,
+            )
+        return MappedPath(
+            original=mapped.original,
+            resolved=None,
+            mapped=False,
+            reason="unsafe:share-symlink",
+        )
+
     try:
         resolved = candidate.resolve(strict=False)
     except OSError:

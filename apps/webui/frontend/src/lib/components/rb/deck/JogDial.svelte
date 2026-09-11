@@ -6,9 +6,18 @@
 	import { DECK_IDS, deckEffectiveBpm, deckStates } from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import { isTempoLockedToMaster, playbackBpm } from '$lib/rb/beat-sync-math';
-	import { DEFAULT_PQTZ_BAR_BEATS, pqtzBarPhase, phaseGridSpokes } from '$lib/components/rb/wave/wave-math';
-	import { GRID_FEATURE_TIP, gridFeaturesInert } from '$lib/player/grid-features';
+	import {
+		JOG_WHEEL_FACE_RADIUS,
+		PHASE_MARK_INNER_RADIUS,
+		PHASE_MARK_OUTER_RADIUS,
+		jogPhaseBeats,
+		phaseBeatMarks,
+		pqtzBarPhase
+	} from '$lib/components/rb/wave/wave-math';
+	import type { PhaseBeatMark } from '$lib/components/rb/wave/wave-math';
+	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
 	import type { DeckState } from '$lib/rb/deck-state-types';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import ControlExplainer from './ControlExplainer.svelte';
 
 	let {
@@ -18,8 +27,7 @@
 		onQuantize,
 		onQuantizeGrid,
 		onMasterTempo,
-		onSlip,
-		inertTip
+		onSlip
 	}: {
 		deck: DeckState;
 		pitchRange: PitchRange;
@@ -31,7 +39,6 @@
 		onQuantizeGrid: (beats: 1 | 4 | 8) => Promise<void>;
 		onMasterTempo: () => Promise<void>;
 		onSlip: () => Promise<void>;
-		inertTip: string;
 	} = $props();
 
 	// Live BPM = PQTZ grid BPM x playback ratio (Beat Sync plans from PQTZ,
@@ -81,19 +88,19 @@
 			: Math.min(1, Math.max(0, deck.position_ms / deck.duration_ms)) * 360
 	);
 
-	// Pin 67a4ce88805f: an obviously-playing deck needs a fast second line
-	// completing one revolution per "phase" (a PQTZ bar), plus a rotating
-	// radial grid dividing that bar into sections. barBeats is the config
-	// anchor - the deck's OWN quantize grid (1/4/8 beats, the one real,
-	// already-plumbed per-deck "beats per phase" setting in this codebase),
-	// falling back to DEFAULT_PQTZ_BAR_BEATS only when that setting is the
-	// unimplemented 'phase' sentinel (pin a67bafbfc4b0 - never reaches a real
-	// beat count). position_ms is the engine-published presentation
-	// position, never a browser clock, so this only ever moves with real
-	// playback.
-	const barBeats: number = $derived(
-		deck.quantize_grid_beats === 'phase' ? DEFAULT_PQTZ_BAR_BEATS : deck.quantize_grid_beats
-	);
+	// Pin 67a4ce88805f: an obviously-playing deck needs a fast white line
+	// completing one revolution per "phase" (a PQTZ bar).
+	//
+	// Pin f19a1b2a455a corrects two things about that first cut. The phase
+	// length was read straight off deck.quantize_grid_beats, whose shipped
+	// default is 1 (player/state.svelte.ts), so the visual completed a
+	// revolution every single BEAT, carrying one mark, instead of "once per
+	// phase (4 beats default)";
+	// jogPhaseBeats resolves that (and the unimplemented 'phase' sentinel)
+	// to DEFAULT_PQTZ_BAR_BEATS while still honouring a chosen 4 or 8.
+	// position_ms is the engine-published presentation position, never a
+	// browser clock, so this only ever moves with real playback.
+	const barBeats: number = $derived(jogPhaseBeats(deck.quantize_grid_beats));
 	const barPhase: number | null = $derived(
 		pqtzBarPhase(deck.anlz?.beatgrid.beats ?? [], Math.max(0, deck.position_ms / 1000), barBeats)
 	);
@@ -103,11 +110,20 @@
 			? 'PQTZ phase unavailable - phase visual parked at the downbeat'
 			: `${Math.round(barPhase * 100)}% through the ${barBeats}-beat phase`
 	);
-	// Section count must track barBeats (pin 67a4ce88805f review: a
-	// hardcoded 2-line cross always rendered 4 sections regardless of what
-	// quantize grid was selected). phaseGridSpokes is pure geometry, unit
-	// tested directly for count and endpoint values at barBeats 1/4/8.
-	const gridSpokes = $derived(phaseGridSpokes(barBeats));
+	// Pin f19a1b2a455a: one WHITE rim mark per beat in the phase (4 marks
+	// for a 4-beat phase), beat 1 thicker than the rest. The centre-crossing
+	// black radial grid pin 67a4ce88805f's cut drew is gone - "remove the
+	// spinning black line - looks bad, the white line is plenty ... no
+	// spinning UI to overlap the central wheel". Marks are therefore drawn
+	// in the annulus outside the r=40 wheel face, never into it.
+	const phaseMarks: PhaseBeatMark[] = $derived(phaseBeatMarks(barBeats));
+	// PHASE_MARK_INNER_RADIUS already carries half the thickest rotating
+	// stroke, so a round line cap lands outside the face rather than 1.5
+	// units inside it. The red position tick uses the same inner endpoint:
+	// it is stroke-width 3 and rotates, so it is spinning UI under the same
+	// "no overlap" requirement.
+	const markOuterY = 50 - PHASE_MARK_OUTER_RADIUS;
+	const markInnerY = 50 - PHASE_MARK_INNER_RADIUS;
 
 	const slipTitle: string = $derived(
 		deck.slip_active
@@ -126,9 +142,10 @@
 	// inert rather than lying about what a click will do. Transport is
 	// deliberately NOT gated the same way - play, pause and cue always run.
 	const gridless: boolean = $derived(gridFeaturesInert(deck));
+	const gridInertTip: string = $derived(gridFeatureInertTip(deck));
 	const qTitle: string = $derived(
 		gridless
-			? GRID_FEATURE_TIP
+			? gridInertTip
 			: deck.quantize_enabled
 				? 'Quantize ON - snaps seeks, cue, and loop ends to the beatgrid'
 				: 'Quantize OFF - seeks, cue, and loop ends use exact playhead times'
@@ -148,6 +165,15 @@
 			? 'Master Tempo ON - hold musical key while changing tempo'
 			: 'Master Tempo OFF - pitch and key shift together with tempo'
 	);
+	const dialTitle: string = $derived(
+		[
+			`Jog dial: live BPM ${bpmText}, pitch ${pitchText}, range ${rangeText}`,
+			phaseTitle,
+			offTempoTitle
+		]
+			.filter((part): part is string => part !== null)
+			.join('. ')
+	);
 </script>
 
 	<div class="jog" role="group" aria-label={`jog controls deck ${deck.deck_id}`}>
@@ -155,25 +181,25 @@
 		class="dial-wrap"
 		class:jog-off-tempo={offTempoTitle !== null}
 		class:dial-playing={deck.audible}
-		title={offTempoTitle ?? undefined}
+		title={dialTitle}
 	>
 		<svg viewBox="0 0 100 100" class="dial" role="img" aria-label={`jog dial readout, ${phaseTitle}`}>
 			<circle cx="50" cy="50" r="47" fill="#0a0c0f" stroke="#23282f" stroke-width="2.5" />
-			<circle class="wheel-fill" cx="50" cy="50" r="40" fill="#14171d" stroke="#1a1e25" stroke-width="1" />
+			<circle class="wheel-fill" cx="50" cy="50" r={JOG_WHEEL_FACE_RADIUS} fill="#14171d" stroke="#1a1e25" stroke-width="1" />
 			{#if deck.audible}
-				<g class="playing-phase-grid" transform={`rotate(${phaseAngle} 50 50)`}>
-					{#each gridSpokes as spoke (spoke.angleDeg)}
-						<line class="grid-spoke" x1="50" y1="50" x2={spoke.x2} y2={spoke.y2} />
+				<g class="phase-marks" transform={`rotate(${phaseAngle} 50 50)`}>
+					{#each phaseMarks as mark (mark.angleDeg)}
+						<line
+							class="phase-mark"
+							class:downbeat={mark.isDownbeat}
+							x1="50"
+							y1={markOuterY}
+							x2="50"
+							y2={markInnerY}
+							transform={`rotate(${mark.angleDeg} 50 50)`}
+						/>
 					{/each}
 				</g>
-				<line
-					class="phase-marker"
-					x1="50"
-					y1="4"
-					x2="50"
-					y2="12"
-					transform={`rotate(${phaseAngle} 50 50)`}
-				/>
 			{/if}
 			{#if deck.stable_id !== null}
 				<circle
@@ -184,10 +210,11 @@
 				/>
 				<line class="progress-zero" x1="50" y1="3" x2="50" y2="13" stroke="#fff" stroke-opacity="0.3" stroke-width="1" />
 				<line
+					class="position-tick"
 					x1="50"
-					y1="4"
+					y1={markOuterY}
 					x2="50"
-					y2="12"
+					y2={markInnerY}
 					stroke="#d0342c"
 					stroke-width="3"
 					stroke-linecap="round"
@@ -210,6 +237,8 @@
 							class:selected={deck.quantize_grid_beats === beats}
 							data-testid={`quantize-grid-${beats}-deck-${deck.deck_id}`}
 							aria-pressed={deck.quantize_grid_beats === beats}
+							title={`${beats}-beat snap grid${deck.quantize_grid_beats === beats ? ' (selected)' : ''}`}
+							aria-label={`${beats}-beat snap grid deck ${deck.deck_id}`}
 							onclick={async () => await onQuantizeGrid(beats)}
 						>
 							{beats}
@@ -279,8 +308,8 @@
 		>
 			MT
 		</button>
-		<button class="rb-lit-button rb-inert" disabled title={inertTip} aria-label={`auto cue deck ${deck.deck_id}`} data-testid={`auto-cue-deck-${deck.deck_id}`}>AU</button>
-		<button class="rb-lit-button rb-inert" disabled title={inertTip} aria-label={`manual deck ${deck.deck_id}`} data-testid={`manual-deck-${deck.deck_id}`}>MA</button>
+		<button class="rb-lit-button rb-inert" disabled title={plannedTitle('auto-cue')} aria-label={`auto cue deck ${deck.deck_id}`} data-testid={`auto-cue-deck-${deck.deck_id}`}>AU</button>
+		<button class="rb-lit-button rb-inert" disabled title={plannedTitle('manual-source')} aria-label={`manual deck ${deck.deck_id}`} data-testid={`manual-deck-${deck.deck_id}`}>MA</button>
 	</div>
 </div>
 
@@ -339,15 +368,15 @@
 		fill: #f2f0e8;
 		stroke: #fff;
 	}
-	.playing-phase-grid {
-		stroke: #1f2329;
-		stroke-width: 1;
-		stroke-opacity: 0.7;
-	}
-	.phase-marker {
+	/* Pin f19a1b2a455a: white rim marks only. .downbeat (beat 1) is thicker
+	 * than the rest; nothing here reaches inside the r=40 wheel face. */
+	.phase-mark {
 		stroke: #fff;
-		stroke-width: 2;
+		stroke-width: 1.25;
 		stroke-linecap: round;
+	}
+	.phase-mark.downbeat {
+		stroke-width: 3;
 	}
 	.dial-wrap.dial-playing .bpm {
 		fill: #101216;

@@ -42,6 +42,13 @@ import {
 	toastTimerArmed
 } from '$lib/stores.svelte';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
+import {
+	analysisSourceState,
+	installAnalysisSourceRefreshRunner,
+	setAnalysisSource,
+	type AnalysisSource,
+	type AnalysisSourceFeature
+} from '$lib/rb/analysis-source.svelte';
 import { createPairing } from '$lib/api';
 import { planHotCueTrigger, quantizeToNearestDownbeat } from '$lib/rb/beat-sync-math';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
@@ -61,6 +68,8 @@ import {
 	type DeckTransportClock,
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
+import { readTransition } from './transition-read.svelte';
+import type { TransitionStatus } from './transition-classifier';
 import {
 	assertLoopGridBase,
 	loopIntervalChoices,
@@ -73,8 +82,14 @@ import {
 	ScopedCommandScheduler
 } from '$lib/rb/performance-command-scheduler';
 import type { WidenScope } from '$lib/player/scoped-sync-runner';
-import { pendingLoadPlayState, setPendingLoadPlayIntent, type DeckId } from '$lib/rb/deck-slots';
+import {
+	markArmedHotCuePress,
+	pendingLoadPlayState,
+	setPendingLoadPlayIntent,
+	type DeckId
+} from '$lib/rb/deck-slots';
 import { setLibraryPanelCollapsed, type LibraryPanel } from '$lib/rb/prefs.svelte';
+import { copyDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type {
 	DeckAudioSnapshot,
 	DeckState,
@@ -152,6 +167,7 @@ export type PerformanceCommand =
 	| { type: 'key_nudge'; deck: DeckId; semitones: -1 | 1 }
 	| { type: 'trim'; deck: DeckId; value: number }
 	| { type: 'eq'; deck: DeckId; band: EqBand; value: number }
+	| { type: 'filter'; deck: DeckId; value: number }
 	| { type: 'fader'; deck: DeckId; value: number }
 	| { type: 'assign'; deck: DeckId; assign: CrossfaderAssign }
 	| { type: 'channel_cue'; deck: DeckId; enabled: boolean }
@@ -164,6 +180,7 @@ export type PerformanceCommand =
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
+	| { type: 'analysis_source'; feature: AnalysisSourceFeature; source: AnalysisSource }
 	/** UI contract only: no automatic second-track selection or mixing exists yet. */
 	| { type: 'auto_play_two_track' }
 	/** Pin fc60002b81a8: early next-track transition trigger, the ">|" split
@@ -197,7 +214,9 @@ export type PerformanceCommand =
 	| { type: 'tech_mode_edge_hover'; edge: EdgeRegion; hovered: boolean }
 	| { type: 'pairing_snapshot_open' }
 	| { type: 'pairing_snapshot_remove_eq_adjuster'; deck: DeckId; band: EqBand }
-	| { type: 'pairing_snapshot_save'; from_deck: DeckId; to_deck: DeckId };
+	| { type: 'pairing_snapshot_save'; from_deck: DeckId; to_deck: DeckId }
+	| { type: 'playlist_undo' }
+	| { type: 'playlist_redo' };
 
 export interface PerformanceDeckSnapshot {
 	deck_id: DeckId;
@@ -273,6 +292,8 @@ export interface PerformanceDeckSnapshot {
 export interface PerformanceState {
 	version: 1;
 	master_deck: DeckId | null;
+	/** TRANS-01: dual-deck blend the TopBar pill also reads via readTransition(). */
+	transition: TransitionStatus;
 	command_pending: boolean;
 	command_queued: number;
 	load_play_intent: Record<DeckId, { generation: number; desired_play: boolean } | null>;
@@ -289,6 +310,22 @@ export interface PerformanceState {
 	preset: PerformancePresetLifecycleSnapshot;
 	waveform_stutter: ReturnType<typeof waveformStutterSnapshot>;
 	library_panels: { next_collapsed: boolean; recommended_collapsed: boolean };
+	/** PARITY-02: the effective rbx-vs-own selection per feature, keyed the
+	 * same way the `analysis_source` command names it. An agent driving this
+	 * daemon has to be able to READ the state it can write, including a
+	 * selection some other client PUT directly or one that survived a reload -
+	 * the highlighted RBX/OWN control was the only place it appeared
+	 * (discussion_r3968214027 P1 BLOCKING). Empty until the first
+	 * loadAnalysisSource lands, which is "not asked yet", never a default. */
+	analysis_source: Record<string, AnalysisSource>;
+	/** PARITY-02: the source the loaded DECKS are actually on, which lags
+	 * `analysis_source` by up to one poll and, on a switch whose deck refresh
+	 * keeps failing, may never catch up. An agent that PUT a source and wants to
+	 * know whether the decks followed can only read that here: the two fields
+	 * disagreeing IS the split (discussion_r3970117737, discussion_r3970117741).
+	 * Empty until the first refresh lands, which is "not asked yet", never a
+	 * default. */
+	analysis_source_decks: Record<string, AnalysisSource>;
 	feedback_marks: ReturnType<typeof performanceFeedbackSummary>;
 	last_error: string | null;
 	pairing_snapshot: PairingSnapshot | null;
@@ -341,12 +378,39 @@ export function registerAutoPlayNextController(controller: AutoPlayNextControlle
 	};
 }
 
+export interface PlaylistHistoryAdapter {
+	undo(): Promise<void>;
+	redo(): Promise<void>;
+}
+
+let _playlistHistoryAdapter: PlaylistHistoryAdapter | null = null;
+
+export function registerPlaylistHistoryAdapter(adapter: PlaylistHistoryAdapter): () => void {
+	_playlistHistoryAdapter = adapter;
+	return () => {
+		if (_playlistHistoryAdapter === adapter) _playlistHistoryAdapter = null;
+	};
+}
+
 let _browserAdapter: PerformanceBrowserAdapter | null = null;
 let _activeBrowserPlaylist: string | null = null;
 let _commandSequence = 0;
 let _commandHistory: Array<{ id: string; type: PerformanceCommand['type'] }> = [];
 let _deckCommandIds: Record<DeckId, string | null> = { 1: null, 2: null, 3: null, 4: null };
 let _pairingSnapshot: PairingSnapshot | null = $state(null);
+
+/** Narrow test seam for exercising queryPerformanceState()'s pairing_snapshot
+ * clone directly, without driving the full pairing_snapshot_open/save command
+ * sequence. Production always reaches _pairingSnapshot through those
+ * commands, which is where the Svelte $state reactive proxy wrapping this
+ * module's test bundler cannot reproduce (see performance-ipc.test.mjs). */
+export function installPairingSnapshotForTest(snapshot: PairingSnapshot | null): () => void {
+	const previous = _pairingSnapshot;
+	_pairingSnapshot = snapshot;
+	return () => {
+		_pairingSnapshot = previous;
+	};
+}
 
 export function registerPerformanceBrowserAdapter(adapter: PerformanceBrowserAdapter): () => void {
 	if (_browserAdapter !== null) throw new Error('performance browser adapter is already registered');
@@ -422,7 +486,7 @@ export interface PerformanceBrowserIpc {
  * screen, copied to the clipboard and written into the perf-event ring row. */
 export interface ToastIpcRow {
 	id: string;
-	kind: 'info' | 'error';
+	kind: 'info' | 'warn' | 'error';
 	message: string;
 	count: number;
 	created_at: string;
@@ -482,11 +546,13 @@ export interface PerformanceHotCueDriver {
 		positionSec: number;
 		beats: readonly AnlzBeat[];
 	};
-	/** Immediate jump - the same path an unquantized click always took. */
-	jump(deck: DeckId, positionMs: number): Promise<void>;
+	/** Immediate jump - the same path an unquantized click always took.
+	 * pressT0Ms is Q1's operator-felt press stamp. */
+	jump(deck: DeckId, positionMs: number, pressT0Ms?: number): Promise<void>;
 	/** Defer the jump to the deck's own next downbeat; returns the absolute
-	 * AudioContext time the schedule lands at. */
-	arm(deck: DeckId, positionMs: number, armAtPositionSec: number): Promise<number>;
+	 * AudioContext time the schedule lands at. pressT0Ms is Q1's
+	 * operator-felt press stamp. */
+	arm(deck: DeckId, positionMs: number, armAtPositionSec: number, pressT0Ms?: number): Promise<number>;
 	contextTimeNowSec(): number;
 }
 
@@ -504,8 +570,9 @@ const _defaultHotCueDriver: PerformanceHotCueDriver = {
 			beats: state.anlz?.beatgrid.beats ?? []
 		};
 	},
-	jump: (deck, positionMs) => engine.quantizedSeek(deck, positionMs),
-	arm: (deck, positionMs, armAtPositionSec) => engine.armHotCueTrigger(deck, positionMs, armAtPositionSec),
+	jump: (deck, positionMs, pressT0Ms) => engine.quantizedSeek(deck, positionMs, undefined, pressT0Ms),
+	arm: (deck, positionMs, armAtPositionSec, pressT0Ms) =>
+		engine.armHotCueTrigger(deck, positionMs, armAtPositionSec, pressT0Ms),
 	contextTimeNowSec: () => engine.contextTimeNowSec()
 };
 let _hotCueDriver: PerformanceHotCueDriver = _defaultHotCueDriver;
@@ -617,6 +684,14 @@ installScopedSyncRunner((_deck, run) => {
 			}
 		});
 });
+// PARITY-02: the poll in AnalysisSourceToggle.svelte adopts an agent's direct
+// PUT with no command of its own, so its deck/cache refresh needs the same
+// all-deck-plus-sync claim the `analysis_source` command takes. Same scopes,
+// so a poll-detected switch queues behind PREPARE/START and every deck
+// mutation instead of replacing grids underneath them
+// (discussion_r3968214009 P1 BLOCKING). Installed rather than imported
+// because analysis-source.svelte.ts is imported FROM here.
+installAnalysisSourceRefreshRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work));
 let _commandGeneration = 0;
 let _commandStatusGeneration = 0;
 let _activeCommandSession: { generation: number } | null = null;
@@ -770,6 +845,14 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, device_id: record.device_id };
 	}
+	if (type === 'analysis_source') {
+		_exactKeys(record, ['type', 'feature', 'source']);
+		if (record.feature !== 'beatgrid') throw new TypeError(`analysis-source feature must be beatgrid; got ${String(record.feature)}`);
+		if (record.source !== 'rekordbox' && record.source !== 'own') {
+			throw new TypeError(`analysis-source source must be rekordbox or own; got ${String(record.source)}`);
+		}
+		return { type, feature: record.feature, source: record.source };
+	}
 	if (type === 'auto_play_two_track') {
 		_exactKeys(record, ['type']);
 		return { type };
@@ -801,6 +884,10 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	if (type === 'tech_mode_edge_hover') {
 		_exactKeys(record, ['type', 'edge', 'hovered']);
 		return { type, edge: _edge(record.edge), hovered: _boolean('hovered', record.hovered) };
+	}
+	if (type === 'playlist_undo' || type === 'playlist_redo') {
+		_exactKeys(record, ['type']);
+		return { type };
 	}
 	if (type === 'pairing_snapshot_open') {
 		_exactKeys(record, ['type']);
@@ -943,7 +1030,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new TypeError(`mode must be "beat" or "bar"; got ${String(record.mode)}`);
 		}
 		return { type, deck, mode: record.mode };
-	} else if (type === 'trim' || type === 'fader') {
+	} else if (type === 'trim' || type === 'fader' || type === 'filter') {
 		_exactKeys(record, ['type', 'deck', 'value']);
 		return { type, deck, value: _unit('value', record.value) };
 	} else if (type === 'eq') {
@@ -1192,6 +1279,7 @@ export function queryPerformanceState(): PerformanceState {
 	return {
 		version: 1,
 		master_deck: masterDecks[0] ?? null,
+		transition: readTransition(),
 		command_pending: performanceCommandStatus.active > 0 || performanceCommandStatus.queued > 0,
 		command_queued: performanceCommandStatus.queued,
 		load_play_intent: Object.fromEntries(
@@ -1225,7 +1313,16 @@ export function queryPerformanceState(): PerformanceState {
 		history: _commandHistory.map((event) => ({ ...event })),
 		preset: { ...performancePresetLifecycle },
 		last_error: performanceCommandStatus.last_error,
-		pairing_snapshot: _pairingSnapshot === null ? null : structuredClone(_pairingSnapshot),
+		// _pairingSnapshot is a $state variable, so Svelte hands back a reactive
+		// Proxy wrapping the assigned object - and a Proxy, regardless of what
+		// it wraps, is never structured-cloneable (DataCloneError). Every other
+		// field here is rebuilt fresh with a spread/map, which is naturally
+		// plain; this one instead fed the live proxy straight into
+		// structuredClone(). $state.snapshot() deep-unwraps it back to plain
+		// data first, matching the Svelte 5 idiom for "give me a cloneable copy
+		// of reactive state" - see performance-ipc.test.mjs.
+		pairing_snapshot:
+			_pairingSnapshot === null ? null : structuredClone($state.snapshot(_pairingSnapshot)),
 		technically_working: {
 			active: isTechModeActive(),
 			peeking: isPeeking(),
@@ -1238,6 +1335,13 @@ export function queryPerformanceState(): PerformanceState {
 			next_collapsed: uiPrefs.next_panel_collapsed,
 			recommended_collapsed: uiPrefs.recommended_panel_collapsed
 		},
+		// Spread, not the live rune: this snapshot is structuredClone'd across
+		// the IPC boundary and a $state Proxy is never cloneable.
+		analysis_source: { ...analysisSourceState.features },
+		// Spread for the same reason as the line above: analysisSourceState is a
+		// $state rune, so handing the live Proxy out breaks structuredClone for
+		// every agent reading this snapshot over IPC.
+		analysis_source_decks: { ...analysisSourceState.deckFeatures },
 		feedback_marks: performanceFeedbackSummary()
 	};
 }
@@ -1285,6 +1389,7 @@ export function performanceCommandQueueScopes(
 	) {
 		return ['headphone'];
 	}
+	if (command.type === 'analysis_source') return [...DECK_IDS, 'sync'];
 	const deck = _commandDeck(command);
 	if (command.type === 'channel_cue') {
 		if (deck === null) throw new Error('channel_cue has no deck command queue scope');
@@ -1293,6 +1398,7 @@ export function performanceCommandQueueScopes(
 	if (
 		command.type === 'trim' ||
 		command.type === 'eq' ||
+		command.type === 'filter' ||
 		command.type === 'fader' ||
 		command.type === 'assign' ||
 		command.type === 'crossfader' ||
@@ -1323,6 +1429,8 @@ export function performanceCommandQueueScopes(
 		|| command.type === 'auto_play_next_arm'
 		|| command.type === 'auto_play_next_cancel'
 		|| command.type === 'load_play_intent'
+		|| command.type === 'playlist_undo'
+		|| command.type === 'playlist_redo'
 	) {
 		return null;
 	}
@@ -1397,7 +1505,11 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		hotCueArmed[command.deck] = null;
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'load_play_intent') {
-		if (!setPendingLoadPlayIntent(command.deck, command.generation, command.desired_play)) {
+		// Q1: the stamp rides WITH the intent, so the play this eventually
+		// becomes can time from the operator's keydown and not from the load.
+		if (
+			!setPendingLoadPlayIntent(command.deck, command.generation, command.desired_play, pressT0Ms)
+		) {
 			throw new Error(`load_play_intent generation ${command.generation} is not pending on CH${command.deck}`);
 		}
 	} else if (command.type === 'unload') {
@@ -1469,6 +1581,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		engine.setTrim(command.deck, command.value);
 	} else if (command.type === 'eq') {
 		engine.setEq(command.deck, command.band, command.value);
+	} else if (command.type === 'filter') {
+		engine.setFilter(command.deck, command.value);
 	} else if (command.type === 'fader') {
 		engine.setFader(command.deck, command.value);
 		} else if (command.type === 'assign') {
@@ -1495,6 +1609,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.acquireHeadphoneOutput();
 	} else if (command.type === 'headphone_output_select') {
 		await engine.selectHeadphoneOutput(command.device_id);
+	} else if (command.type === 'analysis_source') {
+		await setAnalysisSource(command.feature, command.source);
 	} else if (command.type === 'library_panels') {
 		setLibraryPanelCollapsed(command.panel, command.collapsed);
 	} else if (command.type === 'safety_loop_save') {
@@ -1557,9 +1673,18 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		const plan = planHotCueTrigger(uiPrefs.beat_sync_max, playing, loopEngaged, positionSec, beats);
 		if (plan.kind === 'immediate') {
 			hotCueArmed[command.deck] = null;
-			await _hotCueDriver.jump(command.deck, cue.in_ms);
+			await _hotCueDriver.jump(command.deck, cue.in_ms, pressT0Ms);
 		} else {
-			const targetContextTime = await _hotCueDriver.arm(command.deck, cue.in_ms, plan.armAtPositionSec);
+			// Mark BEFORE the row can file: the eventual schedule reads this same
+			// stamp via press-stamp.ts's claimArmedHotCuePress to distinguish an
+			// armed (deferred-to-downbeat) wait from an immediate press row.
+			if (pressT0Ms !== undefined) markArmedHotCuePress(pressT0Ms);
+			const targetContextTime = await _hotCueDriver.arm(
+				command.deck,
+				cue.in_ms,
+				plan.armAtPositionSec,
+				pressT0Ms
+			);
 			hotCueArmed[command.deck] = {
 				slot: command.slot,
 				target_position_ms: cue.in_ms,
@@ -1617,6 +1742,16 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		});
 	} else if (command.type === 'feedback_mark') {
 		throw new Error('feedback_mark must be captured at the dispatch boundary');
+	} else if (command.type === 'playlist_undo') {
+		if (_playlistHistoryAdapter === null) {
+			throw new Error('playlist_undo requires a mounted playlist history panel');
+		}
+		await _playlistHistoryAdapter.undo();
+	} else if (command.type === 'playlist_redo') {
+		if (_playlistHistoryAdapter === null) {
+			throw new Error('playlist_redo requires a mounted playlist history panel');
+		}
+		await _playlistHistoryAdapter.redo();
 	} else {
 		const _exhaustive: never = command;
 		throw new Error(`Unhandled performance command: ${JSON.stringify(_exhaustive)}`);
@@ -2199,22 +2334,7 @@ function _toastId(id: unknown): string {
 }
 
 function _captureUnknown(deck: unknown): DeckAudioSnapshot {
-	const snapshot = engine.captureDeckAudio(_deck(deck));
-	const scalars = [snapshot.context_time_s, snapshot.sample_rate_hz, snapshot.fft_size];
-	const values = [...scalars, ...snapshot.frequency_db, ...snapshot.time_domain];
-	if (!values.every((value) => Number.isFinite(value))) {
-		throw new Error('deck audio capture contains non-finite values and cannot be serialized');
-	}
-	if (snapshot.sample_rate_hz <= 0 || !Number.isInteger(snapshot.fft_size) || snapshot.fft_size <= 0) {
-		throw new Error('deck audio capture has invalid sample-rate or FFT metadata');
-	}
-	return {
-		context_time_s: snapshot.context_time_s,
-		sample_rate_hz: snapshot.sample_rate_hz,
-		fft_size: snapshot.fft_size,
-		frequency_db: [...snapshot.frequency_db],
-		time_domain: [...snapshot.time_domain]
-	};
+	return copyDeckAudioSnapshot(engine.captureDeckAudio(_deck(deck)));
 }
 
 export function installPerformanceBrowserIpc(): () => void {

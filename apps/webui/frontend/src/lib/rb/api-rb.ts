@@ -17,6 +17,7 @@ import { API_BASE } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
 import type { components } from '$lib/api-types';
 import { api, unwrap } from '$lib/api/client';
+import { currentAnlzFetchGeneration } from './anlz-fetch-generation';
 import type { AnlzCue, AnlzData } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
@@ -29,7 +30,9 @@ export {
 	getTrack,
 	listPlaylists,
 	listTracks,
-	patchTrack
+	patchTrack,
+	pingHealth,
+	timeoutSignal
 } from '$lib/api';
 export type {
 	HealthOut,
@@ -59,6 +62,12 @@ export class RbApiError extends Error {
 		this.name = 'RbApiError';
 	}
 }
+
+export type TrackLyrics = {
+	stable_id: string;
+	source: string;
+	lines: Array<{ start_ms: number; text: string }>;
+};
 
 // ----------------------------------------------------------- _helpers
 
@@ -99,6 +108,48 @@ async function _fetchJson<T>(path: string, cache?: RequestCache): Promise<T> {
 	const r = await fetch(`${RB_API_BASE}${path}`, init);
 	if (!r.ok) await _throwRbApiError(r);
 	return (await r.json()) as T;
+}
+
+function _parseTrackLyrics(raw: unknown, stableId: string): TrackLyrics {
+	if (typeof raw !== 'object' || raw === null) throw new Error('lyrics response must be an object');
+	const lyrics = raw as { stable_id?: unknown; source?: unknown; lines?: unknown };
+	if (lyrics.stable_id !== stableId || typeof lyrics.source !== 'string' || !lyrics.source) {
+		throw new Error('lyrics response has invalid stable_id or source');
+	}
+	if (!Array.isArray(lyrics.lines) || lyrics.lines.length === 0) {
+		throw new Error('lyrics response has no line-level lyrics');
+	}
+	let previousStartMs = -1;
+	const lines = lyrics.lines.map((line, index) => {
+		if (typeof line !== 'object' || line === null) throw new Error(`lyrics line ${index} is invalid`);
+		const value = line as { start_ms?: unknown; text?: unknown };
+		if (
+			typeof value.start_ms !== 'number' ||
+			!Number.isInteger(value.start_ms) ||
+			value.start_ms < 0 ||
+			value.start_ms <= previousStartMs ||
+			typeof value.text !== 'string' ||
+			!value.text.trim()
+		) {
+			throw new Error(`lyrics line ${index} is invalid`);
+		}
+		previousStartMs = value.start_ms;
+		return { start_ms: value.start_ms, text: value.text };
+	});
+	return { stable_id: stableId, source: lyrics.source, lines };
+}
+
+/** GET cached line-synced lyrics. A 404 is the explicit no-lyrics state. */
+export async function fetchTrackLyrics(stableId: string): Promise<TrackLyrics | null> {
+	try {
+		return _parseTrackLyrics(
+			await _fetchJson<unknown>(`/api/v1/tracks/${encodeURIComponent(stableId)}/lyrics`),
+			stableId
+		);
+	} catch (error) {
+		if (error instanceof RbApiError && error.status === 404) return null;
+		throw error;
+	}
 }
 
 async function _putJson<T>(path: string, body: unknown, ifMatch?: string): Promise<T> {
@@ -317,6 +368,10 @@ export interface PlaylistTrackRowWire {
 	energy: number | null;
 	energy_source: 'mik' | null;
 	energy_reason: string;
+	key_status?: 'ok' | 'failed' | 'missing';
+	key_reason?: string | null;
+	loudness_status?: 'ok' | 'failed' | 'missing';
+	loudness_reason?: string | null;
 	duration_ms: number | null;
 	genre: string | null;
 	comments: string | null;
@@ -394,6 +449,28 @@ export async function searchCollection(params: {
 	if (params.limit !== undefined) qs.set('limit', String(params.limit));
 	if (params.offset !== undefined) qs.set('offset', String(params.offset));
 	return _fetchJson<SearchResultsWire>(`/api/v1/search?${qs.toString()}`);
+}
+
+// -------------------------------------------- lyric-only search (Part 3 of #935, #1344)
+// Matches cached synced lyrics only (never title/artist/genre/tags), over the
+// durable background index Part 2 builds. Rendered below a divider AFTER the
+// whole-collection search above settles - see LyricSearchResults.svelte.
+//
+// Reuses SearchHitWire/SearchResultsWire rather than declaring a
+// near-identical sibling: a hit is a hydrated track row plus an excerpt of
+// what matched either way. Here `match_context` is the one lyric line that
+// best carries the query, never the full transcript or a bare title.
+
+/** GET /lyrics/search - lyric-only search, not scoped to the active pane. */
+export async function searchLyrics(params: {
+	q: string;
+	limit?: number;
+	offset?: number;
+}): Promise<SearchResultsWire> {
+	const qs = new URLSearchParams({ q: params.q });
+	if (params.limit !== undefined) qs.set('limit', String(params.limit));
+	if (params.offset !== undefined) qs.set('offset', String(params.offset));
+	return _fetchJson<SearchResultsWire>(`/api/v1/lyrics/search?${qs.toString()}`);
 }
 
 /** PlaylistSummary + contract point 2's available_count. */
@@ -508,24 +585,33 @@ export async function listTracksHydrated(params: {
  * a library prefetch and a deck load do not double-hit the backend. */
 const _inflightAnlz = new Map<string, Promise<AnlzWithVocals>>();
 
-/** `bypassCache: true` forces a `no-store` network read and skips the
- * in-flight de-dup below: an authoritative recheck (a vendor mapping that
- * may have landed after the deck's own /anlz already served the empty
- * local payload, which the backend caches for an hour) must never be
- * satisfied by either cache. */
+/** The daemon's selected source is authoritative and can outlive this
+ * document, so the ordinary path never permits the browser's shared HTTP
+ * cache to reuse an /anlz payload from another tab or a prior reload, whose
+ * document-local generation might coincidentally be the same
+ * (discussion_r3923593660): `cache: 'no-store'` and the `gen` cache-buster
+ * (anlz-fetch-generation.ts) both apply unconditionally, and `gen` stays
+ * part of the in-flight key so a live source switch still splits concurrent
+ * requests within this document.
+ *
+ * `bypassCache: true` additionally skips the in-flight de-dup below: an
+ * authoritative recheck (a vendor mapping that may have landed after the
+ * deck's own /anlz already served the empty local payload) must never be
+ * handed a promise some unrelated in-flight call is already waiting on. */
 export async function fetchAnlz(
 	stable_id: string,
 	points = 38400,
 	bypassCache = false
 ): Promise<AnlzWithVocals> {
-	const key = `${stable_id}:${points}`;
+	const gen = currentAnlzFetchGeneration();
+	const key = `${stable_id}:${points}:${gen}`;
 	if (!bypassCache) {
 		const existing = _inflightAnlz.get(key);
 		if (existing !== undefined) return existing;
 	}
 	const pending = _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}`,
-		bypassCache ? 'no-store' : undefined
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}&gen=${gen}`,
+		'no-store'
 	).then((data) => {
 		vocalsOf(data);
 		return data;
@@ -540,21 +626,31 @@ export async function fetchAnlz(
 
 /** Like {@link fetchAnlz}, but for the one caller (`refreshHotCues`,
  * audio-engine) that cannot accept a browser-HTTP-cache hit: the backend
- * marks a decoded /anlz response `Cache-Control: public, max-age=3600`
- * (`rb_assets.py` `_CACHE_ANLZ`), so a plain `fetch` of the same URL within
- * that hour can be satisfied straight out of the HTTP cache with no network
- * round trip - "fresh" in name only, right after the mutation it's meant to
- * observe. `cache: 'reload'` forces the round trip and re-primes the HTTP
- * cache with the new response, so ordinary reads right after this one still
- * benefit from it. Deliberately bypasses the in-flight dedupe map above: an
+ * marks a decoded /anlz response `private, no-cache` with an ETag over the
+ * body (`rb_assets.py` `_CACHE_ANLZ`). That was `public, max-age=3600` when
+ * this helper was written, and a plain `fetch` of the same URL inside the
+ * hour could be satisfied from the HTTP cache with no round trip - "fresh" in
+ * name only, right after the mutation it is meant to observe. `no-cache` now
+ * forces a revalidation on every read, so the unconditional replay is gone;
+ * `cache: 'reload'` additionally skips the conditional request, which keeps
+ * this caller's guarantee independent of the server's cache-control policy
+ * rather than resting on it. It re-primes the HTTP cache with the new
+ * response, so ordinary reads right after this one still benefit from it. Deliberately bypasses the in-flight dedupe map above: an
  * ordinary in-flight `fetchAnlz` for the same key must not be handed this
- * stale-cache-tolerant promise, and vice versa. */
+ * stale-cache-tolerant promise, and vice versa.
+ *
+ * Includes the same `gen` cache-buster `fetchAnlz` reads (anlz-fetch-
+ * generation.ts) so the URL it re-primes is the EXACT one an ordinary
+ * `fetchAnlz` call issued after the same switch will request - without it,
+ * this would prime a `gen`-less URL nothing else ever asks for, and every
+ * subsequent read would still take a real round trip instead of benefiting
+ * from this one. */
 export async function fetchAnlzBypassingHttpCache(
 	stable_id: string,
 	points = 38400
 ): Promise<AnlzWithVocals> {
 	const data = await _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}`,
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}&gen=${currentAnlzFetchGeneration()}`,
 		'reload'
 	);
 	vocalsOf(data);

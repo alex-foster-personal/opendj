@@ -13,6 +13,7 @@
 	 */
 	import { onMount } from 'svelte';
 	import { engine, isMasterMuted, mixerState } from '$lib/rb/audio-engine.svelte';
+	import { anyDeckPlaying } from '$lib/rb/playing-gate';
 	import type { AudioEngine } from '$lib/rb/audio-engine-types';
 	import {
 		dispatchPerformanceCommand,
@@ -35,6 +36,7 @@
 	import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
 	import { describeAudioOutputHealth } from '$lib/rb/audio-output-health-display';
 	import UserBauble from '$lib/components/UserBauble.svelte';
+	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import CommandEntry from './CommandEntry.svelte';
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
@@ -43,6 +45,7 @@
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import StemsProgress from './StemsProgress.svelte';
 	import VibeMeter from './VibeMeter.svelte';
+	import TransitioningChip from './TransitioningChip.svelte';
 	import JobsDrawer from '$lib/components/rb/JobsDrawer.svelte';
 	import { jobsRefusal } from '$lib/api/capabilities.svelte';
 	import { jobsStore, toggleJobsDrawer } from '$lib/rb/jobs-store.svelte';
@@ -52,6 +55,7 @@
 	import { maybeAutoEnableMidi, midiUi, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
+	import MasterLevelMeter from './mixer/MasterLevelMeter.svelte';
 	import { APP_MODES } from '$lib/rb/app-mode';
 
 	interface MasterCapableEngine extends AudioEngine {
@@ -88,7 +92,7 @@
 	}
 
 	function _placeAutoPlayMenu(): void {
-		if (autoPlayWrapEl === undefined) return;
+		if (!autoPlayWrapEl) return;
 		const r = autoPlayWrapEl.getBoundingClientRect();
 		autoPlayMenuStyle = `left:${Math.round(r.right)}px;top:${Math.round(r.bottom + 6)}px`;
 	}
@@ -110,19 +114,19 @@
 	}
 
 	function _placeModeMenu(): void {
-		if (modePickerEl === undefined || !modePickerEl.open) return;
+		if (!modePickerEl?.open) return;
 		const rect = modePickerEl.getBoundingClientRect();
 		modeMenuStyle = `left:${Math.round(rect.left)}px;top:${Math.round(rect.bottom + 5)}px`;
 	}
 
 	function _dismissModeMenuOnOutsidePointer(e: PointerEvent): void {
-		if (modePickerEl === undefined || !modePickerEl.open) return;
+		if (!modePickerEl?.open) return;
 		if (e.target instanceof Node && modePickerEl.contains(e.target)) return;
 		modePickerEl.open = false;
 	}
 
 	function _dismissModeMenuOnEscape(e: KeyboardEvent): void {
-		if (e.key !== 'Escape' || modePickerEl === undefined || !modePickerEl.open) return;
+		if (e.key !== 'Escape' || !modePickerEl?.open) return;
 		modePickerEl.open = false;
 	}
 
@@ -226,6 +230,13 @@
 			_setMaster(_clamp01(mixerState.master - 0.02));
 		}
 	}
+
+	// TopBar is mounted for the whole /performance session, so the master
+	// meter's RAF loop must not run unconditionally from route mount - it
+	// stops the instant nothing is playing, same gate as
+	// armAudioContextWatchdog's arm predicate (anyDeckPlaying is the one
+	// shared source of truth for "is this session live").
+	const masterMeterActive = $derived(anyDeckPlaying());
 </script>
 
 <svelte:window onpointerdown={_dismissModeMenuOnOutsidePointer} onkeydown={_dismissModeMenuOnEscape} />
@@ -234,7 +245,10 @@
 	class="rb-topbar rb-panel"
 	class:vibe-rainbow={vibeState.display >= 0.9}
 	style={vibeState.display >= 0.9 ? `--vr:${vibeState.rainbow_index}` : undefined}
->	<!-- left: live audio health + prefetch count, then mode dropdown -->
+>	<!-- top-left: PARITY-02 rbx-vs-own source A/B toggle (issue #1002),
+	     ahead of the live audio health + prefetch count and mode dropdown. -->
+	<AnalysisSourceToggle />
+
 	<PerfMeters />
 
 	<!-- Stems separation, aggregate and live off jobs.updated. Renders nothing
@@ -243,7 +257,7 @@
 	<StemsProgress />
 
 	<details class="mode-picker" bind:this={modePickerEl} ontoggle={_placeModeMenu}>
-		<summary class="mode-dd" aria-label="Choose app mode">
+		<summary class="mode-dd" aria-label="Choose app mode" title="App mode picker - PERFORMANCE is the current mode">
 			PERFORMANCE
 			<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
 				<path d="M0.5 1 L3.5 4 L6.5 1" fill="none" stroke="currentColor" stroke-width="1.2" />
@@ -364,6 +378,8 @@
 		<VibeMeter />
 	</div>
 
+	<TransitioningChip />
+
 	<!-- right cluster -->
 	<button
 		type="button"
@@ -380,8 +396,8 @@
 		class:on={uiPrefs.beat_sync_max}
 		aria-pressed={uiPrefs.beat_sync_max}
 		title={uiPrefs.beat_sync_max
-			? 'BeatSyncMax ON - every seek (incl. master) keeps BAR phase lock'
-			: 'BeatSyncMax OFF - followers sync on seek; master free-seeks'}
+			? 'BeatSyncMax ON - downbeats stay aligned; every seek (incl. master) keeps BAR phase lock'
+			: 'BeatSyncMax OFF - followers sync on seek using their own BEAT/BAR mode; master free-seeks'}
 		onclick={() => setBeatSyncMax(!uiPrefs.beat_sync_max)}
 	>
 		BeatSyncMax
@@ -578,6 +594,14 @@
 			<div class="master-thumb" style={`left: calc(${mixerState.master * 100}% - 4px);`}></div>
 		</div>
 
+		<!-- master output level meter: REAL -> engine master bus, post master
+		     gain (pin 5a5c3b8033d8's still-open half; the ten-segment channel
+		     meters shipped in PR #1062 tap post-EQ/pre-fader and so do not move
+		     with this control). Distinct from the output-health-bar below,
+		     which answers "is a device receiving audio" rather than "how loud
+		     is the master bus". -->
+		<MasterLevelMeter active={masterMeterActive} />
+
 		<!-- output-to-device bar: REAL -> audio-output-liveness verdict (pin
 		     93c82bb36eb7). A 1px line under the master slider distinguishing "we
 		     are sending audio" (the slider above) from "a device is actually
@@ -731,8 +755,36 @@
 	   pre-existing crush (free-badge/utility reappearing past the
 	   untouched 1400px boundary) that reproduces identically with this
 	   diff fully reverted - out of scope for this fix, flagged separately
-	   (spawned task investigates it alongside the CI e2e-gate flake). */
-	@media (max-width: 1340px) {
+	   (spawned task investigates it alongside the CI e2e-gate flake).
+
+	   RE-MEASURED Wed 9 Sep 2026 (PARITY-02, issue #1002): the SOURCE toggle
+	   added to this row is a 75px fixed-width control, and this budget had no
+	   slack, so 1340px was no longer the right eviction point. Measured with
+	   Playwright elementFromPoint at 5px granularity across [1340px, 1920px]
+	   on one page, three configurations, same run:
+
+	     A  SOURCE shown, this rule at 1340px (i.e. the state that reds):
+	        .cmd-entry collapses from 130px at 1340px to 8px at 1345px, and the
+	        command INPUT fails its own hit test from 1345px continuously to
+	        1505px. It first passes at 1510px.
+	     B  SOURCE shown, pairing+vibe evicted across the whole sweep:
+	        .cmd-entry is a flat 130px and the input is hittable at EVERY one of
+	        the 117 widths from 1340px to 1920px.
+	     C  SOURCE hidden (the pre-#1002 baseline, this rule at 1340px):
+	        hittable everywhere except 1410-1425px - the pre-existing >1400px
+	        crush already described above, not caused by and not fixed by #1002.
+
+	   So the deficit is real and this eviction window is what pays for it.
+	   1530px = 1505px (the last width measured unstable in A) + the same 25px
+	   margin the 1340px choice used. That is a DELIBERATE WIDENING of the
+	   eviction window, 1340px -> 1530px: pairing and vibe now hide up to
+	   1530px rather than 1340px. It was chosen over hiding SOURCE itself
+	   because pairing and vibe are read-only status chrome while SOURCE and
+	   the command entry are both controls, and this row's existing ranking
+	   already evicts pairing+vibe first. Configuration B is what ships, and it
+	   is strictly healthier than the C baseline: it also closes the 1410-1425
+	   hole. */
+	@media (max-width: 1530px) {
 		.rb-topbar .topbar-slot-pairing,
 		.rb-topbar .topbar-slot-vibe { display: none; }
 	}
@@ -740,7 +792,22 @@
 		.rb-topbar :global(.cmd-input) { width: 86px; }
 		.rb-topbar :global(.cmd-status) { display: none; }
 	}
-	@media (max-width: 1024px) {
+	/* 1024px -> 1210px, re-measured Wed 9 Sep 2026 with SOURCE in the row
+	   (same harness and method as the 1530px note above). Two findings, one
+	   of them pre-existing:
+	     - With SOURCE and this rule still at 1024px, the command input fails
+	       its hit test continuously across [1089px, 1184px]. Attributable:
+	       the same sweep with SOURCE hidden passes at every one of those
+	       widths.
+	     - [1029px, 1084px] fails in BOTH sweeps. That is the >1024px twin of
+	       the >1400px crush noted above and predates #1002.
+	   Evicting this cluster across [1024px, 1340px] clears every width in
+	   both sweeps, so 1210px = 1184px (last width attributable to SOURCE) +
+	   the same 25px margin, and it closes the pre-existing hole as a side
+	   effect. This group is the right thing to drop first: every member is
+	   placeholder chrome - the eight view icons and LINK are `rb-inert` and
+	   `disabled`, PAD is a dim label - so nothing operable leaves the row. */
+	@media (max-width: 1210px) {
 		.rb-topbar .icon-cluster,
 		.rb-topbar .link-btn,
 		.rb-topbar .topbar-slot-pad { display: none; }
@@ -751,7 +818,26 @@
 		.rb-topbar .topbar-slot-autoplay > .bsm-toggle:first-child { font-size: 0; }
 		.rb-topbar .topbar-slot-autoplay > .bsm-toggle:first-child::after { content: 'AP'; font-size: 9px; }
 	}
-	@media (max-width: 820px) {
+	/* 820px -> 825px, re-measured Wed 9 Sep 2026 with SOURCE in the row (same
+	   harness and method as the two notes above, but swept at 1px rather than
+	   5px granularity because the band in question turned out to be 5px wide).
+	   This rule EVICTS the command entry outright, so every width it covers
+	   reads as "input not hittable" by design, and the sweep numbers have to
+	   be read against that:
+	     - pre-#1002 baseline (SOURCE hidden): the input is hittable at every
+	       width from 821px to 1920px, and not below, i.e. the eviction
+	       boundary and the crush floor coincide exactly at 820/821.
+	     - with SOURCE and this rule still at 820px: the input is CRUSHED
+	       (present, laid out, not hittable) across [821px, 825px], then
+	       hittable at every width from 826px to 1920px.
+	   So SOURCE costs this row exactly 5px of floor. Moving the boundary to
+	   825px is a DELIBERATE 5px WIDENING of an eviction window that already
+	   drops the command entry: it converts [821px, 825px] from a visible but
+	   unclickable control into the same honest "not shown at this width"
+	   state the four narrower pixels already had. A crushed control is the
+	   worse of the two failure modes, since it looks operable and is not.
+	   Below the 1024px this row is designed for either way. */
+	@media (max-width: 825px) {
 		.rb-topbar .topbar-slot-midi,
 		.rb-topbar .topbar-slot-utility,
 		.rb-topbar .free-badge,

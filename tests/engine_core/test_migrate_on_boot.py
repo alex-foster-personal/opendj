@@ -30,6 +30,7 @@ from pathlib import Path
 
 import pytest
 
+from apps.shared.state import schema as state_schema
 from tests.test_schema_time_travel import _verified_v5_sql
 
 pytestmark = pytest.mark.requirement("GUARD-09")
@@ -129,7 +130,15 @@ def test_engine_boots_and_serves_health_against_a_v5_db(probe: dict) -> None:
     assert probe["health_body"]["status"] == "ok"
 
 
-def test_v5_state_db_lands_on_v8_after_boot(probe: dict) -> None:
+def test_v5_state_db_lands_on_the_ladder_top_after_boot(probe: dict) -> None:
+    """[if] booting over a v5 library leaves schema_meta below the ladder's
+    terminal version [then] the migration did not complete, [else stop].
+
+    Pinned to ``state_schema.SCHEMA_VERSION`` rather than to the number that
+    happened to be terminal when this was written: a literal here passes the
+    day it is written and then silently stops checking that boot reaches the
+    TOP the moment a rung is added, which is precisely when it matters.
+    """
     conn = sqlite3.connect(f"file:{probe['state_db']}?mode=ro", uri=True)
     try:
         version = conn.execute(
@@ -137,14 +146,14 @@ def test_v5_state_db_lands_on_v8_after_boot(probe: dict) -> None:
         ).fetchone()[0]
         # v7 first added the ``deleted_at`` column that the live incident's
         # unmigrated db was missing; querying it proves the shape survives
-        # the subsequent v8 migration too, not just the version counter.
+        # every subsequent migration too, not just the version counter.
         row = conn.execute(
             "SELECT deleted_at FROM tracks WHERE stable_id = ?",
             ("v5-boot-fixture",),
         ).fetchone()
     finally:
         conn.close()
-    assert version == 8
+    assert version == state_schema.SCHEMA_VERSION
     assert row == (None,)
 
 

@@ -140,13 +140,13 @@ def get_analysis_queue(
 
 
 @router.post("/run", response_model=ingest.RefreshStatusOut, status_code=202)
-def run_analysis_queue() -> ingest.RefreshStatusOut:
+def run_analysis_queue(request: Request) -> ingest.RefreshStatusOut:
     """Drain the queue now, through the shared one-slot refresh job."""
-    return ingest.start_refresh(ingest.RefreshIn(scope="unmapped"))
+    return ingest.start_refresh(request, ingest.RefreshIn(scope="unmapped"))
 
 
 @router.post("/orders/{stable_id}/{kind}", response_model=AnalysisOrderOut, status_code=202)
-def order_track_analysis(stable_id: str, kind: str) -> AnalysisOrderOut:
+def order_track_analysis(request: Request, stable_id: str, kind: str) -> AnalysisOrderOut:
     """Order one real analysis CLI run through the same single refresh slot."""
     if kind not in ORDERABLE_ANALYSIS_KINDS:
         raise HTTPException(422, f"analysis kind cannot be ordered: {kind!r}")
@@ -158,7 +158,7 @@ def order_track_analysis(stable_id: str, kind: str) -> AnalysisOrderOut:
             raise HTTPException(409, "a refresh job is already running")
         ingest.validate_track_order_target(stable_id)
         status = ingest.start_refresh(
-            ingest.RefreshIn(scope="track", stable_id=stable_id, analysis_kind=kind)
+            request, ingest.RefreshIn(scope="track", stable_id=stable_id, analysis_kind=kind)
         )
     return AnalysisOrderOut(stable_id=stable_id, kind=kind, phase=status.phase)
 

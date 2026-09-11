@@ -47,7 +47,7 @@
 
 	$effect(() => {
 		const el = trackEl;
-		if (el === undefined) return;
+		if (!el) return;
 		const measure = (): void => {
 			trackH = el.getBoundingClientRect().height;
 		};

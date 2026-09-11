@@ -20,10 +20,20 @@ from .probe_types import ProcessRow, run_text
 WEBKIT_ASSOCIATION_WINDOW_SECONDS = 45.0
 WEBKIT_CLUSTER_WINDOW_SECONDS = 3.0
 
-SHELL_MARKERS = (
-    "/Applications/Open DJ",
-    "/MacOS/opendj-desktop",
-)
+SHELL_MARKER = "/MacOS/opendj-desktop"
+"""The shell EXECUTABLE's path within the bundle, and only that.
+
+A bare bundle-root marker like `/Applications/Open DJ` matches every process
+launched from inside the bundle, not just the shell -- the packaged engine's
+own command is `.../Open DJ.app/Contents/Resources/payload/runtime/bin/
+python3 -m apps.engine_core serve`, which contains that root as a plain
+substring. `shell_candidates()` (added in 5fd736cd to reject ambiguity when
+two builds run) then counted the engine as a second candidate shell on every
+SINGLE build, permanently tripping the ambiguity guard it was supposed to
+gate on rarity (PR #705 review, resolve_role.py:76, fresh evidence after the
+guard's own introduction). `Contents/MacOS/<executable>` is the one place in
+a macOS app bundle only the main binary itself lives.
+"""
 WEBKIT_MARKER = "/WebKit.framework/"
 WEBKIT_ROLES = {
     "com.apple.WebKit.WebContent": "webkit-webcontent",
@@ -72,11 +82,22 @@ def process_table() -> list[ProcessRow]:
 
 
 def _is_shell(row: ProcessRow) -> bool:
-    return any(marker in row.command for marker in SHELL_MARKERS)
+    return SHELL_MARKER in row.command
+
+
+def shell_candidates(rows: Iterable[ProcessRow]) -> list[ProcessRow]:
+    """Every live process that looks like an Open DJ desktop shell.
+
+    Exposed so a caller can detect AMBIGUITY (more than one candidate) before
+    picking one, rather than only ever seeing whichever single row `find_shell`
+    happened to choose.
+    """
+
+    return [row for row in rows if _is_shell(row)]
 
 
 def find_shell(rows: Iterable[ProcessRow], requested_pid: int | None) -> ProcessRow | None:
-    candidates = [row for row in rows if _is_shell(row)]
+    candidates = shell_candidates(rows)
     if requested_pid is not None:
         return next((row for row in candidates if row.pid == requested_pid), None)
     return min(candidates, key=lambda row: row.pid) if candidates else None
@@ -190,6 +211,23 @@ def suspected_orphans(
     return [found[pid] for pid in sorted(found)]
 
 
+def _other_shell_starts(
+    rows: list[ProcessRow], native: DarwinProcessMetrics, shell: ProcessRow
+) -> list[float]:
+    """Start times of every OTHER live Open DJ shell, for the contest check below."""
+
+    starts: list[float] = []
+    for other in shell_candidates(rows):
+        if other.pid == shell.pid:
+            continue
+        try:
+            usage = native.read(other.pid)
+        except ProcessLookupError:
+            continue
+        starts.append(native.ticks_to_seconds(usage.proc_start_abstime))
+    return starts
+
+
 def _webkit_candidates(
     rows: list[ProcessRow], native: DarwinProcessMetrics, shell_start: float
 ) -> list[tuple[ProcessRow, str, float]]:
@@ -210,17 +248,47 @@ def _webkit_candidates(
     return candidates
 
 
+def _is_contested(start: float, other_shell_starts: list[float]) -> bool:
+    """Would a DIFFERENT live shell's own association window also claim a
+    helper that started at `start`?
+
+    The window alone cannot tell which shell a helper belongs to: with two
+    Open DJ builds running within `WEBKIT_ASSOCIATION_WINDOW_SECONDS` of each
+    other, the same WebContent can sit inside BOTH shells' windows, and
+    `_webkit_cluster`'s "first WebContent" rule then hands whichever shell
+    asked the OTHER shell's cluster -- or merges both when their WebContents
+    start within `WEBKIT_CLUSTER_WINDOW_SECONDS` of each other. `ProcessRow`
+    carries no ancestry that ties a WebKit helper to its requesting shell (its
+    ppid is launchd, and its command is the shared framework binary with no
+    bundle reference -- the reason this module uses timing at all), so a
+    contested candidate cannot be constrained to the right build; it can only
+    be refused (Codex P1/BLOCKING, #705, resolve_role.py:98).
+    """
+
+    return any(
+        0 <= start - other_start <= WEBKIT_ASSOCIATION_WINDOW_SECONDS
+        for other_start in other_shell_starts
+    )
+
+
 def _webkit_cluster(
     candidates: list[tuple[ProcessRow, str, float]],
-) -> tuple[float | None, dict[int, tuple[ProcessRow, str]]]:
-    """The first WebContent plus every helper launched within the cluster window."""
+) -> tuple[float | None, dict[int, tuple[ProcessRow, str, float]]]:
+    """The first WebContent plus every helper launched within the cluster window.
+
+    Keeps each member's OWN start time rather than just `cluster_start`: a
+    member can join the cluster window (`WEBKIT_CLUSTER_WINDOW_SECONDS` of the
+    first WebContent) while itself falling inside a DIFFERENT shell's
+    association window, and only checking `cluster_start` for a contest missed
+    that member entirely (Codex P1/BLOCKING, #705, probe_process_family.py:306).
+    """
 
     webcontent = [item for item in candidates if item[1] == "webkit-webcontent"]
     if not webcontent:
         return None, {}
     cluster_start = min(webcontent, key=lambda item: item[2])[2]
     return cluster_start, {
-        row.pid: (row, role)
+        row.pid: (row, role, start)
         for row, role, start in candidates
         if abs(start - cluster_start) <= WEBKIT_CLUSTER_WINDOW_SECONDS
     }
@@ -238,19 +306,52 @@ def associate_process_family(
             selected[row.pid] = (row, process_role(row, shell.pid, descendant_pids))
 
     shell_start = native.ticks_to_seconds(native.read(shell.pid).proc_start_abstime)
-    cluster_start, cluster = _webkit_cluster(
-        _webkit_candidates(rows, native, shell_start)
+    other_starts = _other_shell_starts(rows, native, shell)
+    candidates = _webkit_candidates(rows, native, shell_start)
+    cluster_start, cluster = _webkit_cluster(candidates)
+    contested = cluster_start is not None and any(
+        _is_contested(start, other_starts) for _row, _role, start in cluster.values()
     )
-    selected.update(cluster)
+    # A candidate WebContent outside the cluster window is a SECOND, distinct
+    # cluster in the same 45s association window -- an unrelated WKWebView
+    # (Safari, another Electron app), not just another Open DJ shell. Nothing
+    # ties a WebKit helper back to its launching app, so a second cluster
+    # makes "first WebContent" a guess between two apps, not one shell's
+    # timing ambiguity (Codex P1/BLOCKING, #705, resolve_role.py:105).
+    multiple_clusters = cluster_start is not None and any(
+        role == "webkit-webcontent" and abs(start - cluster_start) > WEBKIT_CLUSTER_WINDOW_SECONDS
+        for _row, role, start in candidates
+    )
+    # A SECOND webkit-webcontent candidate INSIDE the cluster window is not,
+    # by itself, proof of a second app: the locked production capture at
+    # tests/fixtures/perf/MANIFEST.json ("probe-samples.jsonl") shows one real
+    # Open DJ family legitimately holding two webkit-webcontent PIDs in the
+    # same cluster at once, so "one WKWebView" does not mean "one WebContent
+    # process" and counting webcontent PIDs cannot stand in for counting
+    # WKWebViews. ProcessRow carries no field that ties a WebKit helper back
+    # to the app that launched it (ppid is launchd, command is the shared
+    # framework binary -- see `_is_contested`), so there is no stronger
+    # identity to distinguish a same-app second process from an unrelated
+    # app's; only `contested` (another live shell could equally claim it) and
+    # `multiple_clusters` (a genuinely separate cluster outside this window)
+    # are signals this data can actually support (Codex P1/BLOCKING, #705,
+    # probe_process_family.py:334).
+    ambiguous = contested or multiple_clusters
+    if ambiguous:
+        cluster_start, cluster = None, {}
+    selected.update({pid: (row, role) for pid, (row, role, _start) in cluster.items()})
 
     association = {
         "shell_rule": "command contains an Open DJ app-bundle marker",
         "descendant_rule": "recursive PPID ancestry from desktop shell",
         "webkit_rule": (
             "first WebContent launched 0..45s after shell; include WebKit helpers "
-            "within 3s of that WebContent"
+            "within 3s of that WebContent; refused instead when another live Open "
+            "DJ shell's own window could equally claim that WebContent, or when a "
+            "second, distinct WebContent cluster sits in the same window"
         ),
         "webkit_cluster_found": cluster_start is not None,
+        "webkit_cluster_ambiguous": ambiguous,
         "included_pids": sorted(selected),
     }
     return [selected[pid] for pid in sorted(selected)], association

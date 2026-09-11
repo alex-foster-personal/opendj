@@ -87,9 +87,11 @@ def seed_backend() -> InMemoryBackend:
             created_at=created, updated_at=created,
             provenance={
                 "rating": Provenance(value=rating, source="rekordbox",
-                                     confidence=1.0, modified_at=created),
+                                     confidence=1.0, modified_at=created,
+                                     status="ok"),
                 "bpm": Provenance(value=bpm, source="rekordbox",
-                                  confidence=0.95, modified_at=created),
+                                  confidence=0.95, modified_at=created,
+                                  status="ok"),
             },
         ))
     backend.seed_playlist(Playlist(

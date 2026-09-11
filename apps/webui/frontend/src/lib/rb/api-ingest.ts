@@ -30,6 +30,8 @@ export type IngestCoverage = {
 	on_disk: number;
 	unreachable: number;
 	missing: Record<string, number>;
+	/** Per-step count of entries that PARSE-FAIL their real contract (malformed JSON, invalid fields, identity mismatch) - a subset of `missing`, distinct from an ordinary not-yet-run or stale-needs-rerun verdict. */
+	corrupt: Record<string, number>;
 	generated_at: number;
 };
 

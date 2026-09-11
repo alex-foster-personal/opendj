@@ -16,8 +16,9 @@ Two dicts:
 stays under the 600-line review threshold; the split is purely mechanical,
 ``from apps.database.column_docs import TABLE_DOCS`` still works. The four
 analysis-retention tables' entries (PR #383) moved the same way into
-:mod:`apps.database.column_docs_analysis_retention` and are merged into
-``COLUMN_DOCS`` below, for the same reason.
+:mod:`apps.database.column_docs_analysis_retention`, and schema v10's
+``lyric_verdict`` into :mod:`apps.database.column_docs_lyrics`; both are
+merged into ``COLUMN_DOCS`` below, for the same reason.
 
 Coverage: every table :mod:`apps.shared.state.schema` knows about --
 ``TABLES`` (the fourteen this module actually creates), the seven real
@@ -42,6 +43,11 @@ guards against drift; this file only supplies the meaning.
 from __future__ import annotations
 
 from apps.database.column_docs_analysis_retention import ANALYSIS_RETENTION_COLUMN_DOCS
+from apps.database.column_docs_lyrics import LYRICS_COLUMN_DOCS
+from apps.database.column_docs_native_analysis import NATIVE_ANALYSIS_COLUMN_DOCS
+from apps.database.column_docs_pairing_capture import PAIRING_CAPTURE_COLUMN_DOCS
+from apps.database.column_docs_sibling_apps import SIBLING_APP_COLUMN_DOCS
+from apps.database.enrollment_table_docs import ENROLLMENT_COLUMN_DOCS
 from apps.database.table_docs import TABLE_DOCS
 
 __all__ = ["COLUMN_DOCS", "TABLE_DOCS"]
@@ -345,7 +351,13 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     },
     "sync_policies": {
         "machine_id": "FK -> machines(machine_id), ON DELETE CASCADE.",
-        "asset_kind": ("CHECK IN ('audio', 'stem_bundle', 'anlz_cache', 'vocal_cache')."),
+        "asset_kind": (
+            "CHECK IN ('audio', 'stem_bundle', 'anlz_cache', 'vocal_cache', "
+            "'lyrics_cache', 'karaoke_words') -- widened from four kinds to "
+            "six by the schema v10 table rebuild "
+            "(apps/shared/state/migrations_v10.ASSET_KIND_CHECK_VALUES is the "
+            "one source of that list)."
+        ),
         "mode": (
             "CHECK IN ('pinned', 'cached', 'stream', 'excluded') -- "
             "pinned is always-local, cached is opportunistic with LRU "
@@ -561,6 +573,13 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         "last_dragged_at": "Unix-epoch timestamp of the last drag, or NULL.",
     },
     **ANALYSIS_RETENTION_COLUMN_DOCS,
+    **NATIVE_ANALYSIS_COLUMN_DOCS,
+    **PAIRING_CAPTURE_COLUMN_DOCS,
+    **SIBLING_APP_COLUMN_DOCS,
+    # Migration v9 enrollment tables (ADR 12).
+    **ENROLLMENT_COLUMN_DOCS,
+    # Migration v10 lyric_verdict (specs/karaoke-lyrics-operational-plan.md D13.1).
+    **LYRICS_COLUMN_DOCS,
 }
 
 

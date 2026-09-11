@@ -12,7 +12,8 @@
  * band arrays the server filled - bands are NEVER synthesised.
  */
 import { vocalsOf } from '$lib/rb/api-rb';
-import type { AnlzBeat, AnlzData, AnlzPhrase, AnlzWaveform } from '$lib/rb/anlz-types';
+import { shouldPaintBeatGrid } from '$lib/player/grid-features';
+import type { AnlzBeat, AnlzData, AnlzPhrase, AnlzTempoChange, AnlzWaveform } from '$lib/rb/anlz-types';
 import type { LoopState } from '$lib/rb/deck-state-types';
 import { LOOP_MIN_BAND_PX, loopBandPx, visibleBeatLines, type LoopBandSource } from './wave-math';
 import { drawLoopCueBands, drawPointCueMarkers, MARKER_BAND_PX, type WavePalette } from './cues';
@@ -196,7 +197,10 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 		// would otherwise blank out for their span; point cue markers stay in
 		// the foreground, after them (discussion_r3918219289).
 		drawLoopCueBands(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
-		_drawBeatGrid(ctx, frame.anlz.beatgrid.beats, tLeft, pxPerS, w, h, palette);
+		if (shouldPaintBeatGrid(frame.anlz)) {
+			_drawBeatGrid(ctx, frame.anlz.beatgrid.beats, tLeft, pxPerS, w, h, palette);
+			_drawTempoChanges(ctx, frame.anlz.tempo_changes, tLeft, pxPerS, w, h, palette);
+		}
 		_drawPhrases(ctx, frame.anlz.phrases, tLeft, pxPerS, w, palette);
 		drawPointCueMarkers(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
 		_drawVocals(ctx, frame.anlz, tLeft, pxPerS, w);
@@ -331,6 +335,28 @@ function _drawBands(
 	ctx.globalAlpha = 1;
 }
 
+function _drawTempoChanges(
+	ctx: CanvasRenderingContext2D,
+	changes: readonly AnlzTempoChange[] | undefined,
+	tLeft: number,
+	pxPerS: number,
+	w: number,
+	h: number,
+	palette: WavePalette
+): void {
+	if (changes === undefined || changes.length === 0) return;
+	ctx.strokeStyle = palette.phrase;
+	ctx.lineWidth = 1;
+	for (const change of changes) {
+		const x = (change.at_s - tLeft) * pxPerS;
+		if (x < -2 || x > w + 2) continue;
+		ctx.beginPath();
+		ctx.moveTo(x, 0);
+		ctx.lineTo(x, h);
+		ctx.stroke();
+	}
+}
+
 function _drawBeatGrid(
 	ctx: CanvasRenderingContext2D,
 	beats: AnlzBeat[],
@@ -429,12 +455,15 @@ function _drawVocals(
 }
 
 /**
- * CH3/4 get a lighter fill than --rb-bg (#0d0f12) so secondary rows read
- * clearly under the opaque canvas (CSS alone cannot show through).
+ * CH3/4 still get a lighter fill than --rb-bg so the opaque canvas matches
+ * the gutter; the colour now comes from --rb-waverow-secondary, not a
+ * hardcoded dark hex. CSS alone cannot show through.
  */
 export function resolvePaintPalette(deckId: number, palette: WavePalette): WavePalette {
-	const rowBg = deckId === 3 || deckId === 4 ? '#1a1f28' : palette.bg;
-	return rowBg === palette.bg ? palette : { ...palette, bg: rowBg };
+	if (deckId !== 3 && deckId !== 4) return palette;
+	return palette.secondaryBg === palette.bg
+		? palette
+		: { ...palette, bg: palette.secondaryBg };
 }
 
 /** Fixed center playhead. Always drawn (busy waveforms + empty decks).

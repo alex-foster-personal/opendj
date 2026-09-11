@@ -16,17 +16,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+TREND_MINUTES = 30.0
+TREND_AMBER_SLOPE_MB_PER_HOUR = 25.0
+TREND_RED_SLOPE_MB_PER_HOUR = 100.0
+UNLOAD_TOLERANCE_MB = 256.0
+
 
 def append_bounded_jsonl(
     output_dir: Path, record: dict[str, Any], cap_bytes: int
 ) -> tuple[Path, bool]:
     output_dir.mkdir(parents=True, exist_ok=True)
     # UTC names and UTC record timestamps keep one cross-machine timeline.
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")  # noqa: UP017
     path = output_dir / f"opendj-performance-{stamp}.jsonl"
     payload = (
-        json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        + "\n"
+        json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
     ).encode("utf-8")
     try:
         current_size = path.stat().st_size
@@ -181,14 +185,10 @@ def _aggregate_samples(
         aggregate.process_families.add(tuple(sorted(family)))
         for role, value in per_role.items():
             aggregate.role_values.setdefault(role, []).append(value)
-        aggregate.max_active_jobs = max(
-            aggregate.max_active_jobs, _active_engine_job_count(record)
-        )
+        aggregate.max_active_jobs = max(aggregate.max_active_jobs, _active_engine_job_count(record))
         orphan_count = record.get("suspected_orphan_count")
         if isinstance(orphan_count, int):
-            aggregate.max_suspected_orphans = max(
-                aggregate.max_suspected_orphans, orphan_count
-            )
+            aggregate.max_suspected_orphans = max(aggregate.max_suspected_orphans, orphan_count)
         deep = record.get("deep_vmmap")
         if isinstance(deep, dict):
             aggregate.deep_samples += 1
@@ -246,9 +246,7 @@ def _window_summary(
     return {
         "first": samples[0][0].isoformat().replace("+00:00", "Z"),
         "last": samples[-1][0].isoformat().replace("+00:00", "Z"),
-        "duration_minutes": round(
-            (samples[-1][0] - samples[0][0]).total_seconds() / 60, 2
-        ),
+        "duration_minutes": round((samples[-1][0] - samples[0][0]).total_seconds() / 60, 2),
         "sample_count": len(samples),
         "non_sample_record_count": total_record_count - len(samples),
         "malformed_lines": malformed_lines,
@@ -260,9 +258,7 @@ def summarize_logs(output_dir: Path, hours: float) -> dict[str, Any]:
 
     cutoff = datetime.now(timezone.utc).timestamp() - hours * 3600  # noqa: UP017
     rows, malformed_lines = _load_timed_records(output_dir, cutoff)
-    samples = [
-        (timestamp, record) for timestamp, record in rows if record.get("kind") == "sample"
-    ]
+    samples = [(timestamp, record) for timestamp, record in rows if record.get("kind") == "sample"]
     if not samples:
         return {
             "schema_version": 1,
@@ -289,8 +285,7 @@ def summarize_logs(output_dir: Path, hours: float) -> dict[str, Any]:
             "max": round(max(cpu_values), 2) if cpu_values else None,
         },
         "by_role_mb": {
-            role: _series_summary(values)
-            for role, values in sorted(aggregate.role_values.items())
+            role: _series_summary(values) for role, values in sorted(aggregate.role_values.items())
         },
         "unique_process_families": len(aggregate.process_families),
         "max_active_engine_jobs": aggregate.max_active_jobs,
@@ -299,4 +294,287 @@ def summarize_logs(output_dir: Path, hours: float) -> dict[str, Any]:
         "deep_vmmap_sample_count": aggregate.deep_samples,
         "latest_deep_vmmap": aggregate.latest_deep,
         "builds": list(aggregate.builds.values()),
+    }
+
+
+def _parse_since(value: str) -> datetime:
+    """Parse one explicit ISO 8601 boundary, refusing ambiguous local time."""
+
+    try:
+        result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"--since must be ISO 8601, got {value!r}") from exc
+    if result.tzinfo is None:
+        raise ValueError("--since must include a timezone, for example 2026-09-02T12:00:00Z")
+    return result.astimezone(timezone.utc)  # noqa: UP017
+
+
+def _process_series(
+    samples: list[tuple[datetime, dict[str, Any]]],
+) -> dict[str, dict[str, Any]]:
+    """Return PID-stable footprint slopes without copying command strings."""
+
+    by_pid: dict[str, tuple[str, list[float], list[float]]] = {}
+    first_time = samples[0][0]
+    for timestamp, record in samples:
+        processes = record.get("processes")
+        if not isinstance(processes, list):
+            continue
+        elapsed = (timestamp - first_time).total_seconds()
+        for process in processes:
+            if not isinstance(process, dict) or not isinstance(process.get("pid"), int):
+                continue
+            value = process.get("physical_footprint_mb")
+            if not isinstance(value, (int, float)):
+                continue
+            key = str(process["pid"])
+            role = str(process.get("role", "unknown"))
+            prior = by_pid.get(key)
+            if prior is None:
+                by_pid[key] = (role, [elapsed], [float(value)])
+            else:
+                prior[1].append(elapsed)
+                prior[2].append(float(value))
+    return {
+        pid: {
+            "role": role,
+            "sample_count": len(values),
+            "physical_footprint_mb": _series_summary(values),
+            "slope_mb_per_hour": _linear_slope_mb_per_hour(elapsed, values),
+        }
+        for pid, (role, elapsed, values) in sorted(by_pid.items(), key=lambda item: int(item[0]))
+    }
+
+
+def _loaded_deck_count(record: dict[str, Any]) -> int | None:
+    ring = record.get("browser_perf_ring")
+    value = ring.get("loaded_deck_count") if isinstance(ring, dict) else None
+    return value if isinstance(value, int) and 0 <= value <= 4 else None
+
+
+def _deck_normalized_footprints(
+    samples: list[tuple[datetime, dict[str, Any]]],
+) -> dict[str, Any]:
+    """Per-deck footprints, with the zero-deck samples EXCLUDED, not divided.
+
+    Dividing by `max(1, decks)` treated a measured zero-deck sample as a
+    one-deck sample, so the whole raw process footprint entered the series
+    labelled as a per-deck value. That is a fabricated denominator, and it
+    drags the series toward a number no deck ever cost. A zero-deck sample has
+    no per-deck value to report, so it is omitted and COUNTED: the count is
+    what stops the omission from being silent, and it distinguishes an empty
+    series caused by no measurable ring from one caused by an idle app.
+    """
+
+    values: list[float] = []
+    excluded_zero_deck = 0
+    for _, record in samples:
+        decks = _loaded_deck_count(record)
+        if decks is None:
+            continue
+        totals = record.get("totals")
+        if not isinstance(totals, dict) or not isinstance(
+            totals.get("physical_footprint_mb"), (int, float)
+        ):
+            continue
+        if decks == 0:
+            excluded_zero_deck += 1
+            continue
+        values.append(round(float(totals["physical_footprint_mb"]) / decks, 2))
+    return {"values": values, "excluded_zero_deck": excluded_zero_deck}
+
+
+def _unload_unavailable_reason(has_deck_state_evidence: bool) -> dict[str, Any]:
+    """Why no clean unload cycle completed, phrased to tell absence from idle.
+
+    No sample ever resolving a deck count means the ring carried no deck-state
+    evidence at all - a broken or never-written ring. That is NOT the same as an
+    app that sat idle through the window: an idle app with the empty-deck
+    baseline reads 0 loaded decks and opens a baseline. Conflating the two hid
+    real retained-memory regressions as "the app was never exercised".
+    """
+
+    if not has_deck_state_evidence:
+        return {"available": False, "reason": "no deck-state evidence in perf ring"}
+    return {
+        "available": False,
+        "reason": "need post-boot baseline, four loaded decks, and later all-unloaded sample",
+    }
+
+
+def _unload_check(
+    samples: list[tuple[datetime, dict[str, Any]]],
+    history: list[tuple[datetime, dict[str, Any]]],
+) -> dict[str, Any]:
+    """Compare a windowed load cycle to the first post-boot sample for its shell."""
+
+    def footprint_rows(
+        records: list[tuple[datetime, dict[str, Any]]],
+    ) -> list[tuple[dict[str, Any], int | None]]:
+        return [
+            (record, _loaded_deck_count(record))
+            for _, record in records
+            if isinstance(record.get("totals"), dict)
+            and isinstance(record["totals"].get("physical_footprint_mb"), (int, float))
+        ]
+
+    any_deck_state_evidence = False
+    post_boot_baselines: dict[int, float | None] = {}
+    for record, decks in footprint_rows(history):
+        if decks is not None:
+            any_deck_state_evidence = True
+        shell_pid = record.get("shell_pid")
+        if not isinstance(shell_pid, int) or shell_pid in post_boot_baselines:
+            continue
+        footprint = float(record["totals"]["physical_footprint_mb"])
+        post_boot_baselines[shell_pid] = footprint if decks == 0 else None
+
+    four_loaded_seen: set[int] = set()
+    completed: tuple[float, float] | None = None
+    for record, decks in footprint_rows(samples):
+        if decks is not None:
+            any_deck_state_evidence = True
+        shell_pid = record.get("shell_pid")
+        if not isinstance(shell_pid, int):
+            continue
+        baseline = post_boot_baselines.get(shell_pid)
+        if baseline is None:
+            continue
+        footprint = float(record["totals"]["physical_footprint_mb"])
+        if decks == 4:
+            four_loaded_seen.add(shell_pid)
+        elif decks == 0 and shell_pid in four_loaded_seen:
+            completed = (baseline, footprint)
+    if completed is None:
+        return _unload_unavailable_reason(any_deck_state_evidence)
+    baseline, latest_unloaded = completed
+    delta = round(latest_unloaded - baseline, 2)
+    return {
+        "available": True,
+        "baseline_mb": baseline,
+        "after_unload_mb": latest_unloaded,
+        "delta_mb": delta,
+        "tolerance_mb": UNLOAD_TOLERANCE_MB,
+        "passed": delta <= UNLOAD_TOLERANCE_MB,
+    }
+
+
+def trend_logs(output_dir: Path, since: str) -> dict[str, Any]:
+    """Assess resource growth from existing JSONL only, with a process verdict."""
+
+    boundary = _parse_since(since)
+    rows, malformed_lines = _load_timed_records(output_dir, boundary.timestamp())
+    if malformed_lines:
+        return {
+            "available": False,
+            "verdict": "AMBER",
+            "exit_code": 2,
+            "reason": (
+                f"refusing trend verdict: {malformed_lines} malformed JSONL "
+                "record(s) in the selected log window"
+            ),
+        }
+    samples = [(timestamp, record) for timestamp, record in rows if record.get("kind") == "sample"]
+    if not samples:
+        return {
+            "available": False,
+            "verdict": "AMBER",
+            "exit_code": 0,
+            "reason": "no process samples since boundary",
+        }
+    duration_minutes = (samples[-1][0] - samples[0][0]).total_seconds() / 60
+    processes = _process_series(samples)
+    slopes = [
+        item["slope_mb_per_hour"]
+        for item in processes.values()
+        if isinstance(item["slope_mb_per_hour"], float)
+    ]
+    max_slope = max(slopes, default=None)
+    orphan_count = max(
+        (
+            int(record.get("suspected_orphan_count", 0))
+            for _, record in samples
+            if isinstance(record.get("suspected_orphan_count", 0), int)
+        ),
+        default=0,
+    )
+    engine_rss = [
+        float(process["resident_mb"])
+        for _, record in samples
+        for process in record.get("processes", [])
+        if isinstance(process, dict)
+        and process.get("role") == "python-engine"
+        and isinstance(process.get("resident_mb"), (int, float))
+    ]
+    history, _ = _load_timed_records(output_dir, float("-inf"))
+    history_samples = [
+        (timestamp, record) for timestamp, record in history if record.get("kind") == "sample"
+    ]
+    unload = _unload_check(samples, history_samples)
+    normalized = _deck_normalized_footprints(samples)
+    reasons: list[str] = []
+    # The sufficiency floor gates only the SLOPE-derived signal. A window
+    # shorter than TREND_MINUTES has not observed enough time to extrapolate a
+    # rate, so a steep slope in that window is an observation, not a finding
+    # (verification.md: a tool that cannot measure reports UNKNOWN, never a
+    # verdict). Orphan count and a failed unload check are direct observations,
+    # not extrapolations: an orphan that exists, exists, and a failed unload
+    # check failed, regardless of how long the window was. Suppressing those
+    # behind the floor would report UNKNOWN with exit 0 for a real, directly
+    # observed failure, which is worse than the false alarm the floor exists
+    # to prevent (issue #1404 review, PR #1407).
+    sufficient_window = duration_minutes >= TREND_MINUTES
+    slope_exceeds_red = max_slope is not None and max_slope > TREND_RED_SLOPE_MB_PER_HOUR
+    red_from_observation = orphan_count > 0 or unload.get("passed") is False
+    if orphan_count:
+        reasons.append(f"{orphan_count} suspected orphan(s)")
+    if unload.get("passed") is False:
+        reasons.append(f"unload retained {unload['delta_mb']} MB above baseline")
+    if red_from_observation:
+        verdict = "RED"
+        if slope_exceeds_red:
+            if sufficient_window:
+                reasons.append(f"process slope {max_slope} MB/hour")
+            else:
+                reasons.append(
+                    f"process slope {max_slope} MB/hour observed but not counted "
+                    f"(only {duration_minutes:.1f} minutes sampled, need {TREND_MINUTES:.0f})"
+                )
+    elif not sufficient_window:
+        verdict = "UNKNOWN"
+        reasons.append(f"only {duration_minutes:.1f} minutes sampled, need {TREND_MINUTES:.0f}")
+    elif slope_exceeds_red:
+        verdict = "RED"
+        reasons.append(f"process slope {max_slope} MB/hour")
+    elif max_slope is None:
+        verdict = "AMBER"
+        reasons.append("no process slope is measurable")
+    elif max_slope > TREND_AMBER_SLOPE_MB_PER_HOUR:
+        verdict = "AMBER"
+        reasons.append(f"process slope {max_slope} MB/hour")
+    else:
+        verdict = "GREEN"
+        reasons.append("no growth threshold crossed")
+    return {
+        "available": True,
+        "since": boundary.isoformat().replace("+00:00", "Z"),
+        "window": _window_summary(samples, len(rows), malformed_lines),
+        "per_process": processes,
+        "deck_load_normalized_footprint_mb": normalized["values"],
+        "deck_load_normalized_excluded_zero_deck_samples": normalized["excluded_zero_deck"],
+        "orphan_count": orphan_count,
+        "engine_rss_mb": _series_summary(engine_rss),
+        "engine_port": next(
+            (
+                engine["port"]
+                for _, record in reversed(samples)
+                if isinstance(record.get("engine"), dict)
+                and isinstance((engine := record["engine"]).get("port"), int)
+            ),
+            None,
+        ),
+        "unload_check": unload,
+        "verdict": verdict,
+        "verdict_reason": "; ".join(reasons),
+        "exit_code": 1 if verdict == "RED" else 0,
     }

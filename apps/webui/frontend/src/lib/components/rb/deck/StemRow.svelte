@@ -45,7 +45,9 @@
 				`- it is mixed into INST, so it cannot be muted on its own`
 			);
 		}
-		return statusTip;
+		const ctrl = deck.stems.controls[stem];
+		const state = ctrl.solo ? 'soloed now' : ctrl.muted ? 'muted now' : 'audible now';
+		return `${label} stem is ${state}. Click to mute, Shift+click to solo. ${statusTip}`;
 	}
 
 	async function toggle(event: MouseEvent, stem: StemControl): Promise<void> {

@@ -4,6 +4,7 @@ export {
 	seekSyncMaster,
 	syncChangeRequiresReschedule,
 	syncMayWriteTempo,
+	syncModeForBeatSyncMax,
 	type SeekSyncPlan
 } from '$lib/rb/beat-sync-decisions';
 

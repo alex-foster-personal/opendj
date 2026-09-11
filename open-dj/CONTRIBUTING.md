@@ -42,6 +42,11 @@ protocol. In short:
    fixture's `capabilities.yaml`.
 5. Land a docs page under `open-dj/adapters/<name>.md` summarising the
    field table and any safety rails.
+6. Add a `vendors.<name>` object on every entry in
+   `open-dj/synonym-map.json` and a matching column in
+   `open-dj/terminology.md`. A new canonical field on `Track` or a new
+   `CapabilityField` needs a glossary entry too.
+   `tests/open_dj/test_glossary.py` fails otherwise.
 
 ## Licensing gotchas
 

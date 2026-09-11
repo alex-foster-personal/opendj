@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import dataclass
 
+from scripts.review_claude import CLAUDE, is_claude_thread
 from scripts.review_sol import SOL, is_sol_thread
 
 BOT_LOGINS = frozenset(
@@ -34,12 +36,42 @@ BOT_LOGINS = frozenset(
 # ![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)
 _SEVERITY_BADGE = re.compile(r"badge/(P[0-9])-")
 _SEVERITY_BARE = re.compile(r"\b(P[0-3])\b")
-# The verdict is a LEADING token on the headline, which is how reviewers
-# actually emit it ("BLOCKING Validate ...", "NON-BLOCKING: Restrict ...").
+# The verdict is the FIRST TOKEN on the headline, which is how reviewers
+# actually emit it ("BLOCKING Validate ...", "[NON-BLOCKING] Restrict ...").
 # Anchoring matters: a headline may legitimately describe the problem using
 # the word, as in "Move blocking upload analysis off the event loop", and
 # reading that as an explicit verdict mis-tiers an ordinary P2.
-_BLOCKING = re.compile(r"^\s*(NON[-\s]?)?BLOCKING\b\s*[:.-]?\s", re.IGNORECASE)
+#
+# What is pinned is POSITION, not punctuation. Codex changed its own markup
+# between PR #1600 and PR #1658 -- a bare "BLOCKING Close ..." became a
+# bracketed "[BLOCKING] Close ..." -- and an anchor requiring the marker at
+# literal offset zero read every bracketed verdict as `unmarked`. An unmarked
+# P2 is eligible for the debt-log path under MERGE WITH P2s OPEN, so a thread
+# the reviewer had explicitly marked BLOCKING could be waved through a merge:
+# exactly the one shortcut the tiering exists to refuse. Pinning the new markup
+# would rot the same way on the bot's next rendering change.
+#
+# So a WRAPPER is optional and unenumerated -- `[`, `(`, U+3010, whatever the
+# renderer emits next -- but it must ABUT the marker, with no space between.
+# That is what makes it a wrapper rather than a word of its own, and it is the
+# discriminator Codex asked for on PR #1671: Devin opens its headlines with a
+# SEMANTIC emoji, `🟡 **Blocking I/O stalls the event loop**`, and
+# swallowing every leading non-word character exposed ordinary prose at offset
+# zero and invented a verdict from it. An emoji is followed by a space; a
+# wrapper is not.
+#
+# NON- is matched inside the SAME anchored alternation and is never tested as a
+# separate substring. "BLOCKING" occurs inside "NON-BLOCKING" at offset 4, so an
+# unanchored search reads every non-blocking nit as a merge blocker -- the
+# opposite error, and one this gate has already made once. Anchoring is what
+# keeps both directions correct at the same time: at offset zero the optional
+# NON- group consumes the prefix before BLOCKING is ever reached.
+#
+# Every class here is Unicode-aware (`\w`, not `A-Za-z`): an ASCII-only class
+# calls every accented letter decoration, so "πBLOCKING calculation is wrong"
+# would have its leading letter stripped and become an explicit blocker
+# (Sol P2, PR #1671).
+_BLOCKING = re.compile(r"^\s*(?:[^\w\s]+)?(NON\W?)?BLOCKING", re.IGNORECASE)
 _MD_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _HTML_TAG = re.compile(r"</?[a-zA-Z][^>]*>")
@@ -300,20 +332,32 @@ def _is_bot(login: str) -> bool:
     return _normalize_login(login) in BOT_LOGINS
 
 
+def _reviewer_lane(login: str, body: str) -> str:
+    """Which CLI review lane wrote this opening comment, if any.
+
+    Sol and Claude both post through `gh` as the maintainer (issues #1211 and the Sun 6
+    Sep 2026 Claude lane), so neither has a bot login to recognize and each is
+    identified by the marker its own lane writes. The marker is checked at ANY
+    head, not the current one: an outdated finding still has to reach a
+    disposition.
+    """
+    if is_sol_thread(login, body):
+        return SOL
+    if is_claude_thread(login, body):
+        return CLAUDE
+    return ""
+
+
 def _is_reviewer_thread(login: str, body: str) -> bool:
     """Is this opening comment a REVIEW that the three-state rule governs?
 
-    Bot login is the usual answer. Sol is the exception: it is a Codex CLI run
-    posted through `gh` as the maintainer (issue #1211, Thu 4 Sep 2026), so it has no bot
-    login to recognize and is identified by the marker its lane writes instead.
-    Without this branch a Sol finding would be an ordinary human comment, and
-    the silence detector would let a P0 sit unanswered through a merge -- the
-    exact gap this module exists to close, just wearing a different login.
-
-    The marker is checked at ANY head, not the current one: an outdated
-    finding still has to reach a disposition.
+    Bot login is the usual answer; the CLI lanes are the exception. Without
+    the lane branch a Sol or Claude finding would be an ordinary human
+    comment, and the silence detector would let a P0 sit unanswered through a
+    merge -- the exact gap this module exists to close, just wearing a
+    different login.
     """
-    return _is_bot(login) or is_sol_thread(login, body)
+    return _is_bot(login) or bool(_reviewer_lane(login, body))
 
 
 def _is_human(login: str) -> bool:
@@ -377,6 +421,21 @@ def _headline(body: str) -> str:
     return ""
 
 
+def _joins_into_a_longer_word(char: str) -> bool:
+    """Does `char` make the BLOCKING before it part of a longer word?
+
+    A word character continues it outright ("BLOCKINGS"). So does any Unicode
+    DASH, because a hyphenated compound is one word for this purpose:
+    "BLOCKING-ADJACENT work belongs elsewhere" is prose, not a verdict, and it
+    stays prose when the hyphen is U+2011 or an U+2013 character.
+
+    The dash test asks `unicodedata` for the CATEGORY rather than listing the
+    dashes, which is the same rule the wrapper follows one level up: an
+    enumeration is a value that rots, and Unicode has nineteen of these.
+    """
+    return char.isalnum() or char == "_" or unicodedata.category(char) == "Pd"
+
+
 def _blocking(body: str) -> str:
     """Read the BLOCKING / NON-BLOCKING marker, or 'unmarked' when absent.
 
@@ -384,9 +443,17 @@ def _blocking(body: str) -> str:
     on the finding's first line; scanning the whole body would read a P2 whose
     prose happens to mention "blocking I/O" as an explicit BLOCKING verdict and
     strand it outside the debt-log path.
+
+    Two boundaries, both invariants rather than punctuation lists: the marker
+    leads the headline (bare, or abutting an unenumerated wrapper), and it is a
+    COMPLETE TOKEN rather than the start of a longer one.
     """
-    match = _BLOCKING.match(_headline(body))
+    headline = _headline(body)
+    match = _BLOCKING.match(headline)
     if not match:
+        return "unmarked"
+    tail = headline[match.end() :]
+    if tail and _joins_into_a_longer_word(tail[0]):
         return "unmarked"
     return "NON-BLOCKING" if match.group(1) else "BLOCKING"
 
@@ -475,7 +542,7 @@ def build_thread(
         line=node["line"],
         resolved=node["isResolved"],
         outdated=node["isOutdated"],
-        bot=SOL if is_sol_thread(author, body) else author,
+        bot=_reviewer_lane(author, body) or author,
         severity=_severity(body),
         blocking=_blocking(body),
         summary=_summary(body),

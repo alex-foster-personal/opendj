@@ -41,33 +41,33 @@ def _exists_from(paths: set[str]):
 
 
 def test_rehome_swaps_user_prefix():
-    assert rehome_path("/Users/dev/Music/x.mp3", home="/Users/dev") == (
-        "/Users/dev/Music/x.mp3"
+    assert rehome_path("/Users/old/Music/x.mp3", home="/Users/user") == (
+        "/Users/user/Music/x.mp3"
     )
 
 
 def test_rehome_tolerates_rekordbox_double_slash():
-    assert rehome_path("//Users/dev/Music/x.mp3", home="/Users/dev") == (
-        "/Users/dev/Music/x.mp3"
+    assert rehome_path("//Users/old/Music/x.mp3", home="/Users/user") == (
+        "/Users/user/Music/x.mp3"
     )
 
 
 def test_rehome_preserves_posix_home_flavor_on_windows_hosts():
     """A migrated Mac library keeps POSIX paths even when checked on Windows."""
-    assert rehome_path("/Users/dev/Music/x.mp3", home="/Users/dev") == (
-        "/Users/dev/Music/x.mp3"
+    assert rehome_path("/Users/old/Music/x.mp3", home="/Users/user") == (
+        "/Users/user/Music/x.mp3"
     )
 
 
 def test_rehome_uses_windows_home_flavor_for_windows_library():
-    assert rehome_path("/Users/dev/Music/x.mp3", home=r"C:\Users\dev") == (
-        r"C:\Users\dev\Music\x.mp3"
+    assert rehome_path("/Users/old/Music/x.mp3", home=r"C:\Users\user") == (
+        r"C:\Users\user\Music\x.mp3"
     )
 
 
 def test_rehome_accepts_absolute_windows_unc_home():
     assert rehome_path(
-        "/Users/dev/Music/x.mp3", home=r"\\server\share\dev"
+        "/Users/old/Music/x.mp3", home=r"\\server\share\dev"
     ) == r"\\server\share\dev\Music\x.mp3"
 
 
@@ -75,19 +75,19 @@ def test_rehome_accepts_absolute_windows_unc_home():
     "home",
     [
         "Users/dev",
-        r"C:Users\dev",
+        r"C:Users\user",
         r"\\server",
         "\\\\",
     ],
 )
 def test_rehome_rejects_non_absolute_home(home: str):
     with pytest.raises(ValueError, match="absolute POSIX or Windows"):
-        rehome_path("/Users/dev/Music/x.mp3", home=home)
+        rehome_path("/Users/old/Music/x.mp3", home=home)
 
 
 def test_rehome_returns_none_without_home_prefix():
-    assert rehome_path("/Volumes/SLATER/x.mp3", home="/Users/dev") is None
-    assert rehome_path("", home="/Users/dev") is None
+    assert rehome_path("/Volumes/SLATER/x.mp3", home="/Users/user") is None
+    assert rehome_path("", home="/Users/user") is None
 
 
 # ----- check_integrity classification ------------------------------------
@@ -95,9 +95,9 @@ def test_rehome_returns_none_without_home_prefix():
 
 def test_present_when_file_exists():
     rep = check_integrity(
-        [FakeTrack("/Users/dev/Music/a.mp3")],
-        exists=_exists_from({"/Users/dev/Music/a.mp3"}),
-        home="/Users/dev",
+        [FakeTrack("/Users/user/Music/a.mp3")],
+        exists=_exists_from({"/Users/user/Music/a.mp3"}),
+        home="/Users/user",
     )
     assert (rep.present, rep.rehomable, rep.missing) == (1, 0, 0)
 
@@ -105,33 +105,33 @@ def test_present_when_file_exists():
 def test_rehomable_when_only_home_prefix_differs():
     # File lives under the *current* home; DB still points at the old user.
     rep = check_integrity(
-        [FakeTrack("//Users/dev/Music/a.mp3")],
-        exists=_exists_from({"/Users/dev/Music/a.mp3"}),
-        home="/Users/dev",
+        [FakeTrack("//Users/old/Music/a.mp3")],
+        exists=_exists_from({"/Users/user/Music/a.mp3"}),
+        home="/Users/user",
     )
     assert (rep.present, rep.rehomable, rep.missing) == (0, 1, 0)
     assert rep.broken == 1  # rehomable still counts as broken-until-fixed
 
 
 def test_rehomable_when_current_home_is_windows_flavored():
-    rehomed = r"C:\Users\dev\Music\a.mp3"
+    rehomed = r"C:\Users\user\Music\a.mp3"
     rep = check_integrity(
-        [FakeTrack("//Users/dev/Music/a.mp3")],
+        [FakeTrack("//Users/old/Music/a.mp3")],
         exists=_exists_from({rehomed}),
-        home=r"C:\Users\dev",
+        home=r"C:\Users\user",
     )
     assert (rep.present, rep.rehomable, rep.missing) == (0, 1, 0)
 
 
 def test_missing_when_nowhere():
     rep = check_integrity(
-        [FakeTrack("//Users/dev/Music/gone.mp3")],
+        [FakeTrack("//Users/old/Music/gone.mp3")],
         exists=_exists_from(set()),
-        home="/Users/dev",
+        home="/Users/user",
     )
     assert (rep.present, rep.rehomable, rep.missing) == (0, 0, 1)
-    assert rep.missing_examples == ["//Users/dev/Music/gone.mp3"]
-    assert rep.stale_home_prefixes == {"//Users/dev": 1}
+    assert rep.missing_examples == ["//Users/old/Music/gone.mp3"]
+    assert rep.stale_home_prefixes == {"//Users/old": 1}
 
 
 def test_streaming_and_empty_paths_skipped():
@@ -139,10 +139,10 @@ def test_streaming_and_empty_paths_skipped():
         [
             FakeTrack("spotify:track:abc", is_streaming=True),
             FakeTrack(""),
-            FakeTrack("/Users/dev/Music/a.mp3"),
+            FakeTrack("/Users/user/Music/a.mp3"),
         ],
-        exists=_exists_from({"/Users/dev/Music/a.mp3"}),
-        home="/Users/dev",
+        exists=_exists_from({"/Users/user/Music/a.mp3"}),
+        home="/Users/user",
     )
     assert rep.total == 3
     assert rep.streaming == 1
@@ -153,13 +153,13 @@ def test_streaming_and_empty_paths_skipped():
 def test_ratios_use_with_path_denominator():
     rep = check_integrity(
         [
-            FakeTrack("/Users/dev/Music/a.mp3"),       # present
+            FakeTrack("/Users/user/Music/a.mp3"),       # present
             FakeTrack("//Users/old/Music/b.mp3"),       # rehomable
             FakeTrack("//Users/old/Music/c.mp3"),       # missing
             FakeTrack("//Users/old/Music/d.mp3"),       # missing
         ],
-        exists=_exists_from({"/Users/dev/Music/a.mp3", "/Users/dev/Music/b.mp3"}),
-        home="/Users/dev",
+        exists=_exists_from({"/Users/user/Music/a.mp3", "/Users/user/Music/b.mp3"}),
+        home="/Users/user",
     )
     assert rep.with_path == 4
     assert rep.missing == 2 and rep.rehomable == 1
@@ -172,9 +172,9 @@ def test_ratios_use_with_path_denominator():
 
 def test_assert_healthy_noop_when_all_present():
     rep = check_integrity(
-        [FakeTrack("/Users/dev/Music/a.mp3")],
-        exists=_exists_from({"/Users/dev/Music/a.mp3"}),
-        home="/Users/dev",
+        [FakeTrack("/Users/user/Music/a.mp3")],
+        exists=_exists_from({"/Users/user/Music/a.mp3"}),
+        home="/Users/user",
     )
     assert_healthy(rep)  # must not raise
 
@@ -185,23 +185,23 @@ def test_assert_healthy_noop_on_empty_library():
 
 def test_assert_healthy_raises_over_threshold_with_actionable_message():
     rep = check_integrity(
-        [FakeTrack("//Users/dev/Music/x.mp3") for _ in range(100)],
+        [FakeTrack("//Users/old/Music/x.mp3") for _ in range(100)],
         exists=_exists_from(set()),
-        home="/Users/dev",
+        home="/Users/user",
     )
     with pytest.raises(LibraryIntegrityError) as exc:
         assert_healthy(rep, threshold=DEFAULT_THRESHOLD)
     msg = str(exc.value)
-    assert "/Users/dev" in msg  # names the stale prefix
+    assert "/Users/old" in msg  # names the stale prefix
     assert "100/100" in msg
 
 
 @pytest.mark.parametrize("bad", [-0.1, 1.5, 10.0])
 def test_assert_healthy_rejects_out_of_range_threshold(bad):
     rep = check_integrity(
-        [FakeTrack("/Users/dev/Music/a.mp3")],
-        exists=_exists_from({"/Users/dev/Music/a.mp3"}),
-        home="/Users/dev",
+        [FakeTrack("/Users/user/Music/a.mp3")],
+        exists=_exists_from({"/Users/user/Music/a.mp3"}),
+        home="/Users/user",
     )
     with pytest.raises(ValueError, match="threshold"):
         assert_healthy(rep, threshold=bad)

@@ -119,6 +119,7 @@ def run_worker(
         cmd = [
             "uv",
             "run",
+            "--no-sync",
             str(WORKER_SCRIPT),
             "--audio",
             str(audio),

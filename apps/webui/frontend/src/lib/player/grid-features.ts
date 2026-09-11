@@ -19,11 +19,12 @@
  */
 
 import { validateBeatGrid } from '$lib/rb/beat-sync-math';
-import type { AnlzBeat } from '$lib/rb/anlz-types';
+import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { DeckState } from '$lib/rb/deck-state-types';
 
 /**
- * The one sentence every inert sync / quantize control shows on hover.
+ * The one sentence every inert sync / quantize control shows on hover when the
+ * track simply has no usable grid.
  *
  * Deliberately NOT the 'not implemented - see PARITY-TODO' stub wording, which
  * means "never built" and is policed as a literal by inert-controls.test.mjs.
@@ -34,6 +35,8 @@ import type { DeckState } from '$lib/rb/deck-state-types';
  */
 export const GRID_FEATURE_TIP =
 	'needs a beat grid - analyse this track for quantize and beat sync; play, pause and cue still work';
+
+const _NAMED_SOURCES = new Set<string>(['own', 'rekordbox']);
 
 /**
  * Whether these beats are a real PQTZ grid the beat math can plan against.
@@ -56,30 +59,93 @@ export function hasRealBeatGrid(
 	return true;
 }
 
+function _beatgridSource(anlz: Pick<AnlzData, 'beatgrid'> | null | undefined): unknown {
+	return anlz?.beatgrid?.source;
+}
+
+/** Fail-closed trust predicate for grid-dependent controls (NATIVE-01/03).
+ *
+ * Identifies the selected source ONLY from `anlz.beatgrid.source`, never from
+ * the presence or absence of any other field. Any value other than the two
+ * named literals is its own explicit untrusted branch.
+ */
+export function hasTrustedBeatGrid(anlz: Pick<AnlzData, 'beatgrid'> | null | undefined): boolean {
+	if (anlz === null || anlz === undefined) return false;
+	const source = _beatgridSource(anlz);
+	if (typeof source !== 'string' || !_NAMED_SOURCES.has(source)) {
+		return false;
+	}
+	if (!hasRealBeatGrid(anlz.beatgrid.beats)) return false;
+	if (source === 'rekordbox') return true;
+	const bg = anlz.beatgrid;
+	if (bg.status !== 'ok') return false;
+	if (bg.static_grid_untrusted !== false) return false;
+	return true;
+}
+
 export function deckHasRealBeatGrid(st: Pick<DeckState, 'anlz'>): boolean {
 	return hasRealBeatGrid(st.anlz?.beatgrid.beats);
 }
 
+export function deckHasTrustedBeatGrid(st: Pick<DeckState, 'anlz'>): boolean {
+	return hasTrustedBeatGrid(st.anlz);
+}
+
+/** Whether beat ticks and tempo-change markers should paint on the deck.
+ *
+ * Own `status: failed` paints NO beats (never rekordbox's in its place).
+ * Own `static_grid_untrusted: true` still paints ticks and tempo markers.
+ */
+export function shouldPaintBeatGrid(anlz: Pick<AnlzData, 'beatgrid'> | null | undefined): boolean {
+	if (anlz === null || anlz === undefined) return false;
+	const source = _beatgridSource(anlz);
+	if (source === 'own' && anlz.beatgrid.status === 'failed') return false;
+	return hasRealBeatGrid(anlz.beatgrid.beats);
+}
+
+/** Hover title for inert quantize / beat-sync controls on a loaded deck. */
+export function gridFeatureInertTip(
+	st: Pick<DeckState, 'anlz' | 'stable_id'>
+): string {
+	if (st.stable_id === null) return GRID_FEATURE_TIP;
+	const anlz = st.anlz;
+	if (anlz === null || anlz === undefined) return GRID_FEATURE_TIP;
+	const source = _beatgridSource(anlz);
+	if (source === 'own' && anlz.beatgrid.status === 'failed') {
+		const reason = anlz.beatgrid.reason;
+		if (typeof reason === 'string' && reason.length > 0) return reason;
+		return 'own beatgrid analysis failed';
+	}
+	if (source === 'own' && anlz.beatgrid.static_grid_untrusted === true) {
+		const first = anlz.tempo_changes?.[0];
+		if (first !== undefined) {
+			return `static grid untrusted - tempo change at ${first.at_s.toFixed(3)}s`;
+		}
+		return 'static grid untrusted - tempo change detected';
+	}
+	return GRID_FEATURE_TIP;
+}
+
 /** Quantize as the transport actually applies it: what the DJ asked for, AND
- * a grid to snap to. */
+ * a trusted grid to snap to. */
 export function effectiveQuantize(st: Pick<DeckState, 'anlz' | 'quantize_enabled'>): boolean {
-	return st.quantize_enabled && deckHasRealBeatGrid(st);
+	return st.quantize_enabled && deckHasTrustedBeatGrid(st);
 }
 
 /** Beat Sync as the transport actually applies it: what the DJ asked for, AND
- * a grid to phase-lock with. */
+ * a trusted grid to phase-lock with. */
 export function effectiveBeatSync(st: Pick<DeckState, 'anlz' | 'beat_sync_enabled'>): boolean {
-	return st.beat_sync_enabled && deckHasRealBeatGrid(st);
+	return st.beat_sync_enabled && deckHasTrustedBeatGrid(st);
 }
 
 /**
- * Whether a LOADED track's missing grid is what makes this deck's sync and
- * quantize controls inert.
+ * Whether a LOADED track's missing or untrusted grid is what makes this deck's
+ * sync and quantize controls inert.
  *
  * An empty deck is deliberately excluded: nothing has been loaded to analyse,
  * so blaming the grid would send a new user looking for a track that is not
  * there. Empty decks keep their existing controls and copy.
  */
 export function gridFeaturesInert(st: Pick<DeckState, 'anlz' | 'stable_id'>): boolean {
-	return st.stable_id !== null && !deckHasRealBeatGrid(st);
+	return st.stable_id !== null && !deckHasTrustedBeatGrid(st);
 }

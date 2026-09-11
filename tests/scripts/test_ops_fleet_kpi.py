@@ -46,9 +46,13 @@ Regression lines:
     broken (off at 5, on at 15, and the matching health line flips with it)
   - if a health line that cannot measure reports PASS or a silent zero instead
     of FAIL then broken (missing probe fixture and missing gh fixture controls)
-  - if the 8 data health lines cannot be flipped by their own fixture inputs
+  - if the 9 data health lines cannot be flipped by their own fixture inputs
     then broken (the red-fixture run proves each verdict is driven by the
     input it names, not by ambient machine state)
+  - if a launcher refusal or a provisioning fault counts on the FLEET FATAL line then
+    broken (issue #1670: they have lines of their own, and the fleet line had no
+    reachable green while they shared it). The split's own cases live in
+    tests/scripts/test_ops_fleet_kpi_fatal_classes.py
   - if an untimestamped FATAL line flips the window health check then broken:
     a bare "FATAL: ..." has awk $1 = "FATAL:", and a string compare puts "F"
     above any "2026-..." bound, so the pre-fix filter admitted it forever and
@@ -153,13 +157,32 @@ def _health(out: str) -> dict[str, str]:
     return verdicts
 
 
-def _fatal_label(untimestamped: int) -> str:
-    """The FATAL health label, which names how many lines the window filter had
-    to exclude for carrying no timestamp to window on."""
+def _fatal_label(untimestamped: int | str) -> str:
+    """The FLEET FATAL health label, which names how many lines the window filter
+    had to exclude for carrying no timestamp to window on. Since issue #1670 this
+    line counts only records that are neither a launcher refusal nor a
+    provisioning fault; those two have lines of their own."""
     return (
-        f"no timestamped FATAL in logs last {HOURS}h "
-        f"(+{untimestamped} untimestamped, excluded: no time to window on)"
+        f"no timestamped fleet FATAL in logs last {HOURS}h "
+        f"(+{untimestamped} untimestamped, excluded: no time to window on; "
+        f"launcher refusals and provisioning faults have their own lines below)"
     )
+
+
+PROVISIONING_LABEL = (
+    f"no timestamped provisioning fault in logs last {HOURS}h "
+    f"(a lane with no usable account or credential: the box is not set up, "
+    f"the fleet is not broken)"
+)
+
+
+def _refusals(out: str) -> str:
+    """The launcher-refusal count off the `refusals` line, as written. A count,
+    never a verdict: see issue #1670."""
+    for line in out.splitlines():
+        if line.startswith("refusals "):
+            return line.split(" ", 2)[1].removeprefix("launcher=")
+    raise AssertionError(f"no refusals line in output:\n{out}")
 
 
 GREEN_LABELS = [
@@ -170,7 +193,10 @@ GREEN_LABELS = [
     "dispatcher ticked in last 70 min",
     "workers within cap (4)",
     "actionable PR backlog under builder-freeze threshold 15",
+    "host disk GREEN (level=GREEN free=160.17GB rate=0GB/h hours_to_red=999"
+    " ts=2026-09-04T18:28:00.7173594Z; Windows C: per af-disk-watchdog, stale after 15 min)",
     _fatal_label(0),
+    PROVISIONING_LABEL,
     "token present for launchers",
 ]
 
@@ -222,6 +248,56 @@ def test_green_fixture_reports_expected_kpis(tmp_path):
     assert list(verdicts) == GREEN_LABELS, out
     assert set(verdicts.values()) == {"PASS"}, out
     assert "missing" not in proc.stderr
+
+
+def test_retired_and_zero_tick_driven_lanes_are_distinct(tmp_path):
+    """If a retired lane and a driven lane with no ticks render alike then broken.
+
+    The watchdog fixture is the authority for driven residents.  The retired
+    lane exists only in its captured resident log, which is how KPI discovery
+    preserves an auditable retirement without maintaining a second resident
+    list in the KPI script.
+    """
+    fixture = _copy_fixture(tmp_path)
+    (fixture / "jobs" / "watchdog.sh").write_text(
+        'RESIDENTS="merge-odd:$JOBS/merge-lane-brief.md rc-qa:$JOBS/rc-qa-brief.md"\n'
+    )
+    (fixture / "jobs" / "logs" / "resident-merge-even.log").write_text(
+        "2026-09-02T16:29:22Z resident stopped as control\n"
+    )
+    tick_gate = fixture / "jobs" / "logs" / "tick-gate.log"
+    tick_gate.write_text(
+        "\n".join(line for line in tick_gate.read_text().splitlines() if " merge-odd " not in line)
+        + "\n"
+    )
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+
+    assert proc.returncode == 0, out
+    assert (
+        "ticks lane=merge-even RETIRED (not driven by watchdog.sh; "
+        "last log 2026-09-02T16:29:22Z)"
+    ) in out
+    assert "ticks lane=merge-odd ran=0 skipped=0 skip_ratio=ALERT" in out
+    assert "skip_ratio=n/a" not in out
+
+
+def test_retired_lane_without_timestamp_fails_loudly(tmp_path):
+    """If a retired log lacks an exact UTC timestamp but KPI reports it then broken."""
+    fixture = _copy_fixture(tmp_path)
+    (fixture / "jobs" / "watchdog.sh").write_text(
+        'RESIDENTS="merge-odd:$JOBS/merge-lane-brief.md rc-qa:$JOBS/rc-qa-brief.md"\n'
+    )
+    (fixture / "jobs" / "logs" / "resident-merge-even.log").write_text(
+        "2026-09-02T16:29:22+01:00 resident stopped outside UTC\n"
+    )
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+
+    assert proc.returncode == 2
+    assert "retired lane merge-even has no valid UTC timestamp" in proc.stderr
+    assert "ticks lane=merge-even RETIRED" not in proc.stdout
 
 
 def test_copy_fixture_pins_report_mtimes_inside_the_frozen_window(tmp_path):
@@ -289,6 +365,27 @@ def test_untimestamped_fatal_is_counted_but_never_windowed(tmp_path):
     assert verdicts[_fatal_label(1)] == "PASS", out
     # And the excluded line is named rather than swallowed.
     assert _fatal_label(0) not in verdicts, out
+
+
+def test_an_unstamped_fatal_record_is_counted_but_prose_is_not(tmp_path):
+    """If the excluded count includes prose then broken.
+
+    The count exists to name scripts that write a FATAL record without a UTC
+    stamp, because such a line can never be windowed and so a recurrence is
+    invisible. It is only actionable while it counts records and nothing else.
+    """
+    fixture = _copy_fixture(tmp_path)
+    (fixture / "jobs" / "logs" / "mixed.log").write_text(
+        "FATAL: Codex transcript capture failed at exit session_id=missing\n"
+        "the runbook says a FATAL here means the brief was never written\n"
+        '+        echo "FATAL: unknown tier" >> "$LOG"\n'
+    )
+
+    verdicts = _health(_run(_env(fixture, _home(tmp_path, token_profile=True))).stdout)
+
+    # One record, two prose lines: the label names 1, and the window stays green.
+    assert verdicts[_fatal_label(1)] == "PASS"
+    assert _fatal_label(3) not in verdicts
 
 
 def test_builder_freeze_switches_on_at_fifteen_actionable(tmp_path):

@@ -36,7 +36,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// The payload directory inside the bundle, relative to Contents/Resources.
@@ -56,6 +56,8 @@ pub const BOOT_TIMEOUT: Duration = Duration::from_secs(30);
 const HEALTH_PATH: &str = "/api/v1/health";
 const POLL_INTERVAL: Duration = Duration::from_millis(150);
 const SOCKET_TIMEOUT: Duration = Duration::from_millis(750);
+
+static SHELL_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 /// Environment the shell strips before spawning the engine.
 ///
@@ -260,6 +262,74 @@ fn health_ok(port: u16) -> bool {
     String::from_utf8_lossy(&response).starts_with("HTTP/1.1 200")
 }
 
+// ----- build profile ------------------------------------------------------
+
+/// The feature-flag profile name a sandboxed build runs under.
+///
+/// Mirrors `apps/feature_flags/profiles.py`. The engine validates the name and
+/// refuses an unknown one with the list of real profiles, so a typo here dies
+/// at boot rather than silently shipping the full build.
+pub const APPSTORE_PROFILE: &str = "appstore";
+
+/// macOS sets this inside an App Sandbox container.
+const SANDBOX_CONTAINER_ENV: &str = "APP_SANDBOX_CONTAINER_ID";
+
+/// Where macOS redirects a sandboxed process's home.
+const SANDBOX_HOME_MARKER: &str = "/Library/Containers/";
+
+/// Which `--build-profile` this boot passes, or None for the full build.
+///
+/// DETECTED AT RUNTIME, NOT COMPILED IN (SAND-04). The obvious alternative is
+/// a cargo feature set by the store lane, but that has to be remembered at
+/// package time and is wrong whenever anyone forgets: a store bundle built
+/// from the dmg lane would offer USB export, which cannot work in a sandbox,
+/// and would fail as an EMPTY DRIVE LIST rather than as a refusal. Being
+/// inside a container is a fact about the process, so the shell asks the
+/// process. That is also self-correcting in both directions -- a store build
+/// is sandboxed by definition and a dmg build never is -- which is why no
+/// store-only build flag is needed anywhere.
+///
+/// Two independent signals, because either alone can be defeated: the env var
+/// is absent on some spawn paths that still inherit the container, and a
+/// developer can point HOME at a container-shaped path without being
+/// sandboxed. A false positive costs an explicit refusal the user can read; a
+/// false negative costs the silent empty list. That asymmetry is why either
+/// signal alone is enough to trip it.
+///
+/// Pure in its inputs so it is testable without mutating process environment,
+/// which is global and would race the other tests in this binary.
+///
+/// `host_is_macos` is passed explicitly rather than read from `cfg!` inside
+/// this function, mirroring `apps/shared/sandbox.py`'s `platform` parameter:
+/// the App Sandbox is macOS-only, so a hardcoded `cfg!(target_os = "macos")`
+/// check here would make every call short-circuit to `None` on the Linux CI
+/// runner that actually runs this test suite, leaving the signal logic
+/// untested where it runs.
+pub fn build_profile_for(
+    container_id: Option<&str>,
+    home: Option<&str>,
+    host_is_macos: bool,
+) -> Option<&'static str> {
+    if !host_is_macos {
+        return None;
+    }
+    let container_set = container_id.is_some_and(|value| !value.trim().is_empty());
+    let home_in_container =
+        home.is_some_and(|value| value.contains(SANDBOX_HOME_MARKER));
+    if container_set || home_in_container {
+        Some(APPSTORE_PROFILE)
+    } else {
+        None
+    }
+}
+
+/// [`build_profile_for`] against this process's real environment.
+fn build_profile() -> Option<&'static str> {
+    let container = std::env::var(SANDBOX_CONTAINER_ENV).ok();
+    let home = std::env::var("HOME").ok();
+    build_profile_for(container.as_deref(), home.as_deref(), cfg!(target_os = "macos"))
+}
+
 // ----- spawn --------------------------------------------------------------
 /// Start the bundled engine on `port`, writing its output to `log_path`.
 ///
@@ -322,6 +392,13 @@ pub fn spawn(
         .env("OPENDJ_ENGINE_WARN_LOG", log_path.with_file_name("engine-warn.log"))
         .env("OPENDJ_ENGINE_LOG_BOOT_ID", log_boot_id())
         .process_group(0);
+    // A sandboxed shell means an App Store build, and the engine must run the
+    // profile that turns off what the sandbox forbids. Passed as an argument
+    // rather than an env var so it survives STRIPPED_ENV below and shows up in
+    // the engine's own boot line, where a wrong profile is visible.
+    if let Some(profile) = build_profile() {
+        command.arg("--build-profile").arg(profile);
+    }
     for name in STRIPPED_ENV {
         command.env_remove(name);
     }
@@ -386,7 +463,7 @@ impl LogSink {
     /// Record why the pump stopped. The first reason wins: whichever stream
     /// failed first is the cause, and the second is usually its consequence.
     fn record_failure(&self, detail: String) {
-        eprintln!("[ERROR] {detail}");
+        append_shell_log("ERROR", &detail);
         let mut slot = self.failure.lock().expect("engine log failure mutex poisoned");
         if slot.is_none() {
             *slot = Some(detail);
@@ -520,6 +597,49 @@ fn rotate_log_if_needed(log_path: &Path, max_bytes: u64) -> std::io::Result<()> 
     std::fs::rename(log_path, rotation_path(log_path, 1))
 }
 
+/// Append one shell-owned line to the shared engine log.
+pub fn append_shell_log(level: &str, message: &str) {
+    let Some(path) = SHELL_LOG_PATH.get() else {
+        eprintln!("[{level}] {message}");
+        return;
+    };
+    let line = format!("[shell {level}] {message}\n");
+    if let Err(err) = append_rotated(path, line.as_bytes()) {
+        eprintln!("[shell log failed] {err}: [{level}] {message}");
+    }
+}
+
+/// Route shell stderr and panics into the same engine log the child uses.
+pub fn install_shell_logging(log_path: &Path) -> Result<(), EngineError> {
+    if let Some(parent) = log_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| {
+            EngineError::new(
+                "Open DJ could not create its log folder.",
+                format!("{}: {err}", parent.display()),
+            )
+        })?;
+    }
+    verify_log_writable(log_path)?;
+    let _ = SHELL_LOG_PATH.set(log_path.to_path_buf());
+    std::panic::set_hook(Box::new(|info| {
+        let payload = if let Some(message) = info.payload().downcast_ref::<&str>() {
+            (*message).to_string()
+        } else if let Some(message) = info.payload().downcast_ref::<String>() {
+            message.clone()
+        } else {
+            "panic".into()
+        };
+        let location = info
+            .location()
+            .map(|loc| format!("{}:{}", loc.file(), loc.line()))
+            .unwrap_or_else(|| "unknown".into());
+        let detail = format!("panic at {location}: {payload}");
+        append_shell_log("panic", &detail);
+        eprintln!("[PANIC] {detail}");
+    }));
+    Ok(())
+}
+
 /// The tail of the engine log, for an error dialog that says something.
 pub fn log_tail(log_path: &Path, lines: usize) -> String {
     let Ok(text) = std::fs::read_to_string(log_path) else {
@@ -533,6 +653,78 @@ pub fn log_tail(log_path: &Path, lines: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ----- build profile ---------------------------------------------------
+    //
+    // Both directions, because a one-directional guard passes its own bug
+    // report perfectly. Under-detecting ships USB export into a sandbox where
+    // it returns an empty drive list; over-detecting turns the feature off in
+    // the dmg, where it works fine. Each has a test.
+
+    #[test]
+    fn a_container_env_var_selects_the_appstore_profile() {
+        assert_eq!(
+            build_profile_for(Some("com.opendj.desktop"), Some("/Users/dj"), true),
+            Some(APPSTORE_PROFILE)
+        );
+    }
+
+    #[test]
+    fn a_container_shaped_home_selects_the_appstore_profile() {
+        // The second signal alone, with the env var absent: some spawn paths
+        // inherit the container without setting it.
+        assert_eq!(
+            build_profile_for(
+                None,
+                Some("/Users/dj/Library/Containers/com.opendj.desktop/Data"),
+                true
+            ),
+            Some(APPSTORE_PROFILE)
+        );
+    }
+
+    #[test]
+    fn an_unsandboxed_shell_passes_no_profile() {
+        // The over-detection control. A dmg build must keep USB export, so
+        // this asserts the ORIGINAL behavior still holds where it should.
+        assert_eq!(build_profile_for(None, Some("/Users/dj"), true), None);
+        assert_eq!(build_profile_for(None, None, true), None);
+    }
+
+    #[test]
+    fn a_blank_container_id_is_not_a_container() {
+        // An exported-but-empty variable is the shell's version of a zero
+        // that is both a value and an error signature. Empty means absent.
+        assert_eq!(build_profile_for(Some(""), Some("/Users/dj"), true), None);
+        assert_eq!(build_profile_for(Some("   "), Some("/Users/dj"), true), None);
+    }
+
+    #[test]
+    fn a_home_merely_containing_library_is_not_a_container() {
+        // Substring matching is the trap here: ~/Library alone is every Mac.
+        // Only the Containers segment means a sandbox.
+        assert_eq!(
+            build_profile_for(None, Some("/Users/dj/Library/Application Support"), true),
+            None
+        );
+    }
+
+    #[test]
+    fn the_sandbox_is_macos_only() {
+        // Mirrors apps/shared/sandbox.py's test_the_sandbox_is_macos_only: a
+        // Linux or Windows host is never sandboxed, whatever the process
+        // signals say. This is the case that a bare `cfg!(target_os =
+        // "macos")` inside the helper made untestable on Linux CI, where it
+        // always returned None before looking at either signal.
+        assert_eq!(
+            build_profile_for(
+                Some("com.opendj.desktop"),
+                Some("/Users/dj/Library/Containers/com.opendj.desktop/Data"),
+                false
+            ),
+            None
+        );
+    }
 
     // - if an interrupted read ends the pump then one signal during a healthy
     //   engine's life silently stops all logging -> broken
@@ -691,6 +883,19 @@ mod tests {
         assert!(failure.headline.contains("lost the engine log"), "{failure}");
         assert!(failure.detail.contains("disk full"), "{failure}");
         engine.shutdown();
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn shell_logging_appends_prefixed_lines() {
+        let directory = scratch_dir("shell-log");
+        let log_path = directory.join("engine.log");
+        install_shell_logging(&log_path).unwrap();
+        append_shell_log("WARN", "monitor scale factor 0");
+        assert_eq!(
+            std::fs::read_to_string(&log_path).unwrap(),
+            "[shell WARN] monitor scale factor 0\n"
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
 

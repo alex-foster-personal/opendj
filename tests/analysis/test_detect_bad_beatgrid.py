@@ -5,6 +5,7 @@ import dataclasses
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -13,7 +14,11 @@ from apps.analysis.record import AnalysisRecord
 
 
 def _rec(**overrides) -> AnalysisRecord:
-    base = dict(
+    # Annotated so mypy checks the OVERRIDES against the dataclass rather than
+    # inferring `dict[str, object]` and then reporting one arg-type error per
+    # distinct field type on the ** call. Widening the record (native-analysis
+    # v1) made that count grow with the record instead of with the test.
+    base: dict[str, Any] = dict(
         stable_id="sid",
         backend="librosa+madmom",
         backend_version="test-1",

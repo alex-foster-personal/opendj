@@ -1,0 +1,594 @@
+"""Key lane scorer: MIREX weighted score, KSEA, mode accuracy, three-bucket
+stratification against rekordbox and Mixed In Key.
+
+WHY THIS SCORER OWNS ITS OWN RULER, UNLIKE beatgrid_lane.py. `beatgrid_lane.py`
+adapts an EXISTING versioned scorer (`beatgrid.py`, pinned since round 0) behind
+the shared interface. No key scorer exists yet anywhere in the repository, so
+this module IS the ruler, in the same position `beatgrid.py`/`continuity.py`
+hold for their lane: pure stdlib plus numpy, importable by pytest without a
+heavy dependency.
+
+MIREX WEIGHTED SCORE (1.0 / 0.5 / 0.3 / 0.2 / 0.0), ALLOWING DESCENDING FIFTHS.
+Issue #1584 and the round-0 brief (`specs/native-analysis-v1-lanes/
+nav1-key-r0.md`) both ask for "MIREX weighted (descending fifths allowed)".
+`weighted_score` below credits 0.5 for EITHER direction of the fifth
+(`(estimated_pc - reference_pc) % 12` in `{5, 7}`, same mode), which is the
+literal, doubly-stated instruction, implemented here rather than importing
+`mir_eval` per the issue's own preference.
+
+DOCUMENTED DIVERGENCE FROM THE SHIPPED `mir_eval` LIBRARY. The issue's
+parenthetical cites `mir_eval.key.weighted_score(..., allow_descending_fifths=
+True)` as "the reference behavior". Checked live against the real, installed
+`mir_eval` 0.8.2 (`uv run --with mir_eval`, Wed 9 Sep 2026): that function's
+signature is `weighted_score(reference_key, estimated_key)` with NO
+`allow_descending_fifths` parameter at all, and its shipped algorithm credits
+0.5 ONLY for the ascending fifth (`% 12 == 7`); a descending fifth
+(`% 12 == 5`) scores 0.0 there. This module deliberately implements the
+BEHAVIOR the issue and the round-0 brief both specify in prose (descending
+fifths credited), not the parenthetical's library citation, which does not
+match the code it names. `scripts/keybench/verify_mirex.py` cross-checks
+against real mir_eval as a control and documents this one expected
+divergence rather than treating it as a bug.
+
+KSEA, PER THE S-KEY PAPER, CITED BY
+`docs/research/beatgrid-and-segmentation-sota-20260906-d-key-detection.md
+:614-618` (NOT `specs/native-analysis-v1.md`, which does not define it).
+"Key Signature Estimation Accuracy": the mean, over scored fixtures, of a
+per-fixture score that ignores mode entirely -- 1.0 when the candidate's
+tonic pitch class matches the reference's exactly, 0.5 when it is a fifth
+above or below, 0.0 otherwise. KSEA is distinct from MODE ACCURACY (mode
+match, ignoring tonic) and from the exact MIREX 1.0 rate (both tonic AND
+mode). An earlier cut of this module computed a DIFFERENT metric under this
+name -- boolean key-SIGNATURE equivalence (full credit for a relative major/
+minor pair, zero for a fifth) -- which is not what the cited research doc's
+KSEA means, and gave materially different, incomparable numbers (Codex P1
+BLOCKING, PR #1620).
+
+THREE-BUCKET STRATIFICATION (spec section 5, "Agreement metric"; bucket
+definitions per `docs/research/beatgrid-and-segmentation-sota-20260906-d-
+key-detection.md:698-710`). Every fixture whose bundle carries BOTH a
+rekordbox and a MIK reference is classified ONCE, by the relationship
+between those two references ALONE -- never by which key the candidate
+answers, so the same reference pair lands in the same bucket for every arm:
+  - AGREE: the two references canonicalize to the same (pitch_class,
+    is_minor). The candidate's MIREX score is reported against that
+    agreed value -- this is the only bucket with an unambiguous "correct".
+  - DISAGREE-RELATED: the references disagree but are related (relative,
+    parallel, or a fifth apart -- `weighted_score(rekordbox, mik) > 0.0`).
+    Only WITHIN this bucket does the candidate's answer get reported, as
+    "sides with rekordbox" / "sides with MIK" / "sides with neither", NEVER
+    as "correct" -- neither reference is truth
+    (`specs/native-analysis-v1-lanes/nav1-key-r0.md`: rekordbox scored
+    79.55, MIK 74.60, against GiantSteps, so both are themselves
+    imperfect). A fixture the candidate never answered (omitted, failed, or
+    filtered out by `_parse_candidate`) took no side at all, so it is
+    counted separately as `disagree_no_answer` rather than folded into
+    `sides_with_neither`, which would read as an active third guess when
+    the candidate said nothing (Codex P1 BLOCKING, PR #1620).
+  - DISAGREE-UNRELATED: the references disagree AND are unrelated
+    (`weighted_score(rekordbox, mik) == 0.0`). Enumerated by stable_id
+    (spec: "enumerate, listen, prime key-change candidates") rather than
+    just counted, REGARDLESS of what the candidate answered -- this bucket
+    has no "sides with" concept at all. An earlier cut classified both
+    DISAGREE buckets by which reference the CANDIDATE's answer matched,
+    so the same disagreeing pair could land in either bucket depending on
+    which arm was scored, and a genuinely related pair fell into
+    DISAGREE-UNRELATED whenever a given candidate's answer happened to
+    match neither reference exactly (Codex P1 BLOCKING, PR #1620).
+A fixture missing either reference cannot be classified into any of the three
+buckets (there is no "which reference" to side with); it is counted and named
+separately (`n_no_reference_pair`) rather than silently folded into the
+denominator of a bucket it does not belong to.
+
+HONEST DENOMINATORS, NEITHER REFERENCE IS TRUTH. Per the round-0 finding
+above, a MIREX/KSEA/mode-accuracy figure computed "against rekordbox" and one
+computed "against MIK" are reported SEPARATELY, each naming its own
+denominator (the count of scored fixtures carrying THAT reference), rather
+than blended into one number that hides which side it agrees with more.
+
+OMITTED ANSWERS ARE SCORED AS WRONG, NOT DROPPED. Following the beatgrid
+lane's `_OMITTED` precedent (Codex P1 BLOCKING, PR #1582): a fixture the
+candidate did not answer is walked from the BUNDLE's fixture list, not the
+candidate's results, and is scored as `Key | None = None` -- the worst
+possible MIREX/KSEA/mode-accuracy outcome -- so a candidate cannot improve its
+denominator by skipping its hard tracks.
+
+ATTEMPTED-BUT-FAILED IS COUNTED SEPARATELY FROM OMITTED, AND A SUCCESSFUL-ONLY
+SCORE IS REPORTED BESIDE THE ALL-ATTEMPTED ONE. Spec section 5's baseline
+paragraph (the classical-upgrade rung) states the three-number contract a
+posted round has to satisfy: "the primary score over every attempted track
+with each fabricated fallback key ... scored as zero, the successful-only
+score, and the failure rate with its denominator." `n_omitted` alone conflates
+two different things: a fixture the candidate never touched, and one it tried
+and could not answer (an explicit `error`, or a result with no parseable key).
+`score_bundle` tells them apart (`n_failed`, walked from the same per-fixture
+results, plus the candidate's own self-reported `payload["n_failed"]` under
+`n_failed_reported` so that count is never silently dropped either) and
+reports `vs_rekordbox_successful_only`/`vs_mik_successful_only` alongside the
+existing all-attempted `vs_rekordbox`/`vs_mik` (the latter already zero-fills
+every omission and failure, which is what makes it the "primary" figure).
+`failure_rate` is rendered as `n_failed/n_attempted`, never a bare percentage,
+per the house honest-denominators rule (Codex P1 BLOCKING, PR #1620: the first
+cut computed only the all-attempted aggregate).
+
+TWO NAMED FLOORS, NOT ONE. Spec section 5's "Agreement metric" bullet cites a
+specific constant predictor ("S-KEY's 'always C major' floor was 19.0
+MIREX"), and the round-0 brief (`nav1-key-r0.md`) names a second, independent
+one: "constant 'most common key in the set'". `apps/analysis_bench/
+controls.py` builds both (`constant_key` answers C major; `most_common_key`
+answers whichever rekordbox key occurs most often in the bundle, ties broken
+by first-seen order). A prior cut of `constant_key` answered A minor instead,
+which cites no source in this spec, and shipped only that one floor (Codex P2
+BLOCKING, PR #1620).
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+from apps.analysis_key import canon
+
+__all__ = ["SCORER_VERSION", "render_table", "score_bundle"]
+
+SCORER_VERSION = "1.0.0"
+
+KSEA_DEFINITION = (
+    "KSEA (Key Signature Estimation Accuracy, per the S-KEY paper, cited in "
+    "docs/research/beatgrid-and-segmentation-sota-20260906-d-key-detection.md"
+    ":614-618): the mean, over scored fixtures, of a per-fixture score that "
+    "ignores mode entirely -- 1.0 when the candidate's tonic pitch class "
+    "matches the reference's exactly, 0.5 when it is a fifth above or "
+    "below, 0.0 otherwise (Codex P1 BLOCKING, PR #1620: an earlier cut "
+    "computed boolean key-signature equivalence instead -- full credit for "
+    "a relative pair, zero for a fifth -- a different metric from the one "
+    "this research doc defines)."
+)
+
+# Controls first, same convention as beatgrid_lane.py: a reader should meet
+# the floor and the ceiling before the candidate row whose numbers they read.
+# Both floors (constant, most-common) sort ahead of both ceilings
+# (rekordbox-echo, MIK-echo).
+_ROLE_ORDER = {
+    "negative_control": 0,
+    "most_common_control": 1,
+    "positive_control": 2,
+    "positive_mik_control": 3,
+}
+
+_REFERENCES = ("rekordbox", "mik")
+
+
+#-----------------------------------------------------------------------------
+def weighted_score(reference: canon.Key | None, estimated: canon.Key | None) -> float:
+    """MIREX weighted score, 1.0 / 0.5 / 0.3 / 0.2 / 0.0, descending fifths allowed.
+
+    See the module docstring for the documented divergence from `mir_eval`
+    0.8.2's shipped algorithm (ascending fifth only).
+    """
+    if reference is None or estimated is None:
+        return 0.0
+    if reference == estimated:
+        return 1.0
+    delta = (estimated.pitch_class - reference.pitch_class) % 12
+    if estimated.is_minor == reference.is_minor and delta in (5, 7):
+        return 0.5
+    if estimated.is_minor != reference.is_minor:
+        if not reference.is_minor and delta == 9:
+            return 0.3
+        if reference.is_minor and delta == 3:
+            return 0.3
+        if delta == 0:
+            return 0.2
+    return 0.0
+
+
+def _ksea_score(reference: canon.Key | None, estimated: canon.Key | None) -> float:
+    """Per-fixture KSEA score. See `KSEA_DEFINITION` for the citation.
+
+    Deliberately NOT `weighted_score`: KSEA ignores mode entirely (a
+    parallel major/minor pair with the same tonic scores 1.0 here, 0.2
+    there), and credits only the exact tonic or a fifth -- never a
+    relative pair, which `weighted_score` credits at 0.3 (Codex P1
+    BLOCKING, PR #1620: an earlier cut conflated the two, scoring boolean
+    key-signature equivalence -- full credit for a relative pair, zero for
+    a fifth -- which is a different metric from the one this module now
+    documents and computes).
+    """
+    if reference is None or estimated is None:
+        return 0.0
+    if reference.pitch_class == estimated.pitch_class:
+        return 1.0
+    delta = (estimated.pitch_class - reference.pitch_class) % 12
+    if delta in (5, 7):
+        return 0.5
+    return 0.0
+
+
+def _mode_match(reference: canon.Key | None, estimated: canon.Key | None) -> bool:
+    if reference is None or estimated is None:
+        return False
+    return reference.is_minor == estimated.is_minor
+
+
+#-----------------------------------------------------------------------------
+def _parse_reference(value: str | None, source: str) -> canon.Key | None:
+    """A truth-file value for one reference, or None for a documented absence."""
+    if not value:
+        return None
+    if source == "rekordbox":
+        return canon.from_rekordbox_scale_name(value)
+    if source == "mik":
+        return canon.from_mik_camelot(value)
+    raise ValueError(f"unknown reference source {source!r}")  # pragma: no cover -- internal
+
+
+def _parse_candidate(result: dict[str, Any] | None) -> canon.Key | None:
+    """A candidate's answer for one fixture, accepting either notation it may
+    emit (Camelot or Open Key -- both are real MIK/rekordbox output shapes),
+    or None for an explicit error, a fabricated fallback, a malformed value,
+    an inconsistent dual-notation answer, or an omitted answer. In that order:
+
+    1. `error` truthy -> None (the candidate itself said it failed).
+    2. `key_confidence == 0.0` -> None. `apps/analysis/backends/librosa.py`
+       emits a FULLY SUCCESSFUL `AnalysisRecord` (no `error` field) on an
+       internal `chroma_cqt`/key-estimation exception, with a fixed fallback
+       key pair and `key_confidence=0.0` marking it as a non-estimate --
+       spec section 5's baseline paragraph names this exact shape ("each
+       fabricated fallback key (1A/1m, confidence 0.0) scored as zero") and
+       it was previously unhandled here, so a fallback that happened to
+       collide with the reference scored as a real answer (Codex P1
+       BLOCKING, PR #1620).
+    3. `no_tonal_center` truthy -> None. `apps/analysis_key/flags.py`
+       exists precisely so a low-confidence-but-nonzero or ambiguous-margin
+       estimate (a long drone, a noise/FX intro, unpitched percussion) does
+       not publish its best-of-24 guess as a finding; the same signal is
+       named `no_tonal_center` end to end (`flags.TonalCenterFlag
+       .no_tonal_center`, `LaneResult.reason="no_tonal_center"`,
+       `specs/native-analysis-v1.md`'s own key-lane row). Checked
+       separately from `key_confidence == 0.0` above: a flagged estimate's
+       confidence can be any nonzero value below `flags.CONFIDENCE_
+       THRESHOLD` (or above it with a thin margin), so it would otherwise
+       be accepted as a real answer and inflate MIREX/KSEA/mode-accuracy
+       and the successful-result count on exactly the ambiguous tracks this
+       flag exists to catch (Codex P1 BLOCKING, PR #1620).
+    4. Parse whichever of `key_camelot` / `key_openkey` are present.
+       `key_openkey` (no underscore) is the field name used throughout the
+       repo already -- `AnalysisRecord.key_openkey`, `apps/analysis/store.py`,
+       `apps/analysis/backends/mik.py`. A value that fails to normalise
+       counts as a failed answer rather than crashing the whole round (Codex
+       P1 BLOCKING, PR #1620: an uncaught `NormaliseError` here would abort
+       `score_bundle` for every arm over one bad fixture). Caught as plain
+       `ValueError`, not just `NormaliseError`: `canon._normalise_or_raise`
+       raises a bare `ValueError` (not its `NormaliseError` subclass) for
+       MIK's own documented missing-key sentinel (e.g. Camelot `"0"`, which
+       `apps.equivalence.normalisers.normalise_key` maps to `MISSING`), a
+       second, distinct case an `except NormaliseError` alone still let
+       through uncaught (Codex P1 BLOCKING, PR #1620).
+    5. `AnalysisRecord.key_camelot`/`key_openkey` are BOTH mandatory fields
+       (`apps/analysis/record.py`), so a real candidate answer always
+       carries both. If both are present and parse to DIFFERENT keys, the
+       answer is internally inconsistent -- exactly the class of
+       Camelot<->Open Key conversion bug this lane exists to catch -- and is
+       scored as a failure rather than trusting Camelot alone and never
+       looking at Open Key (Codex P1 BLOCKING, PR #1620).
+    """
+    if not result or result.get("error"):
+        return None
+    if result.get("key_confidence") == 0.0:
+        return None
+    if result.get("no_tonal_center"):
+        return None
+    camelot, open_key = result.get("key_camelot"), result.get("key_openkey")
+    try:
+        parsed_camelot = canon.from_mik_camelot(camelot) if camelot else None
+        parsed_open_key = canon.from_mik_open_key(open_key) if open_key else None
+    except ValueError:
+        return None
+    if parsed_camelot and parsed_open_key and parsed_camelot != parsed_open_key:
+        return None
+    return parsed_camelot or parsed_open_key
+
+
+_ReferenceMap = dict[str, canon.Key | None]
+
+
+def load_bundle(bundle: Path) -> tuple[dict[str, Any], _ReferenceMap, _ReferenceMap]:
+    """`(manifest, rekordbox references by stable_id, MIK references by stable_id)`.
+
+    Public (unlike `beatgrid_lane.py`'s private `_cells`) because `controls.py`
+    needs the same rekordbox reference the `truth_echo` control answers with,
+    and re-parsing the truth file a second way there would risk drifting from
+    what the scorer itself reads.
+    """
+    manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+    reads = manifest.get("reads") or {}
+    truth_name = reads.get("truth")
+    if not truth_name:
+        raise ValueError(f"{bundle}/manifest.json declares no reads.truth for the key lane")
+    truth = json.loads((bundle / truth_name).read_text(encoding="utf-8"))["keys"]
+    stable_ids = [row["stable_id"] for row in manifest.get("fixtures") or []]
+    _refuse_malformed_join(bundle, truth_name, truth, stable_ids)
+    rekordbox = {sid: _parse_reference(truth[sid].get("rekordbox"), "rekordbox")
+                 for sid in stable_ids}
+    mik = {sid: _parse_reference(truth[sid].get("mik_camelot"), "mik")
+           for sid in stable_ids}
+    return manifest, rekordbox, mik
+
+
+def _refuse_malformed_join(
+    bundle: Path, truth_name: str, truth: dict[str, Any], stable_ids: list[str]
+) -> None:
+    """Refuse a bundle whose manifest/truth join is broken, rather than let
+    it score as two ordinary missing references or a silently shrunken
+    denominator (Codex P1 BLOCKING, PR #1620, x2): a stale or failed join
+    can list a `stable_id` the truth file has no row for at all, which
+    `truth.get(sid, {})` used to accept as an explicit per-source null, and
+    can emit the same `stable_id` twice, which the reference-map dict
+    comprehensions used to collapse into one key without saying so.
+    """
+    duplicates = sorted({sid for sid in stable_ids if stable_ids.count(sid) > 1})
+    if duplicates:
+        raise ValueError(
+            f"{bundle}/manifest.json lists {len(duplicates)} duplicate fixture "
+            f"stable_id(s), first {duplicates[0]!r}: a malformed join must not "
+            "silently collapse into a smaller scored set."
+        )
+    missing = sorted(sid for sid in stable_ids if sid not in truth)
+    if missing:
+        raise ValueError(
+            f"{bundle}/{truth_name} has no truth row at all for {len(missing)} "
+            f"fixture(s) the manifest declares, first {missing[0]!r}: a broken "
+            "join must not silently become ordinary missing references."
+        )
+
+
+#-----------------------------------------------------------------------------
+def _score_against(stable_ids: list[str], reference: _ReferenceMap,
+                    answers: _ReferenceMap) -> dict[str, Any]:
+    """MIREX/KSEA/mode-accuracy against ONE reference, named denominator = n."""
+    scored = [sid for sid in stable_ids if reference[sid] is not None]
+    if not scored:
+        return {"n": 0, "mirex_mean_pct": None, "ksea_pct": None, "mode_accuracy_pct": None}
+    mirex = [weighted_score(reference[sid], answers[sid]) for sid in scored]
+    ksea = [_ksea_score(reference[sid], answers[sid]) for sid in scored]
+    mode = [_mode_match(reference[sid], answers[sid]) for sid in scored]
+    n = len(scored)
+    return {
+        "n": n,
+        "mirex_mean_pct": round(100.0 * sum(mirex) / n, 2),
+        "ksea_pct": round(100.0 * sum(ksea) / n, 2),
+        "mode_accuracy_pct": round(100.0 * sum(mode) / n, 2),
+    }
+
+
+def _rate_pct(numerator: int, denominator: int) -> float | None:
+    """A named-denominator percentage, or None when the denominator is zero."""
+    return round(100.0 * numerator / denominator, 2) if denominator else None
+
+
+def _buckets(stable_ids: list[str], rekordbox: _ReferenceMap,
+             mik: _ReferenceMap, answers: _ReferenceMap) -> dict[str, Any]:
+    """AGREE/DISAGREE-RELATED/DISAGREE-UNRELATED, classified by the
+    rekordbox/MIK pair's OWN relationship, never by the candidate's answer.
+
+    `docs/research/beatgrid-and-segmentation-sota-20260906-d-key-detection.md
+    :698-710` defines DISAGREE-RELATED as "they differ by relative, parallel,
+    or fifth" and DISAGREE-UNRELATED as "they differ by something MIREX
+    would score 0.0" -- both properties of the rekordbox/MIK pair alone. An
+    earlier cut classified by which reference the CANDIDATE's answer
+    happened to match, so the same disagreeing pair could land in either
+    bucket depending on which arm was being scored, and a genuinely related
+    pair (e.g. a fifth apart) fell into DISAGREE-UNRELATED whenever a given
+    candidate's answer matched neither reference exactly (Codex P1
+    BLOCKING, PR #1620). Here the pair is classified ONCE via
+    `weighted_score(rb_key, mik_key)`, independent of `answers`; only within
+    the related class does the candidate's side get reported at all.
+    """
+    agree_ids, related_ids, related_rb, related_mik, related_neither = [], [], [], [], []
+    unrelated_ids, no_answer_ids, no_reference_pair = [], [], []
+    agree_scores: list[float] = []
+    for sid in stable_ids:
+        rb_key, mik_key = rekordbox[sid], mik[sid]
+        if rb_key is None or mik_key is None:
+            no_reference_pair.append(sid)
+            continue
+        answer = answers[sid]
+        if rb_key == mik_key:
+            agree_ids.append(sid)
+            agree_scores.append(weighted_score(rb_key, answer))
+            continue
+        if weighted_score(rb_key, mik_key) == 0.0:
+            unrelated_ids.append(sid)
+            continue
+        related_ids.append(sid)
+        if answer is None:
+            # A related-pair fixture the candidate never answered (omitted
+            # or failed): it did not "side with" neither reference, it never
+            # took a side at all (Codex P1 BLOCKING, PR #1620).
+            no_answer_ids.append(sid)
+        elif answer == rb_key:
+            related_rb.append(sid)
+        elif answer == mik_key:
+            related_mik.append(sid)
+        else:
+            related_neither.append(sid)
+    return {
+        "agree": {
+            "n": len(agree_ids),
+            "mirex_mean_pct": round(100.0 * sum(agree_scores) / len(agree_scores), 2)
+            if agree_scores else None,
+        },
+        "disagree_related": {
+            "n": len(related_ids),
+            "sides_with_rekordbox": len(related_rb),
+            "sides_with_mik": len(related_mik),
+            "sides_with_neither": len(related_neither),
+            # Rates, not just raw counts: the research doc's own worked
+            # phrasing is "sides with MIK on X percent, with rekordbox on Y
+            # percent, with neither on Z percent" (docs/research/beatgrid-
+            # and-segmentation-sota-20260906-d-key-detection.md:702-705),
+            # and its own verification discipline asks to "measure the size
+            # of every bucket and report it every time" (:713-716). Named
+            # denominator is `len(related_ids)`, the bucket's own `n` --
+            # NOT `sides_with_rekordbox + sides_with_mik + sides_with_
+            # neither`, which excludes `disagree_no_answer` fixtures, so
+            # these three percentages can legitimately sum to less than
+            # 100 rather than silently hiding that a fourth, separately
+            # reported category exists (Codex P2 BLOCKING, PR #1620: the
+            # raw counts alone rendered no visible denominator at all).
+            "pct_sides_with_rekordbox": _rate_pct(len(related_rb), len(related_ids)),
+            "pct_sides_with_mik": _rate_pct(len(related_mik), len(related_ids)),
+            "pct_sides_with_neither": _rate_pct(len(related_neither), len(related_ids)),
+        },
+        "disagree_unrelated": {"n": len(unrelated_ids), "stable_ids": sorted(unrelated_ids)},
+        "disagree_no_answer": {"n": len(no_answer_ids), "stable_ids": sorted(no_answer_ids)},
+        "n_no_reference_pair": len(no_reference_pair),
+    }
+
+
+#-----------------------------------------------------------------------------
+def _attempt_stats(
+    stable_ids: list[str], results: dict[str, Any], answers: _ReferenceMap
+) -> dict[str, Any]:
+    """Split one arm's fixtures into omitted / failed / successful.
+
+    ATTEMPTED but not SUCCESSFUL: a result entry exists (the candidate tried)
+    but it carried an explicit error or no scorable key came out of it --
+    distinct from omitted (no entry at all). `successful_ids` feeds the
+    successful-only score spec section 5's baseline paragraph asks for
+    beside the all-attempted one (Codex P1 BLOCKING, PR #1620: the first cut
+    computed only the all-attempted score and dropped the candidate's own
+    self-reported `n_failed`).
+    """
+    n_omitted = sum(1 for sid in stable_ids if sid not in results)
+    n_attempted = len(stable_ids) - n_omitted
+    n_failed = sum(1 for sid in stable_ids if sid in results and answers[sid] is None)
+    successful_ids = [sid for sid in stable_ids if sid in results and answers[sid] is not None]
+    return {
+        "n_omitted": n_omitted,
+        "n_failed": n_failed,
+        # Named denominator, not a bare percentage (house honest-
+        # denominators rule): a rate with no stated "of what" is the exact
+        # defect that rule exists to catch.
+        "failure_rate": f"{n_failed}/{n_attempted}" if n_attempted else "0/0",
+        "successful_ids": successful_ids,
+    }
+
+
+def score_bundle(bundle: Path, arms: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Score every arm of a round against one bundle's rekordbox+MIK truth."""
+    manifest, rekordbox, mik = load_bundle(Path(bundle))
+    stable_ids = list(rekordbox)
+    scored: dict[str, Any] = {}
+    for name, arm in arms.items():
+        results = (arm["payload"].get("results")) or {}
+        unknown = sorted(set(results) - set(stable_ids))
+        if unknown:
+            raise ValueError(
+                f"this arm answered {len(unknown)} fixture(s) the bundle does not contain, "
+                f"first {unknown[0]!r}. It was run against a different fixture set; "
+                "scoring it here would attribute one bundle's numbers to another."
+            )
+        answers = {sid: _parse_candidate(results.get(sid)) for sid in stable_ids}
+        attempt = _attempt_stats(stable_ids, results, answers)
+        successful_ids = attempt.pop("successful_ids")
+        scored[name] = {
+            "role": arm["role"],
+            "note": arm.get("note", ""),
+            "producer": arm["payload"].get("candidate"),
+            "producer_version": arm["payload"].get("candidate_version"),
+            "generated_at": arm["payload"].get("generated_at"),
+            "n_failed_reported": arm["payload"].get("n_failed"),
+            **attempt,
+            "vs_rekordbox": _score_against(stable_ids, rekordbox, answers),
+            "vs_rekordbox_successful_only": _score_against(successful_ids, rekordbox, answers),
+            "vs_mik": _score_against(stable_ids, mik, answers),
+            "vs_mik_successful_only": _score_against(successful_ids, mik, answers),
+            "buckets": _buckets(stable_ids, rekordbox, mik, answers),
+        }
+    return {
+        "lane": "key",
+        "scorer_version": SCORER_VERSION,
+        "n_fixtures": len(stable_ids),
+        "truth": (manifest.get("reads") or {}).get("truth", "inline"),
+        "ksea_definition": KSEA_DEFINITION,
+        "arms": scored,
+    }
+
+
+def render_table(report: dict[str, Any]) -> str:
+    """The round's markdown: the KSEA definition, then one row per arm."""
+    order = sorted(
+        report["arms"].items(),
+        key=lambda item: (_ROLE_ORDER.get(item[1]["role"], 2), item[0]),
+    )
+    lines = [
+        report["ksea_definition"],
+        "",
+        f"n_fixtures (bundle denominator) = {report['n_fixtures']}",
+        "",
+        "| arm | role | producer/version (generated_at) | n_omitted | "
+        "n_failed (of attempted) / producer-reported | "
+        "vs rekordbox (n) | MIREX% (all/successful-only) | KSEA% | mode% | "
+        "vs MIK (n) | MIREX% (all/successful-only) | KSEA% | mode% | AGREE (n, MIREX%) | "
+        "DISAGREE-RELATED (n, rb%/mik%/neither%) | DISAGREE-UNRELATED (n: stable_ids) | "
+        "DISAGREE-NO-ANSWER (n: stable_ids) | NO-REFERENCE-PAIR (n) |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for name, arm in order:
+        rb, mikr, buckets = arm["vs_rekordbox"], arm["vs_mik"], arm["buckets"]
+        rb_succ, mikr_succ = arm["vs_rekordbox_successful_only"], arm["vs_mik_successful_only"]
+        agree, related, unrelated, no_answer = (
+            buckets["agree"], buckets["disagree_related"],
+            buckets["disagree_unrelated"], buckets["disagree_no_answer"],
+        )
+        # The enumerated ids, not just the count, because rounds.append_round
+        # persists only this rendered table -- the raw JSON's stable_ids list
+        # is never written to the spec log (Codex P2 BLOCKING, PR #1620), and
+        # spec section 5 asks to "enumerate, listen, prime key-change
+        # candidates" for exactly this bucket. disagree_no_answer and
+        # n_no_reference_pair are rendered too (Codex P2 BLOCKING, PR #1620:
+        # the persisted table previously dropped both, so a reader could not
+        # reconcile the displayed bucket counts against the bundle
+        # denominator).
+        unrelated_ids = ", ".join(unrelated["stable_ids"]) or "-"
+        no_answer_ids = ", ".join(no_answer["stable_ids"]) or "-"
+        # `producer`/`producer_version`/`generated_at` come straight from the
+        # arm's own payload (`payload["candidate"]`/`["candidate_version"]`/
+        # `["generated_at"]`, written by controls.py and every real candidate
+        # CLI) -- this is which producer artifact, at which version, and
+        # which run generated the row, distinct from the per-fixture
+        # `AnalysisRecord.producer`/`producer_version` that do not exist at
+        # the arm level. "-" for a missing field, never a fabricated value
+        # (Codex P1 BLOCKING, PR #1620, two rounds: `candidate`/`generated_at`
+        # then `candidate_version`). `n_failed_reported` is rendered
+        # BESIDE the derived `n_failed` rather than replacing or refusing on
+        # a mismatch: the two counting different things (the producer's own
+        # aggregate vs. this scorer's per-fixture walk) is expected, not an
+        # error to raise on, and a bare "0" here would be indistinguishable
+        # from "the producer reported nothing at all" (Codex P2 BLOCKING,
+        # PR #1620).
+        producer = arm["producer"] if arm["producer"] is not None else "-"
+        producer_version = arm["producer_version"] if arm["producer_version"] is not None else "-"
+        generated_at = arm["generated_at"] if arm["generated_at"] is not None else "-"
+        n_failed_reported = (
+            arm["n_failed_reported"] if arm["n_failed_reported"] is not None else "-"
+        )
+        lines.append(
+            f"| {name} | {arm['role']} | {producer}/{producer_version} ({generated_at}) | "
+            f"{arm['n_omitted']} | "
+            f"{arm['n_failed']} of {arm['failure_rate'].split('/')[1]} / {n_failed_reported} | "
+            f"{rb['n']} | {rb['mirex_mean_pct']}/{rb_succ['mirex_mean_pct']} | "
+            f"{rb['ksea_pct']} | {rb['mode_accuracy_pct']} | "
+            f"{mikr['n']} | {mikr['mirex_mean_pct']}/{mikr_succ['mirex_mean_pct']} | "
+            f"{mikr['ksea_pct']} | {mikr['mode_accuracy_pct']} | "
+            f"{agree['n']}, {agree['mirex_mean_pct']} | "
+            f"{related['n']}, {related['pct_sides_with_rekordbox']}/"
+            f"{related['pct_sides_with_mik']}/{related['pct_sides_with_neither']} | "
+            f"{unrelated['n']}: {unrelated_ids} | "
+            f"{no_answer['n']}: {no_answer_ids} | "
+            f"{buckets['n_no_reference_pair']} |"
+        )
+    return "\n".join(lines)

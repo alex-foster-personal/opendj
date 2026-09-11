@@ -9,10 +9,10 @@
 	 * agents use, so there is nothing UI-only to lose.
 	 *
 	 * Honest rendering: on a daemon with no /api/v1/feedback the chevron and
-	 * comment icon render inert with the standard PARITY-TODO tooltip, never
-	 * a broken panel.
+	 * comment icon render inert and name the control plus that this daemon
+	 * does not serve feedback, never a broken panel.
 	 */
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import {
 		describePinStatusSummary,
 		describeAnchor,
@@ -38,6 +38,7 @@
 		hydrateFeedback,
 		startPinWatch,
 		stopPinWatch,
+		takePendingPinDraft,
 		toggleFeedbackPanel,
 		type FeedbackPin
 	} from '$lib/rb/feedback-store.svelte';
@@ -49,7 +50,10 @@
 	import FeedbackPinVisibilityActions from './FeedbackPinVisibilityActions.svelte';
 	import FeedbackPinMarkers from './feedback/FeedbackPinMarkers.svelte';
 
-	const INERT_TITLE = 'not implemented - see PARITY-TODO';
+	const FEEDBACK_UNAVAILABLE =
+		'Review todos - this daemon does not serve /api/v1/feedback, so in-app review is unavailable';
+	const COMMENT_UNAVAILABLE =
+		'Comment pins - this daemon does not serve /api/v1/feedback, so dropping a pin is unavailable';
 
 	/** Pin 88e3abec02a0: worded for an end user, not the agent-facing PRD copy
 	 * elsewhere in this file. Shown in the shared ControlExplainer's heading. */
@@ -120,7 +124,7 @@
 
 	const unavailable = $derived(feedbackState.availability === 'missing');
 	const commentPinTitle = $derived.by(() => {
-		if (unavailable) return INERT_TITLE;
+		if (unavailable) return COMMENT_UNAVAILABLE;
 		if (feedbackState.availability === 'unknown')
 			return 'Comment pins - probing the daemon for /api/v1/feedback';
 		const summary = describePinStatusSummary(feedbackState.pins);
@@ -134,7 +138,7 @@
 	 * main - the honest statement of what the comment API does NOT track,
 	 * stated plainly rather than silently omitted. */
 	const commentPinBullets = $derived.by(() => {
-		if (unavailable) return [INERT_TITLE];
+		if (unavailable) return [COMMENT_UNAVAILABLE];
 		if (feedbackState.availability === 'unknown') {
 			return ['Probing the daemon for /api/v1/feedback'];
 		}
@@ -144,7 +148,7 @@
 		];
 	});
 	const chevronTitle = $derived.by(() => {
-		if (unavailable) return INERT_TITLE;
+		if (unavailable) return FEEDBACK_UNAVAILABLE;
 		if (feedbackState.availability === 'unknown')
 			return 'Review todos - probing the daemon for /api/v1/feedback (click retries)';
 		return `Review todos - ${openCount} open item(s) agents queued for the maintainer's review; check done, pick options, type feedback (auto-saves)`;
@@ -170,6 +174,23 @@
 				{ source: 'feedback-pin-draft-storage' }
 			);
 		});
+	});
+
+	$effect(() => {
+		if (!draftHydrated) return;
+		if (feedbackState.pendingDraft === null) return;
+		const draft = untrack(() => takePendingPinDraft());
+		if (draft === null) return;
+		foreignDraftParked = false;
+		pinDraft = {
+			point: draft.point,
+			anchor: draft.anchor,
+			text: draft.text,
+			page: draft.page,
+			viewport: draft.viewport ?? _currentViewport(),
+			followOn: null
+		};
+		void focusPinDraftTextarea();
 	});
 
 	onMount(() => {
@@ -439,7 +460,7 @@
 {/if}
 
 <!-- pin text bubble -->
-<FeedbackPinDraftBubble bind:pinDraft bind:this={draftBubble} />
+<FeedbackPinDraftBubble bind:pinDraft bind:this={draftBubble} {pushToast} />
 
 <FeedbackPanel />
 

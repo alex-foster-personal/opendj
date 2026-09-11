@@ -55,6 +55,9 @@ Requirements (mini-PRD):
     [if] a review's own `commit_id`, or a summary comment's own embedded SHA,
     predates the PR's current head and still counts toward coverage
     [then broken]
+  / A gate older than main's own gate code renders no verdict (PR #1720).
+    [if] a branch cut before a gate fix on main prints PASS [then broken]
+    -- see scripts/review_gate_freshness.py
 
 Policy change, issue #1016 P1 BLOCKING (PR #1053, thread r3927136609, Thu 3
 Sep 2026): evidence used to count from ANY push, not just the current one.
@@ -89,7 +92,7 @@ repo's 600-line file-size ratchet -- see that module's docstring for why.
 from __future__ import annotations
 
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
@@ -105,6 +108,8 @@ except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.review_coverage") from None
     raise
+from scripts.review_claude import CLAUDE, is_claude_artifact
+from scripts.review_gate_freshness import require_gate_current_with_main
 from scripts.review_sol import SOL, is_sol_artifact, substitute_alternatives
 
 REPO = "maintainer/music-dj-tools"
@@ -117,9 +122,13 @@ REPO = "maintainer/music-dj-tools"
 #: produces a real review to require.
 #: Sol joined Thu 4 Sep 2026 (issue #1211): the Codex GitHub app ran out of
 #: quota at ~18:30Z and has posted a usage-limit notice instead of a review
-#: ever since. The two are ALTERNATIVES, not additional requirements -- see
+#: ever since. The three are ALTERNATIVES, not additional requirements -- see
 #: `review_sol.substitute_alternatives`, applied in `triage` below.
-EXPECTED_REVIEWERS: tuple[str, ...] = ("Codex", SOL)
+#: Claude joined Sun 6 Sep 2026, authorized by the maintainer: by then BOTH ChatGPT
+#: subscription seats Sol can reach were walled too, with a stated reset of
+#: Thu 11 Sep, so every named reviewer was down at once and no new PR head
+#: could be covered by anything.
+EXPECTED_REVIEWERS: tuple[str, ...] = ("Codex", SOL, CLAUDE)
 
 #: Substrings that mean the check reported success WITHOUT reviewing. Matched
 #: case-insensitively against the check's description.
@@ -149,6 +158,16 @@ REVIEWER_LOGINS: dict[str, tuple[str, ...]] = {
     "Codex": ("chatgpt-codex-connector",),
 }
 
+#: Reviewers recognized by login PLUS an embedded marker rather than by a bot
+#: login alone, each with the matcher that owns that pair. A CLI lane posts
+#: through `gh` as the maintainer, so neither signal is sufficient by itself; the
+#: matchers live beside the markers they read (scripts/review_sol.py,
+#: scripts/review_claude.py) so a writer and its reader cannot drift apart.
+_MARKER_REVIEWERS: dict[str, Callable[[str, str, str], bool]] = {
+    SOL: is_sol_artifact,
+    CLAUDE: is_claude_artifact,
+}
+
 #: Reviewers that post NO check-run at all, ever -- they review by submitting a
 #: PR review (and/or inline comments) directly, so there is no status line to
 #: require or cross-check against. Codex is the confirmed case (see the module
@@ -158,9 +177,9 @@ REVIEWER_LOGINS: dict[str, tuple[str, ...]] = {
 #: cross-check on a weaker status signal, it is the ONLY signal, so
 #: `classify_reviewer` skips the check lookup entirely rather than misreading
 #: its permanent absence as a failure.
-#: Sol posts no check either: it is a CLI run whose only trace on the PR is
-#: the review it submits, so evidence is its sole instrument too.
-CHECKLESS_REVIEWERS: frozenset[str] = frozenset({"Codex", SOL})
+#: Sol and Claude post no check either: each is a CLI run whose only trace on
+#: the PR is the review it submits, so evidence is their sole instrument too.
+CHECKLESS_REVIEWERS: frozenset[str] = frozenset({"Codex", SOL, CLAUDE})
 
 #: Reviewers KNOWN to be unavailable, with the owner of restoring each. A gate
 #: that can never go green blocks all work, so a known-dead reviewer must not
@@ -237,17 +256,21 @@ def _collect_evidence(
     directly testable against real captured payload shapes, no network call
     or mock required.
 
-    Submitted reviews and inline review comments both carry `commit_id`, the
-    push each was left against, so those filter on plain equality. Issue
-    comments carry no such field, so they fall back to `_body_is_at_head`.
+    A submitted review's `commit_id` is the push it was left against, so it
+    filters on plain equality. An inline comment's `commit_id` is NOT: GitHub
+    carries it forward to every newer push its diff position still applies
+    to, so it filters on `original_commit_id`, and a comment without one
+    counts for nothing (PR #1717, Thu 10 Sep 2026: three older Codex comments
+    certified head f8f0cad79 while Codex's own review of it had failed).
+    Issue comments carry no SHA field, so they fall back to `_body_is_at_head`.
     """
     def wrote(payload: dict) -> bool:
         """Did `name` write this artifact? Codex is known by its bot login;
-        Sol has no bot account and is known by login PLUS marker (see
-        scripts/review_sol.py for why neither half suffices alone)."""
+        the CLI lanes have no bot account and are known by login PLUS marker
+        (see scripts/review_sol.py for why neither half suffices alone)."""
         login = (payload.get("user") or {}).get("login", "")
-        if name == SOL:
-            return is_sol_artifact(login, payload.get("body") or "", head_sha)
+        if matcher := _MARKER_REVIEWERS.get(name):
+            return matcher(login, payload.get("body") or "", head_sha)
         return _matches(login, name)
 
     bodies: list[str] = []
@@ -260,14 +283,14 @@ def _collect_evidence(
         submitted += 1
         if review.get("body"):
             bodies.append(review["body"])
-    comments = sum(1 for c in inline if wrote(c) and c.get("commit_id") == head_sha)
+    comments = sum(1 for c in inline if wrote(c) and c.get("original_commit_id") == head_sha)
     for comment in issue_comments:
         if not wrote(comment):
             continue
         body = comment.get("body") or ""
-        # Sol's marker already carries the head it reviewed, so `wrote` has
+        # A lane marker already carries the head it reviewed, so `wrote` has
         # done the head-tie `_body_is_at_head` does for Codex's summary table.
-        if name == SOL or _body_is_at_head(body, head_sha):
+        if name in _MARKER_REVIEWERS or _body_is_at_head(body, head_sha):
             bodies.append(body)
     return ReviewerEvidence(submitted, comments, tuple(bodies))
 
@@ -475,15 +498,17 @@ def _require_head_unchanged(sampled: str, current: str) -> None:
 
 
 def triage(pr: str) -> int:
+    gate_commit = require_gate_current_with_main()
     checks = _checks(pr)
     head_sha = _head_sha(pr)
     evidence = _evidence(pr, head_sha)
     _require_head_unchanged(head_sha, _head_sha(pr))
     verdicts = substitute_alternatives(
-        [classify_reviewer(name, checks, evidence.get(name)) for name in EXPECTED_REVIEWERS]
+        [classify_reviewer(name, checks, evidence.get(name)) for name in EXPECTED_REVIEWERS],
+        EXPECTED_REVIEWERS,
     )
 
-    print(f"[review-coverage] PR #{pr} @ head {head_sha}")
+    print(f"[review-coverage] PR #{pr} @ head {head_sha} (gate code has main's {gate_commit[:9]})")
     print()
     print("  reviewer coverage")
     for verdict in verdicts:

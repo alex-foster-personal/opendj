@@ -238,6 +238,7 @@ def build_argv(payload: dict[str, Any]) -> list[str]:
     argv: list[str] = [
         UV_BIN,
         "run",
+        "--no-sync",
         "--with",
         "modal",
         "python",

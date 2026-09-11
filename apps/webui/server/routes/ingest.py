@@ -29,7 +29,8 @@ Requirements (mini-PRD):
     [if] PUT contains an unknown step id [then ⛔️] 422, nothing persisted
     [if] config file absent [then] code DEFAULT_STEPS returned and persisted
   ✔︎ ✅ GET coverage: per-step missing counts from real artifacts
-    (analysis table, stems bundles, vocal-cache) over on-disk tracks.
+    (analysis table, stems bundles, vocal-cache, lyrics-cache) over on-disk
+    tracks. lyrics is coverage-only - it has no STEPS/refresh runner.
     [if] a track's file is a broken link [then] it is excluded and counted
     in ``unreachable`` instead of any step's missing list
   ✔︎ ✅ POST refresh + status: background job over missing tracks for
@@ -54,15 +55,15 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import NoReturn
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 from apps.analysis import backlog
 from apps.analysis import run as analysis_run
-from apps.shared import fs_residency
 from apps.shared.events import publish
 from apps.shared.paths import AUDIO_EXTENSIONS, HOME, STATE_DB
 from apps.shared.state.db import open_ro
+from apps.webui.soft_deletes import has_soft_deletes
 from apps.webui.server.routes.ingest_analysis_argv import CliFailed, build_analysis_argv
 from apps.webui.server.routes.ingest_job import (
     _JOBS,
@@ -75,22 +76,39 @@ from apps.webui.server.routes.ingest_job import (
     _RefreshJob,
     _run_cli,
     _systemic_message,
+    missing_by_step,
+    tracks_on_disk,
 )
 from apps.webui.server.routes.ingest_scope import RefreshIn, resolve_scope, unmapped_steps
 from apps.webui.server.routes.ingest_track import select_track_target
-from apps.webui.server.stem_artifacts import (
-    DEFAULT_STEMS_DIR,
-    StemArtifactError,
-    StemBundleNotFoundError,
-    load_stem_bundle,
-)
+from apps.webui.server.stem_artifacts import DEFAULT_STEMS_DIR, stem_roots
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
+
+
+def _stem_roots(app: FastAPI) -> tuple[Path, ...]:
+    """The app's configured stem roots (remote library mode), else the local
+    default farm/RoFormer roots. Coverage, refresh targeting and the deck all
+    have to resolve roots through this one path, or a mode where the app
+    configures crate-backed roots sees a different set than it was told."""
+    configured = getattr(app.state, "stem_roots", None)
+    if configured is not None:
+        return tuple(Path(root) for root in configured)
+    return stem_roots(DEFAULT_STEMS_DIR)
+
+
+#: Lines of the job log the status response carries. 60 lost the head of a
+#: faulthandler dump (about 40 lines: the fatal-signal line, one stack per
+#: thread, the extension-module list) behind the two lines the drain appends
+#: after a crashed chunk, so the CI log showed the crash's outermost frames and
+#: not the one that faulted (e2e run 34339762348, Wed 9 Sep 2026).
+LOG_TAIL_LINES: int = 200
 
 # ----- CFG -------------------------------------------------------------------
 CONFIG_PATH: Path = STATE_DB.parent / "ingest-config.json"
 INGEST_INBOX: Path = HOME / "Music" / "Manual Library" / "_ingest"
 VOCAL_CACHE_DIR: Path = STATE_DB.parent / "vocal-cache"
+LYRICS_CACHE_DIR: Path = STATE_DB.parent / "lyrics-cache"
 DUP_DURATION_TOLERANCE_MS: int = 1_500
 DUP_FP_THRESHOLD: float = 0.92          # matches apps.dedup.find_clusters
 DUP_MAX_FP_CANDIDATES: int = 5          # fingerprinting candidates is O(seconds) each
@@ -189,91 +207,31 @@ class CoverageOut(BaseModel):
     on_disk: int
     unreachable: int
     missing: dict[str, int]
+    #: Per-step count of entries that exist but are STRUCTURALLY INVALID
+    #: (malformed JSON, missing/invalid fields, identity mismatch) -- a
+    #: subset of ``missing``, never the other way round. Distinct from an
+    #: ordinary "not yet run" or "stale, needs re-run" verdict (a stale
+    #: vocal-cache entry whose audio_signature no longer matches is
+    #: legitimately missing, not corrupt) so a malformed write cannot hide
+    #: behind a quiet "incomplete" dot. lyrics/vocals/stems populate this;
+    #: analysis reports 0 (not yet distinguished for that step).
+    corrupt: dict[str, int]
     generated_at: float
 
 
-def _tracks_on_disk() -> tuple[list[tuple[str, str]], int]:
-    """(stable_id, file_path) for tracks whose file is materialised; + unreachable count."""
-    conn = open_ro()
-    try:
-        rows = conn.execute(
-            "SELECT stable_id, file_path FROM tracks "
-            "WHERE file_path IS NOT NULL AND deleted_at IS NULL"
-        ).fetchall()
-    finally:
-        conn.close()
-    ok: list[tuple[str, str]] = []
-    unreachable = 0
-    for sid, fp in rows:
-        if fp.startswith(("tidal:", "soundcloud:", "spotify:")):
-            continue
-        if fs_residency.is_materialised(Path(fp)):
-            ok.append((sid, fp))
-        else:
-            unreachable += 1
-    return ok, unreachable
-
-
-def _valid_stem_bundle_ids() -> set[str]:
-    """stable_ids with a COMPLETE stems bundle under DEFAULT_STEMS_DIR.
-
-    A directory alone is not done: an interrupted worker can leave it without
-    a manifest or with missing/corrupt stem files, and counting it as covered
-    would exclude the track from refresh targets forever. Invalid bundles
-    count as missing so refresh can repair them.
-    """
-    if not DEFAULT_STEMS_DIR.is_dir():
-        return set()
-    done: set[str] = set()
-    for p in DEFAULT_STEMS_DIR.iterdir():
-        if not p.is_dir():
-            continue
-        try:
-            load_stem_bundle(p.name, stems_dir=DEFAULT_STEMS_DIR)
-        except (StemArtifactError, StemBundleNotFoundError):
-            continue
-        done.add(p.name)
-    return done
-
-
-def _missing_by_step(on_disk: list[tuple[str, str]]) -> dict[str, list[tuple[str, str]]]:
-    conn = open_ro()
-    try:
-        # apps.analysis.store creates its table on first write, so a library
-        # that has never been analysed legitimately has no ``analysis`` table:
-        # that means zero tracks analysed, not an error.
-        has_analysis = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='analysis'"
-        ).fetchone() is not None
-        analysed = (
-            {r[0] for r in conn.execute("SELECT DISTINCT stable_id FROM analysis")}
-            if has_analysis
-            else set()
-        )
-    finally:
-        conn.close()
-    stems_done = _valid_stem_bundle_ids()
-    vocals_done = (
-        {p.stem for p in VOCAL_CACHE_DIR.glob("*.json")}
-        if VOCAL_CACHE_DIR.is_dir()
-        else set()
-    )
-    return {
-        "analysis": [(s, f) for s, f in on_disk if s not in analysed],
-        "stems": [(s, f) for s, f in on_disk if s not in stems_done],
-        "vocals": [(s, f) for s, f in on_disk if s not in vocals_done],
-    }
-
-
 @router.get("/coverage", response_model=CoverageOut)
-def get_coverage() -> CoverageOut:
-    on_disk, unreachable = _tracks_on_disk()
-    missing = _missing_by_step(on_disk)
+def get_coverage(request: Request) -> CoverageOut:
+    on_disk, unreachable = tracks_on_disk(open_ro)
+    missing, corrupt = missing_by_step(
+        on_disk, open_ro, _stem_roots(request.app), VOCAL_CACHE_DIR, LYRICS_CACHE_DIR
+    )
     conn = open_ro()
     try:
-        total = conn.execute(
-            "SELECT count(*) FROM tracks WHERE deleted_at IS NULL"
-        ).fetchone()[0]
+        if has_soft_deletes(conn, "tracks"):
+            total_sql = "SELECT count(*) FROM tracks WHERE deleted_at IS NULL"
+        else:
+            total_sql = "SELECT count(*) FROM tracks"
+        total = conn.execute(total_sql).fetchone()[0]
     finally:
         conn.close()
     return CoverageOut(
@@ -281,6 +239,7 @@ def get_coverage() -> CoverageOut:
         on_disk=len(on_disk),
         unreachable=unreachable,
         missing={k: len(v) for k, v in missing.items()},
+        corrupt={k: len(v) for k, v in corrupt.items()},
         generated_at=time.time(),
     )
 
@@ -420,7 +379,9 @@ def _log_id_keyed_skips(job: _RefreshJob, steps: list[str], scope: str) -> None:
                   "Rekordbox import first (id-keyed)")
 
 
-def _batch_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
+def _batch_targets(
+    job: _RefreshJob, _roots: tuple[Path, ...]
+) -> dict[str, list[tuple[str, str]]]:
     """Freshly staged files with no state.db rows yet, so no ids either."""
     assert job.batch_dir is not None
     staged = sorted(
@@ -433,7 +394,9 @@ def _batch_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
     return {"analysis": [("", f) for f in staged], "stems": [], "vocals": []}
 
 
-def _unmapped_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
+def _unmapped_targets(
+    job: _RefreshJob, _roots: tuple[Path, ...]
+) -> dict[str, list[tuple[str, str]]]:
     """Locally imported tracks: a tracks row, no live rekordbox twin."""
     queue = unmapped_backlog()
     job.queue_signature = queue.signature
@@ -448,25 +411,36 @@ def _unmapped_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
     }
 
 
-def _library_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
-    on_disk, unreachable = _tracks_on_disk()
+def _library_targets(
+    job: _RefreshJob, roots: tuple[Path, ...]
+) -> dict[str, list[tuple[str, str]]]:
+    on_disk, unreachable = tracks_on_disk(open_ro)
     _log(job, f"coverage: {len(on_disk)} tracks on disk, {unreachable} unreachable")
-    return _missing_by_step(on_disk)
+    # Refresh targets stay unified with coverage's "missing" semantics: a
+    # corrupt entry still needs its step re-run, exactly like an absent or
+    # stale one, so it is a target here too. Only the coverage ROUTE splits
+    # corrupt out as an additional, distinguishing signal for the UI.
+    missing, _corrupt = missing_by_step(
+        on_disk, open_ro, roots, VOCAL_CACHE_DIR, LYRICS_CACHE_DIR
+    )
+    return missing
 
 
 def validate_track_order_target(stable_id: str) -> None:
     """Fail before queueing when a requested track is absent or ambiguous."""
-    targets, _unreachable = _tracks_on_disk()
+    targets, _unreachable = tracks_on_disk(open_ro)
     select_track_target(stable_id, targets)
 
 
-def _track_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
+def _track_targets(
+    job: _RefreshJob, _roots: tuple[Path, ...]
+) -> dict[str, list[tuple[str, str]]]:
     """One explicit track order, selected before the shared worker starts."""
     if len(job.analysis_orders) != 1:
         raise RuntimeError("track scope requires exactly one analysis order")
     stable_id, kind = next(iter(job.analysis_orders.items()))
     step = "stems" if kind == "stems" else "vocals" if kind == "vocals" else "analysis"
-    targets, _unreachable = _tracks_on_disk()
+    targets, _unreachable = tracks_on_disk(open_ro)
     selected = [select_track_target(stable_id, targets)]
     _log(job, f"track scope: ordering {kind} for {stable_id} through {step}")
     return {"analysis": selected if step == "analysis" else [],
@@ -483,18 +457,20 @@ _SCOPE_TARGETS = {
 }
 
 
-def _targets_for(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
+def _targets_for(
+    job: _RefreshJob, roots: tuple[Path, ...]
+) -> dict[str, list[tuple[str, str]]]:
     """Per-scope work list. An unknown scope is a programming error, not a run."""
     build = _SCOPE_TARGETS.get(job.scope)
     if build is None:  # pragma: no cover - start_refresh validates the scope
         raise RuntimeError(f"unhandled refresh scope {job.scope!r}")
-    return build(job)
+    return build(job, roots)
 
 
-def _refresh_worker(job: _RefreshJob) -> None:
+def _refresh_worker(job: _RefreshJob, roots: tuple[Path, ...]) -> None:
     try:
         job.phase = "running"
-        missing = _targets_for(job)
+        missing = _targets_for(job, roots)
 
         for step in job.steps:
             job.current_step = step
@@ -514,7 +490,9 @@ def _refresh_worker(job: _RefreshJob) -> None:
 
 
 def _start_refresh_job(
-    body: RefreshIn | None, guard: Callable[[], None] | None = None
+    body: RefreshIn | None,
+    roots: tuple[Path, ...],
+    guard: Callable[[], None] | None = None,
 ) -> _RefreshJob:
     """Claim the one slot and hand back THE job created, not the slot.
 
@@ -564,13 +542,15 @@ def _start_refresh_job(
         _JOBS.current = job
         if scope == UNMAPPED_SCOPE:
             _JOBS.last_unmapped = job
-        threading.Thread(target=_refresh_worker, args=(job,), daemon=True).start()
+        threading.Thread(
+            target=_refresh_worker, args=(job, roots), daemon=True
+        ).start()
     return job
 
 
 @router.post("/refresh", response_model=RefreshStatusOut, status_code=202)
-def start_refresh(body: RefreshIn | None = None) -> RefreshStatusOut:
-    return _status_of(_start_refresh_job(body))
+def start_refresh(request: Request, body: RefreshIn | None = None) -> RefreshStatusOut:
+    return _status_of(_start_refresh_job(body, _stem_roots(request.app)))
 
 
 @router.get("/refresh/status", response_model=RefreshStatusOut)
@@ -595,6 +575,6 @@ def _status_of(job: _RefreshJob | None) -> RefreshStatusOut:
         current_step=job.current_step, step_done=job.step_done,
         step_total=job.step_total, steps_completed=job.steps_completed,
         started_at=job.started_at, finished_at=job.finished_at, error=job.error,
-        log_tail=list(job.log)[-60:],
+        log_tail=list(job.log)[-LOG_TAIL_LINES:],
         recently_done_ids=list(job.recently_done_ids),
     )

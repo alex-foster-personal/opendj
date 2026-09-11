@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { pushToast } from '$lib/stores.svelte';
+	import { writeToastReport } from '$lib/toast-report';
 	import {
+		acknowledgeSoundcloudExport,
 		getRecorderStatus,
 		getSession,
+		getSoundcloudExport,
 		getTimeline,
 		getTransitions,
 		listSessions,
@@ -33,6 +36,21 @@
 	let busy = $state(false);
 	let deviceIndex = $state('');
 	let selectionRequest = 0;
+	let exportBusy = $state(false);
+	let exportOpened = $state(false);
+	let exportAcknowledged = $state(false);
+	let exportReminder = $state('');
+	let exportComment = $state('');
+	let exportTrackCount = $state(0);
+
+	function resetSoundcloudExport(): void {
+		exportBusy = false;
+		exportOpened = false;
+		exportAcknowledged = false;
+		exportReminder = '';
+		exportComment = '';
+		exportTrackCount = 0;
+	}
 
 	onMount(loadSurface);
 
@@ -59,6 +77,7 @@
 
 	async function selectSession(sessionId: string): Promise<void> {
 		const requestId = ++selectionRequest;
+		resetSoundcloudExport();
 		try {
 			const [nextSession, nextTimeline, nextTransitions] = await Promise.all([
 				getSession(sessionId),
@@ -71,6 +90,52 @@
 			}
 		} catch (error) {
 			pushToast(`Failed to open session: ${error}`, 'error');
+		}
+	}
+
+	async function openSoundcloudExport(): Promise<void> {
+		if (!selected) return;
+		exportBusy = true;
+		try {
+			const payload = await getSoundcloudExport(selected.summary.session_id);
+			exportOpened = true;
+			exportAcknowledged = false;
+			exportReminder = payload.licensing_reminder;
+			exportComment = '';
+			exportTrackCount = payload.tracklist.length;
+		} catch (error) {
+			pushToast(`SoundCloud export failed: ${error}`, 'error');
+		} finally {
+			exportBusy = false;
+		}
+	}
+
+	async function acknowledgeSoundcloudRights(): Promise<void> {
+		if (!selected) return;
+		exportBusy = true;
+		try {
+			const payload = await acknowledgeSoundcloudExport(selected.summary.session_id);
+			exportAcknowledged = true;
+			exportReminder = payload.licensing_reminder;
+			exportComment = payload.comment ?? '';
+			exportTrackCount = payload.tracklist.length;
+		} catch (error) {
+			pushToast(`SoundCloud export failed: ${error}`, 'error');
+		} finally {
+			exportBusy = false;
+		}
+	}
+
+	async function copySoundcloudComment(): Promise<void> {
+		try {
+			await writeToastReport(
+				exportComment,
+				typeof navigator === 'undefined' ? undefined : navigator.clipboard,
+				typeof window === 'undefined' ? false : window.isSecureContext
+			);
+			pushToast('Tracklist copied');
+		} catch (error) {
+			pushToast(`Copy failed: ${error}`, 'error');
 		}
 	}
 
@@ -222,6 +287,28 @@
 				{/each}
 			</section>
 
+			<section class="soundcloud-export" aria-label="SoundCloud tracklist">
+				<h4>SoundCloud tracklist</h4>
+				<p class="export-lead">Metadata only. Open DJ does not upload audio or offer takeover.</p>
+				{#if !exportOpened}
+					<button onclick={openSoundcloudExport} disabled={exportBusy || busy}>
+						SoundCloud tracklist
+					</button>
+				{:else}
+					<p class="licensing-reminder">{exportReminder}</p>
+					{#if exportTrackCount === 0}
+						<p class="empty">This session has no track_loaded rows in its timeline.</p>
+					{:else if !exportAcknowledged}
+						<button onclick={acknowledgeSoundcloudRights} disabled={exportBusy}>
+							I own the rights or I will check SoundCloud's terms
+						</button>
+					{:else}
+						<textarea readonly rows="8" aria-label="SoundCloud tracklist comment">{exportComment}</textarea>
+						<button onclick={copySoundcloudComment} disabled={exportComment === ''}>Copy</button>
+					{/if}
+				{/if}
+			</section>
+
 			<section class="timeline" aria-label="Session timeline">
 				<div class="section-title">
 					<h4>Timeline</h4>
@@ -274,7 +361,23 @@
 	.session-card.selected { background: #202731; border-color: var(--accent-dim); box-shadow: inset 3px 0 var(--accent); }
 	.session-detail { padding: 1.2rem 1.35rem; }
 	.detail-heading { border-bottom: 1px solid var(--border); padding-bottom: 1rem; }
-	.replay, .timeline { margin-top: 1.25rem; }
+	.replay, .timeline, .soundcloud-export { margin-top: 1.25rem; }
+	.soundcloud-export h4 { margin-bottom: 0.45rem; }
+	.export-lead, .licensing-reminder { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem; max-width: 62ch; }
+	.licensing-reminder { color: #e6edf3; }
+	.soundcloud-export textarea {
+		display: block;
+		width: 100%;
+		margin: 0.75rem 0;
+		padding: 0.7rem 0.8rem;
+		background: #10141b;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		color: inherit;
+		font-family: ui-monospace, monospace;
+		font-size: 0.82rem;
+		resize: vertical;
+	}
 	.replay h4 { margin-bottom: 0.65rem; }
 	.segment { border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem 0.8rem; margin-top: 0.5rem; }
 	.segment audio { height: 34px; max-width: 55%; }

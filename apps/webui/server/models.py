@@ -8,10 +8,22 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ProvenanceOut(BaseModel):
+    """One field's value plus where it came from and whether it is real.
+
+    ``status`` has NO DEFAULT on purpose (native-analysis v1, spec section 3
+    and `.planning/REQUIREMENTS.md` NATIVE-04). A default of ``ok`` would let
+    a caller omit the field and serialize a `failed` or `missing` own-analysis
+    lane as a success, which is the exact silent-fallback shape this milestone
+    exists to remove. Every construction site states its status, and the
+    rekordbox/legacy boundary passes ``ok`` explicitly.
+    """
+
     value: Any
     source: str
     confidence: float | None = None
     modified_at: str
+    status: Literal["ok", "failed", "missing"]
+    reason: str | None = None
 
 
 class TrackOut(BaseModel):
@@ -101,6 +113,27 @@ class TrackListItemOut(TrackOut):
     energy_reason: str
 
 
+class LyricLineOut(BaseModel):
+    """One cache-backed line timestamp in integer track milliseconds."""
+
+    start_ms: int = Field(ge=0)
+    text: str = Field(min_length=1)
+
+
+class TrackLyricsOut(BaseModel):
+    """Agent-native read model for cached line-synced lyrics only."""
+
+    stable_id: str
+    source: str
+    lines: list[LyricLineOut] = Field(min_length=1)
+
+
+class LyricsUnavailableOut(BaseModel):
+    """The explicit cache-miss response for one track's lyrics timeline."""
+
+    detail: str
+
+
 class TracksPage(BaseModel):
     items: list[TrackListItemOut]
     next_cursor: str | None = None
@@ -181,6 +214,10 @@ class TrackRowOut(BaseModel):
     energy: int | None
     energy_source: Literal["mik"] | None
     energy_reason: str
+    key_status: Literal["ok", "failed", "missing"]
+    key_reason: str | None
+    loudness_status: Literal["ok", "failed", "missing"]
+    loudness_reason: str | None
 
 
 class PlaylistDetail(BaseModel):
@@ -340,6 +377,7 @@ __all__ = [
     "HealthStateDb",
     "HealthSyncthing",
     "HealthWaveformMaterialization",
+    "LyricLineOut",
     "PairingCreate",
     "PairingOut",
     "PlaylistDetail",
@@ -351,6 +389,7 @@ __all__ = [
     "QueueItemOut",
     "QueueOut",
     "TrackListItemOut",
+    "TrackLyricsOut",
     "TrackOut",
     "TrackPatch",
     "TrackRowOut",

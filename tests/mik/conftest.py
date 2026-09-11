@@ -246,7 +246,7 @@ def staged(state_conn, make_mik_store, data_dir: Path, write_verdicts):
         [
             {
                 "pk": 1,
-                "path": "/Users/dev/orphan.mp3",
+                "path": "/Users/old/orphan.mp3",
                 "name": "7 - Orphan",
                 "artist": "Nobody",
                 "key": "9A",
@@ -280,7 +280,7 @@ def _stage_one(
         [
             {
                 "pk": 1,
-                "path": "/Users/dev/orphan.mp3",
+                "path": "/Users/old/orphan.mp3",
                 "name": "7 - Orphan",
                 "artist": "Nobody",
                 "key": "9A",

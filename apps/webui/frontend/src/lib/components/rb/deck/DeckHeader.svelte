@@ -8,13 +8,13 @@
 	import {
 		DECK_IDS,
 		deckStates,
-		effectiveCamelotKey,
 		keySyncPreview,
 		pitchRanges,
 		rateDeckTrack
 	} from '$lib/rb/audio-engine.svelte';
 	import { tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
-	import { GRID_FEATURE_TIP, gridFeaturesInert } from '$lib/player/grid-features';
+	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
+	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import ControlExplainer from './ControlExplainer.svelte';
@@ -62,19 +62,20 @@
 	// BEAT SYNC is inert rather than lit-but-dead. Transport is deliberately
 	// NOT gated the same way - play, pause and cue always run.
 	const gridless: boolean = $derived(gridFeaturesInert(deck));
+	const gridInertTip: string = $derived(gridFeatureInertTip(deck));
 	const beatSyncTitle: string = $derived(
 		gridless
-			? GRID_FEATURE_TIP
+			? gridInertTip
 			: deck.beat_sync_enabled
-				? 'BEAT SYNC ON - lock beat phase to the tempo MASTER (strict BAR 1-4)'
+				? 'BEAT SYNC ON - lock beat phase to the tempo MASTER (BAR phase, folding if it must)'
 				: 'BEAT SYNC OFF - this deck keeps its own tempo and phase'
 	);
 	const beatSyncBullets: readonly string[] = $derived([
-		'Locks this deck to the MASTER beat grid (BAR: beat 1 aligns with 1, … 4 with 4).',
+		'Locks this deck to the MASTER beat grid (BAR: beat 1 aligns with 1, … 4 with 4 whenever the two tempos match outright).',
 		`Needs a real PQTZ grid on both decks. BAR tempo must land in pitch range [${syncBounds.min}, ${syncBounds.max}] (default +-16%).`,
 		'Outside that window sync cannot engage - button reverts; use pitch or pick a closer BPM.',
 		'No grid on this track: the button is inert and transport runs unsynced.',
-		'Half/double tempo matching needs Sync mode BEAT (explicit opt-out), not BAR.'
+		'BAR prefers an exact match, and folds to half/double tempo rather than refusing when that is the only lock available - it warns in orange and stays locked.'
 	]);
 	const masterTitle: string = $derived(
 		deck.stable_id === null
@@ -137,12 +138,14 @@
 			? 'Master Tempo is OFF. Tempo changes affect vocal pitch; KEY SYNC itself does not change playback speed.'
 			: null
 	);
-	/** Show audible Camelot after KEY SYNC / nudge; raw metadata stays in the tooltip. */
-	const keyText: string = $derived(
-		effectiveCamelotKey(deck.key, deck.key_shift_semitones) ?? deck.key ?? '--'
+	/** Show audible Camelot after KEY SYNC / nudge; playhead segments override metadata. */
+	const keyPlayhead = $derived(
+		keyAtPlayheadNow(deck.anlz, deck.position_ms, deck.key_shift_semitones, deck.key)
 	);
+	const keyText: string = $derived(keyPlayhead.display ?? '--');
 	const keyColor: string | null = $derived(camelotKeyColor(keyText === '--' ? null : keyText));
 	const keyHover: string | null = $derived.by(() => {
+		if (keyPlayhead.title !== null) return keyPlayhead.title;
 		const effective = keyText === '--' ? null : keyText;
 		const base = camelotKeyHoverLabel(effective);
 		const raw = deck.key;
@@ -210,11 +213,25 @@
 	const remainText: string = $derived(
 		deck.duration_ms === null ? '--:--.-' : `-${_fmtClock(deck.duration_ms - deck.position_ms)}`
 	);
+	const remainTitle: string = $derived(
+		deck.duration_ms === null
+			? 'Remaining time --:--.- (no track loaded)'
+			: `Remaining time ${remainText} (MM:SS.d until the end of this track)`
+	);
+	const elapsedTitle: string = $derived(
+		deck.duration_ms === null
+			? 'Elapsed time --:--.- (no track loaded)'
+			: `Elapsed time ${elapsedText} (MM:SS.d from the start of this track)`
+	);
+	const keyOffTitle: string = $derived(
+		`Key shift ${keyShiftText} semitones from the original key`
+	);
+	const deckNumTitle: string = $derived(`Deck ${deckId}`);
 </script>
 
 <div class="deck-header">
 	<div class="art-slot">
-		{#if artSrc !== null && !artworkFailed}
+		{#if deck.stable_id !== null}
 			<button
 				type="button"
 				class="art-btn"
@@ -224,14 +241,18 @@
 				disabled={pending}
 				onclick={() => void onUnload()}
 			>
-				<img
-					class="art"
-					src={artSrc}
-					alt=""
-					onerror={() => {
-						artworkFailed = true;
-					}}
-				/>
+				{#if artSrc !== null && !artworkFailed}
+					<img
+						class="art"
+						src={artSrc}
+						alt=""
+						onerror={() => {
+							artworkFailed = true;
+						}}
+					/>
+				{:else}
+					<span class="art placeholder"></span>
+				{/if}
 				<span class="art-eject" aria-hidden="true">⏏</span>
 			</button>
 		{:else}
@@ -242,7 +263,7 @@
 	<!-- Body wraps beside art so a second chrome row does not stack under the
 	     full artwork height (header = max(art, body), not art + body). -->
 	<div class="header-body">
-		<span class="deck-num">{deckId}</span>
+		<span class="deck-num" title={deckNumTitle}>{deckId}</span>
 
 		<div class="meta" class:empty={deck.stable_id === null}>
 			<span class="title">{deck.title ?? 'No track loaded'}</span>
@@ -253,7 +274,7 @@
 					<!-- Dot only, per pin scope: the library column, the click-to-set
 					     swatch selector, and the shift-stacked multi-tag layout are a
 					     separate feature and stay out of this packet. -->
-					<span class="color-dot" title="Colour tag (not yet settable)"></span>
+					<span class="color-dot" title="Color tag (not yet settable)"></span>
 				</span>
 			{/if}
 		</div>
@@ -295,8 +316,8 @@
 		</ControlExplainer>
 
 		<div class="clocks">
-			<span class="remain">{remainText}</span>
-			<span class="elapsed">{elapsedText}</span>
+			<span class="remain" title={remainTitle}>{remainText}</span>
+			<span class="elapsed" title={elapsedTitle}>{elapsedText}</span>
 		</div>
 
 		<div class="chrome">
@@ -351,7 +372,7 @@
 					style={keyColor !== null ? `color:${keyColor}` : undefined}
 					title={keyHover ?? undefined}>{keyText}</span
 				>
-				<span class="key-off">{keyShiftText}</span>
+				<span class="key-off" title={keyOffTitle}>{keyShiftText}</span>
 				<button
 					class="nudge"
 					disabled={pending || deck.stable_id === null || deck.key_shift_semitones === 12}
@@ -519,13 +540,33 @@
 		gap: 5px;
 		font-size: var(--rb-fs-label);
 	}
+	/* Pin 54c59dd3f564: "color dot should be vertically center aligned with
+	 * star icons and be 20% smaller." 9px -> 7.2px is the 20%.
+	 *
+	 * The centring is NOT what `align-items: center` above already does. That
+	 * aligns LAYOUT BOXES, and those were already flush (both centred on
+	 * 249.5 in a 1280x800 deck). What the maintainer can see is the INK: `.rb-star`
+	 * carries `line-height: 1`, and the ☆ glyph paints low inside that line
+	 * box, so the stars' ink centre sat 0.67px below the dot's. `top` here is
+	 * that optical correction, in em of the STAR's font size rather than the
+	 * row's, written as the SAME expression theme.css gives `.rb-star` so the
+	 * two cannot drift apart. In this subtree it always resolves to the
+	 * `--rb-fs-browser` fallback: `--rb-star-size` is a local custom property
+	 * on TrackTable's `.c-rating` cell, and a deck header is never a
+	 * descendant of one, so the narrowed-rating-column case cannot reach here.
+	 * 0.045em is the measured 0.5px at that 11px default; residual 0.17px.
+	 * Measured, not assumed -- performance-deck-color-dot.spec.ts reads the
+	 * composited pixels back and fails if this is reverted. */
 	.color-dot {
 		display: inline-block;
-		width: 9px;
-		height: 9px;
+		width: 7.2px;
+		height: 7.2px;
 		border-radius: 50%;
 		border: 1px solid var(--rb-text-dim);
 		background: transparent;
+		font-size: var(--rb-star-size, var(--rb-fs-browser));
+		position: relative;
+		top: 0.045em;
 	}
 	.readout {
 		display: flex;

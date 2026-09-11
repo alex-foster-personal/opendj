@@ -73,6 +73,13 @@ export default defineConfig({
 	// setup-entry-points.spec.ts is deliberately NOT here: its double run under
 	// vite/chromium AND the webkit artifact config is documented in both files.
 	testIgnore: [
+		// 30s test-level timeout here makes #1385's 45s toBeVisible allowance
+		// inert (Playwright counts test-function time toward the timeout), and
+		// the unconditional 5s boot-burst wait after it can then blow the
+		// budget too -- Sol P2 BLOCKING on #1463, thread 3961468764. Runs only
+		// under playwright.rekordbox-gate.config.ts (60s timeout) instead.
+		'**/artwork-reader-unavailable.spec.ts', // playwright.rekordbox-gate.config.ts (30s root timeout too tight, #1463 thread 3961468764)
+		'**/missing-tracks-folder.spec.ts', // playwright.rekordbox-gate.config.ts
 		'**/boot-burst.spec.ts', // playwright.boot-burst.config.ts (real library benchmark)
 		'**/comment-hotkey-browser.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
 		'**/performance-*.spec.ts', // playwright.performance.config.ts (real library)
@@ -89,7 +96,8 @@ export default defineConfig({
 		'**/stems-progress.spec.ts', // playwright.stems.config.ts (engine + ffmpeg)
 		'**/stretch-artifact.spec.ts', // playwright.stretch-artifact.config.ts (built artifact)
 		'**/stretch-quality.spec.ts', // playwright.stretch-quality.config.ts (no server)
-		'**/full-reload-gate.spec.ts' // playwright.full-reload-gate.config.ts (own vite instance, r3920753724)
+		'**/full-reload-gate.spec.ts', // playwright.full-reload-gate.config.ts (own vite instance, r3920753724)
+		'**/audio-soak.spec.ts' // playwright.audio-soak.config.ts (built artifact, MINUTES; `just test-audio-soak`)
 	],
 	fullyParallel: false,
 	workers: 1,

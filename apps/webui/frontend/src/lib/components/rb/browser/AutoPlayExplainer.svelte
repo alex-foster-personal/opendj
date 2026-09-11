@@ -44,7 +44,7 @@
 	const mode = $derived(describeAutoPlayMode(uiPrefs));
 
 	function _place(): void {
-		if (wrapEl === undefined || panelEl === undefined) return;
+		if (!wrapEl || !panelEl) return;
 		panelStyle = columnExplainerStyle(
 			wrapEl.getBoundingClientRect(),
 			panelEl.getBoundingClientRect(),
@@ -95,7 +95,7 @@
 	}
 
 	$effect(() => {
-		if (!open || panelEl === undefined) return;
+		if (!open || !panelEl) return;
 		_place();
 		const reposition = () => _place();
 		window.addEventListener('resize', reposition);

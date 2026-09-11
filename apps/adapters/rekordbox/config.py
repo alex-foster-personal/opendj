@@ -82,13 +82,21 @@ ARTWORK_FILENAMES: dict[str, str] = {
 # Cached anlz JSON schema version. Bump whenever the payload shape or any
 # decode semantics change (band order fix, vocals field, ...) so stale
 # cache entries self-heal by recomputing instead of serving old shapes.
-ANLZ_CACHE_SCHEMA: int = 2
+# 3 adds the required `beatgrid.source` discriminator ("own" | "rekordbox",
+# NATIVE-01). A schema-2 entry has no `source` key at all, and a consumer that
+# fails closed on an unknown source would render every cached rekordbox track's
+# grid controls inert until the file happened to be re-decoded.
+ANLZ_CACHE_SCHEMA: int = 3
 # Bump whenever beatgrid_diagnostics' output shape or thresholds change.
 BEATGRID_ISSUE_CACHE_SCHEMA: int = 1
-# Bump whenever the local decode changes what the peaks MEAN (sample rate,
-# column density, value scale), so stale entries recompute instead of being
-# rendered against a different convention.
-LOCAL_WAVEFORM_CACHE_SCHEMA: int = 1
+# Bump whenever the local waveform cache ENTRY SHAPE changes, so stale entries
+# recompute instead of being rendered against a different convention. 2 is the
+# NATIVE-06 tri-band entry (``peaks_b64`` holds (n, 3) columns, not (n,)).
+# What the peaks MEAN - rate, column density, crossovers, filter order - is
+# gated separately and automatically by
+# ``apps.analysis_waveform.local_waveform.PEAKS_VERSION``, which is derived
+# from those constants rather than hand-maintained here.
+LOCAL_WAVEFORM_CACHE_SCHEMA: int = 2
 
 # --- file-existence cache ---
 # file_exists is disk truth (FR-1 item 4): playable local bytes, not merely

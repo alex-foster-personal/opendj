@@ -857,11 +857,27 @@ async function _waitForDeckLoaded(page: Page, deck: DeckId): Promise<void> {
 		settled = state.stable_id !== null && !state.transport_pending ? settled + 1 : 0;
 		if (settled >= DECK_SETTLE_POLLS) return;
 		if (Date.now() > deadline) {
+			// Every deck, not just the one waited on: nightly run 34187231703 (Tue 8
+			// Sep 2026) waited on deck 1 while the app's own picker had landed the
+			// track on deck 2, and this message could not say why deck 1 was passed
+			// over. The picker's inputs (is_master, playing, stable_id) are stated
+			// so the next failure names the exclusion instead of the symptom.
+			const board = (await _query(page)).decks;
+			const roster = (Object.keys(board) as unknown as DeckId[])
+				.map((id) => {
+					const d = board[id];
+					return (
+						`deck${id}[sid=${d.stable_id?.slice(0, 8) ?? 'null'} ` +
+						`playing=${d.playing} audible=${d.audible} master=${d.is_master} ` +
+						`pending=${d.transport_pending}]`
+					);
+				})
+				.join(' ');
 			throw new Error(
 				`deck ${deck} never settled on a loaded track: ` +
 					`stable_id=${state.stable_id ?? 'null'}, ` +
 					`transport_pending=${state.transport_pending}, ` +
-					`duration_ms=${state.duration_ms ?? 'null'}`
+					`duration_ms=${state.duration_ms ?? 'null'}; board: ${roster}`
 			);
 		}
 		await page.waitForTimeout(DECK_SETTLE_POLL_MS);
@@ -909,7 +925,10 @@ async function _waitForDeckReloaded(
 	);
 }
 
-test.describe.configure({ mode: 'serial' });
+// Sequential execution comes from workers: 1 + fullyParallel: false in the
+// webkit-deckload config, required because tests share the beforeAll page.
+// mode: serial is forbidden here: the first failure would skip the quarantined
+// remainder (#712).
 
 test.describe('webkit performance controls on the engine-served build', () => {
 	let page: Page;

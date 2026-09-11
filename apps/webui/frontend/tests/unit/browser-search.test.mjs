@@ -83,13 +83,31 @@ test('a superseded search cannot report over the command that replaced it', asyn
 	unsubscribe();
 });
 
-test('Next-only moves into the compact search stack above SearchBox while searching', async () => {
+// pin 5e3ed689ad3a: this asserted the OPPOSITE placement - the toggle inside
+// `.search-options`, which renders only while the search box is focused. That
+// is exactly the bug the maintainer reported ("where has the checkbox gone?"), so the
+// assertions are inverted rather than dropped: the control must now sit in the
+// always-rendered header row, outside the search-focus block, and must NOT be
+// inside `.search-options` any more. The real-browser proof that it is visible
+// without touching search lives in performance-library-panels.spec.ts.
+test('the compatible filter is always reachable in the header, never gated on search focus', async () => {
 	const source = await import('node:fs/promises').then(({ readFile }) =>
 		readFile(new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url), 'utf8')
 	);
-	assert.match(source, /\{#if searchFocused \|\| pane\.search\.trim\(\) !== ''\}/);
-	assert.match(source, /class="search-options"[\s\S]*?class="next-only"[\s\S]*?<SearchBox/);
-	assert.match(source, /title="Filter visible candidates by Camelot and BPM\. Shortcut: Tab"/);
+	const searchOnlyBlock = source.slice(source.indexOf('class="search-options"'));
+	assert.ok(
+		!/class="search-options"[\s\S]*?class="next-only"[\s\S]*?<SearchBox/.test(source),
+		'the compatible toggle must not be inside the search-focused options row'
+	);
+	assert.ok(
+		searchOnlyBlock.includes('class="whole-collection"'),
+		'Search all playlists stays in the search-focused options row'
+	);
+	assert.match(source, /class="hide-broken"[\s\S]*?class="next-only"[\s\S]*?<span>compatible<\/span>/);
+	assert.match(
+		source,
+		/title="Show only tracks compatible with the reference deck \(master, else playing, else any loaded with key and BPM\): Camelot key family/
+	);
 });
 
 test('Search all playlists explains its current-pane and collection scopes', async () => {

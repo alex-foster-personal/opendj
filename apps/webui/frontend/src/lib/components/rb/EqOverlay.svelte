@@ -35,7 +35,7 @@
 <div class="eq-overlay" role="group" aria-label="Technically-working mode EQ overlay">
 	{#each loadedOrder as deck (deck)}
 		<div class="eq-strip" data-eq-overlay-channel={deck}>
-			<span class="ch-num">{deck}</span>
+			<span class="ch-num" title={`Mixer channel ${deck} (deck ${deck})`}>{deck}</span>
 			<Knob
 				knobId={knobId(deck, 'high')}
 				label="HI"

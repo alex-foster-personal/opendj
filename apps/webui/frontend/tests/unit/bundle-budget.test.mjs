@@ -24,7 +24,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -164,8 +164,37 @@ test('a dynamic import from performance is charged to other-lazy, not the route 
 	assert.ok(otherLazy > 9000, `other-lazy must pay for the deferred chunk, got ${otherLazy}`);
 });
 
+/**
+ * Read a budget's limit out of the gate rather than restating it here.
+ *
+ * The `other-lazy` overflow below used to be the literal 70000, chosen to clear
+ * a 67584 limit. When that limit moved to 110592 for the Q18 FLAC decoder
+ * (PR #1691), 70000 stopped overflowing anything and this guard went GREEN
+ * while asserting that a budget fails - the exact "decorative budget" failure
+ * the header above says these tests exist to prevent, one level up. A guard
+ * that stops guarding when the thing it guards changes is worse than no guard,
+ * so the number is derived now and cannot go stale again.
+ */
+function _limitOf(name) {
+  const source = readFileSync(GATE, 'utf8');
+  const match = source.match(new RegExp(`name: '${name}', limit: (\\d+)`));
+  assert.ok(match, `could not read the ${name} limit out of ${GATE}`);
+  return Number(match[1]);
+}
+
 for (const surface of ['library', 'performance', 'other-lazy']) {
-  const overflow = { library: 260000, performance: 210000, 'other-lazy': 70000 }[surface];
+  // EVERY surface derives from the gate, none is a literal. A literal goes
+  // stale the moment a ceiling is raised and then asserts a failure that can
+  // no longer happen: when PR #1587 raised performance to 227,328, the pinned
+  // `performance: 210000` stopped overflowing and this case passed while
+  // proving nothing. That branch re-pinned it to 228000, which is the same
+  // maintenance recurring rather than the defect ending. It was written
+  // literal on the theory that the fixture's other chunks make the margin
+  // unpredictable, but those chunks only ADD to the surface, so limit + 8000
+  // always overflows - the theory was right about the exact overage and wrong
+  // about the direction, which is the half that matters. Same defect fixed
+  // for `other-lazy` one round earlier on this PR; these are its siblings.
+  const overflow = _limitOf(surface) + 8000;
   test(`budget "${surface}" FAILS when its own weight exceeds the limit`, () => {
     const { code, out } = _run(_fixture({ sizes: { [surface]: overflow } }));
     assert.equal(code, 1, `expected a non-zero exit\n${out}`);

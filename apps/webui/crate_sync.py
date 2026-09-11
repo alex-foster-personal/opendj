@@ -38,10 +38,11 @@ from typing import Literal, Optional
 from apps.shared import fs_residency, library_mode, platform_paths
 from apps.shared.crate_index import audit_manifest, ledger_digest
 from apps.shared.platform_paths import PROJECT_ROOT
+from apps.webui.soft_deletes import has_soft_deletes
 from apps.webui.run_agentbox import (
     AGENTBOX_HOSTNAME,
-    ALLOWED_SSH_HOSTS,
     allowed_ssh_host,
+    allowed_ssh_hosts_description,
     ssh_agentbox_argv,
 )
 
@@ -59,19 +60,29 @@ PRELOAD1_PRESET: Path = (
     / "preset.ts"
 )
 DEFAULT_CRATE_ROOT: Path = Path("/data/mdt-crate")
-DEFAULT_USER_PREFIXES: tuple[str, ...] = ("/Users/dev", "/Users/dev")
+#: Env naming this deployment's owner-Mac home prefix(es) (os.pathsep-
+#: separated absolute paths, e.g. "/Users/<name>"). No personal name is
+#: hardcoded here (#910); unset means the caller must pass --map explicitly.
+DEFAULT_USER_PREFIXES_ENV: str = "MDT_OWNER_USER_PREFIXES"
 OWNER_MEDIA_SUBTREES: frozenset[str] = frozenset({"Documents", "Music"})
 REMOTE_REPO: Path = Path("/root/music-dj-tools")
-OWNER_SSH_DEFAULT = "dev@192.0.2.1"
-OWNER_REPO_DEFAULT = Path("/Users/dev/Music/music-dj-tools")
-OWNER_SSH_KEY = Path("/root/.ssh/agentbox_mac_sync_ed25519")
-ALLOWED_OWNER_SSH: frozenset[str] = frozenset(
-    {
-        "dev@192.0.2.1",
-        "dev@air",
-        "dev@air.example-tailnet.ts.net",
-    }
-)
+#: Env naming this deployment's allowed owner-Mac SSH target(s) (user@host or
+#: user@tailnet-name, os.pathsep-separated; first entry is the --owner
+#: default). No personal tailnet identity is hardcoded here (#910); unset
+#: fails fast, only at the point a --remote pull actually needs it, because
+#: validating against an empty allowlist would silently refuse everyone
+#: while looking like a real check.
+OWNER_SSH_TARGETS_ENV: str = "MDT_OWNER_SSH_TARGETS"
+#: Env naming this deployment's owner-Mac repo checkout path, used to sanity
+#: check the path a --remote pull is told to trust (#910). Unset fails fast
+#: the same way, and only when --remote pull needs it.
+OWNER_REPO_ENV: str = "MDT_OWNER_REPO"
+#: Env naming the private key this deployment's owner-Mac pull lane
+#: authenticates with. A path under one machine's /root is deployment config,
+#: not repo content, so it sits beside OWNER_SSH_TARGETS_ENV rather than as a
+#: literal (#1540). Unset fails fast at the point a pull needs it, the same
+#: contract as the two env names above.
+OWNER_SSH_KEY_ENV: str = "MDT_OWNER_SSH_KEY"
 ANLZ_SIBLING_SUFFIXES: frozenset[str] = frozenset({".DAT", ".EXT", ".2EX"})
 ARTWORK_SIBLINGS: tuple[str, ...] = ("artwork.jpg", "artwork_s.jpg", "artwork_m.jpg")
 FileKind = Literal["audio", "anlz", "artwork"]
@@ -118,11 +129,63 @@ def preload1_stable_ids(preset_path: Path = PRELOAD1_PRESET) -> tuple[str, ...]:
 # ----- path map / dest ----------------------------------------------------
 
 
+def _default_user_prefixes() -> tuple[str, ...]:
+    """This deployment's owner-Mac home prefix(es), read fresh from the
+    environment (not cached at import time) so a placeholder can never be
+    baked into tracked code and a test can set/unset the variable per case.
+    """
+    raw = os.environ.get(DEFAULT_USER_PREFIXES_ENV, "")
+    return tuple(p for p in raw.split(os.pathsep) if p)
+
+
 def default_user_maps(crate_root: Path) -> tuple[tuple[str, str], ...]:
+    prefixes = _default_user_prefixes()
+    if not prefixes:
+        raise RuntimeError(
+            f"{DEFAULT_USER_PREFIXES_ENV} is not set and --map was not given -- "
+            "export this machine's owner-Mac home prefix(es) (os.pathsep-"
+            "separated absolute paths, e.g. /Users/<name>) or pass --map FROM=TO"
+        )
     return tuple(
         (prefix, str(crate_root / "users" / prefix.rsplit("/", 1)[-1]))
-        for prefix in DEFAULT_USER_PREFIXES
+        for prefix in prefixes
     )
+
+
+def _owner_ssh_targets() -> tuple[str, ...]:
+    """This deployment's allowed owner-Mac SSH targets, read fresh from the
+    environment (not cached at import time) so a test can set/unset the
+    variable per case. Raises when empty: an empty allowlist must refuse
+    every owner explicitly, not compare true against nothing.
+    """
+    raw = os.environ.get(OWNER_SSH_TARGETS_ENV, "")
+    targets = tuple(t for t in raw.split(os.pathsep) if t)
+    if not targets:
+        raise RuntimeError(
+            f"{OWNER_SSH_TARGETS_ENV} is not set -- export this deployment's "
+            "owner-Mac SSH target(s) (user@host, os.pathsep-separated; the "
+            "first is used as the --owner default) before a --remote pull"
+        )
+    return targets
+
+
+def _owner_ssh_default() -> str:
+    return _owner_ssh_targets()[0]
+
+
+def _owner_repo_default() -> Path:
+    """This deployment's owner-Mac repo checkout, read fresh from the
+    environment. Raises when unset: a --remote pull with no --owner-repo and
+    no configured default must fail loudly rather than trust a placeholder
+    that matches nothing real (#910).
+    """
+    raw = os.environ.get(OWNER_REPO_ENV)
+    if not raw:
+        raise RuntimeError(
+            f"{OWNER_REPO_ENV} is not set and --owner-repo was not given -- "
+            "export this deployment's owner-Mac repo checkout path"
+        )
+    return Path(raw)
 
 
 def parse_map_entry(raw: str) -> tuple[str, str]:
@@ -216,30 +279,46 @@ def _open_ro(path: Path, label: str) -> sqlite3.Connection:
 
 
 def _playlist_stable_ids(state: sqlite3.Connection, name: str) -> tuple[str, ...]:
-    rows = state.execute(
-        "SELECT playlist_id, name FROM playlists "
-        "WHERE name = ? AND deleted_at IS NULL",
-        (name,),
-    ).fetchall()
+    if has_soft_deletes(state, "playlists"):
+        lookup_sql = (
+            "SELECT playlist_id, name FROM playlists "
+            "WHERE name = ? AND deleted_at IS NULL"
+        )
+    else:
+        lookup_sql = (
+            "SELECT playlist_id, name FROM playlists "
+            "WHERE name = ?"
+        )
+    rows = state.execute(lookup_sql, (name,)).fetchall()
     if not rows:
-        known = [
-            r[0]
-            for r in state.execute(
+        if has_soft_deletes(state, "playlists"):
+            known_sql = (
                 "SELECT DISTINCT name FROM playlists "
                 "WHERE deleted_at IS NULL ORDER BY name"
             )
-        ]
+        else:
+            known_sql = (
+                "SELECT DISTINCT name FROM playlists "
+                "ORDER BY name"
+            )
+        known = [r[0] for r in state.execute(known_sql)]
         raise RuntimeError(
             f"unknown playlist {name!r}. Known: {', '.join(known) or '(none)'}"
         )
     ids: list[str] = []
     seen: set[str] = set()
     for playlist_id, _name in rows:
-        for (stable_id,) in state.execute(
-            "SELECT stable_id FROM playlist_memberships "
-            "WHERE playlist_id = ? AND deleted_at IS NULL ORDER BY position",
-            (playlist_id,),
-        ):
+        if has_soft_deletes(state, "playlist_memberships"):
+            members_sql = (
+                "SELECT stable_id FROM playlist_memberships "
+                "WHERE playlist_id = ? AND deleted_at IS NULL ORDER BY position"
+            )
+        else:
+            members_sql = (
+                "SELECT stable_id FROM playlist_memberships "
+                "WHERE playlist_id = ? ORDER BY position"
+            )
+        for (stable_id,) in state.execute(members_sql, (playlist_id,)):
             if stable_id not in seen:
                 seen.add(stable_id)
                 ids.append(stable_id)
@@ -338,17 +417,30 @@ def collect_plan(
             state, playlist=playlist, stable_ids=stable_ids, preload1=preload1
         )
         if wanted is None:
-            rows = state.execute(
-                "SELECT stable_id, file_path FROM tracks "
-                "WHERE deleted_at IS NULL ORDER BY stable_id"
-            ).fetchall()
+            if has_soft_deletes(state, "tracks"):
+                all_tracks_sql = (
+                    "SELECT stable_id, file_path FROM tracks "
+                    "WHERE deleted_at IS NULL ORDER BY stable_id"
+                )
+            else:
+                all_tracks_sql = (
+                    "SELECT stable_id, file_path FROM tracks "
+                    "ORDER BY stable_id"
+                )
+            rows = state.execute(all_tracks_sql).fetchall()
         else:
             marks = ",".join("?" * len(wanted))
-            rows = state.execute(
-                f"SELECT stable_id, file_path FROM tracks WHERE stable_id IN ({marks}) "
-                "AND deleted_at IS NULL ORDER BY stable_id",
-                wanted,
-            ).fetchall()
+            if has_soft_deletes(state, "tracks"):
+                in_list_sql = (
+                    f"SELECT stable_id, file_path FROM tracks WHERE stable_id IN ({marks}) "
+                    "AND deleted_at IS NULL ORDER BY stable_id"
+                )
+            else:
+                in_list_sql = (
+                    f"SELECT stable_id, file_path FROM tracks WHERE stable_id IN ({marks}) "
+                    "ORDER BY stable_id"
+                )
+            rows = state.execute(in_list_sql, wanted).fetchall()
             found = {str(r["stable_id"]) for r in rows}
             missing = [sid for sid in wanted if sid not in found]
             if missing:
@@ -543,7 +635,7 @@ def _source_group(
     Roots are normalised with :func:`platform_paths.resolve_local` rather
     than ``Path.resolve``: the owner prefixes are Mac paths, and resolving
     one on Windows would anchor it to the current drive and hand the caller
-    back a root (``D:/Users/dev``) that names nothing.
+    back a root (``D:/Users/user``) that names nothing.
     """
     source = platform_paths.resolve_local(item.source)
     pioneer_source_root = platform_paths.resolve_local(
@@ -571,15 +663,31 @@ def _source_group(
         except ValueError:
             continue
         dest_root = Path(dest_raw)
-        if (
-            source_raw in DEFAULT_USER_PREFIXES
-            and relative.parts
-            and relative.parts[0] in OWNER_MEDIA_SUBTREES
-        ):
-            subtree = relative.parts[0]
-            source_root /= subtree
-            dest_root /= subtree
-            relative = Path(*relative.parts[1:])
+        # Every entry in user_maps names an owner-Mac home by construction
+        # -- --map's own contract ("FROM=TO user prefix"), or
+        # MDT_OWNER_USER_PREFIXES via default_user_maps when --map was not
+        # given. The narrowing below must be derived from that same source
+        # of truth (this loop's own user_maps), never from the env var
+        # alone (#910/P1): gating on _default_user_prefixes() left the
+        # --map path unnarrowed whenever the env var was unset, which is a
+        # fully supported configuration. So the only question left is
+        # whether this file falls under an approved media subtree; if it
+        # does not, the source root would stay the bare home directory,
+        # which crate_owner_ssh_gate.ALLOWED_SOURCE_ROOTS never approves --
+        # refuse instead of silently widening the rsync source to the
+        # whole home.
+        if not (relative.parts and relative.parts[0] in OWNER_MEDIA_SUBTREES):
+            raise RuntimeError(
+                f"refusing bare-home rsync source for {item.source}: "
+                f"{source_root} is an owner-home prefix but the file is not "
+                f"under an approved subtree {sorted(OWNER_MEDIA_SUBTREES)}; "
+                "narrowing could not apply and the source root would be the "
+                "whole home directory"
+            )
+        subtree = relative.parts[0]
+        source_root /= subtree
+        dest_root /= subtree
+        relative = Path(*relative.parts[1:])
         if dest_root / relative != item.dest:
             raise RuntimeError(
                 f"crate mapping drift for {item.source}: expected "
@@ -600,6 +708,12 @@ def _rsync_plan_to_host(
     """Copy a plan in one NUL-safe rsync batch per source root."""
     groups: dict[tuple[Path, Path], list[Path]] = {}
     for item in plan.files:
+        # Escape must be refused before any narrowing logic runs, and before
+        # any ssh/rsync call: `_source_group` below can raise its own
+        # bare-home RuntimeError first for a mapping that never resolves a
+        # dest_root at all, which would let an out-of-crate `--map` target
+        # slip past this containment gate under a different error.
+        _assert_within_crate(item.dest, crate_root, local=False)
         source_root, dest_root, relative = _source_group(
             item, crate_root=crate_root, user_maps=user_maps
         )
@@ -658,16 +772,40 @@ def _rsync_plan_to_host(
 
 
 def allowed_owner_ssh(owner: str) -> bool:
-    return owner in ALLOWED_OWNER_SSH
+    return owner in _owner_ssh_targets()
+
+
+def owner_ssh_key_path() -> Path:
+    """The configured owner-Mac pull key, or a hard failure.
+
+    No default: this used to be a literal path under one deployment's /root, and
+    defaulting an unset value to a path that exists nowhere is how a pull lane
+    reports a missing key as a permission error three layers down.
+    """
+    raw = os.environ.get(OWNER_SSH_KEY_ENV, "").strip()
+    if not raw:
+        raise RuntimeError(
+            f"{OWNER_SSH_KEY_ENV} must name the owner Mac SSH private key the "
+            "crate pull lane authenticates with; unset is not defaulted"
+        )
+    return Path(raw)
+
+
+def _require_owner_ssh_key() -> Path:
+    """The configured key, proven to exist. Both pull lanes open with this."""
+    key = owner_ssh_key_path()
+    if not key.is_file():
+        raise RuntimeError(f"owner SSH key missing: {key}")
+    return key
 
 
 def ssh_owner_argv(command: str, *, owner: str) -> list[str]:
     if not allowed_owner_ssh(owner):
         raise RuntimeError(
-            f"refusing owner SSH target {owner!r}; allowed {sorted(ALLOWED_OWNER_SSH)}"
+            f"refusing owner SSH target {owner!r}; allowed "
+            f"{sorted(_owner_ssh_targets())}"
         )
-    if not OWNER_SSH_KEY.is_file():
-        raise RuntimeError(f"owner SSH key missing: {OWNER_SSH_KEY}")
+    key = _require_owner_ssh_key()
     return [
         "ssh",
         "-o",
@@ -677,7 +815,7 @@ def ssh_owner_argv(command: str, *, owner: str) -> list[str]:
         "-o",
         "IdentitiesOnly=yes",
         "-i",
-        str(OWNER_SSH_KEY),
+        str(key),
         owner,
         command,
     ]
@@ -719,10 +857,9 @@ def _rsync_manifest_from_host(
     if not allowed_owner_ssh(owner):
         raise RuntimeError(
             f"refusing owner SSH target {owner!r}; allowed "
-            f"{sorted(ALLOWED_OWNER_SSH)}"
+            f"{sorted(_owner_ssh_targets())}"
         )
-    if not OWNER_SSH_KEY.is_file():
-        raise RuntimeError(f"owner SSH key missing: {OWNER_SSH_KEY}")
+    owner_ssh_key = _require_owner_ssh_key()
     groups: dict[tuple[Path, Path], list[Path]] = {}
     for entry in _manifest_files(manifest):
         source = Path(str(entry["source"]))
@@ -765,7 +902,7 @@ def _rsync_manifest_from_host(
                 "--files-from=-",
                 "-e",
                 "ssh -o BatchMode=yes -o ConnectTimeout=8 "
-                f"-o IdentitiesOnly=yes -i {OWNER_SSH_KEY}",
+                f"-o IdentitiesOnly=yes -i {owner_ssh_key}",
                 f"{owner}:{shlex.quote(source_root.as_posix().rstrip('/') + '/')}",
                 dest_root.as_posix().rstrip("/") + "/",
             ],
@@ -789,10 +926,9 @@ def _rsync_manifest_from_host(
 def owner_manifest(
     *, owner: str, owner_repo: Path, forwarded_args: Sequence[str]
 ) -> dict[str, object]:
-    if owner_repo != OWNER_REPO_DEFAULT:
-        raise RuntimeError(
-            f"refusing owner repo {owner_repo}; expected {OWNER_REPO_DEFAULT}"
-        )
+    expected = _owner_repo_default()
+    if owner_repo != expected:
+        raise RuntimeError(f"refusing owner repo {owner_repo}; expected {expected}")
     command = shlex.join(["mdt-crate-plan", *forwarded_args])
     result = subprocess.run(
         ssh_owner_argv(command, owner=owner),
@@ -1105,9 +1241,13 @@ def assert_push_host(*, dest_kind: DestKind, dest_host: str, to_explicit: bool) 
     if dest_kind == "local":
         return
     if sys.platform == "darwin":
-        if not allowed_ssh_host(dest_host) and dest_host != AGENTBOX_HOSTNAME:
+        # Exact membership of the configured allowlist, and nothing else. This
+        # destination goes to mkdir/rsync directly, without the remote-hostname
+        # check run_via_ssh performs, so the allowlist is the only thing between
+        # a typo (or a hostile argument) and a library copied off this machine.
+        if not allowed_ssh_host(dest_host):
             raise RuntimeError(
-                f"refusing dest host {dest_host!r}; allowed {sorted(ALLOWED_SSH_HOSTS)}"
+                f"refusing dest host {dest_host!r}; allowed {allowed_ssh_hosts_description()}"
             )
         return
     if to_explicit:
@@ -1133,7 +1273,16 @@ def status_report(
 ) -> dict[str, object]:
     mode = library_mode.library_mode()
     manifest = load_manifest(manifest_path)
-    sample_src = "/Users/dev/Music/track.mp3"
+    if not user_maps:
+        raise RuntimeError(
+            "status_report requires at least one user_maps entry to probe; "
+            f"got none (check {DEFAULT_USER_PREFIXES_ENV} or pass --map)"
+        )
+    # Probes the FIRST configured prefix rather than a hardcoded placeholder
+    # (#910): a literal example path can never equal whatever prefix this
+    # deployment actually configured, so "mapped_sample" would report a
+    # permanent, misleading non-match even when the real mapping works.
+    sample_src = f"{user_maps[0][0]}/Music/track.mp3"
     mapped = platform_paths.resolve_library_path(
         sample_src,
         path_map=platform_paths.PathMap(entries=tuple(user_maps)),
@@ -1143,9 +1292,11 @@ def status_report(
     if state_db.is_file():
         state = _open_ro(state_db, "STATE_DB")
         try:
-            rows = state.execute(
-                "SELECT file_path FROM tracks WHERE deleted_at IS NULL"
-            ).fetchall()
+            if has_soft_deletes(state, "tracks"):
+                paths_sql = "SELECT file_path FROM tracks WHERE deleted_at IS NULL"
+            else:
+                paths_sql = "SELECT file_path FROM tracks"
+            rows = state.execute(paths_sql).fetchall()
         finally:
             state.close()
         path_map = platform_paths.PathMap(entries=tuple(user_maps))
@@ -1287,13 +1438,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--owner",
-        default=OWNER_SSH_DEFAULT,
-        help="fixed SSH owner used only by --remote pull mode",
+        default=None,
+        help=(
+            "fixed SSH owner used only by --remote pull mode; defaults to "
+            f"the first entry of {OWNER_SSH_TARGETS_ENV}"
+        ),
     )
     parser.add_argument(
         "--owner-repo",
-        default=str(OWNER_REPO_DEFAULT),
-        help="owner checkout used only by --remote pull mode",
+        default=None,
+        help=(
+            "owner checkout used only by --remote pull mode; defaults to "
+            f"{OWNER_REPO_ENV}"
+        ),
     )
     parser.add_argument(
         "--dest",
@@ -1310,7 +1467,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         type=parse_map_entry,
-        help="FROM=TO user prefix (repeatable). Default: /Users/dev and /Users/dev",
+        help=(
+            "FROM=TO user prefix (repeatable). Default: derived from "
+            f"{DEFAULT_USER_PREFIXES_ENV}"
+        ),
     )
     parser.add_argument(
         "--base-url",
@@ -1507,9 +1667,11 @@ def _run(argv: Optional[Sequence[str]] = None) -> int:
                 "--remote pull requires MDT_LIBRARY_MODE=remote; refusing to "
                 "write a replica into a local-library process"
             )
+        owner = args.owner or _owner_ssh_default()
+        owner_repo = Path(args.owner_repo) if args.owner_repo else _owner_repo_default()
         payload = owner_manifest(
-            owner=args.owner,
-            owner_repo=Path(args.owner_repo),
+            owner=owner,
+            owner_repo=owner_repo,
             forwarded_args=_forwarded_plan_args(
                 args,
                 crate_root=crate_root,
@@ -1531,7 +1693,7 @@ def _run(argv: Optional[Sequence[str]] = None) -> int:
         payload["spike_verified"] = spike_verified(existing)
         transferred = _rsync_manifest_from_host(
             payload,
-            owner=args.owner,
+            owner=owner,
             crate_root=crate_root,
         )
         write_json(path_map_path, path_map_document(user_maps))

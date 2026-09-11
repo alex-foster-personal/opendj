@@ -79,12 +79,14 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import cache
 
+from apps.shared.state.migrations_v9 import ENROLLED_VIA_VALUES
+
 _WHITESPACE_RE = re.compile(r"\s+")
 _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 1
+SCHEMA_VERSION: int = 4
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -275,13 +277,18 @@ _SYNC_INFRA: tuple[str, ...] = (
     "name TEXT NOT NULL UNIQUE, platform TEXT NOT NULL CHECK (platform IN "
     "('macos','windows','linux')), is_hub INTEGER NOT NULL DEFAULT 0, "
     "data_root TEXT, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL )",
+    # The asset_kind CHECK carries the SIX kinds legacy _V10 rebuilds the
+    # table to, not the four v7 created it with: the legacy side of the parity
+    # gate runs the whole ladder, so this text is compared against the rebuilt
+    # shape. Character-for-character with
+    # apps/shared/state/migrations_v10.ASSET_KIND_CHECK_VALUES.
     "CREATE TABLE IF NOT EXISTS sync_policies ( machine_id TEXT NOT NULL "
     "REFERENCES machines(machine_id) ON DELETE CASCADE, asset_kind TEXT NOT "
     "NULL CHECK (asset_kind IN ('audio','stem_bundle','anlz_cache',"
-    "'vocal_cache')), mode TEXT NOT NULL CHECK (mode IN ('pinned','cached',"
-    "'stream','excluded')), cache_budget_mb INTEGER, updated_at TEXT, "
-    "origin_device_id TEXT, deleted_at TEXT, PRIMARY KEY (machine_id, "
-    "asset_kind) )",
+    "'vocal_cache','lyrics_cache','karaoke_words')), mode TEXT NOT NULL CHECK "
+    "(mode IN ('pinned','cached','stream','excluded')), cache_budget_mb "
+    "INTEGER, updated_at TEXT, origin_device_id TEXT, deleted_at TEXT, "
+    "PRIMARY KEY (machine_id, asset_kind) )",
     "CREATE TABLE IF NOT EXISTS playlist_pins ( machine_id TEXT NOT NULL "
     "REFERENCES machines(machine_id) ON DELETE CASCADE, playlist_id TEXT "
     "NOT NULL REFERENCES playlists(playlist_id) ON DELETE CASCADE, mode "
@@ -301,6 +308,64 @@ _SYNC_INFRA: tuple[str, ...] = (
     "TEXT NOT NULL )",
     "CREATE INDEX IF NOT EXISTS idx_local_changelog_table "
     "ON local_changelog(table_name, row_pk)",
+)
+
+
+# ==========================================================================
+# DOMAIN: machine enrollment (who OWNS a machine, legacy v9)
+# Legacy source: apps/shared/state/migrations_v9.py (_V9, specs/
+# design_decision_12.md). Its own domain rather than more rows in
+# _SYNC_INFRA: those tables carry replication STATE and every one of them
+# rides the sync set, whereas neither table here is ever synced -- the hub
+# that performed the enrollment is the only writer (ADR 12 reading 1). One
+# domain, one answer to "does this cross machines".
+# ==========================================================================
+
+#: The provenance vocabulary, read from the legacy rung rather than retyped.
+#: Claude review, PR #1648 (P3): migrations_v9 builds its CHECK from this
+#: tuple explicitly "so the provenance list has one home rather than a copy
+#: that can drift from the constraint", and enrollment_table_docs repeats
+#: that claim to readers -- while this mirror wrote the three values out as a
+#: literal, which is the copy the docs deny exists. A fourth provenance would
+#: have left a consolidated database rejecting those rows with an
+#: IntegrityError naming nothing.
+#:
+#: The one import this module takes from a legacy bootstrap, and deliberately
+#: narrow: a VOCABULARY, not DDL. The table text stays a verbatim lift like
+#: every other domain here, because tests/engine_core/test_store_schema.py
+#: compares it against the legacy ladder's real output object by object, and
+#: importing the statements would make that gate compare a thing with itself.
+_ENROLLED_VIA_SQL: str = ",".join(f"'{value}'" for value in ENROLLED_VIA_VALUES)
+
+_ENROLLMENT: tuple[str, ...] = (
+    f"""
+    CREATE TABLE IF NOT EXISTS machine_owners (
+        machine_id      TEXT PRIMARY KEY
+                          REFERENCES machines(machine_id) ON DELETE CASCADE,
+        google_sub      TEXT NOT NULL
+                          REFERENCES users(google_sub) ON DELETE CASCADE,
+        hub_machine_id  TEXT NOT NULL,
+        enrolled_at     TEXT NOT NULL,
+        enrolled_via    TEXT NOT NULL CHECK
+                          (enrolled_via IN ({_ENROLLED_VIA_SQL})),
+        revoked_at      TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_machine_owners_sub "
+    "ON machine_owners(google_sub)",
+    """
+    CREATE TABLE IF NOT EXISTS enrollment_grants (
+        grant_token_sha256  TEXT PRIMARY KEY,
+        google_sub          TEXT NOT NULL
+                              REFERENCES users(google_sub) ON DELETE CASCADE,
+        created_at          TEXT NOT NULL,
+        expires_at          TEXT NOT NULL,
+        redeemed_at         TEXT,
+        redeemed_machine_id TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_enrollment_grants_expires "
+    "ON enrollment_grants(expires_at)",
 )
 
 
@@ -343,6 +408,78 @@ _ANALYSIS: tuple[str, ...] = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_analysis_events_type   ON analysis_events(event_type)",
     "CREATE INDEX IF NOT EXISTS idx_analysis_events_stable ON analysis_events(stable_id)",
+)
+
+
+# ==========================================================================
+# DOMAIN: native-analysis v1 -- canonical pointer, read-time projection, and
+# the persisted per-lane source default.
+# Legacy sources: apps/analysis/store.py (_ANALYSIS_TABLES_SQL) and
+# apps/analysis/selection.py (_SOURCE_DEFAULT_TABLE_SQL, created on the
+# first promotion).
+#
+# Kept as its own tuple rather than appended to _ANALYSIS because it is BOTH
+# the fresh-DB DDL and the body of migration v2: appending it to _V1 alone
+# would have meant a state.db already stamped at the current version never
+# gained these tables, since apply_migrations returns early at
+# `current >= SCHEMA_VERSION`. Reproduced Wed 9 Sep 2026 before this split.
+# ==========================================================================
+
+_NATIVE_ANALYSIS_V1: tuple[str, ...] = (
+    # The deterministic canonical pointer. Rows in `analysis` never
+    # overwrite across producers, so which row a reader gets cannot be a
+    # last-writer-wins column; it is recomputed from ALL rows on every
+    # upsert by one rule (highest semver, tie -> inapp over backfill, cand
+    # never eligible). That is what makes the pointer a function of what
+    # was produced rather than of the order it was produced in.
+    """
+    CREATE TABLE IF NOT EXISTS analysis_canonical (
+        stable_id        TEXT NOT NULL,
+        lane             TEXT NOT NULL,
+        backend          TEXT NOT NULL,
+        backend_version  TEXT NOT NULL,
+        updated_at       TEXT NOT NULL,
+        PRIMARY KEY (stable_id, lane)
+    )
+    """,
+    # The read-time projection of own scalars. Every scalar reader goes
+    # through effective_fields() (apps/analysis/selection.py), which reads
+    # THIS table for a lane on own and track_fields for a lane on rbx.
+    # Nothing here is ever written into track_fields, so no own value can
+    # enter track_field_history or the sync path.
+    """
+    CREATE TABLE IF NOT EXISTS analysis_projection (
+        stable_id        TEXT NOT NULL,
+        field            TEXT NOT NULL,
+        -- Deliberately typeless: SQLite gives an untyped column BLOB (none)
+        -- affinity, so a REAL bpm stays a REAL and a TEXT camelot stays TEXT.
+        -- Declaring it TEXT would coerce 128.0 to '128.0' and make every
+        -- smartlist numeric operator a lexical comparison, which is the same
+        -- class of silent wrongness as sorting 0.10.0 below 0.9.0.
+        value,
+        status           TEXT NOT NULL,
+        reason           TEXT,
+        confidence       REAL,
+        backend          TEXT NOT NULL,
+        backend_version  TEXT NOT NULL,
+        updated_at       TEXT NOT NULL,
+        PRIMARY KEY (stable_id, field)
+    )
+    """,
+    # Spec section 3: the filters on these fields must not scan records.
+    "CREATE INDEX IF NOT EXISTS idx_analysis_projection_field_value "
+    "ON analysis_projection(field, value)",
+    # The persisted per-lane source default: what a PROMOTION writes, and the
+    # only half of the selection surface that survives a relaunch. Created by
+    # apps/analysis/selection.py on first use; declared here so schema
+    # adoption, drift checks and the fresh-database inventory all know it.
+    """
+    CREATE TABLE IF NOT EXISTS analysis_source_default (
+        lane        TEXT PRIMARY KEY,
+        source      TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+    )
+    """,
 )
 
 
@@ -445,6 +582,54 @@ _ANALYSIS_RETENTION: tuple[str, ...] = (
     """,
 )
 
+
+
+# ==========================================================================
+# DOMAIN: karaoke lyrics -- one verdict row per track
+# Legacy source: apps/shared/state/migrations_v10.py (_V10, specs/
+# karaoke-lyrics-operational-plan.md D13.1). Same consolidation rule as
+# everywhere else in this file: the shapes below are the legacy ladder's
+# output, reproduced verbatim.
+#
+# ONE deliberate divergence from the legacy text, and it is a creation-time
+# flag rather than a shape: the legacy ladder writes a BARE ``CREATE TABLE``
+# and a BARE ``CREATE INDEX`` so a stale ``idx_lyric_verdict_red`` left on a
+# renamed-aside branch table fails the migration loudly (migrations_v10.py
+# reading 2). This module cannot do that: every statement here is replayed
+# against ALREADY-provisioned databases by the adoption path, so it must be
+# ``IF NOT EXISTS`` or adoption breaks on every real file. ``normalize_object_
+# sql`` strips the flag before comparing, so the parity gate is unaffected.
+# ==========================================================================
+
+_LYRICS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS lyric_verdict (
+        stable_id          TEXT PRIMARY KEY REFERENCES tracks(stable_id) ON DELETE CASCADE,
+        verdict            TEXT NOT NULL CHECK (verdict IN
+                             ('vocal','sparse','no-lyrics','unknown')),
+        coverage_pct       REAL,
+        source             TEXT,
+        language_iso3      TEXT,
+        n_words            INTEGER,
+        n_lines            INTEGER,
+        pct_witness_red    REAL,
+        override           TEXT CHECK (override IS NULL OR override IN
+                             ('vocal','sparse','no-lyrics')),
+        override_note      TEXT,
+        pipeline_version   TEXT NOT NULL,
+        words_content_hash TEXT CHECK (words_content_hash IS NULL OR
+                             length(words_content_hash) = 64),
+        computed_at        TEXT NOT NULL,
+        updated_at         TEXT NOT NULL,
+        origin_device_id   TEXT,
+        deleted_at         TEXT
+    )
+    """,
+    (
+        "CREATE INDEX IF NOT EXISTS idx_lyric_verdict_red "
+        "ON lyric_verdict(pct_witness_red DESC)"
+    ),
+)
 
 
 # ==========================================================================
@@ -790,8 +975,10 @@ _LAUNCHER: tuple[str, ...] = (
 DOMAINS: dict[str, tuple[str, ...]] = {
     "state_core": _STATE_CORE,
     "sync_infra": _SYNC_INFRA,
+    "enrollment": _ENROLLMENT,
     "analysis": _ANALYSIS,
     "analysis_retention": _ANALYSIS_RETENTION,
+    "lyrics": _LYRICS,
     "curation": _CURATION,
     "play_orders": _PLAY_ORDERS,
     "spotify": _SPOTIFY,
@@ -817,8 +1004,11 @@ wipe. Applied by :func:`apply_cache_migrations`, never by
 LEGACY_SOURCES: dict[str, str] = {
     "state_core": "apps/shared/state/schema.py",
     "sync_infra": "apps/shared/state/schema.py",
+    "enrollment": "apps/shared/state/migrations_v9.py",
     "analysis": "apps/analysis/store.py",
+    "native_analysis_v1": "apps/analysis/store.py",
     "analysis_retention": "apps/shared/state/schema.py",
+    "lyrics": "apps/shared/state/migrations_v10.py",
     "curation": "apps/shared/pairings/schema_sql.py",
     "play_orders": "apps/shared/play_orders/schema.py",
     "spotify": "apps/spotify/state_writer.py",
@@ -855,13 +1045,23 @@ TABLES: dict[str, tuple[str, ...]] = {
         "hub_changelog",
         "local_changelog",
     ),
+    "enrollment": (
+        "machine_owners",
+        "enrollment_grants",
+    ),
     "analysis": ("analysis", "analysis_events"),
+    "native_analysis_v1": (
+        "analysis_canonical",
+        "analysis_projection",
+        "analysis_source_default",
+    ),
     "analysis_retention": (
         "track_availability",
         "unmatched_source_analysis",
         "track_energy_segments",
         "analysis_field_verification",
     ),
+    "lyrics": ("lyric_verdict",),
     "curation": ("pairings", "smartlists"),
     "play_orders": ("play_orders", "play_order_entries", "play_orders_schema_meta"),
     "spotify": (
@@ -894,10 +1094,62 @@ ALL_CACHE_TABLES: tuple[str, ...] = tuple(
 
 # --- migration ladder -----------------------------------------------------
 
-_V1: list[str] = [stmt for domain in DOMAINS.values() for stmt in domain]
-"""Consolidated 0 -> 1: create everything. Fresh-DB path."""
+#: Domains that are NOT part of rung 1 because they arrived later, each as
+#: its own rung. Named here rather than inline so the exclusion and the rung
+#: that compensates for it cannot drift apart silently.
+_POST_V1_DOMAINS: frozenset[str] = frozenset(
+    {"native_analysis_v1", "enrollment", "lyrics"}
+)
 
-MIGRATIONS: list[list[str]] = [_V1]
+_V1: list[str] = [
+    stmt for name, domain in DOMAINS.items()
+    if name not in _POST_V1_DOMAINS
+    for stmt in domain
+]
+"""Consolidated 0 -> 1: create everything that existed at v1. Fresh-DB path."""
+
+_V2: list[str] = list(_NATIVE_ANALYSIS_V1)
+"""1 -> 2: native-analysis v1's canonical pointer, projection and source default.
+
+A NEW rung rather than an append to _V1. `apply_migrations` returns at
+`current >= SCHEMA_VERSION`, so a state.db already stamped at v1 -- which is
+every existing install -- would never have run an appended statement, and the
+fresh-DB tests would have passed anyway. Reproduced Wed 9 Sep 2026: dropping
+the two tables from a stamped database and re-running the ladder left them
+absent. Every statement is `IF NOT EXISTS`, so the rung is also safe on a
+database that already has them."""
+
+_V3: list[str] = list(_ENROLLMENT)
+"""2 -> 3: machine ownership and enrollment grants (legacy ladder v9).
+
+A new rung for the reason _V2 spells out: an install already stamped at v2
+never re-runs _V1, so an enrollment table appended there would exist only on
+databases born after this commit -- and the fresh-DB tests would have passed
+anyway. The legacy ladder makes the same move at its own v9."""
+
+_V4: list[str] = list(_LYRICS)
+"""3 -> 4: the karaoke lyrics verdict row and its triage index.
+
+Its own rung for the reason _V2 and _V3 spell out. Mirrors legacy ``_V10``
+(apps/shared/state/migrations_v10.py); the legacy sync_policies rebuild that
+ships in the same legacy step is NOT mirrored as a rebuild, because this
+module declares the END shape directly -- its widened ``asset_kind`` CHECK is
+already in ``_SYNC_INFRA``. ``LEGACY_SHARED_STATE_VERSION`` deliberately stays
+where scripts/sync_drift_rules.MIRROR_VERSION_DEBT pins it; REPORT.md O-16
+records what that costs."""
+
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4]
+
+ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
+"""Every rung, flattened. What both the fresh path and adoption execute.
+
+The runner does not replay rungs one at a time: it runs the whole ladder and
+stamps the target version, and every statement is ``IF NOT EXISTS``, so a
+database that already has an object is a no-op rather than an error. The
+rungs still exist as separate lists because SCHEMA_VERSION is what decides
+whether an ALREADY-STAMPED database is brought forward at all -- adding a
+table without a new rung and a version bump means no existing install ever
+gets it, which is exactly what happened here before v2."""
 
 # Data-bearing statements the legacy ladder carried alongside its DDL. They
 # are re-run on adoption because a DB adopted mid-ladder may have the table
@@ -1063,7 +1315,12 @@ def _reference_objects() -> dict[str, tuple[str, str]]:
     """
     reference = sqlite3.connect(":memory:")
     try:
-        for statement in _V1:
+        # ALL_DDL, not _V1. The audit reference has to be built from the SAME
+        # statement set creation runs, or a rung added after v1 is never
+        # audited: `CREATE TABLE IF NOT EXISTS` would preserve a malformed
+        # pre-existing object and the file would still be stamped at the new
+        # version (Codex P2, PR #1549).
+        for statement in ALL_DDL:
             reference.execute(statement)
         shadow_prefixes = tuple(
             f"{row[0]}_"
@@ -1318,7 +1575,7 @@ def _adopt(conn: sqlite3.Connection) -> tuple[str, ...]:
     (:func:`_assert_adoptable` + :func:`_audit_existing_shapes`).
     """
     was_missing = missing_tables(conn)
-    _create_all(conn, _V1)
+    _create_all(conn, ALL_DDL)
     for stmt in _ADOPTION_BACKFILL:
         conn.execute(stmt)
     return was_missing
@@ -1372,7 +1629,7 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
             _adopt(conn)
             _record(conn, ADOPTION_VERSION)
         else:
-            _create_all(conn, _V1)
+            _create_all(conn, ALL_DDL)
         _stamp_legacy_counters(conn)
         _record(conn, VERSION_OFFSET + SCHEMA_VERSION)
         conn.execute("COMMIT")
@@ -1419,6 +1676,7 @@ def was_adopted(conn: sqlite3.Connection) -> bool:
 __all__ = [
     "ADOPTION_VERSION",
     "ALL_CACHE_TABLES",
+    "ALL_DDL",
     "ALL_TABLES",
     "BUSY_TIMEOUT_MS",
     "CACHE_DOMAINS",

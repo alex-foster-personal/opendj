@@ -35,7 +35,7 @@ def test_precedence_blocks_a_field_already_supplied_by_another_source(
     """A track that acquired ``energy`` from rekordbox while MIK's analysis sat
     in staging keeps rekordbox's value: promotion is not a backdoor around
     ``apps.mik.load.build_plan``'s precedence policy."""
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     _prov.write_field(
         state_conn,
         stable_id="a" * 40,
@@ -74,7 +74,7 @@ def test_overwrite_flag_does_not_help_a_field_where_the_source_always_outranks_m
 ) -> None:
     """rekordbox always outranks MIK on bpm; ``overwrite_lower_precedence``
     only unblocks a source that is NOT in ``OUTRANKS_MIK`` for the field."""
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     _prov.write_field(
         state_conn,
         stable_id="a" * 40,
@@ -104,7 +104,7 @@ def test_overwrite_flag_does_not_help_a_field_where_the_source_always_outranks_m
 def test_overwrite_flag_lets_mik_replace_a_non_outranking_source(
     state_conn: sqlite3.Connection, add_track, staged
 ) -> None:
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     _prov.write_field(
         state_conn,
         stable_id="a" * 40,
@@ -141,7 +141,7 @@ def test_key_below_confidence_floor_is_blocked_regardless_of_overwrite(
     gate = _stage_one(
         state_conn, make_mik_store, data_dir, write_verdicts, confidence=0.5
     )
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     result = promoter.promote(
         state_conn,
         gate,
@@ -168,7 +168,7 @@ def test_key_in_review_band_with_a_prior_source_is_flagged_not_written(
     gate = _stage_one(
         state_conn, make_mik_store, data_dir, write_verdicts, confidence=0.8
     )
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     _prov.write_field(
         state_conn,
         stable_id="a" * 40,
@@ -205,7 +205,7 @@ def test_key_in_review_band_with_no_prior_source_still_writes(
     gate = _stage_one(
         state_conn, make_mik_store, data_dir, write_verdicts, confidence=0.8
     )
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     result = promoter.promote(state_conn, gate, source_row_id="1", stable_id="a" * 40)
     assert result.key_review_band == []
     assert (
@@ -219,7 +219,7 @@ def test_key_in_review_band_with_no_prior_source_still_writes(
 def test_promotion_persists_verification_provenance(
     state_conn: sqlite3.Connection, add_track, staged
 ) -> None:
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     result = promoter.promote(
         state_conn,
         staged["gate"],
@@ -238,7 +238,7 @@ def test_promotion_persists_verification_provenance(
 def test_promote_all_is_atomic(
     state_conn: sqlite3.Connection, add_track, staged
 ) -> None:
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     with pytest.raises(promoter.PromotionError):
         promoter.promote_all(
             state_conn,
@@ -273,7 +273,7 @@ def test_discover_rejects_duplicate_promotion_targets(
         [
             {
                 "pk": 1,
-                "path": "/Users/dev/dup.mp3",
+                "path": "/Users/old/dup.mp3",
                 "name": "7 - Dup",
                 "artist": "Nobody",
                 "key": "9A",
@@ -283,7 +283,7 @@ def test_discover_rejects_duplicate_promotion_targets(
             },
             {
                 "pk": 2,
-                "path": "/Users/dev/dup.mp3",
+                "path": "/Users/old/dup.mp3",
                 "name": "7 - Dup",
                 "artist": "Nobody",
                 "key": "9A",
@@ -304,7 +304,7 @@ def test_discover_rejects_duplicate_promotion_targets(
     assert promoter.discover(state_conn) == {}
 
     # The shared path now resolves to exactly one newly created track.
-    add_track("a" * 40, file_path="/Users/dev/dup.mp3")
+    add_track("a" * 40, file_path="/Users/old/dup.mp3")
 
     found = promoter.discover(state_conn)
     # Exactly ONE source row claims the track -- never both.

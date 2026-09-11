@@ -14,9 +14,24 @@ name: Full CI (on-demand)
 
 on:
   workflow_dispatch:
+  # Called by periodic-checks.yml so the periodic full run and a
+  # dispatched one are provably the SAME suite, not a copy that can
+  # drift. There is still no schedule or push trigger here; the cadence
+  # lives in periodic-checks.yml, with its merge-window gate.
+  workflow_call:
+    inputs:
+      ref:
+        description: >-
+          Commit to check out. A caller that REPORTS on a specific SHA pins it
+          here, so the suite runs against the tree that caller recorded rather
+          than against wherever the branch has moved to since. Empty means the
+          workflow event's own ref, which is what a manual dispatch wants.
+        type: string
+        required: false
+        default: ""
 
 concurrency:
-  group: full-ci-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'shared' }}
+  group: full-ci-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || github.event_name == 'pull_request' && 'shared' || github.run_id }}
   # Trunk verification is never cancellable. A merge burst used to cancel each
   # run's predecessor and leave heads whose jobs never executed (Mon 31 Aug 2026:
   # six merges in 25s left main with no completed pytest or frontend job, while
@@ -28,6 +43,14 @@ concurrency:
   # next push run was created. Removing the shared group removes the precondition
   # for cancelling at all, so it does not depend on the mechanism that failed.
   # Pull requests keep the shared group and still cancel superseded runs.
+  #
+  # A reusable-workflow CALL reports the CALLER's event, so neither a periodic
+  # call nor a manual dispatch on main is a `push`: both used to land in the same
+  # `full-ci-refs/heads/main-shared` group and cancel one another. The periodic
+  # window would then record its head with the full suite CANCELLED, and a
+  # cancelled job is not a failed one, so nothing would say the suite had not
+  # run. Everything that is not a pull request now gets a run-scoped group,
+  # which no other run can collide with.
   cancel-in-progress: true
 
 env:
@@ -142,9 +165,17 @@ jobs:
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # A caller's pinned SHA when there is one; empty falls back to the
+          # workflow event's own ref, which is the dispatch behavior.
+          ref: ${{ inputs.ref }}
           # Progress-tree provenance validates historical feature commit SHAs.
           fetch-depth: 0
-          clean: true
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
 
       - name: Setup Python
         # SHA-pinned to the v5 tag commit (resolved 2026-04-17).
@@ -160,15 +191,70 @@ jobs:
         # modal is a CI test-environment tool, not a package dependency;
         # see the fuller note in ci.yml.
         run: |
-          uv venv --python 3.11 .venv
-          uv pip install --python .venv/bin/python -r requirements.txt modal
+          scripts/ci_venv.sh 3.11
+          uv pip install --exact --upgrade --python .venv/bin/python -r requirements.txt modal
 
       - name: System deps for pyrekordbox (SQLCipher)
         # Keep the project interpreter available to any post-failure steps.
         # See ci.yml: libsqlcipher-dev ships the runtime shared library on
         # Ubuntu noble.
         run: |
-          scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file bubblewrap'
+          scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file bubblewrap just ffmpeg'
+
+      - name: Runner preflight - host binaries the suite shells out to
+        # Name the missing binary at second five rather than minute four:
+        # `file`, `bwrap` (#1056), the Tauri toolchain (93e11a47f) and `just`
+        # (#1363) each reddened a trunk shard as a bare FileNotFoundError when
+        # its test landed on the host that lacked it, green on the PR because
+        # that shard had landed on the other host. The list is pinned by
+        # tests/scripts/test_ci_shard_binary_preflight.py; provisioning lives in
+        # docs/ci-actions-cost-review-2026-08-16.md item 7.
+        run: scripts/ci_runner_preflight.sh file bwrap just pkg-config cargo uv ffmpeg
+
+      - name: Keep the numba JIT cache across jobs on this runner
+        # librosa's numba artifacts live beside its source by default, and this
+        # job recreated `.venv` every run, so every job paid a 25-45 s cold
+        # compile in the warm-up step (measured Tue 8 Sep 2026: 41-46 s on
+        # every shard, 0.3 s once the cache survives venv recreation). One
+        # directory per RUNNER: a runner runs one job at a time, so the
+        # warm-up below is the only cold writer it ever sees, and the stamp
+        # next to it is what lets the warm-up prove the cache is still what
+        # that serial writer left. Hosted runners get a fresh HOME per job
+        # and simply compile once, as before.
+        # Keyed by the toolchain too (python, numba, llvmlite, librosa, numpy
+        # versions, printed by the module that owns the cache): an upgrade
+        # lands in an empty directory and compiles once under the lock,
+        # instead of numba rejecting stale artifacts at first use in whatever
+        # processes got there first, concurrently and cold.
+        run: |
+          identity="$(.venv/bin/python -m apps.analysis.jit_warmup --identity)"
+          dir="$HOME/.cache/mdt-numba/${RUNNER_NAME:?RUNNER_NAME is unset}/${identity:?identity is empty}"
+          mkdir -p "$dir/cache" "$dir/lock"
+          chmod 700 "$HOME/.cache/mdt-numba" "$dir" "$dir/lock"
+          { echo "NUMBA_CACHE_DIR=$dir/cache"; echo "MDT_NUMBA_WARMUP_DIR=$dir/lock"; } >> "$GITHUB_ENV"
+
+      - name: Warm the numba JIT cache before the suite (#1316)
+        # librosa's `@numba.guvectorize(..., cache=True)` hot paths compile on
+        # first call into `.nbi`/`.nbc` artifacts beside the librosa source.
+        # Two processes meeting a COLD cache interleave those writes and every
+        # later process that loads the result dies at a NULL instruction
+        # pointer, with no traceback and no Python exception (issue #1316).
+        # `apps.analysis.run` warms in the parent before it creates a pool, so
+        # this step is belt and braces - but it moves the one-off compile out
+        # of whichever test happens to touch analysis first, where it looks
+        # like an unrelated timeout, and it costs nothing on a cache that is
+        # already what a previous warm-up left.
+        #
+        # `--purge-if-stale`, not `--purge`: the cache now persists per runner
+        # (step above), so a purge on every job would buy a cold ~25-45 s
+        # compile each time to insure against a state a single serial writer
+        # cannot produce. The stamp is the witness: a cache the last serial
+        # warm-up left untouched is kept and the step takes ~0.3 s; a cache
+        # without a matching stamp (killed writer, racing writer, librosa
+        # upgrade) is purged before anything loads it, which is the only
+        # repair for a poisoned cache, since loading it is what segfaults.
+        # Pinned by tests/scripts/test_ci_jit_warmup.py.
+        run: .venv/bin/python -m apps.analysis.jit_warmup --backend librosa --purge-if-stale
 
       - name: Run full pytest with coverage
         # coverage: apps/* only. --cov-report=xml for external tools.
@@ -202,27 +288,33 @@ jobs:
       - name: Upload coverage-matrix.md artifact
         if: always()
         # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
+        # Non-fatal: a byproduct upload must not red a job on a storage 403.
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-matrix
           path: coverage-matrix.md
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3
 
       - name: Upload htmlcov/ artifact
         if: always()
+        # Non-fatal: a byproduct upload must not red a job on a storage 403.
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: htmlcov
           path: htmlcov/
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3
 
       - name: Upload coverage.xml
         if: always()
+        # Non-fatal: a byproduct upload must not red a job on a storage 403.
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-xml
           path: coverage.xml
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3

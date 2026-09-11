@@ -11,7 +11,10 @@
  * measure must never become a failure to play.
  */
 
-import { installAudioContextWatchdog } from '$lib/rb/audio-context-watchdog';
+import {
+	installAudioContextWatchdog,
+	noteRecoveryOpportunity
+} from '$lib/rb/audio-context-watchdog';
 import { installOutputRebind, type OutputRebindHandle } from '$lib/rb/audio-output-rebind';
 import { installOutputLiveness, type AudioOutputSnapshot } from '$lib/rb/audio-output-liveness';
 import { clearAudioOutputHealth, setAudioOutputHealth } from '$lib/rb/audio-output-health.svelte';
@@ -26,7 +29,12 @@ import {
 	installXrunSentinel,
 	installXrunSessionGlobal
 } from '$lib/rb/xrun-sentinel';
-import { attachMeterTaps, teardownMeterTaps, type MeterTapSource } from '$lib/rb/meter-tap';
+import {
+	attachMeterTaps,
+	markMetersUnavailable,
+	teardownMeterTaps,
+	type MeterTapSource
+} from '$lib/rb/meter-tap';
 
 /**
  * The context whose authoritative (running) device-floor row has been emitted.
@@ -92,9 +100,23 @@ export function armDeckMeters(
 	sources: ReadonlyArray<MeterTapSource>
 ): void {
 	void attachMeterTaps(ctx, sources).catch((error: unknown) => {
+		// Recorded AND surfaced: a perf-event row alone is a terminal error
+		// masked as a silent reading (AGENTS.md L244-L246) - nobody watches the
+		// ring live, so the meter itself has to say it is broken.
+		//
+		// Scoped to THIS context, though. Route cleanup calls `dispose()`
+		// without awaiting it, so a rejection from a context torn down mid-arm
+		// can land after a remount has armed a healthy new one; marking then
+		// would leave a working meter reading "unavailable" for the rest of the
+		// session. `markMetersUnavailable` drops a verdict from a context that
+		// is no longer armed, and the row says which of the two happened so a
+		// dropped verdict is still visible in the ring.
+		const marked = markMetersUnavailable(ctx);
 		recordPerfEvent(
 			'deck-meters-failed',
-			`channel level meters did not start, so every meter reads silence: ${String(error)}`
+			marked
+				? `level meters did not start, so every meter is unavailable rather than reading silence: ${String(error)}`
+				: `level meters failed for a context that is no longer armed, so the current graph's meters are left alone: ${String(error)}`
 		);
 	});
 }
@@ -120,6 +142,48 @@ export function armXrunSentinel(ctx: AudioContext): void {
  */
 let _outputRebind: OutputRebindHandle | null = null;
 let _outputLiveness: ReturnType<typeof installOutputLiveness> | null = null;
+let _watchdogDetach: (() => void) | null = null;
+let _recoveryEdgesDetach: (() => void) | null = null;
+
+/**
+ * The DOM edges that mean "ask the watchdog to try again".
+ *
+ * The context watchdog's resume schedule is bounded on purpose and spans about
+ * nine seconds. Everything that actually takes an output device away lasts
+ * longer than that -- a Bluetooth re-pair, a phone call, a screen lock, this
+ * app's own packaged WKWebView sitting behind another window -- and
+ * `statechange` will not fire again, because a context that stayed
+ * `interrupted` never changed state. These two edges are the app's only news
+ * that the world moved:
+ *
+ *   - `visibilitychange` to visible: the operator came back to the window, which
+ *     on macOS is also when a backgrounded WKWebView is allowed to hold an
+ *     output stream again.
+ *   - `devicechange`: the device list moved, so the device may be back. The
+ *     rebind module listens to this too, for the DIFFERENT failure where the
+ *     context stays `running` on a dead stream; that path cannot help here,
+ *     because its cycle begins by checking for `running`.
+ *
+ * Installed once per armed graph and dropped on disarm, so a route remount does
+ * not stack a second pair.
+ */
+function installRecoveryOpportunities(): void {
+	_recoveryEdgesDetach?.();
+	if (typeof document === 'undefined' && typeof navigator === 'undefined') return;
+	const onVisibility = (): void => {
+		if (document.visibilityState === 'visible') noteRecoveryOpportunity('the window became visible');
+	};
+	const onDeviceChange = (): void => noteRecoveryOpportunity('the output device list changed');
+	const media = typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined;
+	if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility);
+	media?.addEventListener('devicechange', onDeviceChange);
+	_recoveryEdgesDetach = () => {
+		if (typeof document !== 'undefined') {
+			document.removeEventListener('visibilitychange', onVisibility);
+		}
+		media?.removeEventListener('devicechange', onDeviceChange);
+	};
+}
 
 export function disarmContextInstrumentation(): void {
 	detachXrunSentinel();
@@ -142,6 +206,13 @@ export function disarmContextInstrumentation(): void {
 	// stops it, and `_ensureGraph` arms a fresh one on the way back in.
 	_outputLiveness?.uninstall();
 	_outputLiveness = null;
+	// Same identity-scoped teardown as the two above. The watchdog's recovery
+	// listener sits on a module-level fan-out, so one left behind by a route
+	// unmount answers every later device change by resuming a CLOSED context.
+	_watchdogDetach?.();
+	_watchdogDetach = null;
+	_recoveryEdgesDetach?.();
+	_recoveryEdgesDetach = null;
 	// The bar under master volume must go back to "no data" rather than keep
 	// quoting a device snapshot from the context just closed.
 	clearAudioOutputHealth();
@@ -177,7 +248,12 @@ export function armAudioContextWatchdog(
 	// No cast of any kind: WatchableAudioContext is declared narrowly enough that
 	// a real AudioContext structurally satisfies it, which is the point of
 	// declaring it that way rather than reaching for a double assertion.
-	installAudioContextWatchdog(
+	//
+	// Held now, where it used to be discarded. The watchdog registers a
+	// module-level recovery listener, and a discarded detach leaks one of those
+	// per route visit -- each still holding a closed context to resume.
+	_watchdogDetach?.();
+	_watchdogDetach = installAudioContextWatchdog(
 		ctx,
 		{
 			pushToast,
@@ -186,6 +262,7 @@ export function armAudioContextWatchdog(
 		},
 		isAnyDeckPlaying
 	);
+	installRecoveryOpportunities();
 	// Chromium keeps a context `running` on a dead output stream after the device
 	// changes under it (a phone call taking the headphones, Wed 2 Sep 2026), so
 	// the statechange watchdog above never fires; this one cycles the output.
@@ -197,7 +274,12 @@ export function armAudioContextWatchdog(
 		ctx,
 		{
 			pushToast,
-			recordPerfEvent: (kind, message) => recordPerfEvent(kind, message, null, 'info'),
+			// Severity comes FROM the rebind, it is not pinned here: a failed
+			// re-bind records at `error` so `recordPerfEvent` escalates it to the
+			// engine's client-error log. Pinning every row at `info` is why the
+			// Wed 9 Sep 2026 17:44Z cutout left no server-side trace.
+			recordPerfEvent: (kind, message, severity = 'info') =>
+				recordPerfEvent(kind, message, null, severity),
 			now: () => performance.now(),
 			setTimeout: (fn, ms) => setTimeout(fn, ms),
 			clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)

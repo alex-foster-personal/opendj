@@ -28,6 +28,7 @@ from typing import Any
 import pytest
 
 from apps.dedup import schema as dedup_schema
+from apps.webui.server import dedup_decisions
 from apps.webui.server.backend import InMemoryBackend, Track
 from apps.webui.server.routes import dedup_review
 
@@ -56,11 +57,13 @@ def _hold_decision_lock(
     result: Any,
 ) -> None:
     """Process target proving the decision lock serializes real writers."""
-    dedup_review.DECISIONS_FILE = Path(decisions_path)
+    path = Path(decisions_path)
+    dedup_decisions.DECISIONS_FILE = path
+    dedup_review.DECISIONS_FILE = path
     ready.put(True)
     try:
         _wait_for_start_or_raise(start)
-        with dedup_review._decision_file_lock():
+        with dedup_decisions.decision_file_lock():
             entered = time.monotonic()
             time.sleep(0.15)
             leaving = time.monotonic()
@@ -148,6 +151,7 @@ def dedup_db(tmp_path: Path, monkeypatch) -> Path:
     decisions_path = tmp_path / "review-decisions.json"
     monkeypatch.setattr(dedup_review.dedup_paths, "DEDUP_FALLBACK_DB", db_path)
     monkeypatch.setattr(dedup_review, "DECISIONS_FILE", decisions_path)
+    monkeypatch.setattr(dedup_decisions, "DECISIONS_FILE", decisions_path)
     return db_path
 
 
@@ -285,6 +289,7 @@ def test_decision_round_trip(app_client, dedup_db: Path) -> None:
     assert decision["survivor"] == "track-alias"
     assert decision["action"] == "merge"
     assert decision["cluster_key"] == cluster["cluster_key"]
+    assert decision["pending_apply"] is True
 
 
 def test_decision_rejects_non_member_survivor(app_client, dedup_db: Path) -> None:
@@ -544,3 +549,21 @@ def test_openapi_documents_dedup_cas_contract(app_client) -> None:
     )
     assert if_match["required"] is True
     assert {"200", "409", "428"} <= set(operation["responses"])
+
+
+def test_duplicate_cluster_rows_fail_get(app_client, dedup_db: Path) -> None:
+    _seed_cluster_db(
+        dedup_db, cluster_id=1,
+        canonical_sid="track-canon", canonical_path="/music/canon.flac",
+        alias_sid="track-alias", alias_path="/music/alias-128.mp3",
+    )
+    _seed_cluster_db(
+        dedup_db, cluster_id=2,
+        canonical_sid="track-canon", canonical_path="/music/canon-copy.flac",
+        alias_sid="track-alias", alias_path="/music/alias-copy.mp3",
+    )
+    response = app_client.get("/api/v1/dedup/clusters")
+    assert response.status_code == 500
+    detail = response.json()["detail"]
+    assert detail["error"] == "invalid_cluster_identity"
+    assert "sha256:" in detail["message"]

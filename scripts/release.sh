@@ -95,8 +95,13 @@ spctl -a -t exec -vv "$app"
 xcrun stapler validate "$dmg"
 spctl -a -t open -vv "$dmg"
 
-manifest="$(mktemp "${TMPDIR:-/tmp}/opendj-latest.XXXXXX.json")"
-cleanup() { rm -f "$manifest"; }
+# The asset is uploaded under its FILENAME, and the updater endpoint fetches
+# `latest.json`. So it is named exactly that, inside a unique directory: BSD
+# mktemp randomizes only trailing X's, and the old `opendj-latest.XXXXXX.json`
+# template would have published an asset literally named that.
+manifest_dir="$(mktemp -d "${TMPDIR:-/tmp}/opendj-latest.XXXXXX")"
+manifest="$manifest_dir/latest.json"
+cleanup() { rm -rf "$manifest_dir"; }
 trap cleanup EXIT
 PUBLIC_REPO="$PUBLIC_REPO" VERSION="$version" GIT_SHA="$git_sha" ARCHIVE_NAME="$(basename "$archive")" SIGNATURE="$signature" MANIFEST="$manifest" python3 - <<'PY'
 import json

@@ -20,9 +20,11 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 //   at full scale reads as merely loud
 
 let meter;
+let calFields;
 
 before(async () => {
 	meter = await loadTypeScriptModule('src/lib/rb/meter-math.ts');
+	calFields = await loadTypeScriptModule('src/lib/rb/prefs-fields.ts');
 });
 
 test('digital silence floors instead of diverging to -Infinity', () => {
@@ -173,4 +175,108 @@ test('the worklet processor holds no policy numbers', () => {
 		);
 	}
 	assert.ok(!code.includes('log10'), 'processor is converting to dB, which is policy');
+});
+
+// --- calibration -----------------------------------------------------------
+//
+// Regression lines:
+// - if an uncalibrated install stops using the default scale then every
+//   existing user's meter silently changes under them
+// - if calibration does not SHIFT the whole scale then the PPM spacing is
+//   replaced by an invented curve and the segments stop meaning dB steps
+// - if the calibrated red point does not become the first red segment then
+//   the number the user chose by ear is not the number the meter uses
+
+test('null calibration keeps the default scale exactly', () => {
+	assert.deepEqual(
+		[...meter.segmentThresholdsForRed(null)],
+		[...meter.SEGMENT_THRESHOLDS_DBFS]
+	);
+});
+
+test('the calibrated level becomes the first RED segment', () => {
+	for (const red of [-12, -6, -3, 0, 3]) {
+		const t = meter.segmentThresholdsForRed(red);
+		// Segment 8 is the first red one; thresholds are 0-indexed.
+		assert.ok(
+			Math.abs(t[7] - red) < 1e-9,
+			`red anchor ${red} landed at ${t[7]}`
+		);
+		assert.equal(meter.segmentBand(8), 'red');
+	}
+});
+
+test('calibration shifts the whole scale, preserving PPM spacing', () => {
+	const base = meter.SEGMENT_THRESHOLDS_DBFS;
+	const shifted = meter.segmentThresholdsForRed(meter.DEFAULT_RED_DBFS + 6);
+	for (let i = 0; i < base.length; i += 1) {
+		assert.ok(Math.abs(shifted[i] - base[i] - 6) < 1e-9, `segment ${i} spacing changed`);
+	}
+});
+
+test('a hot library reads mid-scale once calibrated, instead of pinning', () => {
+	// Measured: the maintainer's tracks median +1.0 dBTP. On the default scale that is
+	// 10/10 lit. Calibrating red to 0 dBFS must stop it pinning every track.
+	const hot = 1.0;
+	assert.equal(meter.segmentsLitFromDbfs(hot), 10, 'default scale should pin, that is the bug');
+	const calibrated = meter.segmentThresholdsForRed(3);
+	const lit = meter.segmentsLitFromDbfs(hot, calibrated);
+	assert.ok(lit < 10, `calibrated scale still pinned at ${lit}/10`);
+	assert.ok(lit >= 5, `calibrated scale collapsed to ${lit}/10, should stay readable`);
+});
+
+test('a wrong-length threshold set is a hard error, not a silent miscount', () => {
+	assert.throws(() => meter.segmentsLitFromDbfs(-10, [-20, -10]), RangeError);
+});
+
+test('a non-finite calibration is rejected rather than shifting by NaN', () => {
+	assert.throws(() => meter.segmentThresholdsForRed(NaN), RangeError);
+	assert.throws(() => meter.segmentThresholdsForRed(Infinity), RangeError);
+});
+
+test('a low calibration never lights a segment at true silence', () => {
+	// Issue #1578: an unclamped shift moves thresholds below METER_FLOOR_DBFS,
+	// so a low red anchor (e.g. a quiet room during calibration) lit segments
+	// with no signal at all. Sweep the FULL range the UI permits for
+	// red_dbfs (prefs-fields.ts CAL_MIN_DBFS..CAL_MAX_DBFS), not samples: the
+	// value comes off a live meter read, so it can land anywhere in the range
+	// including a fractional boundary.
+	const { CAL_MIN_DBFS, CAL_MAX_DBFS } = calFields;
+	const STEP = 0.1;
+	const values = [];
+	for (let x = CAL_MIN_DBFS; x <= CAL_MAX_DBFS; x += STEP) values.push(x);
+	values.push(CAL_MIN_DBFS, CAL_MAX_DBFS, -29.05);
+	for (const red of values) {
+		const thresholds = meter.segmentThresholdsForRed(red);
+		const lit = meter.segmentsLitFromDbfs(meter.METER_FLOOR_DBFS, thresholds);
+		assert.equal(
+			lit,
+			0,
+			`red=${red} lit ${lit}/10 segments at the floor (${meter.METER_FLOOR_DBFS} dBFS)`
+		);
+	}
+});
+
+test('a low enough calibration clamps multiple thresholds to the same floor value', () => {
+	// Codex P1 on #1578: the floor clamp above makes segmentThresholdsForRed
+	// produce DUPLICATE values by design once redDbfs is low enough that more
+	// than one shifted threshold lands at or below METER_FLOOR_DBFS - they all
+	// clamp to the same number. ChannelLevelMeter.svelte's {#each} keys on
+	// segment INDEX, not threshold, specifically because of this. This test
+	// pins that the duplicate-value case is real (not hypothetical) and stays
+	// reachable within the UI-permitted range, so a future change that
+	// "simplifies" the template back to keying on threshold has something to
+	// fail against.
+	const { CAL_MIN_DBFS } = calFields;
+	const thresholds = meter.segmentThresholdsForRed(CAL_MIN_DBFS);
+	const atFloor = thresholds.filter((t) => t === meter.METER_FLOOR_DBFS);
+	assert.ok(
+		atFloor.length >= 2,
+		`expected >= 2 thresholds clamped to the floor at CAL_MIN_DBFS=${CAL_MIN_DBFS}, got ${atFloor.length} of [${thresholds.join(', ')}]`
+	);
+	assert.notEqual(
+		new Set(thresholds).size,
+		thresholds.length,
+		'thresholds should contain duplicates at this calibration, proving segment.threshold is unsafe as an each-block key'
+	);
 });

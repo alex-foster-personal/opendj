@@ -101,8 +101,11 @@ test('BrowserPanel loads ingestion coverage after primary browser initialization
 test('coverage counts only reachable audio and refetches through the library refresh gate', () => {
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
 	assert.match(src, /const completed = coverage\.on_disk - missing;/);
-	assert.match(src, /\$\{coverage\.unreachable\} unreachable/);
-	assert.match(src, /async function _refreshLibraryRowsOnce\(\): Promise<void> \{\s*await Promise\.all\(\[_loadIngestCoverage\(\), _loadReconcileSummary\(\)\]\);/);
+	assert.match(src, /\$\{coverage\.unreachable\} broken \$\{coverage\.unreachable === 1 \? 'link' : 'links'\}/);
+	assert.match(
+		src,
+		/async function _refreshLibraryRowsOnce\(\): Promise<void> \{\s*await Promise\.all\(\[_loadIngestCoverage\(\), _loadReconcileSummary\(\), _refreshPlaylists\(\)\]\);/
+	);
 	assert.doesNotMatch(src, /import \{ api, unwrap \} from '\$lib\/api\/client';/);
 	const ingest = source('../server/routes/ingest.py');
 	assert.match(ingest, /finally:\s*job\.current_step = None\s*job\.finished_at = time\.time\(\)\s*publish\("library\.changed", \{"kind": "tracks", "ids": \[\]\}\)/);
@@ -111,10 +114,10 @@ test('coverage counts only reachable audio and refetches through the library ref
 test('BrowserPanel renders reconciled playable counts without delaying initial playlist rendering', () => {
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
 	assert.match(src, /getReconcileSummary/);
-	assert.match(src, /allTracksPlayableCount = summary\.total_tracks - summary\.total_broken/);
+	assert.match(src, /allTracksNonBrokenCount = summary\.total_tracks - summary\.total_broken/);
 	assert.match(src, /broken_count: p\.track_count - p\.available_count/);
 	assert.match(src, /void _loadReconcileSummary\(\);/);
-	assert.match(src, /allTracksCount=\{allTracksPlayableCount\}/);
+	assert.match(src, /allTracksCount=\{allTracksNonBrokenCount\}/);
 
 	const tree = source('src/lib/components/rb/browser/PlaylistTree.svelte');
 	assert.match(tree, /playable tracks, \$\{node\.broken_count\} broken tracks/);
@@ -198,3 +201,24 @@ test('the memory meter samples on a real 2s interval and goes through the model'
 	);
 	assert.match(src, /title=\{memoryHover\}/, 'the house rule: every numeric readout keeps its hover');
 });
+
+test('PlaylistTree renders the reserved Missing Tracks folder outside the playlist loop', () => {
+	const tree = source('src/lib/components/rb/browser/PlaylistTree.svelte');
+	assert.match(tree, /MissingTracksFolder/);
+	assert.match(tree, /data-testid="playlist-missing-tracks"/);
+	const eachBlock = tree.match(/\{#each nodes as node \(node\.playlist_id\)\}[\s\S]*?\{\/each\}/)?.[0];
+	assert.ok(eachBlock, 'playlist {#each} loop must still exist');
+	assert.doesNotMatch(eachBlock, /playlist-missing-tracks/);
+});
+
+test('BrowserPanel loads Missing Tracks via the reserved kind and hide-broken bypass', () => {
+	const src = source('src/lib/components/rb/BrowserPanel.svelte');
+	assert.match(src, /fetchMissingTrackRows/);
+	assert.match(src, /node\.kind === 'missing_tracks'/);
+	assert.match(
+		src,
+		/hide_broken_links && !isMissingTracksId/,
+		'the Missing Tracks pane must ignore Hide broken links or every row vanishes'
+	);
+});
+

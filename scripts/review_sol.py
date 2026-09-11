@@ -126,15 +126,25 @@ def is_sol_thread(login: str, body: str) -> bool:
     return _normalize_login(login) in SOL_LOGINS and bool(SOL_MARKER.search(body or ""))
 
 
-def substitute_alternatives(verdicts: list[ReviewerVerdict]) -> list[ReviewerVerdict]:
-    """Let a real Sol review stand in for an absent Codex one, and vice versa.
+def substitute_alternatives(
+    verdicts: list[ReviewerVerdict], alternatives: tuple[str, ...]
+) -> list[ReviewerVerdict]:
+    """Let a real review by ANY of `alternatives` stand in for the others.
 
-    Codex and Sol are two routes to the same thing -- a GPT-5 class model
-    reading the diff -- so requiring BOTH would mean the gate can only go
-    green while two independent quotas both hold, and a gate that cannot go
-    green blocks all work (the reasoning `KNOWN_UNAVAILABLE_REVIEWERS` was
-    built on). Requiring EITHER keeps the gate honest in the direction that
-    matters: a PR nobody reviewed still reports MISS on both rows and fails.
+    Codex, Sol and Claude are three routes to the same thing -- a frontier
+    model reading the diff -- so requiring ALL of them would mean the gate can
+    only go green while three independent quotas hold at once, and a gate that
+    cannot go green blocks all work (the reasoning
+    `KNOWN_UNAVAILABLE_REVIEWERS` was built on). Requiring ANY keeps the gate
+    honest in the direction that matters: a PR nobody reviewed still reports
+    MISS on every row and fails.
+
+    `alternatives` is passed in rather than read from a constant here so that
+    the set lives beside `EXPECTED_REVIEWERS`, which is what it must always
+    equal; a private copy in this module would be a second list to forget to
+    update the next time a reviewer is added or removed. It started as a
+    hard-coded Codex/Sol pair and became a parameter when the Claude lane
+    landed (Sun 6 Sep 2026).
 
     The stand-in is recorded in `substituted_by` rather than being folded into
     the reason string, so the board can print `sub` instead of `ok` and never
@@ -142,11 +152,11 @@ def substitute_alternatives(verdicts: list[ReviewerVerdict]) -> list[ReviewerVer
     are frozen dataclasses and are not mutated.
     """
     reviewed = {v.name for v in verdicts if v.reviewed}
-    partner = {SOL: CODEX, CODEX: SOL}
     out = []
     for verdict in verdicts:
-        stand_in = partner.get(verdict.name, "")
-        if verdict.reviewed or stand_in not in reviewed:
+        others = [n for n in alternatives if n != verdict.name and n in reviewed]
+        stand_in = others[0] if others else ""
+        if verdict.reviewed or verdict.name not in alternatives or not stand_in:
             out.append(verdict)
             continue
         out.append(

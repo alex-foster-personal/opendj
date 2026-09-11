@@ -14,8 +14,9 @@ let presentation;
 let headphones;
 let computeFollowerSyncPlan;
 // The pure SLIP hidden-timeline math lives in the player's pure leaf
-// (transport/schedule-math.ts); only the two timeline-shaped helpers
-// (presentedSlipAnchor, slipTempoBoundariesAfterAnchor) are still the engine's.
+// (transport/schedule-math.ts); the two timeline-shaped helpers
+// (presentedSlipAnchor, slipTempoBoundariesAfterAnchor) live in
+// transport/presentation.ts and reach here through the engine barrel.
 let slip;
 let disposeAudioResources;
 let beatLoopFitsWithinDuration;
@@ -1640,7 +1641,10 @@ test('analysis retrieval failure rejects before an unusable deck candidate can p
 				{ status: 200, headers: { 'content-type': 'application/json' } }
 			);
 		}
-		if (url.endsWith('/anlz?points=38400')) {
+		// includes(), not endsWith(): fetchAnlz appends a `&gen=` cache-buster
+		// (anlz-fetch-generation.ts, PARITY-02 discussion_r3921839825) after
+		// the points param.
+		if (url.includes('/anlz?points=38400')) {
 			return new Response(
 				JSON.stringify({
 					detail: { code: 'ANALYSIS_NOT_FOUND', message: 'track has no analysis' }

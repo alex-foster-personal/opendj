@@ -9,6 +9,8 @@
 	--rb-bg: #0d0f12;            /* near-black window background */
 	--rb-panel: #14171d;         /* panel surface, slightly lighter */
 	--rb-panel-raised: #1a1e25;  /* raised chrome (buttons, chips) */
+	--rb-waverow-secondary: #1a1f28; /* decks 3/4 waveform row and canvas fill;
+	                                    lighter than --rb-bg so 1/2 keep the eye */
 	--rb-border: #23282f;        /* panel dividers */
 	--rb-text: #c8cdd2;          /* primary text */
 	--rb-text-dim: #838990;      /* dim/secondary text - lightened from #7a8088
@@ -60,6 +62,8 @@ html[data-theme='light'] .perf-root {
 	--rb-bg: #f7f3eb;
 	--rb-panel: #fffdf8;
 	--rb-panel-raised: #eee8dd;
+	--rb-waverow-secondary: #fffdf8; /* same role as dark: lighter than --rb-bg
+	                                    so 3/4 recede; light --rb-panel hex */
 	--rb-border: #b8b0a3;
 	--rb-text: #27241f;
 	--rb-text-dim: #5d574e;

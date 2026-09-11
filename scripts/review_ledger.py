@@ -59,6 +59,34 @@ def debt_permalinks_from_text(text: str) -> frozenset[str]:
     return frozenset(_PERMALINK.findall(text))
 
 
+def debt_text_at(number: int, head_sha: str, owner: str = OWNER, repo: str = REPO) -> str:
+    """Read one PR's debt file at its immutable reviewed head.
+
+    A missing file is a measured empty ledger. Any other failure raises, so a
+    caller can fail open instead of treating an unread ledger as a match.
+    """
+    path = _DEBT_PATH.format(number=number)
+    result = subprocess.run(
+        [
+            "gh",
+            "api",
+            "-H",
+            "Accept: application/vnd.github.raw",
+            f"repos/{owner}/{repo}/contents/{path}?ref={head_sha}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        return result.stdout
+    if _is_missing_file(result.stdout) and _path_exists_at(head_sha, path, owner, repo) is False:
+        return ""
+    raise LedgerReadError(
+        f"could not read {path} at {head_sha}: {result.stderr.strip() or '<no stderr>'}"
+    )
+
+
 def _debt_permalinks(
     number: int, head_sha: str, owner: str = OWNER, repo: str = REPO
 ) -> frozenset[str]:

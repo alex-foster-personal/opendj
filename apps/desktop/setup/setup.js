@@ -139,6 +139,13 @@ function showUnreachable(result, attempts) {
 	byId('probe-url-echo').textContent = result.url;
 	byId('probe-detail').textContent = result.detail;
 	byId('attempts').textContent = String(attempts);
+	if (typeof globalThis.__OPENDJ_enqueueShellClientError === 'function') {
+		globalThis.__OPENDJ_enqueueShellClientError(
+			'webview-navigation',
+			`engine unreachable: ${result.detail}`,
+			{ source: 'shell-bootstrap', url: result.url }
+		);
+	}
 }
 
 /**

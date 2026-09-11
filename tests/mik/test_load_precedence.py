@@ -30,7 +30,7 @@ def test_mik_bpm_never_clobbers_rekordbox(
 ) -> None:
     """track_fields has no source in its PK, so a write REPLACES. MIK loses BPM."""
     write_verdicts(ALL_PASSED)
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
     state_conn.execute(
         "INSERT INTO track_fields(stable_id, field_name, value_json, source, "
         "modified_at) VALUES (?, 'bpm', '120.0', 'rekordbox', "
@@ -38,7 +38,7 @@ def test_mik_bpm_never_clobbers_rekordbox(
         ("a" * 40,),
     )
     store = make_mik_store(
-        [{"path": "/Users/dev/x.mp3", "tempo": 90.0, "confidence": 0.99}]
+        [{"path": "/Users/user/x.mp3", "tempo": 90.0, "confidence": 0.99}]
     )
     plan, _gate = _load(
         state_conn, store, data_dir, overwrite_lower_precedence=True
@@ -61,9 +61,9 @@ def test_low_confidence_key_falls_through_to_rekordbox(
     write_verdicts,
 ) -> None:
     write_verdicts(ALL_PASSED)
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
     store = make_mik_store(
-        [{"path": "/Users/dev/x.mp3", "key": "3A", "confidence": 0.29}]
+        [{"path": "/Users/user/x.mp3", "key": "3A", "confidence": 0.29}]
     )
     plan, _gate = _load(state_conn, store, data_dir)
     assert plan.blocked_by_key_floor == 1
@@ -83,7 +83,7 @@ def test_high_confidence_key_only_overwrites_when_asked(
     write_verdicts,
 ) -> None:
     write_verdicts(ALL_PASSED)
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
     state_conn.execute(
         "INSERT INTO track_fields(stable_id, field_name, value_json, source, "
         "modified_at) VALUES (?, 'key', '\"8A\"', 'rekordbox', "
@@ -91,7 +91,7 @@ def test_high_confidence_key_only_overwrites_when_asked(
         ("a" * 40,),
     )
     store = make_mik_store(
-        [{"path": "/Users/dev/x.mp3", "key": "9A", "confidence": 0.99}]
+        [{"path": "/Users/user/x.mp3", "key": "9A", "confidence": 0.99}]
     )
     default_plan, _ = _load(state_conn, store, data_dir)
     assert default_plan.blocked_by_precedence["key"] == 1
@@ -111,7 +111,7 @@ def test_mid_band_key_is_flagged_for_review_not_silently_written(
 ) -> None:
     """0.70-0.90 with rekordbox present: flag it, never guess (ISMIR 2015)."""
     write_verdicts(ALL_PASSED)
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
     state_conn.execute(
         "INSERT INTO track_fields(stable_id, field_name, value_json, source, "
         "modified_at) VALUES (?, 'key', '\"8A\"', 'rekordbox', "
@@ -119,7 +119,7 @@ def test_mid_band_key_is_flagged_for_review_not_silently_written(
         ("a" * 40,),
     )
     store = make_mik_store(
-        [{"path": "/Users/dev/x.mp3", "key": "9A", "confidence": 0.80}]
+        [{"path": "/Users/user/x.mp3", "key": "9A", "confidence": 0.80}]
     )
     plan, _gate = _load(
         state_conn, store, data_dir, overwrite_lower_precedence=True
@@ -138,9 +138,9 @@ def test_mid_band_key_still_fills_an_empty_field(
 ) -> None:
     """Nothing to disagree with, so a 0.80-confidence key beats no key."""
     write_verdicts(ALL_PASSED)
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
     store = make_mik_store(
-        [{"path": "/Users/dev/x.mp3", "key": "9A", "confidence": 0.80}]
+        [{"path": "/Users/user/x.mp3", "key": "9A", "confidence": 0.80}]
     )
     plan, _gate = _load(state_conn, store, data_dir)
     assert plan.key_review_band == []
@@ -156,9 +156,9 @@ def test_key_confidence_is_mik_own_per_track_value(
 ) -> None:
     """Not the flat 0.95: the whole point of the audit's correction 1."""
     write_verdicts(ALL_PASSED)
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
     store = make_mik_store(
-        [{"path": "/Users/dev/x.mp3", "key": "9A", "confidence": 0.83}]
+        [{"path": "/Users/user/x.mp3", "key": "9A", "confidence": 0.83}]
     )
     plan, _gate = _load(state_conn, store, data_dir)
     loader.apply_plan(state_conn, plan)
@@ -187,11 +187,11 @@ def test_modified_at_comes_from_the_analysis_date_not_the_clock(
     write_verdicts,
 ) -> None:
     write_verdicts(ALL_PASSED)
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
     store = make_mik_store(
         [
             {
-                "path": "/Users/dev/x.mp3",
+                "path": "/Users/user/x.mp3",
                 "confidence": 0.9,
                 "analysed_at": "2023-12-20T02:20:10+00:00",
             }
@@ -214,10 +214,10 @@ def test_second_live_run_writes_nothing(
     write_verdicts,
 ) -> None:
     write_verdicts(ALL_PASSED)
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
     store = make_mik_store(
         [
-            {"path": "/Users/dev/x.mp3", "confidence": 0.9,
+            {"path": "/Users/user/x.mp3", "confidence": 0.9,
              "segments": [(0.0, 60.0, 5)]},
             {"path": "/none/y.mp3", "confidence": 0.9, "segments": [(0.0, 30.0, 3)]},
         ]
@@ -241,8 +241,8 @@ def test_apply_is_atomic(
     write_verdicts,
 ) -> None:
     write_verdicts(ALL_PASSED)
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
-    store = make_mik_store([{"path": "/Users/dev/x.mp3", "confidence": 0.9}])
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
+    store = make_mik_store([{"path": "/Users/user/x.mp3", "confidence": 0.9}])
     plan, _gate = _load(state_conn, store, data_dir)
     # A staged row referencing a bogus reason trips the CHECK constraint.
     plan.staged.append(
@@ -276,7 +276,7 @@ def test_verification_basis_is_persisted_with_the_data(
     Not just in a log line: six months from now nobody should be able to read
     energy_segments and assume it was cross-validated.
     """
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
     (data_dir / "state" / "equivalence-verdicts.json").write_text(
         json.dumps(
             {
@@ -304,7 +304,7 @@ def test_verification_basis_is_persisted_with_the_data(
     )
     store = make_mik_store(
         [
-            {"path": "/Users/dev/x.mp3", "confidence": 0.95,
+            {"path": "/Users/user/x.mp3", "confidence": 0.95,
              "segments": [(0.0, 60.0, 5)]}
         ]
     )
@@ -345,11 +345,11 @@ def test_clamped_start_is_persisted_per_row(
 ) -> None:
     """A genuine 0 start and a clamped one must be distinguishable in the DB."""
     write_verdicts(ALL_PASSED)
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
     store = make_mik_store(
         [
             {
-                "path": "/Users/dev/x.mp3",
+                "path": "/Users/user/x.mp3",
                 "confidence": 0.95,
                 "segments": [(-0.0195, 60.0, 5), (60.0, 30.0, 8)],
             }
@@ -388,8 +388,8 @@ def test_staged_series_round_trips_the_clamp_flag(
 def test_override_is_recorded_as_overridden(
     state_conn: sqlite3.Connection, add_track, make_mik_store, data_dir: Path
 ) -> None:
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
-    store = make_mik_store([{"path": "/Users/dev/x.mp3", "confidence": 0.95}])
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
+    store = make_mik_store([{"path": "/Users/user/x.mp3", "confidence": 0.95}])
     plan, _gate = _load(state_conn, store, data_dir, allow_unverified=True)
     loader.apply_plan(state_conn, plan)
     overridden = state_conn.execute(
@@ -407,10 +407,10 @@ def test_every_source_value_is_accounted_for(
 ) -> None:
     """Bucket invariant: written + staged + blocked + absent == what MIK offered."""
     write_verdicts({"energy": "passed"})
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
     store = make_mik_store(
         [
-            {"path": "/Users/dev/x.mp3", "confidence": 0.9},
+            {"path": "/Users/user/x.mp3", "confidence": 0.9},
             {"path": "/none/y.mp3", "confidence": 0.9},
             {"path": "/none/z.mp3", "energy": None, "confidence": 0.9},
         ]

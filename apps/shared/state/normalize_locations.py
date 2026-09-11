@@ -100,17 +100,28 @@ class LocationRow:
         return _is_nfc(self.file_path) and _is_nfc(self.remote_url)
 
     @property
+    def is_orderable(self) -> bool:
+        """True when this row's stamp can take part in the LWW comparison.
+
+        A NULL stamp can: ADR 04 c7 reads it as epoch-old, which is a
+        decision, not a guess. An unorderable SPELLING cannot -- see
+        :func:`scan` for what happens to its group.
+        """
+        return self.updated_at is None or sync_stamp.is_orderable(self.updated_at)
+
+    @property
     def lww_key(self) -> tuple[str, str]:
         """``(updated_at, origin_device_id)``, the winner-picks-max comparison.
 
-        An unorderable or NULL stored stamp coalesces to
-        :data:`apps.shared.state.sync_stamp.EPOCH` (module rule 4) rather than
-        raising, so one legacy row cannot crash the repair that would fix it.
-        A NULL origin collapses to ``''`` (``protocol.NO_ORIGIN``), keeping the
-        order total.
+        Only valid on a row where :attr:`is_orderable` is True; callers check
+        first. A NULL stamp sorts as :data:`apps.shared.state.sync_stamp.
+        EPOCH` (ADR 04 c7) and a NULL origin collapses to ``''``
+        (``protocol.NO_ORIGIN``), keeping the order total.
         """
+        if self.updated_at is None:
+            return (sync_stamp.EPOCH, self.origin_device_id or "")
         return (
-            sync_stamp.coalesce_stored_stamp(self.updated_at),
+            sync_stamp.to_canonical(self.updated_at),
             self.origin_device_id or "",
         )
 
@@ -187,25 +198,59 @@ def _read_rows(conn: sqlite3.Connection) -> list[LocationRow]:
     ]
 
 
+def _repairable_groups(
+    conn: sqlite3.Connection,
+) -> tuple[list[list[LocationRow]], list[list[LocationRow]]]:
+    """Groups needing repair, split into (orderable, quarantined).
+
+    A group is quarantined when ANY member's stored stamp cannot be ordered.
+    Not "the faulted member is dropped from the comparison": this pass picks
+    a winner and then HARD-DELETES the losers, so a group resolved without
+    one of its members can delete the row carrying the most recent edit. File
+    identity would survive (the rows are NFD/NFC twins of one path); edit
+    provenance would not, and nothing anywhere would record that it had gone.
+    """
+    if not _table_exists(conn, LOCATIONS_TABLE):
+        return [], []
+    groups: dict[tuple[str | None, str, str, str | None, str | None], list[LocationRow]]
+    groups = defaultdict(list)
+    for row in _read_rows(conn):
+        groups[row.normalized_key].append(row)
+    repairable: list[list[LocationRow]] = []
+    quarantined: list[list[LocationRow]] = []
+    for members in groups.values():
+        if not (len(members) > 1 or any(not m.stored_is_nfc for m in members)):
+            continue
+        if all(member.is_orderable for member in members):
+            repairable.append(members)
+        else:
+            quarantined.append(members)
+    return repairable, quarantined
+
+
+def quarantined_groups(conn: sqlite3.Connection) -> list[list[LocationRow]]:
+    """Groups this pass REFUSES to collapse, and why they need reporting.
+
+    Every member of one of these needs
+    ``python -m apps.shared.state.normalize_stamps --live`` first. Until
+    then the duplicate stays, which means its ``track_locations`` digest
+    stays divergent -- visible, bounded and reversible by one command, which
+    a silently deleted row would not be.
+    """
+    return _repairable_groups(conn)[1]
+
+
 def scan(conn: sqlite3.Connection) -> list[Collapse]:
     """Every natural key holding a non-NFC path, or a duplicate to collapse.
 
     A table missing from the DB is skipped rather than raising, matching
     :func:`apps.shared.state.normalize_stamps.scan`: this pass runs against
-    legacy files.
+    legacy files. A group holding an unorderable stored stamp is NOT here --
+    it is reported by :func:`quarantined_groups` instead.
     """
-    if not _table_exists(conn, LOCATIONS_TABLE):
-        return []
-    groups: dict[tuple[str | None, str, str, str | None, str | None], list[LocationRow]]
-    groups = defaultdict(list)
-    for row in _read_rows(conn):
-        groups[row.normalized_key].append(row)
-
+    repairable, _quarantined = _repairable_groups(conn)
     collapses: list[Collapse] = []
-    for members in groups.values():
-        needs_repair = len(members) > 1 or any(not m.stored_is_nfc for m in members)
-        if not needs_repair:
-            continue
+    for members in repairable:
         winner = max(members, key=lambda m: m.lww_key)
         losers = tuple(m for m in members if m.location_id != winner.location_id)
         collapses.append(
@@ -262,7 +307,16 @@ def apply_collapses(conn: sqlite3.Connection, collapses: list[Collapse]) -> int:
                 (
                     LOCATIONS_TABLE,
                     sync_stamp.encode_row_pk((collapse.winner.location_id,)),
-                    sync_stamp.coalesce_stored_stamp(collapse.winner.updated_at),
+                    # VERBATIM (round 5). Nothing orders
+                    # local_changelog.updated_at -- the push fence reads
+                    # (seq, table_name, row_pk) -- so the honest value is the
+                    # row's own. A NULL has no verbatim value and the column
+                    # is NOT NULL, so it takes the storable floor.
+                    (
+                        sync_stamp.FLOOR_STAMP
+                        if collapse.winner.updated_at is None
+                        else collapse.winner.updated_at
+                    ),
                     collapse.winner.origin_device_id or "",
                     received_at,
                 ),
@@ -297,6 +351,33 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+#: Exit code when the safe repairs ran but some group could not be touched
+#: because a member's stored stamp is unorderable. NOT 0: a partial repair
+#: reported as success is the "clean binary answer for a case that should be
+#: messy" .claude/rules/verification.md names, and the operator has one more
+#: command to run before this pass can finish its job.
+EXIT_QUARANTINED: int = 3
+
+
+def _report_quarantined(groups: list[list[LocationRow]]) -> None:
+    for members in groups:
+        first = members[0]
+        offending = [m for m in members if not m.is_orderable]
+        print(
+            f"[QUARANTINED] {LOCATIONS_TABLE} {first.machine_id}/"
+            f"{first.stable_id}/{first.kind}: "
+            + ", ".join(f"{m.location_id} updated_at={m.updated_at!r}" for m in offending)
+            + " cannot be ordered; not collapsed",
+            file=sys.stderr,
+        )
+    print(
+        f"[WARN] {len(groups)} natural key(s) skipped: run `python -m "
+        f"apps.shared.state.normalize_stamps --live` first, then re-run this "
+        f"pass",
+        file=sys.stderr,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     target = state_db_path(args.data_dir)
@@ -306,35 +387,40 @@ def main(argv: list[str] | None = None) -> int:
     conn = state_db.open_rw(target)
     try:
         collapses = scan(conn)
+        held_back = quarantined_groups(conn)
         for collapse in collapses:
             print(collapse.describe())
+        if held_back:
+            _report_quarantined(held_back)
         if not collapses:
             print("[OK] every track_locations path is NFC; nothing to do")
-            return 0
+            return EXIT_QUARANTINED if held_back else 0
         dropped = sum(len(c.losers) for c in collapses)
         if args.dry_run:
             print(
                 f"[DRY-RUN] {len(collapses)} natural key(s) would be repaired "
                 f"({dropped} duplicate row(s) dropped)"
             )
-            return 0
+            return EXIT_QUARANTINED if held_back else 0
         repaired = apply_collapses(conn, collapses)
         print(
             f"[OK] repaired {repaired} natural key(s), dropped {dropped} "
             f"duplicate row(s)"
         )
-        return 0
+        return EXIT_QUARANTINED if held_back else 0
     finally:
         conn.close()
 
 
 __all__ = [
     "CHANGELOG_TABLES",
+    "EXIT_QUARANTINED",
     "LOCATIONS_TABLE",
     "Collapse",
     "LocationRow",
     "apply_collapses",
     "main",
+    "quarantined_groups",
     "scan",
     "state_db_path",
 ]

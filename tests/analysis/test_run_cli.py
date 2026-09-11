@@ -19,6 +19,14 @@ class _MockBackend:
     version = "mock-1.0"
 
     @classmethod
+    def jit_cache_roots(cls) -> tuple[Path, ...]:
+        return ()
+
+    @classmethod
+    def warm_jit_cache(cls) -> str:
+        return "mock backend has no JIT cache"
+
+    @classmethod
     def analyze(cls, path: Path, stable_id: str) -> AnalysisRecord:
         return AnalysisRecord(
             stable_id=stable_id,
@@ -159,6 +167,14 @@ class _StartMethodBackend:
     version = "1"
 
     @classmethod
+    def jit_cache_roots(cls) -> tuple[Path, ...]:
+        return ()
+
+    @classmethod
+    def warm_jit_cache(cls) -> str:
+        return "start-method backend has no JIT cache"
+
+    @classmethod
     def analyze(cls, path: Path, stable_id: str) -> AnalysisRecord:
         return AnalysisRecord(
             stable_id=stable_id,
@@ -200,3 +216,12 @@ def test_parallel_workers_are_spawned_not_forked(
         con.close()
     assert methods == {"spawn"}, methods
 
+
+# A real, end-to-end proof that run() wires purge_stale to
+# ensure_owned_numba_cache_dir()'s return value on the default (NUMBA_CACHE_DIR
+# unset) path lives in test_jit_warmup_cold_cache.py::
+# test_a_real_analysis_run_self_provisions_a_cache_dir_and_purges_it_when_torn
+# (issue #1572 review round 7: a mocked backend with a monkeypatched spy on
+# warm_backend_jit proves only that a keyword moved, not that a real numba
+# cache gets written, fingerprinted, torn and purged through the
+# self-provisioned directory).
