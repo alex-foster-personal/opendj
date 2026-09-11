@@ -18,16 +18,6 @@
 		<span class="job-ribbon-fill"></span>
 		<span class="job-ribbon-label">{ribbon.label}</span>
 	</button>
-{:else}
-	<button
-		type="button"
-		class="job-ribbon idle"
-		title="Library stems and lyrics jobs. Click to open the queue."
-		aria-label="Library jobs"
-		onclick={() => (open = !open)}
-	>
-		<span class="job-ribbon-label">jobs</span>
-	</button>
 {/if}
 <LibraryJobQueuePanel bind:open />
 
@@ -52,5 +42,4 @@
 		opacity: 0.45;
 	}
 	.job-ribbon-label { position: relative; padding: 0 6px; font-size: 11px; }
-	.idle { opacity: 0.7; }
 </style>

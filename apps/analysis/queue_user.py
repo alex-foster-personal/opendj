@@ -244,6 +244,49 @@ def _resequence(
         )
 
 
+def _plan_one(
+    conn: sqlite3.Connection,
+    *,
+    batch_id: str,
+    lane: str,
+    sid: str,
+    tracks: dict[str, tuple[str | None, int | None]],
+    stems_root: Path,
+    data_dir: Path,
+) -> str:
+    existing = _get_row(conn, batch_id, sid, lane)
+    path, duration_ms = tracks[sid]
+    duration_s = None if duration_ms is None else duration_ms / 1000.0
+    file_path = path or ""
+    if existing is not None and existing.state == queue_store.ITEM_RUNNING:
+        return "running"
+    if artifact_is_fresh(lane, sid, stems_root=stems_root, data_dir=data_dir):
+        _upsert(
+            conn,
+            batch_id=batch_id,
+            stable_id=sid,
+            lane=lane,
+            file_path=file_path,
+            duration_s=duration_s,
+            state=queue_store.ITEM_SKIPPED,
+            reason=SKIP_UP_TO_DATE,
+            position=0,
+        )
+        return "skipped"
+    _upsert(
+        conn,
+        batch_id=batch_id,
+        stable_id=sid,
+        lane=lane,
+        file_path=file_path,
+        duration_s=duration_s,
+        state=queue_store.ITEM_PENDING,
+        reason=None,
+        position=0,
+    )
+    return "pending"
+
+
 def enqueue_next(
     conn: sqlite3.Connection,
     *,
@@ -271,43 +314,20 @@ def enqueue_next(
         result_ids: list[str] = []
         head_pending: list[str] = []
         for sid in ordered:
-            existing = _get_row(conn, batch_id, sid, lane)
-            path, duration_ms = tracks[sid]
-            duration_s = None if duration_ms is None else duration_ms / 1000.0
-            file_path = path or ""
-            if existing is not None and existing.state == queue_store.ITEM_RUNNING:
-                already_running.append(sid)
-                result_ids.append(sid)
-                continue
-            if artifact_is_fresh(
-                lane, sid, stems_root=stems_root, data_dir=data_dir
-            ):
-                _upsert(
-                    conn,
-                    batch_id=batch_id,
-                    stable_id=sid,
-                    lane=lane,
-                    file_path=file_path,
-                    duration_s=duration_s,
-                    state=queue_store.ITEM_SKIPPED,
-                    reason=SKIP_UP_TO_DATE,
-                    position=0,
-                )
-                result_ids.append(sid)
-                continue
-            _upsert(
+            kind = _plan_one(
                 conn,
                 batch_id=batch_id,
-                stable_id=sid,
                 lane=lane,
-                file_path=file_path,
-                duration_s=duration_s,
-                state=queue_store.ITEM_PENDING,
-                reason=None,
-                position=0,
+                sid=sid,
+                tracks=tracks,
+                stems_root=stems_root,
+                data_dir=data_dir,
             )
-            head_pending.append(sid)
             result_ids.append(sid)
+            if kind == "running":
+                already_running.append(sid)
+            elif kind == "pending":
+                head_pending.append(sid)
         previous = [sid for sid in _pending_ids(conn, batch_id, lane) if sid not in head_pending]
         if placement == "tail":
             _resequence(conn, batch_id, lane, previous + head_pending)

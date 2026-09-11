@@ -1,5 +1,8 @@
 """User-ordered stems/lyrics jobs on the persistent queue (issue #1865).
 
+[if] the user selects N tracks and chooses Stems: do next [then] N stems jobs
+exist at the head of the stems lane in selection order, else stop.
+
 Each acceptance line is a test. No mocks of has_bundle or the lyrics cache:
 fresh artifacts are real files on disk. The runner is a spy only for the
 skip-does-not-dispatch line.

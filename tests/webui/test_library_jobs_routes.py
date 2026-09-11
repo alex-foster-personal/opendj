@@ -1,4 +1,8 @@
-"""HTTP / CLI / UI parity for user-ordered stems and lyrics jobs (#1865)."""
+"""HTTP / CLI / UI parity for user-ordered stems and lyrics jobs (#1865).
+
+[if] the UI can enqueue, list, reorder, or cancel a library job [then] HTTP and
+CLI expose the same verbs, else stop.
+"""
 from __future__ import annotations
 
 import argparse
