@@ -1,5 +1,5 @@
 {
-  "_doc": "Binds the UX scenarios S1-S11 in specs/perf-latency-program.md to the KPI names recorded in kpi-ledger.json, and to the budget each must meet. Read by scripts/perf/kpi_scorecard.py (`just perf-kpis`). The scenario set here must match the spec exactly; the scorecard fails loudly when they drift, because a scorecard that silently drops a scenario reports a clean board by having no checks. A scenario with an empty `kpis` list is NOT a pass: it is a scenario nobody can score, which is the state the scorecard exists to make visible.",
+  "_doc": "Binds the UX scenarios S1-S13 in specs/perf-latency-program.md to the KPI names recorded in kpi-ledger.json, and to the budget each must meet. Read by scripts/perf/kpi_scorecard.py (`just perf-kpis`). The scenario set here must match the spec exactly; the scorecard fails loudly when they drift, because a scorecard that silently drops a scenario reports a clean board by having no checks. A scenario with an empty `kpis` list is NOT a pass: it is a scenario nobody can score, which is the state the scorecard exists to make visible.",
   "schema_version": 2,
   "direction_note": "`lower_is_better` false means a bigger number is better (frames per second, throughput). `budget` is the spec's Target, `acceptable` its Acceptable, `breaking` its Breaking. Units follow the ledger entry's own unit. `required` entries are normally a plain KPI name, which inherits the scenario's own budget/acceptable/breaking/unit (schema_version 1 shape). A scenario whose required KPIs do NOT share one threshold - S2's 16ms visual feedback next to its 30ms audible budget, S4's ms frame delta next to its % dropped-frame budget, S7's ms p95 next to its 0-tolerance dropped-keystroke count - uses a dict entry instead, carrying its own kpi/unit/budget/acceptable/breaking/lower_is_better (schema_version 2 addition, `_resolve_required` in the scorer normalizes both shapes).",
   "scenarios": {
@@ -371,6 +371,86 @@
         "cold_start_to_first_browse_s"
       ],
       "context_kpis": []
+    },
+    "S12": {
+      "title": "CloudSync: sign-in to library synced",
+      "class": "P1",
+      "kpis": [
+        "cloudsync_first_sync_s",
+        "cloudsync_noop_sync_s",
+        "cloudsync_hello_s",
+        "cloudsync_push_s",
+        "cloudsync_pull_s",
+        "cloudsync_digest_s"
+      ],
+      "missing_kpi": "no run_sync capture in the ledger; the instrument could not reach a hub on this host",
+      "lower_is_better": true,
+      "budget": 10,
+      "acceptable": 20,
+      "breaking": 60,
+      "unit": "s",
+      "spec_cells": {
+        "target": "first <=10s; no-op <=1s",
+        "acceptable": "first <=20s; no-op <=2s",
+        "breaking": "first >60s; no-op >5s"
+      },
+      "required": [
+        {
+          "kpi": "cloudsync_first_sync_s",
+          "unit": "s",
+          "lower_is_better": true,
+          "budget": 10,
+          "acceptable": 20,
+          "breaking": 60
+        },
+        {
+          "kpi": "cloudsync_noop_sync_s",
+          "unit": "s",
+          "lower_is_better": true,
+          "budget": 1,
+          "acceptable": 2,
+          "breaking": 5
+        }
+      ],
+      "context_kpis": [
+        "cloudsync_hello_s",
+        "cloudsync_push_s",
+        "cloudsync_pull_s",
+        "cloudsync_digest_s"
+      ],
+      "capture_method": "run_sync PhaseTimer (hello, push, pull, digest, total); first vs no-op classified on the result",
+      "absent_verdict": "UNKNOWN"
+    },
+    "S13": {
+      "title": "Login: submit to library usable",
+      "class": "P1",
+      "kpis": [
+        "login_submit_to_library_usable_s",
+        "auth_login_ms",
+        "auth_callback_ms",
+        "login_full_wall_s"
+      ],
+      "missing_kpi": "a capture without both the submit mark and the library-usable mark, or one that cannot exclude Google, is UNKNOWN. Server auth timings alone must not PASS this scenario",
+      "lower_is_better": true,
+      "budget": 2,
+      "acceptable": 5,
+      "breaking": 10,
+      "unit": "s",
+      "spec_cells": {
+        "target": "<=2s in-app",
+        "acceptable": "<=5s",
+        "breaking": ">10s"
+      },
+      "required": [
+        "login_submit_to_library_usable_s"
+      ],
+      "context_kpis": [
+        "auth_login_ms",
+        "auth_callback_ms",
+        "login_full_wall_s"
+      ],
+      "capture_method": "client-telemetry login span (submit mark to first recordLibraryLoadTiming) plus auth-route AuthTimer; scored value is in-app (Google consent excluded)",
+      "absent_verdict": "UNKNOWN"
     }
   },
   "proxy_note": "Superseded by `required` plus `context_kpis`. A scenario scores ONLY on its required KPIs, the ones that prove the thing the scenario is about. Everything else bound to it prints as context and never scores. This replaced an earlier `proxy_only` flag that had to be set by hand, and which a reviewer correctly showed was not enough: with an any-measured test, S2 would have reported PASS the moment press-to-schedule was recorded, while press-to-AUDIBLE, the number the scenario exists for, was still missing.",
