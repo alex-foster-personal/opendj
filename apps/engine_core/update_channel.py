@@ -99,14 +99,12 @@ from apps.shared import platform_paths
 #: asserts the two are identical.
 #:
 #: GitHub Releases is the standard host for a Tauri updater and needs no
-#: server to operate. NOTE THE CONSEQUENCE: this repository is PRIVATE, and
-#: GitHub serves release assets of a private repo only to authenticated
-#: callers, answering 404 to everyone else. Until the repo is public (or
-#: releases move to a public host) this endpoint resolves to a 404, which this
-#: module reports as ``endpoint-refused`` rather than concealing. See
-#: docs/auto-update.md.
+#: server to operate. The product repository is private, so its releases are
+#: deliberately not used here: unauthenticated Tauri clients receive a 404.
+#: ``issue-assets`` is public and holds only signed release artifacts and their
+#: manifest. See docs/auto-update.md.
 UPDATE_ENDPOINT: str = (
-    "https://github.com/maintainer/music-dj-tools"
+    "https://github.com/maintainer/issue-assets"
     "/releases/latest/download/latest.json"
 )
 
@@ -260,7 +258,7 @@ def compare_versions(current: str, available: str) -> UpdateStatus:
     there = parse_version(available, "the channel manifest's 'version'")
     if there > here:
         return "update-available"
-    elif there == here:
+    if there == here:
         return "up-to-date"
     return "ahead-of-channel"
 
@@ -282,12 +280,7 @@ def _fetch_manifest(endpoint: str, client: httpx.Client) -> dict[str, object]:
     if response.status_code != 200:
         hint = ""
         if response.status_code == 404:
-            hint = (
-                " A 404 here is what a PRIVATE GitHub repository returns for "
-                "release assets to an unauthenticated caller, which is the "
-                "expected state of this channel until the repo or its "
-                "releases are published. See docs/auto-update.md."
-            )
+            hint = " See docs/auto-update.md for the public release host."
         raise UpdateCheckError(
             "endpoint-refused",
             f"{endpoint} answered HTTP {response.status_code}.{hint}",
@@ -335,6 +328,16 @@ def _platform_entry(manifest: dict[str, object], key: str) -> dict[str, object]:
             "refused by the updater at install time, so it is refused here.",
         )
     return entry
+
+
+def _manifest_version(manifest: dict[str, object]) -> str:
+    raw_version = manifest.get("version")
+    if not isinstance(raw_version, str):
+        raise UpdateCheckError(
+            "manifest-malformed",
+            "the channel manifest has no string 'version' field",
+        )
+    return raw_version
 
 
 # ----- resolution ---------------------------------------------------------
@@ -399,12 +402,7 @@ def resolve_update_check(
     try:
         manifest = _fetch_manifest(endpoint, client)
         entry = _platform_entry(manifest, resolved_key)
-        raw_version = manifest.get("version")
-        if not isinstance(raw_version, str):
-            raise UpdateCheckError(
-                "manifest-malformed",
-                "the channel manifest has no string 'version' field",
-            )
+        raw_version = _manifest_version(manifest)
         verdict = compare_versions(current_version, raw_version)
     except UpdateCheckError as exc:
         return base.model_copy(
@@ -450,6 +448,32 @@ def _mentions_other_sha(
 
 
 # ----- route --------------------------------------------------------------
+def _update_check_http_response(
+    identity: BuildIdentity, result: UpdateCheckOut
+) -> UpdateCheckOut | JSONResponse:
+    """Map a resolver verdict to the HTTP contract this build source carries.
+
+    Installed payloads answer 502 on a channel fault so a caller that only
+    reads the status code cannot treat an outage as reassurance. Developer
+    checkouts answer 200 with the named fault in the body: the UI and agents
+    branch on ``status``, and e2e surfaces treat any 502 from this route as a
+    defect even when the channel is genuinely unpublished.
+    """
+    if result.status in ANSWERED:
+        return result
+    info = identity.info
+    if info is not None and info.source == "repo":
+        return result
+    return JSONResponse(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        content={
+            "error": CODE_UPDATE_CHECK_FAILED,
+            "message": result.detail,
+            **result.model_dump(),
+        },
+    )
+
+
 def add_update_check_route(
     app: FastAPI, *, endpoint: str = UPDATE_ENDPOINT
 ) -> None:
@@ -470,19 +494,7 @@ def add_update_check_route(
         identity: BuildIdentity = getattr(app.state, BUILD_IDENTITY_STATE_ATTR)
         with httpx.Client() as client:
             result = resolve_update_check(identity, client=client, endpoint=endpoint)
-        if result.status in ANSWERED:
-            return result
-        # A fault is an HTTP fault. Returning 200 with a sad field is how a
-        # broken channel gets rendered as a working one by the next caller
-        # who only checks the status code.
-        return JSONResponse(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            content={
-                "error": CODE_UPDATE_CHECK_FAILED,
-                "message": result.detail,
-                **result.model_dump(),
-            },
-        )
+        return _update_check_http_response(identity, result)
 
 
 # ----- CLI ----------------------------------------------------------------

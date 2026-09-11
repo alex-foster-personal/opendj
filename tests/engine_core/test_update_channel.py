@@ -51,7 +51,7 @@ from apps.engine_core.update_channel import (
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 TAURI_CONF: Path = REPO_ROOT / "apps/desktop/src-tauri/tauri.conf.json"
 
-RUNNING_VERSION: str = "0.1.0"
+RUNNING_VERSION: str = json.loads(TAURI_CONF.read_text(encoding="utf-8"))["version"]
 RUNNING_SHA_FULL: str = "0d41a28c0000000000000000000000000000beef"
 KEY: str = "darwin-aarch64"
 
@@ -67,6 +67,23 @@ def _identity(app_version: str | None = RUNNING_VERSION) -> BuildIdentity:
             git_dirty=False,
             built_at_utc="2026-08-31T12:00:00Z",
             built_at_kind="payload-build",
+            app_version=app_version,
+        ),
+        failure=None,
+    )
+
+
+def _repo_identity(app_version: str | None = RUNNING_VERSION) -> BuildIdentity:
+    return BuildIdentity(
+        info=BuildInfoOut(
+            source="repo",
+            engine_version="0.1.0",
+            git_sha="0d41a28c",
+            git_sha_full=RUNNING_SHA_FULL,
+            git_branch="main",
+            git_dirty=False,
+            built_at_utc="2026-08-31T12:00:00Z",
+            built_at_kind="head-commit",
             app_version=app_version,
         ),
         failure=None,
@@ -103,6 +120,14 @@ def test_endpoint_matches_the_shell_configuration() -> None:
     assert endpoints[0] == UPDATE_ENDPOINT, (
         "the engine check and the Tauri updater must read ONE channel; "
         f"conf={endpoints[0]!r} module={UPDATE_ENDPOINT!r}"
+    )
+
+
+def test_endpoint_uses_the_public_release_host() -> None:
+    """An unauthenticated updater cannot read assets from the private repo."""
+    assert UPDATE_ENDPOINT == (
+        "https://github.com/maintainer/issue-assets"
+        "/releases/latest/download/latest.json"
     )
 
 
@@ -162,7 +187,7 @@ def test_a_newer_release_is_offered_with_both_versions_named() -> None:
     with _client(_json_ok(_manifest("0.2.0"))) as client:
         result = resolve_update_check(_identity(), client=client, key=KEY)
     assert result.status == "update-available"
-    assert result.current_version == "0.1.0"
+    assert result.current_version == RUNNING_VERSION
     assert result.available_version == "0.2.0"
     assert result.current_git_sha == "0d41a28c"
     assert "0.2.0" in (result.detail or "")
@@ -170,7 +195,7 @@ def test_a_newer_release_is_offered_with_both_versions_named() -> None:
 
 def test_the_same_release_is_up_to_date() -> None:
     notes = f"built from {RUNNING_SHA_FULL}"
-    with _client(_json_ok(_manifest("0.1.0", notes=notes))) as client:
+    with _client(_json_ok(_manifest(RUNNING_VERSION, notes=notes))) as client:
         result = resolve_update_check(_identity(), client=client, key=KEY)
     assert result.status == "up-to-date"
     assert result.same_version_different_build is False
@@ -178,7 +203,9 @@ def test_the_same_release_is_up_to_date() -> None:
 
 def test_the_same_version_from_a_different_build_is_surfaced() -> None:
     # The case semver cannot see. The updater will not act; the human is told.
-    with _client(_json_ok(_manifest("0.1.0", notes="built from cafe1234"))) as client:
+    with _client(
+        _json_ok(_manifest(RUNNING_VERSION, notes="built from cafe1234"))
+    ) as client:
         result = resolve_update_check(_identity(), client=client, key=KEY)
     assert result.status == "up-to-date"
     assert result.same_version_different_build is True
@@ -200,8 +227,7 @@ def test_a_404_is_refused_not_reassuring() -> None:
         result = resolve_update_check(_identity(), client=client, key=KEY)
     assert result.status == "endpoint-refused"
     assert "404" in (result.detail or "")
-    # The private-repo reality is explained where somebody will actually read it.
-    assert "PRIVATE" in (result.detail or "")
+    assert "public release host" in (result.detail or "")
 
 
 def test_a_non_json_body_is_malformed() -> None:
@@ -249,7 +275,7 @@ def _app(identity: BuildIdentity) -> FastAPI:
     return app
 
 
-def _route_response(monkeypatch, handler):
+def _route_response(monkeypatch, handler, *, identity: BuildIdentity | None = None):
     """Drive the mounted route with a transport that opens no socket.
 
     The mock client is built BEFORE httpx.Client is patched: patching first
@@ -260,17 +286,18 @@ def _route_response(monkeypatch, handler):
     mock_client = _client(handler)
     monkeypatch.setattr(module.httpx, "Client", lambda: mock_client)
     monkeypatch.setattr(module, "platform_key", lambda *a, **k: KEY)
-    with TestClient(_app(_identity())) as client:
+    resolved = identity if identity is not None else _identity()
+    with TestClient(_app(resolved)) as client:
         return client.get(UPDATE_CHECK_PATH)
 
 
 def test_the_route_answers_200_when_the_channel_answered(monkeypatch) -> None:
-    response = _route_response(monkeypatch, _json_ok(_manifest("0.1.0")))
+    response = _route_response(monkeypatch, _json_ok(_manifest(RUNNING_VERSION)))
     assert response.status_code == 200
     assert response.json()["status"] == "up-to-date"
 
 
-def test_the_route_answers_502_on_a_fault(monkeypatch) -> None:
+def test_the_route_answers_502_on_a_payload_fault(monkeypatch) -> None:
     response = _route_response(
         monkeypatch, lambda r: httpx.Response(404, text="nope")
     )
@@ -278,6 +305,18 @@ def test_the_route_answers_502_on_a_fault(monkeypatch) -> None:
     # gets read as a working one.
     assert response.status_code == 502
     assert response.json()["status"] == "endpoint-refused"
+
+
+def test_a_repo_checkout_returns_200_when_the_channel_faults(monkeypatch) -> None:
+    response = _route_response(
+        monkeypatch,
+        lambda r: httpx.Response(404, text="nope"),
+        identity=_repo_identity(),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "endpoint-refused"
+    assert "error" not in body
 
 
 # ----- the agent-native path ----------------------------------------------
@@ -297,6 +336,7 @@ def test_the_cli_exists_and_refuses_an_unreachable_channel() -> None:
         capture_output=True,
         text=True,
         timeout=120,
+        check=False,
     )
     assert result.returncode == 2, (
         f"expected a non-zero exit on an unreachable channel; "

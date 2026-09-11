@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- TEMPLATE, not a loadable plist. `just cloudsync-hub-start` renders it with
+     `python -m apps.sync_hub.hub_deploy render - -kind launchd` into
+     ~/Library/LaunchAgents/com.opendj.hub.plist. launchd expands nothing at
+     load time (not ~ and not $HOME), so every path is made absolute at render
+     time from apps/sync_hub/hub_deploy.py, the same hub_serve_argv + HUB_ENV
+     that tests/cloudsync/test_hub_deploy.py boots.
+
+     Bind is always 127.0.0.1; tailnet exposure is `tailscale serve`.
+     Runbook: docs/cloudsync/hub-runbook.md -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>__LABEL__</string>
+	<key>ProgramArguments</key>
+	<array>
+__PROGRAM_ARGUMENTS__
+	</array>
+	<key>WorkingDirectory</key>
+	<string>__REPO_ROOT__</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+__ENVIRONMENT__
+	</dict>
+	<key>StandardOutPath</key>
+	<string>__LOG_DIR__/hub.launchd.log</string>
+	<key>StandardErrorPath</key>
+	<string>__LOG_DIR__/hub.launchd.log</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<!-- Restart only after a NON-zero exit. A clean stop stays stopped. -->
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>

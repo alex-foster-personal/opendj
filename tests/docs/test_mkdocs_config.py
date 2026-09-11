@@ -4,6 +4,7 @@ These tests are deliberately dependency-free: they parse `mkdocs.yml` as YAML
 and verify every nav entry resolves to a file on disk. The heavier
 `test_mkdocs_build.py` exercises the real mkdocs toolchain.
 """
+
 from __future__ import annotations
 
 import pathlib
@@ -52,7 +53,7 @@ def test_mkdocs_yml_parses():
     cfg = _load_config()
     assert cfg["site_name"] == "open-dj"
     assert cfg["docs_dir"] == "open-dj"
-    assert "nav" in cfg and cfg["nav"], "nav must be non-empty"
+    assert cfg.get("nav"), "nav must be non-empty"
 
 
 def test_theme_is_material():
@@ -116,16 +117,41 @@ def test_docs_workflow_present():
 
 
 def test_ci_and_docs_workflows_accept_all_normal_pull_request_bases():
-    """Normal CI gates must accept every active integration PR base."""
-    expected_pr_bases = [
+    """Normal CI gates must accept every active integration PR base.
+
+    The invariant is acceptance, not a literal list. An absent
+    `pull_request.branches` key accepts EVERY base, which is what ci.yml now
+    relies on: a base allowlist silently gave stacked PRs zero CI runs
+    (issue #1171), so the narrowing is the bug and the widening is the fix.
+    A workflow that still names bases must therefore name at least all of
+    these, and a workflow that names none is accepted as strictly wider.
+    """
+    required_pr_bases = {
         "main",
         "codex--v2-integration",
-    ]
+    }
     expected_push_bases = ["main"]
     for workflow_name in ("ci.yml", "docs.yml"):
         triggers = _load_workflow(workflow_name)["on"]
-        assert triggers["pull_request"]["branches"] == expected_pr_bases
+        pr_bases = triggers["pull_request"].get("branches")
+        if pr_bases is not None:
+            missing = required_pr_bases - set(pr_bases)
+            assert not missing, (
+                f"{workflow_name} pull_request.branches rejects normal PR bases: {sorted(missing)}"
+            )
         assert triggers["push"]["branches"] == expected_push_bases
+
+
+def test_ci_workflow_has_no_pull_request_base_allowlist():
+    """ci.yml must run for every PR base, whatever the base is named.
+
+    Guards the fix for issue #1171 from the direction the removed literal
+    assertion above no longer covers: re-adding any allowlist here reintroduces
+    PRs that are green because CI never ran.
+    """
+    triggers = _load_workflow("ci.yml")["on"]
+
+    assert "branches" not in triggers["pull_request"]
 
 
 def test_release_workflow_remains_release_only():
@@ -142,6 +168,10 @@ def test_docs_publish_guards_target_release_branch_only():
 
     assert text.count("github.ref == 'refs/heads/main'") == 2
     assert "github.ref == 'refs/heads/af--rekordbox-parity-ui'" not in text
+    # Pages publish is main-only at the step, not the job: a job-level
+    # `if: github.ref == main` reports SKIPPED on pull requests.
+    deploy = _load_workflow("docs.yml")["jobs"]["deploy"]
+    assert "if" not in deploy
 
 
 @pytest.mark.parametrize(

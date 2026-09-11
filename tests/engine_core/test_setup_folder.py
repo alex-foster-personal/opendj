@@ -427,6 +427,13 @@ def test_folder_import_needs_at_least_one_folder(client: TestClient) -> None:
     assert client.post(f"{API}/import/folder", json={"folders": []}).status_code == 422
 
 
+def test_folder_import_refuses_the_filesystem_root(client: TestClient) -> None:
+    """A root walk is unbounded, so it must fail before a job is enqueued."""
+    response = client.post(f"{API}/import/folder", json={"folders": ["/"]})
+    assert response.status_code == 400
+    assert "filesystem root" in response.json()["detail"]["message"]
+
+
 def test_status_carries_the_folder_stage_list(client: TestClient) -> None:
     """The wizard renders whichever stage list applies, never a hardcoded one."""
     assert client.get(f"{API}/status").json()["folder_stages"] == [
@@ -483,6 +490,8 @@ def test_folder_mode_argv_carries_every_root() -> None:
         {"data_dir": "/tmp/library", "mode": "folder"},
         {"data_dir": "/tmp/library", "mode": "folder", "roots": []},
         {"data_dir": "/tmp/library", "mode": "folder", "roots": ["relative"]},
+        {"data_dir": "/tmp/library", "mode": "folder", "roots": ["/"]},
+        {"data_dir": "/tmp/library", "mode": "folder", "roots": ["/tmp/.."]},
         {"data_dir": "/tmp/library", "mode": "folder", "roots": [""]},
         {"data_dir": "/tmp/library", "mode": "folder", "roots": "/tmp/a"},
     ],

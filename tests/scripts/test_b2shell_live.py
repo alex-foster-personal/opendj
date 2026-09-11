@@ -18,7 +18,7 @@ as UNAVAILABLE; do not manufacture a passing result." So:
 
 Run:  MDT_LIVE_BIFROST2=1 uv run pytest tests/scripts/test_b2shell_live.py -q
 
-Needs the tailnet: `tailscale switch owner@example.com`.
+Needs the tailnet: `tailscale switch maintainer`.
 
 -Claude
 """
@@ -49,7 +49,7 @@ LIVE = os.environ.get("MDT_LIVE_BIFROST2") == "1"
 UNAVAILABLE = (
     "UNAVAILABLE: bifrost2 live checks not run. This is a capability report, "
     "not a pass. Enable with MDT_LIVE_BIFROST2=1 and the tailnet up "
-    "(tailscale switch owner@example.com)."
+    "(tailscale switch maintainer)."
 )
 
 pytestmark = pytest.mark.skipif(not LIVE, reason=UNAVAILABLE)

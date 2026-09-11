@@ -92,3 +92,19 @@ def test_goal_json_valid_json(po_conn: sqlite3.Connection) -> None:
     play_it(conn=po_conn, playlist_id="pl-g", goal=goal, tracks=tracks)
     loaded = load_play_order(po_conn, "pl-g", "PLAY IT")
     json.loads(loaded.goal_json)
+
+
+@pytest.mark.requirement("SET-04")
+def test_pins_persist_in_goal_json(po_conn: sqlite3.Connection) -> None:
+    tracks = make_tracks(12, seed=6)
+    goal = SetGoal(
+        duration_min=60,
+        peak_at_min=30,
+        peak_pins=(tracks[5].stable_id, tracks[6].stable_id),
+        opener_pins=(tracks[0].stable_id, tracks[1].stable_id),
+        closer_pin=tracks[11].stable_id,
+    )
+    play_it(conn=po_conn, playlist_id="pl-pins", goal=goal, tracks=tracks)
+    loaded = load_play_order(po_conn, "pl-pins", "PLAY IT")
+    assert loaded.goal_json is not None
+    assert set_goal_from_json(loaded.goal_json) == goal

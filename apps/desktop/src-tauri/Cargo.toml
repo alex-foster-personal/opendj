@@ -22,9 +22,9 @@ serde_json = "1"
 libc = "0.2"
 # Native modal for the one failure this shell cannot recover from: the engine
 # did not come up. Without it that failure is a blank window, which is the
-# exact outcome the bundled-engine work exists to remove. default-features
-# off keeps the Linux-only portal/gtk backends out of the build.
-rfd = { version = "0.15", default-features = false }
+# exact outcome the bundled-engine work exists to remove. The GTK backend
+# lets the Rust test gate compile the shell on its Linux runner.
+rfd = { version = "0.15", default-features = false, features = ["gtk3"] }
 # The auto-update channel. The plugin is the ONLY component that can apply an
 # update: it re-fetches the manifest itself, verifies the minisign signature
 # against `plugins.updater.pubkey`, and swaps the .app bundle. The engine's

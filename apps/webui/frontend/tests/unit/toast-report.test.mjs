@@ -150,7 +150,7 @@ const INPUT = {
 	createdAt: '2026-08-31T14:50:06.001Z',
 	env: {
 		machine: 'maintainer-macbook-air',
-		user: 'owner@example.com',
+		user: 'maintainer',
 		client: { name: 'Safari', version: '18.1' },
 		url: 'http://127.0.0.1:8585/performance'
 	}
@@ -162,7 +162,7 @@ test('the payload carries everything that was asked for', () => {
 	assert.match(text, /^when: 2026-08-31T14:50:06\.001Z$/m);
 	assert.match(text, /^message: Deck 2 could not be set as master$/m);
 	assert.match(text, /^machine: maintainer-macbook-air$/m);
-	assert.match(text, /^user: owner@example.com$/m);
+	assert.match(text, /^user: maintainer$/m);
 	assert.match(text, /^client: Safari 18\.1$/m, 'client AND version, per the ask');
 	assert.match(text, /^kind: error$/m);
 });

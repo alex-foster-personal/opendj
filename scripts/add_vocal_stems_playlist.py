@@ -9,11 +9,17 @@
   tier 'inferred', duration from mutagen). Idempotent (INSERT OR IGNORE).
 - Create playlist via the daemon API, then PUT membership in NNN order.
 Fail-fast: any unresolved filename, DB error, or non-2xx API response raises.
+
+MDT_ACAPELLA_VOCALS_DIR names this machine's unpacked acapella-pack vocals
+directory (#910: no personal path is hardcoded in tracked code). Required,
+and the directory must exist -- an unset or missing value fails fast rather
+than globbing zero files and silently doing nothing.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -23,9 +29,25 @@ from pathlib import Path
 import httpx
 from mutagen import File as MutagenFile
 
-REPO = Path("/Users/dev/Music/music-dj-tools")
+REPO = Path(__file__).resolve().parents[1]
 DB = REPO / "data" / "state" / "state.db"
-VOCALS = Path("/Users/dev/Music/_incoming/clubsauna-acapella-techno-100/vocals")
+VOCALS_DIR_ENV = "MDT_ACAPELLA_VOCALS_DIR"
+
+
+def _vocals_dir() -> Path:
+    raw = os.environ.get(VOCALS_DIR_ENV)
+    if not raw:
+        raise RuntimeError(
+            f"{VOCALS_DIR_ENV} is not set -- export this machine's unpacked "
+            "acapella-pack vocals directory before running this script"
+        )
+    path = Path(raw)
+    if not path.is_dir():
+        raise FileNotFoundError(f"{VOCALS_DIR_ENV} does not exist: {path}")
+    return path
+
+
+VOCALS = _vocals_dir()
 API = "http://127.0.0.1:8585/api/v1"
 PLAYLIST_NAME = "Dan-Vocal-Stems-Max-ish"
 

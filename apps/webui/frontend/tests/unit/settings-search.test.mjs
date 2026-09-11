@@ -39,6 +39,36 @@ test('filterSettings appends AI ids without duplicates', async () => {
 	);
 });
 
+test('filterSettings finds DECKUX-02 jog radial waveform setting', async () => {
+	const mod = await loadTypeScriptModule('src/lib/settings/search.ts');
+	const hits = mod.filterSettings('radial jog waveform', { hideTodo: true, group: null });
+	const def = hits.keyword.find((s) => s.id === 'jog_radial_waveform');
+	assert.ok(def, 'jog_radial_waveform must be searchable');
+	assert.equal(def.implemented, true);
+	assert.equal(def.control.kind, 'boolean');
+});
+
+test('filterSettings finds pin 862cd3 deck layout settings, implemented via existing controls', async () => {
+	const mod = await loadTypeScriptModule('src/lib/settings/search.ts');
+
+	const layout = mod.filterSettings('more less deck layout', { hideTodo: true, group: null });
+	const layoutDef = layout.keyword.find((s) => s.id === 'deck_layout');
+	assert.ok(layoutDef, 'deck_layout must be searchable by "more less deck layout"');
+	assert.equal(layoutDef.implemented, true);
+	assert.equal(layoutDef.control.kind, 'enum');
+
+	const animate = layout.keyword.find((s) => s.id === 'deck_layout_animate');
+	assert.ok(animate, 'deck_layout_animate must be searchable alongside deck_layout');
+	assert.equal(animate.implemented, true);
+	assert.equal(animate.control.kind, 'boolean');
+
+	const duration = mod.filterSettings('duration transition', { hideTodo: true, group: null });
+	const durationDef = duration.keyword.find((s) => s.id === 'deck_layout_duration_ms');
+	assert.ok(durationDef, 'deck_layout_duration_ms must be searchable by "duration transition"');
+	assert.equal(durationDef.implemented, true);
+	assert.equal(durationDef.control.kind, 'enum');
+});
+
 test('keyboard helpers move and toggle booleans', async () => {
 	const mod = await loadTypeScriptModule('src/lib/settings/keyboard.ts');
 	assert.equal(mod.moveSelection(0, 1, 3), 1);

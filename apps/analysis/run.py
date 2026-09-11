@@ -28,9 +28,11 @@ Exit codes
 ``1``  ``EXIT_TRACK_FAILURES`` -- at least one track was attempted and its
        backend failed on it. The only status that says nothing about the
        next chunk, so the only one a chunking caller may continue past.
-``2``  ``EXIT_USAGE`` -- bad flags, an unknown backend, a malformed handoff
-       file. Argparse's own convention, kept distinct from ``1`` so a
-       configuration mistake is not read as "some tracks failed".
+``2``  ``EXIT_USAGE`` -- bad flags, an unknown backend, a backend refused for
+       licensing reasons (NATIVE-08; e.g. ``librosa+madmom`` without
+       ``MDT_BENCH_NONSHIPPABLE=1``), a malformed handoff file. Argparse's
+       own convention, kept distinct from ``1`` so a configuration mistake
+       is not read as "some tracks failed".
 ``3``  ``EXIT_MISSING_TARGETS`` -- one or more ``--pairs-json`` targets were
        gone before they could be analyzed, either at the admission check or
        later, when the backend opened the file. Never attempted either way.
@@ -52,21 +54,18 @@ import hashlib
 import json
 import logging
 import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 from rich.console import Console
 from rich.table import Table
 
+from ._warmup_lock import ensure_owned_numba_cache_dir
 from .backends import DEFAULT_BACKEND, get_backend
-from .backends.base import (
-    BackendNotAvailable,
-    TrackTooLong,
-    TrackUnreadable,
-    TrackVanished,
-)
+from .backends.base import BackendNonshippable, TrackVanished
+from .jit_warmup import warm_backend_jit
+from .pool import analyze_one, run_pool
 from .record import AnalysisRecord
 from .store import fetch_records_by_ids, open_conn, upsert_record
 
@@ -238,37 +237,6 @@ def filter_missing(
 
 
 # ---------------------------------------------------------------------------
-# Worker
-# ---------------------------------------------------------------------------
-
-
-def _analyze_one(
-    backend_name: str, stable_id: str, path_str: str
-) -> tuple[str, AnalysisRecord | None, str | None]:
-    """Analyze one track, or say why this FILE could not be.
-
-    Only failures a backend has declared to be about the input are turned
-    into a per-track error here. Everything else propagates: a broad catch at
-    this level relabels a machine-wide fault - an unreadable analyzer config,
-    a backend that failed to initialize, a dead worker - as "this file
-    failed", which the CLI then reports as EXIT_TRACK_FAILURES, which is the
-    one status a chunking caller is allowed to continue past. The caller then
-    meets the identical fault once per chunk across the whole library.
-
-    ``get_backend`` is outside the guard for the same reason: an unresolvable
-    backend name is a configuration fact, not a property of this track.
-    """
-    backend = get_backend(backend_name)
-    try:
-        rec = backend.analyze(Path(path_str), stable_id)
-    except (
-        BackendNotAvailable, TrackTooLong, TrackUnreadable, TrackVanished
-    ) as exc:
-        return stable_id, None, f"{type(exc).__name__}: {exc}"
-    return stable_id, rec, None
-
-
-# ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
 
@@ -321,17 +289,44 @@ def run(
 
     rows: list[tuple[str, AnalysisRecord | None, str | None]] = []
 
+    backend = get_backend(backend_name)
+
+    # Compile the backend's cached JIT paths HERE, in the parent, before any
+    # second process exists. Concurrent cold compiles into one shared numba
+    # cache corrupt it, and every later process that loads the corrupt cache
+    # dies at a NULL instruction pointer with no traceback (issue #1316). Not
+    # behind a flag and not conditional on `workers`: it is the precondition
+    # that makes the rest of this function safe to run at all, and the crash
+    # reproduces at --workers 1 with no child process in sight.
+    #
+    # purge_stale=True: this call, not the CI warm-up CLI, is the one that
+    # actually stands between a corrupted cache and this process loading it
+    # (issue #1572 review). A content mismatch means something wrote to the
+    # cache since the last known-good stamp - a racing or killed writer, a
+    # torn artifact - and must never merely fall through to warm_jit_cache(),
+    # which can still load what just failed to vouch. Scoped to a directory
+    # this process verifiably owns (see ensure_owned_numba_cache_dir): an
+    # unset NUMBA_CACHE_DIR gets a private one provisioned so every
+    # deployment keeps purge protection, and an operator-set one is verified
+    # rather than trusted, so purge never fires against a cache this process
+    # does not own.
+    owned_cache = ensure_owned_numba_cache_dir()
+    warmup = warm_backend_jit(
+        backend, backend_name=backend_name, purge_stale=owned_cache is not None
+    )
+    console.print(f"[cyan]{warmup.render()}[/cyan]")
+
     if workers > 1:
-        with ProcessPoolExecutor(max_workers=workers) as pool:
-            futs = [
-                pool.submit(_analyze_one, backend_name, r.stable_id, str(r.path))
-                for r in queue
-            ]
-            for fut in as_completed(futs):
-                rows.append(fut.result())
+        rows.extend(
+            run_pool(
+                ((r.stable_id, str(r.path)) for r in queue),
+                backend=backend,
+                workers=workers,
+            )
+        )
     else:
         for r in queue:
-            rows.append(_analyze_one(backend_name, r.stable_id, str(r.path)))
+            rows.append(analyze_one(backend, r.stable_id, str(r.path)))
 
     table = Table(title="analysis run")
     table.add_column("stable_id")
@@ -508,13 +503,13 @@ def main(argv: list[str] | None = None) -> int:
 
 def _dispatch(args: argparse.Namespace) -> int:
     # Resolve the backend BEFORE the queue. An unknown name is a
-    # configuration error, and letting it reach _analyze_one turns it into a
+    # configuration error, and letting it reach analyze_one turns it into a
     # per-track KeyError repeated once per file, which reads to a chunking
     # caller as "these files failed" and invites it to try the next chunk
     # against the same bad name.
     try:
         get_backend(args.backend)
-    except KeyError as exc:
+    except (KeyError, BackendNonshippable) as exc:
         log.error("--backend %r: %s", args.backend, exc.args[0])
         raise SystemExit(EXIT_USAGE) from exc
     if args.pairs_json is not None:

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('browser headphone output acquisition starts from the visible ADD OUTPUT gesture', async ({ page }) => {
+test('browser headphone output acquisition starts from the visible + OUT gesture', async ({ page }) => {
 	await page.goto('/performance');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 	// Quiet headed runs; gain > 0 so presentation/audible checks stay valid.
@@ -17,7 +17,7 @@ test('browser headphone output acquisition starts from the visible ADD OUTPUT ge
 				.selectAudioOutput === 'function' &&
 			typeof HTMLMediaElement.prototype.setSinkId === 'function'
 	);
-	await page.getByRole('button', { name: 'ADD OUTPUT' }).click();
+	await page.getByRole('button', { name: '+ OUT', exact: true }).click();
 	await page.waitForFunction(() => {
 		const state = window.musicDjToolsPerformance?.query();
 		return (

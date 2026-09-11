@@ -26,7 +26,7 @@
  * the remote-daemon setting cannot drift between here and everywhere else.
  */
 
-import { API_BASE } from '$lib/api/client';
+import { API_BASE } from '$lib/api/base';
 
 /** The two endpoints, spelled once. */
 export const ASSISTANT_STATUS_PATH = '/api/v1/assistant/status';

@@ -79,3 +79,5 @@ def test_missing_state_db_is_an_explicit_error(tmp_path: Path) -> None:
     with pytest.raises(SystemExit) as excinfo:
         main(["--data-db", str(tmp_path / "absent.db"), "whoami"])
     assert "state DB not found" in str(excinfo.value)
+
+pytestmark = pytest.mark.rb_parity

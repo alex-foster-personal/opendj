@@ -5,20 +5,31 @@
 	// to it, submits to POST /api/v1/voice/probe (grammar-only, no mic, no
 	// daemon), and renders the parsed intent inline. SEARCH is forwarded
 	// through the shared browser-search command path to the active pane.
+	import { onMount } from 'svelte';
 	import { probeVoiceCommand } from '$lib/rb/api-rb';
 	import type { VoiceProbeResult } from '$lib/rb/api-rb';
-	import { requestBrowserSearch } from '$lib/rb/browser-search';
+	import {
+		requestBrowserSearch,
+		subscribeBrowserSearchResult,
+		type BrowserSearchResult
+	} from '$lib/rb/browser-search';
 
 	let text = $state('');
 	let loading = $state(false);
 	let result = $state<VoiceProbeResult | null>(null);
+	let browserSearchResult = $state<BrowserSearchResult | null>(null);
 	let errorMessage = $state<string | null>(null);
 
 	function summarize(r: VoiceProbeResult): string {
 		if (r.intent === null) return `no match: "${r.transcript}"`;
 		if (r.blocked) return `${r.intent} blocked: ${r.reason ?? 'destructive intent'}`;
 		const query = typeof r.slots.query === 'string' ? ` "${r.slots.query}"` : '';
-		return `${r.intent}${query}${r.reply ? ` -> ${r.reply}` : ''}`;
+		const fallback = browserSearchResult === null
+			? '; browser search result pending'
+			: browserSearchResult.fallback
+			? `; ${browserSearchResult.rowCount} result${browserSearchResult.rowCount === 1 ? '' : 's'} ignoring ${browserSearchResult.ignoredFilters.join(' and ')}`
+			: '';
+		return `${r.intent}${query}${r.reply ? ` -> ${r.reply}` : ''}${fallback}`;
 	}
 
 	async function submit(): Promise<void> {
@@ -26,6 +37,7 @@
 		if (!submitted || loading) return;
 		loading = true;
 		errorMessage = null;
+		browserSearchResult = null;
 		try {
 			result = await probeVoiceCommand(submitted);
 			if (result.client_action === 'browser_search') {
@@ -33,7 +45,8 @@
 				if (typeof query !== 'string') {
 					throw new Error('voice probe browser_search action omitted query');
 				}
-				requestBrowserSearch(query);
+				const request = requestBrowserSearch(query);
+				browserSearchResult = request.result;
 			}
 		} catch (e) {
 			result = null;
@@ -42,6 +55,12 @@
 			loading = false;
 		}
 	}
+
+	onMount(() =>
+		subscribeBrowserSearchResult((request) => {
+			browserSearchResult = request.result;
+		})
+	);
 
 	function handleKeydown(e: KeyboardEvent): void {
 		if (e.key === 'Enter') {
@@ -52,7 +71,7 @@
 
 	const statusText = $derived(errorMessage ?? (result ? summarize(result) : ''));
 	const statusTitle = $derived(
-		errorMessage ?? (result ? JSON.stringify(result) : '')
+		errorMessage ?? (result ? summarize(result) : 'Voice command result')
 	);
 </script>
 

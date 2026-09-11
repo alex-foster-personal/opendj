@@ -1,0 +1,28 @@
+# TEMPLATE, not a loadable unit. `just cloudsync-hub-start` renders it with
+# `python -m apps.sync_hub.hub_deploy render --kind systemd` into
+# ~/.config/systemd/user/opendj-hub.service. Every placeholder is filled from
+# apps/sync_hub/hub_deploy.py (hub_serve_argv + HUB_ENV), which is also the
+# command tests/cloudsync/test_hub_deploy.py boots, so the two cannot drift.
+#
+# Bind is always 127.0.0.1. Tailnet exposure is `tailscale serve`, never a
+# wider --host (the engine refuses one without MDT_SYNC_TRUST_TAILNET=1).
+# Runbook: docs/cloudsync/hub-runbook.md
+[Unit]
+Description=openDJ CloudSync hub (headless engine_core, loopback only)
+Documentation=file://__REPO_ROOT__/docs/cloudsync/hub-runbook.md
+
+[Service]
+Type=simple
+WorkingDirectory=__REPO_ROOT__
+__ENVIRONMENT__
+ExecStart=__EXEC_START__
+Restart=on-failure
+RestartSec=10
+# 1 = another engine already holds this data dir's lock, 2 = the engine
+# refused to boot (bad data dir, non-loopback bind, ...). Retrying heals
+# neither, so they stop the unit instead of looping.
+RestartPreventExitStatus=1 2
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { before, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { engineBlockAfter, readFrontendSource as readSource } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
@@ -171,6 +173,63 @@ test('HONEST DENOMINATORS: the message names its window and its callback count',
 });
 
 //-----------------------------------------------------------------------------
+// window console/escalation severity (not a new gap class)
+//-----------------------------------------------------------------------------
+
+test('xrunWindowSeverity: hunt windows under 1% are warn; starvation is error', () => {
+	// Hunt-recorded Linux Chromium windows (issue #1877): isolated late
+	// callbacks, not a starved audio thread.
+	assert.equal(xrun.xrunWindowSeverity({ xruns: 2, callbacks: 691 }), 'warn');
+	assert.equal(xrun.xrunWindowSeverity({ xruns: 1, callbacks: 686 }), 'warn');
+	// Sentinel docstring starved case, and the LIVE-01 1% boundary (>=).
+	assert.equal(xrun.xrunWindowSeverity({ xruns: 80, callbacks: 80 }), 'error');
+	assert.equal(xrun.xrunWindowSeverity({ xruns: 1, callbacks: 100 }), 'error');
+	assert.equal(xrun.xrunWindowSeverity({ xruns: 6, callbacks: 691 }), 'warn');
+	assert.equal(xrun.xrunWindowSeverity({ xruns: 7, callbacks: 691 }), 'error');
+	assert.equal(xrun.xrunWindowSeverity({ xruns: 1, callbacks: 0 }), 'error');
+	assert.throws(
+		() => xrun.xrunWindowSeverity({ xruns: 0, callbacks: 100 }),
+		RangeError,
+		'the sentinel must not ask severity of a window with no xruns'
+	);
+});
+
+test('XRUN_ERROR_RATE is the same 1% LIVE-01 already ships', () => {
+	assert.equal(xrun.XRUN_ERROR_RATE, 0.01);
+	const math = readSource('src/lib/rb/xrun-math.ts');
+	const live = readFileSync(
+		fileURLToPath(new URL('../../../../../tests/live/ui-mirror-invariants.mjs', import.meta.url)),
+		'utf8'
+	);
+	assert.ok(
+		math.includes('export const XRUN_ERROR_RATE = 0.01'),
+		'the sentinel error-rate literal must stay 0.01'
+	);
+	assert.ok(
+		live.includes('const MAX_XRUN_RATE = 0.01'),
+		'LIVE-01 MAX_XRUN_RATE must stay the same 0.01 the sentinel errors at'
+	);
+});
+
+test('SABOTAGE: _onReport takes severity from xrunWindowSeverity, never hardcodes error', () => {
+	const sentinel = readSource('src/lib/rb/xrun-sentinel.ts');
+	assert.ok(
+		sentinel.includes("recordPerfEvent('xrun', xrunReportMessage(data), null, xrunWindowSeverity(data))"),
+		'_onReport must pass xrunWindowSeverity(data) as the 4th argument'
+	);
+	const onReportAt = sentinel.indexOf('function _onReport');
+	assert.ok(onReportAt !== -1, '_onReport moved');
+	const onReport = sentinel.slice(onReportAt, sentinel.indexOf('function _onMessage', onReportAt));
+	const recordAt = onReport.indexOf("recordPerfEvent('xrun'");
+	assert.ok(recordAt !== -1, '_onReport must still record an xrun window');
+	const call = onReport.slice(recordAt, onReport.indexOf(';', recordAt));
+	assert.ok(
+		!call.includes("'error'"),
+		'the 4th argument must not be the literal error; sub-threshold hunt windows would console.error'
+	);
+});
+
+//-----------------------------------------------------------------------------
 // wiring: the processor must run the arithmetic that was tested
 //-----------------------------------------------------------------------------
 
@@ -236,17 +295,16 @@ test('the sentinel writes no audio, and is muted on the way out anyway', () => {
 	);
 });
 
-test('a healthy window costs nothing: no post, no ring row', () => {
+test('a healthy window sends a bounded liveness report but no ring row', () => {
 	const processor = readSource('src/lib/rb/xrun-sentinel-processor.js');
 	assert.ok(
-		processor.includes('if (this.xruns > 0 || this.parked > 0) {'),
-		'an idle set must produce zero MessagePort traffic, or the instrument becomes the ' +
-			'load it is measuring'
+		processor.includes('this.port.postMessage({'),
+		'LIVE-01 needs a bounded callback report to distinguish a healthy worklet from a stalled one'
 	);
 	const sentinel = readSource('src/lib/rb/xrun-sentinel.ts');
 	assert.ok(
-		sentinel.includes("recordPerfEvent('xrun'"),
-		'a report that reaches the main thread must land in the ring'
+		sentinel.includes('if (data.xruns === 0) return;'),
+		'a healthy liveness report must not become an xrun ring row'
 	);
 });
 
@@ -283,4 +341,16 @@ test('the session counter is reachable without a UI', () => {
 		'agent-native parity: the counter needs a programmatic read, not only a meter'
 	);
 	assert.ok(sentinel.includes('__mdtXruns'), 'and a DevTools handle alongside __mdtPerfLog');
+	assert.ok(
+		sentinel.includes('export function flushXrunSessionCounter()'),
+		'an agent must be able to flush the worklet window before reading a pressure boundary'
+	);
+	assert.ok(sentinel.includes('__mdtFlushXruns'), 'the acknowledged flush needs a DevTools handle');
+	const processor = readSource('src/lib/rb/xrun-sentinel-processor.js');
+	assert.ok(processor.includes("kind: 'xrun-flush-ack'"), 'the worklet must acknowledge a flush');
+	assert.ok(processor.includes('judging: this.judging'), 'the acknowledgement must expose warmup readiness');
+	assert.ok(
+		sentinel.includes("xrun sentinel has not completed cadence warmup"),
+		'a flush before cadence warmup must reject rather than claim an authoritative zero'
+	);
 });

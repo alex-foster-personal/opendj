@@ -188,17 +188,46 @@ test('the newest active message is surfaced for the hover title', () => {
 });
 
 test('the bar title names the numbers and says the work costs money', () => {
-	const title = mod.stemsProgressTitle(
-		mod.stemsProgress([
-			job({ id: 'a', status: 'running', progress: 0.5, message: '5/10 stems separated' }),
-			job({ id: 'b', status: 'queued', progress: 0 })
-		])
-	);
+	const jobs = [
+		job({ id: 'a', status: 'running', progress: 0.5, message: '5/10 stems separated' }),
+		job({ id: 'b', status: 'queued', progress: 0 })
+	];
+	const title = mod.stemsProgressTitle(mod.stemsProgress(jobs), jobs);
 	assert.match(title, /25%/);
 	assert.match(title, /1 running/);
 	assert.match(title, /1 queued/);
 	assert.match(title, /5\/10 stems separated/);
 	assert.match(title, /costs real money/i);
+});
+
+test('local stems jobs say generating locally in the ribbon title', () => {
+	const jobs = [
+		job({
+			status: 'running',
+			progress: 0.4,
+			payload: { tier: 'LOCAL', executor: 'local', stable_ids: ['abc'] }
+		})
+	];
+	const title = mod.stemsProgressTitle(mod.stemsProgress(jobs), jobs);
+	assert.match(title, /Generating stems locally/i);
+	assert.match(title, /On-device separation/i);
+});
+
+test('isLocalStemsJob detects executor field and worker argv', () => {
+	assert.ok(
+		mod.isLocalStemsJob(
+			job({ payload: { executor: 'local', tier: 'M' }, worker_argv: null })
+		)
+	);
+	assert.ok(
+		mod.isLocalStemsJob(
+			job({
+				payload: { tier: 'M' },
+				worker_argv: ['uv', 'run', 'python', 'scripts/stems_local_worker.py']
+			})
+		)
+	);
+	assert.equal(mod.isLocalStemsJob(job({ payload: { tier: 'M' } })), false);
 });
 
 test('an idle title still explains a past failure instead of going silent', () => {

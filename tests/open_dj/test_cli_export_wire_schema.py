@@ -75,6 +75,7 @@ def _minimal_library() -> OpenDjLibrary:
 
 @pytest.mark.requirement("OPEN-01a")
 class TestExportV02WireSchema:
+    """[if] the v02 export schema is used [then] its wire contract remains stable, [else stop]."""
     """Export must produce schema-valid v0.2 documents (codex P15 finding)."""
 
     def test_library_to_wire_document_validates(self) -> None:

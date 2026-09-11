@@ -8,8 +8,16 @@ import { DECK_IDS, getDeckState } from '$lib/rb/audio-engine.svelte';
 import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 import { getRecentDeck, noteRecentDeck } from '$lib/rb/recent-deck';
 import { toggleNextOnlyFilter } from '$lib/rb/prefs.svelte';
-import type { DeckId } from '$lib/rb/deck-slots';
+import { mostRecentPendingLoadPlay, type DeckId } from '$lib/rb/deck-slots';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
+import { isNativeInteractiveTarget } from '$lib/rb/performance-hotkeys-target';
+import { armPinPlacement } from './feedback-store.svelte';
+
+// Re-exported so noteLoopInteraction's callers (e.g. LoopSafetyControls.svelte)
+// can take DeckId from here instead of a fresh direct import of deck-slots.ts,
+// which sits at its frontend.max_fan_in allowance (same pairing as DECK_IDS
+// alongside DeckId in $lib/player/constants).
+export type { DeckId };
 
 const HOVER_ARM_MS = 250;
 const MIN_BEATS = 1;
@@ -44,12 +52,6 @@ export function clearLoopHover(deck: DeckId): void {
 	}
 }
 
-function _typingTarget(t: EventTarget | null): boolean {
-	if (!(t instanceof HTMLElement)) return false;
-	const tag = t.tagName;
-	return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable;
-}
-
 function _resolveTransportDeck(): DeckId | null {
 	const recent = getRecentDeck();
 	if (recent !== null && getDeckState(recent).stable_id !== null) return recent;
@@ -68,13 +70,42 @@ function _resolveTransportDeck(): DeckId | null {
 	return null;
 }
 
-async function _toggleRecentPlay(): Promise<void> {
+/**
+ * Q1: `pressT0Ms` is the keydown's own `event.timeStamp`, on the
+ * `performance.now()` epoch, threaded from the listener instead of re-read
+ * here.
+ *
+ * Space is the most latency-sensitive press in the app - it is how a DJ starts
+ * a track without looking at the screen - and it is also the path with the most
+ * to hide before the stamp arrives: the browser queues the key, dispatches to
+ * this listener, and only then does anything measurable begin. A
+ * `performance.now()` taken downstream starts the clock after all of that and
+ * reports a number smaller than the wait the operator actually had.
+ *
+ * An EMPTY deck returns before dispatching anything, which is what keeps the
+ * instrument honest: no command means no schedule, so no press row, so silence
+ * can never be quoted as a latency.
+ */
+async function _toggleRecentPlay(pressT0Ms?: number): Promise<void> {
+	const pending = mostRecentPendingLoadPlay();
+	if (pending !== null) {
+		await runPerformanceCommandFromUi(
+			{
+				type: 'load_play_intent',
+				deck: pending.deck,
+				generation: pending.generation,
+				desired_play: !pending.desiredPlay
+			},
+			pressT0Ms
+		);
+		return;
+	}
 	const deck = _resolveTransportDeck();
 	if (deck === null) return;
 	const st = getDeckState(deck);
 	if (st.stable_id === null) return;
 	noteRecentDeck(deck);
-	await runPerformanceCommandFromUi({ type: 'play', deck, playing: !st.playing });
+	await runPerformanceCommandFromUi({ type: 'play', deck, playing: !st.playing }, pressT0Ms);
 }
 
 async function _resizeLast(factor: 0.5 | 2): Promise<void> {
@@ -106,10 +137,10 @@ async function _exitLast(): Promise<void> {
 export function installPerformanceHotkeys(): () => void {
 	const onKey = (e: KeyboardEvent): void => {
 		if (isSettingsOpen()) return;
-		if (_typingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+		if (isNativeInteractiveTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
 		if (e.code === 'Space' || e.key === ' ') {
 			e.preventDefault();
-			void _toggleRecentPlay();
+			void _toggleRecentPlay(e.timeStamp);
 		} else if (e.key === 'Tab') {
 			e.preventDefault();
 			toggleNextOnlyFilter();
@@ -122,6 +153,13 @@ export function installPerformanceHotkeys(): () => void {
 		} else if (e.key === ')') {
 			e.preventDefault();
 			void _exitLast();
+		} else if (e.key === 'm' || e.key === 'M') {
+			// Drop a comment pin without reaching for the topbar icon. The
+			// guard above already answers the other half of pin 919d65b350b1:
+			// nothing here fires while a text field has focus, and a modifier
+			// held (Cmd+Enter to submit) returns early too.
+			e.preventDefault();
+			armPinPlacement();
 		}
 	};
 	window.addEventListener('keydown', onKey);

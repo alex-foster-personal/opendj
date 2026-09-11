@@ -18,11 +18,11 @@ from pathlib import Path
 import pytest
 
 from apps.adapters.rekordbox import config as rb_config
+from apps.analysis_waveform import local_waveform
 from apps.shared.state import db as state_db
 from apps.shared.state.writer import StateWriter
-from apps.webui.server.rb_vendor_pkg import local_waveform
 
-pytestmark = pytest.mark.requirement("PARITY-03")
+pytestmark = [pytest.mark.requirement("PARITY-03"), pytest.mark.rb_parity]
 
 LOCAL_SID = "e" * 40
 SAMPLE_RATE_HZ = 44_100

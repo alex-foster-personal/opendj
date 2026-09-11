@@ -9,6 +9,8 @@ Public surface:
 * :func:`overrides.set_override` / :func:`overrides.clear_override`
   -- PLAY-03 per-track override write-path.
 * :func:`suggester.suggest_next` -- AI-01 ranked next-track candidates.
+* :func:`peak_pressure.compute_peak_pressure` -- AI-05 metadata peak
+  pressure score and advisory cue (no camera).
 
 All modules are pure-stdlib; no ML, no network, no subprocess.
 """

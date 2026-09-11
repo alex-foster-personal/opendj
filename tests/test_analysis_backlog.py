@@ -250,11 +250,11 @@ def test_a_path_mapped_track_is_queued_at_its_local_path(state_db, tmp_path, mon
     local = _audio(tmp_path, "mapped.mp3")
     map_file = tmp_path / "path-map.json"
     map_file.write_text(
-        json.dumps({"entries": [{"from": "/Users/dev/Music", "to": str(tmp_path)}]}),
+        json.dumps({"entries": [{"from": "/Users/user/Music", "to": str(tmp_path)}]}),
         encoding="utf-8",
     )
     monkeypatch.setenv("MDT_PATH_MAP", str(map_file))
-    _add_track(state_db, "mapd0001", "/Users/dev/Music/mapped.mp3")
+    _add_track(state_db, "mapd0001", "/Users/user/Music/mapped.mp3")
 
     out = _scan(state_db)
     assert [i.stable_id for i in out.pending] == ["mapd0001"]
@@ -274,7 +274,7 @@ def test_an_unmappable_foreign_path_counts_unreachable(state_db, tmp_path, monke
     map_file.write_text(json.dumps({"entries": []}), encoding="utf-8")
     monkeypatch.setenv("MDT_PATH_MAP", str(map_file))
     monkeypatch.setenv("MDT_LIBRARY_MODE", "remote")
-    _add_track(state_db, "frgn0001", "/Users/dev/Music/nowhere.mp3")
+    _add_track(state_db, "frgn0001", "/Users/user/Music/nowhere.mp3")
 
     out = _scan(state_db)
     assert out.pending == ()

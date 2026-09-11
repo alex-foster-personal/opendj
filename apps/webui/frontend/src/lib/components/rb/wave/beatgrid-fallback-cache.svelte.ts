@@ -7,7 +7,7 @@
  *
  * .svelte.ts extension is REQUIRED for the $state rune (RECON-FRONTEND 10.1).
  */
-import { RbApiError } from '$lib/rb/api-rb';
+import { RbApiError } from '$lib/rb/api-rb-error';
 import { fetchBeatgridFallback } from '$lib/rb/beatgrid-fallback-api';
 import type { BeatgridFallbackOut } from '$lib/rb/beatgrid-fallback-api';
 

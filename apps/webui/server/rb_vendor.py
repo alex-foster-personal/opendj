@@ -20,7 +20,7 @@ Where the implementation went:
     rb_vendor_pkg/track_rows.py         browser read model (C5)
     rb_vendor_pkg/anlz_cache.py         anlz JSON cache (C7)
     rb_vendor_pkg/beatgrid_issue_cache.py  beatgrid-issue sidecar (C8)
-    rb_vendor_pkg/waveform_native.py    optional Rust waveform backend gate
+    (moved out) analysis_waveform/native.py  optional Rust waveform backend gate
                                         (ported from main, not a T3b cluster)
 
 The five ``rb_vendor_pkg`` modules are still under ``apps.webui`` because
@@ -62,6 +62,7 @@ from apps.adapters.rekordbox.paths import (
     local_artwork,
     local_artwork_available,
     local_audio_file,
+    local_track_file_tags,
     local_track_row,
     resolve_asset_path,
     resolve_content,
@@ -69,6 +70,27 @@ from apps.adapters.rekordbox.paths import (
     resolve_share_path,
 )
 from apps.adapters.rekordbox.writer import _open_rw
+from apps.analysis_waveform.bands import (
+    _bands_payload,
+    _bands_payload_python,
+    _downsample_max,
+    _mono_bands,
+    _tri_bands,
+)
+from apps.analysis_waveform.local_waveform import (
+    LocalDecodeUnavailable,
+    ensure_local_peaks,
+    local_anlz_payload,
+    local_preview_strip,
+)
+from apps.analysis_waveform.native import (
+    _WAVEFORM_BACKEND_REQUEST,
+    _WAVEFORM_NATIVE,
+    _WAVEFORM_NATIVE_IMPORT_ERROR,
+    waveform_materialization_backend,
+    waveform_materialization_backend_request,
+    waveform_materialization_status,
+)
 from apps.shared.platform_paths import resolve_library_path
 
 # ANLZ decode, caches, cue reads and the browser read model (C2-C9).
@@ -115,12 +137,6 @@ from apps.webui.server.rb_vendor_pkg.beatgrid_issue_cache import (
     cached_beatgrid_issue,
 )
 from apps.webui.server.rb_vendor_pkg.db import count_cues, fetch_cues, playlist_order_index
-from apps.webui.server.rb_vendor_pkg.local_waveform import (
-    LocalDecodeUnavailable,
-    ensure_local_peaks,
-    local_anlz_payload,
-    local_preview_strip,
-)
 from apps.webui.server.rb_vendor_pkg.row_hydration_cache import (
     _PREVIEW_CACHE,
     _VOCALS_CACHE,
@@ -132,21 +148,6 @@ from apps.webui.server.rb_vendor_pkg.track_rows import (
     bulk_file_size,
     bulk_quality,
     bulk_rb_meta,
-)
-from apps.webui.server.rb_vendor_pkg.waveform_bands import (
-    _bands_payload,
-    _bands_payload_python,
-    _downsample_max,
-    _mono_bands,
-    _tri_bands,
-)
-from apps.webui.server.rb_vendor_pkg.waveform_native import (
-    _WAVEFORM_BACKEND_REQUEST,
-    _WAVEFORM_NATIVE,
-    _WAVEFORM_NATIVE_IMPORT_ERROR,
-    waveform_materialization_backend,
-    waveform_materialization_backend_request,
-    waveform_materialization_status,
 )
 
 log = logging.getLogger(__name__)
@@ -308,6 +309,7 @@ __all__ = [
     "local_artwork_available",
     "local_audio_file",
     "local_preview_strip",
+    "local_track_file_tags",
     "local_track_row",
     "merge_demucs_vocals",
     "not_found",

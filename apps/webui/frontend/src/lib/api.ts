@@ -21,9 +21,12 @@
  */
 import type { components, paths } from './api-types';
 import { ApiError, api, requireBody, unwrap } from './api/client';
-import type { RuleAst } from './smartlists/rule-form';
+import { subscribeKind, subscribeResync } from './api/events-bus';
+import { BOOT_COALESCE_TTL_MS, requestCoalescer } from './api/request-coalescer';
+import { rememberOptionalResources } from './rb/optional-resource-availability';
 
 export { API_BASE } from './api/client';
+export { api, unwrap, ApiError, RbApiError } from './api/client';
 
 /** The documented `/api/v1/tracks` filter set. `listTracks` keeps its open
  * `Record` signature (call sites pass filter bags straight through), so the
@@ -50,6 +53,10 @@ export type SettingsOut = components['schemas']['SettingsOut'];
 /** The daemon's schema is named EngineHealthOut; the frontend name is kept so
  * no call site moves. `status` is an open string there, not the literal 'ok'. */
 export type HealthOut = components['schemas']['EngineHealthOut'];
+type PairingCreateBody = Omit<components['schemas']['PairingCreate'], 'direction' | 'source'> &
+	Partial<Pick<components['schemas']['PairingCreate'], 'direction' | 'source'>>;
+export type PerformanceFeedbackMark = components['schemas']['PerformanceFeedbackMarkIn'];
+export type PerformanceFeedbackSummary = components['schemas']['PerformanceFeedbackMarksOut'];
 
 export class ConflictError extends Error {
 	constructor(public current: Track, public etag: string) {
@@ -57,11 +64,27 @@ export class ConflictError extends Error {
 	}
 }
 
+/** Engine-owned user judgements, retained independently of the browser origin. */
+export async function getPerformanceFeedback(): Promise<PerformanceFeedbackSummary> {
+	return requireBody(await api.GET('/api/v1/feedback/performance-marks')).data;
+}
+
+export async function createPerformanceFeedback(
+	mark: PerformanceFeedbackMark
+): Promise<PerformanceFeedbackSummary> {
+	return requireBody(
+		await api.POST('/api/v1/feedback/performance-marks', { body: mark })
+	).data;
+}
+
 export interface PlayItGoal {
 	duration_min: number;
 	peak_at_min?: number | null;
 	floor_energy?: number;
 	ceiling_energy?: number;
+	peak_pins?: string[];
+	opener_pins?: string[];
+	closer_pin?: string | null;
 }
 
 export type PlayItSolveOut = components['schemas']['PlayItSolveOut'];
@@ -89,10 +112,35 @@ export async function listTracks(params: Record<string, string | number | undefi
 	return unwrap(api.GET('/api/v1/tracks', { params: { query } }));
 }
 
+function _rememberTrackOptionalResources(track: Track): void {
+	const partial: {
+		lyrics?: boolean;
+		autoCues?: boolean;
+		stems?: boolean;
+		artwork?: boolean | null;
+	} = {};
+	if (typeof track.lyrics_available === 'boolean') {
+		partial.lyrics = track.lyrics_available;
+	}
+	if (typeof track.auto_cues_available === 'boolean') {
+		partial.autoCues = track.auto_cues_available;
+	}
+	if (typeof track.stems_available === 'boolean') {
+		partial.stems = track.stems_available;
+	}
+	if ('artwork_available' in track) {
+		partial.artwork = track.artwork_available;
+	}
+	if (Object.keys(partial).length > 0) {
+		rememberOptionalResources(track.stable_id, partial);
+	}
+}
+
 export async function getTrack(stable_id: string): Promise<{ track: Track; etag: string }> {
 	const { data, response } = requireBody(
 		await api.GET('/api/v1/tracks/{stable_id}', { params: { path: { stable_id } } })
 	);
+	_rememberTrackOptionalResources(data);
 	return { track: data, etag: response.headers.get('etag') ?? '' };
 }
 
@@ -118,6 +166,7 @@ export async function patchTrack(
 		throw error;
 	}
 	const { data, response } = requireBody(call);
+	_rememberTrackOptionalResources(data);
 	return { track: data, etag: response.headers.get('etag') ?? '' };
 }
 
@@ -202,13 +251,31 @@ export async function listPairings(source?: string): Promise<Pairing[]> {
 	);
 }
 
-export async function createPairing(body: {
-	from_stable_id: string;
-	to_stable_id: string;
-	direction?: '->' | '<->';
-	source?: 'manual' | 'learned' | 'ai';
-	notes?: string;
-}): Promise<Pairing> {
+/** Every pairing touching `stableId`, either direction. The route only
+ * filters by ONE side per call (`from_stable_id` XOR `to_stable_id`), so this
+ * issues both and merges by `pairing_id` - a pairing is directional data
+ * (`direction`), but "is this track paired with anything" has to look both
+ * ways. Used to default-show the paired track in the recommended bar (pin
+ * 72ac80073f92 / issue #878). */
+export async function listPairingsFor(stableId: string): Promise<Pairing[]> {
+	const [asFrom, asTo] = await Promise.all([
+		unwrap(
+			api.GET('/api/v1/pairings', {
+				params: { query: { from_stable_id: stableId, to_stable_id: null, source: null } }
+			})
+		),
+		unwrap(
+			api.GET('/api/v1/pairings', {
+				params: { query: { from_stable_id: null, to_stable_id: stableId, source: null } }
+			})
+		)
+	]);
+	const byId = new Map<string, Pairing>();
+	for (const p of [...asFrom, ...asTo]) byId.set(p.pairing_id, p);
+	return [...byId.values()];
+}
+
+export async function createPairing(body: PairingCreateBody): Promise<Pairing> {
 	try {
 		// `direction` and `source` carry server-side defaults, which the generated
 		// request type spells as required.
@@ -238,6 +305,28 @@ export async function deletePairing(pairing_id: string, etag: string): Promise<v
 	}
 }
 
+export type SyncSnapshot = components['schemas']['SyncSnapshotOut'];
+export type Alignment = components['schemas']['AlignmentOut'];
+type AlignmentCreateBody = components['schemas']['AlignmentIn'];
+
+/** PAIR-02's durable LV1 snapshots (`/api/v1/pairings/sync-snapshots`, GET).
+ * `stable_a`/`stable_b` match directionally, unlike `listAlignments` below --
+ * see `lib/rb/pairing-capture.ts` for the query-both-orders caller. */
+export async function listSyncSnapshots(
+	stable_a: string,
+	stable_b: string,
+	limit: number
+): Promise<SyncSnapshot[]> {
+	return unwrap(
+		api.GET('/api/v1/pairings/sync-snapshots', { params: { query: { stable_a, stable_b, limit } } })
+	);
+}
+
+/** PAIR-02's durable LV2 alignment marks (`/api/v1/pairings/alignments`, POST). */
+export async function createAlignment(body: AlignmentCreateBody): Promise<Alignment> {
+	return unwrap(api.POST('/api/v1/pairings/alignments', { body }));
+}
+
 export async function getQueue(kind: string): Promise<QueueOut> {
 	return unwrap(api.GET('/api/v1/queues/{kind}', { params: { path: { kind } } }));
 }
@@ -246,120 +335,167 @@ export async function getSettings(): Promise<SettingsOut> {
 	return unwrap(api.GET('/api/v1/settings'));
 }
 
-/** `rule` is an open record here, not a `RuleAst`: the daemon documents it as
- * one (`SmartlistSummary.rule`) and the editor narrows it with `astToForm`. */
-export type SmartlistOut = components['schemas']['SmartlistSummary'];
+/** The coalescer key for the health body read. One string, one endpoint. */
+const HEALTH_KEY = 'GET /api/v1/health';
 
-export class SmartlistApiError extends Error {
-	constructor(public status: number, message: string) {
-		super(message);
-	}
+/**
+ * A cached health read must not outlive the question it answered: a track
+ * import (or any change to `state_db.tracks`) inside the coalescer's TTL
+ * would otherwise be invisible to the next `getHealth()` caller for up to
+ * BOOT_COALESCE_TTL_MS, which is exactly the window BrowserPanel reads
+ * `allTracksCount` from to decide whether the boot pane has anything to
+ * show (PR #1656 review thread on this line). A resync (seq gap) also
+ * invalidates: a gap means something was missed and health may be one of
+ * the things that changed, so serving the pre-gap body is the same bug.
+ *
+ * `subscribeResync` alone used to miss the bus's very first successful
+ * connection, which needed a second, explicit `subscribeConnectionState`
+ * invalidation here to cover (PR #1656 review round 4). That gap is now
+ * closed at the source: events-bus.ts fires a resync (reason
+ * `'initial-connect'`) on the first open too, not just a reconnect, so this
+ * one subscription now covers both cases and the extra listener was removed.
+ *
+ * `forceInFlight: false` for that one reason only (review round 5): nothing
+ * about SERVER state changed just because the bus connected for the first
+ * time, unlike a real 'tracks' change or a seq gap, so an entry already in
+ * flight is not stale against it and does not need to be force-reissued --
+ * doing so anyway bought no correctness and cost an intermittent fifth
+ * request racing the one already in flight (`request-coalescer.test.mjs`
+ * covers this directly).
+ */
+subscribeKind('tracks', () => requestCoalescer.invalidate(HEALTH_KEY));
+subscribeResync((reason) =>
+	requestCoalescer.invalidate(HEALTH_KEY, { forceInFlight: reason !== 'initial-connect' })
+);
+
+/**
+ * How long the coalesced health fetch may run before it is abandoned.
+ *
+ * PR #1656 review thread on `request-coalescer.ts:158`: the coalescer joins
+ * an in-flight request for as long as it stays in flight, with no bound, so
+ * a health fetch that never settles (a stalled connection) would otherwise
+ * wedge every caller inside the TTL forever, and the coalescer has no clock
+ * of its own to recover from that -- it only drops an entry on REJECTION.
+ * Bounding the fetch itself, the same way `pingHealth`'s `CONN_PING_TIMEOUT_MS`
+ * already does for the liveness dot, turns a stall into an ordinary rejection
+ * the coalescer already handles correctly (see "a rejected call is dropped"
+ * in request-coalescer.test.mjs). The largest real fetchWall this module's
+ * docstring ever measured, for an 8000-row library, was ~3579ms; this sits
+ * roughly 3x above that, comfortably clear of realistic load while still
+ * bounding how long a genuine stall can hold the boot pane blank.
+ */
+const HEALTH_FETCH_TIMEOUT_MS = 10_000;
+
+function _fetchHealthBody() {
+	const { signal, clear } = timeoutSignal(HEALTH_FETCH_TIMEOUT_MS);
+	return api.GET('/api/v1/health', { signal }).finally(clear);
 }
 
-export class SmartlistConflictError extends Error {
-	constructor(public current: SmartlistOut, public etag: string) {
-		super('Smartlist If-Match mismatch');
-	}
+/**
+ * The daemon's health body, shared with any other caller asking inside the
+ * boot window (see `src/lib/api/request-coalescer.ts` for the measurement
+ * that motivated this and the TTL derivation).
+ *
+ * Pass `fresh: true` when the caller is reacting to a CHANGE and needs the
+ * value it is refreshing to, rather than the value the page already has.
+ * `_refreshLibraryRowsOnce` in BrowserPanel is the case: it runs off library
+ * invalidation events, so serving it a body from before the change it is
+ * reacting to would paint a stale track count and leave it there until the
+ * next event. Correctness beats one request.
+ */
+export async function getHealth(
+	options: { fresh?: boolean } = {}
+): Promise<{ health: HealthOut; bindWarning: string | null }> {
+	// NOT shared with the capability probe, deliberately: that probe reads the
+	// raw bytes to tell a legacy daemon from an engine one, and carries its own
+	// memoization with its own rules. A 2s TTL underneath it would change what
+	// "the daemon is legacy" means, since a daemon whose identity changed inside
+	// the window would keep reporting the identity it had at the start of it.
+	// Joining it was tried and reverted; daemon-capabilities.test.mjs refuses it.
+	const call =
+		options.fresh === true
+			? _fetchHealthBody()
+			: requestCoalescer.share(HEALTH_KEY, BOOT_COALESCE_TTL_MS, _fetchHealthBody);
+	// A joined caller reads HEADERS off a shared Response whose body stream
+	// the client has already parsed into `data`. Headers are re-readable;
+	// the stream is not, and nothing here touches it.
+	const { data, response } = requireBody(await call);
+	return { health: data, bindWarning: response.headers.get('x-bind-warning') };
 }
 
-export type SmartlistTrackOut = components['schemas']['TrackRowOut'];
+/**
+ * `AbortSignal.timeout` equivalent built from `AbortController` + `setTimeout`
+ * (Sol review thread 3966717870 on PR #1560). `AbortSignal.timeout` needs
+ * Safari 16; the desktop app's `minimumSystemVersion` in
+ * `apps/desktop/src-tauri/tauri.conf.json` is "11.0", and macOS 11 Big Sur
+ * tops out at Safari/WebKit 15.x - so on a supported install the static
+ * method is simply absent and calling it throws before any fetch is issued.
+ * No feature-detect-and-fall-back: a second, untested code path is worse
+ * than one path that works everywhere.
+ *
+ * The timer is cleared by the caller (`finally`) on both the success and
+ * throw paths, so a settled probe never leaves a pending timer behind.
+ * Exported because `BrowserPanel.svelte`'s `_pingFrontend` needs the exact
+ * same signal for a plain `fetch()` call outside the OpenAPI client.
+ */
+export function timeoutSignal(timeoutMs: number): { signal: AbortSignal; clear: () => void } {
+	const controller = new AbortController();
+	const timer = setTimeout(
+		() => controller.abort(new DOMException('The operation timed out.', 'TimeoutError')),
+		timeoutMs
+	);
+	return { signal: controller.signal, clear: () => clearTimeout(timer) };
+}
 
-/** Backend contract: `apps/webui/server` route landing on `af--gating-wave`
- * (GET /api/v1/smartlists + /{id}/tracks). No single-smartlist GET is
- * documented yet, so the edit route filters the list client-side. */
-export async function listSmartlists(): Promise<SmartlistOut[]> {
+/**
+ * Liveness-only health read for the Backend status dot (pin a66ee132a14e).
+ *
+ * Separate from `getHealth` on purpose: this one must not hang, so it carries
+ * its own abort timeout and bypasses any cache, and it wants nothing from the
+ * body. It lives here rather than in the component for the same fan-in reason
+ * documented below - `src/lib/api/client.ts` sits at its recorded floor, so
+ * new direct importers of it are not free.
+ *
+ * Throws on any non-2xx or on timeout; the caller turns that into a red dot
+ * carrying the reason.
+ */
+export async function pingHealth(timeoutMs: number): Promise<void> {
+	const { signal, clear } = timeoutSignal(timeoutMs);
 	try {
-		return await unwrap(api.GET('/api/v1/smartlists'));
-	} catch (error) {
-		if (error instanceof ApiError) throw new Error(`GET smartlists failed: ${error.status}`);
-		throw error;
-	}
-}
-
-function requiredSmartlistEtag(response: Response): string {
-	const etag = response.headers.get('etag');
-	if (etag === null || etag.length === 0) {
-		throw new Error('smartlist response is missing ETag');
-	}
-	return etag;
-}
-
-export async function getSmartlist(
-	id: string
-): Promise<{ smartlist: SmartlistOut; etag: string }> {
-	let call: { data?: SmartlistOut; response: Response };
-	try {
-		call = await api.GET('/api/v1/smartlists/{smartlist_id}', {
-			params: { path: { smartlist_id: id } }
-		});
-	} catch (error) {
-		if (error instanceof ApiError) {
-			throw new SmartlistApiError(error.status, `GET smartlist failed: ${error.status}`);
-		}
-		throw error;
-	}
-	const { data, response } = requireBody(call);
-	const etag = requiredSmartlistEtag(response);
-	return { smartlist: data, etag };
-}
-
-export async function getSmartlistTracks(id: string): Promise<SmartlistTrackOut[]> {
-	try {
-		const body = await unwrap(
-			api.GET('/api/v1/smartlists/{smartlist_id}/tracks', {
-				params: { path: { smartlist_id: id } }
+		requireBody(
+			await api.GET('/api/v1/health', {
+				cache: 'no-store',
+				signal
 			})
 		);
-		return body.tracks;
-	} catch (error) {
-		if (error instanceof ApiError) throw new Error(`GET smartlist tracks failed: ${error.status}`);
-		throw error;
+	} finally {
+		clear();
 	}
 }
 
-/** Replace a smartlist rule through the same HTTP apply path as the editor.
- * The returned object is server-persisted readback, never an optimistic copy. */
-export async function updateSmartlist(
-	id: string,
-	body: { rule: RuleAst; order_by?: string },
-	etag: string
-): Promise<{ smartlist: SmartlistOut; etag: string }> {
-	let call: { data?: SmartlistOut; response: Response };
-	try {
-		call = await api.PUT('/api/v1/smartlists/{smartlist_id}', {
-			params: { path: { smartlist_id: id }, header: { 'If-Match': etag } },
-			// A spread, not an assertion: `RuleAst` is a closed union of
-			// interfaces and the schema's `rule` is an open record, so the AST
-			// has to widen into one rather than be asserted onto it. `?? null`
-			// for the same exactOptionalPropertyTypes reason as listPairings
-			// above: the generated type is `order_by?: string | null`.
-			body: { rule: { ...body.rule }, order_by: body.order_by ?? null }
-		});
-	} catch (error) {
-		if (error instanceof ApiError && error.status === 409) {
-			// The conflict envelope is top-level {current, etag}; the header and
-			// the body must agree before the caller is handed a revision to retry
-			// against, so a half-updated response can never drive a silent clobber.
-			const responseEtag = requiredSmartlistEtag(error.response);
-			const payload = error.body as { current: SmartlistOut; etag: string };
-			if (payload.etag !== responseEtag) {
-				throw new Error('smartlist conflict response ETag does not match its body');
-			}
-			throw new SmartlistConflictError(payload.current, responseEtag);
-		}
-		if (error instanceof ApiError) {
-			const payload = (error.body ?? {}) as { detail?: { message?: string } | string };
-			const detail = typeof payload.detail === 'object' ? payload.detail?.message : payload.detail;
-			throw new SmartlistApiError(error.status, detail ?? `PUT smartlist failed: ${error.status}`);
-		}
-		throw error;
-	}
-	const { data, response } = requireBody(call);
-	const nextEtag = requiredSmartlistEtag(response);
-	return { smartlist: data, etag: nextEtag };
-}
+/** PREFLIGHT-01's boot gate (issue #771) reads `GET /api/v1/preflight`.
+ *
+ * It lives HERE, beside `getHealth`, rather than in its own
+ * `src/lib/preflight/` transport module, for one measured reason: every new
+ * direct importer of `src/lib/api/client.ts` moves `frontend.max_fan_in`,
+ * which sits at its recorded floor with zero headroom (ops/quality/README.md
+ * -- allowances only shrink). This module already depends on the client, so
+ * routing the call through it adds no edge, and preflight is a health-family
+ * read anyway: same daemon, same "is this thing ready" question.
+ *
+ * One call serves both "Re-check" and "Re-request permissions": the server's
+ * audio-access check performs the real gated read every time it runs, so a
+ * second GET after granting an OS permission is both at once. There is no
+ * separate mutating endpoint to keep in sync with this one -- see
+ * `apps/webui/server/routes/preflight.py`.
+ *
+ * The verdict is READ, never recomputed: callers take `PreflightOut.status`
+ * as given rather than deriving pass/fail from the check list, so the server
+ * stays the one source of truth (this issue's own parity clause).
+ */
+export type PreflightResult = components['schemas']['PreflightOut'];
+export type PreflightCheck = components['schemas']['PreflightCheckOut'];
 
-export async function getHealth(): Promise<{ health: HealthOut; bindWarning: string | null }> {
-	const { data, response } = requireBody(await api.GET('/api/v1/health'));
-	return { health: data, bindWarning: response.headers.get('x-bind-warning') };
+export async function getPreflight(): Promise<PreflightResult> {
+	return unwrap(api.GET('/api/v1/preflight'));
 }

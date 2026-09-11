@@ -171,8 +171,8 @@ def _is_on_this_machine(here: Path) -> bool:
     Permanently, on a machine that keeps the unreadable directory.
 
     Found on agentbox, Thu 3 Sep 2026: a self-hosted CI runner holding a
-    restored macOS home at `/Users/dev` (mode 750, another uid) against
-    transcripts whose recorded cwd is `/Users/dev/code/afmac`. Ten provenance
+    restored macOS home at `/Users/user` (mode 750, another uid) against
+    transcripts whose recorded cwd is `/Users/user/code/afmac`. Ten provenance
     tests failed on it, none of them naming a permission.
 
     A path this process cannot traverse is PRESENT and not ours, which is what

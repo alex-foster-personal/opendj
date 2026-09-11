@@ -140,8 +140,12 @@ test('the press stages are appended, so the existing [perf] line prefix is uncha
 	// summary read left to right: keep the ratchet number first.
 	const keys = Object.keys(stages({ pressToScheduleMs: 12.5 }));
 	assert.equal(keys[0], 'scheduled_offset_ms');
-	assert.deepEqual(keys.slice(-2), ['press_to_schedule_ms', 'input_to_audible_ms']);
-	assert.deepEqual(Object.keys(stages()), keys.slice(0, -2));
+	assert.deepEqual(keys.slice(-3), [
+		'press_to_schedule_ms',
+		'input_to_audible_ms',
+		'input_to_output_ms'
+	]);
+	assert.deepEqual(Object.keys(stages()), keys.slice(0, -3));
 });
 
 //-----------------------------------------------------------------------------

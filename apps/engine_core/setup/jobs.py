@@ -42,7 +42,7 @@ def build_argv(payload: dict[str, Any]) -> list[str]:
 
 
 def _mode_args(payload: dict[str, Any]) -> list[str]:
-    """rekordbox by default; folder mode needs at least one absolute root.
+    """rekordbox by default; folder mode needs bounded absolute roots.
 
     Relative roots are refused for the same reason a relative data dir is:
     the worker's cwd is the engine's, which is not somewhere the operator
@@ -62,6 +62,9 @@ def _mode_args(payload: dict[str, Any]) -> list[str]:
             raise _reject("roots", root, "entries must be non-empty strings")
         if not Path(root).is_absolute():
             raise _reject("roots", root, "entries must be absolute paths")
+        resolved = Path(root).resolve(strict=False)
+        if resolved == resolved.parent:
+            raise _reject("roots", root, "entries must not be the filesystem root")
         argv += ["--root", root]
     return argv
 

@@ -3,8 +3,15 @@
 # H100 batch over all audio, streaming stems -> stems/ and copying each vocal
 # into a flat vocals/ dir as it lands. Both stems kept; vocals also flat-copied.
 set -uo pipefail
-BASE="/Users/dev/Music/_incoming/clubsauna-acapella-techno-100"
-REPO="/Users/dev/Music/music-dj-tools"
+# MDT_ACAPELLA_TECHNO_100_BASE names this machine's unpacked acapella-pack
+# base directory (#910: no personal path is hardcoded here). Required, and
+# it must exist -- an unset or missing value fails fast rather than watching
+# and finding zero files forever.
+: "${MDT_ACAPELLA_TECHNO_100_BASE:?export MDT_ACAPELLA_TECHNO_100_BASE to the unpacked acapella-pack base directory on this machine}"
+BASE="$MDT_ACAPELLA_TECHNO_100_BASE"
+[ -d "$BASE" ] || { echo "FATAL: MDT_ACAPELLA_TECHNO_100_BASE does not exist: $BASE" >&2; exit 1; }
+# This repo's own checkout location, not a machine-specific value (#910).
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG="$BASE/farm.log"
 # No -e in this script (RC is read explicitly after the farm call), so the cd
 # is guarded explicitly rather than silently continuing in the wrong tree.
@@ -41,7 +48,7 @@ echo "[$(date '+%H:%M:%S')] FIRING roformer H100 farm over $N tracks (max_contai
 ( while :; do flat_vocals; sleep 10; done ) & CPWATCH=$!
 
 # filenames are NNN_<id>.<ext> with no spaces -> safe to word-split
-MDT_ROFORMER_MAX_CONTAINERS=60 uv run --with modal python scripts/modal_roformer_spike.py \
+MDT_ROFORMER_MAX_CONTAINERS=60 uv run --no-sync --with modal python scripts/modal_roformer_spike.py \
   separate --input $FILES --out-dir "$BASE/stems" --run-id clubsauna-acapella-100
 RC=$?
 

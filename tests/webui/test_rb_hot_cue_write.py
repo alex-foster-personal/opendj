@@ -34,7 +34,7 @@ from apps.webui.server import rb_vendor
 from apps.webui.server.routes.rb_hot_cues import router
 from apps.webui.server.sqlite_backend import make_backend
 
-pytestmark = pytest.mark.requirement("CAT-05")
+pytestmark = [pytest.mark.requirement("CAT-05"), pytest.mark.rb_parity]
 
 VENDOR_ID = "126790091"
 STABLE_ID = "a" * 40

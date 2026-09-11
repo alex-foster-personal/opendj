@@ -65,9 +65,19 @@ export function visibleBeatLines(
 	return lines;
 }
 
-/** Gutter label like '1.1Bars' / '86.3Bars' - whole bars + leftover beats
- * until the next countdown target (SCREENSHOT-SPEC 2: bars until next
- * cue/phrase). Target picking, in priority order over REAL data only:
+/** Gutter label like '1Bars' / '86Bars' - WHOLE bars until the next
+ * countdown target (SCREENSHOT-SPEC 2: bars until next cue/phrase).
+ *
+ * Whole bars, floored, and the render cost is the reason as much as the
+ * readability is (pin d56d98cd9c53, the maintainer, Wed 2 Sep 2026). The label used to
+ * carry the leftover beat ('3.2Bars'), so its string changed on every beat
+ * and dirtied the gutter four times a bar for a digit nobody reads at a
+ * glance. Flooring to bars makes it change only when the playhead crosses a
+ * bar line: one re-render a bar instead of four, with no throttle to keep in
+ * sync. Floor, never round - a rounded label would claim a bar of runway
+ * that is not there.
+ *
+ * Target picking, in priority order over REAL data only:
  *   1. earliest upcoming cue (memory / hot cue / loop-in), else
  *   2. earliest upcoming phrase boundary, else
  *   3. the end of the beatgrid (last analyzed beat).
@@ -95,9 +105,7 @@ export function barsToNextCueLabel(anlz: AnlzData, positionMs: number): string |
 	}
 	if (!Number.isFinite(targetS)) return null;
 	const beatsRemaining = firstBeatAtOrAfter(beats, targetS) - firstBeatAtOrAfter(beats, posS);
-	const bars = Math.floor(beatsRemaining / 4);
-	const rem = beatsRemaining % 4;
-	return `${bars}.${rem}Bars`;
+	return `${Math.floor(beatsRemaining / 4)}Bars`;
 }
 
 /** Enclosing PQTZ beat + fractional phase in [0,1) at positionSec. */
@@ -116,6 +124,138 @@ export function enclosingBeatPhase(
 	const phase = (positionSec - a.t) / dur;
 	if (!Number.isFinite(phase)) return null;
 	return { n: a.n, phase: Math.min(1, Math.max(0, phase)) };
+}
+
+/** Rekordbox's normal bar has four numbered PQTZ beats. Keep this beside
+ * pqtzBarPhase so every visual consumer shares one explicit fallback
+ * contract instead of inlining "4" wherever a bar length is needed. */
+export const DEFAULT_PQTZ_BAR_BEATS = 4;
+
+/** Fraction through the current PQTZ bar ("phase"), or null when the real
+ * grid cannot establish it. Callers may park their visual at the downbeat
+ * for null. `barBeats` is the config anchor (pin 67a4ce88805f) - pass the
+ * deck's own beats-per-phase setting; it defaults here only for a caller
+ * with none to give.
+ *
+ * Deliberately does NOT use `enclosingBeatPhase`'s `n` field for the cycle
+ * position: captured PQTZ beats number 1..4 and RESET every bar regardless
+ * of `barBeats` (rekordbox's own bar length, always 4). Keying phase on `n`
+ * directly made an 8-beat phase snap backwards every 4 beats instead of
+ * completing one real revolution, and made a 1-beat phase null on 3 beats
+ * out of 4 (n>1 never satisfies n<=1). The SEQUENTIAL beat index in the
+ * ordered array has no such reset, so `index % barBeats` is the one value
+ * that actually walks 0..barBeats-1 once per configured phase, matching the
+ * pin's "rotates one full journey per phase" regardless of what barBeats is. */
+export function pqtzBarPhase(
+	beats: AnlzBeat[],
+	positionSec: number,
+	barBeats: number = DEFAULT_PQTZ_BAR_BEATS
+): number | null {
+	if (!Number.isInteger(barBeats) || barBeats < 1) {
+		throw new RangeError(`pqtzBarPhase: barBeats must be a positive integer, got ${barBeats}`);
+	}
+	if (beats.length < 2 || !Number.isFinite(positionSec) || positionSec < 0) return null;
+	let i = firstBeatAtOrAfter(beats, positionSec) - 1;
+	if (i < 0) i = 0;
+	if (i >= beats.length - 1) return null;
+	const a = beats[i];
+	const b = beats[i + 1];
+	const dur = b.t - a.t;
+	if (!(dur > 0)) return null;
+	const rawPhase = (positionSec - a.t) / dur;
+	if (!Number.isFinite(rawPhase)) return null;
+	const phase = Math.min(1, Math.max(0, rawPhase));
+	return ((i % barBeats) + phase) / barBeats;
+}
+
+/** The jog wheel's central face (the off-white disc carrying the BPM/pitch
+ * text) is an r=40 circle centered at 50,50 in the dial's 100x100 viewBox.
+ * Pin f19a1b2a455a: "no spinning UI to overlap the central wheel", so every
+ * rotating mark has to live wholly OUTSIDE this radius. Exported so the
+ * no-overlap requirement is an assertable number rather than a comment. */
+export const JOG_WHEEL_FACE_RADIUS = 40;
+
+/** The face is itself stroked, so the disc RENDERS half a stroke wider than
+ * r=40. Clearance is measured from that edge, not the geometric radius, or
+ * a mark could sit exactly on the face's own border and still satisfy an
+ * arithmetic that only knew about r=40. */
+export const JOG_WHEEL_FACE_STROKE_WIDTH = 1;
+export const JOG_WHEEL_FACE_RENDERED_RADIUS =
+	JOG_WHEEL_FACE_RADIUS + JOG_WHEEL_FACE_STROKE_WIDTH / 2;
+
+/** Stroke widths of the three rotating rim elements, mirrored by JogDial's
+ * own CSS/attributes (jog-phase-visual asserts the two agree). They belong
+ * here because the no-overlap radius cannot be chosen without them. */
+export const PHASE_MARK_STROKE_WIDTH = 1.25;
+export const PHASE_DOWNBEAT_STROKE_WIDTH = 3;
+export const POSITION_TICK_STROKE_WIDTH = 3;
+
+/** Every rotating rim element is drawn with `stroke-linecap: round`, which
+ * caps each endpoint with a semicircle of radius strokeWidth/2. A radial
+ * mark therefore RENDERS strokeWidth/2 further in than its inner endpoint:
+ * the r=41 endpoint the first cut of pin f19a1b2a455a chose reached r=39.5
+ * for the stroke-width-3 downbeat, i.e. 0.5 units INSIDE the r=40 face,
+ * while a centerline-only assertion reported no overlap. */
+export const THICKEST_ROTATING_STROKE_WIDTH = Math.max(
+	PHASE_MARK_STROKE_WIDTH,
+	PHASE_DOWNBEAT_STROKE_WIDTH,
+	POSITION_TICK_STROKE_WIDTH
+);
+
+/** Gap left between the face edge and the nearest RENDERED pixel of any
+ * rotating element, so "outside the face" is visibly true rather than
+ * exactly tangent. */
+export const JOG_FACE_CLEARANCE = 0.5;
+
+/** Radii of a phase mark, measured from the dial center. Both sit in the
+ * annulus between the wheel face (r=40) and the outer ring (r=47), and the
+ * inner one is chosen for the THICKEST rotating stroke so every mark's cap,
+ * not just its centerline, clears the face. The red position tick shares
+ * this annulus. */
+export const PHASE_MARK_OUTER_RADIUS = 46;
+export const PHASE_MARK_INNER_RADIUS =
+	JOG_WHEEL_FACE_RENDERED_RADIUS + JOG_FACE_CLEARANCE + THICKEST_ROTATING_STROKE_WIDTH / 2;
+
+/** One phase mark on the JogDial rim: its angle in degrees before the
+ * group's own phase rotation, and whether it is beat 1 (the downbeat).
+ *
+ * Pin f19a1b2a455a replaces pin 67a4ce88805f's centre-crossing radial grid
+ * ("remove the spinning black line - looks bad, the white line is plenty"):
+ * the phase now carries one WHITE rim mark per beat in the phase, beat 1
+ * thicker than the rest, and nothing reaching into the wheel face. Pure
+ * geometry so the mark COUNT and the downbeat flag are unit-testable
+ * without rendering Svelte. */
+export interface PhaseBeatMark {
+	angleDeg: number;
+	isDownbeat: boolean;
+}
+
+export function phaseBeatMarks(barBeats: number): PhaseBeatMark[] {
+	if (!Number.isInteger(barBeats) || barBeats < 1) {
+		throw new RangeError(`phaseBeatMarks: barBeats must be a positive integer, got ${barBeats}`);
+	}
+	return Array.from({ length: barBeats }, (_, i) => ({
+		angleDeg: (360 * i) / barBeats,
+		isDownbeat: i === 0
+	}));
+}
+
+/** Beats in one phase for the jog visual, from the deck's own quantize grid.
+ *
+ * Pin f19a1b2a455a: "it should spin once per phase (4 beats default)". A
+ * phase is a BAR, so a 1-beat quantize grid is not a phase length - it is
+ * the snap grid at its shipped default (player/state.svelte.ts seeds every
+ * deck at 1), which is exactly what made the visual spin once per BEAT with
+ * a single mark. Both 1 and the unimplemented 'phase' sentinel therefore
+ * mean "no phase length is set" and resolve to DEFAULT_PQTZ_BAR_BEATS,
+ * while a deliberately chosen bar-scale grid (4 or 8) still anchors the
+ * phase per pin 67a4ce88805f's "phase in config is anchor". */
+export function jogPhaseBeats(quantizeGrid: number | 'phase'): number {
+	if (quantizeGrid === 'phase' || quantizeGrid === 1) return DEFAULT_PQTZ_BAR_BEATS;
+	if (!Number.isInteger(quantizeGrid) || quantizeGrid < 1) {
+		throw new RangeError(`jogPhaseBeats: quantize grid must be a positive integer or 'phase', got ${quantizeGrid}`);
+	}
+	return quantizeGrid;
 }
 
 /** Center-playhead sync tone for a Beat Sync follower vs the master. */

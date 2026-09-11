@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
 	import type { StemSummary } from '$lib/rb/api-rb';
+	import ControlExplainer from '../deck/ControlExplainer.svelte';
 
 	interface Props {
 		stems: StemSummary | null;
@@ -50,6 +51,30 @@
 		);
 	}
 
+	function _heading(s: StemSummary | null): string {
+		if (s === null || s.status === 'none') return 'STEMS unavailable';
+		if (s.status === 'invalid') return 'STEMS invalid';
+		return 'STEMS ready';
+	}
+
+	function _bullets(s: StemSummary | null): string[] {
+		if (s === null) return ['Status: not loaded for this row'];
+		if (s.status === 'none') return ['Status: no local stem bundle'];
+		if (s.status === 'invalid') return [`Status: invalid - ${s.error ?? 'unknown error'}`];
+		return [
+			'Status: ready',
+			`Model: ${s.model ?? '?'}`,
+			`Preset: ${s.preset ?? '?'}`,
+			`Format: ${s.format}`,
+			`Total: ${_fmtBytes(s.total_bytes)}`,
+			...GROUPS.map((group) => {
+				const stem = s.groups[group];
+				const parts = stem?.parts.join('+') || 'no parts';
+				return `${group}: ${parts} (${_fmtBytes(stem?.bytes ?? 0)})`;
+			})
+		];
+	}
+
 	const ready = $derived(stems !== null && stems.status === 'ready' ? stems : null);
 	const meta = $derived(
 		ready === null
@@ -59,18 +84,22 @@
 </script>
 
 {#if ready === null}
-	<span class="stem-tags empty" title={_title(stems)} aria-label={_title(stems)}>-</span>
+	<ControlExplainer title={_heading(stems)} bullets={_bullets(stems)}>
+		<span class="stem-tags empty" tabindex="0" title={_title(stems)} aria-label={_title(stems)}>-</span>
+	</ControlExplainer>
 {:else}
-	<span class="stem-tags" title={_title(ready)} aria-label={_title(ready)}>
-		{#each GROUPS as g (g)}
-			<span
-				class="tag"
-				class:on={(ready.groups[g]?.bytes ?? 0) > 0}
-				data-g={g}
-			>{g}</span>
-		{/each}
-		<span class="meta">{meta}</span>
-	</span>
+	<ControlExplainer title={_heading(ready)} bullets={_bullets(ready)}>
+		<span class="stem-tags" tabindex="0" title={_title(ready)} aria-label={_title(ready)}>
+			{#each GROUPS as g (g)}
+				<span
+					class="tag"
+					class:on={(ready.groups[g]?.bytes ?? 0) > 0}
+					data-g={g}
+				>{g}</span>
+			{/each}
+			<span class="meta">{meta}</span>
+		</span>
+	</ControlExplainer>
 {/if}
 
 <style>
@@ -118,7 +147,7 @@
 	}
 	.meta {
 		margin-left: 3px;
-		color: var(--rb-text-dim, #7a8088);
+		color: var(--rb-text-dim, #838990);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		min-width: 0;

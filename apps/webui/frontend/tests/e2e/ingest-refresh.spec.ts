@@ -10,10 +10,18 @@ import { test, expect } from '@playwright/test';
 //    reports the staged file.
 
 test.describe('refresh analysis button', () => {
-	test('hover shows coverage popover, click runs a refresh to done', async ({ page }) => {
+	test('hover shows coverage popover and reports the real refresh result', async ({ page }) => {
+		// This fixture intentionally has no Rekordbox master database or stem
+		// artifacts. Configure the real ingest endpoint for its runnable analysis
+		// step before exercising the top-bar control, rather than asking the
+		// unrelated vocals backfill to fail on unavailable fixture data.
+		const config = await page.request.put('/api/v1/ingest/config', {
+			data: { enabled: { analysis: true, stems: false, vocals: false } }
+		});
+		expect(config.ok()).toBe(true);
 		await page.goto('/performance');
 		const btn = page.getByTestId('refresh-analysis');
-		await expect(btn).toBeVisible();
+		await expect(btn).toBeVisible({ timeout: 15_000 });
 		await expect(btn).toBeEnabled();
 
 		await btn.hover();
@@ -42,9 +50,21 @@ test.describe('refresh analysis button', () => {
 		expect(rendered).toMatch(/auto\s+(on|off)/);
 
 		await btn.click();
-		// Empty seeded library: analysis has no targets and vocals from-stems
-		// returns quickly, so the job reaches a terminal phase fast.
+		// Empty seeded library: analysis has no targets, so the job reaches a
+		// terminal phase fast.
 		await expect(pop).toContainText(/done|error/, { timeout: 25_000 });
+		if (/error/.test(await pop.innerText())) {
+			// The popover shows a window of the job log; the status endpoint
+			// carries the last LOG_TAIL_LINES. When a pipeline CLI dies with a
+			// signal, its faulthandler dump is in there and this is the only
+			// place it reaches the CI log (apps.analysis.run exited -11, #1574).
+			const status = await page.request.get('/api/v1/ingest/refresh/status');
+			const body = (await status.json()) as { log_tail?: string[] };
+			console.log(
+				['[ingest-refresh] job log at failure:', ...(body.log_tail ?? [])].join('\n')
+			);
+		}
+		await expect(pop).toContainText('done');
 		await expect(pop).not.toContainText('error', { timeout: 1_000 });
 	});
 });

@@ -10,7 +10,7 @@ from apps.reconcile import prefix_dead_playlists as prefixer
 # This module exercises live-write MECHANICS against tmp fixtures, so it runs
 # with the one-way rekordbox import gate ON (root conftest reads the marker).
 # It never touches a real rekordbox target.
-pytestmark = pytest.mark.rekordbox_writeback
+pytestmark = [pytest.mark.rekordbox_writeback, pytest.mark.rb_parity]
 
 
 def _plan() -> list[prefixer.PlaylistHealth]:

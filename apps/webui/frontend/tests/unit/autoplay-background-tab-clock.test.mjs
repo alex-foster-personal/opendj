@@ -66,21 +66,35 @@ describe('AutoPlay triggers off the audio clock, not the rAF mirror', () => {
 		fileURLToPath(new URL('../../src/lib/rb/auto-play.svelte.ts', import.meta.url)),
 		'utf8'
 	);
+	// The snapshot builder moved to auto-play-snap.ts (pin 0e5fa1 sizing), so
+	// this guard follows the code: the builder must take its position from the
+	// injected clock reader, and the controller must inject the audio clock.
+	const SNAP_SOURCE = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/auto-play-snap.ts', import.meta.url)),
+		'utf8'
+	);
 
 	it('_snaps takes position from the clock reader', () => {
-		assert.match(SOURCE, /position_ms: deckAudioClockPositionMs\(id\),/);
+		assert.match(SNAP_SOURCE, /position_ms: readClockPositionMs\(id\),/);
+		assert.match(SOURCE, /autoPlayDeckSnaps\(DECK_IDS, \(id\) => deckStates\[id\], deckAudioClockPositionMs\)/);
 	});
 
 	it('_snaps never falls back to the rAF-published mirror', () => {
-		const snaps = SOURCE.slice(
-			SOURCE.indexOf('function _snaps()'),
-			SOURCE.indexOf('function _excludeIds(')
+		const snaps = SNAP_SOURCE.slice(
+			SNAP_SOURCE.indexOf('export function autoPlayDeckSnaps('),
+			SNAP_SOURCE.indexOf('export function autoPlayExcludeIds(')
 		);
 		assert.ok(snaps.length > 0, 'if _snaps cannot be located then this guard asserts nothing');
 		assert.doesNotMatch(
 			snaps,
 			/position_ms: d\.position_ms/,
 			'reading the rAF mirror here is exactly the background-tab stall'
+		);
+		// The controller must not quietly reintroduce a local snapshot either.
+		assert.doesNotMatch(
+			SOURCE,
+			/position_ms: d\.position_ms/,
+			'the controller must not rebuild snapshots from the rAF mirror'
 		);
 	});
 

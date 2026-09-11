@@ -105,3 +105,5 @@ def test_hashed_immutable_asset_is_cached_forever(
 
     assert response.status_code == 200
     assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+pytestmark = pytest.mark.rb_parity

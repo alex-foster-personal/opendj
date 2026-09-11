@@ -32,8 +32,17 @@ export type Toast = {
 	id: number;
 	logId: string;
 	message: string;
-	kind: 'info' | 'error';
+	/**
+	 * `warn` is the middle rung, added for pin 9bf12adccb45: a BAR beat sync
+	 * that had to fold to half/double tempo now HAPPENS and says so in orange,
+	 * where it used to be refused in red. An outcome the DJ should see but that
+	 * did not fail has no honest home in a two-value scale - it either
+	 * overstates as an error or disappears as info.
+	 */
+	kind: 'info' | 'warn' | 'error';
 	createdAt: string;
+	count: number;
+	groupKey: string | undefined;
 };
 
 // The numeric counter now lives in `rb/error-id.ts` and is shared with the deck
@@ -41,6 +50,8 @@ export type Toast = {
 // which is what stops `t-3` matching the third id of every session ever.
 const _toastSession = newToastSessionToken();
 export const toasts = $state<Toast[]>([]);
+// Retain occurrence ids only while their grouped toast remains actionable.
+const _toastLogIds = new Map<number, Set<string>>();
 
 /**
  * The live dismissal timer per toast, plus the delay to restart it with.
@@ -83,12 +94,13 @@ function _armTimer(id: number, dismissMs: number): void {
 }
 
 function _removeToast(id: number): void {
+	_toastLogIds.delete(id);
 	const i = toasts.findIndex((t) => t.id === id);
 	if (i >= 0) toasts.splice(i, 1);
 }
 
 function _find(logId: string): Toast | undefined {
-	return toasts.find((t) => t.logId === logId);
+	return toasts.find((t) => t.logId === logId || _toastLogIds.get(t.id)?.has(logId));
 }
 
 /** Default auto-dismiss delay when a caller does not name its own. */
@@ -110,10 +122,11 @@ export const TOAST_DEFAULT_MS = 5000;
  */
 export function pushToast(
 	message: string,
-	kind: 'info' | 'error' = 'info',
+	kind: 'info' | 'warn' | 'error' = 'info',
 	dismissMs: number = TOAST_DEFAULT_MS,
 	cause?: unknown,
-	context: ClientErrorContext = {}
+	context: ClientErrorContext = {},
+	groupKey?: string
 ): void {
 	if (!Number.isFinite(dismissMs) || dismissMs <= 0) {
 		throw new RangeError(`pushToast: dismissMs must be a positive finite number, got ${dismissMs}`);
@@ -141,10 +154,23 @@ export function pushToast(
 		`toast-${kind}`,
 		message,
 		null,
-		kind === 'error' ? 'error' : 'info',
+		// recordPerfEvent's severity scale is already info/warn/error, so the
+		// toast kind maps straight onto it rather than being flattened.
+		kind,
 		logId
 	);
-	toasts.push({ id, logId, message, kind, createdAt: row.t });
+	// Group only when a caller names the same control. Every occurrence still
+	// has its own log row; the displayed message/id refer to the latest one.
+	const existing = groupKey === undefined ? undefined :
+		toasts.find((toast) => toast.groupKey === groupKey && toast.kind === kind);
+	const toast = existing ?? { id, logId, message, kind, createdAt: row.t, count: 0, groupKey };
+	if (groupKey !== undefined) {
+		const logIds = _toastLogIds.get(toast.id) ?? new Set<string>();
+		logIds.add(logId);
+		_toastLogIds.set(toast.id, logIds);
+	}
+	Object.assign(toast, { logId, message, createdAt: row.t, count: toast.count + 1 });
+	if (existing === undefined) toasts.push(toast);
 	// Warm the host lookup now so the eventual click can write the clipboard
 	// synchronously inside its own gesture. See _machineName.
 	void _machineName();
@@ -163,7 +189,11 @@ export function pushToast(
 			...context
 		});
 	}
-	_armTimer(id, dismissMs);
+	if (existing !== undefined && _timers.get(toast.id)?.handle === null) {
+		_timers.set(toast.id, { handle: null, dismissMs });
+	} else {
+		_armTimer(toast.id, dismissMs);
+	}
 }
 
 // ----- dismissal ----------------------------------------------------------
@@ -293,7 +323,7 @@ export async function copyToast(logId: string): Promise<string> {
 	const text = buildToastReport({
 		id: toast.logId,
 		kind: toast.kind,
-		message: toast.message,
+		message: toast.count > 1 ? `${toast.message}\nOccurrences: ${toast.count}` : toast.message,
 		createdAt: toast.createdAt,
 		env: await _toastEnvironment(page)
 	});

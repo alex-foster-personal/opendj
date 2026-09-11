@@ -28,7 +28,7 @@ def _rec_for_cues(
         duration_s=duration_s,
         sample_rate=44100,
         bpm=120.0, bpm_confidence=0.9,
-        key_camelot="8A", key_openkey="8m", key_confidence=0.9,
+        key_camelot="8A", key_openkey="1m", key_confidence=0.9,
         energy=6,
         onsets_s=onsets_s or [],
         downbeats_s=downbeats_s or [],

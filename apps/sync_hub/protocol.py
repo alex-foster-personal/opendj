@@ -8,8 +8,10 @@ Five decisions worth reading before changing anything:
 
 1. **Columns are introspected, never hardcoded.** ``PRAGMA table_info`` is
    the single source of truth so this module cannot drift from
-   ``apps.shared.state.schema``. A peer on a different ``SCHEMA_VERSION`` is
-   rejected at the handshake rather than silently exchanging half a row.
+   ``apps.shared.state.schema``. A peer on a different
+   :data:`apps.sync_hub.wire_version.WIRE_VERSION` is rejected at the
+   handshake rather than silently exchanging half a row; one wire version
+   pins one synced column shape, so SCHEMA_VERSION may differ.
 2. **NULL ``updated_at`` sorts as epoch** (ADR 04 c7): legacy rows written
    before migration v6 always lose to a real edit. The sentinel is a real
    ISO string (:data:`EPOCH`) rather than ``None`` so every comparison is a
@@ -28,9 +30,13 @@ Five decisions worth reading before changing anything:
    a ``+01:00`` offset makes an EARLIER instant sort LATER. So the value is
    parsed with :func:`apps.shared.state.sync_stamp.parse_canonical` and
    re-emitted in the one canonical format everywhere it is read: on the
-   wire, in :func:`lww_key`, and in the digest. Anything unparseable or
-   naive raises :class:`SyncProtocolError`, which the service turns into a
-   422 rather than storing a row nothing can order.
+   wire, in :func:`lww_key`, and in the digest. Canonicalization is
+   NORMALIZATION for an orderable value and EXCLUSION for the rest (round
+   5): off the wire, unparseable or naive raises :class:`SyncProtocolError`
+   and the service turns it into a 422; read out of a LOCAL table, the
+   caller asks :func:`stored_stamp_faults` first and quarantines that one
+   row -- see :mod:`apps.sync_hub.protocol_common`'s docstring for the
+   direction split.
 5. **Strings are NFC-normalized before hashing** (ADR 08 point 6a, round 1
    finding 6a). macOS hands back NFD paths, Windows and Linux NFC; both are
    correct spellings of one string and neither the digest nor a UNIQUE index
@@ -53,11 +59,13 @@ surface it had.
 from __future__ import annotations
 
 import hashlib
+import logging
 import sqlite3
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
+from apps.sync_hub import sync_set
 from apps.sync_hub.protocol_common import (
     DELETED_AT,
     DIGEST_TABLES,
@@ -72,6 +80,7 @@ from apps.sync_hub.protocol_common import (
     SYNC_COLUMNS,
     SYNC_TABLES,
     UPDATED_AT,
+    StampFault,
     SyncProtocolError,
     TableSpec,
     canonical_bytes,
@@ -79,13 +88,17 @@ from apps.sync_hub.protocol_common import (
     canonical_timestamp,
     canonical_values,
     decode_row_pk,
+    describe_faults,
     encode_row_pk,
     lww_key,
     natural_keys,
     nfc,
     pk_columns,
+    stored_stamp_faults,
     table_columns,
 )
+
+log = logging.getLogger(__name__)
 
 # ----- wire payloads -----------------------------------------------------
 
@@ -213,12 +226,27 @@ class SyncDigest:
     tables: dict[str, str]
     overall: str
     seq: int = 0
+    #: Rows per table this peer EXCLUDED from the hash because a stored stamp
+    #: is unorderable (round 5). Not folded into ``overall``: the two sides
+    #: are comparing the rows that are actually eligible to sync, and two
+    #: peers with identical eligible content and different quarantine counts
+    #: have converged. ``None`` means the peer DID NOT REPORT -- an older
+    #: build, or a payload without the field -- and must be surfaced as
+    #: unknown, never coerced to 0, or the readout becomes a failed
+    #: measurement rendered as a clean result.
+    quarantined: dict[str, int] | None = field(default=None)
+
+    @property
+    def quarantined_rows(self) -> int | None:
+        """Total rows this peer quarantined, or None when it did not report."""
+        return None if self.quarantined is None else sum(self.quarantined.values())
 
     def to_wire(self) -> dict[str, Any]:
         return {
             "tables": dict(self.tables),
             "overall": self.overall,
             "seq": self.seq,
+            "quarantined": None if self.quarantined is None else dict(self.quarantined),
         }
 
     @classmethod
@@ -231,10 +259,21 @@ class SyncDigest:
             raise SyncProtocolError(
                 f"digest payload 'seq' must be an integer, got {seq!r}"
             )
+        raw_quarantined = payload.get("quarantined")
+        if raw_quarantined is not None and not isinstance(raw_quarantined, dict):
+            raise SyncProtocolError(
+                f"digest payload 'quarantined' must be an object or absent, "
+                f"got {raw_quarantined!r}"
+            )
         return cls(
             tables={str(k): str(v) for k, v in tables.items()},
             overall=_require_str(payload, "overall"),
             seq=seq,
+            quarantined=(
+                None
+                if raw_quarantined is None
+                else {str(k): int(v) for k, v in raw_quarantined.items()}
+            ),
         )
 
     def divergent_tables(self, other: SyncDigest) -> tuple[str, ...]:
@@ -244,12 +283,45 @@ class SyncDigest:
             name for name in names if self.tables.get(name) != other.tables.get(name)
         )
 
+    def inconclusive_tables(self, other: SyncDigest) -> tuple[str, ...]:
+        """Divergent tables whose comparison EXCLUDED rows on one side.
+
+        A table where either peer held rows out of its sync set did not
+        compare two complete sets, so a difference there is UNMEASURED, not
+        divergence. It happens the moment a row that already reached the peer
+        is later quarantined locally: the peer still hashes it, this machine
+        no longer can, and without this the ADR 04 c6 corruption alarm would
+        fire on every sync forever -- quarantine as the brick under a new
+        name, which is the failure mode this whole round exists to remove.
+
+        Empty when EITHER side did not report a quarantine map: "did not
+        report" is not "reported zero", and a mismatch explained by a
+        measurement nobody took is not explained at all.
+        """
+        if self.quarantined is None or other.quarantined is None:
+            return ()
+        return tuple(
+            name
+            for name in self.divergent_tables(other)
+            if self.quarantined.get(name, 0) or other.quarantined.get(name, 0)
+        )
+
 
 # ----- digest --------------------------------------------------------------
 
 
-def table_digest(conn: sqlite3.Connection, table: str) -> str:
-    """sha256 over the ordered canonical rows of ``table``.
+@dataclass(frozen=True)
+class TableDigest:
+    """One table's hash and how many of its rows never entered it."""
+
+    hash: str
+    quarantined: int
+
+
+def table_digest(
+    conn: sqlite3.Connection, table: str, held: sync_set.HeldKeys | None = None
+) -> TableDigest:
+    """sha256 over the ordered SYNC-ELIGIBLE canonical rows of ``table``.
 
     Tombstones included: a peer that dropped a ``deleted_at`` row has
     diverged, and this is the only check that would notice.
@@ -258,8 +330,22 @@ def table_digest(conn: sqlite3.Connection, table: str) -> str:
     same instant spelled differently, or the same path in NFD and NFC, agree
     (module docstring points 4 and 5). That is not a weakening of the check:
     those rows ARE the same content, and before ADR 08 the difference halted
-    a machine that had done nothing wrong. A timestamp that cannot be parsed
-    at all still raises rather than hashing.
+    a machine that had done nothing wrong.
+
+    A row that is not in the sync set (:mod:`apps.sync_hub.sync_set`) is
+    EXCLUDED and counted (round 5) rather than raising. Hashing its raw bytes
+    would be worse than either: the row never reaches a peer, so the two
+    digests would differ forever and ``run_sync`` would raise
+    :class:`SyncDigestMismatch` -- the one alarm ADR 04 c6 reserves for a
+    merge bug -- on every sync of a library holding one legacy row. Excluding
+    it means the digest answers the question it is asked (did the rows that
+    CAN sync converge?) and the count beside it says the rest never left.
+
+    ``held`` carries the exclusions from the tables already walked, and is
+    the reason this must be driven from :func:`sync_digest` rather than
+    called per table: a standalone call sees no parent held in another table,
+    so it can hash a child the push cannot offer. It defaults to an empty set
+    for the per-table callers that only compare one table against itself.
 
     Callers that compare two digests MUST hold a read transaction open
     across the whole comparison (ADR 08 point 6b): without one, a table read
@@ -267,21 +353,30 @@ def table_digest(conn: sqlite3.Connection, table: str) -> str:
     earlier table was read, and the rollup describes a state that never
     existed.
     """
-    spec = SPEC_BY_TABLE.get(table)
-    if spec is None and table == MEMBERSHIP_TABLE:
-        spec = MEMBERSHIP_SPEC
-    if spec is None:
-        raise SyncProtocolError(f"{table!r} is not in the digest set")
+    spec = sync_set.spec_for(table)
+    tracking = sync_set.HeldKeys(conn) if held is None else held
     columns = table_columns(conn, table)
     order_by = ", ".join(spec.pk)
     digest = hashlib.sha256()
     digest.update(canonical_bytes({"table": table, "columns": list(columns)}))
+    quarantined = 0
     cursor = conn.execute(
         f"SELECT {', '.join(columns)} FROM {table} ORDER BY {order_by}"
     )
     for row in cursor:
+        reason = sync_set.excluded_reason(conn, table, columns, row, spec, tracking)
+        if reason is not None:
+            quarantined += 1
+            log.error(
+                "digest excludes one %s row: %s. It is not in the sync set on "
+                "this machine. Repair it with `python -m apps.shared.state."
+                "normalize_stamps --live`.",
+                table,
+                reason,
+            )
+            continue
         digest.update(canonical_bytes(canonical_row(table, columns, row)))
-    return digest.hexdigest()
+    return TableDigest(hash=digest.hexdigest(), quarantined=quarantined)
 
 
 def sync_digest(conn: sqlite3.Connection, *, seq: int = 0) -> SyncDigest:
@@ -290,10 +385,31 @@ def sync_digest(conn: sqlite3.Connection, *, seq: int = 0) -> SyncDigest:
     ``seq`` is carried through untouched: the caller reads it from the
     changelog inside the same transaction as this call, so the digest and
     the position it describes are one snapshot.
+
+    Walks :data:`apps.sync_hub.sync_set.FK_ORDER`, not ``DIGEST_TABLES``:
+    exclusions are transitive over the foreign keys, so a parent must be
+    judged before its children. The returned mapping is the same set of
+    tables either way, and the rollup sorts its keys, so the ORDER of the
+    walk changes nothing about the answer -- only about its correctness.
+
+    The rollup hashes the per-table HASHES only, never the quarantine
+    counts: two peers holding identical eligible content converge even when
+    one of them is holding a legacy row back.
     """
-    tables = {name: table_digest(conn, name) for name in DIGEST_TABLES}
+    held = sync_set.HeldKeys(conn)
+    computed = {name: table_digest(conn, name, held) for name in sync_set.FK_ORDER}
+    tables = {name: value.hash for name, value in computed.items()}
     overall = hashlib.sha256(canonical_bytes(tables)).hexdigest()
-    return SyncDigest(tables=tables, overall=overall, seq=seq)
+    return SyncDigest(
+        tables=tables,
+        overall=overall,
+        seq=seq,
+        quarantined={
+            name: value.quarantined
+            for name, value in computed.items()
+            if value.quarantined
+        },
+    )
 
 
 # ----- small parsing helpers ------------------------------------------------
@@ -359,19 +475,23 @@ __all__ = [
     "UPDATED_AT",
     "MachineRow",
     "RowChange",
+    "StampFault",
     "SyncDigest",
     "SyncProtocolError",
+    "TableDigest",
     "TableSpec",
     "canonical_bytes",
     "canonical_row",
     "canonical_timestamp",
     "canonical_values",
     "decode_row_pk",
+    "describe_faults",
     "encode_row_pk",
     "lww_key",
     "natural_keys",
     "nfc",
     "pk_columns",
+    "stored_stamp_faults",
     "sync_digest",
     "table_columns",
     "table_digest",
