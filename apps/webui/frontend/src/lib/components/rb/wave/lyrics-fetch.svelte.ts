@@ -9,17 +9,19 @@
 import { optionalResources } from '$lib/rb/optional-resource-availability';
 import type { LyricLine } from './lyrics-lane';
 import { shouldFetchTrackLyrics } from './lyrics-cached-ids';
+import { ensureLyricsCachedIdsLoaded, getLyricsCachedIds } from './lyrics-cached-ids.svelte';
 
 type LyricsPayload = { lines: LyricLine[] };
 
 export function createLyricsFetchState(
 	stableId: () => string | null,
 	fetchLyrics: (stableId: string) => Promise<LyricsPayload | null>,
-	cachedLyricsIds: () => ReadonlySet<string> | null = () => null
+	cachedLyricsIds: () => ReadonlySet<string> | null = getLyricsCachedIds
 ): { readonly lyrics: LyricsPayload | null; readonly loadError: Error | null } {
 	let lyrics = $state<LyricsPayload | null>(null);
 	let loadError = $state<Error | null>(null);
 	$effect(() => {
+		ensureLyricsCachedIdsLoaded();
 		const sid = stableId();
 		const cachedIds = cachedLyricsIds();
 		let cancelled = false;

@@ -62,10 +62,6 @@
 	} from './wave-scrub';
 	import WaveGutter from './WaveGutter.svelte';
 	import LyricsLane from './LyricsLane.svelte';
-	import {
-		ensureLyricsCachedIdsLoaded,
-		getLyricsCachedIds
-	} from './lyrics-cached-ids.svelte';
 	import { createLyricsFetchState } from './lyrics-fetch.svelte';
 
 	const { deckId }: { deckId: DeckId } = $props();
@@ -97,14 +93,7 @@
 		const token = registerAnlzConsumer(sid);
 		return () => unregisterAnlzConsumer(sid, token);
 	});
-	$effect(() => {
-		ensureLyricsCachedIdsLoaded();
-	});
-	const lyricsState = createLyricsFetchState(
-		() => deck.stable_id,
-		fetchTrackLyrics,
-		() => getLyricsCachedIds()
-	);
+	const lyricsState = createLyricsFetchState(() => deck.stable_id, fetchTrackLyrics);
 
 	const anlzData = $derived.by(() => resolveDisplayedAnlz(deck.anlz, deck.stable_id));
 	const anlzErrorCode = $derived.by(() => {
