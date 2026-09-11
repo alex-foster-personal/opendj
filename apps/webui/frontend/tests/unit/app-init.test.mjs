@@ -175,6 +175,14 @@ test('startAppInstruments arms the background demand shed', () => {
 	assert.match(source, /startBackgroundDemandShed/);
 });
 
+test('startAppInstruments wires silence dropout recovery', () => {
+	const source = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/app-init.ts', import.meta.url)),
+		'utf8'
+	);
+	assert.match(source, /setSilenceDropoutHandler/);
+});
+
 test('the root layout actually calls startAppInstruments', () => {
 	// The gap the rest of this file cannot see. Every test above drives
 	// startAppInstruments directly, so all of them keep passing if the layout
