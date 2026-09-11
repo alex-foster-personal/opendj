@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from apps.lyrics.repair import repair_sheet
-from apps.lyrics.verdict import classify
+from apps.lyrics.verdict import Verdict, classify
 
 VERSE_A = ["walking", "down", "the", "empty", "street", "under", "silver", "light", "tonight"]
 VERSE_B = ["morning", "comes", "with", "golden", "rays", "across", "the", "sleeping", "town"]
@@ -21,8 +21,16 @@ SONG = VERSE_A + CHORUS + VERSE_B + CHORUS  # what the audio sings (ASR heard ex
 
 def test_phantom_chorus_deleted_and_green_after_repair() -> None:
     sheet = VERSE_A + CHORUS + CHORUS + VERSE_B + CHORUS  # sheet claims 3 choruses, audio sings 2
-    v = classify(sheet, SONG)
-    assert any(f.kind == "sheet_repeat_unsupported" for f in v.findings)
+    classified = classify(sheet, SONG)
+    assert classified.verdict == "needs_acoustic_check"
+    assert any(f.kind == "sheet_repeat_unsupported" for f in classified.findings)
+    v = Verdict(
+        verdict="structure_mismatch",
+        ref_match_rate=classified.ref_match_rate,
+        asr_match_rate=classified.asr_match_rate,
+        longest_anchor=classified.longest_anchor,
+        findings=classified.findings,
+    )
     r = repair_sheet(sheet, SONG, v)
     assert len(r.words) == len(SONG), "if the phantom chorus survives repair then broken"
     v2 = classify(r.words, SONG)
@@ -63,3 +71,11 @@ def test_refuses_unverifiable_and_wrong_song() -> None:
     clean = classify(SONG, SONG)
     with pytest.raises(ValueError, match="nothing to repair"):
         repair_sheet(SONG, SONG, clean)
+
+
+def test_refuses_needs_acoustic_check() -> None:
+    sheet = VERSE_A + CHORUS + CHORUS + VERSE_B + CHORUS
+    v = classify(sheet, SONG)
+    assert v.verdict == "needs_acoustic_check"
+    with pytest.raises(ValueError, match="refusing to repair"):
+        repair_sheet(sheet, SONG, v)
