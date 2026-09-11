@@ -29,7 +29,7 @@ export function lyricLanePositionPercent({
 }
 
 /** The active line is the latest cache timestamp at or before the playhead. */
-export function activeLyricLineIndex(lines: TimedLyricLine[], positionMs: number): number {
+export function activeLyricLineIndex(lines: readonly TimedLyricLine[], positionMs: number): number {
 	let activeIndex = -1;
 	for (let index = 0; index < lines.length; index += 1) {
 		if (lines[index].start_ms > positionMs) return activeIndex;

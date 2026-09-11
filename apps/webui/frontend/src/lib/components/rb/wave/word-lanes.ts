@@ -52,6 +52,23 @@ export const LANE_COUNT = 2;
  * while keeping lane decisions visually indistinguishable. */
 export const PX_PER_S_BUCKET = 1;
 
+/** Marker band at the top of each wave row (cue markers). */
+export const MARKER_BAND_PX = 10;
+/** Vertical clearance between the two lyric lanes' text boxes. */
+export const LANE_V_GAP_PX = 2;
+
+/** Text baselines for the two lyric lanes, tucked under the marker band. */
+export function lyricLaneYs(heightCss: number): [number, number] {
+	if (heightCss < MARKER_BAND_PX + 2 * LANE_FONT_PX + LANE_V_GAP_PX) {
+		throw new RangeError(
+			`lyricLaneYs: row height ${heightCss}px cannot hold two ${LANE_FONT_PX}px lanes ` +
+				`under the ${MARKER_BAND_PX}px marker band`
+		);
+	}
+	const lane0 = MARKER_BAND_PX + LANE_FONT_PX;
+	return [lane0, lane0 + LANE_FONT_PX + LANE_V_GAP_PX];
+}
+
 /** One word with a lane decision (window-independent). */
 export interface LaneWord {
 	/** Source word - `word.idx` is the track-level index used for the

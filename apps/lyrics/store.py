@@ -281,6 +281,27 @@ def _verdict_from_row(row: Sequence[Any]) -> LyricVerdict:
     return LyricVerdict(**dict(zip(COLUMNS, row, strict=True)))
 
 
+def verdict_absence_detail(conn: sqlite3.Connection, stable_id: str) -> str | None:
+    """Why a track has no live verdict for the words route, or None if it does.
+
+    Unlike :func:`get_verdict`, this distinguishes "no row" from "tombstoned"
+    so the router can return an honest 404 detail without SQL in the handler.
+    """
+    row = conn.execute(
+        f"SELECT deleted_at FROM {TABLE} WHERE stable_id = ?", (stable_id,)
+    ).fetchone()
+    if row is None:
+        return f"no live lyric_verdict row for {stable_id!r}"
+    if row[0] is not None:
+        return f"lyric_verdict {stable_id!r} is tombstoned"
+    track = conn.execute(
+        "SELECT deleted_at FROM tracks WHERE stable_id = ?", (stable_id,)
+    ).fetchone()
+    if track is None or track[0] is not None:
+        return f"no live lyric_verdict row for {stable_id!r}"
+    return None
+
+
 def get_verdict(conn: sqlite3.Connection, stable_id: str) -> LyricVerdict | None:
     """The live verdict, or None. A tombstoned row reads as absent."""
     row = conn.execute(
@@ -372,5 +393,6 @@ __all__ = [
     "set_override",
     "tombstone",
     "upsert_verdict",
+    "verdict_absence_detail",
     "verdicts_by_source",
 ]

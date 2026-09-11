@@ -46,6 +46,9 @@ class LaneFigure:
     within_1_0_n: int | None = None
     related_n: int | None = None
     mirex_mean: float | None = None
+    iou_mean: float | None = None
+    precision_mean: float | None = None
+    recall_mean: float | None = None
     boundary_f_0_5: float | None = None
     boundary_f_3_0: float | None = None
     label_acc: float | None = None
@@ -98,6 +101,9 @@ class LaneFigure:
             "within_1_0_n": self.within_1_0_n,
             "related_n": self.related_n,
             "mirex_mean": self.mirex_mean,
+            "iou_mean": self.iou_mean,
+            "precision_mean": self.precision_mean,
+            "recall_mean": self.recall_mean,
             "boundary_f_0_5": self.boundary_f_0_5,
             "boundary_f_3_0": self.boundary_f_3_0,
             "label_acc": self.label_acc,

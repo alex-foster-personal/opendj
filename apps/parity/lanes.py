@@ -33,6 +33,7 @@ SCORED_THIS_ROUND: Final[tuple[str, ...]] = (
     "phrase",
     "cues_db",
     "cues_anlz",
+    "vocal",
 )
 DELEGATED_THIS_ROUND: Final[tuple[str, ...]] = ("beatgrid", "downbeat")
 
@@ -49,10 +50,6 @@ REMAINING_REASON: Final[dict[str, str]] = {
     "waveform_triband": (
         "Part 2 of 5 of #1520: waveform tri-band (ANLZ PWV6/PWV7). "
         "No own waveform analysis exists yet."
-    ),
-    "vocal": (
-        "Part 5 of 5 of #1520: vocal (ANLZ PVDI). "
-        "Tracks with no PVDI fourcc are ungradable."
     ),
 }
 
@@ -79,5 +76,7 @@ DENOMINATOR_NAME: Final[dict[str, str]] = {
     "cues_anlz": (
         "tracks with readable rekordbox ANLZ cues (PCOB/PCO2) in this fixture"
     ),
-    "vocal": "tracks with rekordbox PVDI in this fixture",
+    "vocal": (
+        "tracks with rekordbox PVDI among present audio in this fixture"
+    ),
 }
