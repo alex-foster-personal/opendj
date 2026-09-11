@@ -285,6 +285,11 @@ def _harvest_lines(target: Target) -> tuple[list[str], dict]:
             f"- [ ] feedback(pin) [{target.machine} {_sha(pin)} {pin['created_at']}]: "
             f"{pin['text']} (at {pin['x_pct']}%,{pin['y_pct']}% on {pin['page']}{anchor})"
         )
+        for reply in pin.get("replies") or []:
+            if isinstance(reply, dict):
+                author = reply.get("author", "?")
+                text = reply.get("text", "")
+                lines.append(f"    - {author}: {text}")
     if general["text"]:
         stamp = general.get("updated_at") or "?"
         lines.append(
@@ -306,6 +311,11 @@ def _print_snapshot(target: Target, snapshot: dict) -> None:
     print(f"comment pins: {len(snapshot['comments'])}")
     for pin in snapshot["comments"]:
         print(f"  - {pin['text']} ({pin['page']} {pin['x_pct']}%,{pin['y_pct']}%)")
+        for reply in pin.get("replies") or []:
+            if isinstance(reply, dict):
+                author = reply.get("author", "?")
+                text = reply.get("text", "")
+                print(f"    - {author}: {text}")
     general = snapshot["general"]
     print(f"general note: {general['text']!r}" if general["text"] else "general note: (empty)")
 

@@ -1,32 +1,44 @@
 /**
- * Pure lane packing for the main-waveform lyric overlay (build unit:
- * wavestack lyric lanes; specs/karaoke-lyrics-operational-plan.md).
+ * Pure lane packing for the main-waveform word overlay (build unit:
+ * wavestack word lanes; specs/karaoke-lyrics-operational-plan.md).
  *
  * No DOM, no canvas, no runes: every function is a plain transform of REAL
- * aligner words (LyricWord from /api/v1/tracks/{id}/lyrics), unit-testable
- * in isolation (tests/unit/word-lanes.test.mjs) and cheap enough to run
- * inside the WaveRow repaint.
+ * aligner words (a structural subset of the LyricWord shape served at
+ * /api/v1/tracks/{id}/lyrics, declared locally below as LaneInputWord so
+ * this module imports nothing), unit-testable in isolation
+ * (tests/unit/word-lanes.test.mjs) and cheap enough to run inside the
+ * WaveRow repaint.
  *
  * TEXT WIDTH ESTIMATE: pure code cannot call canvas measureText, so label
  * width is estimated as chars * LANE_CHAR_W_PX. 5.6px/char is a deliberate
  * OVER-estimate of the average glyph advance of a 9px sans-serif (~4.5-5px),
  * so the packer errs toward dropping a word rather than visually colliding
- * two. The painter (render.ts drawLyricLanes) draws at LANE_FONT_PX with the
- * same constant for underlines/backing, keeping estimate and paint coherent.
+ * two. The painter (WordLane.svelte) draws at LANE_FONT_PX with the same
+ * constant for underlines/backing, keeping estimate and paint coherent; the
+ * painter is DOM now, not canvas.
  *
  * MEMO CONTRACT (documented here, implemented by the caller): lane
  * assignment depends ONLY on word times, text widths and the px-per-second
  * scale - not on the window position. So assignLanes runs once per
  * (track, bucketPxPerS(pxPerS)) and sliceLanes does the per-frame work: one
  * binary search plus a walk over the visible words. Never re-assign per
- * frame in a rAF loop (docs/performance-monitor.md, lyric-lanes table).
+ * frame in a rAF loop (docs/perf/performance-register.md, word-lanes table).
  */
-import type { LyricWord } from '$lib/api';
+
+/** One aligner word as consumed by the packer - a structural subset of the
+ * LyricWord shape served at /api/v1/tracks/{id}/lyrics. Declared locally
+ * (not imported from $lib/api) so this module stays dependency-free. */
+export interface LaneInputWord {
+	idx: number;
+	word: string;
+	start_s: number | null;
+	end_s: number | null;
+}
 
 /** Canvas font size the painter uses for lane words, CSS px. 11px (was 9):
  * the maintainer's Tue 1 Sep 2026 review called the 9px lanes too hard to read. The
  * canonical wave row (~36px CSS) still fits two 11px lanes under the 10px
- * marker band (lyricLaneYs guards the arithmetic). */
+ * marker band (the DOM layout in WordLane.svelte guards the arithmetic). */
 export const LANE_FONT_PX = 11;
 /** Estimated average glyph advance at LANE_FONT_PX (see header). Scaled with
  * the font (5.6 * 11/9), kept a deliberate over-estimate. */
@@ -61,7 +73,7 @@ export function lyricLaneYs(heightCss: number): [number, number] {
 export interface LaneWord {
 	/** Source word - `word.idx` is the track-level index used for the
 	 * active-word highlight match. */
-	word: LyricWord;
+	word: LaneInputWord;
 	lane: number;
 	/** Estimated label width in px at LANE_FONT_PX (see header). */
 	widthPx: number;
@@ -115,7 +127,7 @@ export function bucketPxPerS(pxPerS: number): number {
  *      construction (the property the unit test sweeps).
  */
 export function assignLanes(
-	words: LyricWord[],
+	words: LaneInputWord[],
 	pxPerS: number,
 	opts: PackOpts = {}
 ): AssignedLanes {
@@ -129,7 +141,7 @@ export function assignLanes(
 	let usedLane1 = false;
 	let prevStart = -Infinity;
 	for (const word of words) {
-		if (word.start_s == null) continue;
+		if (word.start_s === null) continue;
 		if (word.start_s < prevStart) {
 			throw new Error(
 				`assignLanes: words not time-ordered at idx ${word.idx} ` +
@@ -197,19 +209,38 @@ export function sliceLanes(
 }
 
 /**
- * Convenience one-shot: assign + slice. The unit the perf table measures.
- * Callers in a rAF loop must NOT use this - memoise assignLanes per
- * (track, bucketPxPerS) and call sliceLanes per frame (see header).
+ * Waveform window geometry for one frame: the window shown is
+ * `windowSeconds * pitch` seconds of track time centred on the playhead
+ * (the same semantic the main's lyrics-lane.ts lyricLanePositionPercent
+ * encodes: `50 + (t - pos) / (windowSeconds * pitch * 1000) * 100`).
+ * Returns the left edge of that window in track seconds and the resulting
+ * px-per-second scale, ready to feed sliceLanes/packWordLanes.
  */
-export function packLyricLanes(
-	words: LyricWord[],
-	tLeftSec: number,
-	pxPerSec: number,
-	widthCss: number,
-	opts: PackOpts = {}
-): PackedLaneWord[] {
-	const assigned = assignLanes(words, opts.assignPxPerS ?? pxPerSec, opts);
-	return sliceLanes(assigned, tLeftSec, pxPerSec, widthCss);
+export function laneWindow(args: {
+	positionMs: number;
+	pitch: number;
+	widthCss: number;
+	windowSeconds: number;
+}): { tLeftSec: number; pxPerS: number } {
+	const { positionMs, pitch, widthCss, windowSeconds } = args;
+	if (
+		!Number.isFinite(positionMs) ||
+		!Number.isFinite(pitch) ||
+		!Number.isFinite(widthCss) ||
+		!Number.isFinite(windowSeconds)
+	) {
+		throw new RangeError(`laneWindow: all inputs must be finite, got ${JSON.stringify(args)}`);
+	}
+	if (pitch <= 0 || widthCss <= 0 || windowSeconds <= 0) {
+		throw new RangeError(
+			`laneWindow: pitch, widthCss and windowSeconds must be > 0, got ${JSON.stringify(args)}`
+		);
+	}
+	const windowSpanSec = windowSeconds * pitch;
+	return {
+		tLeftSec: positionMs / 1000 - windowSpanSec / 2,
+		pxPerS: widthCss / windowSpanSec
+	};
 }
 
 /**
@@ -223,31 +254,8 @@ export function activeLaneWordIdx(laneWords: LaneWord[], tSec: number): number |
 	for (const i of [at, at - 1]) {
 		if (i < 0 || i >= laneWords.length) continue;
 		const { start_s, end_s, idx } = laneWords[i].word;
-		if (start_s == null || end_s == null) continue;
+		if (start_s === null || end_s === null) continue;
 		if (tSec >= start_s && tSec < end_s) return idx;
 	}
 	return null;
-}
-
-/**
- * Per-call cost harness hook (docs/performance-monitor.md, lyric-lanes
- * table): median-free mean microseconds per packLyricLanes call over
- * `iterations` runs, after a small warmup. Pure - the perf unit test calls
- * this and prints the number; nothing in the app path does.
- */
-export function packCostMicroseconds(args: {
-	words: LyricWord[];
-	tLeftSec: number;
-	pxPerSec: number;
-	widthCss: number;
-	iterations?: number;
-}): number {
-	const { words, tLeftSec, pxPerSec, widthCss } = args;
-	const iterations = args.iterations ?? 500;
-	if (iterations < 1) throw new RangeError(`packCostMicroseconds: iterations >= 1 required`);
-	for (let i = 0; i < 20; i++) packLyricLanes(words, tLeftSec, pxPerSec, widthCss);
-	const t0 = globalThis.performance.now();
-	for (let i = 0; i < iterations; i++) packLyricLanes(words, tLeftSec, pxPerSec, widthCss);
-	const t1 = globalThis.performance.now();
-	return ((t1 - t0) * 1000) / iterations;
 }

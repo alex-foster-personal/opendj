@@ -72,7 +72,7 @@
 			aria-label={`safety loop deck ${deckId}`}
 			data-state={safety.armed ? 'on' : 'off'}
 			aria-pressed={safety.armed}
-			title={`safety loop ${safety.beat_length ?? '?'} beats at ${Math.round(safety.in_ms)} ms - ${safety.armed ? 'armed, engages instead of running off the end' : 'saved but disarmed'}`}
+			title={`safety loop ${safety.beat_length ?? '?'} beats at ${Math.round(safety.in_ms)} ms - ${safety.armed ? "armed, engages when this loop's out is reached" : 'saved but disarmed'}`}
 			onclick={toggleSafetyArmed}
 		>
 			SAFE {safety.beat_length ?? ''}

@@ -62,7 +62,6 @@ router = APIRouter(prefix="/bench", tags=["bench"])
 REPO_ROOT: Path = Path(__file__).resolve().parents[4]
 # Module-level so tests can monkeypatch to a tmp ledger / tmp ratings dir.
 KPI_LEDGER_FILE: Path = REPO_ROOT / "scripts" / "bench" / "kpi_ledger.json"
-LYRICS_KPI_LEDGER_FILE: Path = REPO_ROOT / "scripts" / "bench" / "lyrics_kpi_ledger.json"
 RATINGS_DIR: Path = REPO_ROOT / "scripts" / "bench" / "ratings"
 RATINGS_REL: str = "scripts/bench/ratings"
 SLUG_MAX_CHARS: int = 80
@@ -95,34 +94,6 @@ def get_kpi_ledger() -> dict[str, Any]:
     for key in ("kpis", "snapshots"):
         if key not in ledger:
             raise _malformed("kpi_ledger_malformed", f"{KPI_LEDGER_FILE} missing '{key}'")
-    return ledger
-
-
-@router.get("/lyrics-kpi")
-def get_lyrics_kpi_ledger() -> dict[str, Any]:
-    """The lyrics KPI ledger (scripts/bench/lyrics_kpi_ledger.json).
-
-    Read-only contract: appending stays a CLI action (lyrics_kpi_append.py).
-    Unlike /bench/kpi, a missing file is 404 naming the path.
-    """
-    if not LYRICS_KPI_LEDGER_FILE.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"lyrics KPI ledger not found: {LYRICS_KPI_LEDGER_FILE}",
-        )
-    try:
-        ledger = json.loads(LYRICS_KPI_LEDGER_FILE.read_text())
-    except json.JSONDecodeError as exc:
-        raise _malformed(
-            "lyrics_kpi_ledger_unparseable",
-            f"{LYRICS_KPI_LEDGER_FILE} is not valid JSON: {exc}",
-        ) from exc
-    for key in ("kpis", "snapshots"):
-        if key not in ledger:
-            raise _malformed(
-                "lyrics_kpi_ledger_malformed",
-                f"{LYRICS_KPI_LEDGER_FILE} missing '{key}'",
-            )
     return ledger
 
 

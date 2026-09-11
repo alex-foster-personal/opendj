@@ -68,6 +68,7 @@ from .routes import feedback as feedback_routes
 from .routes import feedback_attachments as feedback_attachments_routes
 from .routes import feedback_performance_marks as feedback_performance_marks_routes
 from .routes import feedback_pins as feedback_pins_routes
+from .routes import feedback_replies as feedback_replies_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
@@ -399,6 +400,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         feedback_attachments_routes.router,
         feedback_performance_marks_routes.router,
         feedback_pins_routes.router,
+        feedback_replies_routes.router,
         share_routes.router,
         rb_assets_routes.router,
         search_routes.router,

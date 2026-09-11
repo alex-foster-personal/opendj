@@ -169,6 +169,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sets/{session_id}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Get Metadata Share
+         * @description Get an existing metadata-only share link for a finalized published set.
+         */
+        get: operations["api_get_metadata_share_api_sets__session_id__share_get"];
+        put?: never;
+        /**
+         * Api Publish Metadata Share
+         * @description Publish timeline metadata after explicit acknowledgement, never MP3 audio.
+         */
+        post: operations["api_publish_metadata_share_api_sets__session_id__share_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sets/{session_id}/soundcloud-export": {
         parameters: {
             query?: never;
@@ -640,10 +664,12 @@ export interface paths {
         };
         /**
          * Get Lyrics Kpi Ledger
-         * @description The lyrics KPI ledger (scripts/bench/lyrics_kpi_ledger.json).
+         * @description The lyrics KPI ledger verbatim (``scripts/bench/lyrics_kpi_ledger.json``).
          *
-         *     Read-only contract: appending stays a CLI action (lyrics_kpi_append.py).
-         *     Unlike /bench/kpi, a missing file is 404 naming the path.
+         *     Read-only here: appending a snapshot is a CLI act
+         *     (``scripts/bench/lyrics_kpi_append.py``) so the ledger keeps one writer.
+         *     A missing key raises rather than defaulting - a KPI panel drawing invented
+         *     numbers is worse than a panel that fails.
          */
         get: operations["get_lyrics_kpi_ledger_api_v1_bench_lyrics_kpi_get"];
         put?: never;
@@ -1538,6 +1564,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feedback/comments/{comment_id}/replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Append a follow-up on the same pin
+         * @description Appends a follow-up comment on the same pin without creating a second marker. This is not POST /follow-on, which opens a new pin at the same anchor only after the parent is fixed or merged. The agent_note scalar remains the latest agent lifecycle note; PATCH of agent_note also appends an agent reply unless it duplicates the last agent turn.
+         */
+        post: operations["add_reply_api_v1_feedback_comments__comment_id__replies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/general": {
         parameters: {
             query?: never;
@@ -2010,8 +2056,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Lyrics */
-        get: operations["list_lyrics_api_v1_lyrics_get"];
+        /**
+         * List Lyric Verdicts
+         * @description The triage listing: least trustworthy first by default, with the track
+         *     names joined in so a human can act on a row without a second request.
+         */
+        get: operations["list_lyric_verdicts_api_v1_lyrics_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2027,9 +2077,20 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Lyrics Config */
+        /**
+         * Get Lyrics Config
+         * @description The source ordering the pipeline will use on its next run.
+         *
+         *     No DB connection: the order is a JSON file beside state.db, read by BOTH
+         *     this endpoint and the offline scripts, so what the admin panel shows is
+         *     what the next fetch uses.
+         */
         get: operations["get_lyrics_config_api_v1_lyrics_config_get"];
-        /** Put Lyrics Config */
+        /**
+         * Put Lyrics Config
+         * @description Persist a full reordering. Partial lists are rejected: an ordering that
+         *     silently omits a source is an ordering the operator never saw.
+         */
         put: operations["put_lyrics_config_api_v1_lyrics_config_put"];
         post?: never;
         delete?: never;
@@ -2045,10 +2106,21 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Lyric Jobs */
+        /**
+         * Get Lyric Jobs
+         * @description Newest first. The queue is drained by the offline runner scripts:
+         *     stems and alignment never run in the daemon (house rule).
+         */
         get: operations["get_lyric_jobs_api_v1_lyrics_jobs_get"];
         put?: never;
-        /** Post Lyric Job */
+        /**
+         * Post Lyric Job
+         * @description Record a processing request from the UI (context menu / admin panel).
+         *
+         *     Every stable_id is checked against ``tracks`` in ONE select (the second and
+         *     last raw statement here, see :func:`_titles_by_stable_id`): a queue entry
+         *     for a track the library does not know is a job no runner can honour.
+         */
         post: operations["post_lyric_job_api_v1_lyrics_jobs_post"];
         delete?: never;
         options?: never;
@@ -2065,7 +2137,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post Lyrics Purge */
+        /**
+         * Post Lyrics Purge
+         * @description Remove one provider's lyrics from the row, the disk and R2 - parity for
+         *     the ``python -m apps.lyrics purge`` CLI, same function underneath.
+         *
+         *     ``writing=not dry_run`` is how the CLI asks for credentials too: a
+         *     rehearsal pushes and deletes nothing, so it must stay runnable on a
+         *     machine that has none.
+         */
         post: operations["post_lyrics_purge_api_v1_lyrics_purge_post"];
         delete?: never;
         options?: never;
@@ -2097,8 +2177,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Lyrics Summary */
-        get: operations["lyrics_summary_api_v1_lyrics_summary_get"];
+        /**
+         * Get Lyrics Summary
+         * @description Library-wide verdict histogram plus the calibrated bands, so a client
+         *     never hardcodes the thresholds it displays.
+         */
+        get: operations["get_lyrics_summary_api_v1_lyrics_summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3141,6 +3225,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stems/live-capability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Live Stems Capability
+         * @description Read install-time capability and, when requested, its deck plan.
+         */
+        get: operations["get_live_stems_capability_api_v1_stems_live_capability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stems/plan": {
         parameters: {
             query?: never;
@@ -3681,8 +3785,16 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Put Override */
-        put: operations["put_override_api_v1_tracks__stable_id__lyrics_override_put"];
+        /**
+         * Put Lyric Override
+         * @description Set (or clear with null) the human verdict, which always beats the
+         *     computed one wherever it is read (``store.LyricVerdict.effective``).
+         *
+         *     The override VALUE is validated before the write so the two failures stay
+         *     distinguishable: an unknown value is the caller's mistake (422), while a
+         *     refusal from the store means there is no live row to override (404).
+         */
+        put: operations["put_lyric_override_api_v1_tracks__stable_id__lyrics_override_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -3697,8 +3809,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Track Lyrics Words */
-        get: operations["get_track_lyrics_words_api_v1_tracks__stable_id__lyrics_words_get"];
+        /**
+         * Get Track Karaoke Words
+         * @description This track's karaoke timeline: the verdict envelope plus every word.
+         */
+        get: operations["get_track_karaoke_words_api_v1_tracks__stable_id__lyrics_words_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5224,6 +5339,8 @@ export interface components {
             issue_url?: string | null;
             /** Page */
             page: string;
+            /** Replies */
+            replies?: components["schemas"]["CommentReplyOut"][];
             /** Status */
             status?: string | null;
             /** Text */
@@ -5234,6 +5351,35 @@ export interface components {
             x_pct: number;
             /** Y Pct */
             y_pct: number;
+        };
+        /** CommentReplyIn */
+        CommentReplyIn: {
+            /** Agent Kind */
+            agent_kind?: string | null;
+            /**
+             * Author
+             * @default operator
+             * @enum {string}
+             */
+            author: "operator" | "agent";
+            /** Text */
+            text: string;
+        };
+        /** CommentReplyOut */
+        CommentReplyOut: {
+            /** Agent Kind */
+            agent_kind?: string | null;
+            /**
+             * Author
+             * @enum {string}
+             */
+            author: "operator" | "agent";
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
         };
         /** CommentUpdateIn */
         CommentUpdateIn: {
@@ -5296,29 +5442,49 @@ export interface components {
             /** Unreachable */
             unreachable: number;
         };
-        /** CoverageVerdictOut */
+        /**
+         * CoverageVerdictOut
+         * @description One ``lyric_verdict`` row as the API states it.
+         */
         CoverageVerdictOut: {
             /** Artist */
             artist?: string | null;
-            /** Computed At */
+            /**
+             * Computed At
+             * @description when the pipeline judged the track
+             */
             computed_at: string;
-            /** Coverage Pct */
+            /**
+             * Coverage Pct
+             * @description share of the track the vocal stem carries energy
+             */
             coverage_pct?: number | null;
             /**
              * Effective
-             * @description what to act on: override if set, else verdict
+             * @description same as effective_verdict; kept for clients that read .effective
              */
             effective: string;
             /**
+             * Effective Verdict
+             * @description what to act on: the human override if set, else verdict
+             */
+            effective_verdict: string;
+            /**
              * Has Words
-             * @description true when words_content_hash is set on the verdict row
+             * @description a words artifact exists for this track (the row records a words_content_hash); false means the words route will 404
              */
             has_words: boolean;
             /** Language Iso3 */
             language_iso3?: string | null;
-            /** N Lines */
+            /**
+             * N Lines
+             * @description derived lines in the artifact
+             */
             n_lines?: number | null;
-            /** N Words */
+            /**
+             * N Words
+             * @description words in the karaoke artifact
+             */
             n_words?: number | null;
             /** Override */
             override?: string | null;
@@ -5329,8 +5495,11 @@ export interface components {
              * @description share of words the independent ASR witness distrusts
              */
             pct_witness_red?: number | null;
-            /** Pipeline Version */
-            pipeline_version?: string | null;
+            /**
+             * Pipeline Version
+             * @description the code version that produced this row's hash
+             */
+            pipeline_version: string;
             /**
              * Source
              * @description lyric provider + match method
@@ -5340,15 +5509,16 @@ export interface components {
             stable_id: string;
             /** Title */
             title?: string | null;
-            /** Updated At */
+            /**
+             * Updated At
+             * @description sync stamp: when a machine last wrote the row
+             */
             updated_at: string;
             /**
              * Verdict
              * @description computed verdict from stem vocal coverage
              */
             verdict: string;
-            /** Words Content Hash */
-            words_content_hash?: string | null;
         };
         /** CredentialMachineOut */
         CredentialMachineOut: {
@@ -6313,31 +6483,52 @@ export interface components {
         };
         /**
          * KaraokeLineOut
-         * @description One derived line (apps/lyrics/lines.py, the canonical grouping).
+         * @description One derived line (:mod:`apps.lyrics.lines`, the canonical grouping).
+         *
+         *     Served rather than client-derived so every surface agrees and an agent can
+         *     curl exactly what the deck renders.
          */
         KaraokeLineOut: {
-            /** Band */
+            /**
+             * Band
+             * @description good | uncertain | bad | unjudged
+             */
             band: string;
-            /** End S */
+            /**
+             * End S
+             * @description last sung offset in the line, seconds
+             */
             end_s: number | null;
             /** First Idx */
             first_idx: number;
             /** Last Idx */
             last_idx: number;
-            /** N Judged */
+            /**
+             * N Judged
+             * @description words the witness judged at all
+             */
             n_judged: number;
-            /** N Red */
+            /**
+             * N Red
+             * @description words the witness put in a red class
+             */
             n_red: number;
             /** N Words */
             n_words: number;
-            /** Para Final */
+            /**
+             * Para Final
+             * @description gap-derived paragraph break: a blank line follows
+             */
             para_final: boolean;
             /**
              * Quality
              * @description share of witness-judged words NOT in the red classes; null when no word in the line was judged
              */
-            quality?: number | null;
-            /** Start S */
+            quality: number | null;
+            /**
+             * Start S
+             * @description first sung onset in the line, seconds
+             */
             start_s: number | null;
             /** Text */
             text: string;
@@ -6356,12 +6547,21 @@ export interface components {
              * @description calibrated band: at or below this stem vocal coverage a track is auto-stamped no-lyrics (novox round 0, pinned by test)
              */
             no_lyrics_max_coverage: number;
-            /** Sparse Max Coverage */
+            /**
+             * Sparse Max Coverage
+             * @description above this coverage a track is treated as vocal; between the two, other evidence decides
+             */
             sparse_max_coverage: number;
-            /** Total */
+            /**
+             * Total
+             * @description live verdict rows, the histogram's denominator
+             */
             total: number;
         };
-        /** KaraokeTrackOut */
+        /**
+         * KaraokeTrackOut
+         * @description The words payload. ``verdict`` is ALWAYS set: see the 404 rule.
+         */
         KaraokeTrackOut: {
             /**
              * Lines
@@ -6372,22 +6572,36 @@ export interface components {
             /** Words */
             words: components["schemas"]["KaraokeWordOut"][];
         };
-        /** KaraokeWordOut */
+        /**
+         * KaraokeWordOut
+         * @description One aligned word, exactly as the artifact stores it.
+         */
         KaraokeWordOut: {
-            /** Asr Delta S */
-            asr_delta_s?: number | null;
-            /** End S */
+            /**
+             * End S
+             * @description sung offset in seconds
+             */
             end_s?: number | null;
-            /** Idx */
+            /**
+             * Idx
+             * @description position in the track's flat word list, from 0
+             */
             idx: number;
             /**
              * Line Final
+             * @description this word closes its line (the grouping flag)
              * @default false
              */
             line_final: boolean;
-            /** Score */
+            /**
+             * Score
+             * @description aligner confidence for this word, 0..1
+             */
             score?: number | null;
-            /** Start S */
+            /**
+             * Start S
+             * @description sung onset in seconds
+             */
             start_s?: number | null;
             /**
              * Witness
@@ -6721,7 +6935,10 @@ export interface components {
             kind: string;
             /** Note */
             note?: string | null;
-            /** Stable Ids */
+            /**
+             * Stable Ids
+             * @description tracks to process; each must exist
+             */
             stable_ids: string[];
         };
         /** LyricJobOut */
@@ -6730,13 +6947,22 @@ export interface components {
             id: string;
             /** Kind */
             kind: string;
-            /** Note */
-            note: string | null;
+            /**
+             * Note
+             * @description the runner's stage progress
+             */
+            note?: string | null;
             /** Stable Ids */
             stable_ids: string[];
-            /** Status */
+            /**
+             * Status
+             * @description queued | done | failed
+             */
             status: string;
-            /** Ts */
+            /**
+             * Ts
+             * @description when the job was queued, UTC
+             */
             ts: string;
         };
         /**
@@ -6759,7 +6985,10 @@ export interface components {
         };
         /** LyricsConfigIn */
         LyricsConfigIn: {
-            /** Source Order */
+            /**
+             * Source Order
+             * @description every known source, ranked; a partial list is rejected
+             */
             source_order: string[];
         };
         /** LyricsConfigOut */
@@ -6781,6 +7010,119 @@ export interface components {
             source_titles: {
                 [key: string]: string;
             };
+        };
+        /** LyricsKpiDefOut */
+        LyricsKpiDefOut: {
+            /**
+             * Direction
+             * @description lower_better | higher_better
+             */
+            direction: string;
+            /** Label */
+            label: string;
+            /**
+             * Title
+             * @description hover text: what the number actually measures
+             */
+            title: string;
+            /** Unit */
+            unit: string;
+        };
+        /** LyricsKpiOut */
+        LyricsKpiOut: {
+            /** Kpis */
+            kpis: {
+                [key: string]: components["schemas"]["LyricsKpiDefOut"];
+            };
+            /**
+             * Snapshots
+             * @description oldest first
+             */
+            snapshots: components["schemas"]["LyricsKpiSnapshotOut"][];
+        };
+        /** LyricsKpiSnapshotOut */
+        LyricsKpiSnapshotOut: {
+            /**
+             * Label
+             * @description the experiment round or shipped milestone
+             */
+            label: string;
+            /** Notes */
+            notes: string;
+            /**
+             * Provenance
+             * @description 'measured' at append time, or 'hand' transcribed from the experiment log. House rule: never quote a value without its ts.
+             */
+            provenance: string;
+            /** Ts */
+            ts: string;
+            /**
+             * Values
+             * @description one entry per KPI; null is a gap, never a carried-forward number
+             */
+            values: {
+                [key: string]: number | null;
+            };
+        };
+        /** LyricsPurgeIn */
+        LyricsPurgeIn: {
+            /**
+             * Dry Run
+             * @description NO default on purpose: a purge deletes licensed text from disk and R2, so the caller states which one it wants
+             */
+            dry_run: boolean;
+            /**
+             * Source Prefix
+             * @description source prefix, matched LIKE prefix%
+             */
+            source_prefix: string;
+        };
+        /**
+         * LyricsPurgeOut
+         * @description :class:`apps.lyrics.purge.PurgeReport`. Every count is observed.
+         */
+        LyricsPurgeOut: {
+            /** Dry Run */
+            dry_run: boolean;
+            /**
+             * Files Absent
+             * @description matched rows with no local artifact
+             */
+            files_absent: number;
+            /**
+             * Files Removed
+             * @description local karaoke artifacts deleted
+             */
+            files_removed: number;
+            /**
+             * Objects Absent
+             * @description R2 keys already gone
+             */
+            objects_absent: number;
+            /**
+             * Objects Deleted
+             * @description R2 objects deleted
+             */
+            objects_deleted: number;
+            /**
+             * R2 Skipped Reason
+             * @description why R2 was left alone; null means it was visited
+             */
+            r2_skipped_reason?: string | null;
+            /**
+             * Rows Matched
+             * @description live verdict rows whose source matched
+             */
+            rows_matched: number;
+            /**
+             * Rows Tombstoned
+             * @description rows soft-deleted; 0 on a dry run
+             */
+            rows_tombstoned: number;
+            /** Source Prefix */
+            source_prefix: string;
+            /** Stable Ids */
+            stable_ids: string[];
         };
         /**
          * LyricsRowSummaryOut
@@ -6950,6 +7292,37 @@ export interface components {
             dest: components["schemas"]["PlaylistWriteOut"];
             source?: components["schemas"]["PlaylistWriteOut"] | null;
         };
+        /**
+         * MetadataShareRequest
+         * @description Explicit acknowledgement that the resulting web view excludes audio.
+         */
+        MetadataShareRequest: {
+            /**
+             * Confirm Metadata Only
+             * @constant
+             */
+            confirm_metadata_only: true;
+        };
+        /**
+         * MetadataShareResponse
+         * @description A browser URL for the non-audio set history presentation.
+         */
+        MetadataShareResponse: {
+            /**
+             * Content
+             * @constant
+             */
+            content: "metadata_only";
+            /** Session Id */
+            session_id: string;
+            /**
+             * Share State
+             * @constant
+             */
+            share_state: "shared_cloud";
+            /** Share Url */
+            share_url: string;
+        };
         /** MixerChannelMarkOut */
         MixerChannelMarkOut: {
             /** Assign */
@@ -7107,7 +7480,10 @@ export interface components {
         };
         /** OverrideIn */
         OverrideIn: {
-            /** Note */
+            /**
+             * Note
+             * @description why the human disagreed
+             */
             note?: string | null;
             /**
              * Override
@@ -7910,39 +8286,6 @@ export interface components {
              * @default 0
              */
             skipped: number;
-        };
-        /** PurgeIn */
-        PurgeIn: {
-            /**
-             * Dry Run
-             * @default false
-             */
-            dry_run: boolean;
-            /** Source Prefix */
-            source_prefix: string;
-        };
-        /** PurgeOut */
-        PurgeOut: {
-            /** Dry Run */
-            dry_run: boolean;
-            /** Files Absent */
-            files_absent: number;
-            /** Files Removed */
-            files_removed: number;
-            /** Objects Absent */
-            objects_absent: number;
-            /** Objects Deleted */
-            objects_deleted: number;
-            /** R2 Skipped Reason */
-            r2_skipped_reason: string | null;
-            /** Rows Matched */
-            rows_matched: number;
-            /** Rows Tombstoned */
-            rows_tombstoned: number;
-            /** Source Prefix */
-            source_prefix: string;
-            /** Stable Ids */
-            stable_ids: string[];
         };
         /** PushRequest */
         PushRequest: {
@@ -9732,6 +10075,37 @@ export interface components {
             jog_radial_waveform: boolean;
             level_calibration?: components["schemas"]["LevelCalibrationOut"];
             /**
+             * Lyrics Deck Line
+             * @default true
+             */
+            lyrics_deck_line: boolean;
+            /**
+             * Lyrics Global
+             * @default true
+             */
+            lyrics_global: boolean;
+            /**
+             * Lyrics Hover Scrub
+             * @default true
+             */
+            lyrics_hover_scrub: boolean;
+            /**
+             * Lyrics Library Col
+             * @default true
+             */
+            lyrics_library_col: boolean;
+            /**
+             * Lyrics Load Strategy
+             * @default hover
+             * @enum {string}
+             */
+            lyrics_load_strategy: "in-view" | "hover" | "off";
+            /**
+             * Lyrics Waveform Overlay
+             * @default true
+             */
+            lyrics_waveform_overlay: boolean;
+            /**
              * Show Agent Pins
              * @default true
              */
@@ -9760,6 +10134,18 @@ export interface components {
             /** Jog Radial Waveform */
             jog_radial_waveform?: boolean | null;
             level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
+            /** Lyrics Deck Line */
+            lyrics_deck_line?: boolean | null;
+            /** Lyrics Global */
+            lyrics_global?: boolean | null;
+            /** Lyrics Hover Scrub */
+            lyrics_hover_scrub?: boolean | null;
+            /** Lyrics Library Col */
+            lyrics_library_col?: boolean | null;
+            /** Lyrics Load Strategy */
+            lyrics_load_strategy?: ("in-view" | "hover" | "off") | null;
+            /** Lyrics Waveform Overlay */
+            lyrics_waveform_overlay?: boolean | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
             /** Technically Working Animate */
@@ -10557,6 +10943,72 @@ export interface operations {
             };
         };
     };
+    api_get_metadata_share_api_sets__session_id__share_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataShareResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_publish_metadata_share_api_sets__session_id__share_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MetadataShareRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataShareResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get: {
         parameters: {
             query?: never;
@@ -11336,9 +11788,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["LyricsKpiOut"];
                 };
             };
         };
@@ -13130,6 +13580,41 @@ export interface operations {
             };
         };
     };
+    add_reply_api_v1_feedback_comments__comment_id__replies_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentReplyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_general_api_v1_feedback_general_get: {
         parameters: {
             query?: never;
@@ -13991,7 +14476,7 @@ export interface operations {
             };
         };
     };
-    list_lyrics_api_v1_lyrics_get: {
+    list_lyric_verdicts_api_v1_lyrics_get: {
         parameters: {
             query?: {
                 limit?: number;
@@ -14142,7 +14627,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PurgeIn"];
+                "application/json": components["schemas"]["LyricsPurgeIn"];
             };
         };
         responses: {
@@ -14152,7 +14637,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PurgeOut"];
+                    "application/json": components["schemas"]["LyricsPurgeOut"];
                 };
             };
             /** @description Validation Error */
@@ -14200,7 +14685,7 @@ export interface operations {
             };
         };
     };
-    lyrics_summary_api_v1_lyrics_summary_get: {
+    get_lyrics_summary_api_v1_lyrics_summary_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -16201,6 +16686,40 @@ export interface operations {
             };
         };
     };
+    get_live_stems_capability_api_v1_stems_live_capability_get: {
+        parameters: {
+            query?: {
+                deck_count?: number | null;
+                bpm?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_stems_plan_api_v1_stems_plan_get: {
         parameters: {
             query?: {
@@ -17187,7 +17706,7 @@ export interface operations {
             };
         };
     };
-    put_override_api_v1_tracks__stable_id__lyrics_override_put: {
+    put_lyric_override_api_v1_tracks__stable_id__lyrics_override_put: {
         parameters: {
             query?: never;
             header?: never;
@@ -17222,7 +17741,7 @@ export interface operations {
             };
         };
     };
-    get_track_lyrics_words_api_v1_tracks__stable_id__lyrics_words_get: {
+    get_track_karaoke_words_api_v1_tracks__stable_id__lyrics_words_get: {
         parameters: {
             query?: {
                 /** @description 'lines' adds the derived line objects */

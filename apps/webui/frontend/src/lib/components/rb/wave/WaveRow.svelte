@@ -5,8 +5,6 @@
 	// so its reserved artwork slot cannot read as a missing image.
 	// rAF repaints ONLY while this deck is playing or being scrubbed.
 	import { fetchTrackLyrics, vocalsOf } from '$lib/rb/api-rb';
-	import { lyricEntry, loadLyrics } from '$lib/lyrics/lyrics-cache.svelte';
-	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import {
 		performanceCommandStatus,
 		runPerformanceCommandFromUi
@@ -63,8 +61,7 @@
 		waveSnapModeFromModifiers
 	} from './wave-scrub';
 	import WaveGutter from './WaveGutter.svelte';
-	import LyricsLane from './LyricsLane.svelte';
-	import WordLane from './WordLane.svelte';
+	import LyricLanes from './LyricLanes.svelte';
 	import { createLyricsFetchState } from './lyrics-fetch.svelte';
 
 	const { deckId }: { deckId: DeckId } = $props();
@@ -97,22 +94,6 @@
 		return () => unregisterAnlzConsumer(sid, token);
 	});
 	const lyricsState = createLyricsFetchState(() => deck.stable_id, fetchTrackLyrics);
-	const deckLyricEntry = $derived(deck.stable_id === null ? null : lyricEntry(deck.stable_id));
-	const hasWords = $derived(
-		deckLyricEntry?.state === 'loaded' &&
-			deckLyricEntry.track !== null &&
-			deckLyricEntry.track.words.length > 0
-	);
-	const showWordLane = $derived(
-		uiPrefs.lyrics_global && uiPrefs.lyrics_waveform_overlay && hasWords
-	);
-
-	$effect(() => {
-		const sid = deck.stable_id;
-		if (sid !== null && uiPrefs.lyrics_global && uiPrefs.lyrics_waveform_overlay) {
-			void loadLyrics(sid);
-		}
-	});
 
 	const anlzData = $derived.by(() => resolveDisplayedAnlz(deck.anlz, deck.stable_id));
 	const anlzErrorCode = $derived.by(() => {
@@ -534,19 +515,7 @@ estimated from the render clock and may run ahead of what you hear."
 			onpointercancel={onPointerCancel}
 			onlostpointercapture={onLostPointerCapture}
 		></canvas>
-		{#if showWordLane}
-			{@const wordTrack = deckLyricEntry?.track}
-			{#if wordTrack !== null && wordTrack !== undefined}
-				<WordLane words={wordTrack.words} positionMs={_paintPositionMs()} pitch={deck.pitch} />
-			{/if}
-		{:else}
-			<LyricsLane
-				lyrics={lyricsState.lyrics}
-				loadError={lyricsState.loadError}
-				positionMs={_paintPositionMs()}
-				pitch={deck.pitch}
-			/>
-		{/if}
+		<LyricLanes stableId={deck.stable_id} lyrics={lyricsState.lyrics} loadError={lyricsState.loadError} positionMs={_paintPositionMs()} pitch={deck.pitch} />
 		{#if deck.stable_id !== null && anlzErrorCode !== null && beatgridFallback === null}
 			<span class="anlz-state" title={anlzErrorCode}>
 				{anlzErrorCode === 'ANALYSIS_NOT_FOUND' ? 'NO ANALYSIS' : `ANLZ ERROR ${anlzErrorCode}`}

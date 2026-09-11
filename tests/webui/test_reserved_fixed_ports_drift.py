@@ -152,6 +152,21 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         5326,
     ),
     (
+        "apps/webui/frontend/tests/e2e/playwright.cloudsync-ui.config.ts",
+        "export const CLOUDSYNC_UI_HUB_PORT = 8711;",
+        8711,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/playwright.cloudsync-ui.config.ts",
+        "export const CLOUDSYNC_UI_SPOKE_PORT = 8712;",
+        8712,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/playwright.cloudsync-ui.config.ts",
+        "export const CLOUDSYNC_UI_FRONTEND_PORT = 5331;",
+        5331,
+    ),
+    (
         "apps/webui/frontend/tests/e2e/vite.rekordbox-gate.config.ts",
         "export const REKORDBOX_GATE_E2E_PORT = 5399;",
         5399,

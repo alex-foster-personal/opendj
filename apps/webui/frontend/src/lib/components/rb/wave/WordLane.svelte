@@ -1,128 +1,155 @@
+<!--
+	Word lane: the DOM half of the karaoke overlay, absolutely positioned
+	over one deck waveform. Placement comes exclusively from word-lanes.ts
+	(assignLanes + sliceLanes fed by laneWindow), so this component makes no
+	geometry decisions of its own - it paints what the packer placed.
+
+	MEMO STRATEGY (word-lanes.ts header contract): lane assignment depends
+	only on word times, label widths and the px-per-second BUCKET, not on the
+	window position, so it runs once per (words identity, bucketPxPerS) and
+	each frame pays only sliceLanes (binary search + walk over visible
+	words). The memo lives in plain per-instance locals on purpose: it is a
+	paint-path cache, not UI state, so it must not be $state.
+-->
 <script lang="ts">
-	/**
-	 * DOM overlay sibling of LyricsLane: per-word lanes packed by word-lanes.ts.
-	 * Uses the presented transport clock (positionMs) like LyricsLane; does not
-	 * import api-rb.
-	 */
-	import type { LyricWord } from '$lib/api';
+	import type { KaraokeWord } from '$lib/api-karaoke';
 	import { WAVE_WINDOW_S } from './render';
 	import {
-		activeLaneWordIdx,
 		assignLanes,
+		activeLaneWordIdx,
 		bucketPxPerS,
-		lyricLaneYs,
-		LANE_FONT_PX,
+		laneWindow,
 		sliceLanes,
-		type AssignedLanes
+		LANE_FONT_PX,
+		type AssignedLanes,
+		type LaneInputWord,
+		type PackedLaneWord
 	} from './word-lanes';
-
-	const SUSPECT_WITNESS = new Set(['contradict', 'lost']);
 
 	const {
 		words,
 		positionMs,
 		pitch
 	}: {
-		words: LyricWord[];
+		words: KaraokeWord[];
 		positionMs: number;
 		pitch: number;
 	} = $props();
 
-	let rootEl = $state<HTMLDivElement | null>(null);
+	/** Per-lane text box height; two of them fill the 24px root. */
+	const LANE_HEIGHT_PX = 12;
+	/** Witness classes drawn as SUSPECT (render.ts drawLyricLanes contract):
+	 * round-5 calibration showed contradict/lost carry 4.5x the base
+	 * word-timing error rate. Shown dimmer and underlined, never hidden. */
+	const SUSPECT_WITNESS: ReadonlySet<string> = new Set(['contradict', 'lost']);
+
+	/** Measured lane width. 0 until the row is laid out - a hidden lane has
+	 * no honest geometry, so nothing is painted at that width. */
 	let widthCss = $state(0);
-	let heightCss = $state(0);
 
-	$effect(() => {
-		const node = rootEl;
-		if (node === null || typeof ResizeObserver === 'undefined') return;
-		const ro = new ResizeObserver(() => {
-			widthCss = node.clientWidth;
-			heightCss = node.clientHeight;
-		});
-		ro.observe(node);
-		widthCss = node.clientWidth;
-		heightCss = node.clientHeight;
-		return () => ro.disconnect();
-	});
+	let _sourceRef: KaraokeWord[] | null = null;
+	let _laneInput: LaneInputWord[] = [];
+	let _witnessByIdx = new Map<number, string | null>();
+	let _laneBucket: number | null = null;
+	let _assigned: AssignedLanes | null = null;
 
-	const trackWindowS = $derived(WAVE_WINDOW_S * pitch);
-	const pxPerSec = $derived(widthCss > 0 ? widthCss / trackWindowS : 0);
-	const tLeftSec = $derived(Math.max(0, positionMs / 1000 - trackWindowS / 2));
-	const positionS = $derived(positionMs / 1000);
+	/** Packer input for one payload: the served words carry optional times,
+	 * the packer requires them present, and witness travels beside the lane
+	 * words rather than through them (assignLanes is shape-fixed). */
+	function _adoptWords(source: KaraokeWord[]): void {
+		_sourceRef = source;
+		_laneInput = source.map((word) => ({
+			idx: word.idx,
+			word: word.word,
+			start_s: word.start_s ?? null,
+			end_s: word.end_s ?? null
+		}));
+		_witnessByIdx = new Map(source.map((word) => [word.idx, word.witness ?? null]));
+		_assigned = null;
+	}
 
-	let assigned = $state<AssignedLanes | null>(null);
-	let assignedKey = $state('');
-
-	$effect(() => {
-		if (pxPerSec <= 0 || words.length === 0) {
-			assigned = null;
-			assignedKey = '';
-			return;
+	function _assignedLanesFor(source: KaraokeWord[], pxPerS: number): AssignedLanes {
+		if (source !== _sourceRef) _adoptWords(source);
+		const bucket = bucketPxPerS(pxPerS);
+		if (bucket !== _laneBucket || _assigned === null) {
+			_assigned = assignLanes(_laneInput, bucket);
+			_laneBucket = bucket;
 		}
-		const bucket = bucketPxPerS(pxPerSec);
-		const key = `${words.length}:${bucket}`;
-		if (key === assignedKey && assigned !== null) return;
-		assigned = assignLanes(words, bucket);
-		assignedKey = key;
+		return _assigned;
+	}
+
+	const frame = $derived.by((): { packed: PackedLaneWord[]; activeIdx: number | null } | null => {
+		if (widthCss <= 0) return null;
+		const win = laneWindow({ positionMs, pitch, widthCss, windowSeconds: WAVE_WINDOW_S });
+		const assigned = _assignedLanesFor(words, win.pxPerS);
+		return {
+			packed: sliceLanes(assigned, win.tLeftSec, win.pxPerS, widthCss),
+			activeIdx: activeLaneWordIdx(assigned.laneWords, positionMs / 1000)
+		};
 	});
 
-	const packed = $derived(
-		assigned === null || pxPerSec <= 0 || widthCss <= 0
-			? []
-			: sliceLanes(assigned, tLeftSec, pxPerSec, widthCss)
-	);
-	const activeIdx = $derived(
-		assigned === null ? null : activeLaneWordIdx(assigned.laneWords, positionS)
-	);
-	const laneYs = $derived(heightCss > 0 ? lyricLaneYs(heightCss) : [0, 0]);
+	function _isSuspect(idx: number): boolean {
+		const witness = _witnessByIdx.get(idx) ?? null;
+		return witness !== null && SUSPECT_WITNESS.has(witness);
+	}
+
+	/** Hover title for a numeric readout (house rule): the sung onset the
+	 * placement came from, plus the ASR witness verdict behind the styling. */
+	function _wordTitle(word: LaneInputWord): string {
+		const witness = _witnessByIdx.get(word.idx) ?? null;
+		const onset = word.start_s === null ? 'unaligned' : `${word.start_s.toFixed(2)}s`;
+		return `sung onset ${onset} - ASR witness ${witness ?? 'unjudged'}`;
+	}
 </script>
 
-<div class="word-lane" bind:this={rootEl} aria-label="Synced word lyrics">
-	{#each packed as p (p.word.idx)}
-		{@const isActive = activeIdx !== null && p.word.idx === activeIdx}
-		{@const witness = p.word.witness}
-		{@const suspect = witness !== null && witness !== undefined && SUSPECT_WITNESS.has(witness)}
-		<span
-			class="word-label"
-			class:active={isActive}
-			class:suspect={suspect}
-			style:left="{p.x}px"
-			style:top="{laneYs[p.lane]}px"
-			style:font-size="{LANE_FONT_PX}px"
-			style:max-width="{p.widthPx}px"
-		>{p.word.word}</span>
-	{/each}
+<div
+	class="word-lane"
+	aria-label="Karaoke words"
+	style:font-size={`${LANE_FONT_PX}px`}
+	bind:clientWidth={widthCss}
+>
+	{#if frame !== null}
+		{#each frame.packed as packed (packed.word.idx)}
+			<span
+				class="lane-word"
+				class:suspect={_isSuspect(packed.word.idx)}
+				class:active={packed.word.idx === frame.activeIdx}
+				style:left={`${packed.x}px`}
+				style:top={`${packed.lane * LANE_HEIGHT_PX}px`}
+				title={_wordTitle(packed.word)}
+				aria-current={packed.word.idx === frame.activeIdx ? 'true' : undefined}
+			>{packed.word.word}</span>
+		{/each}
+	{/if}
 </div>
 
 <style>
 	.word-lane {
 		position: absolute;
-		inset: 0;
+		inset: auto 0 2px;
+		height: 24px;
 		overflow: hidden;
 		pointer-events: none;
 		z-index: 2;
 	}
-	.word-label {
+	.lane-word {
 		position: absolute;
-		transform: translateY(-100%);
+		height: 12px;
+		line-height: 12px;
 		white-space: nowrap;
-		overflow: hidden;
-		padding: 0 2px;
-		border-radius: 2px;
-		background: rgba(8, 10, 13, 0.78);
-		color: rgba(230, 235, 242, 0.92);
-		font-weight: 600;
-		line-height: 1;
+		pointer-events: none;
+		color: color-mix(in srgb, var(--rb-text) 70%, transparent);
 		text-shadow: 0 1px 2px var(--rb-bg);
+		transition: color 80ms linear, font-weight 80ms linear;
 	}
-	.word-label.active {
-		color: #ffffff;
+	/* Suspect first, active second: a suspect word at the playhead still
+	   reads as the active one. */
+	.lane-word.suspect {
+		color: color-mix(in srgb, #ff7b72 70%, transparent);
+		text-decoration: underline wavy;
+	}
+	.lane-word.active {
+		color: var(--rb-text);
 		font-weight: 700;
-	}
-	.word-label.suspect {
-		opacity: 0.72;
-		text-decoration: underline;
-		text-decoration-thickness: 1px;
-		text-underline-offset: 2px;
 	}
 </style>
