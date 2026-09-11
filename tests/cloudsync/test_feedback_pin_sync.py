@@ -112,6 +112,7 @@ class Engine:
 
     name: str
     data_dir: Path
+    app: FastAPI
     http: TestClient
 
     @property
@@ -188,7 +189,7 @@ def _engine(tmp_path: Path, name: str) -> Iterator[Engine]:
     )
     app.state.data_dir = data_dir
     with TestClient(app) as http:
-        yield Engine(name=name, data_dir=data_dir, http=http)
+        yield Engine(name=name, data_dir=data_dir, app=app, http=http)
 
 
 @pytest.fixture
@@ -382,7 +383,9 @@ def test_a_pin_missing_from_one_store_is_restored_not_deleted(
 
     assert pin["id"] in silver.pins(), "absence was read as deletion"
     assert pin["id"] in air.pins()
-    assert air.row(pin["id"])[3] is None, "absence became a tombstone"
+    row = air.row(pin["id"])
+    assert row is not None, "the pin never reached the table"
+    assert row[3] is None, "absence became a tombstone"
 
 
 # ----- FBSYNC-04: offline-first, loud, catches up ----------------------------
@@ -446,12 +449,11 @@ def test_the_cli_twin_drives_a_live_engine_and_fails_loudly_without_one(
 @pytest.mark.requirement("FBSYNC-04")
 def test_the_scheduler_syncs_only_when_switched_on(air: Engine, hub_url: str) -> None:
     """[if] the switch is off [then] no thread runs; on, one tick syncs, [else stop]."""
-    app = air.http.app
-    off = CloudSyncScheduler(app, env={})
+    off = CloudSyncScheduler(air.app, env={})
     off.start()
     assert not off.running, "the scheduler ran without MDT_CLOUDSYNC_SCHEDULER=1"
 
-    on = CloudSyncScheduler(app, env={
+    on = CloudSyncScheduler(air.app, env={
         sync_status.SCHEDULER_ENV: "1", sync_status.ENDPOINT_ENV: hub_url,
     })
     pin = air.drop("scheduled")
