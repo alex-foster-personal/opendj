@@ -37,7 +37,7 @@ import pytest
 from apps.engine_core.store.schema import normalize_object_sql
 from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
-from apps.shared.state.migrations_v10 import ASSET_KIND_CHECK_VALUES
+from apps.shared.state.migrations_v10 import _V10, ASSET_KIND_CHECK_VALUES
 
 pytestmark = pytest.mark.requirement("INFRA-01")
 
@@ -379,13 +379,11 @@ def test_a_stale_index_name_on_a_renamed_aside_table_fails_the_migration(
         with pytest.raises(sqlite3.OperationalError, match="idx_lyric_verdict_red"):
             state_schema.apply_migrations(conn)
         # Every rung below v10 (v9 enrollment included) succeeds and stamps;
-        # the lyric_verdict rung fails, so the DB sits one below v10 and no
-        # later rung (v11 feedback_pins) ever runs. Pinned to the lyric rung,
-        # not to SCHEMA_VERSION, so appending a rung cannot move it.
-        lyric_verdict_rung = 10
+        # only the lyric_verdict rung fails, so the DB sits one below IT.
+        # Derived from the ladder rather than SCHEMA_VERSION - 1: v11+ landed above.
         assert conn.execute(
             "SELECT MAX(version) FROM schema_meta"
-        ).fetchone()[0] == lyric_verdict_rung - 1, (
+        ).fetchone()[0] == state_schema.MIGRATIONS.index(_V10), (
             "a failed step must not stamp its version"
         )
     finally:

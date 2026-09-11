@@ -190,8 +190,8 @@ def test_d09_and_d08_survive_a_second_full_text_index(scan: lint.Scan) -> None:
 
     result = lint.run(widened)
 
-    assert result.checks_run == len(lint.CHECKS) == 8, (
-        "all eight checks must have RUN. A floor that aborts raises SystemExit "
+    assert result.checks_run == len(lint.CHECKS) == 9, (
+        "all nine checks must have RUN. A floor that aborts raises SystemExit "
         "before the first one, and no Result is produced at all."
     )
     undeclared = {v.subject for v in result.violations if v.rule == "undeclared_state_table"}
@@ -336,6 +336,13 @@ def test_every_state_authority_contributes_to_the_subject(clean_scan: lint.Scan)
     per_authority = {
         "apps/shared/state/schema.py": "tracks",
         "apps/analysis/store.py": "analysis",
+        # The backfill queue, additive on the same state.db, and its
+        # staleness table. Two FILES rather than two entry points: the
+        # declaration these are compared against reads files, so a
+        # DDL-bearing file folded into its neighbour's line would be
+        # classified by nobody.
+        "apps/analysis/queue_store.py": "analysis_queue_item",
+        "apps/analysis/queue_stale.py": "analysis_stale",
         "apps/shared/pairings/schema_sql.py": "pairings",
         # The same module's SECOND entry point, listed separately because it
         # is a separate ladder with its own version counter. Naming the module

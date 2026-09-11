@@ -28,6 +28,7 @@ import pytest
 
 from apps.entitlements import (
     FEATURES,
+    FEATURES_BY_ID,
     NOT_IN_PLAN_CODE,
     NOT_IN_PLAN_MESSAGE,
     PROVIDER_ENV,
@@ -42,12 +43,17 @@ from apps.entitlements.catalog import assert_sellable
 from apps.entitlements.resolver import PLAN_ID_UNGATED
 
 #: Ids nothing declares, on purpose: the ENT-04 claim is about UNKNOWN
-#: features, so the test has to ask about ones the catalog cannot know.
+#: features, so the test has to ask about ones the catalog cannot know. Every
+#: id carries a ``zz-test.`` prefix no real feature will ever use: the first
+#: entry used to be ``cloudsync.hosted-storage``, a real-looking id that would
+#: have silently stopped testing an UNKNOWN id the day CloudSync hosting was
+#: catalogued under it.
+UNKNOWN_ID_PREFIX: str = "zz-test."
 UNKNOWN_FEATURES: tuple[str, ...] = (
-    "cloudsync.hosted-storage",
-    "stems.unlimited",
-    "anything.at.all",
-    "a-plan-name-shaped-string",
+    "zz-test.guaranteed-absent",
+    "zz-test.stems-unlimited",
+    "zz-test.anything.at.all",
+    "zz-test.a-plan-name-shaped-string",
 )
 
 
@@ -58,6 +64,15 @@ def _no_provider(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # ----- ENT-04: inert and entitled ----------------------------------------
+def test_unknown_feature_ids_are_absent_from_the_catalog() -> None:
+    """If an UNKNOWN_FEATURES id is catalogued then the ENT-04 tests stop testing unknown ids."""
+    for feature_id in UNKNOWN_FEATURES:
+        assert feature_id.startswith(UNKNOWN_ID_PREFIX), feature_id
+        assert feature_id not in FEATURES_BY_ID, feature_id
+    # The prefix itself is reserved: no real feature may ever start with it.
+    assert not [f for f in FEATURES_BY_ID if f.startswith(UNKNOWN_ID_PREFIX)]
+
+
 def test_no_provider_is_the_shipped_state() -> None:
     assert configured_provider() is None
 

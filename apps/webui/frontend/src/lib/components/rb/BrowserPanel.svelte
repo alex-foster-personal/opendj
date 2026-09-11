@@ -41,6 +41,9 @@
 		isAppropriateNext,
 		resolveSearchFilterFallback,
 		selectSearchFilterFallback,
+		enqueueLibraryJobsBatched,
+		libraryJobsStore,
+		LibraryJobsChrome,
 		type NextOnlyRef
 	} from './browser/browser-panel-support';
 	import type {
@@ -62,10 +65,6 @@
 		recordLibraryLoadTiming
 	} from '$lib/rb/library-perf';
 	import type { FilterDebounce, FilterSettle } from '$lib/rb/library-perf';
-	import {
-		ANALYSIS_COLORS,
-		jobProgress
-	} from '$lib/rb/job-progress.svelte';
 	import {
 		dispatchPerformanceCommand,
 		registerPerformanceBrowserAdapter,
@@ -2802,6 +2801,8 @@
 			onrowvisible={rowVisible}
 			onremoverow={removeRow}
 			onreorder={reorderRows}
+			onstemsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'stems', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
+			onlyricsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'lyrics', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
 			ongenrefilter={genreFilter}
 			{genreFilterUntil}
 			searchQuery={pane.search}
@@ -2889,18 +2890,7 @@
 		<!-- This is our own app, not the vendor whose library format it reads
 		     (pin 571f4281ecea, the maintainer, Wed 2 Sep 2026). -->
 		<span class="wordmark">open dj</span>
-		{#if jobProgress.ribbon()}
-			{@const ribbon = jobProgress.ribbon()!}
-			<span
-				class="job-ribbon"
-				style={`--job:${ANALYSIS_COLORS[ribbon.kind]}; --pct:${Math.max(0.02, ribbon.progress)}`}
-				title={`${ribbon.label} offload`}
-				aria-label={ribbon.label}
-			>
-				<span class="job-ribbon-fill"></span>
-				<span class="job-ribbon-label">{ribbon.label}</span>
-			</span>
-		{/if}
+		<LibraryJobsChrome />
 		<!-- The build identity lives at the RIGHT end of this tray on
 		     /performance. It used to be position:fixed bottom-left, sitting on
 		     top of the connectivity dots. The root layout mounts it in the app

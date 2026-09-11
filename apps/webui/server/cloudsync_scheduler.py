@@ -108,12 +108,15 @@ class CloudSyncScheduler:
         # layout it will never sync.
         try:
             link = sync_status.read_status(self._data_dir, env=self._env)
-            if link.enabled:
+            # ``enabled`` needs a fresh heartbeat (evidence a loop is alive).
+            # ``configured`` is intent only; using ``enabled`` here would refuse
+            # to start before the first beat exists (CAT-04, PR #1998).
+            if link.configured:
                 store_for_app(self._app)
         except (FeedbackSyncError, sync_status.CloudSyncStatusError) as exc:
             self._refuse_to_start(exc)
             return
-        if not link.enabled:
+        if not link.configured:
             self._state, self._reason = "off", link.reason
             log.info("CloudSync scheduler not running: %s", link.reason)
             return

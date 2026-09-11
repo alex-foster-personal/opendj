@@ -62,7 +62,7 @@ REG  Q-09 Measure Python type debt with a pinned mypy, split by top-level
           [if MYPYPATH or PYTHONPATH is set in the calling shell then the
            isolated run still measures the pinned tree, not the ambient
            search path]
-REG  Q-08 Enforce three shell constructs as a hard gate (no ratchet) via
+REG  Q-08 Enforce four shell constructs as a hard gate (no ratchet) via
           scripts/shell_construct_lint.py, over shell sources and justfile
           recipes. Each one returns a plausible value with no error, so a
           growing allowance for them is not a rule.
@@ -284,6 +284,7 @@ HARD_ZERO: frozenset[str] = frozenset({
     "sync_drift.mirror_version_mismatch",
     "sync_drift.migration_step_changed",
     "sync_drift.undeclared_state_table",
+    "sync_drift.wire_shape_changed",
 })
 
 # Metrics that are measured and printed but never gated, because their value
@@ -307,7 +308,7 @@ HARD_ZERO: frozenset[str] = frozenset({
 # entry.
 #
 # shell.files_scanned is the second, for the opposite reason: it is a CONTROL on
-# the shell gate, not an allowance. It exists so a reader can see the three
+# the shell gate, not an allowance. It exists so a reader can see the four
 # hard-zero shell metrics were measured over a real file set rather than over
 # nothing, and gating it either way is wrong (a ratchet would fail on every new
 # script added, a hard zero is nonsense). The floor that makes it meaningful is
@@ -1135,7 +1136,7 @@ def _eval_size() -> list[Metric]:
 
 
 def _eval_shell() -> list[Metric]:
-    """Three shell constructs that silently answer a question nobody asked.
+    """Four shell constructs that silently answer a question nobody asked.
 
     Hard zero, never a ratchet: every one of these returns a plausible value with
     no error, so "we are allowed four of them" is not a position anyone would
@@ -1154,7 +1155,7 @@ def _eval_shell() -> list[Metric]:
     counts = collections.Counter(v.rule for v in violations)
     metrics = [
         Metric("shell.files_scanned", len(files), "shell files + justfiles",
-               "control: the three gates below are measured over this set")
+               "control: the four gates below are measured over this set")
     ]
     for rule in sorted(shell_construct_lint.RULES):
         offenders = [v.render(REPO) for v in violations if v.rule == rule]

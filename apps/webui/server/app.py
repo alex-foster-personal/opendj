@@ -21,12 +21,13 @@ from fastapi import FastAPI
 
 from apps.feature_flags import FlagStore
 
-from . import analysis_autostart, lyric_index_autostart
-from .backend import StateBackend
-from .cloud_sync import probe_syncthing_status
-from . import analysis_serving_bootstrap  # noqa: F401 - PARITY-02 lane registration
+from . import (
+    analysis_autostart,
+    analysis_serving_bootstrap,  # noqa: F401 - PARITY-02 lane registration
+    library_jobs_autostart,
+    lyric_index_autostart,
+)
 from .app_wiring import (
-    _SpaStaticFiles,
     _bind_core_state,
     _bind_feature_state,
     _bind_stem_and_usage,
@@ -37,7 +38,10 @@ from .app_wiring import (
     _mount_api_routers,
     _mount_frontend_or_placeholder,
     _resolve_ports,
+    _SpaStaticFiles,
 )
+from .backend import StateBackend
+from .cloud_sync import probe_syncthing_status
 from .frontend_build import frontend_build_dir
 from .routes import ingest as ingest_routes
 from .share_gate import ShareConfig
@@ -48,7 +52,7 @@ log = logging.getLogger(__name__)
 FRONTEND_BUILD_DIR: Path = frontend_build_dir()
 
 
-def create_app(
+def create_app(  # noqa: PLR0913
     *,
     backend: StateBackend | None = None,
     bind_host: str = "127.0.0.1",
@@ -68,6 +72,7 @@ def create_app(
     share_config: ShareConfig | None = None,
     auto_analyze: bool = False,
     lyric_index: bool = False,
+    auto_user_jobs: bool = False,
     feature_flags: FlagStore | None = None,
     cloudsync_scheduler: bool = False,
 ) -> FastAPI:
@@ -131,6 +136,7 @@ def create_app(
     )
     _bind_stem_and_usage(app, stem_roots, usage_store)
     app.state.cloudsync_scheduler_armed = cloudsync_scheduler
+    app.state.auto_user_jobs = library_jobs_autostart.build(enabled=auto_user_jobs)
     _install_exception_handlers(app)
     if enable_cors:
         _configure_cors(app, frontend_port)
@@ -332,14 +338,19 @@ def build_lyric_index_watcher(app: FastAPI) -> lyric_index_autostart.LyricIndexW
 def _build_default_app() -> FastAPI:
     from apps.shared import platform_paths
     from apps.shared.library_mode import apply_library_env, assert_ready
+    from apps.shared.sync_bind_guard import assert_sync_bind_allowed
     from apps.webui.library_assets import ensure_stem_storage, stem_storage
 
+    bind_host = os.environ.get("MUSIC_DJ_BIND_HOST", "127.0.0.1")
+    # W3, before any disk work: this app mounts /api/v1/sync/*. Covers the bare
+    # `uvicorn ...app:app` entry via MUSIC_DJ_BIND_HOST; uvicorn's own --host
+    # never reaches the app, so that flag alone is unguarded (sync_bind_guard).
+    assert_sync_bind_allowed(bind_host)
     apply_library_env()
     platform_paths.refresh_share_root()
     assert_ready()
     stems = stem_storage()
     ensure_stem_storage(stems)
-    bind_host = os.environ.get("MUSIC_DJ_BIND_HOST", "127.0.0.1")
     hostname = os.environ.get("MUSIC_DJ_HOSTNAME")
     # Phase 5 wiring: prefer SqliteBackend when ``data/state/state.db`` exists,
     # else fall back to the in-memory backend (keeps dev + tests fast).
@@ -373,6 +384,7 @@ def _build_default_app() -> FastAPI:
         auto_analyze=analysis_autostart.arm_from_environ(os.environ),
         lyric_index=lyric_index_autostart.enabled_from_environ(os.environ),
         cloudsync_scheduler=True,
+        auto_user_jobs=library_jobs_autostart.arm_from_environ(os.environ),
     )
 
 

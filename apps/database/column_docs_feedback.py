@@ -1,4 +1,4 @@
-"""Column docs for the v11 ``feedback_pins`` table (FBSYNC-01, ADR-0013).
+"""Column docs for the v12 ``feedback_pins`` table (FBSYNC-01, ADR-0013).
 
 Own module for the same reason ``column_docs_lyrics`` is one: the combined
 column-doc table would otherwise cross the 600-line file-size gate.

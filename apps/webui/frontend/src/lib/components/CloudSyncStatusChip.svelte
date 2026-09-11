@@ -1,29 +1,22 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getStatus, type CloudSyncStatus } from '$lib/api-cloudsync';
+	// The state rules live in one pure module shared with /cloudsync: the chip
+	// reads 'off' whenever there is no fresh scheduler heartbeat
+	// (status.running false), whatever the config or the last result says.
+	import {
+		CHIP_POLL_MS,
+		STATUS_CHANGED_EVENT,
+		chipState as chipStateOf,
+		relativeTime
+	} from '$lib/components/cloudsync/cloudsync-view';
 
 	let status = $state<CloudSyncStatus | null>(null);
 	let detailsOpen = $state(false);
 	let loadError = $state<string | null>(null);
 
-	function chipState(): 'off' | 'syncing' | 'ok' | 'error' | 'inconclusive' {
-		if (status === null || !status.enabled) return 'off';
-		if (status.last_result?.status === 'error') return 'error';
-		// Its own state, never folded into 'ok': the sync completed but its
-		// digest compare excluded rows, so agreement was not verified.
-		if (status.last_result?.status === 'inconclusive') return 'inconclusive';
-		if (status.last_result?.status === 'ok') return 'ok';
-		return 'syncing';
-	}
-
-	function relativeTime(value: string | null): string {
-		if (value === null) return 'never';
-		const delta = Date.now() - Date.parse(value);
-		if (!Number.isFinite(delta) || delta < 0) return value;
-		const minutes = Math.floor(delta / 60_000);
-		if (minutes < 1) return 'just now';
-		if (minutes < 60) return `${minutes}m ago`;
-		return `${Math.floor(minutes / 60)}h ago`;
+	function chipState(): ReturnType<typeof chipStateOf> {
+		return chipStateOf(status);
 	}
 
 	const label = $derived.by(() => {
@@ -57,15 +50,28 @@
 		return `CloudSync is syncing${status.rows_pending !== null ? ` (${status.rows_pending} rows pending)` : ''}. ${next}`;
 	});
 
+	async function load(): Promise<void> {
+		try {
+			status = await getStatus();
+			loadError = null;
+		} catch (error: unknown) {
+			loadError = error instanceof Error ? error.message : String(error);
+		}
+	}
+
+	// Re-read on an interval (a heartbeat that goes stale after load must turn
+	// the chip off) and at once when /cloudsync runs Sync now or saves config.
 	onMount(() => {
-		void getStatus()
-			.then((next) => {
-				status = next;
-				loadError = null;
-			})
-			.catch((error: unknown) => {
-				loadError = error instanceof Error ? error.message : String(error);
-			});
+		void load();
+		const timer = setInterval(() => {
+			if (!document.hidden) void load();
+		}, CHIP_POLL_MS);
+		const onStatusChanged = (): void => void load();
+		window.addEventListener(STATUS_CHANGED_EVENT, onStatusChanged);
+		return () => {
+			clearInterval(timer);
+			window.removeEventListener(STATUS_CHANGED_EVENT, onStatusChanged);
+		};
 	});
 </script>
 

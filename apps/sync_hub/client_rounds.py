@@ -101,6 +101,19 @@ def _watermark_after_hello(
     return watermark, restored
 
 
+def _refusal_verdicts(rounds: list[_Round], digest_inconclusive: bool) -> tuple[bool, bool]:
+    """``(push_refused, digest_inconclusive)`` for the result, refusal first.
+
+    A refused push ends the settle loop, so it can only be the LAST round;
+    ``any`` is used anyway so the result cannot hide one. A refused sync's
+    digests differ by construction, which is not "inconclusive" (that means
+    quarantine), so the refusal owns the verdict. Split out of
+    :func:`_result_from_rounds` to keep it under the quality-gate CC limit.
+    """
+    push_refused = any(round_.push.refused for round_ in rounds)
+    return push_refused, digest_inconclusive and not push_refused
+
+
 def _result_from_rounds(
     rounds: list[_Round],
     *,
@@ -117,6 +130,7 @@ def _result_from_rounds(
     expressions were pushing over the quality-gate limit), never for a reason
     of behavior: every count is still observed, none inferred.
     """
+    push_refused, digest_inconclusive = _refusal_verdicts(rounds, digest_inconclusive)
     return SyncResult(
         machine_id=machine_id,
         hub_machine_id=hub_machine_id,
@@ -139,6 +153,7 @@ def _result_from_rounds(
         quarantined_incoming=sum(round_.pull.quarantined for round_ in rounds),
         hub_quarantined=hub_quarantined,
         digest_inconclusive=digest_inconclusive,
+        push_refused=push_refused,
     )
 
 

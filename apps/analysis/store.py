@@ -43,6 +43,7 @@ from apps.shared.state import db as state_db
 from apps.shared.state.events import EventBus
 from apps.shared.state.types import Event
 
+from . import queue_store
 from .canonical import refresh_for_record
 from .record import AnalysisRecord, validate_record_contract
 
@@ -139,6 +140,17 @@ _ANALYSIS_TABLES_SQL: list[str] = [
     )
     """,
 ]
+
+
+# The backfill queue's own tables (native-analysis v1, spec section 3
+# "Queue"): declared HERE with the rest of the analysis domain, for the same
+# reason analysis_source_default is. The queue is durable state that the
+# canonical pointer reads (analysis_stale is consulted by
+# apps/analysis/canonical.py), so a schema authority that did not know about
+# it would leave the pointer's inputs invisible to adoption, to the drift
+# checks and to the database documentation.
+_ANALYSIS_TABLES_SQL.extend(queue_store.QUEUE_TABLES_SQL)
+_ANALYSIS_TABLES_SQL.extend(queue_store.STALE_TABLES_SQL)
 
 
 def _ensure_analysis_tables(conn: sqlite3.Connection) -> None:
@@ -432,11 +444,18 @@ def upsert_record(
     *,
     db_path: Path | None = None,
     conn: sqlite3.Connection | None = None,
+    cascade: bool = True,
+    version_bump: bool = True,
 ) -> UpsertResult:
     """Persist ``record``; emit an ``analyze`` event on insert/update.
 
     When ``conn`` is provided it is reused for both the upsert and the
     follow-up event publish, avoiding two open/close cycles per record.
+
+    ``cascade`` and ``version_bump`` run the NATIVE-10 side effects every
+    non-unchanged write path shares. The queue runner passes ``False`` for
+    both inside its item commit transaction and applies cascade itself so
+    outcomes stay visible on ``RunSummary``.
     """
     result = upsert(record, db_path=db_path, conn=conn)
     if not result.unchanged:
@@ -456,6 +475,22 @@ def upsert_record(
             db_path=db_path,
             conn=conn,
         )
+        if cascade or version_bump:
+            from .queue_effects import apply_record_write_effects
+
+            owned_effects = conn is None
+            effect_conn = conn if conn is not None else open_conn(db_path)
+            try:
+                apply_record_write_effects(
+                    effect_conn,
+                    record,
+                    result,
+                    cascade=cascade,
+                    version_bump=version_bump,
+                )
+            finally:
+                if owned_effects:
+                    effect_conn.close()
     return result
 
 

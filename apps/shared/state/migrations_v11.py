@@ -1,54 +1,44 @@
-"""Migration ladder (v11) for the shared state schema: synced feedback pins.
+"""Migration 10 -> 11: per-machine sync credentials (ADR 12 amendment, plan X5).
 
-Fifth module in the split ladder (see :mod:`apps.shared.state.migrations_v10`
-for why the ladder is split). :data:`apps.shared.state.schema.MIGRATIONS`
-assembles every part in order and ``schema.apply_migrations`` is the runner.
+One table, and deliberately nothing else. No existing table is altered, so
+:func:`apps.sync_hub.protocol.sync_digest` produces the same bytes over the
+same library before and after this step, exactly as v9 promised for the
+ownership tables.
 
-Step 10 -> 11 adds ``feedback_pins``: one synced row per Open DJ feedback
-comment pin, so the same pins appear on every machine enrolled to the same
-hub (requirement FBSYNC-01, ADR-0013). Pin 4bb2dc57bb5e ("did we wipe all the
-old feedback pins?") is the defect it answers: on Fri 11 Sep 2026 four
-separate ``comments.json`` stores held 138 outstanding pins between them and
-each machine could see only its own.
+Why a credential at all: after v9 a machine is identified on ``push``,
+``pull``, ``status`` and ``digest`` by its ``machine_id`` alone, and the hub
+hands every ``machine_id`` it knows to any ``hello`` caller. So a machine id
+is not a secret, and an ENFORCE flip that checked ownership by id alone
+would be spoofable by anybody who had ever said hello. The credential is the
+secret the id is not.
 
-Four deliberate readings:
+Three readings, stated here so a later reader does not have to diff the spec:
 
-1. ``doc`` holds the WHOLE pin as JSON (id, page, anchor, x/y, text, status,
-   agent_note, issue_url, author, build stamp, environment including the
-   machine name, attachment metadata). The pin's shape is owned by the
-   feedback router's ``CommentOut`` model and has grown four times since
-   Mon 31 Aug 2026; mirroring each field as a column would make every future
-   pin field a schema migration and a lockstep hub upgrade. The row is the
-   unit of replication, exactly as a ``tracks`` row is, so nothing is lost by
-   carrying it as one value. ``CHECK (json_valid(doc))`` refuses a peer that
-   offers anything else.
-2. ``updated_at TEXT NOT NULL``, matching ``tracks`` and ``lyric_verdict``:
-   a pin always has an edit time (its ``updated_at``, else its
-   ``created_at``), so a NULL-stamped offer is a protocol violation that
-   ``engine_apply._upsert`` refuses loudly rather than storing a row that
-   would read as epoch-old and lose every conflict.
-3. Archive is a TOMBSTONE: ``deleted_at`` is set and the doc carries
-   ``status: archived``. It is never inferred from a pin being absent from a
-   ``comments.json``. The row is never hard-deleted
-   (``tests/cloudsync/test_soft_delete.py`` enforces it repo-wide).
-4. No foreign key. A pin references no other synced row, so the table needs
-   no ``apps.sync_hub.sync_set.PARENT_KEYS`` entry and can never be held
-   back by a quarantined parent.
+1. **Never synced.** Same reasoning as ``machine_owners``: the hub that
+   minted the credential is its only writer, and a credential riding the
+   sync set could be pushed by a hostile spoke.
+2. **Only the sha256 reaches the database**, like
+   ``enrollment_grants.grant_token_sha256`` and
+   ``auth_sessions.session_token_sha256``: a stolen hub DB must not hand
+   anybody a working bearer. The raw value is returned exactly once, in the
+   ``/enroll`` response that minted it.
+3. **One live credential per machine** (``machine_id`` is the primary key).
+   Re-minting replaces the hash, so the previous bearer stops working the
+   moment the new one exists. ``ON DELETE CASCADE`` from ``machines`` means a
+   machine row that goes away takes its credential with it.
 """
+
 from __future__ import annotations
 
-FEEDBACK_PINS_TABLE: str = "feedback_pins"
-
 _V11: list[str] = [
-    # The sync trio LAST and declared character-for-character as ``tracks``
-    # declares it, like every other synced table in this ladder.
     """
-    CREATE TABLE feedback_pins (
-        pin_id           TEXT PRIMARY KEY CHECK (length(pin_id) > 0),
-        doc              TEXT NOT NULL CHECK (json_valid(doc)),
-        updated_at       TEXT NOT NULL,
-        origin_device_id TEXT,
-        deleted_at       TEXT
+    CREATE TABLE IF NOT EXISTS machine_credentials (
+        machine_id         TEXT PRIMARY KEY
+                             REFERENCES machines(machine_id) ON DELETE CASCADE,
+        credential_sha256  TEXT NOT NULL UNIQUE,
+        minted_at          TEXT NOT NULL
     )
     """,
 ]
+
+__all__ = ["_V11"]

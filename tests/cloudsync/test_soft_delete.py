@@ -374,7 +374,7 @@ _SYNCED_TABLES: frozenset[str] = frozenset({
     # and it is a tombstone: a hard DELETE would leave every peer still
     # holding the licensed text this repo just promised to drop.
     "lyric_verdict",
-    # Schema v11 (FBSYNC-03). Archiving a pin is a tombstone that syncs; a
+    # Schema v12 (FBSYNC-03). Archiving a pin is a tombstone that syncs; a
     # hard DELETE would let a peer's live copy resurrect it on the next pull.
     "feedback_pins",
 })

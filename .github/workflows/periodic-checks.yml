@@ -114,6 +114,12 @@ jobs:
       threshold: ${{ steps.compute.outputs.threshold }}
       elapsed_days: ${{ steps.compute.outputs.elapsed_days }}
       reason: ${{ steps.compute.outputs.reason }}
+      # Row 10 (windows parity): own marker, own threshold. Sharing `run`
+      # would fire a 30-minute Windows job every merges:50 window.
+      run_windows_parity: ${{ steps.compute.outputs.run_windows_parity }}
+      windows_parity_count: ${{ steps.compute.outputs.windows_parity_count }}
+      windows_parity_base: ${{ steps.compute.outputs.windows_parity_base }}
+      windows_parity_reason: ${{ steps.compute.outputs.windows_parity_reason }}
     steps:
       # Real history: the merge count below is a first-parent walk, and
       # rev-list clamps silently on a shallow clone. `filter: blob:none` keeps
@@ -278,6 +284,54 @@ jobs:
           head_at="$(git log -1 --format=%cI "$head")"
           [ -n "$head_at" ] || { echo "::error::could not date head ${head}"; exit 1; }
 
+          # Row 10 (windows parity): own marker, own threshold. A merges:100
+          # row that read the merges:50 marker would skip forever: every
+          # 50-window moves the shared SHA forward before 100 accrue
+          # (docs/ops/periodic-checks.md, "One marker per row"). No weekly
+          # floor: the table states merges:100 only.
+          WP_THRESHOLD=100
+          wp_combined="$(gh api --paginate --slurp "repos/${REPO}/issues/${LEDGER_ISSUE}/comments" \
+                        --jq '[.[][] | select(.user.login == "github-actions[bot]") | select(.body | contains("<!-- periodic-checks row=10 state sha="))]
+                              | if length > 0 then (.[-1].created_at + " " + (.[-1].body | @base64)) else empty end' \
+                      || true)"
+
+          wp_base=""
+          if [ -n "$wp_combined" ]; then
+            wp_body="$(printf '%s' "${wp_combined#* }" | base64 -d)"
+            wp_hits="$(printf '%s' "$wp_body" \
+                      | grep -oE '<!-- periodic-checks row=10 state sha=[0-9a-f]{40}' \
+                      | grep -oE '[0-9a-f]{40}' || true)"
+            wp_hit_count="$(printf '%s' "$wp_hits" | grep -c . || true)"
+            if [ "$wp_hit_count" = "1" ]; then
+              wp_base="$wp_hits"
+            fi
+          fi
+
+          wp_run="false"
+          wp_count="-1"
+          if [ -z "$wp_base" ]; then
+            wp_reason="bootstrap: no row=10 state marker on issue #${LEDGER_ISSUE}"
+            wp_run="true"
+          elif ! git cat-file -e "${wp_base}^{commit}" 2>/dev/null; then
+            wp_reason="row=10 state SHA ${wp_base} is absent from history; bootstrapping"
+            wp_run="true"
+          elif ! git merge-base --is-ancestor "$wp_base" "$head"; then
+            wp_reason="row=10 state SHA ${wp_base} is not an ancestor of ${head:0:9}; bootstrapping"
+            wp_run="true"
+          elif ! wp_count="$(git rev-list --count --first-parent "${wp_base}..${head}")"; then
+            wp_reason="could not count row=10 integrations ${wp_base:0:9}..${head:0:9}; bootstrapping"
+            wp_run="true"
+          elif [ "$FORCE" = "true" ]; then
+            wp_reason="forced by workflow_dispatch (${wp_count} merges since ${wp_base:0:9}, row=10 threshold ${WP_THRESHOLD})"
+            wp_run="true"
+          elif [ "$wp_count" -ge "$WP_THRESHOLD" ]; then
+            wp_reason="${wp_count} merges since ${wp_base:0:9} (>= row=10 threshold ${WP_THRESHOLD})"
+            wp_run="true"
+          else
+            wp_reason="only ${wp_count} merges since ${wp_base:0:9} (row=10 threshold ${WP_THRESHOLD})"
+            wp_run="false"
+          fi
+
           {
             echo "run=${run}"
             echo "count=${count}"
@@ -288,6 +342,10 @@ jobs:
             echo "threshold=${threshold}"
             echo "elapsed_days=${elapsed_days}"
             echo "reason=${reason}"
+            echo "run_windows_parity=${wp_run}"
+            echo "windows_parity_count=${wp_count}"
+            echo "windows_parity_base=${wp_base}"
+            echo "windows_parity_reason=${wp_reason}"
           } >> "$GITHUB_OUTPUT"
 
           echo "### Periodic checks window" >> "$GITHUB_STEP_SUMMARY"
@@ -295,6 +353,7 @@ jobs:
           echo "- run: \`${run}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- reason: ${reason}" >> "$GITHUB_STEP_SUMMARY"
           echo "- head: \`${head}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- row 10 (windows parity): \`${wp_run}\` (${wp_reason})" >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # Row 1: the full pytest suite, including the slow product-edge suites the
@@ -363,6 +422,18 @@ jobs:
             name_offenders "$remaining"
             exit 1
           }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
 
       # The SHA the window RECORDED, not the workflow event's ref: main can
       # advance between the two, and the report persists the window head as
@@ -491,6 +562,18 @@ jobs:
             name_offenders "$remaining"
             exit 1
           }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
 
       # The SHA the window RECORDED, not the workflow event's ref: main can
       # advance between the two, and the report persists the window head as
@@ -811,6 +894,18 @@ jobs:
             name_offenders "$remaining"
             exit 1
           }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -955,6 +1050,76 @@ jobs:
           EOF
           gh issue comment "${LEDGER_ISSUE:-1492}" --repo "$REPO" --body-file comment.md
           cat comment.md >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Row 10: Windows rekordbox parity (#1508). Own merges:100 window, own
+  # ledger marker. Calls windows-parity.yml so a periodic run and a manual
+  # dispatch are the same workflow. Timeout stays 30 minutes on the callee;
+  # GitHub forbids timeout-minutes on a reusable-workflow caller.
+  # ---------------------------------------------------------------------------
+  windows-parity:
+    name: Windows Rekordbox parity (row 10)
+    needs: window
+    if: needs.window.outputs.run_windows_parity == 'true'
+    uses: ./.github/workflows/windows-parity.yml
+    with:
+      ref: ${{ needs.window.outputs.head }}
+    permissions:
+      contents: read
+
+  windows-parity-report:
+    name: windows parity ledger (row 10)
+    needs: [window, windows-parity]
+    if: always() && needs.window.outputs.run_windows_parity == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Post row 10 result
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD: ${{ needs.window.outputs.head }}
+          BASE: ${{ needs.window.outputs.windows_parity_base }}
+          COUNT: ${{ needs.window.outputs.windows_parity_count }}
+          REASON: ${{ needs.window.outputs.windows_parity_reason }}
+          RESULT: ${{ needs.windows-parity.result }}
+        run: |
+          set -euo pipefail
+          mark() {
+            case "$1" in
+              success) echo "PASS" ;;
+              failure) echo "FAIL" ;;
+              cancelled) echo "CANCELLED" ;;
+              skipped) echo "SKIPPED" ;;
+              "") echo "NOT RUN" ;;
+              *) echo "UNKNOWN ($1)" ;;
+            esac
+          }
+          window_desc="${BASE:0:9}..${HEAD:0:9}"
+          [ -n "$BASE" ] || window_desc="bootstrap..${HEAD:0:9}"
+          merges="$COUNT"
+          [ "$COUNT" != "-1" ] || merges="unknown (bootstrap window)"
+          cat > comment.md <<EOF
+          ## Periodic check row 10 (Windows parity)
+
+          - window: \`${window_desc}\`
+          - merges in window: **${merges}**
+          - trigger: ${REASON}
+          - result: $(mark "$RESULT")
+          - run: ${RUN_URL}
+
+          A FAIL with no job log means GitHub-hosted Windows did not provision
+          a runner (hosted OS billing is gated; see windows-parity.yml). That
+          is a real miss, not a pass.
+
+          <!-- periodic-checks row=10 state sha=${HEAD} threshold=100 -->
+          EOF
+          gh issue comment "${LEDGER_ISSUE:-1492}" --repo "$REPO" --body-file comment.md
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
+
 
   # ---------------------------------------------------------------------------
   # One comment per window on the ledger issue (DEVOPS-03). This is the whole
@@ -1152,9 +1317,10 @@ jobs:
           | 9 | preview drift (remote refs) | $(mark "$R_DRIFT") verdict \`${V_DRIFT:-UNKNOWN}\` |
           | 11 | requirement status drift (cited but unflipped) | $(mark "$R_REQS") verdict \`${V_REQS:-UNKNOWN}\` |
 
-          Rows 3 and 8 and 10 and the Air-only dmg row: see
-          \`docs/ops/periodic-checks.md\`. A row absent from this table did not
-          run and must not be read as passing.
+          Rows 3 and 8 and the Air-only dmg row: see
+          \`docs/ops/periodic-checks.md\`. Row 10 (Windows parity) posts its
+          own ledger comment when its merges:100 window fires. A row absent
+          from this table did not run and must not be read as passing.
 
           <!-- periodic-checks state sha=${HEAD} threshold=${THRESHOLD} -->
           EOF

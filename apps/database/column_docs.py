@@ -581,7 +581,7 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     **ENROLLMENT_COLUMN_DOCS,
     # Migration v10 lyric_verdict (specs/karaoke-lyrics-operational-plan.md D13.1).
     **LYRICS_COLUMN_DOCS,
-    # Migration v11 feedback_pins (FBSYNC-01, ADR-0013).
+    # Migration v12 feedback_pins (FBSYNC-01, ADR-0013).
     **FEEDBACK_COLUMN_DOCS,
 }
 

@@ -79,6 +79,8 @@ concurrency:
 
 permissions:
   contents: read
+  # Cross-workflow artifact download from ci.yml (issue #1513).
+  actions: read
 
 env:
   # apps.shared.library_mode refuses to import on non-darwin platforms without
@@ -222,6 +224,18 @@ jobs:
             name_offenders "$remaining"
             exit 1
           }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
 
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17), matching ci.yml.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -484,16 +498,18 @@ jobs:
           # check plus the mutation must be one critical section. See the script.
           scripts/ci_host_lock.sh pulse-sink scripts/ci_pulse_sink.sh setup
 
-      - name: Build the production frontend
-        working-directory: apps/webui/frontend
-        # The webkit gate refuses to load without this and says so at config
-        # time. It deliberately does NOT use vite: dev serves packages
-        # untransformed and the artifact does not, which is exactly where the
-        # faults it hunts for live.
-        run: pnpm build
+      - name: Acquire production frontend artifact from CI
+        # The webkit gate refuses to load without a production build and says
+        # so at config time. Poll CI for the stamped artifact; never rebuild
+        # locally (issue #1513).
+        id: frontend-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci_frontend_build_acquire_from_ci.sh "${{ github.sha }}"
 
       # -- TIER 1a: the WebKit artifact gate ----------------------------------
       - name: WebKit artifact gate (production build, named subset)
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
         working-directory: apps/webui/frontend
         # Engine-served production build, webkit, one worker, zero retries.
         # Retries stay at zero because a flaky worklet IS the defect under
@@ -547,7 +563,7 @@ jobs:
       # -- TIER 1a-bis: cross-browser deck-load smoke (#770) -------------------
       - name: Deck-load smoke (chromium + webkit, production build)
         working-directory: apps/webui/frontend
-        if: ${{ !cancelled() }}
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
         # Separate step, same engine-served artifact and fixture library as
         # the step above (webServer boots fresh per `playwright test`
         # invocation, so this pays one more ~1s engine boot -- everything
@@ -678,6 +694,14 @@ jobs:
         # keeps its API-backed specs from becoming an unobserved test estate.
         if: ${{ !cancelled() }}
         run: pnpm test:e2e --output test-results/root-playwright
+
+      - name: Library jobs ordering (chromium, dry runner)
+        working-directory: apps/webui/frontend
+        if: ${{ !cancelled() }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" library-jobs \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8704 5277 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.library-jobs.config.ts --output test-results/library-jobs
 
       - name: Restore the PulseAudio server (unload our null sink, previous default back)
         # Always, even after a red suite: the server may be the host's shared,
@@ -821,6 +845,18 @@ jobs:
             name_offenders "$remaining"
             exit 1
           }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -958,13 +994,14 @@ jobs:
           # check plus the mutation must be one critical section. See the script.
           scripts/ci_host_lock.sh pulse-sink scripts/ci_pulse_sink.sh setup
 
-      - name: Build the production frontend
-        working-directory: apps/webui/frontend
-        # stretch-artifact globs the built immutable assets, so the build is a
-        # prerequisite here too.
-        run: pnpm build
+      - name: Acquire production frontend artifact from CI
+        id: frontend-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci_frontend_build_acquire_from_ci.sh "${{ github.sha }}"
 
       - name: Extended - FULL webkit artifact suite (no grep)
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
         working-directory: apps/webui/frontend
         # Whole webkit-deckload config, no grep. Serial skip is gone (#712);
         # the next step asserts every listed test executed. Quarantined tests
@@ -1014,6 +1051,21 @@ jobs:
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" play-analytics \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 9414 5214 -- \
             pnpm exec playwright test --config tests/e2e/playwright.play-analytics.config.ts
+
+      - name: Extended - library wheel
+        working-directory: apps/webui/frontend
+        # Real engine over a throwaway genre-family fixture (state.db +
+        # master.plain.db). The root deckload library has no vendor mapping
+        # and 503s this route, so this suite is the UI evidence for LIBUX-06.
+        # Fixed loopback port (see the vite/playwright config it names) on a
+        # host that runs up to eight e2e jobs at once: hold the per-suite host
+        # lock so a second copy of this step WAITS instead of dying on
+        # 'is already used'. Same reason as the webkit-deckload steps.
+        if: ${{ !cancelled() }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" library-wheel \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 9428 5228 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.library-wheel.config.ts
 
       - name: Extended - stretch artifact (chromium + webkit)
         working-directory: apps/webui/frontend

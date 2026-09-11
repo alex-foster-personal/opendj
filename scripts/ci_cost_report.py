@@ -74,7 +74,14 @@ def render_report(
     mtd = month_to_date(rows, month)
     used = _sum(mtd, "allowance_minutes")
     pct = (used / allowance_limit * 100) if allowance_limit else 0.0
-    state = "STOP" if pct >= stop_pct else "WARN" if pct >= warn_pct else "OK"
+    if not coverage.is_complete:
+        state = "UNKNOWN"
+    elif pct >= stop_pct:
+        state = "STOP"
+    elif pct >= warn_pct:
+        state = "WARN"
+    else:
+        state = "OK"
     wasted = sum(r.allowance_minutes for r in mtd if r.is_waste)
     unpriced = [r for r in rows if r.unpriced_jobs]
 
@@ -99,11 +106,18 @@ def render_report(
 
     if not coverage.is_complete:
         missed = coverage.server_total - coverage.priced
-        why = (
-            "the --max-api-calls budget was reached"
-            if coverage.api_budget_hit
-            else "GitHub caps a `created=`-filtered listing at 1,000 rows"
-        )
+        if coverage.cache_gap:
+            if missed > 0:
+                why = (
+                    f"the priced-run cache was {coverage.cache_gap}, and "
+                    f"{missed} of {coverage.server_total} runs were not priced"
+                )
+            else:
+                why = f"the priced-run cache was {coverage.cache_gap}"
+        elif coverage.api_budget_hit:
+            why = "the --max-api-calls budget was reached"
+        else:
+            why = "GitHub caps a `created=`-filtered listing at 1,000 rows"
         lines += [
             f"> **INCOMPLETE: {missed} of {coverage.server_total} runs were not "
             f"priced** because {why}. Every number below is a **floor**, not a "
@@ -165,6 +179,7 @@ def render_report(
         "coverage_pct": round(coverage.pct, 1),
         "complete": coverage.is_complete,
         "api_calls": coverage.api_calls,
+        "cache_gap": coverage.cache_gap,
         "unpriced_runs": len(unpriced),
     }
     return "\n".join(lines), summary

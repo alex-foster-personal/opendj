@@ -17,7 +17,6 @@
 		listPlaylistPins,
 		listPolicies,
 		putPlaylistPin,
-		putPolicy,
 		type AssetKind,
 		type CloudMachine,
 		type CloudSyncOverview,
@@ -25,14 +24,20 @@
 		type SyncMode,
 		type SyncPolicy
 	} from '$lib/api-cloudsync';
+	import CloudSyncFleetTab from '$lib/components/cloudsync/CloudSyncFleetTab.svelte';
+	import CloudSyncPolicyCell from '$lib/components/cloudsync/CloudSyncPolicyCell.svelte';
+	import CloudSyncStatusTab from '$lib/components/cloudsync/CloudSyncStatusTab.svelte';
+	import { inertKindTitle } from '$lib/components/cloudsync/cloudsync-view';
 	import { listPlaylistsHydrated, type PlaylistSummaryHydrated } from '$lib/rb/api-rb';
 	import { pushToast } from '$lib/stores.svelte';
 
-	type Tab = 'policies' | 'pins' | 'overview';
+	type Tab = 'status' | 'policies' | 'pins' | 'overview' | 'fleet';
 	const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
+		{ id: 'status', label: 'Status & config' },
 		{ id: 'policies', label: 'Machines & policies' },
 		{ id: 'pins', label: 'Playlist pins' },
-		{ id: 'overview', label: 'Fleet overview' }
+		{ id: 'overview', label: 'Hydration overview' },
+		{ id: 'fleet', label: 'Fleet' }
 	];
 
 	const ASSET_KIND_LABEL: Record<AssetKind, string> = {
@@ -46,7 +51,7 @@
 
 	function tabFromUrl(url: URL): Tab {
 		const raw = url.searchParams.get('tab');
-		return raw === 'pins' || raw === 'overview' ? raw : 'policies';
+		return TABS.find((t) => t.id === raw)?.id ?? 'status';
 	}
 
 	let tab = $state<Tab>(tabFromUrl($page.url));
@@ -132,54 +137,6 @@
 		}
 	});
 
-	async function onPolicyModeChange(
-		machineId: string,
-		assetKind: AssetKind,
-		mode: SyncMode
-	): Promise<void> {
-		const existing = policyFor(machineId, assetKind);
-		try {
-			const saved = await putPolicy({
-				machine_id: machineId,
-				asset_kind: assetKind,
-				mode,
-				cache_budget_mb: existing?.cache_budget_mb ?? null
-			});
-			upsertPolicy(saved);
-		} catch (exc) {
-			pushToast(`Failed to save policy: ${errorMessage(exc)}`, 'error');
-		}
-	}
-
-	async function onPolicyBudgetChange(
-		machineId: string,
-		assetKind: AssetKind,
-		raw: string
-	): Promise<void> {
-		const existing = policyFor(machineId, assetKind);
-		const mode = existing?.mode ?? 'stream';
-		let cacheBudgetMb: number | null = null;
-		if (raw.trim() !== '') {
-			const parsed = Number.parseInt(raw, 10);
-			if (!Number.isInteger(parsed) || parsed < 0) {
-				pushToast('Cache budget must be a whole number of MB, 0 or more', 'error');
-				return;
-			}
-			cacheBudgetMb = parsed;
-		}
-		try {
-			const saved = await putPolicy({
-				machine_id: machineId,
-				asset_kind: assetKind,
-				mode,
-				cache_budget_mb: cacheBudgetMb
-			});
-			upsertPolicy(saved);
-		} catch (exc) {
-			pushToast(`Failed to save cache budget: ${errorMessage(exc)}`, 'error');
-		}
-	}
-
 	async function addPin(): Promise<void> {
 		if (!newPinMachineId || !newPinPlaylistId) {
 			pushToast('Pick a machine and a playlist first', 'error');
@@ -220,8 +177,8 @@
 <h2>CloudSync</h2>
 <p style="color: var(--muted);">
 	Per-machine sync policy over R2 (specs/cloudsync-spec.md D5). Machines self-register the first
-	time this page loads on them, so only machines that have opened this page (or run the hub-sync
-	daemon, not built yet) appear below.
+	time this page loads on them or they sync with the hub; the Status tab shows whether this
+	machine's background scheduler is actually running.
 </p>
 
 <div class="tabbar" role="tablist" aria-label="CloudSync sections">
@@ -238,7 +195,11 @@
 	{/each}
 </div>
 
-{#if loading}
+{#if tab === 'status'}
+	<CloudSyncStatusTab />
+{:else if tab === 'fleet'}
+	<CloudSyncFleetTab />
+{:else if loading}
 	<p>Loading...</p>
 {:else if loadError}
 	<p style="color: var(--danger);">Failed to load CloudSync: {loadError}</p>
@@ -253,7 +214,10 @@
 						<tr>
 							<th>Machine</th>
 							{#each ASSET_KINDS as kind (kind)}
-								<th>{ASSET_KIND_LABEL[kind]}</th>
+								{@const inert = inertKindTitle(kind)}
+								<th title={inert ?? undefined} class:inert={inert !== null}>
+									{ASSET_KIND_LABEL[kind]}{#if inert !== null}<span class="chip">inert</span>{/if}
+								</th>
 							{/each}
 						</tr>
 					</thead>
@@ -266,41 +230,15 @@
 									{m.name}{#if m.is_hub}<span class="chip">hub</span>{/if}
 								</td>
 								{#each ASSET_KINDS as kind (kind)}
-									{@const p = policyFor(m.machine_id, kind)}
-									<td class="policy-cell">
-										<select
-											title={`Sync mode for ${ASSET_KIND_LABEL[kind]} on ${m.name}`}
-											value={p?.mode ?? 'stream'}
-											onchange={(e) =>
-												onPolicyModeChange(
-													m.machine_id,
-													kind,
-													(e.currentTarget as HTMLSelectElement).value as SyncMode
-												)}
-										>
-											{#each SYNC_MODES as mode (mode)}
-												<option value={mode}>{mode}</option>
-											{/each}
-										</select>
-										<input
-											class="budget"
-											type="number"
-											min="0"
-											step="1"
-											placeholder="MB"
-											disabled={(p?.mode ?? 'stream') !== 'cached'}
-											value={p?.cache_budget_mb ?? ''}
-											title={(p?.mode ?? 'stream') === 'cached'
-												? `Local hot-cache budget in MB for ${ASSET_KIND_LABEL[kind]} on ${m.name} (LRU eviction above this)`
-												: 'Cache budget only applies in cached mode'}
-											onchange={(e) =>
-												onPolicyBudgetChange(
-													m.machine_id,
-													kind,
-													(e.currentTarget as HTMLInputElement).value
-												)}
-										/>
-									</td>
+									<CloudSyncPolicyCell
+										machineId={m.machine_id}
+										machineName={m.name}
+										assetKind={kind}
+										kindLabel={ASSET_KIND_LABEL[kind]}
+										policy={policyFor(m.machine_id, kind)}
+										onSaved={upsertPolicy}
+										onError={(message) => pushToast(message, 'error')}
+									/>
 								{/each}
 							</tr>
 						{/each}
@@ -463,26 +401,16 @@
 	.table-scroll {
 		overflow-x: auto;
 	}
-	table.matrix td.policy-cell {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		white-space: nowrap;
+	th.inert {
+		color: var(--muted);
 	}
-	select,
-	input.budget {
+	select {
 		background: var(--bg);
 		color: var(--fg);
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		padding: 3px 6px;
 		font-size: 0.82rem;
-	}
-	input.budget {
-		width: 5.5em;
-	}
-	input.budget:disabled {
-		opacity: 0.4;
 	}
 	.pin-form {
 		display: flex;

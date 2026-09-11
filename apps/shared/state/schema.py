@@ -6,11 +6,13 @@ a ``schema_meta`` table to skip already-applied versions.
 
 Versioning: ``SCHEMA_VERSION`` is the target version. ``MIGRATIONS`` is a
 list where index ``i`` is the SQL to take the schema from version ``i`` to
-``i+1``. A fresh DB runs the full list. The ladder itself (``_V1``..``_V10``)
+``i+1``. A fresh DB runs the full list. The ladder itself (``_V1``..``_V12``)
 lives in :mod:`apps.shared.state.migrations` (v1-v5) and
 :mod:`apps.shared.state.migrations_v6_v8` (v6-v8) and
 :mod:`apps.shared.state.migrations_v9` (v9) and
-:mod:`apps.shared.state.migrations_v10` (v10) -- split across sibling modules
+:mod:`apps.shared.state.migrations_v10` (v10) and
+:mod:`apps.shared.state.migrations_v11` (v11) and
+:mod:`apps.shared.state.migrations_v12` (v12) -- split across sibling modules
 (issue #1583) because the combined ladder alone exceeds the 600-line
 file-size gate. This module keeps the runner and the
 drift-tripwire table/view tuples below.
@@ -25,14 +27,15 @@ from .migrations_v6_v8 import _V6, _V7, _V8
 from .migrations_v9 import _V9
 from .migrations_v10 import _V10
 from .migrations_v11 import _V11
+from .migrations_v12 import _V12
 
-SCHEMA_VERSION: int = 11
+SCHEMA_VERSION: int = 12
 
 
 # Each element is the set of SQL statements that take schema from N to N+1.
 # MIGRATIONS[0] runs when going from v0 (empty) to v1.
 MIGRATIONS: list[list[str]] = [
-    _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11,
+    _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12,
 ]
 
 
@@ -116,13 +119,15 @@ TABLES: tuple[str, ...] = (
     "enrollment_grants",
     # v10 (karaoke lyrics verdict, specs/karaoke-lyrics-operational-plan.md D13.1)
     "lyric_verdict",
-    # v11 (FBSYNC-01, docs/decisions/ADR-0013-feedback-pin-cloudsync.md)
+    # v11 (per-machine sync credential, ADR 12 amendment) -- hub-local, unsynced
+    "machine_credentials",
+    # v12 (FBSYNC-01, docs/decisions/ADR-0013-feedback-pin-cloudsync.md)
     "feedback_pins",
 )
 """Domain tables created by :data:`MIGRATIONS`. ``schema_meta`` is
 intentionally excluded -- it is infrastructure, not domain data. Four of
-them arrived in v8, two in v9, ``lyric_verdict`` in v10 and
-``feedback_pins`` in v11."""
+them arrived in v8, two in v9, ``lyric_verdict`` in v10,
+``machine_credentials`` in v11 and ``feedback_pins`` in v12."""
 
 VIEWS: tuple[str, ...] = (
     "tracks_available",

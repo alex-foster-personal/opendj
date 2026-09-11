@@ -285,6 +285,10 @@ test('null artwork availability identifies an unavailable reader without request
 	await page.route(/\/api\/v1\/tracks(?:\?.*)?$/, (route) =>
 		route.fulfill({ json: { items: [TRACK], next_cursor: null } })
 	);
+	// Wave rows gate per-track lyrics reads on this index (#1869, LYRICS-06).
+	await page.route('**/api/v1/tracks/lyrics-cached-ids', (route) =>
+		route.fulfill({ json: { stable_ids: [] } })
+	);
 
 	// The boot scheduler's own deferred families (boot-scheduler.ts, PERF-R6).
 	// None of these are the artwork reader path this test is about; they are

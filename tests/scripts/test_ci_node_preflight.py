@@ -23,7 +23,12 @@ PREFLIGHT = "scripts/ci_node_preflight.sh apps/webui/frontend"
 
 #: Linux jobs that run `pnpm install`; macOS packaging is hosted and has no
 #: shared store, and GNU df is not there either.
-NODE_JOBS = (("ci.yml", "frontend"), ("ci.yml", "quality"), ("e2e.yml", None))
+NODE_JOBS = (
+    ("ci.yml", "frontend-build"),
+    ("ci.yml", "frontend"),
+    ("ci.yml", "quality"),
+    ("e2e.yml", None),
+)
 
 
 def _steps(workflow: str, job_id: str | None) -> list[tuple[str, list[dict]]]:

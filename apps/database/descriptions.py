@@ -133,6 +133,14 @@ TABLES: dict[str, str] = {
         "hand anybody a redeemable credential. Redeemed rows keep their row "
         "so a replay is refused rather than silently re-enrolled."
     ),
+    "machine_credentials": (
+        "One machine's sync credential, as the hub that minted it at enroll "
+        "recorded it. Only the sha256 is stored; the raw bearer was returned "
+        "once to the enrolling machine, which keeps it in <data-dir>/"
+        "sync-credential at 0600 and sends it on hello, push, pull, status "
+        "and digest. Hub-local and never synced, like machine_owners, so a "
+        "spoke cannot push itself a credential."
+    ),
     # ----- analysis ------------------------------------------------------
     "analysis": (
         "One track's computed audio analysis (BPM, key, beatgrid, loudness). "
@@ -148,6 +156,28 @@ TABLES: dict[str, str] = {
         "semver, tie to in-app over backfill, bench candidates never eligible), "
         "so the answer depends on what was produced and never on write order. "
         "Derived: safe to delete and recompute, never hand-edited."
+    ),
+    "analysis_queue_batch": (
+        "One enqueue call on the native-analysis v1 backfill queue, plus the "
+        "admission decision it was planned under: the worker count and band the "
+        "spec section 4 memory rule chose from the LONGEST ADMITTED track, and "
+        "the measured memory model those numbers came from. Written by "
+        "apps.analysis.queue."
+    ),
+    "analysis_queue_item": (
+        "One (track, lane) of backfill work and its state: pending, running, "
+        "done, skipped, failed, refused or cancelled. The record write and the "
+        "move to done are ONE transaction, which is what makes a resume after a "
+        "process kill re-run an interrupted item exactly once and never re-run a "
+        "completed one. A refused item is a row with its named reason, never a "
+        "silently absent one."
+    ),
+    "analysis_stale": (
+        "Records whose DEPENDENCY moved underneath them (today only key -> "
+        "beatgrid). The row keeps its record but stops being eligible for "
+        "analysis_canonical until it is recomputed, so a key computed against a "
+        "superseded beatgrid never reads as canonical. Written by the queue's "
+        "dependency cascade, read by apps.analysis.canonical."
     ),
     "analysis_source_default": (
         "The persisted per-lane source (rbx or own), one row per selection lane, "

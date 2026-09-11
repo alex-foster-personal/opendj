@@ -1,6 +1,6 @@
-"""Writer exercises for the synced tables added by schema rungs v10 and v11.
+"""Writer exercises for the synced tables added by schema rungs v10 and v12.
 
-Moved out of ``test_writer_sync_stamps.py`` when v11 pushed that file past the
+Moved out of ``test_writer_sync_stamps.py`` when v12 pushed that file past the
 quality gate's 600-line ``file_size`` ratchet, the same move round 4 made for
 ``test_writer_sync_stamps_locations.py``. Nothing was cut: both exercises are
 the originals, and the tripwire still calls them from
@@ -61,7 +61,7 @@ def exercise_lyric_verdict_writes(
 def exercise_feedback_pin_reconcile(
     conn: sqlite3.Connection, tmp_path: Path, ts: str
 ) -> None:
-    """Drive the ONLY ``feedback_pins`` writer (schema v11, FBSYNC-01).
+    """Drive the ONLY ``feedback_pins`` writer (schema v12, FBSYNC-01).
 
     Through the real bridge, not a hand-rolled INSERT: the reconcile is the
     writer, and what this pins is that a pin reaching the table from a

@@ -209,6 +209,101 @@ describe('PitchFader double-click reset matches its own tooltip', () => {
 	});
 });
 
+// issue: 186
+// Empty-deck tempo refuse: MIDI (action-glue deck_pitch) and the mouse-wheel
+// path already refuse when no track is loaded. Pointer, keyboard, and
+// double-click must match that contract instead of dispatching tempo and
+// letting the engine throw. Range buttons stay live: setPitchRange does not
+// require a loaded track. Source-scanned because this suite does not mount
+// Svelte components (same idiom as the double-click block above).
+describe('PitchFader empty-deck tempo refuse (issue 186)', () => {
+	const svelte = readFileSync(
+		fileURLToPath(
+			new URL('../../src/lib/components/rb/deck/PitchFader.svelte', import.meta.url)
+		),
+		'utf8'
+	);
+	const deckSrc = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/Deck.svelte', import.meta.url)),
+		'utf8'
+	);
+
+	it('pointer and keyboard gesture starts refuse when no track is loaded', () => {
+		const pointer = svelte.slice(
+			svelte.indexOf('function handlePointerDown('),
+			svelte.indexOf('function handlePointerMove(')
+		);
+		const key = svelte.slice(
+			svelte.indexOf('function handleKeyDown('),
+			svelte.indexOf('</script>')
+		);
+		assert.match(
+			pointer,
+			/if \(pending \|\| deck\.stable_id === null\) return;/,
+			'handlePointerDown must treat no-track like pending'
+		);
+		assert.match(
+			key,
+			/if \(pending \|\| deck\.stable_id === null\) return;/,
+			'handleKeyDown must treat no-track like pending'
+		);
+	});
+
+	it('double-click refuses an empty deck but still has no pending guard', () => {
+		const fn = svelte.slice(
+			svelte.indexOf('function handleDoubleClick('),
+			svelte.indexOf('function handlePointerDone(')
+		);
+		assert.match(fn, /if \(deck\.stable_id === null\) return;/);
+		assert.equal(
+			/if \(pending\) return;/.test(fn),
+			false,
+			'a pending guard here lets an in-flight click command drop the reset'
+		);
+	});
+
+	it('range buttons stay live without a track', () => {
+		const loop = svelte.slice(svelte.indexOf('{#each PITCH_RANGES'), svelte.indexOf('{/each}'));
+		assert.match(loop, /onclick=\{async \(\) => await onRangeChange\(range\)\}/);
+		assert.match(loop, /disabled=\{pending\}/);
+		assert.equal(
+			/stable_id/.test(loop),
+			false,
+			'range switcher must not require a loaded track'
+		);
+	});
+
+	it('Deck mounts PitchFader onto setTempo / setPitchRangeUi and resets first on narrow', () => {
+		assert.match(
+			deckSrc,
+			/<PitchFader[\s\S]*onTempoChange=\{setTempo\}[\s\S]*onRangeChange=\{setPitchRangeUi\}/
+		);
+		const fn = deckSrc.slice(
+			deckSrc.indexOf('async function setPitchRangeUi('),
+			deckSrc.indexOf('async function unloadDeck(')
+		);
+		assert.match(fn, /type: 'tempo'/);
+		assert.match(fn, /ratio: 1/);
+		assert.match(fn, /type: 'pitch_range'/);
+		assert.match(fn, /pitchRange/);
+		assert.match(fn, /deck\.pitch/);
+		assert.equal(fn.includes('16'), false, 'range-narrow compare must not hardcode 16');
+	});
+
+	it('AX labels and test ids on the fader and range buttons are unchanged', () => {
+		assert.match(svelte, /aria-label=\{`deck \$\{deck\.deck_id\} pitch fader`\}/);
+		assert.match(svelte, /data-testid=\{`pitch-fader-deck-\$\{deck\.deck_id\}`\}/);
+		assert.match(svelte, /data-testid=\{`pitch-range-\$\{range\}-deck-\$\{deck\.deck_id\}`\}/);
+		assert.match(
+			svelte,
+			/aria-label=\{`pitch range \$\{range === 100 \? 'wide' : `\$\{range\} percent`\} deck \$\{deck\.deck_id\}`\}/
+		);
+		assert.match(svelte, /aria-disabled=\{pending \|\| deck\.stable_id === null\}/);
+		assert.match(svelte, /tabindex="0"/);
+		assert.match(svelte, /data-performance-control="pitch"/);
+	});
+});
+
 // ---------------------------------------------------------------------------
 // Pin 5a5c3b8033d8: the channel meter is intentionally discrete so it has a
 // readable green/yellow/red status rather than implying a smooth calibration.
