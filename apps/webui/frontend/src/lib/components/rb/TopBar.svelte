@@ -45,6 +45,7 @@
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import StemsProgress from './StemsProgress.svelte';
 	import VibeMeter from './VibeMeter.svelte';
+	import TransitioningChip from './TransitioningChip.svelte';
 	import JobsDrawer from '$lib/components/rb/JobsDrawer.svelte';
 	import { jobsRefusal } from '$lib/api/capabilities.svelte';
 	import { jobsStore, toggleJobsDrawer } from '$lib/rb/jobs-store.svelte';
@@ -376,6 +377,8 @@
 	<div class="vibe-slot topbar-slot-vibe">
 		<VibeMeter />
 	</div>
+
+	<TransitioningChip />
 
 	<!-- right cluster -->
 	<button

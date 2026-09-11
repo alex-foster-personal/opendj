@@ -1217,6 +1217,13 @@ test('pins_show_other_users is a registered performance command that refuses not
 // command), but an agent reading queryPerformanceState() saw no field for it, so
 // it could switch the source and never confirm which one was in effect - and
 // could not attribute a beatgrid/BPM readback to a lane at all.
+test('queryPerformanceState publishes transition from readTransition and defaults to idle', () => {
+	const source = readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
+	assert.match(source, /transition:\s*readTransition\(\)/);
+	assert.equal(ipc.queryPerformanceState().transition.state, 'idle');
+	assert.doesNotThrow(() => structuredClone(ipc.queryPerformanceState().transition));
+});
+
 test('queryPerformanceState reports the analysis source selection, as a snapshot not the live rune', () => {
 	pairing.analysisSourceState.features = { beatgrid: 'own' };
 

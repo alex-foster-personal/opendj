@@ -68,6 +68,8 @@ import {
 	type DeckTransportClock,
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
+import { readTransition } from './transition-read.svelte';
+import type { TransitionStatus } from './transition-classifier';
 import {
 	assertLoopGridBase,
 	loopIntervalChoices,
@@ -288,6 +290,8 @@ export interface PerformanceDeckSnapshot {
 export interface PerformanceState {
 	version: 1;
 	master_deck: DeckId | null;
+	/** TRANS-01: dual-deck blend the TopBar pill also reads via readTransition(). */
+	transition: TransitionStatus;
 	command_pending: boolean;
 	command_queued: number;
 	load_play_intent: Record<DeckId, { generation: number; desired_play: boolean } | null>;
@@ -1255,6 +1259,7 @@ export function queryPerformanceState(): PerformanceState {
 	return {
 		version: 1,
 		master_deck: masterDecks[0] ?? null,
+		transition: readTransition(),
 		command_pending: performanceCommandStatus.active > 0 || performanceCommandStatus.queued > 0,
 		command_queued: performanceCommandStatus.queued,
 		load_play_intent: Object.fromEntries(
