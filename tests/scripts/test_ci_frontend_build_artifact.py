@@ -58,19 +58,31 @@ def test_assert_fails_when_stamp_is_missing(tmp_path: Path) -> None:
 
 
 def test_acquire_refuses_without_ci_artifact(tmp_path: Path, monkeypatch) -> None:
-    """if CI never published the artifact then e2e must not build locally"""
+    """[if] CI never published the artifact then e2e must not build locally [else stop]."""
+    # gh exit 4 is "authentication required". The affected-test canary has no
+    # token, so a live `gh api` dies before the refuse message unless acquire
+    # fail-closes. Pin that path with a real subprocess, not the developer's
+    # logged-in gh (head ed73bf4f7 asserted 4 == 1).
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_gh = fake_bin / "gh"
+    fake_gh.write_text("#!/usr/bin/env bash\nexit 4\n", encoding="utf-8")
+    fake_gh.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.setenv("GITHUB_REPOSITORY", "maintainer/music-dj-tools")
     monkeypatch.setenv("MDT_CI_FRONTEND_ARTIFACT_WAIT_S", "1")
     monkeypatch.setenv("MDT_CI_FRONTEND_ARTIFACT_POLL_S", "1")
     dest = tmp_path / "build"
     result = subprocess.run(
         [str(ACQUIRE), SHA, str(dest)],
-        env={**os.environ, "PATH": os.environ["PATH"]},
+        env={**os.environ},
         capture_output=True,
         text=True,
         check=False,
     )
-    assert result.returncode == 1
+    assert result.returncode == 1, result.stdout + result.stderr
     assert "refusing to build locally" in result.stdout + result.stderr
 
 
@@ -107,3 +119,9 @@ def test_artifact_names_are_keyed_on_sha() -> None:
     ]
     assert uploads
     assert uploads[0]["with"]["name"] == "production-frontend-${{ github.sha }}"
+    # upload-artifact v4 skips dotfiles unless told otherwise. The stamp is
+    # `.ci-production-frontend-sha`; without this the zip has index.html and
+    # e2e assert fails "stamp is missing" (head ed73bf4f7, job 103219857971).
+    assert uploads[0]["with"].get("include-hidden-files") is True, (
+        ".ci-production-frontend-sha is a dotfile; upload-artifact v4 skips it otherwise"
+    )
