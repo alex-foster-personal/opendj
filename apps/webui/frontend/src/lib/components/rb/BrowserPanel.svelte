@@ -31,11 +31,17 @@
 	import { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
 	import {
 		libraryHealthDot as _computeLibraryHealthDot,
-		type LibraryHealthDot,
+		type LibraryHealthDot
+	} from '$lib/rb/library-health-dots';
+	import {
 		plannedTitle,
 		anyDeckPlaying,
 		createPlayingGate,
-		resolveRowVocals
+		resolveRowVocals,
+		isAppropriateNext,
+		resolveSearchFilterFallback,
+		selectSearchFilterFallback,
+		type NextOnlyRef
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -94,12 +100,6 @@
 		PLAYLIST_TREE_WIDTH_MAX,
 		PLAYLIST_TREE_WIDTH_MIN
 	} from '$lib/rb/prefs.svelte';
-	import {
-		isAppropriateNext,
-		resolveSearchFilterFallback,
-		selectSearchFilterFallback,
-		type NextOnlyRef
-	} from '$lib/rb/next-only-filter';
 	import { pushToast } from '$lib/stores.svelte';
 	import {
 		isCurrentBrowserSearch,
