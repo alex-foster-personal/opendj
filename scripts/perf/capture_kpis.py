@@ -1,13 +1,15 @@
-"""Capture S5, S12, and S13 KPIs against a RUNNING engine.
+"""Capture S2, S5, S12, and S13 KPIs against a RUNNING engine.
 
 Drives real HTTP/CLI endpoints only. ``--engine`` is required (no hidden
 port fallback). An unreachable engine, a missing track, or a failed probe
-writes an error (S5/S12) or withheld (S13) row, never a number.
+writes an error (S5/S12) or withheld (S2/S13) row, never a number.
 
 Usage::
 
     python -m scripts.perf.capture_kpis --engine <base-url> --scenario S5,S12
+    python -m scripts.perf.capture_kpis --engine <base-url> --scenario S2
     python -m scripts.perf.capture_kpis --engine <base-url> --scenario S13
+    just perf-capture --engine <base-url> --scenario S2
     just perf-capture --engine <base-url> --scenario S13
 """
 
@@ -36,8 +38,9 @@ from scripts.perf.capture_kpi_ledger import (
     session_meta,
 )
 from scripts.perf.capture_s13 import capture_s13
+from scripts.perf.capture_s2 import capture_s2
 
-KNOWN_SCENARIOS = ("S5", "S12", "S13")
+KNOWN_SCENARIOS = ("S2", "S5", "S12", "S13")
 HTTP_SCENARIOS = frozenset({"S5", "S12"})
 
 
@@ -92,7 +95,24 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--timeout-s",
         type=int,
         default=90,
-        help="wait for the S13 perf-span POST after bauble click",
+        help="Playwright budget for S2 capture or S13 perf-span wait",
+    )
+    parser.add_argument(
+        "--presses",
+        type=int,
+        default=32,
+        help="number of complete-floor ordinary press rows required for S2",
+    )
+    parser.add_argument(
+        "--browser",
+        default="webkit",
+        choices=("webkit", "chromium"),
+        help="browser project for S2 capture (default webkit)",
+    )
+    parser.add_argument(
+        "--track",
+        default=None,
+        help="override stable_id for S2 deck load (default first present track)",
     )
     parser.add_argument(
         "--dry-run",
@@ -235,8 +255,20 @@ def main(argv: list[str] | None = None) -> int:
     http_scenarios = [item for item in scenarios if item in HTTP_SCENARIOS]
     if http_scenarios:
         exit_code = max(exit_code, _run_s5_s12(args, http_scenarios, engine))
+    frontend = (args.frontend or args.engine).rstrip("/")
+    if "S2" in scenarios:
+        code = capture_s2(
+            engine=engine,
+            frontend=frontend,
+            ledger_path=Path(args.ledger),
+            presses=args.presses,
+            browser=args.browser,
+            timeout_s=args.timeout_s,
+            track=args.track,
+            dry_run=args.dry_run,
+        )
+        exit_code = max(exit_code, code)
     if "S13" in scenarios:
-        frontend = (args.frontend or args.engine).rstrip("/")
         code = capture_s13(
             engine=engine,
             frontend=frontend,
