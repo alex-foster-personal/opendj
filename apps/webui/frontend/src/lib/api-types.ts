@@ -5141,6 +5141,23 @@ export interface components {
              */
             slot: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
         };
+        /**
+         * HubStorageErrorBody
+         * @description The ``detail`` object a storage-full push carries.
+         */
+        HubStorageErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * HubStorageErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        HubStorageErrorResponse: {
+            detail: components["schemas"]["HubStorageErrorBody"];
+        };
         /** JobIn */
         JobIn: {
             /** External Ref */
@@ -13637,6 +13654,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The hub sqlite database cannot take the write. code: SYNC_HUB_STORAGE. */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HubStorageErrorResponse"];
                 };
             };
         };
