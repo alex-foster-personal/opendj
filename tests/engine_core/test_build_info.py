@@ -137,13 +137,13 @@ def test_repo_checkout_describes_itself_from_live_git() -> None:
 
 @pytest.mark.requirement("INSTALL-07")
 def test_repo_checkout_carries_the_tauri_app_version() -> None:
-    conf = json.loads(
+    expected = json.loads(
         (REPO_ROOT / "apps/desktop/src-tauri/tauri.conf.json").read_text(
             encoding="utf-8"
         )
-    )
+    )["version"]
     info = resolve_build_info({}, REPO_ROOT)
-    assert info.app_version == conf["version"]
+    assert info.app_version == expected
 
 
 @pytest.mark.requirement("INSTALL-07")

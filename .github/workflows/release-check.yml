@@ -153,7 +153,7 @@ jobs:
       - name: System deps for pyrekordbox (SQLCipher)
         # Keep the project interpreter available to any post-failure steps.
         run: |
-          scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file'
+          scripts/ci_apt_present.sh libsqlcipher-dev file || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file'
 
       - name: Run make release-check
         env:

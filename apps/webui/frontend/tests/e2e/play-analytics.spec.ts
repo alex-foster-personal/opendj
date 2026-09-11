@@ -54,8 +54,10 @@ test('real event-store analytics render and filter through the HTTP contract', a
 	);
 	await expect(page.getByText('warehouse-2026-07-21')).not.toBeVisible();
 	await expect(page.getByText('studio-2026-07-20')).toBeVisible();
-	// Repo checkouts carry app_version from tauri.conf.json; the public manifest
-	// is still unpublished, so the route answers 200 with endpoint-refused.
+	// Repo checkouts carry app_version from tauri.conf.json. The public
+	// manifest is still unpublished, so /update/check answers HTTP 200 with
+	// endpoint-refused rather than 502. setup-entry-points.spec.ts already
+	// carves out payload 502 console noise for the app shell.
 	expect(
 		failedResources.every(({ url }) => url.endsWith('/favicon.svg'))
 	).toBe(true);
