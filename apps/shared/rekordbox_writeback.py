@@ -19,7 +19,10 @@ GATED (a bug here can damage the user's library):
 NOT GATED (the app's own working copies; losing them costs a re-import):
 
   * ``data/master.plain.db`` -- decrypted working copy.  ``rb_vendor`` and the
-    hot-cue routes write here on purpose.
+    hot-cue routes write here on purpose.  ``python -m apps.sync.apply_analysis``
+    without ``--live`` opens that file ``mode=ro`` and is not a write surface;
+    the gated surface ``module.sync.apply_analysis`` remains the ``--live`` path
+    through ``_live_rb_db_path(live=True)``.
   * ``data/master.db.copy`` (``REKORDBOX_WORKING_DB``), ``data/state/state.db``,
     ``data/writeback-backups/``, ``data/reconcile/backups/``, the anlz cache.
   * djay Pro's ``MediaLibrary.db`` and audio-file ID3 tags -- different vendors,
