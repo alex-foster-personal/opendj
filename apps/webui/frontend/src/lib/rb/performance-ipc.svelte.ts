@@ -106,7 +106,7 @@ import type {
 	MixerChannelState
 } from '$lib/rb/mixer-types';
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
-import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset';
+import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
 import { noteRecentDeck } from '$lib/rb/recent-deck';

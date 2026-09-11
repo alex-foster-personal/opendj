@@ -12,7 +12,7 @@
  */
 
 import { API_BASE } from '$lib/api';
-import { RbApiError } from './api-rb';
+import { RbApiError } from './api-rb-error';
 
 export type IngestStep = {
 	id: 'analysis' | 'stems' | 'vocals';
