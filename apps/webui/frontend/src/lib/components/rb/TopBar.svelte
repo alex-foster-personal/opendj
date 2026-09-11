@@ -26,6 +26,7 @@
 		setAutoPlayEnforceOrder,
 		setAutoPlayMaximizeReach,
 		setBeatSyncMax,
+		toggleLyricsGlobal,
 		toggleTheme,
 		uiPrefs
 	} from '$lib/rb/prefs.svelte';
@@ -406,6 +407,19 @@
 		onclick={() => setBeatSyncMax(!uiPrefs.beat_sync_max)}
 	>
 		BeatSyncMax
+	</button>
+
+	<button
+		type="button"
+		class="bsm-toggle topbar-slot-lyr"
+		class:on={uiPrefs.lyrics_global}
+		aria-pressed={uiPrefs.lyrics_global}
+		title={uiPrefs.lyrics_global
+			? 'Lyric overlays ON - click to hide waveform word lanes, deck lyric lines and scrub-hover words everywhere (per-surface toggles keep their state)'
+			: 'Lyric overlays OFF globally - click to restore them (library Lyrics column is unaffected; it has its own setting)'}
+		onclick={toggleLyricsGlobal}
+	>
+		LYR
 	</button>
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->

@@ -36,6 +36,10 @@
 		deckIdFromHoverEl
 	} from '$lib/rb/deck-hover.svelte';
 	import { formatLoadLatency } from '$lib/rb/format-load-latency';
+	import { lyricEntry, loadLyrics } from '$lib/lyrics/lyrics-cache.svelte';
+	import { adaptLyricTrack } from '$lib/rb/lyrics/build-track';
+	import type { LyricsTrack } from '$lib/rb/lyrics/types';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import {
 		acceptTrackDragOver,
 		endTrackDrag,
@@ -53,6 +57,7 @@
 	import PadStrip from './deck/PadStrip.svelte';
 	import PitchFader from './deck/PitchFader.svelte';
 	import DeckErrorBanner from './deck/DeckErrorBanner.svelte';
+	import DeckLyricLine from './deck/DeckLyricLine.svelte';
 	import SecondaryLoadBadge from './deck/SecondaryLoadBadge.svelte';
 	import StemRow from './deck/StemRow.svelte';
 	import StripWaveform from './deck/StripWaveform.svelte';
@@ -99,6 +104,45 @@
 	);
 
 	const hotCueActions = createDeckHotCueActions(() => deckId, () => deck);
+
+	$effect(() => {
+		const stableId = deck.stable_id;
+		if (!uiPrefs.lyrics_deck_line || !uiPrefs.lyrics_global || stableId === null) return;
+		void loadLyrics(stableId);
+	});
+
+	const deckLyricEntry = $derived(deck.stable_id === null ? null : lyricEntry(deck.stable_id));
+	const deckLyrics: { track: LyricsTrack | null; error: string | null } = $derived.by(() => {
+		const stableId = deck.stable_id;
+		const entry = deckLyricEntry;
+		if (stableId === null || entry === null) return { track: null, error: null };
+		if (entry.state === 'error') return { track: null, error: entry.error };
+		if (entry.state !== 'loaded' || entry.track === null) return { track: null, error: null };
+		try {
+			return {
+				track: adaptLyricTrack(
+					{
+						id: stableId,
+						artist: deck.artist ?? '',
+						title: deck.title ?? '',
+						duration_s: (deck.duration_ms ?? 0) / 1000
+					},
+					entry.track
+				),
+				error: null
+			};
+		} catch (error) {
+			return {
+				track: null,
+				error: error instanceof Error ? error.message : String(error)
+			};
+		}
+	});
+
+	function presentedPositionSec(): number | null {
+		if (deck.stable_id === null) return null;
+		return deck.position_ms / 1000;
+	}
 
 	// ------------------------------------------------- engine call plumbing
 	// Engine methods throw loudly on empty decks (fail-fast contract);
@@ -398,6 +442,16 @@
 			onRangeChange={setPitchRangeUi}
 		/>
 	</div>
+
+	{#if uiPrefs.lyrics_deck_line && uiPrefs.lyrics_global && deck.stable_id !== null && deckLyricEntry !== null}
+		<DeckLyricLine
+			track={deckLyrics.track}
+			entryState={deckLyricEntry.state}
+			error={deckLyrics.error}
+			positionSource={presentedPositionSec}
+			rows={1}
+		/>
+	{/if}
 
 	<StemRow
 		{deck}

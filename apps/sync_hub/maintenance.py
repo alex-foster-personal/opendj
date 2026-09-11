@@ -76,6 +76,9 @@ import json
 import os
 import sqlite3
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
@@ -351,6 +354,18 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
 
+    feedback_command = subcommands.add_parser(
+        "feedback-pins",
+        help="sync or inspect a running engine's feedback pins (FBSYNC-04)",
+    )
+    feedback_command.add_argument("action", choices=("sync", "status"))
+    feedback_command.add_argument(
+        "--engine", required=True, help="the engine base URL, e.g. http://127.0.0.1:8728"
+    )
+    feedback_command.add_argument(
+        "--pin-id", default=None, help="status only: narrow the answer to one pin"
+    )
+
     fleet_command = subcommands.add_parser(
         "fleet", parents=[common], help="print who owns which machine on this hub"
     )
@@ -474,6 +489,43 @@ def _print_fleet(args: argparse.Namespace) -> None:
         print(line)
 
 
+#: CFG. A feedback-pins sync is a whole CloudSync round trip on the engine.
+FEEDBACK_PINS_CLI_TIMEOUT_S: float = 300.0
+
+
+def _feedback_pins(args: argparse.Namespace) -> int:
+    """FBSYNC-04 CLI twin: drive a RUNNING engine's feedback pin sync over HTTP.
+
+    A thin shell, like ``enroll``: it opens no database and no comments.json,
+    because the engine owns both and holds the lock every pin write takes.
+    Prints the engine's JSON answer; exits 1 on any HTTP error or an
+    unreachable engine, printing why.
+    """
+    base = args.engine.rstrip("/")
+    if args.action == "sync":
+        request = urllib.request.Request(
+            f"{base}/api/v1/feedback/sync", data=b"", method="POST"
+        )
+    else:
+        query = (
+            f"?{urllib.parse.urlencode({'pin_id': args.pin_id})}" if args.pin_id else ""
+        )
+        request = urllib.request.Request(
+            f"{base}/api/v1/feedback/sync/status{query}", method="GET"
+        )
+    try:
+        with urllib.request.urlopen(request, timeout=FEEDBACK_PINS_CLI_TIMEOUT_S) as response:
+            payload = json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        print(f"[ERROR] feedback-pins {args.action}: HTTP {exc.code} {exc.read().decode()}")
+        return 1
+    except urllib.error.URLError as exc:
+        print(f"[ERROR] feedback-pins {args.action}: engine {base} unreachable: {exc.reason}")
+        return 1
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
 def _print_hosted(args: argparse.Namespace) -> None:
     print(json.dumps(hosted_config.describe_for_cli(os.environ, args.data_dir), sort_keys=True))
 
@@ -492,7 +544,9 @@ def _print_hosted(args: argparse.Namespace) -> None:
 #: and exiting 0. Named here, not in the test, so "every registered
 #: subcommand is dispatched" can be re-derived from the module instead of
 #: from a list a test author kept up to date by hand.
-EXIT_CODE_COMMANDS: frozenset[str] = frozenset({"sync", "status", "policy"})
+EXIT_CODE_COMMANDS: frozenset[str] = frozenset(
+    {"sync", "status", "feedback-pins", "policy"}
+)
 
 
 PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
@@ -526,6 +580,8 @@ def main(argv: list[str] | None = None) -> int:
         return _report_sync(sync(args.data_dir, args.hub, name=args.name))
     if args.command == "status":
         return _report_status(sync_status.read_status(args.data_dir))
+    if args.command == "feedback-pins":
+        return _feedback_pins(args)
     if args.command == "policy":
         return maintenance_policy.run(args)
     # Everything below prints and exits 0; the two above own their own codes.

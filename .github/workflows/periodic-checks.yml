@@ -649,6 +649,170 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
+  # Row 6 (stem decode): four-way FLAC decode on the production browser path.
+  # MEASUREMENT lane: medians only; a red means the harness broke.
+  # ---------------------------------------------------------------------------
+  perf-bench-stem-decode:
+    name: perf bench (stem decode)
+    needs: window
+    if: needs.window.outputs.run == 'true'
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
+    timeout-minutes: 45
+    env:
+      MDT_LIBRARY_MODE: local
+      UV_NO_SYNC: "1"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMBA_NUM_THREADS: "1"
+    steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"
+          foreign() { sudo find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          reclaimed=$(foreign -print0 | tr -cd '\0' | wc -c)
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ needs.window.outputs.head }}
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.14.0"
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+
+      - name: Install Python deps into the project venv
+        run: uv sync --extra dev --extra analysis
+
+      - name: Install frontend dependencies
+        working-directory: apps/webui/frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        working-directory: apps/webui/frontend
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: System deps (ffmpeg for demucs4 FLAC bundle fixture)
+        run: |
+          scripts/ci_apt_present.sh ffmpeg || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y ffmpeg'
+
+      - name: Stem-decode bench
+        working-directory: apps/webui/frontend
+        run: |
+          set -euo pipefail
+          pnpm exec svelte-kit sync
+          pnpm build
+          pnpm exec playwright test \
+            --config tests/e2e/playwright.stem-decode-bench.config.ts \
+            2>&1 | tee "${RUNNER_TEMP}/stem-decode-bench.log"
+          {
+            echo "### Stem-decode bench"
+            echo ""
+            echo '```'
+            tail -40 "${RUNNER_TEMP}/stem-decode-bench.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bench output
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: stem-decode-bench-${{ needs.window.outputs.head }}
+          path: ${{ runner.temp }}/stem-decode-bench.log
+          if-no-files-found: warn
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Row 6 (waveform render): native waveform materialization on Linux.
+  # MEASUREMENT lane: medians only; UNKNOWN when the wheel is absent.
+  # ---------------------------------------------------------------------------
+  perf-bench-waveform-render:
+    name: perf bench (waveform render)
+    needs: window
+    if: needs.window.outputs.run == 'true'
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 20
+    env:
+      UV_NO_SYNC: "1"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMBA_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ needs.window.outputs.head }}
+          clean: false
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+
+      - name: Install Python deps into the project venv
+        run: uv sync --extra dev
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@6190aa5fb88a88ee71c12769924bbe63a9ab152e # 1.96.0
+        with:
+          toolchain: "1.96.0"
+
+      - name: Install waveform native extension
+        run: |
+          uv pip install 'maturin>=1.8,<2'
+          uv run maturin develop --release \
+            --manifest-path apps/webui/server/native/waveform/Cargo.toml
+
+      - name: Waveform-render bench
+        run: |
+          set -euo pipefail
+          uv run --no-sync python scripts/bench/waveform_render_bench.py \
+            2>&1 | tee "${RUNNER_TEMP}/waveform-render-bench.log"
+          {
+            echo "### Waveform-render bench"
+            echo ""
+            echo '```'
+            tail -40 "${RUNNER_TEMP}/waveform-render-bench.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bench output
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: waveform-render-bench-${{ needs.window.outputs.head }}
+          path: ${{ runner.temp }}/waveform-render-bench.log
+          if-no-files-found: warn
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
   # Row 9 (remote half): preview-branch drift. Cheap, no toolchain, so it runs
   # every window regardless of the merge count.
   #
@@ -1132,7 +1296,7 @@ jobs:
   # ---------------------------------------------------------------------------
   report:
     name: ledger comment
-    needs: [window, full-suite, bundle-trend, perf-bench, preview-drift, reqs-drift]
+    needs: [window, full-suite, bundle-trend, perf-bench, perf-bench-stem-decode, perf-bench-waveform-render, preview-drift, reqs-drift]
     if: always() && needs.window.result == 'success' && needs.window.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -1151,6 +1315,8 @@ jobs:
           R_FULL: ${{ needs.full-suite.result }}
           R_BUNDLE: ${{ needs.bundle-trend.result }}
           R_PERF: ${{ needs.perf-bench.result }}
+          R_PERF_STEM: ${{ needs.perf-bench-stem-decode.result }}
+          R_PERF_WAVE: ${{ needs.perf-bench-waveform-render.result }}
           R_DRIFT: ${{ needs.preview-drift.result }}
           V_DRIFT: ${{ needs.preview-drift.outputs.verdict }}
           R_REQS: ${{ needs.reqs-drift.result }}
@@ -1314,6 +1480,8 @@ jobs:
           | 2 | e2e extended (own nightly clock) | ${e2e_line} |
           | 4 | bundle size trend | $(mark "$R_BUNDLE") |
           | 5 | perf bench (boot burst) | $(mark "$R_PERF") |
+          | 6 | perf bench (stem decode) | $(mark "$R_PERF_STEM") |
+          | 6 | perf bench (waveform render) | $(mark "$R_PERF_WAVE") |
           | 9 | preview drift (remote refs) | $(mark "$R_DRIFT") verdict \`${V_DRIFT:-UNKNOWN}\` |
           | 11 | requirement status drift (cited but unflipped) | $(mark "$R_REQS") verdict \`${V_REQS:-UNKNOWN}\` |
 

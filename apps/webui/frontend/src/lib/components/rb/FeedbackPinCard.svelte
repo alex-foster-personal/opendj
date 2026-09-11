@@ -49,6 +49,11 @@
 
 	const thread = $derived(pinThread(pin));
 
+	/** FBSYNC-05: a pin synced from another machine carries its screenshot's
+	 * metadata but not its bytes, so the image 404s here. Keyed on the
+	 * attachment id so a card reused for another pin starts clean. */
+	let unsyncedAttachmentId = $state<string | null>(null);
+
 	/** Re-clamp against the card's REAL measured size, not the guess. Runs
 	 * once pinBodyElement mounts, again whenever `pin` changes (a different
 	 * marker opened into this same instance), and again on every resize,
@@ -70,6 +75,7 @@
 		void pin;
 		measuredPos = null;
 		lightboxOpen = false;
+		unsyncedAttachmentId = null;
 		replyText = readPinReplyDraft(localStorage, pin.id);
 		if (pinBodyElement !== null) _reposition();
 	});
@@ -145,7 +151,13 @@
 			</p>
 		{/if}
 	{/each}
-	{#if pin.attachment}
+	{#if pin.attachment && unsyncedAttachmentId === pin.attachment.id}
+		<p class="fb-hint fb-attachment-unsynced" data-testid="fb-attachment-unsynced">
+			Screenshot not on this machine: pin sync carries attachment details, not the image
+			yet.
+		</p>
+	{:else if pin.attachment}
+		{@const attachmentId = pin.attachment.id}
 		<button
 			type="button"
 			class="fb-attachment-btn"
@@ -159,6 +171,7 @@
 				class="fb-attachment-img"
 				src={`${API_BASE}${pin.attachment.url}`}
 				alt="Pasted screenshot"
+				onerror={() => (unsyncedAttachmentId = attachmentId)}
 			/>
 		</button>
 	{/if}

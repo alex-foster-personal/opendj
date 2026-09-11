@@ -120,6 +120,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         5323,  # tests/e2e/playwright.preflight-gate.config.ts / vite.full-reload-gate.config.ts
         5324,  # tests/e2e/vite.autoplay-stall-gate.config.ts / playwright.audio-soak.config.ts
         5326,  # tests/e2e/vite.autoplay-error-hunt.config.ts AUTOPLAY_HUNT_FRONTEND_PORT
+        5328,  # tests/e2e/vite.lyrics-words.config.ts frontend port
         5331,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_FRONTEND_PORT
         5399,  # tests/e2e/vite.rekordbox-gate.config.ts REKORDBOX_GATE_E2E_PORT
         8686,  # tests/e2e/vite.performance.config.ts DEFAULT_API_BASE
@@ -127,6 +128,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8690,  # tests/e2e/playwright.webkit-deckload.config.ts WEBKIT_DECKLOAD_PORT
         8691,  # apps/desktop/wdio.conf.ts ENGINE_PORT
         8692,  # tests/e2e/playwright.boot-burst.config.ts BOOT_BURST_PORT
+        8700,  # tests/e2e/playwright.stem-decode-bench.config.ts STEM_DECODE_BENCH_PORT
         8695,  # tests/e2e/vite.hotcue-mapping-gate.config.ts API port
         8696,  # tests/e2e/vite.comment-hotkey-gate.config.ts / playwright.preflight-gate.config.ts
         8697,  # tests/e2e/playwright.preflight-gate.config.ts PREFLIGHT_GATE_BROKEN_API_PORT
@@ -134,6 +136,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8699,  # tests/e2e/vite.autoplay-stall-gate.config.ts API port
         8703,  # tests/e2e/vite.autoplay-error-hunt.config.ts AUTOPLAY_HUNT_API_PORT
         8704,  # tests/e2e/library-jobs-e2e-endpoints.ts LIBRARY_JOBS_E2E_BACKEND_PORT
+        8706,  # tests/e2e/vite.lyrics-words.config.ts API port
         8711,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_HUB_PORT
         8712,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_SPOKE_PORT
         9408,  # tests/e2e/stems-e2e-endpoints.ts DEFAULT_FRONTEND_PORT

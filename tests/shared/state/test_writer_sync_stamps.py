@@ -59,6 +59,8 @@ from apps.webui.server.app import create_app
 from apps.webui.server.routes import cloudsync as cloudsync_routes
 from apps.webui.server.sqlite_backend import SqliteBackend
 
+from . import writer_sync_stamps_rungs as rungs
+
 pytestmark = pytest.mark.requirement("INFRA-01")
 
 SID = "a" * 40
@@ -240,44 +242,6 @@ def _exercise_hydration_writers(
         )
 
 
-def _exercise_lyric_verdict_writes(
-    conn: sqlite3.Connection, machine_id: str
-) -> None:
-    """Drive the ``lyric_verdict`` write shape (schema v10, D13.1).
-
-    Written against ``stamped_transaction`` + ``stamp_and_log`` directly
-    rather than through ``apps.lyrics.store``, for the same reason
-    :func:`_exercise_hydration_writers` calls two module-private writers: it
-    is the CHOKEPOINT that is under test here, and reaching it through the
-    lyrics store would drag that package's validation and its verdict
-    vocabulary into a test about stamping. What this pins is that a v10 row
-    can only be written the stamped way -- an insert AND an update, because
-    the ON CONFLICT branch is where the round 2 finding N1 writers all
-    slipped through.
-
-    ``open_rw`` connections are AUTOCOMMIT, so each write owns its own
-    ``stamped_transaction`` and there is no trailing ``conn.commit()``.
-    """
-    with sync_stamp.stamped_transaction(conn):
-        stamp = sync_stamp.stamp_and_log(conn, "lyric_verdict", (SID,), machine_id)
-        conn.execute(
-            "INSERT INTO lyric_verdict(stable_id, verdict, coverage_pct, "
-            "source, n_words, n_lines, pct_witness_red, pipeline_version, "
-            "words_content_hash, computed_at, updated_at, origin_device_id) "
-            "VALUES (?, 'vocal', 91.5, 'lrclib', 240, 41, 0.012, "
-            "'2026.09.09-round3a', ?, ?, ?, ?)",
-            (SID, "c" * 64, _TS, stamp.updated_at, stamp.origin_device_id),
-        )
-    # The recompute branch: same row, new numbers, second stamp.
-    with sync_stamp.stamped_transaction(conn):
-        stamp = sync_stamp.stamp_and_log(conn, "lyric_verdict", (SID,), machine_id)
-        conn.execute(
-            "UPDATE lyric_verdict SET verdict = 'sparse', coverage_pct = 12.0, "
-            "updated_at = ?, origin_device_id = ? WHERE stable_id = ?",
-            (stamp.updated_at, stamp.origin_device_id, SID),
-        )
-
-
 def _exercise_every_writer_path(
     conn: sqlite3.Connection, tmp_path: Path, db_path: Path
 ) -> None:
@@ -287,7 +251,8 @@ def _exercise_every_writer_path(
     _exercise_cloudsync_routes(db_path)
     _exercise_spotify_importer(conn, tmp_path)
     _exercise_hydration_writers(conn, tmp_path, machine_id)
-    _exercise_lyric_verdict_writes(conn, machine_id)
+    rungs.exercise_lyric_verdict_writes(conn, machine_id, SID, _TS)
+    rungs.exercise_feedback_pin_reconcile(conn, tmp_path, _TS)
 
 
 # ----- helpers -------------------------------------------------------------
@@ -425,6 +390,11 @@ def test_the_coverage_check_catches_a_writer_that_bypasses_the_chokepoint(
             "INSERT INTO playlist_pins(machine_id, playlist_id, mode, "
             "updated_at, origin_device_id) VALUES (?, ?, 'cached', ?, ?)",
             (machine_id, f"spotify:{SPOTIFY_PL_ID}", stamp, machine_id),
+        ),
+        "feedback_pins": (
+            "INSERT INTO feedback_pins(pin_id, doc, updated_at, origin_device_id) "
+            "VALUES ('rawpin000000', '{\"id\": \"rawpin000000\"}', ?, ?)",
+            (stamp, machine_id),
         ),
     }
     assert set(bypasses) == set(SYNCED_TABLES), (

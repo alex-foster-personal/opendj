@@ -40,6 +40,7 @@ from .backend import (
     NotFoundError,
     StateBackend,
 )
+from .cloudsync_scheduler import CloudSyncScheduler
 from .errors import (
     handle_backend_error,
     handle_conflict,
@@ -69,6 +70,7 @@ from .routes import feedback_attachments as feedback_attachments_routes
 from .routes import feedback_performance_marks as feedback_performance_marks_routes
 from .routes import feedback_pins as feedback_pins_routes
 from .routes import feedback_replies as feedback_replies_routes
+from .routes import feedback_sync as feedback_sync_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
@@ -187,16 +189,24 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
     # and start live INSIDE this try: a raise here must still stop the
     # auto-analyze watcher above via the finally, not leak its thread.
     lyric_watcher: lyric_index_autostart.LyricIndexWatcher | None = None
+    cloudsync_scheduler: CloudSyncScheduler | None = None
     try:
         lyric_watcher = getattr(app.state, "lyric_index_watcher", None)
         if lyric_watcher is None:
             lyric_watcher = build_lyric_index_watcher(app)
             app.state.lyric_index_watcher = lyric_watcher
         lyric_watcher.start()
+        # FBSYNC-01: built only on an app the daemon entry point ARMED, and
+        # even then inert unless MDT_CLOUDSYNC_SCHEDULER=1 and a hub URL are
+        # set; retained on the app for the reason the watchers above are.
+        if app.state.cloudsync_scheduler_armed:
+            cloudsync_scheduler = getattr(app.state, "cloudsync_scheduler", None)
+            if cloudsync_scheduler is None:
+                cloudsync_scheduler = CloudSyncScheduler(app)
+                app.state.cloudsync_scheduler = cloudsync_scheduler
+            cloudsync_scheduler.start()
         jobs_watcher = getattr(app.state, "library_jobs_watcher", None)
         if jobs_watcher is None:
-            from pathlib import Path
-
             db = Path(app.state.state_db_path)
             data_dir = db.parent.parent if db.parent.name == "state" else db.parent
             roots = getattr(app.state, "stem_roots", None)
@@ -213,6 +223,8 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         jobs_watcher.start()
         yield
     finally:
+        if cloudsync_scheduler is not None:
+            cloudsync_scheduler.stop()
         jobs_w = getattr(app.state, "library_jobs_watcher", None)
         if jobs_w is not None:
             jobs_w.stop()
@@ -401,6 +413,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         feedback_performance_marks_routes.router,
         feedback_pins_routes.router,
         feedback_replies_routes.router,
+        feedback_sync_routes.router,
         share_routes.router,
         rb_assets_routes.router,
         search_routes.router,
