@@ -63,6 +63,7 @@ from apps.analysis import run as analysis_run
 from apps.shared.events import publish
 from apps.shared.paths import AUDIO_EXTENSIONS, HOME, STATE_DB
 from apps.shared.state.db import open_ro
+from apps.webui.soft_deletes import has_soft_deletes
 from apps.webui.server.routes.ingest_analysis_argv import CliFailed, build_analysis_argv
 from apps.webui.server.routes.ingest_job import (
     _JOBS,
@@ -225,9 +226,11 @@ def get_coverage(request: Request) -> CoverageOut:
     )
     conn = open_ro()
     try:
-        total = conn.execute(
-            "SELECT count(*) FROM tracks WHERE deleted_at IS NULL"
-        ).fetchone()[0]
+        if has_soft_deletes(conn, "tracks"):
+            total_sql = "SELECT count(*) FROM tracks WHERE deleted_at IS NULL"
+        else:
+            total_sql = "SELECT count(*) FROM tracks"
+        total = conn.execute(total_sql).fetchone()[0]
     finally:
         conn.close()
     return CoverageOut(

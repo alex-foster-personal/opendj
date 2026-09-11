@@ -24,6 +24,7 @@
 	import TreeContextMenu from './TreeContextMenu.svelte';
 	import MissingTracksFolder from './MissingTracksFolder.svelte';
 	import { MISSING_TRACKS_ID, missingTracksNode } from './missing-tracks';
+	import PlaylistHistoryPanel from './PlaylistHistoryPanel.svelte';
 
 	let {
 		nodes,
@@ -205,6 +206,7 @@
 </script>
 
 <div class="tree-root">
+	<PlaylistHistoryPanel />
 	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} {onselect} />
 	<div class="view-tabs">
 		<button class="vt" class:active={mode === 'tree'} onclick={() => (mode = 'tree')}>

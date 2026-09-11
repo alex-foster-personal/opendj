@@ -533,6 +533,11 @@ def _state_text(mirror: dict[str, Any]) -> str:
     mixer = mirror.get("mixer")
     if isinstance(mixer, dict):
         lines.append(f"crossfader: {mixer.get('crossfader', 'absent')}")
+    transition = mirror.get("transition")
+    if isinstance(transition, dict) and "state" in transition:
+        lines.append(f"transition: {transition['state']}")
+    else:
+        lines.append("transition: absent")
     decks = mirror.get("decks")
     if isinstance(decks, dict):
         for deck_id in sorted(decks, key=str):

@@ -277,6 +277,11 @@ test('null artwork availability identifies an unavailable reader without request
 		route.fulfill({ json: { active: false, owned: false, pid: null, recoverable: false, session_id: null } })
 	);
 	await page.route('**/api/v1/playlists', (route) => route.fulfill({ json: [] }));
+	await page.route('**/api/v1/playlist-history', (route) =>
+		route.fulfill({
+			json: { cursor: 0, limit: 50, can_undo: false, can_redo: false, entries: [] }
+		})
+	);
 	await page.route(/\/api\/v1\/tracks(?:\?.*)?$/, (route) =>
 		route.fulfill({ json: { items: [TRACK], next_cursor: null } })
 	);
