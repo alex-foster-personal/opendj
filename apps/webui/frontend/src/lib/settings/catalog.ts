@@ -142,6 +142,28 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	{
+		id: 'remixes_filter',
+		label: 'Remixes library filter',
+		group: 'library',
+		keywords: ['remix', 'bootleg', 'rework', 'vip', 'edit', 'version', 'filter'],
+		title: 'Keep only remixes (title version markers)',
+		detail:
+			'Title-marker heuristic (remix/bootleg/rework/VIP/non-radio edit); the lyric repair signal joins it after the full-library alignment run. Checkbox in the library toolbar.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'vocals_filter',
+		label: 'Vocals library filter',
+		group: 'library',
+		keywords: ['vocals', 'lyrics', 'lines', 'singing', 'filter', 'acapella'],
+		title: 'Keep only tracks with >5 lines of lyrics',
+		detail:
+			'Requires real word-level lyrics from the pipeline; unprocessed tracks are excluded. Checkbox in the library toolbar.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
 		id: 'beat_sync_max',
 		label: 'Beat Sync Max',
 		group: 'performance',

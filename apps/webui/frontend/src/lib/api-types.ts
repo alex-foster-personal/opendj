@@ -1620,6 +1620,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feedback/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Feedback Sync */
+        post: operations["post_feedback_sync_api_v1_feedback_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feedback/sync/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Feedback Sync Status */
+        get: operations["get_feedback_sync_status_api_v1_feedback_sync_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/todos": {
         parameters: {
             query?: never;
@@ -5192,6 +5226,49 @@ export interface components {
             /** Machine Name */
             machine_name: string | null;
         };
+        /** CloudSyncLinkOut */
+        CloudSyncLinkOut: {
+            /** Enabled */
+            enabled: boolean;
+            /** Endpoint */
+            endpoint: string | null;
+            /** Last Finished At */
+            last_finished_at: string | null;
+            /** Last Message */
+            last_message: string | null;
+            /** Last Result */
+            last_result: string | null;
+            /** Reason */
+            reason: string | null;
+        };
+        /**
+         * CloudSyncSchedulerOut
+         * @description The engine's CloudSync scheduler: is its thread alive, and what last failed.
+         *
+         *     ``not_armed``: this app never builds one (tests, non-daemon boots).
+         *     ``off``: armed, switch not on. ``misconfigured``: switched on but it could
+         *     not start (``reason`` says why); the engine booted regardless.
+         *     ``dead``: it was started and its thread is gone without ``stop()``.
+         */
+        CloudSyncSchedulerOut: {
+            /** Alive */
+            alive: boolean;
+            /** Last Error */
+            last_error: string | null;
+            /** Last Error At */
+            last_error_at: string | null;
+            /** Last Ok At */
+            last_ok_at: string | null;
+            /** Reason */
+            reason: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "not_armed" | "off" | "misconfigured" | "running" | "stopped" | "dead";
+            /** Ticks */
+            ticks: number;
+        };
         /** CloudSyncStatusOut */
         CloudSyncStatusOut: {
             /**
@@ -5460,6 +5537,11 @@ export interface components {
              */
             coverage_pct?: number | null;
             /**
+             * Effective
+             * @description same as effective_verdict; kept for clients that read .effective
+             */
+            effective: string;
+            /**
              * Effective Verdict
              * @description what to act on: the human override if set, else verdict
              */
@@ -5691,6 +5773,8 @@ export interface components {
             contract_rev: string;
             /** Engine Version */
             engine_version: string;
+            /** Google Oauth Configured */
+            google_oauth_configured: boolean;
             state_db: components["schemas"]["HealthStateDb"];
             /**
              * Status
@@ -5853,6 +5937,49 @@ export interface components {
             quota: number | null;
             /** Server Side */
             server_side: boolean;
+        };
+        /** FeedbackStoreSyncOut */
+        FeedbackStoreSyncOut: {
+            /** Archived */
+            archived: number;
+            /** Attachments Missing */
+            attachments_missing: number;
+            /** Harvested */
+            harvested: number;
+            /** Live */
+            live: number;
+            /** Pending Push */
+            pending_push: number;
+            /** Synced */
+            synced: number;
+            /** Unreconciled */
+            unreconciled: number;
+        };
+        /** FeedbackSyncOut */
+        FeedbackSyncOut: {
+            /** Exported */
+            exported: number;
+            /** Imported */
+            imported: number;
+            /** Message */
+            message: string;
+            /** Pulled */
+            pulled: number;
+            /** Pushed */
+            pushed: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "inconclusive";
+        };
+        /** FeedbackSyncStatusOut */
+        FeedbackSyncStatusOut: {
+            cloudsync: components["schemas"]["CloudSyncLinkOut"];
+            /** Pins */
+            pins: components["schemas"]["PinSyncOut"][];
+            scheduler: components["schemas"]["CloudSyncSchedulerOut"];
+            store: components["schemas"]["FeedbackStoreSyncOut"];
         };
         /**
          * FileProbeOut
@@ -7120,6 +7247,30 @@ export interface components {
             stable_ids: string[];
         };
         /**
+         * LyricsRowSummaryOut
+         * @description Per-row karaoke verdict summary for library listings.
+         */
+        LyricsRowSummaryOut: {
+            /** Effective */
+            effective: string;
+            /** Has Words */
+            has_words: boolean;
+            /** Language Iso3 */
+            language_iso3?: string | null;
+            /** N Lines */
+            n_lines?: number | null;
+            /** N Words */
+            n_words?: number | null;
+            /** Override */
+            override?: string | null;
+            /** Pct Witness Red */
+            pct_witness_red?: number | null;
+            /** Source */
+            source?: string | null;
+            /** Verdict */
+            verdict: string;
+        };
+        /**
          * LyricsUnavailableOut
          * @description The explicit cache-miss response for one track's lyrics timeline.
          */
@@ -7244,6 +7395,25 @@ export interface components {
              */
             stable_ids: string[];
         };
+        /** MembershipTransferIn */
+        MembershipTransferIn: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "add" | "move";
+            /** Source Etag */
+            source_etag?: string | null;
+            /** Source Playlist Id */
+            source_playlist_id?: string | null;
+            /** Stable Ids */
+            stable_ids: string[];
+        };
+        /** MembershipTransferOut */
+        MembershipTransferOut: {
+            dest: components["schemas"]["PlaylistWriteOut"];
+            source?: components["schemas"]["PlaylistWriteOut"] | null;
+        };
         /**
          * MetadataShareRequest
          * @description Explicit acknowledgement that the resulting web view excludes audio.
@@ -7274,25 +7444,6 @@ export interface components {
             share_state: "shared_cloud";
             /** Share Url */
             share_url: string;
-        };
-        /** MembershipTransferIn */
-        MembershipTransferIn: {
-            /**
-             * Mode
-             * @enum {string}
-             */
-            mode: "add" | "move";
-            /** Source Etag */
-            source_etag?: string | null;
-            /** Source Playlist Id */
-            source_playlist_id?: string | null;
-            /** Stable Ids */
-            stable_ids: string[];
-        };
-        /** MembershipTransferOut */
-        MembershipTransferOut: {
-            dest: components["schemas"]["PlaylistWriteOut"];
-            source?: components["schemas"]["PlaylistWriteOut"] | null;
         };
         /** MixerChannelMarkOut */
         MixerChannelMarkOut: {
@@ -7765,6 +7916,31 @@ export interface components {
             machine_id: string;
             /** Playlist Id */
             playlist_id: string;
+        };
+        /**
+         * PinSyncOut
+         * @description Where one pin stands. ``attachment_bytes: missing`` is FBSYNC-05's gap:
+         *     the screenshot's metadata synced here but its bytes did not.
+         */
+        PinSyncOut: {
+            /** Archived */
+            archived: boolean;
+            /**
+             * Attachment Bytes
+             * @enum {string}
+             */
+            attachment_bytes: "none" | "present" | "missing";
+            /** Origin Device Id */
+            origin_device_id: string | null;
+            /** Pin Id */
+            pin_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "synced" | "pending_push" | "unreconciled" | "harvested";
+            /** Updated At */
+            updated_at: string;
         };
         /** PlanEntryOut */
         PlanEntryOut: {
@@ -8796,6 +8972,16 @@ export interface components {
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
              * Is Remote
              * @default false
              */
@@ -8818,6 +9004,7 @@ export interface components {
              * @enum {string}
              */
             loudness_status: "ok" | "failed" | "missing";
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Match Context */
             match_context: string;
             /**
@@ -9574,6 +9761,31 @@ export interface components {
             sync_mode: "bar" | "beat";
         };
         /**
+         * TempoPrefOut
+         * @description PREF-01: a track's user-set preferred tempo plus its playable range.
+         *
+         *     Any of the three may be null (unset). Never fabricated on read - a track
+         *     with no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,
+         *     not this shape with all-null members (see sqlite_backend._row_to_track).
+         */
+        TempoPrefOut: {
+            /** Max */
+            max?: number | null;
+            /** Min */
+            min?: number | null;
+            /** Regular */
+            regular?: number | null;
+        };
+        /** TempoPrefPatch */
+        TempoPrefPatch: {
+            /** Max */
+            max?: number | null;
+            /** Min */
+            min?: number | null;
+            /** Regular */
+            regular?: number | null;
+        };
+        /**
          * TierEstimateOut
          * @description Cost of one track at one tier. ``measured`` false means we do not know.
          */
@@ -9746,6 +9958,16 @@ export interface components {
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
              * Is Remote
              * @default false
              */
@@ -9754,6 +9976,7 @@ export interface components {
             key?: string | null;
             /** Last Played At */
             last_played_at?: string | null;
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Lyrics Available */
             lyrics_available: boolean;
             /** Notes */
@@ -9790,6 +10013,7 @@ export interface components {
              * @default []
              */
             tags: string[];
+            tempo_pref?: components["schemas"]["TempoPrefOut"] | null;
             /** Title */
             title?: string | null;
             /** Updated At */
@@ -9862,6 +10086,7 @@ export interface components {
              * @default []
              */
             tags: string[];
+            tempo_pref?: components["schemas"]["TempoPrefOut"] | null;
             /** Title */
             title?: string | null;
             /** Updated At */
@@ -9877,6 +10102,7 @@ export interface components {
             tags_add?: string[] | null;
             /** Tags Remove */
             tags_remove?: string[] | null;
+            tempo_pref?: components["schemas"]["TempoPrefPatch"] | null;
         };
         /**
          * TrackRowOut
@@ -9920,6 +10146,16 @@ export interface components {
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
              * Is Remote
              * @default false
              */
@@ -9942,6 +10178,7 @@ export interface components {
              * @enum {string}
              */
             loudness_status: "ok" | "failed" | "missing";
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /**
              * Play Count
              * @default 0
@@ -10912,37 +11149,6 @@ export interface operations {
             };
         };
     };
-    api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SoundcloudExportResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     api_publish_metadata_share_api_sets__session_id__share_post: {
         parameters: {
             query?: never;
@@ -10965,6 +11171,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MetadataShareResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundcloudExportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -13646,6 +13883,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PerformanceFeedbackMarksOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_feedback_sync_api_v1_feedback_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackSyncOut"];
+                };
+            };
+        };
+    };
+    get_feedback_sync_status_api_v1_feedback_sync_status_get: {
+        parameters: {
+            query?: {
+                pin_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackSyncStatusOut"];
                 };
             };
             /** @description Validation Error */

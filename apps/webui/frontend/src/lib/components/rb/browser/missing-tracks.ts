@@ -57,7 +57,10 @@ export function brokenTrackToBrowserRow(track: BrokenTrack, order: number): Brow
 		artwork_status: 'file_missing',
 		rb_meta: null,
 		revealed: false,
-		match_context: null
+		match_context: null,
+		lyrics: null,
+		is_remix: null,
+		is_radio_edit: null
 	};
 }
 

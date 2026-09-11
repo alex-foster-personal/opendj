@@ -3,7 +3,8 @@
 Requires a running engine with Google OAuth configured
 (OPENDJ_GOOGLE_OAUTH_CLIENT_ID / OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET).
 For unattended capture, set OPENDJ_KPI_GOOGLE_STORAGE_STATE to a Playwright
-storageState JSON path with a pre-consented Google session.
+storageState JSON path with a pre-consented Google session. Create that file
+with ``python -m scripts.perf.s13_signin`` (``just perf-s13-signin``).
 """
 
 from __future__ import annotations

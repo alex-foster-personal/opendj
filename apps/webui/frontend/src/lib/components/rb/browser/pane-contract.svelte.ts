@@ -31,6 +31,8 @@ import type { PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
 import type { RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
+import type { LyricsRowSummary } from '$lib/rb/lyrics/types';
+import { lyricsSortValue } from './lyric-column';
 import { applySelect } from './pane-row-selection';
 import type { SortDir, SortKey } from './browser-sort-ipc';
 export { installBrowserSortIpc } from './browser-sort-ipc';
@@ -106,6 +108,12 @@ export interface BrowserRow extends Pick<TrackRow, 'key_status' | 'key_reason' |
 	revealed: boolean;
 	/** FTS match excerpt, populated only by whole-collection search. */
 	match_context: string | null;
+	/** Listing-row lyric summary; null = pipeline never ran. */
+	lyrics: LyricsRowSummary | null;
+	/** Title-marker remix heuristic (backend is_remix); null on synthetic rows. */
+	is_remix: boolean | null;
+	/** Radio edits are length trims, not remixes - separate tag. */
+	is_radio_edit: boolean | null;
 }
 
 // ---------------------------------------------------------- row provider
@@ -178,6 +186,10 @@ export class PaneStore {
 	/** Loaded rows in membership order (pre filter/sort). */
 	rows = $state<BrowserRow[]>([]);
 	loading = $state(false);
+	/** False until this pane's current load has returned or failed. This keeps
+	 * consumers from mistaking the deliberate empty pre-mount state for an
+	 * empty library result. */
+	has_settled_result = $state(false);
 	error = $state<string | null>(null);
 	/** Client search query (composes AFTER the FR-1 hide-broken filter). */
 	search = $state('');
@@ -232,6 +244,7 @@ export class PaneStore {
 		this.title = title;
 		this.rows = [];
 		this.loading = true;
+		this.has_settled_result = false;
 		this.error = null;
 		this.selected_id = null;
 		this.selected_ids = [];
@@ -268,6 +281,7 @@ export class PaneStore {
 		this.rows = rows;
 		this.truncated = truncated;
 		this.loading = false;
+		this.has_settled_result = true;
 		this.etag = etag;
 		this.load_progress = null;
 		return true;
@@ -278,6 +292,7 @@ export class PaneStore {
 		if (!this.isCurrentLoad(seq)) return false;
 		this.error = error;
 		this.loading = false;
+		this.has_settled_result = true;
 		this.load_progress = null;
 		return true;
 	}
@@ -370,6 +385,25 @@ export function canMutatePlaylist(
 		&& pane.etag !== ''
 		&& !pane.truncated
 		&& !pane.whole_collection;
+}
+
+/** Vocals filter: tracks need MORE than 5 derived lyric lines. */
+export const VOCALS_FILTER_MIN_LINES = 6;
+
+/** Remixes checkbox: only an explicit wire true passes; null (synthetic rows)
+ * is not a claimed remix and must not pass. */
+export function rowIsRemix(row: BrowserRow): boolean {
+	return row.is_remix === true;
+}
+
+/** Vocals checkbox: real word-level lyrics spanning at least
+ * VOCALS_FILTER_MIN_LINES derived lines. */
+export function rowHasVocalLyrics(row: BrowserRow): boolean {
+	return (
+		row.lyrics !== null &&
+		row.lyrics.n_lines !== null &&
+		row.lyrics.n_lines >= VOCALS_FILTER_MIN_LINES
+	);
 }
 
 // ------------------------------------------------------- boot pane selection
@@ -512,6 +546,7 @@ export function sortValue(row: BrowserRow, key: SortKey): string | number | null
 	else if (key === 'time') return row.duration_ms;
 	else if (key === 'energy') return row.energy;
 	else if (key === 'genre') return row.genre ?? row.rb_meta?.genre ?? null;
+	else if (key === 'lyrics') return lyricsSortValue(row.lyrics);
 	throw new Error('AutoPlay ranks are not cell values');
 }
 

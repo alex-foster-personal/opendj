@@ -12,7 +12,19 @@
 	// Vocal blue bars (SPIKE-B1): 2px-ish top layer, drawn ONLY for real
 	// PVDI regions (status 'rekordbox'); the two barless states surface as
 	// explicit tooltips - three mandatory states, nothing invented.
+	// Scrub-hover lyrics: hovering shows the word under the pointer above the strip.
+	import ScrubLyricStrip from '$lib/components/lyrics/ScrubLyricStrip.svelte';
+	import { cancelHoverLoad, hoverLoadLyrics, lyricEntry } from '$lib/lyrics/lyrics-cache.svelte';
+	import {
+		indexLyricWords,
+		nearSecondsForScale,
+		resolvePointerWord,
+		timeForPointer,
+		type PointerWord,
+		type WordIndex
+	} from '$lib/lyrics/pointer-word';
 	import { vocalsOf, type Vocals } from '$lib/rb/api-rb';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
@@ -38,6 +50,21 @@
 	let canvas: HTMLCanvasElement | undefined = $state();
 	/** Play affordance above the last paused seek point (pct along strip). */
 	let playHintPct: number | null = $state(null);
+
+	const scrubOn: boolean = $derived(
+		uiPrefs.lyrics_global && uiPrefs.lyrics_hover_scrub && deck.stable_id !== null
+	);
+	const wordIndex: WordIndex | null = $derived.by(() => {
+		if (!scrubOn || deck.stable_id === null) return null;
+		const entry = lyricEntry(deck.stable_id);
+		if (entry === null || entry.state !== 'loaded' || entry.track === null) return null;
+		if (entry.track.words.length === 0) return null;
+		return indexLyricWords(entry.track.words);
+	});
+
+	let hoverX: number | null = $state(null);
+	let stripW: number = $state(0);
+	let pointer: PointerWord | null = $state(null);
 
 	const posPct: number = $derived(
 		deck.duration_ms === null || deck.duration_ms === 0
@@ -126,11 +153,53 @@
 		if (deck.playing || deck.stable_id === null) playHintPct = null;
 	});
 
+	function _pointAt(e: MouseEvent): { x: number; t: number } | null {
+		if (deck.duration_ms === null || deck.duration_ms === 0) return null;
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		if (rect.width <= 0) return null;
+		stripW = rect.width;
+		const x = Math.min(rect.width, Math.max(0, e.clientX - rect.left));
+		return { x, t: timeForPointer(x, rect.width, deck.duration_ms / 1000) };
+	}
+
+	function _resolveAt(t: number): PointerWord | null {
+		if (wordIndex === null || deck.duration_ms === null || stripW <= 0) return null;
+		return resolvePointerWord(wordIndex, t, {
+			nearS: nearSecondsForScale(deck.duration_ms / 1000 / stripW)
+		});
+	}
+
+	function handleStripPointerMove(e: PointerEvent): void {
+		const point = _pointAt(e);
+		if (point === null) return;
+		hoverX = point.x;
+		if (scrubOn && deck.stable_id !== null && uiPrefs.lyrics_load_strategy === 'hover') {
+			hoverLoadLyrics(deck.stable_id);
+		}
+		pointer = _resolveAt(point.t);
+	}
+
+	function handleStripPointerLeave(): void {
+		hoverX = null;
+		pointer = null;
+		if (deck.stable_id !== null) cancelHoverLoad(deck.stable_id);
+	}
+
 	async function handleClick(e: MouseEvent): Promise<void> {
 		if (deck.duration_ms === null) return;
 		const el = e.currentTarget as HTMLElement;
 		const rect = el.getBoundingClientRect();
 		const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+		const state = _resolveAt(timeForPointer(ratio * rect.width, rect.width, deck.duration_ms / 1000));
+		if (
+			state !== null &&
+			state.kind === 'inside' &&
+			state.focusStartS !== null
+		) {
+			await onSeek(state.focusStartS * 1000);
+			if (!deck.playing) playHintPct = (state.focusStartS * 1000 / deck.duration_ms) * 100;
+			return;
+		}
 		await onSeek(ratio * deck.duration_ms);
 		if (!deck.playing) playHintPct = ratio * 100;
 	}
@@ -159,6 +228,8 @@
 	<button
 		class="strip"
 		onclick={(e) => void handleClick(e)}
+		onpointermove={handleStripPointerMove}
+		onpointerleave={handleStripPointerLeave}
 		disabled={deck.stable_id === null || pending}
 		aria-label={`waveform seek deck ${deck.deck_id}`}
 		data-testid={`waveform-seek-deck-${deck.deck_id}`} data-wave-surface="strip"
@@ -201,6 +272,10 @@
 			<span class="pos" style={`left:${posPct}%`}></span>
 		{/if}
 	</button>
+
+	{#if wordIndex !== null && pointer !== null && hoverX !== null && stripW > 0}
+		<ScrubLyricStrip index={wordIndex} state={pointer} xPx={hoverX} widthPx={stripW} />
+	{/if}
 </div>
 
 <style>
