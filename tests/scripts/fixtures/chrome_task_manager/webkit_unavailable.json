@@ -1,0 +1,6 @@
+{
+  "schema": "opendj.chrome-task-manager.v1",
+  "scenario": "packaged WKWebView",
+  "captured_at": "2026-09-11T17:00:00Z",
+  "unavailable_reason": "Chrome Task Manager does not exist in packaged WKWebView; use just perf-cpu webkit-webcontent"
+}
