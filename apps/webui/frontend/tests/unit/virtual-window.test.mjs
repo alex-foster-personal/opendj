@@ -396,6 +396,96 @@ test('fetchAllPages: onPage receives cumulative counts in order, including the f
 	]);
 });
 
+test('forEachCursorPage: walks in order and reports done on the last page', async () => {
+	const pages = [_page([1, 2], 'c1'), _page([3], null)];
+	const seen = [];
+	const seenCursors = [];
+	await mod.forEachCursorPage(
+		async (cursor) => {
+			seenCursors.push(cursor);
+			return pages.shift();
+		},
+		{ onPage: (info) => seen.push({ items: info.items, loaded: info.loaded, pageCount: info.pageCount, done: info.done }) }
+	);
+	assert.deepEqual(seenCursors, [undefined, 'c1']);
+	assert.deepEqual(seen, [
+		{ items: [1, 2], loaded: 2, pageCount: 1, done: false },
+		{ items: [3], loaded: 3, pageCount: 2, done: true }
+	]);
+});
+
+test('forEachCursorPage: shouldContinue false after page 1 requests no further pages and does not throw', async () => {
+	let calls = 0;
+	let allow = true;
+	await mod.forEachCursorPage(
+		async () => {
+			calls += 1;
+			return _page([calls], `c${calls}`);
+		},
+		{
+			shouldContinue: () => allow,
+			onPage: (info) => {
+				if (info.pageCount === 1) allow = false;
+			}
+		}
+	);
+	assert.equal(calls, 1);
+});
+
+test('forEachCursorPage: a repeated cursor still throws', async () => {
+	let calls = 0;
+	await assert.rejects(
+		() =>
+			mod.forEachCursorPage(
+				async () => {
+					calls += 1;
+					return _page([calls], 'stuck-cursor');
+				},
+				{ onPage: () => {} }
+			),
+		/repeated cursor/
+	);
+	assert.equal(calls, 2);
+});
+
+test('forEachCursorPage: maxPages still throws instead of truncating', async () => {
+	let calls = 0;
+	await assert.rejects(
+		() =>
+			mod.forEachCursorPage(
+				async () => {
+					calls += 1;
+					return _page([1], `cursor-${calls}`);
+				},
+				{ maxPages: 3, onPage: () => {} }
+			),
+		/exceeded/
+	);
+});
+
+test('forEachCursorPage: exact N * pageSize still does the confirming empty page', async () => {
+	const PAGE_SIZE = 4;
+	const FULL_PAGES = 2;
+	let pagesServed = 0;
+	const seen = [];
+	await mod.forEachCursorPage(
+		async () => {
+			pagesServed += 1;
+			if (pagesServed <= FULL_PAGES) {
+				return _page(new Array(PAGE_SIZE).fill(pagesServed), `c${pagesServed}`);
+			}
+			return _page([], null);
+		},
+		{ onPage: (info) => seen.push({ loaded: info.loaded, done: info.done, items: info.items.length }) }
+	);
+	assert.equal(pagesServed, FULL_PAGES + 1);
+	assert.deepEqual(seen, [
+		{ loaded: PAGE_SIZE, done: false, items: PAGE_SIZE },
+		{ loaded: PAGE_SIZE * 2, done: false, items: PAGE_SIZE },
+		{ loaded: PAGE_SIZE * 2, done: true, items: 0 }
+	]);
+});
+
 test('if onPage claims work finer than completed cursor pages then the pin is broken', async () => {
 	// onPage must fire exactly once per fetchPage resolution - never
 	// interpolated between pages - so a caller driving a progress bar off it
