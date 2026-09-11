@@ -8,22 +8,26 @@
  */
 import { optionalResources } from '$lib/rb/optional-resource-availability';
 import type { LyricLine } from './lyrics-lane';
+import { shouldFetchTrackLyrics } from './lyrics-cached-ids';
 
 type LyricsPayload = { lines: LyricLine[] };
 
 export function createLyricsFetchState(
 	stableId: () => string | null,
-	fetchLyrics: (stableId: string) => Promise<LyricsPayload | null>
+	fetchLyrics: (stableId: string) => Promise<LyricsPayload | null>,
+	cachedLyricsIds: () => ReadonlySet<string> | null = () => null
 ): { readonly lyrics: LyricsPayload | null; readonly loadError: Error | null } {
 	let lyrics = $state<LyricsPayload | null>(null);
 	let loadError = $state<Error | null>(null);
 	$effect(() => {
 		const sid = stableId();
+		const cachedIds = cachedLyricsIds();
 		let cancelled = false;
 		lyrics = null;
 		loadError = null;
 		if (sid === null) return;
 		if (optionalResources(sid).lyrics === false) return;
+		if (!shouldFetchTrackLyrics(sid, cachedIds)) return;
 		void (async () => {
 			try {
 				const result = await fetchLyrics(sid);

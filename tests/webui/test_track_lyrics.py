@@ -64,6 +64,33 @@ def test_read_lyrics_returns_404_when_no_cached_lyrics_exist(lyrics_client: Test
     assert response.json()["detail"] == "no cached lyrics for 'no-lyrics'"
 
 
+def test_lyrics_cached_ids_lists_only_valid_cache_entries(lyrics_client: TestClient) -> None:
+    response = lyrics_client.get("/api/v1/tracks/lyrics-cached-ids")
+
+    assert response.status_code == 200
+    assert response.json() == {"stable_ids": ["track-with-lyrics"]}
+
+
+def test_lyrics_cached_ids_is_empty_when_no_cache_entries_exist(tmp_path: Path) -> None:
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    state_db_path = state_dir / "state.db"
+    connection = state_db.open_rw(state_db_path)
+    connection.close()
+    app = create_app(
+        backend=SqliteBackend(state_db_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        state_db_path=str(state_db_path),
+        mount_frontend=False,
+    )
+    with TestClient(app) as client:
+        response = client.get("/api/v1/tracks/lyrics-cached-ids")
+
+    assert response.status_code == 200
+    assert response.json() == {"stable_ids": []}
+
+
 def test_read_lyrics_fails_when_the_app_has_no_configured_state_path(
     lyrics_client: TestClient,
 ) -> None:

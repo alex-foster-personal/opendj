@@ -2923,6 +2923,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/lyrics-cached-ids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Cached Ids
+         * @description List cached lyric timelines so the UI can skip explicit cache-miss reads.
+         */
+        get: operations["get_lyrics_cached_ids_api_v1_tracks_lyrics_cached_ids_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/quality-ladder": {
         parameters: {
             query?: never;
@@ -5449,6 +5469,14 @@ export interface components {
             start_ms: number;
             /** Text */
             text: string;
+        };
+        /**
+         * LyricsCachedIdsOut
+         * @description Stable ids with a valid on-disk lyrics-cache entry.
+         */
+        LyricsCachedIdsOut: {
+            /** Stable Ids */
+            stable_ids?: string[];
         };
         /**
          * LyricsUnavailableOut
@@ -13763,6 +13791,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lyrics_cached_ids_api_v1_tracks_lyrics_cached_ids_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsCachedIdsOut"];
                 };
             };
         };
