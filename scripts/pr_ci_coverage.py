@@ -23,6 +23,8 @@ MINI-PRD
             [then] paginate the full listing and still find it [else stop]
        [if] GitHub returns an incomplete or malformed API response
             [then] exit 10 with an explicit precondition error [else stop]
+       [if] an open non-docs PR head has mergeable_state dirty [then] name it unbuildable,
+            not uncovered, and do not fail the run [else stop] (issue #1782)
     R2 Merge-race correction ..................................... done + regression
        [if] a PR's head was stamped failure while open, then gains a qualifying run
             and merges before the next scheduled watchdog run
@@ -110,6 +112,7 @@ CONCLUSION_FAILURE = "failure"
 # was tested, closing the issue #1431 failure mode against conclusions we have not seen.
 EXECUTED_CONCLUSIONS = frozenset({"success", "timed_out", "neutral"})
 STATUS_CONTEXT = "PR head CI coverage"
+Inspection = tuple[int, str, bool, bool, bool]
 
 
 # ----- GitHub reads ----------------------------------------------------------------
@@ -129,9 +132,9 @@ def _pages(path: str) -> Iterable[list[object]]:
         page += 1
 
 
-def _open_prs() -> list[tuple[int, str]]:
+def _open_prs() -> list[tuple[int, str, str | None]]:
     """Read every open PR with the minimum fields needed for a head check."""
-    result: list[tuple[int, str]] = []
+    result: list[tuple[int, str, str | None]] = []
     for payload in _pages(f"repos/{REPO}/pulls?state=open"):
         for item in payload:
             if not isinstance(item, dict):
@@ -143,7 +146,12 @@ def _open_prs() -> list[tuple[int, str]]:
                 raise PreconditionError(
                     f"open pull-request listing has invalid number or head: {item!r}"
                 )
-            result.append((number, sha))
+            mergeable_state = item.get("mergeable_state")
+            if mergeable_state is not None and not isinstance(mergeable_state, str):
+                raise PreconditionError(
+                    f"PR #{number} has a non-string mergeable_state: {mergeable_state!r}"
+                )
+            result.append((number, sha, mergeable_state))
     return result
 
 
@@ -357,14 +365,16 @@ def _requires_ci(files: list[str]) -> bool:
     return any(not _is_docs_path(path) for path in files)
 
 
-def _inspect_pr(pr: tuple[int, str]) -> tuple[int, str, bool, bool]:
-    """Return one PR's number, head, docs-only state, and head-run coverage."""
-    number, head_sha = pr
+def _inspect_pr(pr: tuple[int, str] | tuple[int, str, str | None]) -> Inspection:
+    """Return one PR's number, head, docs-only state, coverage, and unbuildable flag."""
+    number, head_sha, mergeable_state = (*pr, None)[:3]
+    unbuildable = mergeable_state == "dirty"
     requires_ci = _requires_ci(_changed_files(number))
-    return number, head_sha, requires_ci, requires_ci and _has_actions_run_at_head(head_sha)
+    covered = False if unbuildable or not requires_ci else _has_actions_run_at_head(head_sha)
+    return number, head_sha, requires_ci, covered, unbuildable
 
 
-def _publish_head_status(inspection: tuple[int, str, bool, bool]) -> None:
+def _publish_head_status(inspection: Inspection) -> None:
     """Attach an explicit success or failure status to a checked non-docs PR head.
 
     Prints a confirmed-outcome line only once `_run_gh` actually returns: if the
@@ -372,8 +382,8 @@ def _publish_head_status(inspection: tuple[int, str, bool, bool]) -> None:
     truthfully distinguishable from a completed one in the log, not just inferred
     from the pre-POST intent line in `_log_inspection`.
     """
-    number, head_sha, requires_ci, covered = inspection
-    if not requires_ci:
+    number, head_sha, requires_ci, covered, unbuildable = inspection
+    if not requires_ci or unbuildable:
         return
     state = "success" if covered else "failure"
     description = "Actions run found at PR head" if covered else "No non-bot Actions run at PR head"
@@ -394,9 +404,7 @@ def _publish_head_status(inspection: tuple[int, str, bool, bool]) -> None:
     print(f"PR_CI_COVERAGE_PUBLISHED pr=#{number} head={head_sha} state={state}")
 
 
-def _log_inspection(
-    scope: str, inspection: tuple[int, str, bool, bool], *, publish_status: bool
-) -> None:
+def _log_inspection(scope: str, inspection: Inspection, *, publish_status: bool) -> None:
     """Name one inspected PR and the verdict this run reached, so a silent skip shows
     up as a missing log line rather than as an absence nobody can distinguish from
     "never inspected" (issue #1368's second acceptance criterion).
@@ -406,9 +414,11 @@ def _log_inspection(
     own `PR_CI_COVERAGE_PUBLISHED` line once a POST actually succeeds, so a
     reader can tell an attempted-but-failed publish apart from a confirmed one.
     """
-    number, head_sha, requires_ci, covered = inspection
+    number, head_sha, requires_ci, covered, unbuildable = inspection
     if not requires_ci:
         verdict = "docs-only-skipped"
+    elif unbuildable:
+        verdict = "unbuildable"
     elif covered:
         verdict = "success"
     else:
@@ -421,7 +431,7 @@ def _log_inspection(
 
 def _inspect_all(
     prs: list[tuple[int, str]],
-) -> tuple[list[tuple[int, str, bool, bool] | None], BaseException | None]:
+) -> tuple[list[Inspection | None], BaseException | None]:
     """Inspect every PR concurrently, keeping the verdicts that DID complete.
 
     `list(executor.map(...))` re-raises on the first broken future, discarding every
@@ -437,7 +447,7 @@ def _inspect_all(
     """
     with ThreadPoolExecutor(max_workers=MAX_API_WORKERS) as executor:
         futures = [executor.submit(_inspect_pr, pr) for pr in prs]
-    inspections: list[tuple[int, str, bool, bool] | None] = []
+    inspections: list[Inspection | None] = []
     failure: BaseException | None = None
     for future in futures:
         raised = future.exception()
@@ -450,7 +460,9 @@ def _inspect_all(
     return inspections, failure
 
 
-def _log_failed_inspection(scope: str, pr: tuple[int, str]) -> None:
+def _log_failed_inspection(
+    scope: str, pr: tuple[int, str] | tuple[int, str, str | None],
+) -> None:
     """Name a PR whose own inspection raised, rather than leaving it out of the log.
 
     Its verdict is unknown, so it is reported as one - `inspection-error` is not a
@@ -458,11 +470,42 @@ def _log_failed_inspection(scope: str, pr: tuple[int, str]) -> None:
     PR would be the only one absent from the log, which is the shape a silent skip
     also has.
     """
-    number, head_sha = pr
+    number = pr[0]
+    head_sha = pr[1]
     print(
         f"PR_CI_COVERAGE_PR scope={scope} pr=#{number} head={head_sha} "
         "verdict=inspection-error publish_attempted=False"
     )
+
+
+def _tally_open_inspections(
+    open_prs: list[tuple[int, str, str | None]],
+    inspections: list[Inspection | None],
+    *,
+    publish_status: bool,
+) -> tuple[int, int, list[tuple[int, str]], list[tuple[int, str]]]:
+    """Log open-scope inspections and return docs-only skip plus uncovered/unbuildable lists."""
+    required = 0
+    skipped_docs_only = 0
+    uncovered: list[tuple[int, str]] = []
+    unbuildable: list[tuple[int, str]] = []
+    for pr, inspection in zip(open_prs, inspections, strict=True):
+        if inspection is None:
+            _log_failed_inspection("open", pr)
+            continue
+        _log_inspection("open", inspection, publish_status=publish_status)
+        number, head_sha, requires_ci, covered, head_unbuildable = inspection
+        if not requires_ci:
+            skipped_docs_only += 1
+        elif head_unbuildable:
+            required += 1
+            unbuildable.append((number, head_sha))
+        elif covered:
+            required += 1
+        else:
+            required += 1
+            uncovered.append((number, head_sha))
+    return required, skipped_docs_only, uncovered, unbuildable
 
 
 def main(*, publish_status: bool, now: datetime | None = None) -> int:
@@ -493,22 +536,9 @@ def main(*, publish_status: bool, now: datetime | None = None) -> int:
     # confirmed POST outcome - `_publish_head_status` prints its own confirmation
     # line once a POST actually succeeds.
     split = len(open_prs)
-    required = 0
-    skipped_docs_only = 0
-    uncovered: list[tuple[int, str]] = []
-    for pr, inspection in zip(open_prs, inspections[:split], strict=True):
-        if inspection is None:
-            _log_failed_inspection("open", pr)
-            continue
-        _log_inspection("open", inspection, publish_status=publish_status)
-        number, head_sha, requires_ci, covered = inspection
-        if not requires_ci:
-            skipped_docs_only += 1
-        elif covered:
-            required += 1
-        else:
-            required += 1
-            uncovered.append((number, head_sha))
+    required, skipped_docs_only, uncovered, unbuildable = _tally_open_inspections(
+        open_prs, inspections[:split], publish_status=publish_status
+    )
 
     rechecked = 0
     recovered = 0
@@ -517,7 +547,7 @@ def main(*, publish_status: bool, now: datetime | None = None) -> int:
             _log_failed_inspection("recheck", pr)
             continue
         _log_inspection("recheck", inspection, publish_status=publish_status)
-        _, _, requires_ci, covered = inspection
+        _, _, requires_ci, covered, _head_unbuildable = inspection
         if requires_ci:
             rechecked += 1
             recovered += 1 if covered else 0
@@ -535,9 +565,12 @@ def main(*, publish_status: bool, now: datetime | None = None) -> int:
     print(
         "PR_CI_COVERAGE "
         f"open_non_docs={required} docs_only_skipped={skipped_docs_only} "
-        f"uncovered={len(uncovered)} recheck_candidates={len(recheck_prs)} "
+        f"uncovered={len(uncovered)} unbuildable={len(unbuildable)} "
+        f"recheck_candidates={len(recheck_prs)} "
         f"recheck_non_docs={rechecked} recheck_covered={recovered}"
     )
+    for number, head_sha in unbuildable:
+        print(f"[INFO] PR #{number} head {head_sha} merge ref unbuildable; CI not dispatched")
     for number, head_sha in uncovered:
         print(f"[ERROR] PR #{number} head {head_sha} has no non-bot Actions run")
 
