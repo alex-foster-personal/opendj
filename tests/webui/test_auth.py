@@ -5,7 +5,8 @@ token endpoint would prove only that the mock answers, so the live flow is
 verified by hand against real Google. What is covered is everything that
 can be checked honestly without the network:
 
-  - if GET /auth/me returns anything but 401 while signed out, broken
+  - if GET /auth/me returns anything but 200 {signed_in: false, user: null}
+    while signed out, broken (401 is a fault, not the signed-out answer)
   - if a session cookie does not survive a fresh SessionStore over the same
     file, persistence across a daemon restart is broken
   - if a replayed or unknown OAuth `state` is accepted, CSRF defence is broken
@@ -89,15 +90,21 @@ def client(state_db_path: Path) -> Iterator[TestClient]:
 # ----- /auth/me while signed out -----------------------------------------
 
 
-def test_me_is_401_when_signed_out(client: TestClient) -> None:
+def test_me_is_200_signed_out_when_there_is_no_cookie(client: TestClient) -> None:
     response = client.get("/api/v1/auth/me")
-    assert response.status_code == 401
-    assert response.json()["detail"]["code"] == "AUTH_REQUIRED"
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {"signed_in": False, "user": None}
+    assert "detail" not in body
 
 
-def test_me_is_401_for_an_unknown_cookie(client: TestClient) -> None:
+def test_me_is_200_signed_out_for_an_unknown_cookie(client: TestClient) -> None:
     client.cookies.set(SESSION_COOKIE_NAME, "not-a-real-session-token")
-    assert client.get("/api/v1/auth/me").status_code == 401
+    response = client.get("/api/v1/auth/me")
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {"signed_in": False, "user": None}
+    assert "detail" not in body
 
 
 # ----- session cookie round-trip ------------------------------------------
@@ -109,17 +116,18 @@ def test_session_round_trip_over_http(
     token = store.sign_in(_identity())
     client.cookies.set(SESSION_COOKIE_NAME, token)
     body = client.get("/api/v1/auth/me").json()
-    assert body["google_sub"] == "sub-123"
-    assert body["email"] == "sub-123@example.com"
-    assert body["avatar_url"] == "https://lh3.googleusercontent.com/test"
+    assert body["signed_in"] is True
+    assert body["user"]["google_sub"] == "sub-123"
+    assert body["user"]["email"] == "sub-123@example.com"
+    assert body["user"]["avatar_url"] == "https://lh3.googleusercontent.com/test"
 
 
 def test_me_never_leaks_tokens(client: TestClient, store: SessionStore) -> None:
     token = store.sign_in(_identity())
     client.cookies.set(SESSION_COOKIE_NAME, token)
     body = client.get("/api/v1/auth/me").json()
-    assert "refresh_token" not in body
-    assert "access_token" not in body
+    assert "refresh_token" not in body and "refresh_token" not in body["user"]
+    assert "access_token" not in body and "access_token" not in body["user"]
 
 
 def test_session_survives_a_new_store_over_the_same_file(

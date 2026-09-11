@@ -249,6 +249,28 @@ test('solvePlayIt posts the goal to the play-it route', async () => {
 	assert.deepEqual(seen.body, { duration_min: 90, peak_at_min: 60 });
 });
 
+// requirement: SET-04
+// [if] solvePlayIt is given pin fields [then] they are posted on the solve body
+test('solvePlayIt posts pin fields when provided', async () => {
+	const seen = captureRequest({ playlist_id: 'pl-1', etag: '"rev-1"', steps: [] });
+
+	await api.solvePlayIt('pl-1', {
+		duration_min: 60,
+		peak_at_min: 30,
+		peak_pins: ['a', 'b'],
+		opener_pins: ['c'],
+		closer_pin: 'd'
+	});
+
+	assert.deepEqual(seen.body, {
+		duration_min: 60,
+		peak_at_min: 30,
+		peak_pins: ['a', 'b'],
+		opener_pins: ['c'],
+		closer_pin: 'd'
+	});
+});
+
 test('replacePlaylistTracks PUTs the complete membership under If-Match', async () => {
 	const seen = captureRequest({ playlist_id: 'pl-1', items: ['a', 'b'] }, {
 		headers: { etag: '"rev-2"' }

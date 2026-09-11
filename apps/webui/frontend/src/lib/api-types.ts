@@ -505,7 +505,11 @@ export interface paths {
         };
         /**
          * Whoami
-         * @description The signed-in user, or 401. The bauble polls this on mount.
+         * @description Who is signed in.
+         *
+         *     Always HTTP 200. Signed-out is identity, not a fault: the bauble polls
+         *     this on mount, Chromium logs every 4xx, and the AutoPlay hunt treats
+         *     4xx as a finding. Destructive routes that need a user still 401.
          */
         get: operations["whoami_api_v1_auth_me_get"];
         put?: never;
@@ -525,6 +529,30 @@ export interface paths {
         };
         /** Get Kpi Ledger */
         get: operations["get_kpi_ledger_api_v1_bench_kpi_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bench/perf-kpi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Perf Kpi Ledger
+         * @description The perf ledger as cards: same kpis + snapshots shape as /bench/kpi.
+         *
+         *     One snapshot per (date, round), in date order, so the sparkline runs from
+         *     the first perf measurement to the latest. Cards with the most real readings
+         *     come first: the ones that have actually travelled lead the panel.
+         */
+        get: operations["get_perf_kpi_ledger_api_v1_bench_perf_kpi_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2436,7 +2464,11 @@ export interface paths {
         /** List Smartlists */
         get: operations["list_smartlists_api_v1_smartlists_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create Smartlist
+         * @description Persist a new smartlist and return the created summary plus ETag.
+         */
+        post: operations["create_smartlist_api_v1_smartlists_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5488,6 +5520,12 @@ export interface components {
         };
         /** MeOut */
         MeOut: {
+            /** Signed In */
+            signed_in: boolean;
+            user: components["schemas"]["MeUserOut"] | null;
+        };
+        /** MeUserOut */
+        MeUserOut: {
             /** Avatar Url */
             avatar_url: string | null;
             /** Created At */
@@ -6036,6 +6074,8 @@ export interface components {
              * @default 9
              */
             ceiling_energy: number;
+            /** Closer Pin */
+            closer_pin?: string | null;
             /**
              * Duration Min
              * @default 60
@@ -6046,8 +6086,12 @@ export interface components {
              * @default 3
              */
             floor_energy: number;
+            /** Opener Pins */
+            opener_pins?: string[];
             /** Peak At Min */
             peak_at_min?: number | null;
+            /** Peak Pins */
+            peak_pins?: string[];
         };
         /** PlayItSolveOut */
         PlayItSolveOut: {
@@ -6084,6 +6128,8 @@ export interface components {
             energy: number | null;
             /** Key Camelot */
             key_camelot: string | null;
+            /** Pin Role */
+            pin_role?: ("opener" | "peak" | "closer") | null;
             /** Position */
             position: number;
             /** Stable Id */
@@ -6882,6 +6928,11 @@ export interface components {
             genre: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /**
+             * Is Remote
+             * @default false
+             */
+            is_remote: boolean;
             /** Is Streaming */
             is_streaming: boolean;
             /** Key */
@@ -7044,6 +7095,26 @@ export interface components {
             etag: string;
             /** Message */
             message: string;
+        };
+        /**
+         * SmartlistCreateIn
+         * @description Create payload matching ``python -m apps.smartlists.cli.create``.
+         */
+        SmartlistCreateIn: {
+            /**
+             * Name
+             * @description Display name (non-empty)
+             */
+            name: string;
+            /**
+             * Order By
+             * @description Sort key; defaults to 'added_date desc' like the CLI
+             */
+            order_by?: string | null;
+            /** Rule */
+            rule: {
+                [key: string]: unknown;
+            };
         };
         /**
          * SmartlistPreconditionRequiredBody
@@ -7691,6 +7762,8 @@ export interface components {
              * @enum {string}
              */
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
+            /** Auto Cues Available */
+            auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
             /** Created At */
@@ -7709,10 +7782,17 @@ export interface components {
             file_path?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /**
+             * Is Remote
+             * @default false
+             */
+            is_remote: boolean;
             /** Key */
             key?: string | null;
             /** Last Played At */
             last_played_at?: string | null;
+            /** Lyrics Available */
+            lyrics_available: boolean;
             /** Notes */
             notes?: string | null;
             /**
@@ -7740,6 +7820,8 @@ export interface components {
             stems: {
                 [key: string]: unknown;
             };
+            /** Stems Available */
+            stems_available: boolean;
             /**
              * Tags
              * @default []
@@ -7772,6 +7854,10 @@ export interface components {
             album?: string | null;
             /** Artist */
             artist?: string | null;
+            /** Artwork Available */
+            artwork_available: boolean | null;
+            /** Auto Cues Available */
+            auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
             /** Created At */
@@ -7786,6 +7872,8 @@ export interface components {
             key?: string | null;
             /** Last Played At */
             last_played_at?: string | null;
+            /** Lyrics Available */
+            lyrics_available: boolean;
             /** Notes */
             notes?: string | null;
             /**
@@ -7804,6 +7892,8 @@ export interface components {
             rating?: number | null;
             /** Stable Id */
             stable_id: string;
+            /** Stems Available */
+            stems_available: boolean;
             /**
              * Tags
              * @default []
@@ -7866,6 +7956,11 @@ export interface components {
             genre: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /**
+             * Is Remote
+             * @default false
+             */
+            is_remote: boolean;
             /** Is Streaming */
             is_streaming: boolean;
             /** Key */
@@ -7948,6 +8043,11 @@ export interface components {
              * @default false
              */
             hide_todo_settings: boolean;
+            /**
+             * Jog Radial Waveform
+             * @default false
+             */
+            jog_radial_waveform: boolean;
             level_calibration?: components["schemas"]["LevelCalibrationOut"];
             /**
              * Show Agent Pins
@@ -7975,6 +8075,8 @@ export interface components {
             } | null;
             /** Hide Todo Settings */
             hide_todo_settings?: boolean | null;
+            /** Jog Radial Waveform */
+            jog_radial_waveform?: boolean | null;
             level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
@@ -9351,6 +9453,28 @@ export interface operations {
         };
     };
     get_kpi_ledger_api_v1_bench_kpi_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_perf_kpi_ledger_api_v1_bench_perf_kpi_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -12835,6 +12959,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SmartlistSummary"][];
+                };
+            };
+        };
+    };
+    create_smartlist_api_v1_smartlists_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SmartlistCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    /** @description Strong validator for the complete persisted smartlist row */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SmartlistSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

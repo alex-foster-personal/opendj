@@ -5599,6 +5599,30 @@
       },
       "MeOut": {
         "properties": {
+          "signed_in": {
+            "title": "Signed In",
+            "type": "boolean"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MeUserOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "signed_in",
+          "user"
+        ],
+        "title": "MeOut",
+        "type": "object"
+      },
+      "MeUserOut": {
+        "properties": {
           "avatar_url": {
             "anyOf": [
               {
@@ -5641,7 +5665,7 @@
           "avatar_url",
           "created_at"
         ],
-        "title": "MeOut",
+        "title": "MeUserOut",
         "type": "object"
       },
       "MemberOut": {
@@ -7103,6 +7127,17 @@
             "title": "Ceiling Energy",
             "type": "integer"
           },
+          "closer_pin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closer Pin"
+          },
           "duration_min": {
             "default": 60,
             "maximum": 240.0,
@@ -7117,6 +7152,13 @@
             "title": "Floor Energy",
             "type": "integer"
           },
+          "opener_pins": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Opener Pins",
+            "type": "array"
+          },
           "peak_at_min": {
             "anyOf": [
               {
@@ -7128,6 +7170,13 @@
               }
             ],
             "title": "Peak At Min"
+          },
+          "peak_pins": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Peak Pins",
+            "type": "array"
           }
         },
         "title": "PlayItGoalIn",
@@ -7264,6 +7313,22 @@
               }
             ],
             "title": "Key Camelot"
+          },
+          "pin_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "opener",
+                  "peak",
+                  "closer"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Role"
           },
           "position": {
             "title": "Position",
@@ -9410,6 +9475,11 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_remote": {
+            "default": false,
+            "title": "Is Remote",
+            "type": "boolean"
+          },
           "is_streaming": {
             "title": "Is Streaming",
             "type": "boolean"
@@ -9853,6 +9923,40 @@
           "etag"
         ],
         "title": "SmartlistConflictBody",
+        "type": "object"
+      },
+      "SmartlistCreateIn": {
+        "description": "Create payload matching ``python -m apps.smartlists.cli.create``.",
+        "properties": {
+          "name": {
+            "description": "Display name (non-empty)",
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "order_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sort key; defaults to 'added_date desc' like the CLI",
+            "title": "Order By"
+          },
+          "rule": {
+            "additionalProperties": true,
+            "title": "Rule",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "rule"
+        ],
+        "title": "SmartlistCreateIn",
         "type": "object"
       },
       "SmartlistPreconditionRequiredBody": {
@@ -11483,6 +11587,10 @@
             "title": "Artwork Status",
             "type": "string"
           },
+          "auto_cues_available": {
+            "title": "Auto Cues Available",
+            "type": "boolean"
+          },
           "bpm": {
             "anyOf": [
               {
@@ -11555,6 +11663,11 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_remote": {
+            "default": false,
+            "title": "Is Remote",
+            "type": "boolean"
+          },
           "key": {
             "anyOf": [
               {
@@ -11576,6 +11689,10 @@
               }
             ],
             "title": "Last Played At"
+          },
+          "lyrics_available": {
+            "title": "Lyrics Available",
+            "type": "boolean"
           },
           "notes": {
             "anyOf": [
@@ -11646,6 +11763,10 @@
             "title": "Stems",
             "type": "object"
           },
+          "stems_available": {
+            "title": "Stems Available",
+            "type": "boolean"
+          },
           "tags": {
             "default": [],
             "items": {
@@ -11680,13 +11801,16 @@
           "created_at",
           "updated_at",
           "has_rb_mapping",
+          "lyrics_available",
+          "auto_cues_available",
+          "stems_available",
+          "artwork_available",
           "preview_b64",
           "preview_max",
           "file_exists",
           "quality",
           "vocals",
           "stems",
-          "artwork_available",
           "artwork_status",
           "energy",
           "energy_source",
@@ -11746,6 +11870,21 @@
               }
             ],
             "title": "Artist"
+          },
+          "artwork_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Available"
+          },
+          "auto_cues_available": {
+            "title": "Auto Cues Available",
+            "type": "boolean"
           },
           "bpm": {
             "anyOf": [
@@ -11810,6 +11949,10 @@
             ],
             "title": "Last Played At"
           },
+          "lyrics_available": {
+            "title": "Lyrics Available",
+            "type": "boolean"
+          },
           "notes": {
             "anyOf": [
               {
@@ -11849,6 +11992,10 @@
             "title": "Stable Id",
             "type": "string"
           },
+          "stems_available": {
+            "title": "Stems Available",
+            "type": "boolean"
+          },
           "tags": {
             "default": [],
             "items": {
@@ -11877,7 +12024,11 @@
           "stable_id",
           "created_at",
           "updated_at",
-          "has_rb_mapping"
+          "has_rb_mapping",
+          "lyrics_available",
+          "auto_cues_available",
+          "stems_available",
+          "artwork_available"
         ],
         "title": "TrackOut",
         "type": "object"
@@ -12054,6 +12205,11 @@
           },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
+            "type": "boolean"
+          },
+          "is_remote": {
+            "default": false,
+            "title": "Is Remote",
             "type": "boolean"
           },
           "is_streaming": {
@@ -12325,6 +12481,11 @@
             "title": "Hide Todo Settings",
             "type": "boolean"
           },
+          "jog_radial_waveform": {
+            "default": false,
+            "title": "Jog Radial Waveform",
+            "type": "boolean"
+          },
           "level_calibration": {
             "$ref": "#/components/schemas/LevelCalibrationOut"
           },
@@ -12385,6 +12546,17 @@
               }
             ],
             "title": "Hide Todo Settings"
+          },
+          "jog_radial_waveform": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jog Radial Waveform"
           },
           "level_calibration": {
             "anyOf": [
@@ -14847,7 +15019,7 @@
     },
     "/api/v1/auth/me": {
       "get": {
-        "description": "The signed-in user, or 401. The bauble polls this on mount.",
+        "description": "Who is signed in.\n\nAlways HTTP 200. Signed-out is identity, not a fault: the bauble polls\nthis on mount, Chromium logs every 4xx, and the AutoPlay hunt treats\n4xx as a finding. Destructive routes that need a user still 401.",
         "operationId": "whoami_api_v1_auth_me_get",
         "responses": {
           "200": {
@@ -14885,6 +15057,30 @@
           }
         },
         "summary": "Get Kpi Ledger",
+        "tags": [
+          "bench"
+        ]
+      }
+    },
+    "/api/v1/bench/perf-kpi": {
+      "get": {
+        "description": "The perf ledger as cards: same kpis + snapshots shape as /bench/kpi.\n\nOne snapshot per (date, round), in date order, so the sparkline runs from\nthe first perf measurement to the latest. Cards with the most real readings\ncome first: the ones that have actually travelled lead the panel.",
+        "operationId": "get_perf_kpi_ledger_api_v1_bench_perf_kpi_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Perf Kpi Ledger Api V1 Bench Perf Kpi Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Perf Kpi Ledger",
         "tags": [
           "bench"
         ]
@@ -19739,6 +19935,54 @@
           }
         },
         "summary": "List Smartlists",
+        "tags": [
+          "smartlists"
+        ]
+      },
+      "post": {
+        "description": "Persist a new smartlist and return the created summary plus ETag.",
+        "operationId": "create_smartlist_api_v1_smartlists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmartlistCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartlistSummary"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the complete persisted smartlist row",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Smartlist",
         "tags": [
           "smartlists"
         ]

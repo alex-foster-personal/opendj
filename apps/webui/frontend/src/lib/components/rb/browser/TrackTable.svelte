@@ -42,6 +42,7 @@
 	import { beginTrackDrag, endTrackDrag, TRACK_STABLE_MIME } from '$lib/rb/track-drag.svelte';
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
 	import AutoPlayExplainer from './AutoPlayExplainer.svelte';
+	import AutoPlayRankCell from './AutoPlayRankCell.svelte';
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
 	import { columnExplainer } from './column-explainer-placement';
 	import PreviewStrip from './PreviewStrip.svelte';
@@ -79,7 +80,6 @@
 	const OVERSCAN = 10;
 
 	// ----- AUTOPLAY-COL -----------------------------------------------------
-	const AUTOPLAY_ARROW = '\u2193'; // down; flip to \u2191 without re-plumbing
 	const AUTOPLAY_COL_COUNT = 18;
 	let colWidths = $state<Record<ColId, number>>({ ...COL_DEFAULTS });
 	const manuallyResizedColumns = new Set<ColId>();
@@ -1299,6 +1299,7 @@
 						class:rb-row-find={findQuery !== '' && rowMatchesFind(row, findQuery)}
 						class:broken={!row.file_exists &&
 							!(row.is_streaming ?? row.rb_meta?.is_streaming) &&
+							row.is_remote !== true &&
 							row.spotify_pending !== true &&
 							!row.stable_id.startsWith('spotify-pending:')}
 						class:rb-row-job={jobProgress.activeFor(row.stable_id) !== null}
@@ -1355,6 +1356,28 @@
 										/>
 									</svg>
 								</span>
+							{:else if row.is_remote}
+								<span
+									class="remote"
+									title="remote audio - our file is in non-local storage, not on this machine"
+								>
+									<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+										<path
+											d="M4.5 9a3 3 0 0 1-.4-5.97A4 4 0 0 1 12 3.5 2.75 2.75 0 0 1 11.5 9"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="1.25"
+										/>
+										<path
+											d="M8 7.25v6M5.75 11.25 8 13.25 10.25 11.25"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="1.25"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										/>
+									</svg>
+								</span>
 							{:else if !row.file_exists}
 								<span class="missing" title="audio file missing on disk (broken link)">!</span>
 							{/if}
@@ -1379,16 +1402,31 @@
 							<td class="c-autoplay">
 								{#if _autoPlayRank(row.stable_id) !== null}
 									{@const rank = _autoPlayRank(row.stable_id)!}
+									<!-- svelte-ignore a11y_no_static_element_interactions -->
 									<span
-										class="ap-rank"
-										class:ap-rank-hot={hoveredApId === row.stable_id}
-										tabindex="0"
 										title={`AutoPlay queue position ${rank}: hand off after ${rank - 1} more, from the current AutoPlay view`}
 										onpointerenter={() => (hoveredApId = row.stable_id)}
-										onpointerleave={() => { if (hoveredApId === row.stable_id) hoveredApId = null; }}
+										onpointerleave={() => {
+											if (hoveredApId === row.stable_id) hoveredApId = null;
+										}}
 										onfocus={() => (hoveredApId = row.stable_id)}
-										onblur={() => { if (hoveredApId === row.stable_id) hoveredApId = null; }}
-									>{rank}{AUTOPLAY_ARROW}</span>
+										onblur={() => {
+											if (hoveredApId === row.stable_id) hoveredApId = null;
+										}}
+									>
+										<AutoPlayRankCell
+											stableId={row.stable_id}
+											{rank}
+											isHot={hoveredApId === row.stable_id}
+											onHover={(id) => {
+												if (id === null) {
+													if (hoveredApId === row.stable_id) hoveredApId = null;
+												} else {
+													hoveredApId = id;
+												}
+											}}
+										/>
+									</span>
 								{/if}
 							</td>
 						{/if}
@@ -1675,18 +1713,6 @@
 		text-align: center;
 		font-variant-numeric: tabular-nums;
 		padding: 0 2px;
-	}
-	.ap-rank {
-		display: inline-block;
-		font-style: italic;
-		font-size: 10px;
-		color: var(--rb-text-dim);
-		cursor: default;
-		outline: none;
-	}
-	.ap-rank-hot,
-	.ap-rank:focus {
-		color: var(--rb-accent);
 	}
 	.autoplay-sort {
 		display: inline-flex;
@@ -2256,6 +2282,10 @@
 	.missing {
 		color: var(--rb-red);
 		font-weight: 600;
+	}
+	.remote {
+		display: inline-flex;
+		color: var(--rb-text-dim);
 	}
 
 	/* FR-1: missing-file rows gray out (dim text + dim artwork) but stay

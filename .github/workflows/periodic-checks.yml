@@ -57,6 +57,9 @@ on:
     # can read that run's conclusion, and off the hour where GitHub's scheduler
     # queues are busiest.
     - cron: "40 5 * * *"
+    # Row 8 (dependency audit): monthly, NOT the merge window. A nightly
+    # advisory would red every open PR for a reason no author caused.
+    - cron: "0 6 1 * *"
   workflow_dispatch:
     inputs:
       force:
@@ -67,6 +70,10 @@ on:
         description: "Merges required to trigger a window (default 50)"
         type: string
         required: false
+      dependency_audit:
+        description: "Run row 8 dependency audit outside the monthly schedule"
+        type: boolean
+        default: false
 
 concurrency:
   # One window at a time. Two overlapping windows would both read the same
@@ -751,6 +758,203 @@ jobs:
             exit 0
           fi
           exit 1
+
+  # ---------------------------------------------------------------------------
+  # Row 8: dependency audit (DEVOPS-01, #1507). Monthly cadence on its own
+  # schedule arm, NOT the merge window: a new advisory overnight must not red
+  # every open PR. Policy commands live in docs/ops/periodic-checks.md row 8;
+  # the instrument is scripts/dependency_audit.py.
+  # ---------------------------------------------------------------------------
+  dependency-audit:
+    name: dependency audit (row 8)
+    if: >-
+      github.event.schedule == '0 6 1 * *' ||
+      (github.event_name == 'workflow_dispatch' && inputs.dependency_audit == true)
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 45
+    outputs:
+      verdict: ${{ steps.audit.outputs.verdict }}
+      head: ${{ steps.head.outputs.sha }}
+    steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: main
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Resolve main head
+        id: head
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          sha="$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)"
+          [ -n "$sha" ] || { echo "::error::could not resolve main"; exit 1; }
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+
+      - name: A Rust toolchain must be present
+        run: |
+          command -v cargo >/dev/null || {
+            echo "::error::no cargo on PATH - cargo audit cannot run on this runner"
+            exit 1
+          }
+          cargo --version
+
+      - name: Ensure cargo-audit
+        run: |
+          command -v cargo-audit >/dev/null || cargo install cargo-audit --locked
+
+      - name: Install JS lockfile trees for pnpm audit
+        run: |
+          set -euo pipefail
+          pnpm --dir apps/desktop install --frozen-lockfile
+          pnpm --dir apps/webui/frontend install --frozen-lockfile
+
+      - name: Dependency audit
+        id: audit
+        run: |
+          set -uo pipefail
+          if python -m scripts.dependency_audit --json "${RUNNER_TEMP}/dependency-audit.json" \
+               > "${RUNNER_TEMP}/dependency-audit.txt" 2> "${RUNNER_TEMP}/dependency-audit.err"; then
+            code=0
+          else
+            code=$?
+          fi
+          cat "${RUNNER_TEMP}/dependency-audit.err" >&2 || true
+          cat "${RUNNER_TEMP}/dependency-audit.txt" || true
+          summary="$(grep -E '^\[dependency-audit\]' "${RUNNER_TEMP}/dependency-audit.txt" | tail -1 || true)"
+          if [ "$code" -eq 3 ]; then
+            verdict="UNKNOWN - NOT MEASURED"
+          elif [ "$code" -eq 1 ]; then
+            verdict="FINDINGS (${summary:-see run log})"
+          elif [ "$code" -eq 0 ]; then
+            verdict="PASS (${summary:-clean})"
+          else
+            verdict="UNKNOWN - unexpected exit ${code}"
+          fi
+          echo "verdict=${verdict}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Dependency audit (row 8)"
+            echo ""
+            echo "verdict: \`${verdict}\` (exit ${code})"
+            echo ""
+            echo '```'
+            cat "${RUNNER_TEMP}/dependency-audit.txt" 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" -eq 0 ]; then
+            exit 0
+          fi
+          exit 1
+
+      - name: Upload audit report
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dependency-audit-${{ steps.head.outputs.sha }}
+          path: |
+            ${{ runner.temp }}/dependency-audit.json
+            ${{ runner.temp }}/dependency-audit.txt
+          if-no-files-found: warn
+          retention-days: 3
+
+  dependency-audit-report:
+    name: dependency audit ledger (row 8)
+    needs: dependency-audit
+    if: always() && needs.dependency-audit.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Post row 8 result
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          LEDGER_ISSUE: "1492"
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD: ${{ needs.dependency-audit.outputs.head }}
+          VERDICT: ${{ needs.dependency-audit.outputs.verdict }}
+          RESULT: ${{ needs.dependency-audit.result }}
+        run: |
+          set -euo pipefail
+          mark() {
+            case "$1" in
+              success) echo "PASS" ;;
+              failure) echo "FAIL" ;;
+              cancelled) echo "CANCELLED" ;;
+              skipped) echo "SKIPPED" ;;
+              "") echo "NOT RUN" ;;
+              *) echo "UNKNOWN ($1)" ;;
+            esac
+          }
+          cat > comment.md <<EOF
+          ## Periodic check row 8 (dependency audit)
+
+          - head: \`${HEAD}\`
+          - result: $(mark "$RESULT")
+          - verdict: \`${VERDICT:-UNKNOWN}\`
+          - run: ${RUN_URL}
+
+          Full output is in the workflow log and the \`dependency-audit-${HEAD}\` artifact.
+
+          <!-- periodic-checks row=8 state sha=${HEAD} -->
+          EOF
+          gh issue comment "${LEDGER_ISSUE:-1492}" --repo "$REPO" --body-file comment.md
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # One comment per window on the ledger issue (DEVOPS-03). This is the whole

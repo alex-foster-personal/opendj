@@ -15,6 +15,7 @@ import {
 	setDeckLayoutMode,
 	setHideBrokenLinks,
 	setHideTodoSettings,
+	setJogRadialWaveform,
 	setLibraryDensity,
 	setNextOnlyFilter,
 	setTechnicallyWorkingAnimate,
@@ -43,6 +44,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'next_only_filter',
 	'hide_todo_settings',
 	'technically_working_animate',
+	'jog_radial_waveform',
 	'deck_layout',
 	'deck_layout_animate',
 	'deck_layout_duration_ms',
@@ -85,6 +87,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.hide_todo_settings;
 		case 'technically_working_animate':
 			return uiPrefs.technically_working_animate;
+		case 'jog_radial_waveform':
+			return uiPrefs.jog_radial_waveform;
 		case 'deck_layout':
 			return uiPrefs.deck_layout;
 		case 'deck_layout_animate':
@@ -150,6 +154,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'technically_working_animate':
 			setTechnicallyWorkingAnimate(_asBool(value, key));
+			return;
+		case 'jog_radial_waveform':
+			setJogRadialWaveform(_asBool(value, key));
 			return;
 		case 'deck_layout': {
 			if (value !== 'more' && value !== 'less') {

@@ -88,7 +88,23 @@ test('playlist undo/redo: mixed edits, panel, hotkey, reload, IPC', async ({ pag
 
 	const undoBtn = page.getByTestId('playlist-undo');
 	const redoBtn = page.getByTestId('playlist-redo');
+	await expect
+		.poll(async () => {
+			const hist = await page.request.get('/api/v1/playlist-history');
+			expect(hist.ok(), await hist.text()).toBeTruthy();
+			const body = (await hist.json()) as { can_undo?: unknown };
+			return body.can_undo === true;
+		})
+		.toBe(true);
 	await expect(undoBtn).toBeEnabled({ timeout: 15_000 });
+	await expect
+		.poll(async () => {
+			const listed = await page.request.get('/api/v1/playlists');
+			expect(listed.ok(), await listed.text()).toBeTruthy();
+			const body = (await listed.json()) as Array<{ name?: unknown }>;
+			return body.map((row) => (typeof row.name === 'string' ? row.name : ''));
+		})
+		.toContain(renamedName);
 	await _ensurePlaylistsOpen(page);
 	await expect(_playlistRow(page, renamedName)).toBeVisible({ timeout: 15_000 });
 

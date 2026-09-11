@@ -27,6 +27,7 @@ ALLOWED_KEYS: frozenset[str] = frozenset(
         "beat_sync_max",
         "next_only_filter",
         "hide_todo_settings",
+        "jog_radial_waveform",
         "auto_sync.rekordbox",
         "auto_sync.djay",
         "auto_sync.open_dj",
