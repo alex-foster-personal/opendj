@@ -13,7 +13,7 @@
 	// PVDI regions (status 'rekordbox'); the two barless states surface as
 	// explicit tooltips - three mandatory states, nothing invented.
 	import { vocalsOf, type Vocals } from '$lib/rb/api-rb';
-	import { keyAtPlayhead } from '$lib/player/key-segments';
+	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { drawStripWaveform } from './strip-waveform-render';
@@ -87,7 +87,7 @@
 	);
 
 	const keySegmentMarkersS: readonly number[] = $derived(
-		keyAtPlayhead(deck.anlz, deck.position_ms, deck.key_shift_semitones, deck.key).markerTimesS
+		keyAtPlayheadNow(deck.anlz, deck.position_ms, deck.key_shift_semitones, deck.key).markerTimesS
 	);
 
 	// ----------------------------------------------------------- _helpers

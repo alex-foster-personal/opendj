@@ -14,7 +14,7 @@
 	} from '$lib/rb/audio-engine.svelte';
 	import { tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
 	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
-	import { keyAtPlayhead } from '$lib/player/key-segments';
+	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import ControlExplainer from './ControlExplainer.svelte';
@@ -140,7 +140,7 @@
 	);
 	/** Show audible Camelot after KEY SYNC / nudge; playhead segments override metadata. */
 	const keyPlayhead = $derived(
-		keyAtPlayhead(deck.anlz, deck.position_ms, deck.key_shift_semitones, deck.key)
+		keyAtPlayheadNow(deck.anlz, deck.position_ms, deck.key_shift_semitones, deck.key)
 	);
 	const keyText: string = $derived(keyPlayhead.display ?? '--');
 	const keyColor: string | null = $derived(camelotKeyColor(keyText === '--' ? null : keyText));

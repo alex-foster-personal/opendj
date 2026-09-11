@@ -19,7 +19,7 @@
  */
 
 import { validateBeatGrid } from '$lib/rb/beat-sync-math';
-import type { AnlzBeat, AnlzBeatgridSource, AnlzData } from '$lib/rb/anlz-types';
+import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { DeckState } from '$lib/rb/deck-state-types';
 
 /**
@@ -36,7 +36,7 @@ import type { DeckState } from '$lib/rb/deck-state-types';
 export const GRID_FEATURE_TIP =
 	'needs a beat grid - analyse this track for quantize and beat sync; play, pause and cue still work';
 
-const _NAMED_SOURCES: ReadonlySet<AnlzBeatgridSource> = new Set(['own', 'rekordbox']);
+const _NAMED_SOURCES = new Set<string>(['own', 'rekordbox']);
 
 /**
  * Whether these beats are a real PQTZ grid the beat math can plan against.
@@ -72,7 +72,7 @@ function _beatgridSource(anlz: Pick<AnlzData, 'beatgrid'> | null | undefined): u
 export function hasTrustedBeatGrid(anlz: Pick<AnlzData, 'beatgrid'> | null | undefined): boolean {
 	if (anlz === null || anlz === undefined) return false;
 	const source = _beatgridSource(anlz);
-	if (typeof source !== 'string' || !_NAMED_SOURCES.has(source as AnlzBeatgridSource)) {
+	if (typeof source !== 'string' || !_NAMED_SOURCES.has(source)) {
 		return false;
 	}
 	if (!hasRealBeatGrid(anlz.beatgrid.beats)) return false;
