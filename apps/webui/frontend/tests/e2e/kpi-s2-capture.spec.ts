@@ -65,7 +65,7 @@ test('capture S2 press-to-audible press rows', async ({ page, request, browser }
 			browser: CAPTURE_BROWSER,
 			presses: [],
 			reason,
-			floor
+			...(floor !== undefined ? { floor } : {})
 		});
 	};
 
