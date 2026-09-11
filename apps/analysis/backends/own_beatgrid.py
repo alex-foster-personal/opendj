@@ -72,6 +72,7 @@ from apps.analysis.pcm_fingerprint import (
     require_resampler,
 )
 from apps.analysis_beatgrid.lane_payload import build_beatgrid_lane
+from apps.analysis_beatgrid import activations
 from apps.analysis_beatgrid.version import LANE, PRODUCER, PRODUCER_VERSION
 
 from ..lanes import LaneResult, own_backend
@@ -114,7 +115,12 @@ class RunnerPayloadError(RuntimeError):
 #-----------------------------------------------------------------------------
 
 def runner_command(
-    audio_path: Path, out_path: Path, checkpoint: Path, *, device: str
+    audio_path: Path,
+    out_path: Path,
+    checkpoint: Path,
+    *,
+    device: str,
+    activations_dir: Path,
 ) -> list[str]:
     """The argv for one runner invocation, by whichever of the two paths applies."""
     args = [
@@ -123,6 +129,7 @@ def runner_command(
         "--out", str(out_path),
         "--device", device,
         "--checkpoint", str(checkpoint),
+        "--activations-dir", str(activations_dir),
     ]
     provisioned = os.environ.get(RUNNER_PYTHON_ENV, "").strip()
     if provisioned:
@@ -152,9 +159,12 @@ def run_runner(audio_path: Path, checkpoint: Path, *, device: str) -> dict[str, 
     chunking caller to stop for.
     """
     timeout = float(os.environ.get(TIMEOUT_ENV) or DEFAULT_TIMEOUT_S)
+    activations_dir = activations.default_activations_dir()
     with tempfile.TemporaryDirectory(prefix="own-beatgrid-") as scratch:
         out_path = Path(scratch) / "beats.json"
-        command = runner_command(audio_path, out_path, checkpoint, device=device)
+        command = runner_command(
+            audio_path, out_path, checkpoint, device=device, activations_dir=activations_dir
+        )
         log.info("own_beatgrid: %s", " ".join(command))
         try:
             completed = subprocess.run(
@@ -195,6 +205,17 @@ def run_runner(audio_path: Path, checkpoint: Path, *, device: str) -> dict[str, 
                 f"beat_this_runner.py exited 0 but wrote a {type(payload).__name__}, "
                 "not an object"
             )
+        for result in payload.get("results", {}).values():
+            if result.get("error"):
+                continue
+            if result.get("n_frames") is None:
+                continue
+            npz = result.get("activations_npz")
+            if not isinstance(npz, str) or not Path(npz).is_file():
+                raise RunnerPayloadError(
+                    f"runner result produced logits but activations_npz "
+                    f"{npz!r} is not a readable file; producer contract drift"
+                )
         return payload
 
 
@@ -362,6 +383,15 @@ def record_from_payload(
     duration_s = _duration_s(result, lane_ok=lane.ok, fps=fps, audio_path=audio_path)
     sample_rate = _sample_rate(result, lane_ok=lane.ok, audio_path=audio_path)
 
+    features_blob: dict[str, Any] = {}
+    activations_npz = result.get("activations_npz")
+    if activations_npz:
+        track_fps = result.get("fps", fps)
+        features_blob["activations"] = {
+            "npz": activations_npz,
+            "fps": int(track_fps),
+        }
+
     # The pre-v2 scalar columns. This producer measures no key and no energy,
     # so it states nothing rather than a plausible-looking default; the lane
     # block is what every own reader consults (canonical.py projects from
@@ -385,6 +415,7 @@ def record_from_payload(
         uses_model=True,
         model_sha256=f"sha256:{model_sha256}",
         decode_fingerprint=f"sha256:{decode_fingerprint}",
+        features_blob=features_blob,
         lanes={
             LANE: LaneResult(
                 status=lane.status,
