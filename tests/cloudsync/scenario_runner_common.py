@@ -33,6 +33,8 @@ from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity, sync_stamp
 from apps.sync_hub import client, protocol, service
 
+from .fault_transport import FaultTransport
+
 SCENARIOS_DIR: Path = Path(__file__).resolve().parent / "scenarios"
 
 # Real fleet member names (design_decision_07's D7 reference: agentbox is the
@@ -43,11 +45,25 @@ SCENARIOS_DIR: Path = Path(__file__).resolve().parent / "scenarios"
 FLEET_MACHINE_IDS: tuple[str, ...] = ("silver", "air", "bifrost2", "agentbox")
 
 _VALID_ROLES: frozenset[str] = frozenset({"hub", "spoke"})
-_VALID_ACTIONS: frozenset[str] = frozenset(
-    {"edit", "sync", "assert_converged", "assert_digest", "partition"}
+# The adversarial verbs (plan W9), dispatched by
+# :mod:`tests.cloudsync.scenario_runner_adversarial`. Declared here, not
+# there, so the parser validates them without importing that module.
+_ADVERSARIAL_ACTIONS: frozenset[str] = frozenset(
+    {"delete", "reinsert", "skew_clock", "restore_hub", "prune", "fault", "rename_machine"}
 )
+_VALID_ACTIONS: frozenset[str] = frozenset(
+    {"edit", "sync", "assert_converged", "assert_digest", "partition", "reorder"}
+) | _ADVERSARIAL_ACTIONS
 _EDITABLE_TABLES: frozenset[str] = frozenset(
-    {"tracks", "playlists", "sync_policies", "playlist_pins"}
+    {
+        "tracks",
+        "playlists",
+        "sync_policies",
+        "playlist_pins",
+        "track_fields",
+        "track_locations",
+        "playlist_memberships",
+    }
 )
 _SYNC_RESULT_FIELDS: frozenset[str] = frozenset(
     {"pushed", "accepted", "rejected", "pulled", "applied"}
@@ -237,27 +253,49 @@ class _TestClientTransport:
 
 @dataclass
 class SimRun:
-    """Live state for one scenario execution in sim mode."""
+    """Live state for one scenario execution in sim mode.
+
+    ``transports`` holds one :class:`FaultTransport` per spoke, created on
+    first use around the shared hub transport, so a ``fault`` step armed on
+    one spoke never fires on another. ``clock_skew_s`` offsets a machine's
+    auto-stamped edits (``skew_clock``), ``names`` is the name a spoke syncs
+    under (``rename_machine``), and ``hub_snapshots`` holds the hub DB copies
+    ``restore_hub`` took.
+    """
 
     scenario: Scenario
     hub_transport: _TestClientTransport
     data_dirs: dict[str, Path]
     machine_ids: dict[str, str]
     offline: set[str] = field(default_factory=set)
+    transports: dict[str, FaultTransport] = field(default_factory=dict)
+    clock_skew_s: dict[str, float] = field(default_factory=dict)
+    names: dict[str, str] = field(default_factory=dict)
+    hub_snapshots: dict[str, Path] = field(default_factory=dict)
     _tick: int = 0
 
     def conn(self, machine: str):  # -> sqlite3.Connection
         return state_db.open_rw(client.state_db_path(self.data_dirs[machine]))
 
-    def next_tick(self) -> str:
+    def next_tick(self, machine: str | None = None) -> str:
+        """The next logical instant, shifted by ``machine``'s clock skew if any."""
         self._tick += 1
-        return (_TICK_EPOCH + timedelta(seconds=self._tick)).isoformat()
+        skew = self.clock_skew_s.get(machine, 0.0) if machine is not None else 0.0
+        return (_TICK_EPOCH + timedelta(seconds=self._tick + skew)).isoformat()
+
+    def transport_for(self, machine: str) -> FaultTransport:
+        if machine not in self.transports:
+            self.transports[machine] = FaultTransport(self.hub_transport)
+        return self.transports[machine]
+
+    def sync_name(self, machine: str) -> str:
+        return self.names.get(machine, machine)
 
 
-def _stamp(args: Mapping[str, Any], run: SimRun) -> str:
-    """The explicit ``updated_at`` an args block asked for, else the next tick."""
+def _stamp(args: Mapping[str, Any], run: SimRun, machine: str) -> str:
+    """The explicit ``updated_at`` an args block asked for, else ``machine``'s next tick."""
     explicit = args.get("updated_at")
-    return str(explicit) if explicit is not None else run.next_tick()
+    return str(explicit) if explicit is not None else run.next_tick(machine)
 
 
 def _log_edit(
@@ -340,6 +378,43 @@ def _validate_editable_columns(
                 f"{table}.{key} is a primary-key or sync-trio column and "
                 f"cannot be set directly"
             )
+
+
+def _resolve_pk(
+    run: SimRun, table: str, raw_pk: Mapping[str, Any], *, self_machine: str
+) -> dict[str, str]:
+    """Expand a scenario's ``pk`` block to real column values.
+
+    A string value starting with ``@`` resolves to that logical machine's
+    real (randomly minted) ``machine_id`` -- the only way a YAML file can
+    name another machine's row on a fleet-wide policy table without knowing
+    its id in advance. ``sync_policies``/``playlist_pins`` default a missing
+    ``machine_id`` to the checked machine's own id, since that is what a
+    scenario asks for in the common case. ``machines`` (the registry) is
+    addressable too, so a ``rename_machine`` step can be asserted.
+    """
+    spec = protocol.SPEC_BY_TABLE.get(table)
+    if spec is None and table == protocol.MEMBERSHIP_TABLE:
+        spec = protocol.MEMBERSHIP_SPEC
+    if spec is None and table == protocol.REGISTRY_TABLE:
+        spec = protocol.TableSpec(protocol.REGISTRY_TABLE, ("machine_id",))
+    if spec is None:
+        raise ScenarioError(f"{table!r} is not a syncable/digest table")
+    resolved: dict[str, str] = {}
+    for column, value in raw_pk.items():
+        if isinstance(value, str) and value.startswith("@"):
+            ref = value[1:]
+            if ref not in run.machine_ids:
+                raise ScenarioError(f"pk reference '@{ref}' is not a declared machine")
+            resolved[column] = run.machine_ids[ref]
+        else:
+            resolved[column] = str(value)
+    if table in ("sync_policies", "playlist_pins") and "machine_id" not in resolved:
+        resolved["machine_id"] = run.machine_ids[self_machine]
+    missing = [column for column in spec.pk if column not in resolved]
+    if missing:
+        raise ScenarioError(f"{table} pk incomplete: missing {missing}")
+    return resolved
 
 
 __all__ = [

@@ -18,7 +18,7 @@
 
 import type { Client } from 'openapi-fetch';
 
-import { api, unwrap } from './api/client';
+import { ApiError, api, unwrap } from './api/client';
 
 // ----------------------------------------------------------- types
 
@@ -108,8 +108,19 @@ export interface CloudSyncRecentResult {
 	pulled: number;
 }
 
+/** Which source decided a CloudSync config field; an env override wins over the file. */
+export type CloudSyncConfigSource = 'env' | 'file' | 'default';
+
 export interface CloudSyncStatus {
+	/** configured AND running: true only while a scheduler heartbeat is fresh. */
 	enabled: boolean;
+	/** The effective config is on and names a hub (intent, not evidence). */
+	configured: boolean;
+	/** A scheduler heartbeat is fresh (evidence a loop is alive). */
+	running: boolean;
+	heartbeat_at: string | null;
+	enabled_source: CloudSyncConfigSource;
+	endpoint_source: CloudSyncConfigSource;
 	reason: string | null;
 	signed_in_as: string | null;
 	last_push_at: string | null;
@@ -172,6 +183,24 @@ export async function listPolicies(machineId?: string): Promise<SyncPolicy[]> {
 
 export async function putPolicy(body: SyncPolicyPutBody): Promise<SyncPolicy> {
 	return unwrap(cloudSyncApi.PUT('/api/v1/cloudsync/policies', { body }));
+}
+
+/** One gate verdict from a 409 POLICY_VIOLATION body (`detail.outcome.violations`). */
+interface PolicyViolation {
+	subject: string;
+	message: string;
+	blocking: boolean;
+}
+
+/** A toast-ready message for a failed policy write. A 409 POLICY_VIOLATION
+ * names each blocking violation (`subject: message`), so the user sees WHY the
+ * gate refused; any other failure keeps the API's own message. */
+export function policyErrorMessage(exc: unknown): string {
+	if (!(exc instanceof ApiError)) return exc instanceof Error ? exc.message : String(exc);
+	const body = exc.body as { detail?: { outcome?: { violations?: PolicyViolation[] } } } | null;
+	const blocking = (body?.detail?.outcome?.violations ?? []).filter((v) => v.blocking);
+	if (exc.code !== 'POLICY_VIOLATION' || blocking.length === 0) return exc.message;
+	return blocking.map((v) => `${v.subject}: ${v.message}`).join('; ');
 }
 
 export async function listPlaylistPins(machineId?: string): Promise<PlaylistPin[]> {

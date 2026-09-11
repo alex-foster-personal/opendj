@@ -16,11 +16,11 @@ from apps.shared.state import sync_stamp
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
 from apps.sync_hub import protocol
 from apps.sync_hub.engine_common import (
-    apply_rank,
     HUB_CHANGELOG_TABLE,
     SyncApplyError,
     SyncSchemaMismatch,
     _pk_predicate,
+    apply_rank,
 )
 from apps.sync_hub.engine_watermark import current_seq
 from apps.sync_hub.protocol import MEMBERSHIP_TABLE, SPEC_BY_TABLE, RowChange, TableSpec
@@ -247,8 +247,9 @@ def _checked_values(
         extra = sorted(offered - expected)
         raise SyncSchemaMismatch(
             f"{table}: peer row does not match this schema "
-            f"(missing={missing}, unexpected={extra}). Both machines must be "
-            f"on the same apps.shared.state.schema.SCHEMA_VERSION."
+            f"(missing={missing}, unexpected={extra}). Both machines must "
+            f"speak the same apps.sync_hub.wire_version.WIRE_VERSION; if they "
+            f"already do, a synced column changed without a wire bump."
         )
     for index, column in enumerate(spec.pk):
         declared = change.pk[index]

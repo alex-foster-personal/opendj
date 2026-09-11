@@ -1,0 +1,100 @@
+name: field-and-location-edits
+description: >
+  The two widened tables with their own writers. A sets an analyzed field
+  and records where the file lives on A; both reach B. B then overwrites the
+  field with a later value, which must win back on A, and A tombstones the
+  field, which must reach B. Locations are per machine (ADR 08 point 1), so
+  B receives A's location row verbatim rather than a location of its own.
+
+machines:
+  - id: hub
+    role: hub
+  - id: spoke-a
+    role: spoke
+  - id: spoke-b
+    role: spoke
+
+seed:
+  tracks:
+    - stable_id: trk-1
+      title: original
+      "on": [spoke-a, spoke-b]
+
+steps:
+  - "on": spoke-a
+    action: edit
+    args:
+      table: track_fields
+      stable_id: trk-1
+      field_name: bpm
+      value: 128
+  - "on": spoke-a
+    action: edit
+    args:
+      table: track_locations
+      location_id: loc-a-1
+      stable_id: trk-1
+      file_path: /music/a/trk-1.mp3
+  - "on": spoke-a
+    action: sync
+  - "on": spoke-b
+    action: sync
+
+  - "on": spoke-b
+    action: assert_converged
+    args:
+      table: track_fields
+      pk: { stable_id: trk-1, field_name: bpm }
+      field: value_json
+      equals: "128"
+  - "on": spoke-b
+    action: assert_converged
+    args:
+      table: track_locations
+      pk: { location_id: loc-a-1 }
+      field: file_path
+      equals: /music/a/trk-1.mp3
+
+  - "on": spoke-b
+    action: edit
+    args:
+      table: track_fields
+      stable_id: trk-1
+      field_name: bpm
+      value: 129
+  - "on": spoke-b
+    action: sync
+    args: { expect: { accepted: 1 } }
+  - "on": spoke-a
+    action: sync
+    args: { expect: { applied: 1 } }
+  - "on": spoke-a
+    action: assert_converged
+    args:
+      table: track_fields
+      pk: { stable_id: trk-1, field_name: bpm }
+      field: value_json
+      equals: "129"
+
+  - "on": spoke-a
+    action: delete
+    args:
+      table: track_fields
+      pk: { stable_id: trk-1, field_name: bpm }
+      updated_at: "2026-03-01T00:00:00+00:00"
+  - "on": spoke-a
+    action: sync
+    args: { expect: { accepted: 1 } }
+  - "on": spoke-b
+    action: sync
+    args: { expect: { applied: 1 } }
+  - "on": spoke-b
+    action: assert_converged
+    args:
+      table: track_fields
+      pk: { stable_id: trk-1, field_name: bpm }
+      field: deleted_at
+      equals: "2026-03-01T00:00:00.000000+00:00"
+
+expected:
+  digest_converged: true

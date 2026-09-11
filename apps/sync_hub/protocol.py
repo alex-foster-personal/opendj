@@ -8,8 +8,10 @@ Five decisions worth reading before changing anything:
 
 1. **Columns are introspected, never hardcoded.** ``PRAGMA table_info`` is
    the single source of truth so this module cannot drift from
-   ``apps.shared.state.schema``. A peer on a different ``SCHEMA_VERSION`` is
-   rejected at the handshake rather than silently exchanging half a row.
+   ``apps.shared.state.schema``. A peer on a different
+   :data:`apps.sync_hub.wire_version.WIRE_VERSION` is rejected at the
+   handshake rather than silently exchanging half a row; one wire version
+   pins one synced column shape, so SCHEMA_VERSION may differ.
 2. **NULL ``updated_at`` sorts as epoch** (ADR 04 c7): legacy rows written
    before migration v6 always lose to a real edit. The sentinel is a real
    ISO string (:data:`EPOCH`) rather than ``None`` so every comparison is a
