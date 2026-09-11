@@ -181,7 +181,9 @@ def test_nightly_starts_real_engine_and_stops_it(
     code = cmd_nightly(config, base_url=None, skip_pr=True)
 
     assert code != 1
-    assert _ledger_entries(tmp_path)
+    entries = _ledger_entries(tmp_path)
+    assert entries
+    assert any(row.get("kpi") == "packaged_deck_load_total_ms" for row in entries)
     assert not _listening(port)
     assert (state_dir / SCRATCH_ENGINE_LOG_NAME).is_file()
 
