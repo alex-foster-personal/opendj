@@ -315,7 +315,8 @@ def probe_path_traversal(
             status, err, preview = http_body(target.host, target.port, method, path, body)
             line = f"{method} {path} -> {status if status is not None else err} {preview}"
             lines.append(line)
-            if status is not None and not (400 <= status < 500):
+            # 2xx/3xx served the traversal. 5xx is a broken route, not a leak.
+            if status is not None and status < 400:
                 leaks.append(line)
     output = "\n".join(lines)
     if leaks:
