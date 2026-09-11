@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import os
 import sqlite3
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -111,6 +112,25 @@ class MissingColumnDocsError(RuntimeError):
     This is the drift guard: generating an AGENTS.md that silently omits a
     column's meaning is impossible by construction.
     """
+
+
+class ForeignAgentsMdError(RuntimeError):
+    """``out_path`` exists and is not a generated state.db sidecar.
+
+    ``write_agents_md`` overwrites the traveling generated file on purpose.
+    It must not replace a hand-authored AGENTS.md (``apps/database/AGENTS.md``,
+    a repo-root Agents.md on a case-insensitive volume, a leftover note)
+    sitting in the same directory as a DB opened at a non-standard path.
+    """
+
+
+def _existing_is_generated_sidecar(path: Path) -> bool:
+    """True when ``path`` is missing or already a generated sidecar."""
+    if not path.exists():
+        return True
+    with path.open("r", encoding="utf-8") as handle:
+        first = handle.readline()
+    return first.startswith(_HEADER.splitlines()[0])
 
 
 # ----- introspection --------------------------------------------------------
@@ -292,12 +312,21 @@ def write_agents_md(
 
     Returns the text written. Raises :class:`MissingColumnDocsError` before
     writing anything if coverage is incomplete -- no partial file is ever
-    left behind. ``owned_tables`` is forwarded to :func:`introspect`.
+    left behind. Raises :class:`ForeignAgentsMdError` before writing if
+    ``out_path`` already exists and does not start with the generated
+    header. ``owned_tables`` is forwarded to :func:`introspect`.
     """
+    if not _existing_is_generated_sidecar(out_path):
+        raise ForeignAgentsMdError(
+            f"{out_path} exists and is not a generated state.db sidecar; "
+            "refusing to overwrite"
+        )
     tables = introspect(conn, owned_tables=owned_tables)
     text = render(tables)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = out_path.with_name(f".{out_path.name}.{os.getpid()}.tmp")
+    tmp_path = out_path.with_name(
+        f".{out_path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+    )
     try:
         tmp_path.write_text(text, encoding="utf-8")
         os.replace(tmp_path, out_path)

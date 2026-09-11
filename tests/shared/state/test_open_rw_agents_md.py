@@ -8,7 +8,10 @@ from pathlib import Path
 import pytest
 
 from apps.database import regenerate_agents_md_if_writable
-from apps.database.generate_agents_md import MissingColumnDocsError
+from apps.database.generate_agents_md import (
+    ForeignAgentsMdError,
+    MissingColumnDocsError,
+)
 from apps.shared.state import schema as state_schema
 from apps.shared.state import sync_stamp
 from apps.shared.state.db import open_dry_run, open_rw
@@ -144,6 +147,35 @@ def test_open_rw_omits_legacy_leftover_tables_and_still_opens(tmp_path: Path) ->
     assert "## `tracks`" in text
     assert "lyric_verdict_legacy" not in text
     assert "lyric_word_legacy" not in text
+
+
+def test_open_rw_refuses_to_overwrite_foreign_agents_md(tmp_path: Path) -> None:
+    """if parent AGENTS.md is not a generated sidecar then open_rw does not clobber it - broken"""
+    db_path = tmp_path / "state.db"
+    agents_md = tmp_path / "AGENTS.md"
+    handwritten = "# apps/database\n\nhand-authored -- do not destroy\n"
+    agents_md.write_text(handwritten, encoding="utf-8")
+
+    with pytest.raises(ForeignAgentsMdError, match="not a generated"):
+        open_rw(db_path)
+
+    assert agents_md.read_text(encoding="utf-8") == handwritten
+
+
+def test_open_rw_replaces_generated_agents_md_sidecar(tmp_path: Path) -> None:
+    """if parent AGENTS.md already has the generated header then open_rw rewrites it - broken"""
+    db_path = tmp_path / "state.db"
+    agents_md = tmp_path / "AGENTS.md"
+    stale = _AGENTS_HEADER + "\n\nGENERATED FILE. stale sidecar\n"
+    agents_md.write_text(stale, encoding="utf-8")
+
+    conn = open_rw(db_path)
+    conn.close()
+
+    text = agents_md.read_text(encoding="utf-8")
+    assert text.startswith(_AGENTS_HEADER)
+    assert "stale sidecar" not in text
+    assert "## `tracks`" in text
 
 
 def test_open_rw_keeps_foreign_authority_tables_in_agents_md(tmp_path: Path) -> None:
