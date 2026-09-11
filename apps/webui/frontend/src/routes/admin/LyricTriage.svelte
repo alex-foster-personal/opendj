@@ -75,6 +75,12 @@
 	function _fmtPct(value: number | null): string {
 		return value === null ? '-' : `${Math.round(value * 10) / 10}%`;
 	}
+
+	/** pct_witness_red rides the wire as a 0..1 fraction (lyric-column.ts
+	 * throws outside that range), while coverage_pct is already 0..100. */
+	function _fmtFractionPct(value: number | null): string {
+		return value === null ? '-' : _fmtPct(value * 100);
+	}
 </script>
 
 <div class="triage">
@@ -142,7 +148,7 @@
 						<td class="src" title="Lyric provider + match method that supplied this text.">
 							{row.source ?? '-'}
 						</td>
-						<td class="num" title={RED_TITLE}>{_fmtPct(row.pct_witness_red ?? null)}</td>
+						<td class="num" title={RED_TITLE}>{_fmtFractionPct(row.pct_witness_red ?? null)}</td>
 						<td class="num" title="Number of aligned words stored for this track.">
 							{row.n_words ?? '-'}
 						</td>
