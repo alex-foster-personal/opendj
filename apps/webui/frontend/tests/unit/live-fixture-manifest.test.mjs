@@ -219,7 +219,7 @@ test('only an ordinary run against a matching pinned manifest may continue', () 
 test('the margin is read from the implementation, and unreadable means unreadable', async () => {
 	const { laneMarginFrom, stopwatchLane } = await import('../live/lane-oracle.mjs');
 	const real = readFileSync(
-		new URL('../../src/lib/player/decode/flac-stem-decode.ts', import.meta.url),
+		new URL('../../src/lib/player/decode/stem-decode-lane.ts', import.meta.url),
 		'utf8'
 	);
 	// POSITIVE CONTROL against the LIVE source, not a fixture: the point of
