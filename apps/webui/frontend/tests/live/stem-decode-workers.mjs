@@ -12,7 +12,8 @@
  *   1. the worker path is TAKEN (refusal === null on every part)
  *   2. the samples are BIT-IDENTICAL to decodeAudioData's - FLAC is lossless
  *      and neither path resamples, so anything less is a decoder bug
- *   3. four parts in workers beat four parts through decodeAudioData
+ *   3. each width is timed on both lanes and the calibration agrees with the
+ *      stopwatch (PERF-STEMDEC-02 adds the 2-part roformer2 arm)
  *
  * Re-runnable: `pnpm test:live:stem-decode-workers`. Prints the measured
  * numbers so a later round can compare against them rather than against a
@@ -37,6 +38,7 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { tmpdir } from 'node:os';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -45,7 +47,17 @@ import { fileURLToPath } from 'node:url';
 import { chromium, webkit } from '@playwright/test';
 
 import { buildManifest, manifestGate } from './fixture-manifest.mjs';
-import { laneMarginFrom, stopwatchLane } from './lane-oracle.mjs';
+import { laneMarginFrom } from './lane-oracle.mjs';
+import {
+	FOUR_PARTS,
+	TWO_PARTS,
+	agreeLine,
+	aliasTwoPartBundle,
+	appendLedger,
+	independenceHolds,
+	laneTimingsToRows,
+	missingFixtureMessage
+} from './stem-decode-kpis.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND = path.resolve(HERE, '../..');
@@ -60,7 +72,6 @@ const REPO = path.resolve(FRONTEND, '../../..');
  */
 const FIXTURE_DIR =
 	process.env.Q18_FLAC_DIR ?? path.join(REPO, 'data/datasets/jamendolyrics-vocals');
-const PARTS = ['vocals', 'drums', 'bass', 'other'];
 const PORT = 8719;
 /**
  * Where this run records what it decoded, and what it verifies against.
@@ -73,15 +84,32 @@ const PORT = 8719;
  */
 const MANIFEST_PATH =
 	process.env.Q18_FIXTURE_MANIFEST ?? path.join(REPO, '.tmp/q18-stem-decode-fixtures.json');
+/** One least-significant bit of a 16-bit sample, in float. */
+const LSB_16_BIT = 1 / 32768;
+
+function parseArgs() {
+	const args = process.argv.slice(2);
+	let ledgerPath = null;
+	for (let i = 0; i < args.length; i++) {
+		if (args[i] === '--ledger') {
+			ledgerPath = args[i + 1] ?? path.join(REPO, 'docs/perf/kpi-ledger.json');
+		}
+	}
+	return {
+		recordMode: args.includes('--record') || process.env.Q18_RECORD_FIXTURES === '1',
+		appendLedger: ledgerPath !== null || process.env.Q18_APPEND_LEDGER === '1',
+		ledgerPath: ledgerPath ?? path.join(REPO, 'docs/perf/kpi-ledger.json')
+	};
+}
+
+const CLI = parseArgs();
 /**
  * Pinning the inputs is a MODE of its own, not a thing an ordinary run does
  * on its way past. A run that may write the contract it is about to check
  * itself against has verified nothing, and on a fresh checkout - where the
  * gitignored default does not exist - that would be every run.
  */
-const RECORD_MODE = process.argv.includes('--record') || process.env.Q18_RECORD_FIXTURES === '1';
-/** One least-significant bit of a 16-bit sample, in float. */
-const LSB_16_BIT = 1 / 32768;
+const RECORD_MODE = CLI.recordMode;
 /**
  * The margin the implementation actually uses, READ from it.
  *
@@ -135,19 +163,30 @@ async function main() {
 		? readdirSync(FIXTURE_DIR)
 				.filter((name) => name.endsWith('.flac'))
 				.sort()
-				.slice(0, PARTS.length)
+				.slice(0, FOUR_PARTS.length)
 				.map((name) => path.join(FIXTURE_DIR, name))
 		: [];
-	if (fixtures.length < PARTS.length) {
-		console.log(`need ${PARTS.length} distinct .flac files, found ${fixtures.length} in ${FIXTURE_DIR}`);
-		console.log('point this run at a directory: Q18_FLAC_DIR=/abs/dir pnpm test:live:stem-decode-workers');
+	if (fixtures.length < FOUR_PARTS.length) {
+		for (const line of missingFixtureMessage({
+			found: fixtures.length,
+			required: FOUR_PARTS.length,
+			fixtureDir: FIXTURE_DIR
+		})) {
+			console.log(line);
+		}
 		process.exit(2);
 	}
 	// Read and VERIFY the inputs before spending an esbuild on them: a run
 	// whose subject is wrong is not worth preparing, and the refusal below
 	// should cost seconds rather than a bundle plus two browser launches.
 	const flacs = await Promise.all(fixtures.map((file) => readFile(file)));
-	const byPart = Object.fromEntries(PARTS.map((part, i) => [part, flacs[i]]));
+	const byPart = Object.fromEntries(FOUR_PARTS.map((part, i) => [part, flacs[i]]));
+	const twoPartAlias = aliasTwoPartBundle(byPart);
+	byPart.instrumental = twoPartAlias.instrumental;
+
+	console.log(
+		'2-part arm: vocals plus the drums fixture aliased as instrumental (not a RoFormer mixdown)'
+	);
 
 	// PROVENANCE. A basename and a size do not identify audio, and this
 	// directory is mutable, so a later run of the same command can pass
@@ -158,7 +197,7 @@ async function main() {
 	// measurement of the wrong subject is not worth taking, and a run that
 	// pinned its own subject on the way past has verified nothing.
 	const manifest = buildManifest(
-		fixtures.map((file, i) => ({ part: PARTS[i], file, bytes: flacs[i] }))
+		fixtures.map((file, i) => ({ part: FOUR_PARTS[i], file, bytes: flacs[i] }))
 	);
 	console.log(`fixture manifest v${manifest.version} from ${FIXTURE_DIR}`);
 	for (const entry of manifest.parts) {
@@ -244,6 +283,9 @@ async function main() {
 	const ran = [];
 	/** Engines that could not launch, with the reason, for the UNAVAILABLE report. */
 	const unavailable = [];
+	/** Per-engine width timings for optional ledger append. */
+	const ledgerEngineResults = [];
+
 	for (const [name, engine] of engines) {
 		let browser;
 		try {
@@ -261,147 +303,190 @@ async function main() {
 			if (msg.type() === 'error') console.log(`  [${name} console.error] ${msg.text()}`);
 		});
 		await page.goto(`http://127.0.0.1:${PORT}/`);
-		const result = await page.evaluate(async (parts) => {
-			const decode = await import('/decode.mjs');
-			const ctx = new OfflineAudioContext(2, 1, 44100);
-			const fresh = async () => {
-				const entries = await Promise.all(
-					parts.map(async (part) => [part, await (await fetch('/stem/' + part)).arrayBuffer()])
+		const result = await page.evaluate(
+			async ({ four, two }) => {
+				const decode = await import('/decode.mjs');
+				const ctx = new OfflineAudioContext(2, 1, 44100);
+
+				const fetchParts = async (parts) => {
+					const entries = await Promise.all(
+						parts.map(async (part) => [part, await (await fetch('/stem/' + part)).arrayBuffer()])
+					);
+					return Object.fromEntries(entries);
+				};
+
+				decode.stemDecodeSession.resetLane();
+				decode.stemDecodeSession.resetPool();
+
+				const fourBytes = await fetchParts(four);
+				const twoBytes = {
+					vocals: fourBytes.vocals,
+					instrumental: fourBytes.drums
+				};
+
+				const reference4 = Object.fromEntries(
+					await Promise.all(
+						four.map(async (part) => [part, await ctx.decodeAudioData(fourBytes[part].slice(0))])
+					)
 				);
-				return Object.fromEntries(entries);
-			};
+				const reference2 = Object.fromEntries(
+					await Promise.all(
+						two.map(async (part) => [part, await ctx.decodeAudioData(twoBytes[part].slice(0))])
+					)
+				);
 
-			// The reference decode, straight through decodeAudioData: what the
-			// worker output has to agree with.
-			const referenceBytes = await fresh();
-			const baseline = Object.fromEntries(
-				await Promise.all(
-					parts.map(async (p) => [p, await ctx.decodeAudioData(referenceBytes[p])])
-				)
-			);
+				await decode.decodeStemParts(ctx, fourBytes, four);
+				await decode.decodeStemParts(ctx, fourBytes, four);
+				const lane4AfterFour = decode.stemDecodeSession.lane(4);
+				const lane2AfterFour = decode.stemDecodeSession.lane(2);
 
-			// Let the module calibrate exactly as a session would: two whole
-			// loads, one lane each, then whatever it decided. The pool warms
-			// during the workers trial, so spawn and wasm compile stay out of
-			// the timed comparison below - the app pays that once per page.
-			const warmT0 = performance.now();
-			await decode.decodeStemParts(ctx, await fresh(), parts);
-			await decode.decodeStemParts(ctx, await fresh(), parts);
-			const warmMs = Math.round(performance.now() - warmT0);
-			const pooled = decode.stemDecodeSession.pooled();
-			const chosenLane = decode.stemDecodeSession.lane(PARTS.length);
+				await decode.decodeStemParts(ctx, twoBytes, two);
+				await decode.decodeStemParts(ctx, twoBytes, two);
+				const lane2AfterTwo = decode.stemDecodeSession.lane(2);
+				const lane4AfterTwo = decode.stemDecodeSession.lane(4);
 
-			// Now time both lanes head to head, independently of what the
-			// calibration decided, so the two can be cross-checked. A run that
-			// only ever measured the chosen lane could not catch a wrong choice.
-			decode.stemDecodeSession.forceLane('main-thread');
-			const baselineBytes2 = await fresh();
-			const tb = performance.now();
-			await decode.decodeStemParts(ctx, baselineBytes2, parts);
-			const baselineMs = Math.round(performance.now() - tb);
+				const widths = {};
+				for (const [width, parts, bytes, reference] of [
+					[4, four, fourBytes, reference4],
+					[2, two, twoBytes, reference2]
+				]) {
+					decode.stemDecodeSession.forceLane('main-thread');
+					const tb = performance.now();
+					await decode.decodeStemParts(ctx, bytes, parts);
+					const baselineMs = Math.round(performance.now() - tb);
 
-			decode.stemDecodeSession.forceLane('workers');
-			const workerBytes = await fresh();
-			const t1 = performance.now();
-			const run = await decode.decodeStemParts(ctx, workerBytes, parts);
-			const workerMs = Math.round(performance.now() - t1);
+					decode.stemDecodeSession.forceLane('workers');
+					const t1 = performance.now();
+					const run = await decode.decodeStemParts(ctx, bytes, parts);
+					const workerMs = Math.round(performance.now() - t1);
 
-			// Bit-for-bit: FLAC is lossless and neither lane resamples.
-			let maxAbsDiff = 0;
-			let comparedSamples = 0;
-			for (const part of parts) {
-				const a = baseline[part];
-				const b = run.buffers[part];
-				if (a.length !== b.length || a.numberOfChannels !== b.numberOfChannels) {
-					return { shapeMismatch: part, a: a.length, b: b.length };
-				}
-				for (let ch = 0; ch < a.numberOfChannels; ch++) {
-					const x = a.getChannelData(ch);
-					const y = b.getChannelData(ch);
-					for (let i = 0; i < x.length; i += 97) {
-						const d = Math.abs(x[i] - y[i]);
-						if (d > maxAbsDiff) maxAbsDiff = d;
-						comparedSamples++;
+					let maxAbsDiff = 0;
+					let comparedSamples = 0;
+					for (const part of parts) {
+						const a = reference[part];
+						const b = run.buffers[part];
+						if (a.length !== b.length || a.numberOfChannels !== b.numberOfChannels) {
+							return {
+								shapeMismatch: { width, part, a: a.length, b: b.length }
+							};
+						}
+						for (let ch = 0; ch < a.numberOfChannels; ch++) {
+							const x = a.getChannelData(ch);
+							const y = b.getChannelData(ch);
+							for (let i = 0; i < x.length; i += 97) {
+								const d = Math.abs(x[i] - y[i]);
+								if (d > maxAbsDiff) maxAbsDiff = d;
+								comparedSamples++;
+							}
+						}
 					}
-				}
-			}
-			return {
-				reports: run.reports,
-				labels: decode.stemDecodeLabels(run.reports),
-				baselineMs,
-				workerMs,
-				warmMs,
-				pooled,
-				chosenLane,
 
-				maxAbsDiff,
-				comparedSamples,
-				frames: baseline[parts[0]].length,
-				sampleRate: baseline[parts[0]].sampleRate
-			};
-		}, PARTS);
+					widths[width] = {
+						chosenLane: width === 4 ? lane4AfterFour : lane2AfterTwo,
+						baselineMs,
+						workerMs,
+						reports: run.reports,
+						labels: decode.stemDecodeLabels(run.reports),
+						maxAbsDiff,
+						comparedSamples,
+						frames: reference[parts[0]].length,
+						sampleRate: reference[parts[0]].sampleRate,
+						pooled: decode.stemDecodeSession.pooled()
+					};
+				}
+
+				return {
+					independence: {
+						lane4AfterFour,
+						lane2AfterFour,
+						lane2AfterTwo,
+						lane4AfterTwo
+					},
+					widths
+				};
+			},
+			{ four: FOUR_PARTS, two: TWO_PARTS }
+		);
 		await browser.close();
 
-		console.log(`\n[${name}] ${result.frames} frames @ ${result.sampleRate} Hz, ${PARTS.length} parts`);
+		const engineLedger = { engine: name, widths: {} };
+
 		if (result.shapeMismatch !== undefined) {
-			console.log(`  FAIL shape mismatch on ${result.shapeMismatch}: ${result.a} vs ${result.b}`);
+			const sm = result.shapeMismatch;
+			console.log(
+				`\n[${name}] FAIL shape mismatch on ${sm.width}-part ${sm.part}: ${sm.a} vs ${sm.b}`
+			);
 			failures++;
 			ran.push(name);
 			continue;
 		}
-		console.log(`  labels:            ${JSON.stringify(result.labels)}`);
-		console.log(`  pooled decoders:   ${result.pooled}`);
-		console.log(`  lane chosen here:  ${result.chosenLane}`);
-		console.log(`  calibration cost:  ${result.warmMs} ms (2 whole loads, spawn + wasm inside)`);
-		console.log(`  decodeAudioData:   ${result.baselineMs} ms (4-way)`);
-		console.log(`  wasm in workers:   ${result.workerMs} ms (4-way, warm pool)`);
-		console.log(
-			`  speed-up:          ${(result.baselineMs / result.workerMs).toFixed(2)}x`
-		);
-		console.log(
-			`  max |sample diff|: ${result.maxAbsDiff} over ${result.comparedSamples} compared samples`
-		);
 
-		// THE check this run exists for: the lane the module chose by itself
-		// must be the lane the stopwatch says is faster. A rung that
-		// calibrates to the slower lane is worse than no rung.
-		const faster = result.baselineMs / result.workerMs;
-		// The SAME margin production applies. Anything else makes the oracle
-		// disagree with the implementation about a decision the implementation
-		// took on purpose.
-		const stopwatchSays = stopwatchLane(faster, LANE_MARGIN);
-		const agrees = result.chosenLane === stopwatchSays;
-		console.log(
-			`  calibration chose ${result.chosenLane}; stopwatch says ${stopwatchSays}` +
-				` (workers ${faster.toFixed(2)}x vs a ${LANE_MARGIN}x margin)` +
-				` -> ${agrees ? 'AGREE' : 'DISAGREE'}`
-		);
-		if (!agrees) {
-			console.log('  FAIL the runtime calibration picked the slower lane');
-			failures++;
-		}
-		const tookWorkers = result.reports.every((r) => r.viaWorker && r.refusal === null);
-		if (!tookWorkers) {
-			console.log(`  FAIL the worker path was refused: ${JSON.stringify(result.reports)}`);
-			failures++;
-		}
-		// NOT bit-for-bit. Both decoders are lossless, but they scale a 16-bit
-		// sample to float by different conventions (/32768 vs /32767), which is
-		// a difference strictly below one LSB of the source. Anything at or
-		// above an LSB is a decoder disagreement, not a scaling convention.
-		if (result.maxAbsDiff >= LSB_16_BIT) {
+		for (const width of [4, 2]) {
+			const w = result.widths[width];
+			console.log(`\n[${name}] ${w.frames} frames @ ${w.sampleRate} Hz, ${width} parts`);
+			console.log(`  labels:            ${JSON.stringify(w.labels)}`);
+			console.log(`  pooled decoders:   ${w.pooled}`);
+			console.log(`  lane chosen here:  ${w.chosenLane}`);
+			console.log(`  decodeAudioData:   ${w.baselineMs} ms (${width}-way)`);
+			console.log(`  wasm in workers:   ${w.workerMs} ms (${width}-way, warm pool)`);
+			console.log(`  speed-up:          ${(w.baselineMs / w.workerMs).toFixed(2)}x`);
 			console.log(
-				`  FAIL decode disagreed by ${result.maxAbsDiff} >= one 16-bit LSB (${LSB_16_BIT})`
+				`  max |sample diff|: ${w.maxAbsDiff} over ${w.comparedSamples} compared samples`
+			);
+
+			const agreement = agreeLine({
+				chosenLane: w.chosenLane,
+				baselineMs: w.baselineMs,
+				workerMs: w.workerMs,
+				margin: LANE_MARGIN
+			});
+			console.log(agreement.text);
+			engineLedger.widths[width] = {
+				baselineMs: w.baselineMs,
+				workerMs: w.workerMs,
+				chosenLane: w.chosenLane,
+				agrees: agreement.agrees
+			};
+
+			if (!agreement.agrees) {
+				console.log('  FAIL the runtime calibration picked the slower lane');
+				failures++;
+			}
+			const tookWorkers = w.reports.every((r) => r.viaWorker && r.refusal === null);
+			if (!tookWorkers) {
+				console.log(`  FAIL the worker path was refused: ${JSON.stringify(w.reports)}`);
+				failures++;
+			}
+			if (w.maxAbsDiff >= LSB_16_BIT) {
+				console.log(
+					`  FAIL decode disagreed by ${w.maxAbsDiff} >= one 16-bit LSB (${LSB_16_BIT})`
+				);
+				failures++;
+			}
+			if (w.comparedSamples === 0) {
+				console.log(`  FAIL nothing was compared - the check cannot fail, so it proved nothing`);
+				failures++;
+			}
+			if (tookWorkers && w.maxAbsDiff < LSB_16_BIT && w.comparedSamples > 0 && agreement.agrees) {
+				console.log('  PASS worker path taken, output agrees to within one 16-bit LSB');
+			}
+		}
+
+		const ind = result.independence;
+		console.log(`  lane(2) after 4-part calibration: ${ind.lane2AfterFour ?? 'null'}`);
+		console.log(`  lane(2) after its own two trials: ${ind.lane2AfterTwo ?? 'null'}`);
+		if (!independenceHolds(ind)) {
+			console.log(
+				`  FAIL per-layout independence: lane(4) after four=${ind.lane4AfterFour}, ` +
+					`lane(2) after four=${ind.lane2AfterFour}, lane(2) after two=${ind.lane2AfterTwo}, ` +
+					`lane(4) after two=${ind.lane4AfterTwo}`
 			);
 			failures++;
+		} else {
+			console.log('  PASS per-layout lane verdicts stayed independent');
 		}
-		if (result.comparedSamples === 0) {
-			console.log(`  FAIL nothing was compared - the check cannot fail, so it proved nothing`);
-			failures++;
-		}
-		if (tookWorkers && result.maxAbsDiff < LSB_16_BIT && result.comparedSamples > 0) {
-			console.log('  PASS worker path taken, output agrees to within one 16-bit LSB');
-		}
+
+		ledgerEngineResults.push(engineLedger);
 		ran.push(name);
 	}
 	server.close();
@@ -427,6 +512,21 @@ async function main() {
 		);
 		process.exit(3);
 	}
+
+	if (CLI.appendLedger) {
+		const rows = laneTimingsToRows(ledgerEngineResults, {
+			date: new Date().toISOString().slice(0, 10),
+			round: 'issue-2057',
+			machine: hostname(),
+			source:
+				'pnpm test:live:stem-decode-workers PERF-STEMDEC-02, <N> distinct 44.1kHz FLACs, Playwright <engine>, warm pool, decode only',
+			captureId: 'issue-2057-stemdec-02',
+			fixtureCount: FOUR_PARTS.length
+		});
+		appendLedger(CLI.ledgerPath, rows);
+		console.log(`\nappended ${rows.length} KPI rows to ${CLI.ledgerPath}`);
+	}
+
 	console.log('\nOK');
 }
 
