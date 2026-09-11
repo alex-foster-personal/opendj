@@ -12,7 +12,9 @@ import math
 import re
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -170,30 +172,32 @@ def resolve_library_scale(path: Path | None) -> dict[str, Any]:
     return {"present": True, "track_count": track_count, "reason": None}
 
 
-def write_report(
-    *,
-    baseline_path: Path,
-    during_path: Path,
-    pressure_end_path: Path,
-    after_path: Path,
-    output_path: Path,
-    machine_tag: str,
-    hostname: str,
-    kind: str,
-    level: str,
-    duration_seconds: int,
-    harness_source_sha: str,
-    capture_implementation: str,
-    library_scale_fixture: Path | None = None,
-) -> dict[str, Any]:
+@dataclass(frozen=True)
+class SqueezeWriteRequest:
+    baseline_path: Path
+    during_path: Path
+    pressure_end_path: Path
+    after_path: Path
+    output_path: Path
+    machine_tag: str
+    hostname: str
+    kind: str
+    level: str
+    duration_seconds: int
+    harness_source_sha: str
+    capture_implementation: str
+    library_scale_fixture: Path | None = None
+
+
+def write_report(request: SqueezeWriteRequest) -> dict[str, Any]:
     """Validate four captures and write one squeeze report JSON document."""
     captures = {
         name: validate_capture(_load_json_object(path, f"{name} capture"), name)
         for name, path in (
-            ("baseline", baseline_path),
-            ("during", during_path),
-            ("pressure-end", pressure_end_path),
-            ("after", after_path),
+            ("baseline", request.baseline_path),
+            ("during", request.during_path),
+            ("pressure-end", request.pressure_end_path),
+            ("after", request.after_path),
         )
     }
     app_build_shas = {capture["app_build_sha"] for capture in captures.values()}
@@ -206,38 +210,40 @@ def write_report(
     if len(xrun_session_ids) != 1:
         _error("xrun_session_id changed between captures; report rejected")
     ordered_xruns = [captures[phase]["xruns"] for phase in PHASES]
-    if any(later < earlier for earlier, later in zip(ordered_xruns, ordered_xruns[1:])):
+    if any(later < earlier for earlier, later in pairwise(ordered_xruns)):
         _error("xruns regressed between captures; report rejected")
 
     report = {
         "schema_version": SCHEMA_VERSION,
-        "captured_at": datetime.now(timezone.utc).isoformat(),
-        "machine_tag": machine_tag,
-        "hostname": hostname,
-        "harness_source_sha": harness_source_sha,
+        "captured_at": datetime.now(UTC).isoformat(),
+        "machine_tag": request.machine_tag,
+        "hostname": request.hostname,
+        "harness_source_sha": request.harness_source_sha,
         "harness_source_dirty": False,
-        "capture_implementation": capture_implementation,
+        "capture_implementation": request.capture_implementation,
         "measured_app_build_sha": app_build_shas.pop(),
         "measured_app_build_dirty": False,
         "measured_frontend_build_sha": frontend_build_shas.pop(),
         "measured_frontend_build_dirty": False,
         "xrun_session_id": xrun_session_ids.pop(),
-        "library_scale": resolve_library_scale(library_scale_fixture),
+        "library_scale": resolve_library_scale(request.library_scale_fixture),
         "pressure": {
-            "kind": kind,
-            "level": level,
-            "duration_seconds": int(duration_seconds),
-            "simulated_notification_only": kind == "memory-notify",
+            "kind": request.kind,
+            "level": request.level,
+            "duration_seconds": int(request.duration_seconds),
+            "simulated_notification_only": request.kind == "memory-notify",
         },
         "captures": captures,
         "during_minus_baseline": {
-            "deck_load_ms": captures["during"]["deck_load_ms"] - captures["baseline"]["deck_load_ms"],
+            "deck_load_ms": (
+                captures["during"]["deck_load_ms"] - captures["baseline"]["deck_load_ms"]
+            ),
             "xruns": captures["pressure-end"]["xruns"] - captures["baseline"]["xruns"],
             "ui_latency_ms": captures["during"]["ui_latency_ms"]
             - captures["baseline"]["ui_latency_ms"],
         },
     }
-    output_path.write_text(
+    request.output_path.write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
@@ -261,14 +267,15 @@ def compare_reports(a: dict[str, Any], b: dict[str, Any]) -> None:
             if key not in report:
                 _error(f"{label} missing required field {key}")
         for phase in PHASES:
-            captures = report.get("captures")
-            if not isinstance(captures, dict) or phase not in captures:
+            captures_obj = report.get("captures")
+            if not isinstance(captures_obj, dict) or phase not in captures_obj:
                 _error(f"{label} missing capture phase {phase}")
-            capture = captures[phase]
-            for name in REQUIRED_CAPTURE_KPIS + ("app_build_sha",):
-                if name not in capture:
-                    _error(f"{label} {phase} capture missing required field {name}")
-            _validate_report_capture(label, phase, capture)
+            else:
+                capture = captures_obj[phase]
+                for name in (*REQUIRED_CAPTURE_KPIS, "app_build_sha"):
+                    if name not in capture:
+                        _error(f"{label} {phase} capture missing required field {name}")
+                _validate_report_capture(label, phase, capture)
 
     if a.get("capture_implementation") != b.get("capture_implementation"):
         _error("capture_implementation differs between reports; comparison rejected")
@@ -294,19 +301,21 @@ def _cmd_validate(args: argparse.Namespace) -> None:
 
 def _cmd_write(args: argparse.Namespace) -> None:
     write_report(
-        baseline_path=args.baseline,
-        during_path=args.during,
-        pressure_end_path=args.pressure_end,
-        after_path=args.after,
-        output_path=args.output,
-        machine_tag=args.machine_tag,
-        hostname=args.hostname,
-        kind=args.kind,
-        level=args.level,
-        duration_seconds=args.duration,
-        harness_source_sha=args.harness_source_sha,
-        capture_implementation=args.capture_implementation,
-        library_scale_fixture=args.library_scale_fixture,
+        SqueezeWriteRequest(
+            baseline_path=args.baseline,
+            during_path=args.during,
+            pressure_end_path=args.pressure_end,
+            after_path=args.after,
+            output_path=args.output,
+            machine_tag=args.machine_tag,
+            hostname=args.hostname,
+            kind=args.kind,
+            level=args.level,
+            duration_seconds=args.duration,
+            harness_source_sha=args.harness_source_sha,
+            capture_implementation=args.capture_implementation,
+            library_scale_fixture=args.library_scale_fixture,
+        )
     )
 
 

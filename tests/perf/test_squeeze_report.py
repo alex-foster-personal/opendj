@@ -11,6 +11,7 @@ import pytest
 
 from scripts.perf.squeeze_report import (
     LIBRARY_SCALE_MIN_TRACKS,
+    SqueezeWriteRequest,
     compare_reports,
     main,
     resolve_library_scale,
@@ -59,6 +60,31 @@ def _write_four_captures(tmp_path: Path) -> dict[str, Path]:
     return paths
 
 
+def _report_request(
+    paths: dict[str, Path],
+    output: Path,
+    *,
+    machine_tag: str = "silver-squeeze-cpu-80",
+    hostname: str = "silver",
+    library_scale_fixture: Path | None = None,
+) -> SqueezeWriteRequest:
+    return SqueezeWriteRequest(
+        baseline_path=paths["baseline"],
+        during_path=paths["during"],
+        pressure_end_path=paths["pressure-end"],
+        after_path=paths["after"],
+        output_path=output,
+        machine_tag=machine_tag,
+        hostname=hostname,
+        kind="cpu",
+        level="80",
+        duration_seconds=60,
+        harness_source_sha=SHA,
+        capture_implementation=f"/tmp/capture.sh@{SHA}",
+        library_scale_fixture=library_scale_fixture,
+    )
+
+
 @pytest.mark.requirement("PERFMODE-06")
 def test_dirty_app_build_is_rejected() -> None:
     """If app_build_dirty is true, then validate_capture rejects it."""
@@ -75,20 +101,7 @@ def test_write_report_rejects_dirty_app_build(tmp_path: Path) -> None:
     _write_capture(paths["baseline"], dirty)
     output = tmp_path / "report.json"
     with pytest.raises(SystemExit):
-        write_report(
-            baseline_path=paths["baseline"],
-            during_path=paths["during"],
-            pressure_end_path=paths["pressure-end"],
-            after_path=paths["after"],
-            output_path=output,
-            machine_tag="silver-squeeze-cpu-80",
-            hostname="silver",
-            kind="cpu",
-            level="80",
-            duration_seconds=60,
-            harness_source_sha=SHA,
-            capture_implementation=f"/tmp/capture.sh@{SHA}",
-        )
+        write_report(_report_request(paths, output))
     assert not output.exists()
 
 
@@ -97,20 +110,7 @@ def test_finished_report_contains_required_kpis(tmp_path: Path) -> None:
     """If four valid captures exist, then write_report emits the required schema."""
     paths = _write_four_captures(tmp_path)
     output = tmp_path / "report.json"
-    report = write_report(
-        baseline_path=paths["baseline"],
-        during_path=paths["during"],
-        pressure_end_path=paths["pressure-end"],
-        after_path=paths["after"],
-        output_path=output,
-        machine_tag="silver-squeeze-cpu-80",
-        hostname="silver",
-        kind="cpu",
-        level="80",
-        duration_seconds=60,
-        harness_source_sha=SHA,
-        capture_implementation=f"/tmp/capture.sh@{SHA}",
-    )
+    report = write_report(_report_request(paths, output))
     assert output.exists()
     assert report["measured_app_build_sha"] == SHA
     assert report["machine_tag"] == "silver-squeeze-cpu-80"
@@ -148,33 +148,14 @@ def test_compare_two_hosts_with_same_schema(tmp_path: Path) -> None:
     paths = _write_four_captures(tmp_path)
     report_a_path = tmp_path / "silver.json"
     report_b_path = tmp_path / "air.json"
+    write_report(_report_request(paths, report_a_path))
     write_report(
-        baseline_path=paths["baseline"],
-        during_path=paths["during"],
-        pressure_end_path=paths["pressure-end"],
-        after_path=paths["after"],
-        output_path=report_a_path,
-        machine_tag="silver-squeeze-cpu-80",
-        hostname="silver",
-        kind="cpu",
-        level="80",
-        duration_seconds=60,
-        harness_source_sha=SHA,
-        capture_implementation=f"/tmp/capture.sh@{SHA}",
-    )
-    write_report(
-        baseline_path=paths["baseline"],
-        during_path=paths["during"],
-        pressure_end_path=paths["pressure-end"],
-        after_path=paths["after"],
-        output_path=report_b_path,
-        machine_tag="air-squeeze-cpu-80",
-        hostname="air",
-        kind="cpu",
-        level="80",
-        duration_seconds=60,
-        harness_source_sha=SHA,
-        capture_implementation=f"/tmp/capture.sh@{SHA}",
+        _report_request(
+            paths,
+            report_b_path,
+            machine_tag="air-squeeze-cpu-80",
+            hostname="air",
+        )
     )
     report_a = json.loads(report_a_path.read_text(encoding="utf-8"))
     report_b = json.loads(report_b_path.read_text(encoding="utf-8"))
@@ -185,7 +166,8 @@ def test_compare_two_hosts_with_same_schema(tmp_path: Path) -> None:
 def test_compare_rejects_missing_required_kpi(capsys: pytest.CaptureFixture[str]) -> None:
     """If a required KPI is missing, then compare rejects rather than filling zero."""
     complete = json.loads((FIXTURES / "silver-report.json").read_text(encoding="utf-8"))
-    broken = json.loads((FIXTURES / "air-report-missing-ui-latency.json").read_text(encoding="utf-8"))
+    broken_path = FIXTURES / "air-report-missing-ui-latency.json"
+    broken = json.loads(broken_path.read_text(encoding="utf-8"))
     with pytest.raises(SystemExit):
         compare_reports(complete, broken)
     err = capsys.readouterr().err
@@ -220,21 +202,7 @@ def test_two_track_fixture_is_not_library_scale(tmp_path: Path) -> None:
 
     paths = _write_four_captures(tmp_path)
     output = tmp_path / "report.json"
-    report = write_report(
-        baseline_path=paths["baseline"],
-        during_path=paths["during"],
-        pressure_end_path=paths["pressure-end"],
-        after_path=paths["after"],
-        output_path=output,
-        machine_tag="silver-squeeze-cpu-80",
-        hostname="silver",
-        kind="cpu",
-        level="80",
-        duration_seconds=60,
-        harness_source_sha=SHA,
-        capture_implementation=f"/tmp/capture.sh@{SHA}",
-        library_scale_fixture=fixture,
-    )
+    report = write_report(_report_request(paths, output, library_scale_fixture=fixture))
     assert report["library_scale"]["present"] is False
 
 
@@ -254,33 +222,14 @@ def test_cli_compare_two_reports(tmp_path: Path) -> None:
     paths = _write_four_captures(tmp_path)
     report_a = tmp_path / "a.json"
     report_b = tmp_path / "b.json"
+    write_report(_report_request(paths, report_a))
     write_report(
-        baseline_path=paths["baseline"],
-        during_path=paths["during"],
-        pressure_end_path=paths["pressure-end"],
-        after_path=paths["after"],
-        output_path=report_a,
-        machine_tag="silver-squeeze-cpu-80",
-        hostname="silver",
-        kind="cpu",
-        level="80",
-        duration_seconds=60,
-        harness_source_sha=SHA,
-        capture_implementation=f"/tmp/capture.sh@{SHA}",
-    )
-    write_report(
-        baseline_path=paths["baseline"],
-        during_path=paths["during"],
-        pressure_end_path=paths["pressure-end"],
-        after_path=paths["after"],
-        output_path=report_b,
-        machine_tag="air-squeeze-cpu-80",
-        hostname="air",
-        kind="cpu",
-        level="80",
-        duration_seconds=60,
-        harness_source_sha=SHA,
-        capture_implementation=f"/tmp/capture.sh@{SHA}",
+        _report_request(
+            paths,
+            report_b,
+            machine_tag="air-squeeze-cpu-80",
+            hostname="air",
+        )
     )
     main(["compare", str(report_a), str(report_b)])
 
