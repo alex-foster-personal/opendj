@@ -195,6 +195,15 @@ TABLES: dict[str, str] = {
         "and deleted only by tombstone: the licensing purge stamps "
         "`deleted_at` so peers stop hydrating the words too."
     ),
+    # ----- feedback --------------------------------------------------------
+    "feedback_pins": (
+        "One in-app feedback comment pin, shared across every machine on "
+        "the same CloudSync hub. `doc` is the pin exactly as "
+        "`GET /api/v1/feedback/comments` returns it; `updated_at` is when it "
+        "was last edited (not when it was synced), which is what the "
+        "last-writer-wins merge orders on. A set `deleted_at` means the pin "
+        "was archived somewhere and stays archived everywhere."
+    ),
     # ----- curation ------------------------------------------------------
     "pairings": (
         "One asserted relationship between two tracks (mixes well into, "

@@ -88,6 +88,16 @@ TABLE_DOCS: dict[str, str] = {
         "overridden records a human forcing a write past a non-passing "
         "verdict."
     ),
+    # ----- v11 (FBSYNC-01, ADR-0013) ----------------------------------------
+    "feedback_pins": (
+        "One row per Open DJ feedback comment pin, carrying the whole pin "
+        "as JSON (text, page, anchor, x/y, status, replies, author, build "
+        "and environment stamps, attachment metadata). Synced through "
+        "CloudSync so every machine enrolled to the same hub sees the same "
+        "pins; the per-machine feedback/comments.json store is reconciled "
+        "into and out of it. Archive is a tombstone (deleted_at), never a "
+        "DELETE."
+    ),
     # ----- v10 (specs/karaoke-lyrics-operational-plan.md D13.1) ------------
     "lyric_verdict": (
         "One row per track holding the karaoke lyrics verdict (vocal, "

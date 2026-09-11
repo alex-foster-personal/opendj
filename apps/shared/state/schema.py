@@ -24,13 +24,16 @@ from .migrations import _V1, _V2, _V3, _V4, _V5
 from .migrations_v6_v8 import _V6, _V7, _V8
 from .migrations_v9 import _V9
 from .migrations_v10 import _V10
+from .migrations_v11 import _V11
 
-SCHEMA_VERSION: int = 10
+SCHEMA_VERSION: int = 11
 
 
 # Each element is the set of SQL statements that take schema from N to N+1.
 # MIGRATIONS[0] runs when going from v0 (empty) to v1.
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10]
+MIGRATIONS: list[list[str]] = [
+    _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11,
+]
 
 
 def _ensure_meta(conn: sqlite3.Connection) -> None:
@@ -113,10 +116,13 @@ TABLES: tuple[str, ...] = (
     "enrollment_grants",
     # v10 (karaoke lyrics verdict, specs/karaoke-lyrics-operational-plan.md D13.1)
     "lyric_verdict",
+    # v11 (FBSYNC-01, docs/decisions/ADR-0013-feedback-pin-cloudsync.md)
+    "feedback_pins",
 )
 """Domain tables created by :data:`MIGRATIONS`. ``schema_meta`` is
 intentionally excluded -- it is infrastructure, not domain data. Four of
-them arrived in v8, two in v9 and ``lyric_verdict`` in v10."""
+them arrived in v8, two in v9, ``lyric_verdict`` in v10 and
+``feedback_pins`` in v11."""
 
 VIEWS: tuple[str, ...] = (
     "tracks_available",

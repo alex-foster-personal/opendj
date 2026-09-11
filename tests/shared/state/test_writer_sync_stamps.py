@@ -40,6 +40,7 @@ Acceptance criteria, one assertion block each:
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -57,6 +58,7 @@ from apps.spotify.state_writer import write_playlist_and_pending
 from apps.sync_hub import protocol as hub_protocol
 from apps.webui.server.app import create_app
 from apps.webui.server.routes import cloudsync as cloudsync_routes
+from apps.webui.server.routes import feedback_replica
 from apps.webui.server.sqlite_backend import SqliteBackend
 
 pytestmark = pytest.mark.requirement("INFRA-01")
@@ -278,6 +280,28 @@ def _exercise_lyric_verdict_writes(
         )
 
 
+def _exercise_feedback_pin_reconcile(conn: sqlite3.Connection, tmp_path: Path) -> None:
+    """Drive the ONLY ``feedback_pins`` writer (schema v11, FBSYNC-01).
+
+    Through the real bridge, not a hand-rolled INSERT: the reconcile is the
+    writer, and what this pins is that a pin reaching the table from a
+    ``comments.json`` is always stamped and logged -- on first export AND on
+    the re-export of an edit, the ON CONFLICT branch.
+    """
+    root = tmp_path / "feedback"
+    root.mkdir(parents=True, exist_ok=True)
+    pin = {
+        "id": "tripwirepin1", "x_pct": 10.0, "y_pct": 20.0, "anchor": None,
+        "page": "/performance", "text": "tripwire", "created_at": _TS,
+        "build": {"git_sha": "deadbeef", "built_at_utc": _TS, "source": "repo"},
+    }
+    (root / "comments.json").write_text(json.dumps({"comments": [pin]}), encoding="utf-8")
+    feedback_replica.reconcile(conn, root)
+    edited = {**pin, "status": "fixed", "updated_at": "2026-08-30T10:00:00+00:00"}
+    (root / "comments.json").write_text(json.dumps({"comments": [edited]}), encoding="utf-8")
+    feedback_replica.reconcile(conn, root)
+
+
 def _exercise_every_writer_path(
     conn: sqlite3.Connection, tmp_path: Path, db_path: Path
 ) -> None:
@@ -288,6 +312,7 @@ def _exercise_every_writer_path(
     _exercise_spotify_importer(conn, tmp_path)
     _exercise_hydration_writers(conn, tmp_path, machine_id)
     _exercise_lyric_verdict_writes(conn, machine_id)
+    _exercise_feedback_pin_reconcile(conn, tmp_path)
 
 
 # ----- helpers -------------------------------------------------------------
@@ -425,6 +450,11 @@ def test_the_coverage_check_catches_a_writer_that_bypasses_the_chokepoint(
             "INSERT INTO playlist_pins(machine_id, playlist_id, mode, "
             "updated_at, origin_device_id) VALUES (?, ?, 'cached', ?, ?)",
             (machine_id, f"spotify:{SPOTIFY_PL_ID}", stamp, machine_id),
+        ),
+        "feedback_pins": (
+            "INSERT INTO feedback_pins(pin_id, doc, updated_at, origin_device_id) "
+            "VALUES ('rawpin000000', '{\"id\": \"rawpin000000\"}', ?, ?)",
+            (stamp, machine_id),
         ),
     }
     assert set(bypasses) == set(SYNCED_TABLES), (

@@ -379,10 +379,13 @@ def test_a_stale_index_name_on_a_renamed_aside_table_fails_the_migration(
         with pytest.raises(sqlite3.OperationalError, match="idx_lyric_verdict_red"):
             state_schema.apply_migrations(conn)
         # Every rung below v10 (v9 enrollment included) succeeds and stamps;
-        # only the lyric_verdict rung fails, so the DB sits one below the top.
+        # the lyric_verdict rung fails, so the DB sits one below v10 and no
+        # later rung (v11 feedback_pins) ever runs. Pinned to the lyric rung,
+        # not to SCHEMA_VERSION, so appending a rung cannot move it.
+        lyric_verdict_rung = 10
         assert conn.execute(
             "SELECT MAX(version) FROM schema_meta"
-        ).fetchone()[0] == state_schema.SCHEMA_VERSION - 1, (
+        ).fetchone()[0] == lyric_verdict_rung - 1, (
             "a failed step must not stamp its version"
         )
     finally:
