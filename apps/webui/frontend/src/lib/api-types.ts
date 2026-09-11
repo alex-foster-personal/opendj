@@ -5389,6 +5389,11 @@ export interface components {
             machine: components["schemas"]["MachineModel"];
             /** Schema Version */
             schema_version: number;
+            /**
+             * Wire Version
+             * @description sync wire version; absent on pre-split builds
+             */
+            wire_version?: number | null;
         };
         /** EnrollResponse */
         EnrollResponse: {
@@ -5898,6 +5903,11 @@ export interface components {
             machines?: components["schemas"]["MachineModel"][];
             /** Schema Version */
             schema_version: number;
+            /**
+             * Wire Version
+             * @description sync wire version; absent on pre-split builds
+             */
+            wire_version?: number | null;
         };
         /** HelloResponse */
         HelloResponse: {
@@ -5923,6 +5933,8 @@ export interface components {
             schema_version: number;
             /** Seq */
             seq: number;
+            /** Wire Version */
+            wire_version: number;
         };
         /** HistoryApplyOut */
         HistoryApplyOut: {
@@ -7520,6 +7532,11 @@ export interface components {
             rows: components["schemas"]["RowModel"][];
             /** Schema Version */
             schema_version: number;
+            /**
+             * Wire Version
+             * @description sync wire version; absent on pre-split builds
+             */
+            wire_version?: number | null;
         };
         /** PushResponse */
         PushResponse: {
@@ -8383,6 +8400,8 @@ export interface components {
             schema_version: number;
             /** Seq */
             seq: number;
+            /** Wire Version */
+            wire_version: number;
         };
         /**
          * StemManifestOut
@@ -8635,6 +8654,23 @@ export interface components {
             last_request_at: string | null;
             /** Seconds Since Request */
             seconds_since_request: number | null;
+        };
+        /**
+         * SyncErrorBody
+         * @description The ``detail`` of every sync refusal: a stable code and prose.
+         */
+        SyncErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * SyncErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        SyncErrorResponse: {
+            detail: components["schemas"]["SyncErrorBody"];
         };
         /** SyncPolicyOut */
         SyncPolicyOut: {
@@ -15618,7 +15654,7 @@ export interface operations {
                     "application/json": components["schemas"]["EnrollErrorResponse"];
                 };
             };
-            /** @description The machine is already owned by somebody else (SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked (SYNC_ENROLL_REVOKED), or the enrollment was otherwise refused (SYNC_ENROLL). */
+            /** @description The machine is already owned by somebody else (SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked (SYNC_ENROLL_REVOKED), the enrollment was otherwise refused (SYNC_ENROLL), or the caller speaks another sync wire version (SYNC_WIRE_VERSION, or SYNC_SCHEMA_VERSION for a pre-split build). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15675,6 +15711,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncErrorResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -15774,6 +15819,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncErrorResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

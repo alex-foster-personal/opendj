@@ -42,6 +42,7 @@ from apps.sync_hub import (
     protocol,
     service_enroll,
     spoke_credential,
+    wire_version,
 )
 from apps.sync_hub.client_transport_ops import state_db_path
 from apps.sync_hub.transport import API_PREFIX, HttpTransport, HubTransport
@@ -178,6 +179,7 @@ def enroll(
         {
             "machine": machine.to_wire(),
             "schema_version": state_schema.SCHEMA_VERSION,
+            "wire_version": wire_version.WIRE_VERSION,
             "credential": {"kind": credential_kind, "value": credential_value},
         },
     )

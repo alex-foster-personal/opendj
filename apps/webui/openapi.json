@@ -4069,6 +4069,18 @@
           "schema_version": {
             "title": "Schema Version",
             "type": "integer"
+          },
+          "wire_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sync wire version; absent on pre-split builds",
+            "title": "Wire Version"
           }
         },
         "required": [
@@ -5347,6 +5359,18 @@
           "schema_version": {
             "title": "Schema Version",
             "type": "integer"
+          },
+          "wire_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sync wire version; absent on pre-split builds",
+            "title": "Wire Version"
           }
         },
         "required": [
@@ -5407,11 +5431,16 @@
           "seq": {
             "title": "Seq",
             "type": "integer"
+          },
+          "wire_version": {
+            "title": "Wire Version",
+            "type": "integer"
           }
         },
         "required": [
           "hub_machine_id",
           "schema_version",
+          "wire_version",
           "seq",
           "machines",
           "hub_generation",
@@ -9657,6 +9686,18 @@
           "schema_version": {
             "title": "Schema Version",
             "type": "integer"
+          },
+          "wire_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sync wire version; absent on pre-split builds",
+            "title": "Wire Version"
           }
         },
         "required": [
@@ -11973,11 +12014,16 @@
           "seq": {
             "title": "Seq",
             "type": "integer"
+          },
+          "wire_version": {
+            "title": "Wire Version",
+            "type": "integer"
           }
         },
         "required": [
           "hub_machine_id",
           "schema_version",
+          "wire_version",
           "seq",
           "machines",
           "row_counts",
@@ -12499,6 +12545,38 @@
           "seconds_since_request"
         ],
         "title": "SurfaceActivityOut",
+        "type": "object"
+      },
+      "SyncErrorBody": {
+        "description": "The ``detail`` of every sync refusal: a stable code and prose.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "SyncErrorBody",
+        "type": "object"
+      },
+      "SyncErrorResponse": {
+        "description": "FastAPI wraps an ``HTTPException`` detail under ``detail``.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/SyncErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "SyncErrorResponse",
         "type": "object"
       },
       "SyncPolicyOut": {
@@ -23693,7 +23771,7 @@
                 }
               }
             },
-            "description": "The machine is already owned by somebody else (SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked (SYNC_ENROLL_REVOKED), or the enrollment was otherwise refused (SYNC_ENROLL)."
+            "description": "The machine is already owned by somebody else (SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked (SYNC_ENROLL_REVOKED), the enrollment was otherwise refused (SYNC_ENROLL), or the caller speaks another sync wire version (SYNC_WIRE_VERSION, or SYNC_SCHEMA_VERSION for a pre-split build)."
           },
           "422": {
             "content": {
@@ -23749,6 +23827,16 @@
           },
           "401": {
             "description": "hello refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncErrorResponse"
+                }
+              }
+            },
+            "description": "The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE."
           },
           "422": {
             "content": {
@@ -23890,6 +23978,16 @@
           },
           "401": {
             "description": "push refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncErrorResponse"
+                }
+              }
+            },
+            "description": "The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE."
           },
           "422": {
             "content": {

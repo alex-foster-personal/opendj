@@ -28,7 +28,7 @@ import pytest
 
 from apps.shared.state import machine_identity
 from apps.shared.state import schema as state_schema
-from apps.sync_hub import client, enrollment, enrollment_credentials, service
+from apps.sync_hub import client, enrollment, enrollment_credentials, service, wire_version
 from tests.cloudsync.conftest import (
     ENROLL_OTHER_EMAIL,
     ENROLL_OTHER_SUB,
@@ -400,6 +400,7 @@ def test_an_omitted_ownership_fails_loudly_instead_of_reading_as_unowned() -> No
     common = {
         "hub_machine_id": "hub-1",
         "schema_version": state_schema.SCHEMA_VERSION,
+        "wire_version": wire_version.WIRE_VERSION,
         "seq": 0,
         "machines": [],
         "hub_generation": "gen-1",

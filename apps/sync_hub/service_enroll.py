@@ -94,8 +94,9 @@ ENROLL_RESPONSES: dict[int | str, dict[str, object]] = {
         "description": (
             "The machine is already owned by somebody else "
             "(SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked "
-            "(SYNC_ENROLL_REVOKED), or the enrollment was otherwise refused "
-            "(SYNC_ENROLL)."
+            "(SYNC_ENROLL_REVOKED), the enrollment was otherwise refused "
+            "(SYNC_ENROLL), or the caller speaks another sync wire version "
+            "(SYNC_WIRE_VERSION, or SYNC_SCHEMA_VERSION for a pre-split build)."
         ),
     },
     503: {

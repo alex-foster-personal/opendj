@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.state import schema as state_schema
-from apps.sync_hub import capabilities, engine, protocol
+from apps.sync_hub import capabilities, engine, protocol, wire_version
 from apps.sync_hub.transport import API_PREFIX, HubTransport, SyncTransportError
 
 #: What this build advertises on every request that can be answered
@@ -182,6 +182,7 @@ def _push_in_batches(
             {
                 "machine_id": machine_id,
                 "schema_version": state_schema.SCHEMA_VERSION,
+                "wire_version": wire_version.WIRE_VERSION,
                 "rows": [change.to_wire() for change in chunk],
                 "machines": wire_fleet,
                 "capabilities": list(_ADVERTISED),

@@ -67,8 +67,10 @@ from apps.sync_hub import (
     service_enroll,
     service_shortfall,
     service_storage,
+    wire_version,
 )
 from apps.sync_hub.service_models import (
+    SYNC_VERSION_RESPONSES,
     DigestResponse,
     EnrollRequest,
     HelloRequest,
@@ -160,17 +162,12 @@ def _transaction(conn: sqlite3.Connection) -> Iterator[None]:
     conn.execute("COMMIT")
 
 
-def _require_schema_version(offered: int) -> None:
-    if offered != state_schema.SCHEMA_VERSION:
+def _require_same_wire(offered_wire: int | None, offered_schema: int) -> None:
+    """409 before any row is read or written; the rule is in :mod:`wire_version`."""
+    refusal = wire_version.incompatibility(offered_wire, offered_schema, peer="peer")
+    if refusal is not None:
         raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "SYNC_SCHEMA_VERSION",
-                "message": (
-                    f"peer is on schema v{offered}, hub is on "
-                    f"v{state_schema.SCHEMA_VERSION}; migrate before syncing."
-                ),
-            },
+            status_code=409, detail={"code": refusal.code, "message": refusal.message}
         )
 
 
@@ -322,10 +319,14 @@ def _refuse_unless_capable(
 # ----- endpoints -----------------------------------------------------------
 
 
-@router.post("/hello", response_model=HelloResponse, responses=_auth("hello"))
+@router.post(
+    "/hello",
+    response_model=HelloResponse,
+    responses={**SYNC_VERSION_RESPONSES, **_auth("hello")},
+)
 def hello(request: Request, payload: HelloRequest) -> HelloResponse:
     """Register a spoke in ``machines`` and report the hub's id and seq."""
-    _require_schema_version(payload.schema_version)
+    _require_same_wire(payload.wire_version, payload.schema_version)
     with _hub_conn(request) as conn:
         credential = _require_credential(request, conn, payload.machine.machine_id, "hello")
         try:
@@ -352,6 +353,7 @@ def hello(request: Request, payload: HelloRequest) -> HelloResponse:
         return HelloResponse(
             hub_machine_id=hub_machine_id,
             schema_version=state_schema.SCHEMA_VERSION,
+            wire_version=wire_version.WIRE_VERSION,
             seq=engine.current_seq(conn),
             machines=_machine_models(conn),
             hub_generation=_generation(request, conn),
@@ -383,7 +385,7 @@ def enroll(
     browser and no local Google session enroll at all. One transaction, so a
     refusal registers nothing. Idempotent: a re-run answers ``created: false``.
     """
-    _require_schema_version(payload.schema_version)
+    _require_same_wire(payload.wire_version, payload.schema_version)
     machine = _to_machines([payload.machine])[0]
     # Before BEGIN: verification may fetch Google's JWKS, and an
     # unauthenticated caller must never hold the write lock across that.
@@ -404,7 +406,11 @@ def enroll(
 @router.post(
     "/push",
     response_model=PushResponse,
-    responses={**service_storage.PUSH_STORAGE_RESPONSES, **_auth("push")},
+    responses={
+        **service_storage.PUSH_STORAGE_RESPONSES,
+        **_auth("push"),
+        **SYNC_VERSION_RESPONSES,
+    },
 )
 def push(request: Request, payload: PushRequest) -> PushResponse:
     """Merge offered rows under last-writer-wins; append to ``hub_changelog``.
@@ -420,7 +426,7 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
     it -- an un-upgraded spoke reads ``accepted + rejected < offered`` as
     nothing at all and steps its push fence over the held row.
     """
-    _require_schema_version(payload.schema_version)
+    _require_same_wire(payload.wire_version, payload.schema_version)
     changes = _to_changes(payload.rows)
     fleet = _to_machines(payload.machines)
     with _hub_conn(request) as conn:
@@ -529,6 +535,7 @@ def status(
         return StatusResponse(
             hub_machine_id=hub_machine_id,
             schema_version=state_schema.SCHEMA_VERSION,
+            wire_version=wire_version.WIRE_VERSION,
             seq=seq,
             machines=machines,
             row_counts=counts,
