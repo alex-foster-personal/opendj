@@ -31,9 +31,21 @@ def track(
     rb_cue_db: bool = False,
     rb_ext_readable: bool = True,
     rb_pvdi: bool = False,
+    rb_pwav: list[float] | None = None,
+    rb_pwv2: list[float] | None = None,
+    rb_pwv3: list[float] | None = None,
+    rb_pwv4_luminance: list[float] | None = None,
+    rb_pwv5: list[float] | None = None,
+    rb_pwv6: dict[str, list[float]] | None = None,
+    rb_pwv7: dict[str, list[float]] | None = None,
+    own_preview: list[float] | None = None,
+    own_detail: list[float] | None = None,
+    own_triband: dict[str, list[float]] | None = None,
+    include_waveform: bool = False,
+    **extra: Any,
 ) -> dict[str, Any]:
     """One library-shaped row. Absent fields stay explicit None, never defaulted later."""
-    return {
+    row: dict[str, Any] = {
         "stable_id": stable_id,
         "present": present,
         "rb_bpm_x100": rb_bpm_x100,
@@ -46,13 +58,32 @@ def track(
         "rb_ext_readable": rb_ext_readable,
         "rb_pvdi": rb_pvdi,
     }
+    if include_waveform:
+        row.update(
+            {
+                "rb_pwav": rb_pwav,
+                "rb_pwv2": rb_pwv2,
+                "rb_pwv3": rb_pwv3,
+                "rb_pwv4_luminance": rb_pwv4_luminance,
+                "rb_pwv5": rb_pwv5,
+                "rb_pwv6": rb_pwv6,
+                "rb_pwv7": rb_pwv7,
+                "own_preview": own_preview,
+                "own_detail": own_detail,
+                "own_triband": own_triband,
+            }
+        )
+    row.update(extra)
+    return row
 
 
-def payload(tracks: list[dict[str, Any]], *, measured_at: str = MEASURED_AT) -> dict[str, Any]:
+def payload(
+    tracks: list[dict[str, Any]], *, measured_at: str = MEASURED_AT, round: int = 0
+) -> dict[str, Any]:
     """A scorable extract. Population totals are recorded so a scorer that
     divides by them can be caught; they are not the lane denominators.
     """
-    return {
+    body: dict[str, Any] = {
         "schema": 1,
         "measured_at": measured_at,
         "population": {
@@ -62,6 +93,9 @@ def payload(tracks: list[dict[str, Any]], *, measured_at: str = MEASURED_AT) -> 
         },
         "tracks": tracks,
     }
+    if round:
+        body["round"] = round
+    return body
 
 
 def round0_fixture() -> dict[str, Any]:
@@ -93,4 +127,204 @@ def round0_fixture() -> dict[str, Any]:
             track("ungradable-key-all", rb_key_scale_name="All"),
             track("absent-audio", present=False),
         ]
+    )
+
+
+def _ramp(n: int = 8, *, start: float = 0.1, step: float = 0.1) -> list[float]:
+    return [round(start + index * step, 4) for index in range(n)]
+
+
+def _triband(
+    n: int = 8,
+    *,
+    low_start: float = 0.1,
+    mid_start: float = 0.2,
+    high_start: float = 0.3,
+    step: float = 0.1,
+) -> dict[str, list[float]]:
+    return {
+        "low": [round(low_start + index * step, 4) for index in range(n)],
+        "mid": [round(mid_start + index * step, 4) for index in range(n)],
+        "high": [round(high_start + index * step, 4) for index in range(n)],
+    }
+
+
+def round1_fixture() -> dict[str, Any]:
+    """Round-1 fixture covering waveform preview, detail, and tri-band cases."""
+    preview_ramp = _ramp()
+    detail_ramp = _ramp(start=0.2, step=0.08)
+    triband_truth = _triband()
+    reversed_preview = list(reversed(preview_ramp))
+    partial_own = {
+        "low": _ramp(start=0.9, step=-0.05),
+        "mid": triband_truth["mid"],
+        "high": _ramp(start=0.05, step=0.02),
+    }
+    return payload(
+        [
+            track("exact-128"),
+            track(
+                "exact-key-c",
+                rb_key_scale_name="C",
+                own_key_camelot="8B",
+                own_key_openkey="1d",
+            ),
+            track(
+                "wave-preview-exact",
+                include_waveform=True,
+                rb_bpm_x100=None,
+                own_bpm=None,
+                rb_key_scale_name=None,
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_pwav=preview_ramp,
+                own_preview=preview_ramp,
+                rb_pwv3=detail_ramp,
+                own_detail=detail_ramp,
+                rb_pwv6=triband_truth,
+                own_triband=triband_truth,
+            ),
+            track(
+                "wave-detail-exact",
+                include_waveform=True,
+                rb_bpm_x100=None,
+                own_bpm=None,
+                rb_key_scale_name=None,
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_pwav=preview_ramp,
+                own_preview=preview_ramp,
+                rb_pwv3=detail_ramp,
+                own_detail=detail_ramp,
+                rb_pwv6=triband_truth,
+                own_triband=triband_truth,
+            ),
+            track(
+                "wave-triband-exact",
+                include_waveform=True,
+                rb_bpm_x100=None,
+                own_bpm=None,
+                rb_key_scale_name=None,
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_pwav=preview_ramp,
+                own_preview=preview_ramp,
+                rb_pwv3=detail_ramp,
+                own_detail=detail_ramp,
+                rb_pwv6=triband_truth,
+                own_triband=triband_truth,
+            ),
+            track(
+                "wave-preview-reversed",
+                include_waveform=True,
+                rb_bpm_x100=None,
+                own_bpm=None,
+                rb_key_scale_name=None,
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_pwav=preview_ramp,
+                own_preview=reversed_preview,
+                rb_pwv3=detail_ramp,
+                own_detail=detail_ramp,
+                rb_pwv6=triband_truth,
+                own_triband=triband_truth,
+            ),
+            track(
+                "wave-no-own",
+                include_waveform=True,
+                rb_bpm_x100=None,
+                own_bpm=None,
+                rb_key_scale_name=None,
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_pwav=preview_ramp,
+                own_preview=None,
+                rb_pwv3=detail_ramp,
+                own_detail=None,
+                rb_pwv6=triband_truth,
+                own_triband=None,
+            ),
+            track(
+                "wave-unreadable-ext",
+                include_waveform=True,
+                rb_bpm_x100=None,
+                own_bpm=None,
+                rb_key_scale_name=None,
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_ext_readable=False,
+                rb_pwav=preview_ramp,
+                own_preview=preview_ramp,
+                rb_pwv3=detail_ramp,
+                own_detail=detail_ramp,
+                rb_pwv6=triband_truth,
+                own_triband=triband_truth,
+            ),
+            track(
+                "wave-missing-preview",
+                include_waveform=True,
+                rb_bpm_x100=None,
+                own_bpm=None,
+                rb_key_scale_name=None,
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_pwav=None,
+                rb_pwv2=None,
+                own_preview=preview_ramp,
+                rb_pwv3=detail_ramp,
+                own_detail=detail_ramp,
+                rb_pwv6=triband_truth,
+                own_triband=triband_truth,
+            ),
+            track(
+                "wave-missing-triband",
+                include_waveform=True,
+                rb_bpm_x100=None,
+                own_bpm=None,
+                rb_key_scale_name=None,
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_pwav=preview_ramp,
+                own_preview=preview_ramp,
+                rb_pwv3=detail_ramp,
+                own_detail=detail_ramp,
+                rb_pwv6=None,
+                rb_pwv7=None,
+                own_triband=triband_truth,
+            ),
+            track(
+                "wave-missing-detail",
+                include_waveform=True,
+                rb_bpm_x100=None,
+                own_bpm=None,
+                rb_key_scale_name=None,
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_pwav=preview_ramp,
+                own_preview=preview_ramp,
+                rb_pwv3=None,
+                rb_pwv4_luminance=None,
+                rb_pwv5=None,
+                own_detail=detail_ramp,
+                rb_pwv6=triband_truth,
+                own_triband=triband_truth,
+            ),
+            track(
+                "wave-triband-partial",
+                include_waveform=True,
+                rb_bpm_x100=None,
+                own_bpm=None,
+                rb_key_scale_name=None,
+                own_key_camelot=None,
+                own_key_openkey=None,
+                rb_pwav=preview_ramp,
+                own_preview=preview_ramp,
+                rb_pwv3=detail_ramp,
+                own_detail=detail_ramp,
+                rb_pwv6=triband_truth,
+                own_triband=partial_own,
+            ),
+            track("absent-audio", present=False),
+        ],
+        round=1,
     )

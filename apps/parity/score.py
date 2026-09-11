@@ -13,6 +13,7 @@ from apps.parity.figure import LaneFigure, ParityThresholdNotCalibrated
 from apps.parity.key import score_key
 from apps.parity.lanes import DELEGATED_THIS_ROUND, LANE_IDS, SCORED_THIS_ROUND
 from apps.parity.remaining import classify_remaining
+from apps.parity.waveform import score_waveform
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class ParityReport:
     scorer_version: str
     measured_at: str
     figures: tuple[LaneFigure, ...]
+    round: int = 0
 
     def figure(self, lane: str) -> LaneFigure:
         for item in self.figures:
@@ -68,25 +70,49 @@ def score_payload(payload: dict[str, Any]) -> ParityReport:
             "payload has no measured_at; a figure without a date is not a figure"
         )
     rows = _present_rows(payload)
+    round_label = int(payload.get("round", 0))
     figures: list[LaneFigure] = []
     for lane in LANE_IDS:
         if lane == "bpm":
             figures.append(score_bpm(rows, measured_at=measured_at))
         elif lane == "key":
             figures.append(score_key(rows, measured_at=measured_at))
+        elif lane in {"waveform_preview", "waveform_detail", "waveform_triband"}:
+            figures.append(score_waveform(lane, rows, measured_at=measured_at))
         else:
             figures.append(classify_remaining(lane, rows, measured_at=measured_at))
     return ParityReport(
         scorer_version=SCORER_VERSION,
         measured_at=measured_at,
         figures=tuple(figures),
+        round=round_label,
     )
+
+
+def _waveform_notes(figure: LaneFigure) -> str:
+    parts = []
+    if figure.median_r is not None:
+        parts.append(f"median r {figure.median_r:.6f} (n={figure.scored_n})")
+    if figure.min_r is not None:
+        parts.append(f"min {figure.min_r:.3f}")
+    if figure.band_median_r:
+        band_bits = [
+            f"{figure.band_median_r[name]:.3f}"
+            for name in ("low", "mid", "high")
+            if name in figure.band_median_r
+        ]
+        bands = "/".join(band_bits)
+        parts.append(f"bands low/mid/high {bands}")
+    if figure.median_r_secondary is not None:
+        parts.append(f"secondary median r {figure.median_r_secondary:.6f}")
+    parts.append("Reporting r, not a threshold.")
+    return "; ".join(parts)
 
 
 def render_report(report: ParityReport) -> str:
     """Markdown a later session can resume from. Never says 'at parity'."""
     lines = [
-        "# PARITY-01 round 0",
+        f"# PARITY-01 round {report.round}",
         "",
         f"Measured {report.measured_at}. Scorer {report.scorer_version}.",
         "No lane is described as matching a calibrated threshold; "
@@ -113,6 +139,8 @@ def render_report(report: ParityReport) -> str:
                 f"related {related}; failed_own {figure.failed_own_n}. "
                 "Reuses analysis_bench key weighted_score."
             )
+        if figure.lane in {"waveform_preview", "waveform_detail", "waveform_triband"}:
+            notes = _waveform_notes(figure)
         lines.append(
             f"| {figure.lane} | {figure.status} | {figure.denominator_n} | "
             f"{figure.denominator_name} | {figure.scored_n} | {exact} | "

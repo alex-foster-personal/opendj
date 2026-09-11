@@ -27,23 +27,17 @@ LANE_IDS: Final[tuple[str, ...]] = (
     "vocal",
 )
 
-SCORED_THIS_ROUND: Final[tuple[str, ...]] = ("bpm", "key")
+SCORED_THIS_ROUND: Final[tuple[str, ...]] = (
+    "bpm",
+    "key",
+    "waveform_preview",
+    "waveform_detail",
+    "waveform_triband",
+)
 DELEGATED_THIS_ROUND: Final[tuple[str, ...]] = ("beatgrid", "downbeat")
 
 # Follow-up issue bodies start `Part k of 5 of #1520`. This PR is part 1.
 REMAINING_REASON: Final[dict[str, str]] = {
-    "waveform_preview": (
-        "Part 2 of 5 of #1520: waveform preview (ANLZ PWAV/PWV2). "
-        "No own waveform analysis exists yet."
-    ),
-    "waveform_detail": (
-        "Part 2 of 5 of #1520: waveform detail (ANLZ PWV3/PWV4/PWV5). "
-        "Unreadable .EXT siblings are ungradable, never a miss."
-    ),
-    "waveform_triband": (
-        "Part 2 of 5 of #1520: waveform tri-band (ANLZ PWV6/PWV7). "
-        "No own waveform analysis exists yet."
-    ),
     "phrase": (
         "Part 3 of 5 of #1520: phrase (ANLZ PSSI). "
         "Tracks with no PSSI are ungradable; phrase never uses the beatgrid pool."

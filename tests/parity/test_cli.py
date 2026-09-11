@@ -18,7 +18,7 @@ def test_score_cli_prints_denominators_and_the_measurement_date() -> None:
     lane's denominator, the measurement date, and the scorer version, and
     does not claim parity.
     """
-    path = Path(__file__).parent / "fixtures" / "round0.json"
+    path = Path(__file__).parent / "fixtures" / "round1.json"
     done = subprocess.run(
         [sys.executable, "-m", "apps.parity", "score", "--payload", str(path)],
         check=False,
@@ -32,6 +32,10 @@ def test_score_cli_prints_denominators_and_the_measurement_date() -> None:
     assert "scorer" in out.lower()
     assert "bpm" in out.lower()
     assert "key" in out.lower()
+    assert "waveform_preview" in out
+    assert "waveform_detail" in out
+    assert "waveform_triband" in out
+    assert "scored" in out
+    assert "not_scored_this_round" in out
     assert "at parity" not in out.lower()
     assert "delegated" in out.lower()
-    assert "not_scored_this_round" in out or "not scored this round" in out.lower()

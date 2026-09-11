@@ -16,13 +16,13 @@ from apps.parity.lanes import (
     DELEGATED_THIS_ROUND,
     DENOMINATOR_NAME,
     REMAINING_REASON,
+    SCORED_THIS_ROUND,
 )
 
 _UNGRADABLE_REASON: dict[str, str] = {
     "phrase": "missing_pssi",
     "cues_db": "missing_djmd_cue",
     "cues_anlz": "unreadable_ext",
-    "waveform_detail": "unreadable_ext",
     "vocal": "missing_pvdi",
 }
 
@@ -32,7 +32,7 @@ def _ungradable_pred(lane: str) -> Callable[[dict[str, Any]], bool]:
         return lambda row: not row.get("rb_pssi")
     if lane == "cues_db":
         return lambda row: not row.get("rb_cue_db")
-    if lane in {"cues_anlz", "waveform_detail"}:
+    if lane == "cues_anlz":
         return lambda row: not row.get("rb_ext_readable", True)
     if lane == "vocal":
         return lambda row: not row.get("rb_pvdi")
@@ -43,6 +43,11 @@ def classify_remaining(
     lane: str, rows: list[dict[str, Any]], *, measured_at: str
 ) -> LaneFigure:
     """Name the ungradable set for a lane this round does not score."""
+    if lane in SCORED_THIS_ROUND:
+        raise ValueError(
+            f"lane {lane!r} is scored this round; classify_remaining is for "
+            "remaining lanes only"
+        )
     pred = _ungradable_pred(lane)
     ungradable_ids = tuple(row["stable_id"] for row in rows if pred(row))
     bucket = _UNGRADABLE_REASON.get(lane)
