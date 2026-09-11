@@ -1,0 +1,27 @@
+{
+  "schema": "opendj.chrome-task-manager.v1",
+  "scenario": "4-deck playing",
+  "captured_at": "2026-09-11T17:00:00Z",
+  "processes": {
+    "renderer": {
+      "task": "Tab: Open DJ - Performance",
+      "pid": 12345,
+      "cpu_percent": 42.5,
+      "memory_mb": 512.3,
+      "js_memory_mb": 180.2
+    },
+    "gpu": {
+      "task": "GPU Process",
+      "pid": 12346,
+      "cpu_percent": 8.1,
+      "memory_mb": 96.0,
+      "gpu_memory_mb": 64.5
+    },
+    "browser": {
+      "task": "Browser",
+      "pid": 12344,
+      "cpu_percent": 3.2,
+      "memory_mb": 128.7
+    }
+  }
+}
