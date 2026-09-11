@@ -140,7 +140,7 @@
 		}));
 	}
 
-	let state: StripState = $state({ kind: 'idle' });
+	let stripState: StripState = $state({ kind: 'idle' });
 	let requestSeq = 0; // stale-response guard
 	let localSessionIds: string[] = $state([]);
 	const prevDeckIds: Record<number, string | null> = {};
@@ -163,14 +163,14 @@
 			sessionIds.length > 0 ? [...sessionIds] : [...localSessionIds];
 		const seq = ++requestSeq;
 		if (sid === null) {
-			state = { kind: 'idle' };
+			stripState = { kind: 'idle' };
 			oncandidates?.([]);
 			return;
 		}
-		state = { kind: 'loading' };
+		stripState = { kind: 'loading' };
 		_fetchSuggestions(sid, session).then((next) => {
 			if (seq !== requestSeq) return;
-			state = next;
+			stripState = next;
 			// Republish on every settled outcome, so a failed or
 			// insufficient-data fetch clears the previous track's
 			// candidates instead of leaving them on screen as if current.
@@ -237,24 +237,24 @@
 
 <section class="strip" aria-label="suggested next tracks">
 	<span class="head">NEXT</span>
-	{#if state.kind === 'loaded' && state.data.pressure.cue !== 'unknown'}
-		<PeakPressureCoach cue={state.data.pressure.cue} cueLabel={state.data.pressure.cue_label} />
+	{#if stripState.kind === 'loaded' && stripState.data.pressure.cue !== 'unknown'}
+		<PeakPressureCoach cue={stripState.data.pressure.cue} cueLabel={stripState.data.pressure.cue_label} />
 	{/if}
-	{#if state.kind === 'idle'}
+	{#if stripState.kind === 'idle'}
 		<span class="dim">load a track on deck 1 for suggestions</span>
-	{:else if state.kind === 'loading'}
+	{:else if stripState.kind === 'loading'}
 		<span class="dim">ranking candidates…</span>
-	{:else if state.kind === 'insufficient'}
-		<span class="warn" title={state.message}>
-			track not analyzed: missing {state.missing.join(', ')}
+	{:else if stripState.kind === 'insufficient'}
+		<span class="warn" title={stripState.message}>
+			track not analyzed: missing {stripState.missing.join(', ')}
 		</span>
-	{:else if state.kind === 'error'}
-		<span class="err" role="alert">suggest-next failed: {state.message}</span>
-	{:else if state.data.candidates.length === 0}
+	{:else if stripState.kind === 'error'}
+		<span class="err" role="alert">suggest-next failed: {stripState.message}</span>
+	{:else if stripState.data.candidates.length === 0}
 		<span class="dim">no compatible tracks in library for this BPM/key window</span>
 	{:else}
 		<ol class="cands">
-			{#each state.data.candidates as cand (cand.stable_id)}
+			{#each stripState.data.candidates as cand (cand.stable_id)}
 				{@const chevronExplain = _chevronExplain(cand)}
 				<li
 					class="cand"

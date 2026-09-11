@@ -4668,6 +4668,38 @@
         "title": "HotCueSlotOut",
         "type": "object"
       },
+      "HubStorageErrorBody": {
+        "description": "The ``detail`` object a storage-full push carries.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "HubStorageErrorBody",
+        "type": "object"
+      },
+      "HubStorageErrorResponse": {
+        "description": "FastAPI wraps an ``HTTPException`` detail under ``detail``.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/HubStorageErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "HubStorageErrorResponse",
+        "type": "object"
+      },
       "JobIn": {
         "properties": {
           "external_ref": {
@@ -20947,6 +20979,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "507": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubStorageErrorResponse"
+                }
+              }
+            },
+            "description": "The hub sqlite database cannot take the write. code: SYNC_HUB_STORAGE."
           }
         },
         "summary": "Push",
