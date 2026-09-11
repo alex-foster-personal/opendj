@@ -3605,6 +3605,171 @@
         "title": "CoverageOut",
         "type": "object"
       },
+      "CoverageVerdictOut": {
+        "description": "One ``lyric_verdict`` row as the API states it.",
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "computed_at": {
+            "description": "when the pipeline judged the track",
+            "title": "Computed At",
+            "type": "string"
+          },
+          "coverage_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "share of the track the vocal stem carries energy",
+            "title": "Coverage Pct"
+          },
+          "effective_verdict": {
+            "description": "what to act on: the human override if set, else verdict",
+            "title": "Effective Verdict",
+            "type": "string"
+          },
+          "has_words": {
+            "description": "a words artifact exists for this track (the row records a words_content_hash); false means the words route will 404",
+            "title": "Has Words",
+            "type": "boolean"
+          },
+          "language_iso3": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language Iso3"
+          },
+          "n_lines": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "derived lines in the artifact",
+            "title": "N Lines"
+          },
+          "n_words": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "words in the karaoke artifact",
+            "title": "N Words"
+          },
+          "override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override"
+          },
+          "override_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Note"
+          },
+          "pct_witness_red": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "share of words the independent ASR witness distrusts",
+            "title": "Pct Witness Red"
+          },
+          "pipeline_version": {
+            "description": "the code version that produced this row's hash",
+            "title": "Pipeline Version",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "lyric provider + match method",
+            "title": "Source"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "updated_at": {
+            "description": "sync stamp: when a machine last wrote the row",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "verdict": {
+            "description": "computed verdict from stem vocal coverage",
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "verdict",
+          "effective_verdict",
+          "has_words",
+          "pipeline_version",
+          "computed_at",
+          "updated_at"
+        ],
+        "title": "CoverageVerdictOut",
+        "type": "object"
+      },
       "CredentialMachineOut": {
         "properties": {
           "credential_minted_at": {
@@ -6083,6 +6248,243 @@
         "title": "JobOut",
         "type": "object"
       },
+      "KaraokeLineOut": {
+        "description": "One derived line (:mod:`apps.lyrics.lines`, the canonical grouping).\n\nServed rather than client-derived so every surface agrees and an agent can\ncurl exactly what the deck renders.",
+        "properties": {
+          "band": {
+            "description": "good | uncertain | bad | unjudged",
+            "title": "Band",
+            "type": "string"
+          },
+          "end_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "last sung offset in the line, seconds",
+            "title": "End S"
+          },
+          "first_idx": {
+            "title": "First Idx",
+            "type": "integer"
+          },
+          "last_idx": {
+            "title": "Last Idx",
+            "type": "integer"
+          },
+          "n_judged": {
+            "description": "words the witness judged at all",
+            "title": "N Judged",
+            "type": "integer"
+          },
+          "n_red": {
+            "description": "words the witness put in a red class",
+            "title": "N Red",
+            "type": "integer"
+          },
+          "n_words": {
+            "title": "N Words",
+            "type": "integer"
+          },
+          "para_final": {
+            "description": "gap-derived paragraph break: a blank line follows",
+            "title": "Para Final",
+            "type": "boolean"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "share of witness-judged words NOT in the red classes; null when no word in the line was judged",
+            "title": "Quality"
+          },
+          "start_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "first sung onset in the line, seconds",
+            "title": "Start S"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first_idx",
+          "last_idx",
+          "text",
+          "start_s",
+          "end_s",
+          "n_words",
+          "n_red",
+          "n_judged",
+          "quality",
+          "band",
+          "para_final"
+        ],
+        "title": "KaraokeLineOut",
+        "type": "object"
+      },
+      "KaraokeSummaryOut": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "effective-verdict histogram",
+            "title": "Counts",
+            "type": "object"
+          },
+          "no_lyrics_max_coverage": {
+            "description": "calibrated band: at or below this stem vocal coverage a track is auto-stamped no-lyrics (novox round 0, pinned by test)",
+            "title": "No Lyrics Max Coverage",
+            "type": "number"
+          },
+          "sparse_max_coverage": {
+            "description": "above this coverage a track is treated as vocal; between the two, other evidence decides",
+            "title": "Sparse Max Coverage",
+            "type": "number"
+          },
+          "total": {
+            "description": "live verdict rows, the histogram's denominator",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "counts",
+          "total",
+          "no_lyrics_max_coverage",
+          "sparse_max_coverage"
+        ],
+        "title": "KaraokeSummaryOut",
+        "type": "object"
+      },
+      "KaraokeTrackOut": {
+        "description": "The words payload. ``verdict`` is ALWAYS set: see the 404 rule.",
+        "properties": {
+          "lines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/KaraokeLineOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "present only when requested with ?include=lines",
+            "title": "Lines"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/CoverageVerdictOut"
+          },
+          "words": {
+            "items": {
+              "$ref": "#/components/schemas/KaraokeWordOut"
+            },
+            "title": "Words",
+            "type": "array"
+          }
+        },
+        "required": [
+          "verdict",
+          "words"
+        ],
+        "title": "KaraokeTrackOut",
+        "type": "object"
+      },
+      "KaraokeWordOut": {
+        "description": "One aligned word, exactly as the artifact stores it.",
+        "properties": {
+          "end_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sung offset in seconds",
+            "title": "End S"
+          },
+          "idx": {
+            "description": "position in the track's flat word list, from 0",
+            "title": "Idx",
+            "type": "integer"
+          },
+          "line_final": {
+            "default": false,
+            "description": "this word closes its line (the grouping flag)",
+            "title": "Line Final",
+            "type": "boolean"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "aligner confidence for this word, 0..1",
+            "title": "Score"
+          },
+          "start_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sung onset in seconds",
+            "title": "Start S"
+          },
+          "witness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ASR-witness verdict: agree/drift/unheard/unmatchable are shown normally; contradict/lost are the suspect classes.",
+            "title": "Witness"
+          },
+          "word": {
+            "title": "Word",
+            "type": "string"
+          }
+        },
+        "required": [
+          "idx",
+          "word"
+        ],
+        "title": "KaraokeWordOut",
+        "type": "object"
+      },
       "KindDefaultIn": {
         "additionalProperties": false,
         "properties": {
@@ -6839,6 +7241,90 @@
         "title": "LoopMarkOut",
         "type": "object"
       },
+      "LyricJobIn": {
+        "properties": {
+          "kind": {
+            "description": "analyze | lyricsync | stems",
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "stable_ids": {
+            "description": "tracks to process; each must exist",
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "stable_ids"
+        ],
+        "title": "LyricJobIn",
+        "type": "object"
+      },
+      "LyricJobOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "the runner's stage progress",
+            "title": "Note"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          },
+          "status": {
+            "description": "queued | done | failed",
+            "title": "Status",
+            "type": "string"
+          },
+          "ts": {
+            "description": "when the job was queued, UTC",
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ts",
+          "kind",
+          "stable_ids",
+          "status"
+        ],
+        "title": "LyricJobOut",
+        "type": "object"
+      },
       "LyricLineOut": {
         "description": "One cache-backed line timestamp in integer track milliseconds.",
         "properties": {
@@ -6872,6 +7358,251 @@
           }
         },
         "title": "LyricsCachedIdsOut",
+        "type": "object"
+      },
+      "LyricsConfigIn": {
+        "properties": {
+          "source_order": {
+            "description": "every known source, ranked; a partial list is rejected",
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Order",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_order"
+        ],
+        "title": "LyricsConfigIn",
+        "type": "object"
+      },
+      "LyricsConfigOut": {
+        "properties": {
+          "is_default": {
+            "description": "true while no operator has persisted a custom order",
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "source_order": {
+            "description": "lyric sources, strongest first; the pipeline's tie-break",
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Order",
+            "type": "array"
+          },
+          "source_titles": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "hover text per source (what the method actually does)",
+            "title": "Source Titles",
+            "type": "object"
+          }
+        },
+        "required": [
+          "source_order",
+          "source_titles",
+          "is_default"
+        ],
+        "title": "LyricsConfigOut",
+        "type": "object"
+      },
+      "LyricsKpiDefOut": {
+        "properties": {
+          "direction": {
+            "description": "lower_better | higher_better",
+            "title": "Direction",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "title": {
+            "description": "hover text: what the number actually measures",
+            "title": "Title",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "unit",
+          "direction",
+          "title"
+        ],
+        "title": "LyricsKpiDefOut",
+        "type": "object"
+      },
+      "LyricsKpiOut": {
+        "properties": {
+          "kpis": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/LyricsKpiDefOut"
+            },
+            "title": "Kpis",
+            "type": "object"
+          },
+          "snapshots": {
+            "description": "oldest first",
+            "items": {
+              "$ref": "#/components/schemas/LyricsKpiSnapshotOut"
+            },
+            "title": "Snapshots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kpis",
+          "snapshots"
+        ],
+        "title": "LyricsKpiOut",
+        "type": "object"
+      },
+      "LyricsKpiSnapshotOut": {
+        "properties": {
+          "label": {
+            "description": "the experiment round or shipped milestone",
+            "title": "Label",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "provenance": {
+            "description": "'measured' at append time, or 'hand' transcribed from the experiment log. House rule: never quote a value without its ts.",
+            "title": "Provenance",
+            "type": "string"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "one entry per KPI; null is a gap, never a carried-forward number",
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "ts",
+          "label",
+          "values",
+          "provenance",
+          "notes"
+        ],
+        "title": "LyricsKpiSnapshotOut",
+        "type": "object"
+      },
+      "LyricsPurgeIn": {
+        "properties": {
+          "dry_run": {
+            "description": "NO default on purpose: a purge deletes licensed text from disk and R2, so the caller states which one it wants",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "source_prefix": {
+            "description": "source prefix, matched LIKE prefix%",
+            "title": "Source Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_prefix",
+          "dry_run"
+        ],
+        "title": "LyricsPurgeIn",
+        "type": "object"
+      },
+      "LyricsPurgeOut": {
+        "description": ":class:`apps.lyrics.purge.PurgeReport`. Every count is observed.",
+        "properties": {
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "files_absent": {
+            "description": "matched rows with no local artifact",
+            "title": "Files Absent",
+            "type": "integer"
+          },
+          "files_removed": {
+            "description": "local karaoke artifacts deleted",
+            "title": "Files Removed",
+            "type": "integer"
+          },
+          "objects_absent": {
+            "description": "R2 keys already gone",
+            "title": "Objects Absent",
+            "type": "integer"
+          },
+          "objects_deleted": {
+            "description": "R2 objects deleted",
+            "title": "Objects Deleted",
+            "type": "integer"
+          },
+          "r2_skipped_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "why R2 was left alone; null means it was visited",
+            "title": "R2 Skipped Reason"
+          },
+          "rows_matched": {
+            "description": "live verdict rows whose source matched",
+            "title": "Rows Matched",
+            "type": "integer"
+          },
+          "rows_tombstoned": {
+            "description": "rows soft-deleted; 0 on a dry run",
+            "title": "Rows Tombstoned",
+            "type": "integer"
+          },
+          "source_prefix": {
+            "title": "Source Prefix",
+            "type": "string"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_prefix",
+          "dry_run",
+          "rows_matched",
+          "rows_tombstoned",
+          "files_removed",
+          "files_absent",
+          "objects_deleted",
+          "objects_absent",
+          "stable_ids"
+        ],
+        "title": "LyricsPurgeOut",
         "type": "object"
       },
       "LyricsUnavailableOut": {
@@ -7711,6 +8442,36 @@
           "detail"
         ],
         "title": "OpsErrorResponse",
+        "type": "object"
+      },
+      "OverrideIn": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "why the human disagreed",
+            "title": "Note"
+          },
+          "override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "vocal|sparse|no-lyrics, or null to clear",
+            "title": "Override"
+          }
+        },
+        "title": "OverrideIn",
         "type": "object"
       },
       "OverviewOut": {
@@ -14521,6 +15282,41 @@
           "level_calibration": {
             "$ref": "#/components/schemas/LevelCalibrationOut"
           },
+          "lyrics_deck_line": {
+            "default": true,
+            "title": "Lyrics Deck Line",
+            "type": "boolean"
+          },
+          "lyrics_global": {
+            "default": true,
+            "title": "Lyrics Global",
+            "type": "boolean"
+          },
+          "lyrics_hover_scrub": {
+            "default": true,
+            "title": "Lyrics Hover Scrub",
+            "type": "boolean"
+          },
+          "lyrics_library_col": {
+            "default": true,
+            "title": "Lyrics Library Col",
+            "type": "boolean"
+          },
+          "lyrics_load_strategy": {
+            "default": "hover",
+            "enum": [
+              "in-view",
+              "hover",
+              "off"
+            ],
+            "title": "Lyrics Load Strategy",
+            "type": "string"
+          },
+          "lyrics_waveform_overlay": {
+            "default": true,
+            "title": "Lyrics Waveform Overlay",
+            "type": "boolean"
+          },
           "show_agent_pins": {
             "default": true,
             "title": "Show Agent Pins",
@@ -14599,6 +15395,77 @@
                 "type": "null"
               }
             ]
+          },
+          "lyrics_deck_line": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Deck Line"
+          },
+          "lyrics_global": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Global"
+          },
+          "lyrics_hover_scrub": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Hover Scrub"
+          },
+          "lyrics_library_col": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Library Col"
+          },
+          "lyrics_load_strategy": {
+            "anyOf": [
+              {
+                "enum": [
+                  "in-view",
+                  "hover",
+                  "off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Load Strategy"
+          },
+          "lyrics_waveform_overlay": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Waveform Overlay"
           },
           "show_agent_pins": {
             "anyOf": [
@@ -17322,6 +18189,28 @@
         "summary": "Get Kpi Ledger",
         "tags": [
           "bench"
+        ]
+      }
+    },
+    "/api/v1/bench/lyrics-kpi": {
+      "get": {
+        "description": "The lyrics KPI ledger verbatim (``scripts/bench/lyrics_kpi_ledger.json``).\n\nRead-only here: appending a snapshot is a CLI act\n(``scripts/bench/lyrics_kpi_append.py``) so the ledger keeps one writer.\nA missing key raises rather than defaulting - a KPI panel drawing invented\nnumbers is worse than a panel that fails.",
+        "operationId": "get_lyrics_kpi_ledger_api_v1_bench_lyrics_kpi_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsKpiOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyrics Kpi Ledger",
+        "tags": [
+          "lyrics"
         ]
       }
     },
@@ -20793,6 +21682,267 @@
         ]
       }
     },
+    "/api/v1/lyrics": {
+      "get": {
+        "description": "The triage listing: least trustworthy first by default, with the track\nnames joined in so a human can act on a row without a second request.",
+        "operationId": "list_lyric_verdicts_api_v1_lyrics_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "filter by effective verdict",
+            "in": "query",
+            "name": "verdict",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "filter by effective verdict",
+              "title": "Verdict"
+            }
+          },
+          {
+            "description": "suspect|coverage|recent",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "suspect",
+              "description": "suspect|coverage|recent",
+              "title": "Order",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CoverageVerdictOut"
+                  },
+                  "title": "Response List Lyric Verdicts Api V1 Lyrics Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Lyric Verdicts",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/config": {
+      "get": {
+        "description": "The source ordering the pipeline will use on its next run.\n\nNo DB connection: the order is a JSON file beside state.db, read by BOTH\nthis endpoint and the offline scripts, so what the admin panel shows is\nwhat the next fetch uses.",
+        "operationId": "get_lyrics_config_api_v1_lyrics_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyrics Config",
+        "tags": [
+          "lyrics"
+        ]
+      },
+      "put": {
+        "description": "Persist a full reordering. Partial lists are rejected: an ordering that\nsilently omits a source is an ordering the operator never saw.",
+        "operationId": "put_lyrics_config_api_v1_lyrics_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LyricsConfigIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Lyrics Config",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/jobs": {
+      "get": {
+        "description": "Newest first. The queue is drained by the offline runner scripts:\nstems and alignment never run in the daemon (house rule).",
+        "operationId": "get_lyric_jobs_api_v1_lyrics_jobs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LyricJobOut"
+                  },
+                  "title": "Response Get Lyric Jobs Api V1 Lyrics Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyric Jobs",
+        "tags": [
+          "lyrics"
+        ]
+      },
+      "post": {
+        "description": "Record a processing request from the UI (context menu / admin panel).\n\nEvery stable_id is checked against ``tracks`` in ONE select (the second and\nlast raw statement here, see :func:`_titles_by_stable_id`): a queue entry\nfor a track the library does not know is a job no runner can honour.",
+        "operationId": "post_lyric_job_api_v1_lyrics_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LyricJobIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Lyric Job",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/purge": {
+      "post": {
+        "description": "Remove one provider's lyrics from the row, the disk and R2 - parity for\nthe ``python -m apps.lyrics purge`` CLI, same function underneath.\n\n``writing=not dry_run`` is how the CLI asks for credentials too: a\nrehearsal pushes and deletes nothing, so it must stay runnable on a\nmachine that has none.",
+        "operationId": "post_lyrics_purge_api_v1_lyrics_purge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LyricsPurgeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsPurgeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Lyrics Purge",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
     "/api/v1/lyrics/search": {
       "get": {
         "operationId": "search_lyrics_api_v1_lyrics_search_get",
@@ -20856,6 +22006,28 @@
           }
         },
         "summary": "Search Lyrics",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/summary": {
+      "get": {
+        "description": "Library-wide verdict histogram plus the calibrated bands, so a client\nnever hardcodes the thresholds it displays.",
+        "operationId": "get_lyrics_summary_api_v1_lyrics_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaraokeSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyrics Summary",
         "tags": [
           "lyrics"
         ]
@@ -25358,6 +26530,120 @@
         "summary": "Get Track Lyrics",
         "tags": [
           "tracks"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/lyrics/override": {
+      "put": {
+        "description": "Set (or clear with null) the human verdict, which always beats the\ncomputed one wherever it is read (``store.LyricVerdict.effective``).\n\nThe override VALUE is validated before the write so the two failures stay\ndistinguishable: an unknown value is the caller's mistake (422), while a\nrefusal from the store means there is no live row to override (404).",
+        "operationId": "put_lyric_override_api_v1_tracks__stable_id__lyrics_override_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageVerdictOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Lyric Override",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/lyrics/words": {
+      "get": {
+        "description": "This track's karaoke timeline: the verdict envelope plus every word.",
+        "operationId": "get_track_karaoke_words_api_v1_tracks__stable_id__lyrics_words_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "'lines' adds the derived line objects",
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "'lines' adds the derived line objects",
+              "title": "Include"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaraokeTrackOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Karaoke Words",
+        "tags": [
+          "lyrics"
         ]
       }
     },

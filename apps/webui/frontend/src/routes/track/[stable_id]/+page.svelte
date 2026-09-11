@@ -7,6 +7,7 @@
 	import ProvenanceTooltip from '$lib/components/ProvenanceTooltip.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import QualityBadge from '$lib/components/rb/QualityBadge.svelte';
+	import LyricsPanel from '$lib/components/LyricsPanel.svelte';
 	import { fetchRbMeta, RbApiError } from '$lib/rb/api-rb';
 	import type { TrackQuality } from '$lib/rb/library-types';
 
@@ -101,6 +102,8 @@
 
 	<h3>Notes</h3>
 	<textarea rows="4" value={track.notes ?? ''} onblur={(e) => applyPatch({ notes: (e.currentTarget as HTMLTextAreaElement).value })}></textarea>
+
+	<LyricsPanel stableId={track.stable_id} />
 
 	<h3>Actions (coming in Phase 17)</h3>
 	<p style="color: var(--muted);">Open in Rekordbox · Open in djay · Show in Finder</p>

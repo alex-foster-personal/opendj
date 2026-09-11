@@ -76,6 +76,7 @@ from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
 from .routes import library_jobs as library_jobs_routes
 from .routes import lyrics_search as lyrics_search_routes
+from .routes import lyrics_words as lyrics_words_routes
 from .routes import mytag as mytag_routes
 from .routes import pairing_capture as pairing_capture_routes
 from .routes import pairings as pairings_routes
@@ -423,6 +424,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         ingest_upload_routes.router,
         library_routes.router,
         lyrics_search_routes.router,
+        lyrics_words_routes.router,
         health_routes.router,
         preflight_routes.router,
         settings_routes.router,
