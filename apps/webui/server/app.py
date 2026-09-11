@@ -331,14 +331,19 @@ def build_lyric_index_watcher(app: FastAPI) -> lyric_index_autostart.LyricIndexW
 def _build_default_app() -> FastAPI:
     from apps.shared import platform_paths
     from apps.shared.library_mode import apply_library_env, assert_ready
+    from apps.shared.sync_bind_guard import assert_sync_bind_allowed
     from apps.webui.library_assets import ensure_stem_storage, stem_storage
 
+    bind_host = os.environ.get("MUSIC_DJ_BIND_HOST", "127.0.0.1")
+    # W3, before any disk work: this app mounts /api/v1/sync/*. Covers the bare
+    # `uvicorn ...app:app` entry via MUSIC_DJ_BIND_HOST; uvicorn's own --host
+    # never reaches the app, so that flag alone is unguarded (sync_bind_guard).
+    assert_sync_bind_allowed(bind_host)
     apply_library_env()
     platform_paths.refresh_share_root()
     assert_ready()
     stems = stem_storage()
     ensure_stem_storage(stems)
-    bind_host = os.environ.get("MUSIC_DJ_BIND_HOST", "127.0.0.1")
     hostname = os.environ.get("MUSIC_DJ_HOSTNAME")
     # Phase 5 wiring: prefer SqliteBackend when ``data/state/state.db`` exists,
     # else fall back to the in-memory backend (keeps dev + tests fast).
