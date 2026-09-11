@@ -259,26 +259,8 @@ def test_minting_a_grant_for_an_unknown_email_fails_loudly(enroll_hub_dir: Path)
     assert "nobody@example.com" in str(excinfo.value)
 
 
-def test_the_google_id_token_kind_is_declared_and_not_yet_resolvable(
-    enroll_hub: TestClientTransport, enroll_hub_dir: Path, enroll_spoke_dir: Path
-):
-    """The USER path's credential slot exists and says so, rather than 401ing.
-
-    A reserved kind answering 401 would be indistinguishable from a bad
-    credential, and the seam would be invisible to whoever picks up the
-    in-app work.
-    """
-    assert "google_id_token" in enrollment_credentials.CREDENTIAL_KINDS
-    with pytest.raises(client.SyncTransportError) as excinfo:
-        http_enroll(
-            enroll_hub,
-            enroll_spoke_dir,
-            name="nucbox-wsl",
-            token="an.id.token",
-            kind="google_id_token",
-        )
-    assert "501" in str(excinfo.value)
-    assert owner_rows(enroll_hub_dir) == []
+# The google_id_token kind's tests (valid, forged, unsigned, bad claims,
+# unconfigured hub, JWKS refetch) live in test_enrollment_google_id_token.py.
 
 
 # ----- what a grant's lifetime, and a re-run, are allowed to do --------------
