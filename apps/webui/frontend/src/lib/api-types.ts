@@ -169,6 +169,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sets/{session_id}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Get Metadata Share
+         * @description Get an existing metadata-only share link for a finalized published set.
+         */
+        get: operations["api_get_metadata_share_api_sets__session_id__share_get"];
+        put?: never;
+        /**
+         * Api Publish Metadata Share
+         * @description Publish timeline metadata after explicit acknowledgement, never MP3 audio.
+         */
+        post: operations["api_publish_metadata_share_api_sets__session_id__share_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sets/{session_id}/soundcloud-export": {
         parameters: {
             query?: never;
@@ -7220,6 +7244,37 @@ export interface components {
              */
             stable_ids: string[];
         };
+        /**
+         * MetadataShareRequest
+         * @description Explicit acknowledgement that the resulting web view excludes audio.
+         */
+        MetadataShareRequest: {
+            /**
+             * Confirm Metadata Only
+             * @constant
+             */
+            confirm_metadata_only: true;
+        };
+        /**
+         * MetadataShareResponse
+         * @description A browser URL for the non-audio set history presentation.
+         */
+        MetadataShareResponse: {
+            /**
+             * Content
+             * @constant
+             */
+            content: "metadata_only";
+            /** Session Id */
+            session_id: string;
+            /**
+             * Share State
+             * @constant
+             */
+            share_state: "shared_cloud";
+            /** Share Url */
+            share_url: string;
+        };
         /** MembershipTransferIn */
         MembershipTransferIn: {
             /**
@@ -10826,6 +10881,37 @@ export interface operations {
             };
         };
     };
+    api_get_metadata_share_api_sets__session_id__share_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataShareResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get: {
         parameters: {
             query?: never;
@@ -10844,6 +10930,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SoundcloudExportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_publish_metadata_share_api_sets__session_id__share_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MetadataShareRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataShareResponse"];
                 };
             };
             /** @description Validation Error */

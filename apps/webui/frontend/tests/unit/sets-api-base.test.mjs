@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
@@ -57,6 +59,35 @@ test('all REC controls use the configured HTTP API contract', async () => {
 test('session, timeline, and replay URLs are HTTP-addressable', () => {
 	assert.equal(api.sessionAudioUrl('session / one', 'audio one.mp3'),
 		`${API_BASE}/api/sets/session%20%2F%20one/audio/audio%20one.mp3`);
+});
+
+test('metadata-only set shares use the agent-addressable HTTP contract', async () => {
+	requests.length = 0;
+	await api.publishMetadataShare('session / one');
+	await api.getMetadataShare('session / one');
+
+	assert.deepEqual(requests, [
+		{
+			url: `${API_BASE}/api/sets/session%20%2F%20one/share`,
+			method: 'POST',
+			body: JSON.stringify({ confirm_metadata_only: true })
+		},
+		{
+			url: `${API_BASE}/api/sets/session%20%2F%20one/share`,
+			method: 'GET',
+			body: null
+		}
+	]);
+});
+
+test('the public share route is server-rendered rather than loading the full client application', () => {
+	const pagePath = fileURLToPath(new URL('../../../../sets/share_page.py', import.meta.url));
+	const source = readFileSync(pagePath, 'utf8');
+
+	assert.match(source, /@router.get\("\/sets\/shared\/\{session_id\}"/);
+	assert.match(source, /track_loaded/);
+	assert.match(source, /Metadata-only share/);
+	assert.doesNotMatch(source, /mp3_segments|<audio/);
 });
 
 test('non-2xx maps detail string or statusText onto Error', async () => {
