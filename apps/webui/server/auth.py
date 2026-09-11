@@ -36,6 +36,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from apps.shared.google_oauth_client import CLIENT_ID_ENV_NAMES
 from apps.shared.state import db as state_db
 
 # ----- constants ---------------------------------------------------------
@@ -51,13 +52,9 @@ SESSION_TTL = timedelta(days=30)
 PENDING_LOGIN_TTL_SECONDS = 600
 CALLBACK_PATH = "/api/v1/auth/callback"
 
-# Precedence is explicit, not a hidden default: an openDJ-specific client
-# wins if one is ever provisioned, otherwise the shared personal client in
-# Doppler (project ``general``, config ``dev_personal``) is used.
-CLIENT_ID_ENV_NAMES: tuple[str, ...] = (
-    "OPENDJ_GOOGLE_OAUTH_CLIENT_ID",
-    "GOOGLE_OAUTH_CLIENT_ID",
-)
+# CLIENT_ID_ENV_NAMES lives in apps.shared.google_oauth_client, imported
+# above, because the sync hub pins id_token ``aud`` to the same client id and
+# cannot import the webui. Same precedence rule for the secret below.
 CLIENT_SECRET_ENV_NAMES: tuple[str, ...] = (
     "OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET",
     "GOOGLE_OAUTH_CLIENT_SECRET",

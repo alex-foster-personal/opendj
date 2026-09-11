@@ -11,6 +11,7 @@ Regression one-liners:
   - if /auto-cues isn't deterministic across identical calls then broken
   - if /auto-cues doesn't 404 ANALYSIS_NOT_FOUND for an unknown stable_id then broken
   - if /auto-cues ?backend=<unknown> doesn't 404 ANALYSIS_NOT_FOUND then broken
+  - if /auto-cues 404s for a library track with no analysis row then unanalyzed loads break
   - if /beatgrid-fallback beats aren't exactly ANLZ-shaped {n,bpm,t} then broken
   - if /beatgrid-fallback n doesn't read 1 on every analysis downbeat then broken
   - if /beatgrid-fallback beat times aren't strictly increasing within duration then broken
@@ -34,7 +35,7 @@ from apps.analysis.lanes import LaneResult
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import upsert_record
 from apps.webui.server.app import create_app
-from apps.webui.server.backend import InMemoryBackend
+from apps.webui.server.backend import InMemoryBackend, Track
 from apps.webui.server.routes.analysis import (
     AUTO_CUES_SOURCE,
     BEATGRID_SOURCE,
@@ -50,6 +51,7 @@ SID_FULL = "sid-full"              # onsets + downbeats + rms -> cues + grid
 SID_NO_DOWNBEATS = "sid-nodown"    # analysis row but no downbeats
 SID_ANLZ_ONLY = "sid-anlz-only"    # no analysis row; ANLZ present on disk
 SID_UNKNOWN = "sid-unknown"        # nothing anywhere
+SID_UNANALYZED = "sid-unanalyzed"  # library row, no analysis
 # A legacy librosa row AND a v1 own_beatgrid row that FAILED - v1 has already
 # settled a beatgrid determination for this track, so the endpoint must not
 # fall through to the superseded legacy row (discussion_r3975326241).
@@ -147,7 +149,9 @@ def client(tmp_path_factory: pytest.TempPathFactory) -> Iterator[TestClient]:
     )
 
     app = FastAPI()
-    app.state.backend = InMemoryBackend()
+    mem = InMemoryBackend()
+    mem.seed_track(Track(stable_id=SID_UNANALYZED))
+    app.state.backend = mem
     app.state.analysis_db_path = db
     app.state.anlz_available_fn = lambda sid: sid in ANLZ_PRESENT
     app.include_router(router, prefix="/api/v1")
@@ -198,6 +202,19 @@ def test_auto_cues_unknown_backend_404(client: TestClient) -> None:
     r = client.get(f"/api/v1/tracks/{SID_FULL}/auto-cues?backend=bogus")
     assert r.status_code == 404
     assert r.json()["detail"]["code"] == "ANALYSIS_NOT_FOUND"
+
+
+@pytest.mark.requirement("META-04")
+def test_auto_cues_unanalyzed_library_track_is_200_empty(client: TestClient) -> None:
+    r = client.get(f"/api/v1/tracks/{SID_UNANALYZED}/auto-cues")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["proposal"] is True
+    assert body["stable_id"] == SID_UNANALYZED
+    assert body["source"] == AUTO_CUES_SOURCE
+    assert body["backend"] == "none"
+    assert body["backend_version"] == "none"
+    assert body["proposals"] == []
 
 
 @pytest.mark.requirement("META-04")

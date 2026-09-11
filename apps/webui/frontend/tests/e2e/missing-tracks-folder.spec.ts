@@ -161,6 +161,9 @@ async function stubPerformanceApis(page: Page): Promise<void> {
 	await page.route(/\/api\/v1\/tracks(?:\?.*)?$/, (route) =>
 		route.fulfill({ json: { items: [], next_cursor: null } })
 	);
+	await page.route('**/api/v1/tracks/lyrics-cached-ids', (route) =>
+		route.fulfill({ json: { stable_ids: [] } })
+	);
 	await page.route('**/api/v1/tracks/*/rb-meta**', (route) =>
 		route.fulfill({
 			json: {

@@ -1,0 +1,73 @@
+name: skewed-clock-wins-lww
+description: >
+  CHARACTERIZATION, not a design. Spoke B's clock runs ten years fast. B
+  edits a track EARLIER than A in real order, yet B's stamp is later, so B
+  wins the conflict on every machine and A's edit is discarded. Nothing
+  bounds a future-dated stamp today; the tolerance, and whether an
+  over-tolerance stamp is quarantined or refused, is an open owner decision
+  (tests/cloudsync/test_hub_sync_clock_skew.py pins the harsher case, where
+  the real-clock peer edits AFTER pulling the future row and is wedged).
+
+machines:
+  - id: hub
+    role: hub
+  - id: spoke-a
+    role: spoke
+  - id: spoke-b
+    role: spoke
+
+seed:
+  tracks:
+    - stable_id: trk-1
+      title: original
+      "on": [spoke-a, spoke-b]
+
+steps:
+  - "on": spoke-b
+    action: skew_clock
+    args: { seconds: 315360000 }   # ten years
+
+  - "on": spoke-b
+    action: edit
+    args:
+      table: tracks
+      stable_id: trk-1
+      set: { title: B with a clock ten years fast }
+
+  - "on": spoke-a
+    action: edit
+    args:
+      table: tracks
+      stable_id: trk-1
+      set: { title: A later in real order }
+
+  - "on": spoke-a
+    action: sync
+    args:
+      expect: { accepted: 1 }
+  - "on": spoke-b
+    action: sync
+    args:
+      expect: { accepted: 1 }
+  - "on": spoke-a
+    action: sync
+    args:
+      expect: { applied: 1 }
+
+  - "on": spoke-a
+    action: assert_converged
+    args:
+      table: tracks
+      pk: { stable_id: trk-1 }
+      field: title
+      equals: B with a clock ten years fast
+  - "on": spoke-b
+    action: assert_converged
+    args:
+      table: tracks
+      pk: { stable_id: trk-1 }
+      field: title
+      equals: B with a clock ten years fast
+
+expected:
+  digest_converged: true

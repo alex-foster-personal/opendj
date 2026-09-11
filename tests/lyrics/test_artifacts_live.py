@@ -3,7 +3,7 @@
 Skipped unless ``R2_ACCOUNT_ID`` / ``R2_ACCESS_KEY_ID`` /
 ``R2_SECRET_ACCESS_KEY`` are in the environment, which in practice means::
 
-    doppler run -p music-dj-tools -c prod -- \\
+    doppler run -p general -c dev_personal -- \\
         uv run pytest tests/lyrics/test_artifacts_live.py -m live_r2
 
 Same skip contract as ``tests/cloudsync/test_asset_tier_live.py``, and the
@@ -51,7 +51,7 @@ def test_live_r2_words_artifact_round_trip(
         pytest.skip(
             "live R2 creds absent; set "
             + ", ".join(LIVE_R2_ENV_VARS)
-            + " (via `doppler run -p music-dj-tools -c prod --`) to run this."
+            + " (via `doppler run -p general -c dev_personal --`) to run this."
         )
 
     use_cloud_mode(monkeypatch)

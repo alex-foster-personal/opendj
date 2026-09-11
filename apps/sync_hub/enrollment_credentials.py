@@ -13,9 +13,12 @@ path and the user path share one writer:
   loopback OAuth redirect would come back to the wrong machine.
 * ``google_id_token`` -- the USER path's slot. An install that already holds
   a Google refresh token mints a fresh id_token and presents it; Google is
-  the third party both machines trust, so nothing is copied by hand. NOT
-  IMPLEMENTED YET, and it says so with its own error type rather than
-  answering like a bad credential -- see :class:`EnrollmentCredentialUnavailable`.
+  the third party both machines trust, so nothing is copied by hand. The
+  signature, issuer, audience and lifetime checks live in
+  :mod:`apps.sync_hub.google_id_token`; this module only dispatches to it and
+  translates its two outcomes. A hub that CANNOT verify (no client id, JWKS
+  unreachable) raises :class:`EnrollmentCredentialUnavailable` rather than
+  answering like a bad credential, and never falls back to unverified claims.
 
 Why the existing session bearer is NOT a third kind, since it is the obvious
 idea: :class:`apps.webui.server.auth.SessionStore` is sqlite persistence over
@@ -32,13 +35,19 @@ stays indistinguishable from legitimate use forever.
 from __future__ import annotations
 
 import hashlib
+import logging
+import os
 import secrets
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import ClassVar
 
 from apps.shared.state import sync_stamp
+from apps.sync_hub import google_id_token
 from apps.sync_hub.enrollment import OwnerIdentity
+
+log = logging.getLogger(__name__)
 
 GRANT_TABLE: str = "enrollment_grants"
 
@@ -74,8 +83,7 @@ GRANT_TOKEN_PREFIX: str = "odjenr_"
 GRANT_KIND: str = "grant"
 GOOGLE_ID_TOKEN_KIND: str = "google_id_token"
 
-#: Every credential kind the wire accepts. ``google_id_token`` is listed
-#: because the slot is real and reserved, not because it resolves yet.
+#: Every credential kind the wire accepts.
 CREDENTIAL_KINDS: tuple[str, ...] = (GRANT_KIND, GOOGLE_ID_TOKEN_KIND)
 
 #: Credential kind -> the ``machine_owners.enrolled_via`` it records.
@@ -90,11 +98,13 @@ class EnrollmentCredentialError(RuntimeError):
 
 
 class EnrollmentCredentialUnavailable(EnrollmentCredentialError):
-    """The kind is real and reserved, but this build cannot resolve it.
+    """The kind is real, but this hub cannot resolve it right now. 503.
 
-    Distinct from a rejected credential on purpose. Answering 401 for
-    "not built yet" would make the USER path's seam indistinguishable from a
-    bad token, and whoever picks that work up would have nothing to find.
+    For ``google_id_token``: no OAuth client id is configured, so there is no
+    audience to pin, or Google's signing keys could not be fetched. Distinct
+    from a rejected credential on purpose: the remedy is on the hub, not in
+    the token, and answering 401 would send the user to re-sign-in for a
+    fault they cannot fix.
     """
 
 
@@ -102,6 +112,7 @@ class EnrollmentCredentialUnavailable(EnrollmentCredentialError):
 class GrantCredential:
     """A single-use enrollment grant, as presented by the joining machine."""
 
+    KIND: ClassVar[str] = GRANT_KIND
     value: str
 
 
@@ -113,6 +124,25 @@ class GoogleIdTokenCredential:
 
 
 EnrollmentCredential = GrantCredential | GoogleIdTokenCredential
+
+
+@dataclass(frozen=True)
+class VerifiedGoogleIdToken:
+    """A ``google_id_token`` whose signature and claims ALREADY verified.
+
+    Built only by :func:`verify_outside_transaction`, so holding one is proof
+    the network half of verification is done and the write transaction has
+    nothing left to fetch.
+    """
+
+    KIND: ClassVar[str] = GOOGLE_ID_TOKEN_KIND
+    identity: google_id_token.VerifiedGoogleIdentity
+
+
+#: What :func:`resolve_enrollment_identity` accepts. A grant is checked
+#: against this hub's own table, so it resolves INSIDE the transaction; an
+#: id_token must already be verified, because verifying it is network I/O.
+VerifiedCredential = GrantCredential | VerifiedGoogleIdToken
 
 
 @dataclass(frozen=True)
@@ -201,9 +231,28 @@ def mint_grant(
     )
 
 
+def verify_outside_transaction(credential: EnrollmentCredential) -> VerifiedCredential:
+    """Do every part of verification that needs no hub DB. Call BEFORE ``BEGIN``.
+
+    For a ``google_id_token`` that is the whole cryptographic check,
+    including the JWKS fetch. It must not run inside the enroll route's
+    write transaction: enroll is unauthenticated, so a caller could
+    otherwise hold the hub's sqlite write lock across an outbound fetch (up
+    to ``JWKS_FETCH_TIMEOUT_S``, plus one refetch per unknown kid) and stall
+    every sync push behind it. A grant passes through unchanged; redeeming
+    it is a read-then-write on the hub's own table and belongs inside.
+    """
+    if isinstance(credential, GrantCredential):
+        return credential
+    if isinstance(credential, GoogleIdTokenCredential):
+        return VerifiedGoogleIdToken(identity=_verify_google_id_token(credential))
+    _exhaustive: object = credential
+    raise AssertionError(f"unhandled enrollment credential {_exhaustive!r}")
+
+
 def resolve_enrollment_identity(
     conn: sqlite3.Connection,
-    credential: EnrollmentCredential,
+    credential: VerifiedCredential,
     *,
     machine_id: str,
     now: str | None = None,
@@ -216,19 +265,33 @@ def resolve_enrollment_identity(
     """
     if isinstance(credential, GrantCredential):
         return _redeem_grant(conn, credential, machine_id=machine_id, now=now)
-    if isinstance(credential, GoogleIdTokenCredential):
-        raise EnrollmentCredentialUnavailable(
-            "the google_id_token credential kind is the zero-ceremony USER "
-            "path and is not implemented in this build. It needs a real JWKS "
-            "verifier (signature by kid, iss, aud pinned to our OAuth client "
-            "id, exp and iat) -- apps.webui.server.auth.decode_id_token_claims "
-            "does NOT verify signatures and must not be reused here, because "
-            "a token arriving from a spoke is exactly the untrusted hop its "
-            "docstring excludes. Until then, enroll with a grant: "
-            "python -m apps.sync_hub grant --data-dir <hub data dir>"
-        )
+    if isinstance(credential, VerifiedGoogleIdToken):
+        return google_id_token.owner_for_verified_identity(conn, credential.identity)
     _exhaustive: object = credential
     raise AssertionError(f"unhandled enrollment credential {_exhaustive!r}")
+
+
+def _verify_google_id_token(
+    credential: GoogleIdTokenCredential,
+) -> google_id_token.VerifiedGoogleIdentity:
+    """Verify the id_token against Google's JWKS. No database involved.
+
+    Config is read from the hub's environment on every call, the same source
+    :class:`apps.webui.server.auth.GoogleOAuthConfig` reads, so the pinned
+    ``aud`` is the client this install signs in with. Wall-clock time, not a
+    ``now`` argument: ``exp`` and ``iat`` are Google's wall clock.
+    """
+    try:
+        config = google_id_token.GoogleIdTokenConfig.from_env(os.environ)
+        return google_id_token.verify_google_id_token(
+            credential.value,
+            config=config,
+            cache=google_id_token.jwks_cache_for(config.jwks_url),
+        )
+    except google_id_token.GoogleIdTokenVerifierUnavailable as exc:
+        raise EnrollmentCredentialUnavailable(str(exc)) from exc
+    except google_id_token.GoogleIdTokenRejected as exc:
+        raise EnrollmentCredentialError(str(exc)) from exc
 
 
 def _redeem_grant(
@@ -278,18 +341,20 @@ def _redeem_grant(
             f"enroll long afterwards needs a new grant rather than the old "
             f"token."
         )
-    if redeemed_at is not None:
-        if str(redeemed_machine_id) != machine_id:
-            raise EnrollmentCredentialError(
-                f"this enrollment grant was already redeemed by machine "
-                f"{redeemed_machine_id}. Grants are single use; mint a fresh "
-                f"one for {machine_id}."
-            )
-    else:
-        conn.execute(
-            f"UPDATE {GRANT_TABLE} SET redeemed_at = ?, redeemed_machine_id = ? "
-            f"WHERE grant_token_sha256 = ?",
-            (stamp, machine_id, token_hash),
+    if redeemed_at is None:
+        redeemed_machine_id = _claim_unspent_grant(conn, token_hash, machine_id, stamp)
+    if str(redeemed_machine_id) != machine_id:
+        # The winner's id goes to the hub log only: the refusal reaches
+        # whoever holds the token, and a leaked, spent grant must not tell
+        # its holder which machine spent it.
+        log.warning(
+            "refused grant re-presentation by machine %s: already redeemed by machine %s",
+            machine_id,
+            redeemed_machine_id,
+        )
+        raise EnrollmentCredentialError(
+            f"this enrollment grant was already redeemed by another machine. "
+            f"Grants are single use; mint a fresh one for {machine_id}."
         )
 
     user = conn.execute(
@@ -302,6 +367,39 @@ def _redeem_grant(
             f"hub; the account was deleted. Nothing can be enrolled to them."
         )
     return OwnerIdentity(google_sub=str(user[0]), email=str(user[1]))
+
+
+def _claim_unspent_grant(
+    conn: sqlite3.Connection, token_hash: str, machine_id: str, stamp: str
+) -> str:
+    """Spend an unspent grant for ``machine_id``; return the machine holding it.
+
+    A conditional UPDATE rather than trusting the earlier SELECT: SQLite
+    evaluates ``redeemed_at IS NULL`` under the write lock, so of two callers
+    that both READ the grant as unspent, exactly one claims it (rowcount 1).
+    The other matches zero rows and re-reads the redeemer, so its refusal
+    names the machine that actually won. Before this guard the second UPDATE
+    overwrote the first's claim and both machines resolved an owner, for any
+    caller that did not already hold the write lock when it read the grant
+    (tests/cloudsync/test_enrollment_grant_race.py).
+    """
+    claimed = conn.execute(
+        f"UPDATE {GRANT_TABLE} SET redeemed_at = ?, redeemed_machine_id = ? "
+        f"WHERE grant_token_sha256 = ? AND redeemed_at IS NULL",
+        (stamp, machine_id, token_hash),
+    ).rowcount
+    if claimed == 1:
+        return machine_id
+    row = conn.execute(
+        f"SELECT redeemed_machine_id FROM {GRANT_TABLE} WHERE grant_token_sha256 = ?",
+        (token_hash,),
+    ).fetchone()
+    if row is None or row[0] is None:
+        raise EnrollmentCredentialError(
+            "this enrollment grant changed while it was being redeemed and "
+            "now names no redeeming machine; mint a fresh one on the hub."
+        )
+    return str(row[0])
 
 
 __all__ = [
@@ -318,9 +416,12 @@ __all__ = [
     "GoogleIdTokenCredential",
     "GrantCredential",
     "MintedGrant",
+    "VerifiedCredential",
+    "VerifiedGoogleIdToken",
     "credential_from_wire",
     "hash_grant_token",
     "mint_grant",
     "owner_by_email",
     "resolve_enrollment_identity",
+    "verify_outside_transaction",
 ]

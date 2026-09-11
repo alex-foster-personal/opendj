@@ -17,6 +17,7 @@ readonly EXIT_USAGE=64
 readonly EXIT_UNAVAILABLE=69
 readonly PYTHON_BIN="${PYTHON_BIN:-/usr/bin/python3}"
 readonly PRESSURE_WARMUP_SECONDS=1
+readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 KIND=""
 LEVEL=""
@@ -31,6 +32,7 @@ CAPTURE_SHA=""
 CAPTURE_BLOB=""
 OUTPUT_PATH=""
 MACHINE_TAG=""
+LIBRARY_SCALE_FIXTURE=""
 CONFIRM_REAL_PRESSURE=0
 SQUEEZE_PID=""
 BOUNDARY_CAPTURE_PID=""
@@ -50,7 +52,7 @@ Usage:
   scripts/perf_squeeze.sh --kind <cpu|memory|disk|memory-notify> --level <value>
       --duration <seconds, at least 2> --capture-command <capture-file> --output <report.json>
       --capture-implementation '<path>@<full-git-sha>'
-      [--machine-tag <tag>] [--confirm-real-pressure]
+      [--machine-tag <tag>] [--library-scale-fixture <path>] [--confirm-real-pressure]
 
 The capture file runs four times with PERF_SQUEEZE_PHASE set to baseline,
 during, pressure-end, then after. --capture-command must name exactly the same
@@ -73,6 +75,14 @@ and emit xrun_boundary_ack: true.
 
 --capture-implementation records the checked-in capture implementation and its
 full Git SHA, for example scripts/perf_capture_webkit.sh@0123456789abcdef0123456789abcdef01234567.
+
+--library-scale-fixture points at a JSON manifest ({"track_count": N}) or an
+engine data-dir with state/state.db. The floor is 1000 tracks. The 2-track e2e
+bench is not library-scale. When the fixture is absent, the report still writes
+library_scale.present=false with track_count null (not 0) and stderr names the
+gap. Cross-host comparison uses scripts.perf.squeeze_report compare or
+just perf-squeeze-compare; a missing required KPI is rejected, never filled
+with zero.
 
 Kinds:
   cpu            stress-ng CPU load, --level is 1..100 percent
@@ -222,43 +232,33 @@ _cleanup() {
 
 # ----- capture and pressure --------------------------------------------------------
 
+_squeeze_python() {
+    PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:$PYTHONPATH}" "${PYTHON_BIN}" -m scripts.perf.squeeze_report "$@"
+}
+
+_warn_library_scale_gap() {
+    local resolved reason track_count
+    if [ -n "${LIBRARY_SCALE_FIXTURE}" ]; then
+        resolved="$(_squeeze_python library-scale --fixture "${LIBRARY_SCALE_FIXTURE}")"
+    else
+        resolved="$(_squeeze_python library-scale)"
+    fi
+    reason="$(printf '%s' "${resolved}" | "${PYTHON_BIN}" -c 'import json,sys; print(json.load(sys.stdin)["reason"] or "")')"
+    track_count="$(printf '%s' "${resolved}" | "${PYTHON_BIN}" -c 'import json,sys; value=json.load(sys.stdin)["track_count"]; print("" if value is None else value)')"
+    if [ -z "${reason}" ]; then
+        return 0
+    fi
+    if [ -n "${track_count}" ]; then
+        printf '[WARN] perf-squeeze: %s (track_count=%s)\n' "${reason}" "${track_count}" >&2
+    else
+        printf '[WARN] perf-squeeze: %s\n' "${reason}" >&2
+    fi
+}
+
 _validate_capture_metrics() {
     local phase="$1"
     local raw_path="$2"
-    "${PYTHON_BIN}" -c '
-import json, math, re, sys
-from pathlib import Path
-path, phase = Path(sys.argv[1]), sys.argv[2]
-try:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-except json.JSONDecodeError as error:
-    raise SystemExit(f"[ERROR] perf-squeeze: {phase} capture did not emit valid JSON: {error}")
-if not isinstance(payload, dict):
-    raise SystemExit(f"[ERROR] perf-squeeze: {phase} capture must emit a JSON object")
-for name in ("deck_load_ms", "ui_latency_ms"):
-    value = payload.get(name)
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
-        raise SystemExit(f"[ERROR] perf-squeeze: {phase} capture requires {name} as a finite number >= 0")
-xruns = payload.get("xruns")
-if isinstance(xruns, bool) or not isinstance(xruns, int) or xruns < 0:
-    raise SystemExit(f"[ERROR] perf-squeeze: {phase} capture requires xruns as an integer >= 0")
-build_sha = payload.get("app_build_sha")
-if not isinstance(build_sha, str) or re.fullmatch(r"[0-9a-f]{40}", build_sha) is None:
-    raise SystemExit(f"[ERROR] perf-squeeze: {phase} capture requires app_build_sha as a full Git SHA")
-if payload.get("app_build_dirty") is not False:
-    raise SystemExit(f"[ERROR] perf-squeeze: {phase} capture requires app_build_dirty must be false")
-frontend_sha = payload.get("frontend_build_sha")
-if not isinstance(frontend_sha, str) or re.fullmatch(r"[0-9a-f]{40}", frontend_sha) is None:
-    raise SystemExit(f"[ERROR] perf-squeeze: {phase} capture requires frontend_build_sha as a full Git SHA")
-if payload.get("frontend_build_dirty") is not False:
-    raise SystemExit(f"[ERROR] perf-squeeze: {phase} capture requires frontend_build_dirty must be false")
-xrun_session_id = payload.get("xrun_session_id")
-if not isinstance(xrun_session_id, str) or re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", xrun_session_id) is None:
-    raise SystemExit(f"[ERROR] perf-squeeze: {phase} capture requires xrun_session_id as a stable identifier")
-if phase in ("baseline", "pressure-end") and payload.get("xrun_boundary_ack") is not True:
-    raise SystemExit(f"[ERROR] perf-squeeze: {phase} capture requires xrun_boundary_ack after flushing the worklet")
-print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
-' "${raw_path}" "${phase}" >"${TEMP_DIR}/${phase}.json"
+    _squeeze_python validate --phase "${phase}" --input "${raw_path}" --output "${TEMP_DIR}/${phase}.json"
 }
 
 _capture_metrics() {
@@ -364,29 +364,27 @@ _ensure_pressure_active() {
 }
 
 _write_report() {
-    local output_tmp
+    local output_tmp write_args
     output_tmp="${TEMP_DIR}/report.json"
-    "${PYTHON_BIN}" -c '
-import json, sys
-from datetime import datetime, timezone
-from pathlib import Path
-baseline, during, pressure_end, after, output, machine, kind, level, duration, sha, capture_implementation, hostname = sys.argv[1:]
-captures = {name: json.loads(Path(path).read_text(encoding="utf-8")) for name, path in (("baseline", baseline), ("during", during), ("pressure-end", pressure_end), ("after", after))}
-app_build_shas = {capture["app_build_sha"] for capture in captures.values()}
-if len(app_build_shas) != 1:
-    raise SystemExit("[ERROR] perf-squeeze: app_build_sha changed between captures; report rejected")
-frontend_build_shas = {capture["frontend_build_sha"] for capture in captures.values()}
-if len(frontend_build_shas) != 1:
-    raise SystemExit("[ERROR] perf-squeeze: frontend_build_sha changed between captures; report rejected")
-xrun_session_ids = {capture["xrun_session_id"] for capture in captures.values()}
-if len(xrun_session_ids) != 1:
-    raise SystemExit("[ERROR] perf-squeeze: xrun_session_id changed between captures; report rejected")
-ordered_xruns = [captures[phase]["xruns"] for phase in ("baseline", "during", "pressure-end", "after")]
-if any(later < earlier for earlier, later in zip(ordered_xruns, ordered_xruns[1:])):
-    raise SystemExit("[ERROR] perf-squeeze: xruns regressed between captures; report rejected")
-report = {"schema_version": 2, "captured_at": datetime.now(timezone.utc).isoformat(), "machine_tag": machine, "hostname": hostname, "harness_source_sha": sha, "harness_source_dirty": False, "capture_implementation": capture_implementation, "measured_app_build_sha": app_build_shas.pop(), "measured_app_build_dirty": False, "measured_frontend_build_sha": frontend_build_shas.pop(), "measured_frontend_build_dirty": False, "xrun_session_id": xrun_session_ids.pop(), "pressure": {"kind": kind, "level": level, "duration_seconds": int(duration), "simulated_notification_only": kind == "memory-notify"}, "captures": captures, "during_minus_baseline": {"deck_load_ms": captures["during"]["deck_load_ms"] - captures["baseline"]["deck_load_ms"], "xruns": captures["pressure-end"]["xruns"] - captures["baseline"]["xruns"], "ui_latency_ms": captures["during"]["ui_latency_ms"] - captures["baseline"]["ui_latency_ms"]}}
-Path(output).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-' "${TEMP_DIR}/baseline.json" "${TEMP_DIR}/during.json" "${TEMP_DIR}/pressure-end.json" "${TEMP_DIR}/after.json" "${output_tmp}" "${MACHINE_TAG}" "${KIND}" "${LEVEL}" "${DURATION_SECONDS}" "${HARNESS_SOURCE_SHA}" "${CAPTURE_IMPLEMENTATION}" "$(hostname -s)"
+    write_args=(
+        write
+        --baseline "${TEMP_DIR}/baseline.json"
+        --during "${TEMP_DIR}/during.json"
+        --pressure-end "${TEMP_DIR}/pressure-end.json"
+        --after "${TEMP_DIR}/after.json"
+        --output "${output_tmp}"
+        --machine-tag "${MACHINE_TAG}"
+        --hostname "$(hostname -s)"
+        --kind "${KIND}"
+        --level "${LEVEL}"
+        --duration "${DURATION_SECONDS}"
+        --harness-source-sha "${HARNESS_SOURCE_SHA}"
+        --capture-implementation "${CAPTURE_IMPLEMENTATION}"
+    )
+    if [ -n "${LIBRARY_SCALE_FIXTURE}" ]; then
+        write_args+=(--library-scale-fixture "${LIBRARY_SCALE_FIXTURE}")
+    fi
+    _squeeze_python "${write_args[@]}"
     mv "${output_tmp}" "${OUTPUT_PATH}"
     printf '[OK] perf-squeeze: report=%s machine=%s kind=%s level=%s duration=%ss\n' "${OUTPUT_PATH}" "${MACHINE_TAG}" "${KIND}" "${LEVEL}" "${DURATION_SECONDS}"
 }
@@ -403,6 +401,7 @@ _main() {
             --capture-implementation) CAPTURE_IMPLEMENTATION="${2:-}"; shift 2 ;;
             --output) OUTPUT_PATH="${2:-}"; shift 2 ;;
             --machine-tag) MACHINE_TAG="${2:-}"; shift 2 ;;
+            --library-scale-fixture) LIBRARY_SCALE_FIXTURE="${2:-}"; shift 2 ;;
             --confirm-real-pressure) CONFIRM_REAL_PRESSURE=1; shift ;;
             --help|-h) _usage; return 0 ;;
             *) _die_usage "unknown argument: $1" ;;
@@ -410,6 +409,7 @@ _main() {
     done
     _require_macos
     _validate_arguments
+    _warn_library_scale_gap
     _snapshot_harness_identity
     [ -n "${MACHINE_TAG}" ] || MACHINE_TAG="$(hostname -s)-squeeze-${KIND}-${LEVEL}"
     TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mdt-perf-squeeze.XXXXXX")"

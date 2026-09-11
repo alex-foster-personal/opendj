@@ -2139,6 +2139,45 @@
         "title": "ChatMessage",
         "type": "object"
       },
+      "CheckedViolationOut": {
+        "additionalProperties": false,
+        "properties": {
+          "blocking": {
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "introduced": {
+            "title": "Introduced",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule_id",
+          "severity",
+          "subject",
+          "message",
+          "introduced",
+          "blocking"
+        ],
+        "title": "CheckedViolationOut",
+        "type": "object"
+      },
       "ClientErrorIn": {
         "properties": {
           "audio_worklet_available": {
@@ -4298,6 +4337,133 @@
         "title": "FlagsOut",
         "type": "object"
       },
+      "FleetMachineOut": {
+        "additionalProperties": false,
+        "description": "One row of ``fleet --json``. ``extra=forbid`` so a field the shared\nfunction adds fails loudly here instead of silently vanishing from HTTP.",
+        "properties": {
+          "enrolled_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enrolled At"
+          },
+          "enrolled_via": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enrolled Via"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Email"
+          },
+          "owner_google_sub": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Google Sub"
+          },
+          "row_hub_machine_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Hub Machine Id"
+          },
+          "state": {
+            "enum": [
+              "owned",
+              "unowned",
+              "foreign"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "name",
+          "state",
+          "owner_google_sub",
+          "owner_email",
+          "row_hub_machine_id",
+          "enrolled_at",
+          "enrolled_via"
+        ],
+        "title": "FleetMachineOut",
+        "type": "object"
+      },
+      "FleetOut": {
+        "additionalProperties": false,
+        "properties": {
+          "foreign": {
+            "title": "Foreign",
+            "type": "integer"
+          },
+          "hub_machine_id": {
+            "title": "Hub Machine Id",
+            "type": "string"
+          },
+          "machines": {
+            "items": {
+              "$ref": "#/components/schemas/FleetMachineOut"
+            },
+            "title": "Machines",
+            "type": "array"
+          },
+          "owned": {
+            "title": "Owned",
+            "type": "integer"
+          },
+          "unowned": {
+            "title": "Unowned",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hub_machine_id",
+          "machines",
+          "owned",
+          "unowned",
+          "foreign"
+        ],
+        "title": "FleetOut",
+        "type": "object"
+      },
       "FolderImportIn": {
         "description": "Point at one or more folders of audio files. No rekordbox involved.",
         "properties": {
@@ -4530,6 +4696,59 @@
           "tier"
         ],
         "title": "GenerateIn",
+        "type": "object"
+      },
+      "GrantIn": {
+        "additionalProperties": false,
+        "properties": {
+          "owner_email": {
+            "description": "email of a user who has signed in on this hub (CLI --owner)",
+            "minLength": 1,
+            "title": "Owner Email",
+            "type": "string"
+          },
+          "ttl_seconds": {
+            "default": 900,
+            "description": "how long the grant stays redeemable (CLI --ttl-seconds)",
+            "exclusiveMinimum": 0.0,
+            "maximum": 3600.0,
+            "title": "Ttl Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "owner_email"
+        ],
+        "title": "GrantIn",
+        "type": "object"
+      },
+      "GrantOut": {
+        "description": "The raw token exists in this response and nowhere else; only its\nsha256 is stored. Redeem with ``python -m apps.sync_hub enroll``.",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "owner_email": {
+            "title": "Owner Email",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "owner_email",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "GrantOut",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -5322,6 +5541,25 @@
         "title": "JobOut",
         "type": "object"
       },
+      "KindDefaultIn": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_kind": {
+            "title": "Asset Kind",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_kind",
+          "mode"
+        ],
+        "title": "KindDefaultIn",
+        "type": "object"
+      },
       "LabelRequest": {
         "description": "Body for the relabel endpoint.",
         "properties": {
@@ -6067,6 +6305,20 @@
           "text"
         ],
         "title": "LyricLineOut",
+        "type": "object"
+      },
+      "LyricsCachedIdsOut": {
+        "description": "Stable ids with a valid on-disk lyrics-cache entry.",
+        "properties": {
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "title": "LyricsCachedIdsOut",
         "type": "object"
       },
       "LyricsUnavailableOut": {
@@ -6863,6 +7115,37 @@
         "title": "MyTagSweepOut",
         "type": "object"
       },
+      "OpsErrorBody": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "OpsErrorBody",
+        "type": "object"
+      },
+      "OpsErrorResponse": {
+        "description": "FastAPI wraps an ``HTTPException`` detail under ``detail``.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/OpsErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "OpsErrorResponse",
+        "type": "object"
+      },
       "OverviewOut": {
         "properties": {
           "machines": {
@@ -7583,6 +7866,30 @@
         "title": "PermissionsOut",
         "type": "object"
       },
+      "PinCellIn": {
+        "additionalProperties": false,
+        "properties": {
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "playlist_id",
+          "mode"
+        ],
+        "title": "PinCellIn",
+        "type": "object"
+      },
       "PinEnvironmentOut": {
         "description": "Non-personal runtime facts needed to reproduce a pinned UI defect.\n\n``machine`` and ``release_version`` are already exposed by the running\ndaemon's settings/health surfaces. The browser contributes only its UI\nkind and viewport dimensions: no username, user agent, URL query, or\nother new personal data enters the pin store.",
         "properties": {
@@ -7619,6 +7926,104 @@
           "release_version"
         ],
         "title": "PinEnvironmentOut",
+        "type": "object"
+      },
+      "PinKeyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "playlist_id"
+        ],
+        "title": "PinKeyIn",
+        "type": "object"
+      },
+      "PlanEntryOut": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table",
+          "machine_id",
+          "key",
+          "action",
+          "before",
+          "after"
+        ],
+        "title": "PlanEntryOut",
         "type": "object"
       },
       "PlanModel": {
@@ -8474,6 +8879,181 @@
           "updated_at"
         ],
         "title": "PlaylistWriteOut",
+        "type": "object"
+      },
+      "PolicyApplyIn": {
+        "additionalProperties": false,
+        "description": "``POST /policies/apply``. Dry-run unless ``dry_run`` is false, like the CLI's ``--live``.",
+        "properties": {
+          "changes": {
+            "$ref": "#/components/schemas/PolicyChangesIn"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "changes"
+        ],
+        "title": "PolicyApplyIn",
+        "type": "object"
+      },
+      "PolicyCellIn": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_kind": {
+            "title": "Asset Kind",
+            "type": "string"
+          },
+          "cache_budget_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Budget Mb"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "asset_kind",
+          "mode"
+        ],
+        "title": "PolicyCellIn",
+        "type": "object"
+      },
+      "PolicyChangesIn": {
+        "additionalProperties": false,
+        "description": "A change set. Every list is optional; an empty body validates the stored fleet.",
+        "properties": {
+          "defaults": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/KindDefaultIn"
+            },
+            "title": "Defaults",
+            "type": "array"
+          },
+          "excluded_tables": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Excluded Tables",
+            "type": "array"
+          },
+          "pins": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PinCellIn"
+            },
+            "title": "Pins",
+            "type": "array"
+          },
+          "policies": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PolicyCellIn"
+            },
+            "title": "Policies",
+            "type": "array"
+          },
+          "removed_pins": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PinKeyIn"
+            },
+            "title": "Removed Pins",
+            "type": "array"
+          },
+          "removed_policies": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PolicyKeyIn"
+            },
+            "title": "Removed Policies",
+            "type": "array"
+          }
+        },
+        "title": "PolicyChangesIn",
+        "type": "object"
+      },
+      "PolicyKeyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_kind": {
+            "title": "Asset Kind",
+            "type": "string"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "asset_kind"
+        ],
+        "title": "PolicyKeyIn",
+        "type": "object"
+      },
+      "PolicyOutcomeOut": {
+        "additionalProperties": false,
+        "description": ":meth:`apps.sync_hub.policy_store.PolicyOutcome.to_wire`, typed.",
+        "properties": {
+          "author_machine_id": {
+            "title": "Author Machine Id",
+            "type": "string"
+          },
+          "blocking": {
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "measurable": {
+            "title": "Measurable",
+            "type": "boolean"
+          },
+          "plan": {
+            "items": {
+              "$ref": "#/components/schemas/PlanEntryOut"
+            },
+            "title": "Plan",
+            "type": "array"
+          },
+          "violations": {
+            "items": {
+              "$ref": "#/components/schemas/CheckedViolationOut"
+            },
+            "title": "Violations",
+            "type": "array"
+          },
+          "written": {
+            "title": "Written",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "author_machine_id",
+          "measurable",
+          "blocking",
+          "written",
+          "plan",
+          "violations"
+        ],
+        "title": "PolicyOutcomeOut",
         "type": "object"
       },
       "PreflightCheckOut": {
@@ -11610,6 +12190,122 @@
           "mode"
         ],
         "title": "SyncPolicyPut",
+        "type": "object"
+      },
+      "SyncRunIn": {
+        "additionalProperties": false,
+        "properties": {
+          "hub_url": {
+            "description": "the hub base URL, e.g. http://hub.tailnet:8686 (CLI --hub)",
+            "minLength": 1,
+            "pattern": "^https?://",
+            "title": "Hub Url",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "this machine's display name; the hostname when omitted (CLI --name)",
+            "title": "Name"
+          }
+        },
+        "required": [
+          "hub_url"
+        ],
+        "title": "SyncRunIn",
+        "type": "object"
+      },
+      "SyncRunOut": {
+        "description": "What one ``run_sync`` observed. Every count is observed, none inferred.\n\n``digest_inconclusive`` True is the CLI's exit code 4: rows moved but the\npost-sync digest compare excluded rows, so agreement was NOT verified.\n``hub_quarantined`` None means the hub did not report it (unknown, not 0).",
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "digest_inconclusive": {
+            "title": "Digest Inconclusive",
+            "type": "boolean"
+          },
+          "hub_machine_id": {
+            "title": "Hub Machine Id",
+            "type": "string"
+          },
+          "hub_quarantined": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Quarantined"
+          },
+          "hub_restore_detected": {
+            "title": "Hub Restore Detected",
+            "type": "boolean"
+          },
+          "hub_seq": {
+            "title": "Hub Seq",
+            "type": "integer"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "pulled": {
+            "title": "Pulled",
+            "type": "integer"
+          },
+          "pushed": {
+            "title": "Pushed",
+            "type": "integer"
+          },
+          "quarantined_incoming": {
+            "title": "Quarantined Incoming",
+            "type": "integer"
+          },
+          "quarantined_rows": {
+            "title": "Quarantined Rows",
+            "type": "integer"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "rounds": {
+            "title": "Rounds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "machine_id",
+          "hub_machine_id",
+          "pushed",
+          "accepted",
+          "rejected",
+          "pulled",
+          "applied",
+          "hub_seq",
+          "rounds",
+          "hub_restore_detected",
+          "quarantined_rows",
+          "quarantined_incoming",
+          "hub_quarantined",
+          "digest_inconclusive"
+        ],
+        "title": "SyncRunOut",
         "type": "object"
       },
       "SyncSnapshotIn": {
@@ -16359,6 +17055,150 @@
         ]
       }
     },
+    "/api/v1/cloudsync/data-classes": {
+      "get": {
+        "description": "Every class of data and how it syncs (``policy classes`` twin).",
+        "operationId": "get_data_classes_api_v1_cloudsync_data_classes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "title": "Response Get Data Classes Api V1 Cloudsync Data Classes Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Data Classes",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/enrollment-grants": {
+      "post": {
+        "description": "Mint one single-use grant on this hub. The token is returned once and\nnever logged; only its sha256 reaches the database.",
+        "operationId": "mint_enrollment_grant_api_v1_cloudsync_enrollment_grants_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "No signed-in user on this hub has that email; none is created. code: CLOUDSYNC_GRANT_OWNER_UNKNOWN."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "This machine is not a hub (MDT_IS_HUB is not 1); a grant is an act of hub authority. code: CLOUDSYNC_NOT_A_HUB."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "MDT_IS_HUB holds a value other than 1, 0 or empty. code: CLOUDSYNC_HUB_FLAG_INVALID."
+          }
+        },
+        "summary": "Mint Enrollment Grant",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/fleet": {
+      "get": {
+        "description": "Exactly ``fleet --json``: the one function both entry points call.",
+        "operationId": "get_fleet_api_v1_cloudsync_fleet_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          }
+        },
+        "summary": "Get Fleet",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
     "/api/v1/cloudsync/machines": {
       "get": {
         "operationId": "list_machines_api_v1_cloudsync_machines_get",
@@ -16458,7 +17298,7 @@
         ]
       },
       "put": {
-        "description": "Upsert one pin THROUGH the stamp chokepoint. See :func:`put_policy`.",
+        "description": "Upsert one pin through the policy gate. See :func:`put_policy`.",
         "operationId": "put_playlist_pin_api_v1_cloudsync_playlist_pins_put",
         "requestBody": {
           "content": {
@@ -16479,7 +17319,13 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "The stored pin"
+          },
+          "404": {
+            "description": "MACHINE_NOT_FOUND or PLAYLIST_NOT_FOUND; nothing written"
+          },
+          "409": {
+            "description": "POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written"
           },
           "422": {
             "content": {
@@ -16551,7 +17397,7 @@
         ]
       },
       "put": {
-        "description": "Upsert one policy cell THROUGH the stamp chokepoint.\n\nRound 2 finding N1a: this endpoint stamped the row correctly but skipped\n``local_changelog``, so the edit was never offered to the hub and the\nmachine then failed its post-sync digest compare on ``sync_policies``\nforever. Changing one policy in the config UI stopped that machine\nsyncing anything at all.",
+        "description": "Upsert one policy cell through the policy gate (``policy set --live`` twin).\n\n``apps.sync_hub.policy_store`` stamps the row and its ``local_changelog``\nentry in one transaction (round 2 finding N1a: a write with no changelog\nentry is never offered to the hub) and answers 409 when the change\nintroduces an error-severity violation, writing nothing.",
         "operationId": "put_policy_api_v1_cloudsync_policies_put",
         "requestBody": {
           "content": {
@@ -16572,7 +17418,13 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "The stored cell"
+          },
+          "404": {
+            "description": "MACHINE_NOT_FOUND; nothing written"
+          },
+          "409": {
+            "description": "POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written"
           },
           "422": {
             "content": {
@@ -16586,6 +17438,203 @@
           }
         },
         "summary": "Put Policy",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/policies/apply": {
+      "post": {
+        "description": "Gate the change set and, unless ``dry_run``, write it in one transaction.",
+        "operationId": "apply_policies_api_v1_cloudsync_policies_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyApplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOutcomeOut"
+                }
+              }
+            },
+            "description": "Gated; written is true only when dry_run is false"
+          },
+          "404": {
+            "description": "MACHINE_NOT_FOUND or PLAYLIST_NOT_FOUND or POLICY_NOT_FOUND or PIN_NOT_FOUND; nothing written"
+          },
+          "409": {
+            "description": "POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Policies",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/policies/plan": {
+      "post": {
+        "description": "Rows ``body`` would touch, with the gate's verdict. Never writes.",
+        "operationId": "plan_policies_api_v1_cloudsync_policies_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyChangesIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOutcomeOut"
+                }
+              }
+            },
+            "description": "The rows the change set would touch; CLI exit 3 when blocking"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Plan Policies",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/policies/validate": {
+      "post": {
+        "description": "The fleet with ``body`` applied, judged. No body judges the stored fleet\n(``policy validate`` without ``--proposal``).",
+        "operationId": "validate_policies_api_v1_cloudsync_policies_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PolicyChangesIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOutcomeOut"
+                }
+              }
+            },
+            "description": "The fleet with the change set applied, judged; CLI exit 3 on any error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Policies",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/policies/{machine_id}/{asset_kind}": {
+      "delete": {
+        "description": "Unset one cell: a synced tombstone (``policy unset --live`` twin).",
+        "operationId": "delete_policy_api_v1_cloudsync_policies__machine_id___asset_kind__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "title": "Machine Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_kind",
+            "required": true,
+            "schema": {
+              "title": "Asset Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOutcomeOut"
+                }
+              }
+            },
+            "description": "The cell is tombstoned and will sync"
+          },
+          "404": {
+            "description": "MACHINE_NOT_FOUND or POLICY_NOT_FOUND; nothing written"
+          },
+          "409": {
+            "description": "POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Policy",
         "tags": [
           "cloudsync"
         ]
@@ -16607,6 +17656,81 @@
           }
         },
         "summary": "Get Status",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/sync": {
+      "post": {
+        "description": "One spoke round trip against ``hub_url``, journaled for ``/status``.",
+        "operationId": "run_sync_round_api_v1_cloudsync_sync_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncRunIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "run_sync raised an error it does not declare (a defect). Journaled as error by maintenance.sync; the body is the server's plain 500, not an OpsErrorResponse."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The hub was unreachable or answered with something unusable. code: CLOUDSYNC_HUB_UNREACHABLE. Journaled as error."
+          }
+        },
+        "summary": "Run Sync Round",
         "tags": [
           "cloudsync"
         ]
@@ -19356,7 +20480,7 @@
     },
     "/api/v1/performance/telemetry/pressure": {
       "get": {
-        "description": "What the machine is under right now, cheap enough to poll.\n\nTHE conditions half of a trustworthy timing row. The browser stamps this\nonto every deck-load row (see the frontend's machine-pressure.ts) so a\nlatency number carries the machine state it was measured under instead of\nleaving a later reader to guess, which is how the register ended up with a\nwaveform decode recorded at both 0.73 s and 7.53 s for the same work.\n\nRead-only, and deliberately NOT a process walk: this is sysctl, getloadavg\nand vm_stat, never the `ps` table that `/processes` reads out of the\nprobe's log. It is served from a short shared cache and every response\nstates the age of the sample it is handing back, so a caller can tell a\nfresh reading from a five-second-old one rather than assuming.\n\nAgent-native: `curl $ENGINE/api/v1/performance/telemetry/pressure`.\n\nFields, all optional and all absent rather than zero when unreadable:\n`load_avg_1m` (1-minute kernel load average), `mem_free_mb` (free physical\nmemory, `vm_stat` Pages free only, not the wider reclaimable figure),\n`swap_used_mb` (swap in use), `cache_age_ms` (age of this sample).\n`available` is false, with a `reason`, when nothing could be measured --\nnotably inside the packaged app, whose payload stages `apps` and not\n`scripts`.",
+        "description": "What the machine is under right now, cheap enough to poll.",
         "operationId": "machine_pressure_api_v1_performance_telemetry_pressure_get",
         "responses": {
           "200": {
@@ -21869,7 +22993,7 @@
             },
             "description": "Validation Error"
           },
-          "501": {
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -21877,7 +23001,7 @@
                 }
               }
             },
-            "description": "The credential KIND is real and reserved but not built yet. code: SYNC_ENROLL_KIND_UNAVAILABLE."
+            "description": "The credential KIND is real but this hub cannot resolve it right now: for google_id_token, no OAuth client id is configured or Google's signing keys are unreachable. Never answered with an unverified acceptance. code: SYNC_ENROLL_KIND_UNAVAILABLE."
           }
         },
         "summary": "Enroll",
@@ -22353,6 +23477,28 @@
         ]
       }
     },
+    "/api/v1/tracks/lyrics-cached-ids": {
+      "get": {
+        "description": "List cached lyric timelines so the UI can skip explicit cache-miss reads.",
+        "operationId": "get_lyrics_cached_ids_api_v1_tracks_lyrics_cached_ids_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsCachedIdsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyrics Cached Ids",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
     "/api/v1/tracks/quality-ladder": {
       "get": {
         "description": "The six venue rungs, so the UI legend is not a second copy of them.",
@@ -22633,7 +23779,7 @@
     },
     "/api/v1/tracks/{stable_id}/auto-cues": {
       "get": {
-        "description": "PROPOSED hot cues from apps.analysis (META-04). Never committed cues.",
+        "description": "PROPOSED hot cues from apps.analysis (META-04). Never committed cues.\n\nReturns HTTP 200 with ``proposals: []`` and ``backend=\"none\"`` when the\ntrack is in the library but has no analysis row yet. Unknown stable_id\nand unmatched ``?backend=`` still 404 with ``ANALYSIS_NOT_FOUND``.",
         "operationId": "get_auto_cues_api_v1_tracks__stable_id__auto_cues_get",
         "parameters": [
           {

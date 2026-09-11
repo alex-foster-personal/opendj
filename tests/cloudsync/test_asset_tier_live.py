@@ -3,7 +3,7 @@
 Skipped unless ``R2_ACCOUNT_ID`` / ``R2_ACCESS_KEY_ID`` /
 ``R2_SECRET_ACCESS_KEY`` are in the environment, which in practice means::
 
-    doppler run -p music-dj-tools -c prod -- \\
+    doppler run -p general -c dev_personal -- \\
         uv run pytest tests/cloudsync/test_asset_tier_live.py -m live_r2
 
 Nothing here is mocked. The whole point of this file is that the SigV4
@@ -54,7 +54,7 @@ def test_live_r2_round_trip_put_ranged_get_delete():
         pytest.skip(
             "live R2 creds absent; set "
             + ", ".join(LIVE_R2_ENV_VARS)
-            + " (via `doppler run -p music-dj-tools -c prod --`) to run this."
+            + " (via `doppler run -p general -c dev_personal --`) to run this."
         )
 
     # Unique payload so a concurrent run on another machine cannot collide,

@@ -20,8 +20,10 @@ table.
 :func:`grant` and :func:`fleet` ARE hub-local, and that is not an exception to
 the rule: minting a credential and reading who owns what are acts of hub
 authority, so they run where that authority lives. They share one
-implementation with the future ``/cloudsync`` UI by being the functions it
-will call -- see this module's ``__all__``.
+implementation with their HTTP twins, ``GET /api/v1/cloudsync/fleet`` and
+``POST /api/v1/cloudsync/enrollment-grants``
+(``apps/webui/server/routes/cloudsync_ops.py``), by being the functions those
+routes call -- see this module's ``__all__``.
 """
 from __future__ import annotations
 

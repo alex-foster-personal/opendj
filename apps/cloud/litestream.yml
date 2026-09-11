@@ -1,7 +1,7 @@
 # Litestream config for music-dj-tools cloud sync (Phase 11).
 #
 # Environment variables come from Doppler -- invoke via:
-#   doppler run -p music-dj-tools -c prod -- \
+#   doppler run -p general -c dev_personal -- \
 #       litestream replicate -config apps/cloud/litestream.yml
 #
 # The DB path is the Phase 5 shared-state SQLite file (see
