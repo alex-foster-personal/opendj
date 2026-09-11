@@ -173,7 +173,7 @@ def _get_field(
             status_code=404,
             detail={"error": "not_found", "message": str(exc), "stable_id": stable_id},
         ) from exc
-    etag = compute_etag(track.stable_id, track.updated_at)
+    etag = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
     return track, getattr(track, field), etag
 
 
@@ -255,7 +255,7 @@ def apply(
         FindReplaceApplyRowOut(
             stable_id=track.stable_id,
             new_value=track.notes,
-            etag=compute_etag(track.stable_id, track.updated_at),
+            etag=compute_etag(track.stable_id, track.updated_at, track.selection_tag),
         )
         for track in tracks
         if track.stable_id in replacement_by_id

@@ -17,6 +17,14 @@ export class ScopedCommandInvalidatedError extends Error {
 	}
 }
 
+/** The one predicate for "this claim was dropped by an invalidation, not by a
+ * failure". Discriminates on `name`, the same way the routes already
+ * discriminate an `AbortError`, so it holds for an error that crossed a module
+ * boundary rather than only for one built by this exact class object. */
+export function isScopedCommandInvalidated(error: unknown): boolean {
+	return error instanceof Error && error.name === 'ScopedCommandInvalidatedError';
+}
+
 export class ScopedCommandScheduler<Scope extends PropertyKey> {
 	readonly #tails = new Map<Scope, Promise<void>>();
 	#generation = 0;

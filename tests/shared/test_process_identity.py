@@ -6,29 +6,51 @@ import time
 
 import pytest
 
-from apps.shared.process_identity import process_title
+from apps.shared.process_identity import _os_title, process_command, process_title
+from tests.waits import EXTERNAL_STATE_GUARD_S, wait_for_external_state
 
-_SUBPROCESS_TIMEOUT_SECONDS = 10.0
+#: Per-call ceiling for pgrep/ps and the final reap. Generous because it only
+#: costs time when a call genuinely hangs; a loaded runner is not a defect.
+_SUBPROCESS_TIMEOUT_SECONDS = EXTERNAL_STATE_GUARD_S
 
+# The child outlives any rename wait (the test kills it), so a slow rename can
+# never race the child's own exit.
 _ENGINE_LAUNCH_SOURCE = """
 import time
 from apps.shared.process_identity import set_process_identity
 set_process_identity("Engine", 8585, invocation_marker="apps.engine_core serve")
-time.sleep(10)
+time.sleep(600)
 """
 
 
 def test_process_title_namespaces_role_and_instance() -> None:
-    assert process_title("Engine", 8585) == "Open DJ · Engine :8585"
+    assert process_title("Engine", 8585) == "opendj-engine --name opendj-engine --port 8585"
     assert (
         process_title("  Worker   · setup.import-rekordbox  ")
-        == "Open DJ · Worker · setup.import-rekordbox"
+        == "opendj-worker-setup.import-rekordbox --name opendj-worker-setup.import-rekordbox"
     )
 
 
 def test_process_title_refuses_an_empty_role() -> None:
     with pytest.raises(ValueError, match="non-empty"):
         process_title("  \t  ")
+
+
+def test_os_title_preserves_an_exact_spawn_argv() -> None:
+    argv = ("/opt/Open DJ/python", "-m", "apps.engine_core.setup.worker", "--root", "/tmp/A B")
+
+    title = _os_title("opendj-worker --name opendj-worker", None, argv)
+
+    expected = "['/opt/Open DJ/python' -m apps.engine_core.setup.worker --root '/tmp/A B']"
+    assert title.endswith(expected)
+
+
+def test_process_command_is_the_exact_worker_reap_identity() -> None:
+    argv = (sys.executable, "-m", "apps.engine_core.setup.worker", "--data-dir", "/tmp/dj")
+    assert process_command("worker", invocation_argv=argv) == (
+        f"opendj-worker --name opendj-worker [{sys.executable} -m "
+        "apps.engine_core.setup.worker --data-dir /tmp/dj]"
+    )
 
 
 def test_set_process_identity_preserves_probe_markers_in_the_os_title() -> None:
@@ -48,28 +70,38 @@ def test_set_process_identity_preserves_probe_markers_in_the_os_title() -> None:
     ``scripts/diagnostics/probe_process_family.py`` greps in production.
     """
     proc = subprocess.Popen([sys.executable, "-c", _ENGINE_LAUNCH_SOURCE])
-    try:
-        command = ""
-        deadline = time.monotonic() + _SUBPROCESS_TIMEOUT_SECONDS
-        while time.monotonic() < deadline:
-            # -ww: unlimited width. Without it, a non-tty `ps` (as in CI) truncates
-            # `command=` to a fixed terminal-width guess, which silently clipped this
-            # title mid-marker on GitHub Actions' default COLUMNS.
-            result = subprocess.run(
-                ["ps", "-p", str(proc.pid), "-ww", "-o", "command="],
-                capture_output=True,
-                text=True,
-                timeout=5.0,
-                check=False,
-            )
-            command = result.stdout.strip()
-            if "Open DJ" in command:
-                break
-            time.sleep(0.1)
-        else:
-            pytest.fail(f"process {proc.pid} never reported a renamed title: {command!r}")
+    started = time.monotonic()
 
-        assert command.startswith("Open DJ · Engine :8585 [")
+    def _child_renamed() -> bool:
+        if proc.poll() is not None:
+            raise AssertionError(
+                f"child {proc.pid} exited rc {proc.returncode} after "
+                f"{time.monotonic() - started:.1f}s without renaming its title"
+            )
+        result = subprocess.run(
+            ["pgrep", "-f", "opendj-engine"],
+            capture_output=True,
+            text=True,
+            timeout=_SUBPROCESS_TIMEOUT_SECONDS,
+            check=False,
+        )
+        return proc.pid in {int(pid) for pid in result.stdout.split() if pid.isdigit()}
+
+    try:
+        waited = wait_for_external_state(
+            _child_renamed, what=f"pgrep -f opendj-engine finding child {proc.pid}"
+        )
+        command = subprocess.run(
+            ["ps", "-p", str(proc.pid), "-ww", "-o", "command="],
+            capture_output=True,
+            text=True,
+            timeout=_SUBPROCESS_TIMEOUT_SECONDS,
+            check=False,
+        ).stdout.strip()
+
+        assert command.startswith("opendj-engine --name opendj-engine --port 8585 ["), (
+            f"renamed after {waited:.1f}s, but the title reads {command!r}"
+        )
         assert sys.executable in command
         assert "apps.engine_core serve" in command
     finally:

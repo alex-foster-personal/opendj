@@ -11,7 +11,6 @@ Anything the running process cannot actually introspect is reported with
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Request
@@ -21,13 +20,11 @@ from starlette.routing import Mount
 
 from apps.adapters.rekordbox import config as rb_config
 from apps.shared.paths import DATA_DIR, STATE_DIR
+from apps.webui.server.frontend_build import frontend_build_dir
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
-# Mirrors apps/webui/server/app.py:FRONTEND_BUILD_DIR. Recomputed locally
-# (rather than imported) because app.py imports this router at module load
-# time, and app.py -> routes.settings -> app.py would be a circular import.
-_FRONTEND_BUILD_DIR: Path = Path(__file__).resolve().parents[2] / "frontend" / "build"
+_FRONTEND_BUILD_DIR = frontend_build_dir()
 
 
 # ----- pydantic models (inline per router convention, see progress.py) -------

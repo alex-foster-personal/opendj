@@ -49,6 +49,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -77,9 +78,14 @@ FORBIDDEN_ROOTS: tuple[str, ...] = (
     ".mypy_cache/", "blog/", "downloads/",
 )
 REMOTE_PATHS: dict[str, str] = {
-    "silver": "/Users/dev/code/music-dj-tools",
     "agentbox": "~/code/music-dj-tools",
 }
+#: Env override for Silver's checkout path, resolved fresh (not cached at
+#: import time) so a test can set/unset it per case. Resolved on the REMOTE
+#: host, not locally -- "~/..." is portable there the same way it already is
+#: for agentbox above. #910: no personal absolute path is hardcoded here;
+#: unset falls back to the same portable form agentbox uses.
+SILVER_CHECKOUT_ENV: str = "MDT_SILVER_CHECKOUT"
 
 
 # -----------------------------------------------------------------------------
@@ -333,6 +339,8 @@ def do_worktree(repo: Path, dest: Path, live: bool) -> int:
 
 
 def _remote_root(host: str) -> str:
+    if host == "silver":
+        return os.environ.get(SILVER_CHECKOUT_ENV, "~/code/music-dj-tools")
     return REMOTE_PATHS.get(host, "~/code/music-dj-tools")
 
 

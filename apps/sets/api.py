@@ -14,6 +14,9 @@ Endpoints::
         body {"class": "..."}                       -> appends to labels.jsonl
     GET    /api/sets/{session_id}/audio/{segment}   -> MP3 stream (localhost-only
                                                        when share_state='private')
+    GET    /api/sets/{session_id}/soundcloud-export -> metadata-only tracklist
+    POST   /api/sets/{session_id}/soundcloud-export
+        body {"acknowledge_rights": true}           -> paste-ready comment after ack
 """
 
 from __future__ import annotations
@@ -47,6 +50,11 @@ from .share import (
     configured_share_base_url,
     publish_metadata_only,
     share_url,
+)
+from .soundcloud_export import (
+    SessionNotFound,
+    SoundcloudExport,
+    build_soundcloud_export,
 )
 from .sources.opendj_source import SOURCE_NAME as OPENDJ_SOURCE_NAME
 from .sources.opendj_source import DeckObservationError
@@ -167,6 +175,33 @@ class MetadataShareResponse(BaseModel):
     content: Literal["metadata_only"]
 
 
+class SoundcloudTracklistRowModel(BaseModel):
+    timestamp_s: float
+    timestamp_label: str
+    title: str | None
+    artist: str | None
+    track_stable_id: str | None
+    source: str | None
+    deck: str | None
+    display_name: str
+
+
+class SoundcloudExportResponse(BaseModel):
+    kind: Literal["metadata_only"]
+    session_id: str
+    audio_upload: Literal["not_offered"]
+    takeover: Literal["not_offered"]
+    rights_position: Literal["unsettled"]
+    licensing_reminder: str
+    tracklist: list[SoundcloudTracklistRowModel]
+    comment: str | None = None
+    acknowledged: bool | None = None
+
+
+class SoundcloudExportAckRequest(BaseModel):
+    acknowledge_rights: bool = False
+
+
 class DeckObservationsRequest(BaseModel):
     """A batch of Open DJ deck-state snapshots, oldest first.
 
@@ -236,6 +271,15 @@ def _sets_root(request: Request) -> Path | None:
     if root is None or isinstance(root, Path):
         return root
     raise TypeError("app.state.sets_root must be pathlib.Path or None")
+
+
+def _soundcloud_export_or_error(request: Request, session_id: str) -> SoundcloudExport:
+    try:
+        return build_soundcloud_export(session_id, sets_root=_sets_root(request))
+    except sets_paths.SessionPathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="session not found") from exc
 
 
 def _session_or_not_found(request: Request, session_id: str) -> Session:
@@ -412,6 +456,32 @@ async def api_timeline_stream(request: Request, session_id: str) -> StreamingRes
     return StreamingResponse(_share_stream(), media_type="application/x-ndjson")
 
 
+@router.get(
+    "/{session_id}/soundcloud-export",
+    response_model=SoundcloudExportResponse,
+)
+async def api_get_soundcloud_export(request: Request, session_id: str) -> JSONResponse:
+    export = _soundcloud_export_or_error(request, session_id)
+    return JSONResponse(export.to_dict(include_comment=True))
+
+
+@router.post(
+    "/{session_id}/soundcloud-export",
+    response_model=SoundcloudExportResponse,
+)
+async def api_post_soundcloud_export(
+    request: Request,
+    session_id: str,
+    body: SoundcloudExportAckRequest,
+) -> JSONResponse:
+    export = _soundcloud_export_or_error(request, session_id)
+    if not body.acknowledge_rights:
+        return JSONResponse(export.to_dict(include_comment=False), status_code=400)
+    payload = export.to_dict(include_comment=True)
+    payload["acknowledged"] = True
+    return JSONResponse(payload)
+
+
 @router.get("/{session_id}/transitions")
 async def api_transitions(request: Request, session_id: str) -> JSONResponse:
     _share_visible_session(request, session_id)
@@ -534,5 +604,7 @@ __all__ = [
     "RecorderRecoveryRequest",
     "RecorderStartRequest",
     "RecorderStatus",
+    "SoundcloudExportAckRequest",
+    "SoundcloudExportResponse",
     "router",
 ]

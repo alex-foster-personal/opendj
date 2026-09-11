@@ -19,20 +19,16 @@ import type {
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { SyncMode } from '$lib/rb/deck-state-types';
 import type { CrossfaderAssign } from '$lib/rb/mixer-types';
+import {
+	MUTED_MASTER_VOLUME,
+	type PerformancePresetPhase
+} from '$lib/rb/performance-preset-constants';
 
 const PRESET_DECK_IDS = [1, 2, 3, 4] as const;
 const LOOP_BOUNDARY_TOLERANCE_MS = 0.01;
 const DEFAULT_AUTOPLAY_PROBE_TIMEOUT_MS = 750;
 const DEFAULT_PRESENTATION_TIMEOUT_MS = 30_000;
 const DEFAULT_STOP_TIMEOUT_MS = 30_000;
-const MUTED_MASTER_VOLUME = 0;
-
-export type PerformancePresetPhase =
-	| 'loading'
-	| 'configuring'
-	| 'awaiting_audio'
-	| 'starting'
-	| 'stopping';
 export type PerformanceAudioActivationPolicy = 'auto' | 'require-gesture';
 
 export interface PerformanceMixerChannelPreset {
@@ -40,6 +36,7 @@ export interface PerformanceMixerChannelPreset {
 	high: number;
 	mid: number;
 	low: number;
+	filter: number;
 	fader: number;
 	assign: CrossfaderAssign;
 }
@@ -156,6 +153,7 @@ function _validateMixerChannel(deck: DeckId, channel: PerformanceMixerChannelPre
 	_assertUnit(`mixer deck ${deck} high`, channel.high);
 	_assertUnit(`mixer deck ${deck} mid`, channel.mid);
 	_assertUnit(`mixer deck ${deck} low`, channel.low);
+	_assertUnit(`mixer deck ${deck} filter`, channel.filter);
 	_assertUnit(`mixer deck ${deck} fader`, channel.fader);
 	if (channel.assign !== 'A' && channel.assign !== 'B' && channel.assign !== 'THRU') {
 		throw new TypeError(`mixer deck ${deck} assign must be A, B, or THRU`);
@@ -328,6 +326,7 @@ function _mixerChannelCommands(
 		{ type: 'eq', deck, band: 'high', value: channel.high },
 		{ type: 'eq', deck, band: 'mid', value: channel.mid },
 		{ type: 'eq', deck, band: 'low', value: channel.low },
+		{ type: 'filter', deck, value: channel.filter },
 		{ type: 'fader', deck, value: channel.fader },
 		{ type: 'assign', deck, assign: channel.assign }
 	];
@@ -443,6 +442,7 @@ function _assertPresetMixer(
 			!_sameNumber(actual.eq_high, expected.high) ||
 			!_sameNumber(actual.eq_mid, expected.mid) ||
 			!_sameNumber(actual.eq_low, expected.low) ||
+			!_sameNumber(actual.filter, expected.filter) ||
 			!_sameNumber(actual.fader, expected.fader) ||
 			actual.assign !== expected.assign
 		) {

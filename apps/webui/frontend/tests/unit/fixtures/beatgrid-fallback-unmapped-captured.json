@@ -1,0 +1,659 @@
+{
+  "_provenance": "Captured Tue 1 Sep 2026, re-captured Wed 2 Sep 2026 (r3914268001: audio_file became a real decodable WAV instead of all-zero bytes, which changed only rb_meta_ok.body.quality) by hitting the real FastAPI app (apps.webui.server.routes.rb_assets + analysis) the same way tests/webui/test_unmapped_track_beatgrid_chain.py does. See that file's test_frontend_fixture_capture_matches_the_live_route for the assertion that keeps this fixture from drifting. folder_path is normalized to a placeholder: it is the tmp_path fixture's own path, non-deterministic per test run, and asserted separately as non-empty rather than pinned to a literal. Re-captured again Wed 2 Sep 2026 (PR #765 review round): rb_meta_ok.body.artwork_available changed false -> null, reflecting unrelated upstream fix #833 (local_artwork_available() now reports null rather than guessing false when the optional mutagen reader is absent, matching this dev environment). Re-captured again Wed 9 Sep 2026 (PR #1587): beatgrid_fallback_ok.body.beatgrid gained a required source field, fixed at \"own\" (Codex P2 BLOCKING; FallbackBeatgridOut now mirrors the ANLZ beatgrid's required source discriminator).",
+  "beatgrid_fallback_not_found": {
+    "body": {
+      "detail": {
+        "anlz_available": false,
+        "code": "BEATGRID_FALLBACK_NOT_FOUND",
+        "message": "no apps.analysis record for stable_id bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; no rekordbox ANLZ either - nothing to serve (a beatgrid is never invented)"
+      }
+    },
+    "status": 404
+  },
+  "beatgrid_fallback_ok": {
+    "body": {
+      "anlz_available": false,
+      "backend": "librosa+madmom",
+      "backend_version": "test-1.0",
+      "beatgrid": {
+        "source": "own",
+        "beat_count": 120,
+        "beats": [
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 0.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 0.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 1.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 1.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 2.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 2.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 3.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 3.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 4.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 4.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 5.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 5.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 6.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 6.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 7.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 7.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 8.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 8.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 9.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 9.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 10.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 10.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 11.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 11.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 12.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 12.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 13.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 13.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 14.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 14.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 15.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 15.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 16.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 16.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 17.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 17.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 18.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 18.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 19.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 19.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 20.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 20.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 21.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 21.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 22.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 22.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 23.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 23.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 24.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 24.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 25.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 25.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 26.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 26.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 27.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 27.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 28.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 28.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 29.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 29.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 30.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 30.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 31.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 31.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 32.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 32.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 33.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 33.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 34.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 34.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 35.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 35.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 36.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 36.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 37.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 37.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 38.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 38.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 39.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 39.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 40.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 40.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 41.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 41.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 42.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 42.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 43.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 43.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 44.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 44.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 45.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 45.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 46.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 46.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 47.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 47.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 48.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 48.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 49.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 49.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 50.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 50.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 51.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 51.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 52.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 52.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 53.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 53.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 54.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 54.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 55.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 55.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 56.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 56.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 57.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 57.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 1,
+            "t": 58.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 2,
+            "t": 58.5
+          },
+          {
+            "bpm": 120.0,
+            "n": 3,
+            "t": 59.0
+          },
+          {
+            "bpm": 120.0,
+            "n": 4,
+            "t": 59.5
+          }
+        ]
+      },
+      "bpm": 120.0,
+      "bpm_confidence": 0.9,
+      "source": "apps.analysis",
+      "stable_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "status": 200
+  },
+  "rb_meta_ok": {
+    "body": {
+      "analysis_available": false,
+      "artwork_available": false,
+      "beatgrid_issue": null,
+      "comment": null,
+      "cue_count": 0,
+      "duration_s": 60,
+      "file_exists": true,
+      "folder_path": "<audio-file-path>",
+      "genre": null,
+      "is_streaming": false,
+      "quality": {
+        "blurb": "lossless -- nothing thrown away, safe anywhere",
+        "container": ".wav",
+        "kbps": 6,
+        "label": "Stadium",
+        "lossless": true,
+        "of": 6,
+        "rank": 5,
+        "venue": "stadium"
+      },
+      "stable_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "vendor": "local",
+      "vendor_id": null
+    },
+    "status": 200
+  }
+}

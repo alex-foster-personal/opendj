@@ -193,6 +193,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sets/{session_id}/soundcloud-export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Get Soundcloud Export */
+        get: operations["api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get"];
+        put?: never;
+        /** Api Post Soundcloud Export */
+        post: operations["api_post_soundcloud_export_api_sets__session_id__soundcloud_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sets/{session_id}/timeline": {
         parameters: {
             query?: never;
@@ -315,6 +333,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analysis-queue/orders/{stable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Track Analysis Orders
+         * @description Current shared-job state for a track, readable by UI and HTTP agents.
+         */
+        get: operations["get_track_analysis_orders_api_v1_analysis_queue_orders__stable_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis-queue/orders/{stable_id}/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Order Track Analysis
+         * @description Order one real analysis CLI run through the same single refresh slot.
+         */
+        post: operations["order_track_analysis_api_v1_analysis_queue_orders__stable_id___kind__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analysis-queue/run": {
         parameters: {
             query?: never;
@@ -329,6 +387,118 @@ export interface paths {
          * @description Drain the queue now, through the shared one-slot refresh job.
          */
         post: operations["run_analysis_queue_api_v1_analysis_queue_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis/backfill/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Backfill Batches */
+        get: operations["list_backfill_batches_api_v1_analysis_backfill_batches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis/backfill/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Backfill
+         * @description Cancel pending AND in-flight items. Terminal ones are left alone.
+         */
+        post: operations["cancel_backfill_api_v1_analysis_backfill_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis/backfill/enqueue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enqueue Backfill
+         * @description Plan a batch: admission rule, worker count, band, refusals by name.
+         */
+        post: operations["enqueue_backfill_api_v1_analysis_backfill_enqueue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis/backfill/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Backfill Progress */
+        get: operations["get_backfill_progress_api_v1_analysis_backfill_progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis/backfill/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Backfill
+         * @description Put cancelled and abandoned items back; re-plan from what is LEFT.
+         */
+        post: operations["resume_backfill_api_v1_analysis_backfill_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis/source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Analysis Source */
+        get: operations["get_analysis_source_api_v1_analysis_source_get"];
+        /** Put Analysis Source */
+        put: operations["put_analysis_source_api_v1_analysis_source_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -453,7 +623,11 @@ export interface paths {
         };
         /**
          * Whoami
-         * @description The signed-in user, or 401. The bauble polls this on mount.
+         * @description Who is signed in.
+         *
+         *     Always HTTP 200. Signed-out is identity, not a fault: the bauble polls
+         *     this on mount, Chromium logs every 4xx, and the AutoPlay hunt treats
+         *     4xx as a finding. Destructive routes that need a user still 401.
          */
         get: operations["whoami_api_v1_auth_me_get"];
         put?: never;
@@ -473,6 +647,30 @@ export interface paths {
         };
         /** Get Kpi Ledger */
         get: operations["get_kpi_ledger_api_v1_bench_kpi_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bench/perf-kpi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Perf Kpi Ledger
+         * @description The perf ledger as cards: same kpis + snapshots shape as /bench/kpi.
+         *
+         *     One snapshot per (date, round), in date order, so the sparkline runs from
+         *     the first perf measurement to the latest. Cards with the most real readings
+         *     come first: the ones that have actually travelled lead the panel.
+         */
+        get: operations["get_perf_kpi_ledger_api_v1_bench_perf_kpi_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -557,7 +755,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Client Errors */
+        get: operations["list_client_errors_api_v1_client_errors_get"];
         put?: never;
         /** Capture Client Error */
         post: operations["capture_client_error_api_v1_client_errors_post"];
@@ -565,6 +764,23 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/client-errors/{event_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Triage Client Error */
+        patch: operations["triage_client_error_api_v1_client_errors__event_id__patch"];
         trace?: never;
     };
     "/api/v1/client-events": {
@@ -578,6 +794,145 @@ export interface paths {
         put?: never;
         /** Capture Client Event */
         post: operations["capture_client_event_api_v1_client_events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Config */
+        get: operations["get_config_api_v1_cloudsync_config_get"];
+        /** Put Config */
+        put: operations["put_config_api_v1_cloudsync_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/data-classes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Data Classes
+         * @description Every class of data and how it syncs (``policy classes`` twin).
+         */
+        get: operations["get_data_classes_api_v1_cloudsync_data_classes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/enrollment-grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mint Enrollment Grant
+         * @description Mint one single-use grant on this hub. The token is returned once and
+         *     never logged; only its sha256 reaches the database.
+         */
+        post: operations["mint_enrollment_grant_api_v1_cloudsync_enrollment_grants_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/fleet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fleet
+         * @description Exactly ``fleet --json``: the one function both entry points call.
+         */
+        get: operations["get_fleet_api_v1_cloudsync_fleet_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/fleet/adopt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Adopt Machine
+         * @description Twin of ``adopt``, always adopting to the signed-in user.
+         */
+        post: operations["adopt_machine_api_v1_cloudsync_fleet_adopt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/fleet/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Credentials
+         * @description Twin of ``python -m apps.sync_hub credentials --json``.
+         */
+        get: operations["read_credentials_api_v1_cloudsync_fleet_credentials_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/fleet/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke Machine
+         * @description Twin of ``revoke``, limited to machines the signed-in user owns.
+         */
+        post: operations["revoke_machine_api_v1_cloudsync_fleet_revoke_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -629,7 +984,7 @@ export interface paths {
         get: operations["list_playlist_pins_api_v1_cloudsync_playlist_pins_get"];
         /**
          * Put Playlist Pin
-         * @description Upsert one pin THROUGH the stamp chokepoint. See :func:`put_policy`.
+         * @description Upsert one pin through the policy gate. See :func:`put_policy`.
          */
         put: operations["put_playlist_pin_api_v1_cloudsync_playlist_pins_put"];
         post?: never;
@@ -650,16 +1005,210 @@ export interface paths {
         get: operations["list_policies_api_v1_cloudsync_policies_get"];
         /**
          * Put Policy
-         * @description Upsert one policy cell THROUGH the stamp chokepoint.
+         * @description Upsert one policy cell through the policy gate (``policy set --live`` twin).
          *
-         *     Round 2 finding N1a: this endpoint stamped the row correctly but skipped
-         *     ``local_changelog``, so the edit was never offered to the hub and the
-         *     machine then failed its post-sync digest compare on ``sync_policies``
-         *     forever. Changing one policy in the config UI stopped that machine
-         *     syncing anything at all.
+         *     ``apps.sync_hub.policy_store`` stamps the row and its ``local_changelog``
+         *     entry in one transaction (round 2 finding N1a: a write with no changelog
+         *     entry is never offered to the hub) and answers 409 when the change
+         *     introduces an error-severity violation, writing nothing.
          */
         put: operations["put_policy_api_v1_cloudsync_policies_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/policies/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Policies
+         * @description Gate the change set and, unless ``dry_run``, write it in one transaction.
+         */
+        post: operations["apply_policies_api_v1_cloudsync_policies_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/policies/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Plan Policies
+         * @description Rows ``body`` would touch, with the gate's verdict. Never writes.
+         */
+        post: operations["plan_policies_api_v1_cloudsync_policies_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/policies/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate Policies
+         * @description The fleet with ``body`` applied, judged. No body judges the stored fleet
+         *     (``policy validate`` without ``--proposal``).
+         */
+        post: operations["validate_policies_api_v1_cloudsync_policies_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/policies/{machine_id}/{asset_kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Policy
+         * @description Unset one cell: a synced tombstone (``policy unset --live`` twin).
+         */
+        delete: operations["delete_policy_api_v1_cloudsync_policies__machine_id___asset_kind__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Status */
+        get: operations["get_status_api_v1_cloudsync_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Sync Round
+         * @description One spoke round trip against ``hub_url``, journaled for ``/status``.
+         */
+        post: operations["run_sync_round_api_v1_cloudsync_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Command
+         * @description Submit one declared order and wait for the real browser result.
+         */
+        post: operations["post_command_api_v1_commands_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/commands/next": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Next Command
+         * @description Let the sole open performance page claim its next agent order.
+         */
+        get: operations["next_command_api_v1_commands_next_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/commands/{order_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Command
+         * @description Resolve an order with page-produced per-step statuses and mirror delta.
+         */
+        post: operations["complete_command_api_v1_commands__order_id__result_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/peak-pressure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Peak Pressure Route */
+        post: operations["peak_pressure_route_api_v1_copilot_peak_pressure_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -700,6 +1249,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/dedup/clusters/{cluster_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Dedup Apply
+         * @description Rewrite OpenDJ playlist memberships so aliases point at the survivor.
+         */
+        post: operations["post_dedup_apply_api_v1_dedup_clusters__cluster_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/dedup/clusters/{cluster_id}/decision": {
         parameters: {
             query?: never;
@@ -714,6 +1283,26 @@ export interface paths {
          * @description Persist a pending review decision without applying a merge.
          */
         post: operations["post_dedup_decision_api_v1_dedup_clusters__cluster_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dedup/clusters/{cluster_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Dedup Undo
+         * @description Restore playlist memberships from the apply journal for this cluster.
+         */
+        post: operations["post_dedup_undo_api_v1_dedup_clusters__cluster_id__undo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -785,6 +1374,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feedback/attachments/{attachment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Attachment
+         * @description Stream a stored attachment's bytes back - the agent-native fetch half.
+         */
+        get: operations["get_attachment_api_v1_feedback_attachments__attachment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/comments": {
         parameters: {
             query?: never;
@@ -825,6 +1434,18 @@ export interface paths {
          *     open -> issued -> fixed -> merged, ``issue_url`` links the queue item, and
          *     ``agent_note`` is the one-paragraph reply the widget renders under the
          *     original text. Every write is a partial update; unset fields are untouched.
+         *
+         *     Partial-fix convention (pin 58a16ac781db, follow-on to #907): when only
+         *     PART of a pin's defect is fixed, do NOT invent a new ``status`` value
+         *     (there isn't one, and there is no plan to add one - see that pin's PR
+         *     body for the sizing call). Leave ``status`` at ``open`` or ``issued`` and
+         *     write an ``agent_note`` that starts with the literal prefix ``PARTIAL:``
+         *     and names where the remaining work went (a ``#123`` issue/PR reference,
+         *     or a URL) - e.g. ``"PARTIAL: markers fixed, remainder tracked in #1150"``.
+         *     The frontend (``pinVisualState`` in ``feedback.ts``) recognises that
+         *     convention and paints the pin's marker half orange/half green instead of
+         *     plain amber. A ``PARTIAL:`` note with nothing to point at is NOT
+         *     recognised - a partial pin must always say where the rest of the work is.
          */
         patch: operations["update_comment_api_v1_feedback_comments__comment_id__patch"];
         trace?: never;
@@ -868,6 +1489,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feedback/comments/{comment_id}/attachment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Attachment
+         * @description Attach one screenshot to an existing pin (issue #1333).
+         *
+         *     Type and size are checked, and the bytes are verified to actually decode
+         *     as the claimed image type, BEFORE anything touches disk or comments.json -
+         *     a declared Content-Type header is never trusted alone. Replaces any
+         *     attachment the pin already carried, deleting its old file so attachments
+         *     never accumulate orphans.
+         */
+        post: operations["upload_attachment_api_v1_feedback_comments__comment_id__attachment_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/comments/{comment_id}/follow-on": {
         parameters: {
             query?: never;
@@ -904,6 +1551,24 @@ export interface paths {
         /** Put General */
         put: operations["put_general_api_v1_feedback_general_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feedback/performance-marks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Performance Marks */
+        get: operations["get_performance_marks_api_v1_feedback_performance_marks_get"];
+        put?: never;
+        /** Create Performance Mark */
+        post: operations["create_performance_mark_api_v1_feedback_performance_marks_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1195,6 +1860,167 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Library Jobs */
+        get: operations["list_library_jobs_api_v1_library_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library-jobs/enqueue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue Library Jobs */
+        post: operations["enqueue_library_jobs_api_v1_library_jobs_enqueue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library-jobs/{lane}/{stable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Reorder Library Job */
+        patch: operations["reorder_library_job_api_v1_library_jobs__lane___stable_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/library-jobs/{lane}/{stable_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Library Job */
+        post: operations["cancel_library_job_api_v1_library_jobs__lane___stable_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Library Readiness
+         * @description Per-present-track readiness across beatgrid, waveform, stems, analysis, sync.
+         *
+         *     Requirements (mini-PRD):
+         *       READY-01: GET /api/v1/library/readiness reports per-present-track and
+         *       aggregate readiness. Counts use the present (materialized local audio)
+         *       denominator, never all tracks rows.
+         *         [if] a track's file is not materialized [then] it is absent from
+         *         present, items, and every count
+         *         [if] a present track has no PQTZ, no own beatgrid lane ok, and no
+         *         usable downbeats_s [then] counts.beatgrid_missing includes it and an
+         *         axis=beatgrid item names it
+         *         [if] a present track has a stems directory that load_stem_bundle
+         *         rejects and no valid bundle in any configured root [then]
+         *         stems == corrupt on the item and both counts.stems_corrupt and
+         *         /ingest/coverage corrupt.stems are >= 1
+         *         [if] limit is 1 and many present tracks are not ready [then] items
+         *         has 1 row and counts.not_ready is still the full population
+         *         [if] a present track has a validateBeatGrid-passing grid [then]
+         *         sync_compatible is true without anyone engaging Beat Sync
+         */
+        get: operations["get_library_readiness_api_v1_library_readiness_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/wheel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Library Wheel */
+        get: operations["get_library_wheel_api_v1_library_wheel_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/wheel/axes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Library Wheel Axes
+         * @description Axis catalog alone, so a picker can render enabled/disabled without
+         *     paying for a full tree fetch.
+         */
+        get: operations["get_library_wheel_axes_api_v1_library_wheel_axes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lyrics/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Lyrics */
+        get: operations["search_lyrics_api_v1_lyrics_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mytags": {
         parameters: {
             query?: never;
@@ -1281,6 +2107,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/pairings/alignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Alignments */
+        get: operations["list_alignments_api_v1_pairings_alignments_get"];
+        put?: never;
+        /** Create Alignment */
+        post: operations["create_alignment_api_v1_pairings_alignments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pairings/sync-snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sync Snapshots */
+        get: operations["list_sync_snapshots_api_v1_pairings_sync_snapshots_get"];
+        put?: never;
+        /** Create Sync Snapshot */
+        post: operations["create_sync_snapshot_api_v1_pairings_sync_snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/pairings/{pairing_id}": {
         parameters: {
             query?: never;
@@ -1318,6 +2180,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/performance/telemetry/pressure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Machine Pressure
+         * @description What the machine is under right now, cheap enough to poll.
+         */
+        get: operations["machine_pressure_api_v1_performance_telemetry_pressure_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/performance/telemetry/processes": {
         parameters: {
             query?: never;
@@ -1349,6 +2231,57 @@ export interface paths {
         put?: never;
         /** Solve Play It */
         post: operations["solve_play_it_api_v1_play_it__playlist_id__solve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlist-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Playlist History */
+        get: operations["get_playlist_history_api_v1_playlist_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlist-history/redo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Redo Playlist Edit */
+        post: operations["redo_playlist_edit_api_v1_playlist_history_redo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlist-history/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo Playlist Edit */
+        post: operations["undo_playlist_edit_api_v1_playlist_history_undo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1420,6 +2353,23 @@ export interface paths {
         /** Replace Playlist Tracks */
         put: operations["replace_playlist_tracks_api_v1_playlists__playlist_id__tracks_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlists/{playlist_id}/tracks/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transfer Playlist Tracks */
+        post: operations["transfer_playlist_tracks_api_v1_playlists__playlist_id__tracks_transfer_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1503,6 +2453,23 @@ export interface paths {
         };
         /** Get Writeback Targets */
         get: operations["get_writeback_targets_api_v1_playlists__playlist_id__writeback_targets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Preflight */
+        get: operations["read_preflight_api_v1_preflight_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1900,7 +2867,11 @@ export interface paths {
         /** List Smartlists */
         get: operations["list_smartlists_api_v1_smartlists_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create Smartlist
+         * @description Persist a new smartlist and return the created summary plus ETag.
+         */
+        post: operations["create_smartlist_api_v1_smartlists_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1960,6 +2931,34 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/state/ui-mirror": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ui Mirror
+         * @description Return the latest page mirror, or fail explicitly when no page is open.
+         */
+        get: operations["get_ui_mirror_api_v1_state_ui_mirror_get"];
+        /**
+         * Publish Ui Mirror
+         * @description Replace the page's current screen document with strict JSON input.
+         */
+        put: operations["publish_ui_mirror_api_v1_state_ui_mirror_put"];
+        post?: never;
+        /**
+         * Close Ui Mirror
+         * @description Mark the performance page closed during its unmount lifecycle.
+         */
+        delete: operations["close_ui_mirror_api_v1_state_ui_mirror_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2119,10 +3118,51 @@ export interface paths {
          *     ``/pull``, this answer carries no per-row data, but it does carry the
          *     hub's live changelog position, which an unregistered caller had no
          *     business reading either.
+         *
+         *     A hub holding one row with an unorderable stored stamp no longer answers
+         *     422 (round 5). That row is excluded from the hash and counted in
+         *     ``quarantined``: a legacy row is a fact to report, not a reason to make
+         *     the endpoint every sync depends on unavailable.
+         *
+         *     For a caller that did not advertise ``quarantine/v1`` it still does
+         *     (module docstring). Such a spoke has no ``quarantined`` map to read, so
+         *     it compares a hash over the eligible set against its own hash over
+         *     everything, and the difference reads to it as the ADR 04 c6 CORRUPTION
+         *     alarm -- a false one, raised on ordinary legacy data.
          */
         get: operations["digest_api_v1_sync_digest_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/enroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enroll
+         * @description Join this hub's fleet under a proved owner. The ONE enrollment door.
+         *
+         *     Both ADR 12 paths come through here and neither can reach
+         *     :func:`apps.sync_hub.enrollment.enroll_machine` any other way: the dev
+         *     CLI is a thin argparse shell over this exact call, and the user path will
+         *     be the same call carrying a different credential kind.
+         *
+         *     Deliberately NOT behind a router-level dependency. It authenticates by
+         *     the credential in its BODY, which is what lets a headless machine with no
+         *     browser and no local Google session enroll at all. One transaction, so a
+         *     refusal registers nothing. Idempotent: a re-run answers ``created: false``.
+         */
+        post: operations["enroll_api_v1_sync_enroll_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2163,6 +3203,11 @@ export interface paths {
          *     Chunked because a first sync of a real library is megabytes of JSON held
          *     twice in memory on both sides (round 1 finding A2). ``has_more`` tells
          *     the client to come back with the ``seq`` this response reports.
+         *
+         *     A chunk that had to leave a row out is refused outright for a caller that
+         *     did not advertise ``quarantine/v1`` (module docstring). The shortfall is
+         *     invisible to such a caller, which records the reported ``seq`` as pulled
+         *     and can never ask for those entries again -- not even after the repair.
          */
         get: operations["pull_api_v1_sync_pull_get"];
         put?: never;
@@ -2190,6 +3235,12 @@ export interface paths {
          *     transaction (round 2 finding N4): a row this hub has never met is a
          *     FOREIGN KEY violation, and the recovery push after a hub restore is
          *     exactly the push most likely to carry one.
+         *
+         *     A pusher that did not advertise ``quarantine/v1`` gets ``origin/main``'s
+         *     answer instead of the partial one: 422, whole batch rolled back (module
+         *     docstring). That is the staged-rollout price and it is the safe half of
+         *     it -- an un-upgraded spoke reads ``accepted + rejected < offered`` as
+         *     nothing at all and steps its push fence over the held row.
          */
         post: operations["push_api_v1_sync_push_post"];
         delete?: never;
@@ -2267,6 +3318,26 @@ export interface paths {
         };
         /** List Tracks */
         get: operations["list_tracks_api_v1_tracks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/lyrics-cached-ids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Cached Ids
+         * @description List cached lyric timelines so the UI can skip explicit cache-miss reads.
+         */
+        get: operations["get_lyrics_cached_ids_api_v1_tracks_lyrics_cached_ids_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2398,6 +3469,10 @@ export interface paths {
         /**
          * Get Auto Cues
          * @description PROPOSED hot cues from apps.analysis (META-04). Never committed cues.
+         *
+         *     Returns HTTP 200 with ``proposals: []`` and ``backend="none"`` when the
+         *     track is in the library but has no analysis row yet. Unknown stable_id
+         *     and unmatched ``?backend=`` still 404 with ``ANALYSIS_NOT_FOUND``.
          */
         get: operations["get_auto_cues_api_v1_tracks__stable_id__auto_cues_get"];
         put?: never;
@@ -2423,6 +3498,13 @@ export interface paths {
          *     ``anlz_available`` reporting whether the authoritative rekordbox grid
          *     also exists). 404 with an explicit code when no grid can be served -
          *     a beatgrid is never invented.
+         *
+         *     A caller naming ``backend=`` gets exactly what it named. The default
+         *     newest-row lookup instead defers to native-analysis v1 first: when v1
+         *     has already settled a beatgrid determination for this track (a
+         *     canonical own pointer exists, whatever it resolved to), this endpoint
+         *     preserves that gridless/failed state rather than silently substituting
+         *     a superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).
          */
         get: operations["get_beatgrid_fallback_api_v1_tracks__stable_id__beatgrid_fallback_get"];
         put?: never;
@@ -2485,6 +3567,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/lyrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Track Lyrics
+         * @description Read the real cached line timeline without fetching or inventing lyrics.
+         */
+        get: operations["get_track_lyrics_api_v1_tracks__stable_id__lyrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}/rb-meta": {
         parameters: {
             query?: never;
@@ -2514,7 +3616,7 @@ export interface paths {
         };
         /**
          * Get Stem Manifest
-         * @description Return a stored v1 manifest only after all four files prove alignment.
+         * @description Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.
          */
         get: operations["get_stem_manifest_api_v1_tracks__stable_id__stems_get"];
         put?: never;
@@ -2668,6 +3770,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vocals/analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Analyze Vocals */
+        post: operations["analyze_vocals_api_v1_vocals_analyze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vocals/{stable_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Vocal Status */
+        get: operations["get_vocal_status_api_v1_vocals__stable_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/voice/probe": {
         parameters: {
             query?: never;
@@ -2746,6 +3882,21 @@ export interface components {
             /** Name */
             name: string | null;
         };
+        /** AdoptOut */
+        AdoptOut: {
+            /** Created */
+            created: boolean;
+            /** Enrolled At */
+            enrolled_at: string;
+            /** Enrolled Via */
+            enrolled_via: string;
+            /** Machine Id */
+            machine_id: string;
+            /** Name */
+            name: string;
+            /** Owner Email */
+            owner_email: string;
+        };
         /** AiApplyIn */
         AiApplyIn: {
             /** Instruction */
@@ -2784,6 +3935,81 @@ export interface components {
             /** Model */
             model: string;
         };
+        /** AlignmentIn */
+        AlignmentIn: {
+            /**
+             * Anchor A Kind
+             * @enum {string}
+             */
+            anchor_a_kind: "hotcue" | "ms";
+            /** Anchor A Ms */
+            anchor_a_ms: number;
+            /** Anchor A Slot */
+            anchor_a_slot?: string | null;
+            /**
+             * Anchor B Kind
+             * @enum {string}
+             */
+            anchor_b_kind: "hotcue" | "ms";
+            /** Anchor B Ms */
+            anchor_b_ms: number;
+            /** Anchor B Slot */
+            anchor_b_slot?: string | null;
+            /** Label */
+            label?: string | null;
+            /** Stable A */
+            stable_a: string;
+            /** Stable B */
+            stable_b: string;
+        };
+        /** AlignmentOut */
+        AlignmentOut: {
+            /**
+             * Anchor A Kind
+             * @enum {string}
+             */
+            anchor_a_kind: "hotcue" | "ms";
+            /** Anchor A Ms */
+            anchor_a_ms: number;
+            /** Anchor A Slot */
+            anchor_a_slot: string | null;
+            /**
+             * Anchor B Kind
+             * @enum {string}
+             */
+            anchor_b_kind: "hotcue" | "ms";
+            /** Anchor B Ms */
+            anchor_b_ms: number;
+            /** Anchor B Slot */
+            anchor_b_slot: string | null;
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string | null;
+            /** Stable A */
+            stable_a: string;
+            /** Stable B */
+            stable_b: string;
+        };
+        /** AnalysisOrderOut */
+        AnalysisOrderOut: {
+            /** Kind */
+            kind: string;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "queued" | "running" | "done" | "error";
+            /** Stable Id */
+            stable_id: string;
+        };
+        /** AnalysisOrdersOut */
+        AnalysisOrdersOut: {
+            /** Items */
+            items: components["schemas"]["AnalysisOrderOut"][];
+        };
         /**
          * AnalysisQueueItemOut
          * @description One queued track. ``file_path`` is what the runner decodes.
@@ -2820,6 +4046,54 @@ export interface components {
             /** Unreachable */
             unreachable: number;
         };
+        /** AnalysisSourceOut */
+        AnalysisSourceOut: {
+            /** Lanes */
+            lanes: {
+                [key: string]: components["schemas"]["LaneSourceOut"];
+            };
+            /**
+             * Previous Toggle
+             * @description The toggle value this PUT's `toggle` just displaced for `lane`, read and overwritten under the same lock acquisition. Null for a GET, or a PUT that did not set `toggle`. A client's own prior GET/PUT response can be stale by the time it issues a later PUT (a concurrent agent's write can land in between), so a compensating rollback must restore THIS value, not one read earlier over a separate round trip.
+             */
+            previous_toggle?: string | null;
+            /**
+             * Serving
+             * @description Selection lanes that currently have a serving own implementation on this daemon. Lanes absent from this list refuse PUT own.
+             */
+            serving: string[];
+        };
+        /**
+         * AnalysisSourcePut
+         * @description Set the default, the toggle, or both, for one lane.
+         */
+        AnalysisSourcePut: {
+            /**
+             * Default
+             * @description rbx or own. Persisted; survives a relaunch.
+             */
+            default?: string | null;
+            /**
+             * Expected Toggle
+             * @description Compare-and-set precondition for `toggle`: apply it only if the lane's CURRENT toggle equals this value, atomically. 409 on a mismatch. Ignored unless `toggle` is also given; a plain `toggle` with no `expected_toggle` sets unconditionally, exactly as before this field existed.
+             */
+            expected_toggle?: string | null;
+            /**
+             * Expected Toggle Revision
+             * @description Additional compare-and-set precondition on top of `expected_toggle`: apply it only if the lane's CURRENT `toggle_revision` also equals this value. Closes an ABA gap `expected_toggle` alone cannot: a value-only compare-and-set still succeeds after the toggle round-trips own -> rbx -> own, because the current value equals `expected_toggle` again even though a newer write happened in between (discussion_r3974993963 P1 BLOCKING). Ignored unless `expected_toggle` is also given.
+             */
+            expected_toggle_revision?: number | null;
+            /**
+             * Lane
+             * @description beatgrid, key, waveform, loudness or vocal
+             */
+            lane: string;
+            /**
+             * Toggle
+             * @description unset, rbx or own. In-memory; resets to unset on relaunch.
+             */
+            toggle?: string | null;
+        };
         /**
          * AnlzCueOut
          * @description Same shape as one COMPONENT-MAP 2.3 cue row (rb_vendor.fetch_cues).
@@ -2852,6 +4126,35 @@ export interface components {
              */
             slot: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
         };
+        /** ApplyIn */
+        ApplyIn: {
+            /** Cluster Key */
+            cluster_key: string;
+            /** Survivor */
+            survivor: string;
+        };
+        /** ApplyRecordOut */
+        ApplyRecordOut: {
+            /**
+             * Action
+             * @constant
+             */
+            action: "merge";
+            /** Cluster Id */
+            cluster_id: number;
+            /** Cluster Key */
+            cluster_key: string;
+            /** Decided At */
+            decided_at: string;
+            /** Pending Apply */
+            pending_apply: boolean;
+            /** Playlists */
+            playlists: components["schemas"]["PlaylistRewriteOut"][];
+            /** Revision */
+            revision: string;
+            /** Survivor */
+            survivor: string;
+        };
         /** ApplyRequest */
         ApplyRequest: {
             /** Confirmation */
@@ -2883,6 +4186,28 @@ export interface components {
             configured: boolean;
             /** Model */
             model: string;
+        };
+        /**
+         * AttachmentOut
+         * @description A screenshot pasted into a comment pin (issue #1333, part 2 of #928).
+         *
+         *     ``url`` is the GET route that streams the stored bytes back (relative,
+         *     same convention as ``issue_url`` on ``CommentOut``); ``content_type`` and
+         *     ``size_bytes`` are recorded once, at upload time, so a caller can decide
+         *     whether to fetch the bytes without a HEAD round trip first. The bytes
+         *     themselves live under ``<data-dir>/feedback/attachments/`` - see
+         *     ``feedback_attachments.py``, the module that actually writes and serves
+         *     them; this file only owns the small record ``comments.json`` carries.
+         */
+        AttachmentOut: {
+            /** Content Type */
+            content_type: string;
+            /** Id */
+            id: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Url */
+            url: string;
         };
         /**
          * AutoAnalyzeOut
@@ -2955,6 +4280,240 @@ export interface components {
              */
             rekordbox: boolean;
         };
+        /** BackfillBatchIn */
+        BackfillBatchIn: {
+            /** Batch Id */
+            batch_id: string;
+        };
+        /** BackfillBatchListOut */
+        BackfillBatchListOut: {
+            /** Batches */
+            batches: components["schemas"]["BackfillBatchSummaryOut"][];
+        };
+        /**
+         * BackfillBatchSummaryOut
+         * @description One batch without its items.
+         */
+        BackfillBatchSummaryOut: {
+            /**
+             * Band
+             * @description under_20_min, 20_to_45_min, over_45_min, or empty
+             */
+            band: string;
+            /** Batch Id */
+            batch_id: string;
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** Created At */
+            created_at: string;
+            /** Note */
+            note?: string | null;
+            /**
+             * State
+             * @description queued, running, cancelled or done
+             */
+            state: string;
+            /**
+             * Workers
+             * @description Concurrency the admission rule chose from the LONGEST ADMITTED track, never from core count
+             */
+            workers: number;
+        };
+        /** BackfillCancelOut */
+        BackfillCancelOut: {
+            /** Batch Id */
+            batch_id: string;
+            /**
+             * Cancelled
+             * @description Open items (pending and in flight) cancelled
+             */
+            cancelled: number;
+        };
+        /** BackfillEnqueueIn */
+        BackfillEnqueueIn: {
+            /**
+             * Backend
+             * @description Producer to run, own_<lane>.<producer>
+             */
+            backend: string;
+            /**
+             * Lane
+             * @description beatgrid, key, waveform, loudness or vocal
+             */
+            lane: string;
+            /**
+             * Note
+             * @description Why this batch exists
+             */
+            note?: string | null;
+            /**
+             * Stable Ids
+             * @description Tracks to (re)analyze
+             */
+            stable_ids: string[];
+        };
+        /**
+         * BackfillEnqueueOut
+         * @description The plan. ``offered = admitted + refused``, always.
+         */
+        BackfillEnqueueOut: {
+            /** Admitted */
+            admitted: number;
+            /** Band */
+            band: string;
+            /** Batch Id */
+            batch_id: string;
+            memory_model: components["schemas"]["BackfillMemoryModelOut"];
+            /** Offered */
+            offered: number;
+            /** Refused */
+            refused: number;
+            /** Workers */
+            workers: number;
+        };
+        /**
+         * BackfillItemOut
+         * @description One (track, lane) of work and its state.
+         *
+         *     Named apart from ``routes/queues.py``'s ``QueueItemOut`` (the M3 triage
+         *     queues) for the reason its neighbour ``routes/analysis_queue.py`` states:
+         *     two Pydantic models sharing a name collapse into ONE OpenAPI schema and
+         *     the loser is served under the winner's shape. That collision really
+         *     happened here on the first openapi dump, and it is silent -- the schema
+         *     still validates, it just describes the wrong thing.
+         */
+        BackfillItemOut: {
+            /**
+             * Attempts
+             * @description Claims so far; a kill-and-resume shows 2
+             */
+            attempts: number;
+            /** Backend */
+            backend: string;
+            /**
+             * Duration S
+             * @description Audio length the admission rule budgeted with
+             */
+            duration_s?: number | null;
+            /** Lane */
+            lane: string;
+            /**
+             * Predicted Peak Mb
+             * @description floor + slope x minutes under the batch model
+             */
+            predicted_peak_mb?: number | null;
+            /**
+             * Reason
+             * @description Named cause for a refusal, a failure, or a skip
+             */
+            reason?: string | null;
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * State
+             * @description pending, running, done, skipped, failed, refused, cancelled, or deferred (path vanished; retryable on resume)
+             */
+            state: string;
+        };
+        /**
+         * BackfillMemoryModelOut
+         * @description The measured peak-RSS model a batch was budgeted under.
+         *
+         *     Carried on every response rather than assumed, because the floor and
+         *     slope are MEASURED numbers for one producer version. A report that says
+         *     "budgeted at 330 MB + 68 MB/min" without saying where that was measured
+         *     is quoting a remembered figure.
+         */
+        BackfillMemoryModelOut: {
+            /**
+             * Backend
+             * @description Producer the model was measured on
+             */
+            backend: string;
+            /**
+             * Floor Mb
+             * @description Predicted peak RSS at zero length, MB
+             */
+            floor_mb: number;
+            /**
+             * Measured On
+             * @description Host, method and date of the measurement
+             */
+            measured_on: string;
+            /**
+             * Producer Version
+             * @description Version it was measured at
+             */
+            producer_version: string;
+            /**
+             * Slope Mb Per Min
+             * @description Extra peak RSS per audio minute, MB
+             */
+            slope_mb_per_min: number;
+            /**
+             * Source
+             * @description Document the measurement is recorded in
+             */
+            source: string;
+        };
+        /**
+         * BackfillProgressOut
+         * @description Aggregate + per-item progress. ``counts`` carries every state's zero.
+         */
+        BackfillProgressOut: {
+            /** Band */
+            band: string;
+            /** Batch Id */
+            batch_id: string;
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** Created At */
+            created_at: string;
+            /** Items */
+            items: components["schemas"]["BackfillItemOut"][];
+            /** Memory Model */
+            memory_model: {
+                [key: string]: unknown;
+            };
+            /**
+             * Settled
+             * @description done + skipped + failed + refused
+             */
+            settled: number;
+            /** State */
+            state: string;
+            /** Total */
+            total: number;
+            /** Updated At */
+            updated_at: string;
+            /** Workers */
+            workers: number;
+        };
+        /** BackfillResumeOut */
+        BackfillResumeOut: {
+            /** Band */
+            band: string;
+            /** Batch Id */
+            batch_id: string;
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /**
+             * Requeued
+             * @description Items put back in the queue
+             */
+            requeued: number;
+            /**
+             * Workers
+             * @description Concurrency re-planned from what is LEFT
+             */
+            workers: number;
+        };
         /** BeatgridFallbackOut */
         BeatgridFallbackOut: {
             /** Anlz Available */
@@ -2996,6 +4555,18 @@ export interface components {
              */
             severity: "warning" | "error";
         };
+        /** BlockerOut */
+        BlockerOut: {
+            /** Machine Id */
+            machine_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "unowned" | "foreign" | "no_credential";
+        };
         /** Body_upload_api_v1_ingest_upload_post */
         Body_upload_api_v1_ingest_upload_post: {
             /** Batch */
@@ -3007,6 +4578,11 @@ export interface components {
              * @default false
              */
             force: boolean;
+        };
+        /** Body_upload_attachment_api_v1_feedback_comments__comment_id__attachment_post */
+        Body_upload_attachment_api_v1_feedback_comments__comment_id__attachment_post: {
+            /** File */
+            file: string;
         };
         /** BrokenTrackList */
         BrokenTrackList: {
@@ -3172,6 +4748,21 @@ export interface components {
              */
             role: "system" | "user" | "assistant";
         };
+        /** CheckedViolationOut */
+        CheckedViolationOut: {
+            /** Blocking */
+            blocking: boolean;
+            /** Introduced */
+            introduced: boolean;
+            /** Message */
+            message: string;
+            /** Rule Id */
+            rule_id: string;
+            /** Severity */
+            severity: string;
+            /** Subject */
+            subject: string;
+        };
         /** ClientErrorIn */
         ClientErrorIn: {
             /** Audio Worklet Available */
@@ -3188,7 +4779,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "window-error" | "unhandled-rejection" | "sveltekit" | "ui-error";
+            kind: "window-error" | "unhandled-rejection" | "sveltekit" | "ui-error" | "console-error" | "console-warn" | "resource-error" | "csp-violation" | "webview-console" | "webview-navigation";
             /** Message */
             message: string;
             /** Name */
@@ -3209,33 +4800,38 @@ export interface components {
             /** Stored */
             stored: boolean;
         };
-        /** ClientEventIn */
-        ClientEventIn: {
-            /** Client Event Id */
-            client_event_id: string;
-            /** Client Timestamp */
-            client_timestamp: string;
+        /** ClientErrorRecord */
+        ClientErrorRecord: {
+            /** Event Id */
+            event_id: string;
+            /** Kind */
+            kind: string;
+            /** Message */
+            message: string;
+            /** Received At */
+            received_at: string;
+        };
+        /** ClientErrorTriageIn */
+        ClientErrorTriageIn: {
             /**
-             * Kind
-             * @constant
+             * Disposition
+             * @enum {string}
              */
-            kind: "page-view";
-            /** Language */
-            language?: string | null;
-            /** Path */
-            path: string;
-            /** Referrer */
-            referrer?: string | null;
-            /** Secure Context */
-            secure_context: boolean;
-            /** Url */
-            url: string;
-            /** User Agent */
-            user_agent: string;
-            /** Viewport Height */
-            viewport_height: number;
-            /** Viewport Width */
-            viewport_width: number;
+            disposition: "fix" | "no-fix" | "duplicate";
+            /** Ref */
+            ref: string;
+        };
+        /** ClientErrorTriageOut */
+        ClientErrorTriageOut: {
+            /**
+             * Disposition
+             * @enum {string}
+             */
+            disposition: "fix" | "no-fix" | "duplicate";
+            /** Event Id */
+            event_id: string;
+            /** Ref */
+            ref: string;
         };
         /** ClientEventOut */
         ClientEventOut: {
@@ -3321,6 +4917,96 @@ export interface components {
             /** Stored */
             stored: boolean;
         };
+        /**
+         * CloudSyncConfig
+         * @description The persisted file, validated. Also the HTTP PUT body.
+         */
+        CloudSyncConfig: {
+            /** Enabled */
+            enabled: boolean;
+            /** Hub Url */
+            hub_url: string | null;
+            /** Machine Name */
+            machine_name: string | null;
+        };
+        /** CloudSyncConfigOut */
+        CloudSyncConfigOut: {
+            effective: components["schemas"]["CloudSyncEffectiveConfigOut"];
+            file: components["schemas"]["CloudSyncConfig"] | null;
+            /** Path */
+            path: string;
+        };
+        /** CloudSyncEffectiveConfigOut */
+        CloudSyncEffectiveConfigOut: {
+            /** Configured */
+            configured: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Enabled Source
+             * @enum {string}
+             */
+            enabled_source: "env" | "file" | "default";
+            /** Hub Url */
+            hub_url: string | null;
+            /**
+             * Hub Url Source
+             * @enum {string}
+             */
+            hub_url_source: "env" | "file" | "default";
+            /** Machine Name */
+            machine_name: string | null;
+        };
+        /** CloudSyncStatusOut */
+        CloudSyncStatusOut: {
+            /**
+             * Configured
+             * @description the effective config is on and names a hub
+             */
+            configured: boolean;
+            /**
+             * Enabled
+             * @description configured AND running: a scheduler heartbeat is fresh
+             */
+            enabled: boolean;
+            /**
+             * Enabled Source
+             * @description which source decided 'enabled': env override, config file, or default
+             * @enum {string}
+             */
+            enabled_source: "env" | "file" | "default";
+            /** Endpoint */
+            endpoint: string | null;
+            /**
+             * Endpoint Source
+             * @description which source decided the hub URL: env override, config file, or default
+             * @enum {string}
+             */
+            endpoint_source: "env" | "file" | "default";
+            /**
+             * Heartbeat At
+             * @description UTC time of the last scheduler beat, fresh or stale
+             */
+            heartbeat_at: string | null;
+            /** Last Pull At */
+            last_pull_at: string | null;
+            /** Last Push At */
+            last_push_at: string | null;
+            last_result: components["schemas"]["LastResultOut"] | null;
+            /** Reason */
+            reason: string | null;
+            /** Recent Results */
+            recent_results: components["schemas"]["RecentResultOut"][];
+            /** Rows Pending */
+            rows_pending: number | null;
+            /**
+             * Running
+             * @description a scheduler heartbeat is fresh
+             */
+            running: boolean;
+            /** Signed In As */
+            signed_in_as: string | null;
+        };
         /** ClusterOut */
         ClusterOut: {
             /** Cluster Id */
@@ -3354,12 +5040,28 @@ export interface components {
         };
         /** CommentCreateIn */
         CommentCreateIn: {
+            /** Agent Kind */
+            agent_kind?: string | null;
             /** Anchor */
             anchor?: string | null;
+            /**
+             * Author
+             * @enum {string}
+             */
+            author?: "operator" | "agent";
             /** Page */
             page: string;
             /** Text */
             text: string;
+            /**
+             * Ui
+             * @enum {string}
+             */
+            ui: "chrome-loop" | "packaged-app";
+            /** Viewport Height */
+            viewport_height: number;
+            /** Viewport Width */
+            viewport_width: number;
             /** X Pct */
             x_pct: number;
             /** Y Pct */
@@ -3380,13 +5082,22 @@ export interface components {
         };
         /** CommentOut */
         CommentOut: {
+            /** Agent Kind */
+            agent_kind?: string | null;
             /** Agent Note */
             agent_note?: string | null;
             /** Anchor */
             anchor: string | null;
+            attachment?: components["schemas"]["AttachmentOut"] | null;
+            /**
+             * Author
+             * @enum {string}
+             */
+            author?: "operator" | "agent";
             build: components["schemas"]["BuildStampOut"];
             /** Created At */
             created_at: string;
+            environment?: components["schemas"]["PinEnvironmentOut"] | null;
             /** Id */
             id: string;
             /** Issue Url */
@@ -3413,7 +5124,7 @@ export interface components {
             /** Status */
             status?: string | null;
             /** Text */
-            text?: string | null;
+            text?: string;
         };
         /** ConfigIn */
         ConfigIn: {
@@ -3448,6 +5159,10 @@ export interface components {
         };
         /** CoverageOut */
         CoverageOut: {
+            /** Corrupt */
+            corrupt: {
+                [key: string]: number;
+            };
             /** Generated At */
             generated_at: number;
             /** Missing */
@@ -3460,6 +5175,38 @@ export interface components {
             total_tracks: number;
             /** Unreachable */
             unreachable: number;
+        };
+        /** CredentialMachineOut */
+        CredentialMachineOut: {
+            /** Credential Minted At */
+            credential_minted_at: string | null;
+            /** Is This Hub */
+            is_this_hub: boolean;
+            /** Machine Id */
+            machine_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Ownership
+             * @enum {string}
+             */
+            ownership: "owned" | "unowned" | "foreign" | "revoked";
+        };
+        /** CredentialsOut */
+        CredentialsOut: {
+            /** Blockers */
+            blockers: components["schemas"]["BlockerOut"][];
+            /** Enforce Ready */
+            enforce_ready: boolean;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Machines */
+            machines: components["schemas"]["CredentialMachineOut"][];
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "observe" | "enforce";
         };
         /** DecisionIn */
         DecisionIn: {
@@ -3484,6 +5231,8 @@ export interface components {
             cluster_key: string;
             /** Decided At */
             decided_at: string;
+            /** Pending Apply */
+            pending_apply: boolean;
             /** Survivor */
             survivor: string;
         };
@@ -3509,6 +5258,20 @@ export interface components {
             revision: string;
             /** Survivor */
             survivor: string;
+        };
+        /** DeckMarkOut */
+        DeckMarkOut: {
+            /** Audible */
+            audible: boolean;
+            /** Deck Id */
+            deck_id: number;
+            loop: components["schemas"]["LoopMarkOut"] | null;
+            /** Playing */
+            playing: boolean;
+            /** Position Ms */
+            position_ms: number;
+            /** Stable Id */
+            stable_id: string | null;
         };
         /**
          * DeckObservationsRequest
@@ -3564,6 +5327,10 @@ export interface components {
         DigestResponse: {
             /** Overall */
             overall: string;
+            /** Quarantined */
+            quarantined?: {
+                [key: string]: number;
+            };
             /** Seq */
             seq: number;
             /** Tables */
@@ -3595,6 +5362,81 @@ export interface components {
             /** Version */
             version: string;
             waveform_materialization: components["schemas"]["HealthWaveformMaterialization"];
+        };
+        /**
+         * EnrollCredentialModel
+         * @description The credential the joining machine presents. Rides the BODY, not a header.
+         *
+         *     :class:`apps.sync_hub.transport.HubTransport` is a two-method protocol
+         *     with no header support, and a grant is not a bearer for ``push`` or
+         *     ``pull``. Widening the transport for it would create a credential slot
+         *     those endpoints would then be expected to fill.
+         */
+        EnrollCredentialModel: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "grant" | "google_id_token";
+            /** Value */
+            value: string;
+        };
+        /**
+         * EnrollErrorBody
+         * @description The ``detail`` object every refusal below carries.
+         *
+         *     Declared as a model rather than left implicit so the generated client can
+         *     branch on ``code``. Every raise in :func:`enroll_machine_or_raise` builds
+         *     exactly this shape; the codes are enumerated per status in
+         *     :data:`ENROLL_RESPONSES`.
+         */
+        EnrollErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * EnrollErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        EnrollErrorResponse: {
+            detail: components["schemas"]["EnrollErrorBody"];
+        };
+        /**
+         * EnrollRequest
+         * @description No owner field, by construction: a request cannot name whose machine
+         *     it is becoming. The owner is read from the credential's own record.
+         */
+        EnrollRequest: {
+            credential: components["schemas"]["EnrollCredentialModel"];
+            machine: components["schemas"]["MachineModel"];
+            /** Schema Version */
+            schema_version: number;
+            /**
+             * Wire Version
+             * @description sync wire version; absent on pre-split builds
+             */
+            wire_version?: number | null;
+        };
+        /** EnrollResponse */
+        EnrollResponse: {
+            /** Created */
+            created: boolean;
+            /** Enrolled At */
+            enrolled_at: string;
+            /** Enrolled Via */
+            enrolled_via: string;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Machine Id */
+            machine_id: string;
+            /** Owner Email */
+            owner_email: string;
+            /** Owner Google Sub */
+            owner_google_sub: string;
+            /** Sync Credential */
+            sync_credential: string | null;
         };
         /** EntitlementsOut */
         EntitlementsOut: {
@@ -3638,12 +5480,25 @@ export interface components {
         /**
          * FallbackBeatgridOut
          * @description Identical shape to the ``beatgrid`` object served by /anlz.
+         *
+         *     ``source`` is fixed at ``"own"``: every grid this endpoint can serve came
+         *     from an ``apps.analysis`` record (an unmapped track has no rekordbox PQTZ
+         *     to read), and the ANLZ contract this shape mirrors makes the field
+         *     REQUIRED (``AnlzBeatgridSource`` in ``anlz-types.ts``). Omitting it here
+         *     left the frontend type assertion in ``beatgrid-fallback-api.ts`` hiding a
+         *     real mismatch: a fail-closed, source-aware reader would reject this grid
+         *     outright (Codex P2 BLOCKING, PR #1587).
          */
         FallbackBeatgridOut: {
             /** Beat Count */
             beat_count: number;
             /** Beats */
             beats: components["schemas"]["FallbackBeatOut"][];
+            /**
+             * Source
+             * @constant
+             */
+            source: "own";
         };
         /** FeatureEntitlementOut */
         FeatureEntitlementOut: {
@@ -3788,17 +5643,72 @@ export interface components {
             overridden: boolean;
             /** Owner */
             owner: string;
+            refusal?: components["schemas"]["RefusalOut"] | null;
             /** Retire By */
             retire_by: string;
         };
         /** FlagsOut */
         FlagsOut: {
+            /** Build Profile */
+            build_profile: string;
             /** File Present */
             file_present: boolean;
             /** Flags */
             flags: components["schemas"]["FlagOut"][];
             /** Path */
             path: string;
+            /** Sandboxed */
+            sandboxed: boolean;
+        };
+        /** FleetErrorBody */
+        FleetErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /** FleetErrorResponse */
+        FleetErrorResponse: {
+            detail: components["schemas"]["FleetErrorBody"];
+        };
+        /**
+         * FleetMachineOut
+         * @description One row of ``fleet --json``. ``extra=forbid`` so a field the shared
+         *     function adds fails loudly here instead of silently vanishing from HTTP.
+         */
+        FleetMachineOut: {
+            /** Enrolled At */
+            enrolled_at: string | null;
+            /** Enrolled Via */
+            enrolled_via: string | null;
+            /** Machine Id */
+            machine_id: string;
+            /** Name */
+            name: string;
+            /** Owner Email */
+            owner_email: string | null;
+            /** Owner Google Sub */
+            owner_google_sub: string | null;
+            /** Row Hub Machine Id */
+            row_hub_machine_id: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "owned" | "unowned" | "foreign";
+        };
+        /** FleetOut */
+        FleetOut: {
+            /** Foreign */
+            foreign: number;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Machines */
+            machines: components["schemas"]["FleetMachineOut"][];
+            /** Owned */
+            owned: number;
+            /** Unowned */
+            unowned: number;
         };
         /**
          * FolderImportIn
@@ -3888,6 +5798,25 @@ export interface components {
             /** Sample */
             sample?: string[];
         };
+        /**
+         * GateErrorBody
+         * @description The refusal. ``ui_title`` is present only on a plan refusal (ENT-02).
+         */
+        GateErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Ui Title */
+            ui_title?: string | null;
+        };
+        /**
+         * GateErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        GateErrorResponse: {
+            detail: components["schemas"]["GateErrorBody"];
+        };
         /** GeneralNoteOut */
         GeneralNoteOut: {
             build: components["schemas"]["BuildStampOut"] | null;
@@ -3907,6 +5836,35 @@ export interface components {
             stable_id: string;
             /** Tier */
             tier: string;
+        };
+        /** GrantIn */
+        GrantIn: {
+            /**
+             * Owner Email
+             * @description email of a user who has signed in on this hub (CLI --owner)
+             */
+            owner_email: string;
+            /**
+             * Ttl Seconds
+             * @description how long the grant stays redeemable (CLI --ttl-seconds)
+             * @default 900
+             */
+            ttl_seconds: number;
+        };
+        /**
+         * GrantOut
+         * @description The raw token exists in this response and nowhere else; only its
+         *     sha256 is stored. Redeem with ``python -m apps.sync_hub enroll``.
+         */
+        GrantOut: {
+            /** Created At */
+            created_at: string;
+            /** Expires At */
+            expires_at: string;
+            /** Owner Email */
+            owner_email: string;
+            /** Token */
+            token: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -3981,24 +5939,89 @@ export interface components {
         };
         /** HelloRequest */
         HelloRequest: {
+            /** Capabilities */
+            capabilities?: string[];
             machine: components["schemas"]["MachineModel"];
             /** Machines */
             machines?: components["schemas"]["MachineModel"][];
             /** Schema Version */
             schema_version: number;
+            /**
+             * Wire Version
+             * @description sync wire version; absent on pre-split builds
+             */
+            wire_version?: number | null;
         };
         /** HelloResponse */
         HelloResponse: {
+            /** Capabilities */
+            capabilities?: string[];
+            /**
+             * Credential
+             * @enum {string}
+             */
+            credential: "valid" | "missing" | "invalid" | "revoked" | "unowned";
             /** Hub Generation */
             hub_generation: string;
             /** Hub Machine Id */
             hub_machine_id: string;
             /** Machines */
             machines: components["schemas"]["MachineModel"][];
+            /**
+             * Ownership
+             * @enum {string}
+             */
+            ownership: "owned" | "unowned" | "foreign";
             /** Schema Version */
             schema_version: number;
             /** Seq */
             seq: number;
+            /** Wire Version */
+            wire_version: number;
+        };
+        /** HistoryApplyOut */
+        HistoryApplyOut: {
+            /** Action */
+            action: string;
+            /** Can Redo */
+            can_redo: boolean;
+            /** Can Undo */
+            can_undo: boolean;
+            /** Command Id */
+            command_id: string;
+            current?: components["schemas"]["PlaylistWriteOut"] | null;
+            /** Etag */
+            etag?: string | null;
+            /** Op */
+            op: string;
+            /** Playlist Id */
+            playlist_id: string;
+        };
+        /** HistoryEntryOut */
+        HistoryEntryOut: {
+            /** Command Id */
+            command_id: string;
+            /** Label */
+            label: string;
+            /** Op */
+            op: string;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Ts */
+            ts: string;
+        };
+        /** HistoryGetOut */
+        HistoryGetOut: {
+            /** Can Redo */
+            can_redo: boolean;
+            /** Can Undo */
+            can_undo: boolean;
+            /** Cursor */
+            cursor: number;
+            /** Entries */
+            entries: components["schemas"]["HistoryEntryOut"][];
+            /** Limit */
+            limit: number;
         };
         /** HotCueMutationOut */
         HotCueMutationOut: {
@@ -4039,6 +6062,23 @@ export interface components {
              * @enum {string}
              */
             slot: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
+        };
+        /**
+         * HubStorageErrorBody
+         * @description The ``detail`` object a storage-full push carries.
+         */
+        HubStorageErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * HubStorageErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        HubStorageErrorResponse: {
+            detail: components["schemas"]["HubStorageErrorBody"];
         };
         /** JobIn */
         JobIn: {
@@ -4097,6 +6137,13 @@ export interface components {
             /** Worker Started At */
             worker_started_at?: number | null;
         };
+        /** KindDefaultIn */
+        KindDefaultIn: {
+            /** Asset Kind */
+            asset_kind: string;
+            /** Mode */
+            mode: string;
+        };
         /**
          * LabelRequest
          * @description Body for the relabel endpoint.
@@ -4109,6 +6156,32 @@ export interface components {
              * @default web_ui
              */
             labeler: string;
+        };
+        /**
+         * LaneSourceOut
+         * @description One lane's persisted default, dev toggle, and resulting source.
+         */
+        LaneSourceOut: {
+            /**
+             * Default
+             * @description Persisted per-lane default source: rbx or own
+             */
+            default: string;
+            /**
+             * Effective
+             * @description The source actually read: the toggle unless it is unset
+             */
+            effective: string;
+            /**
+             * Toggle
+             * @description In-memory dev toggle: unset, rbx or own. Launches unset.
+             */
+            toggle: string;
+            /**
+             * Toggle Revision
+             * @description Monotonic counter bumped by every toggle write for this lane, launches at 0. A VALUE can repeat (own -> rbx -> own reads as 'own' again); this never does, so a client that captures it after a write can pass it back as `expected_toggle_revision` to require that nothing has touched the toggle since, not merely that the value looks unchanged.
+             */
+            toggle_revision: number;
         };
         /**
          * LastImportOut
@@ -4151,6 +6224,197 @@ export interface components {
             /** Unreadable Music Roots */
             unreadable_music_roots?: string[];
         };
+        /** LastResultOut */
+        LastResultOut: {
+            /** Message */
+            message: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "error" | "inconclusive";
+        };
+        /**
+         * LevelCalibrationOut
+         * @description By-ear level calibration, captured from live playback.
+         *
+         *     `red_dbfs` anchors the meter's first RED segment; `ceiling_dbfs` is the
+         *     master output ceiling. They are independent: either can be set and toggled
+         *     without the other.
+         */
+        LevelCalibrationOut: {
+            /** Ceiling Dbfs */
+            ceiling_dbfs?: number | null;
+            /**
+             * Ceiling Enabled
+             * @default false
+             */
+            ceiling_enabled: boolean;
+            /** Red Dbfs */
+            red_dbfs?: number | null;
+            /**
+             * Red Enabled
+             * @default false
+             */
+            red_enabled: boolean;
+        };
+        /** LibraryJobEnqueueIn */
+        LibraryJobEnqueueIn: {
+            /**
+             * Lane
+             * @enum {string}
+             */
+            lane: "stems" | "lyrics";
+            /**
+             * Placement
+             * @default next
+             * @enum {string}
+             */
+            placement: "next" | "tail";
+            /** Stable Ids */
+            stable_ids: string[];
+        };
+        /** LibraryJobEnqueueOut */
+        LibraryJobEnqueueOut: {
+            /** Already Running */
+            already_running: string[];
+            /** Items */
+            items: components["schemas"]["LibraryJobItemOut"][];
+            /** Lane */
+            lane: string;
+        };
+        /** LibraryJobItemOut */
+        LibraryJobItemOut: {
+            /** Attempts */
+            attempts: number;
+            /** Detail */
+            detail: string | null;
+            /** Enqueued At */
+            enqueued_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Lane */
+            lane: string;
+            /** Position */
+            position: number;
+            /** Reason */
+            reason: string | null;
+            /** Stable Id */
+            stable_id: string;
+            /** Started At */
+            started_at: string | null;
+            /** State */
+            state: string;
+        };
+        /** LibraryJobListOut */
+        LibraryJobListOut: {
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** Items */
+            items: components["schemas"]["LibraryJobItemOut"][];
+            /** Lane */
+            lane: string;
+        };
+        /** LibraryJobReorderIn */
+        LibraryJobReorderIn: {
+            /** Before Stable Id */
+            before_stable_id?: string | null;
+        };
+        /**
+         * LibraryReadinessCounts
+         * @description Every field is a count over ``present``, never over ``total_tracks``.
+         */
+        LibraryReadinessCounts: {
+            /** Beatgrid Invalid */
+            beatgrid_invalid: number;
+            /** Beatgrid Missing */
+            beatgrid_missing: number;
+            /** Beatgrid Ok */
+            beatgrid_ok: number;
+            /** Has Analysis */
+            has_analysis: number;
+            /** Missing Analysis */
+            missing_analysis: number;
+            /** Not Ready */
+            not_ready: number;
+            /** Ready */
+            ready: number;
+            /** Stems Corrupt */
+            stems_corrupt: number;
+            /** Stems Missing */
+            stems_missing: number;
+            /** Stems Ready */
+            stems_ready: number;
+            /** Sync Compatible */
+            sync_compatible: number;
+            /** Sync Incompatible */
+            sync_incompatible: number;
+            /** Waveform Missing */
+            waveform_missing: number;
+            /** Waveform Ok */
+            waveform_ok: number;
+        };
+        /**
+         * LibraryReadinessItem
+         * @description One present track's stored-artifact readiness.
+         */
+        LibraryReadinessItem: {
+            /** Analysis Backend */
+            analysis_backend: string | null;
+            /** Analysis Version */
+            analysis_version: string | null;
+            /**
+             * Beatgrid
+             * @enum {string}
+             */
+            beatgrid: "ok" | "missing" | "invalid";
+            /** File Path */
+            file_path: string;
+            /** Gaps */
+            gaps: string[];
+            /** Has Analysis */
+            has_analysis: boolean;
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * Stems
+             * @enum {string}
+             */
+            stems: "ready" | "missing" | "corrupt";
+            /** Sync Compatible */
+            sync_compatible: boolean;
+            /** Sync Reason */
+            sync_reason: ("no_beatgrid" | "invalid_grid") | null;
+            /** Title */
+            title: string | null;
+            /**
+             * Waveform Preview
+             * @enum {string}
+             */
+            waveform_preview: "ok" | "missing";
+        };
+        /** LibraryReadinessOut */
+        LibraryReadinessOut: {
+            counts: components["schemas"]["LibraryReadinessCounts"];
+            /**
+             * Denominator
+             * @default present
+             * @constant
+             */
+            denominator: "present";
+            /** Generated At */
+            generated_at: number;
+            /** Items */
+            items: components["schemas"]["LibraryReadinessItem"][];
+            /** Present */
+            present: number;
+            /** Total Tracks */
+            total_tracks: number;
+            /** Unreachable */
+            unreachable: number;
+        };
         /**
          * LocalDataOut
          * @description One store on this machine that holds something about the account.
@@ -4178,6 +6442,44 @@ export interface components {
             redirect_uri: string;
             /** State */
             state: string;
+        };
+        /** LoopMarkOut */
+        LoopMarkOut: {
+            /** In Ms */
+            in_ms: number;
+            /** Out Ms */
+            out_ms: number;
+        };
+        /**
+         * LyricLineOut
+         * @description One cache-backed line timestamp in integer track milliseconds.
+         */
+        LyricLineOut: {
+            /** Start Ms */
+            start_ms: number;
+            /** Text */
+            text: string;
+        };
+        /**
+         * LyricsCachedIdsOut
+         * @description Stable ids with a valid on-disk lyrics-cache entry.
+         */
+        LyricsCachedIdsOut: {
+            /** Stable Ids */
+            stable_ids?: string[];
+        };
+        /**
+         * LyricsUnavailableOut
+         * @description The explicit cache-miss response for one track's lyrics timeline.
+         */
+        LyricsUnavailableOut: {
+            /** Detail */
+            detail: string;
+        };
+        /** MachineIdIn */
+        MachineIdIn: {
+            /** Machine Id */
+            machine_id: string;
         };
         /**
          * MachineModel
@@ -4241,6 +6543,12 @@ export interface components {
         };
         /** MeOut */
         MeOut: {
+            /** Signed In */
+            signed_in: boolean;
+            user: components["schemas"]["MeUserOut"] | null;
+        };
+        /** MeUserOut */
+        MeUserOut: {
             /** Avatar Url */
             avatar_url: string | null;
             /** Created At */
@@ -4315,6 +6623,56 @@ export interface components {
             share_state: "shared_cloud";
             /** Share Url */
             share_url: string;
+        };
+        /** MembershipTransferIn */
+        MembershipTransferIn: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "add" | "move";
+            /** Source Etag */
+            source_etag?: string | null;
+            /** Source Playlist Id */
+            source_playlist_id?: string | null;
+            /** Stable Ids */
+            stable_ids: string[];
+        };
+        /** MembershipTransferOut */
+        MembershipTransferOut: {
+            dest: components["schemas"]["PlaylistWriteOut"];
+            source?: components["schemas"]["PlaylistWriteOut"] | null;
+        };
+        /** MixerChannelMarkOut */
+        MixerChannelMarkOut: {
+            /** Assign */
+            assign: string;
+            /** Deck Id */
+            deck_id: number;
+            /** Eq High */
+            eq_high: number;
+            /** Eq Low */
+            eq_low: number;
+            /** Eq Mid */
+            eq_mid: number;
+            /** Fader */
+            fader: number;
+            /**
+             * Filter
+             * @default 0.5
+             */
+            filter: number;
+            /** Trim */
+            trim: number;
+        };
+        /** MixerMarkOut */
+        MixerMarkOut: {
+            /** Channels */
+            channels: components["schemas"]["MixerChannelMarkOut"][];
+            /** Crossfader */
+            crossfader: number;
+            /** Master */
+            master: number;
         };
         /** MyTagAssignIn */
         MyTagAssignIn: {
@@ -4426,12 +6784,54 @@ export interface components {
             /** Tracks Updated */
             tracks_updated: number;
         };
+        /** OpsErrorBody */
+        OpsErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * OpsErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        OpsErrorResponse: {
+            detail: components["schemas"]["OpsErrorBody"];
+        };
         /** OverviewOut */
         OverviewOut: {
             /** Machines */
             machines: components["schemas"]["MachineOverview"][];
             /** Total Tracks */
             total_tracks: number;
+        };
+        /** PageViewIn */
+        PageViewIn: {
+            /** Client Event Id */
+            client_event_id: string;
+            /** Client Timestamp */
+            client_timestamp: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "page-view";
+            /** Language */
+            language?: string | null;
+            /** Path */
+            path: string;
+            /** Referrer */
+            referrer?: string | null;
+            /** Secure Context */
+            secure_context: boolean;
+            /** Url */
+            url: string;
+            /** User Agent */
+            user_agent: string;
+            /** Viewport Height */
+            viewport_height: number;
+            /** Viewport Width */
+            viewport_width: number;
         };
         /** PairingCreate */
         PairingCreate: {
@@ -4445,6 +6845,7 @@ export interface components {
             from_stable_id: string;
             /** Notes */
             notes?: string | null;
+            snapshot?: components["schemas"]["PairingSnapshot"] | null;
             /**
              * Source
              * @default manual
@@ -4453,6 +6854,33 @@ export interface components {
             source: "manual" | "learned" | "ai";
             /** To Stable Id */
             to_stable_id: string;
+        };
+        /** PairingDeckSnapshot */
+        PairingDeckSnapshot: {
+            /**
+             * Deck Id
+             * @enum {integer}
+             */
+            deck_id: 1 | 2 | 3 | 4;
+            /** Eq Adjusts */
+            eq_adjusts: components["schemas"]["PairingEqAdjust"][];
+            /** Position Ms */
+            position_ms: number;
+            /** Stable Id */
+            stable_id: string;
+            timestamp: components["schemas"]["PairingTimestamp"];
+            /** Title */
+            title: string;
+        };
+        /** PairingEqAdjust */
+        PairingEqAdjust: {
+            /**
+             * Band
+             * @enum {string}
+             */
+            band: "low" | "mid" | "high";
+            /** Value */
+            value: number;
         };
         /** PairingOut */
         PairingOut: {
@@ -4469,6 +6897,7 @@ export interface components {
             notes?: string | null;
             /** Pairing Id */
             pairing_id: string;
+            snapshot?: components["schemas"]["PairingSnapshot"] | null;
             /**
              * Source
              * @enum {string}
@@ -4478,6 +6907,28 @@ export interface components {
             to_stable_id: string;
             /** Updated At */
             updated_at: string;
+        };
+        /** PairingSnapshot */
+        PairingSnapshot: {
+            /** Beat Sync Max */
+            beat_sync_max: boolean;
+            /** Decks */
+            decks: components["schemas"]["PairingDeckSnapshot"][];
+            /**
+             * Version
+             * @constant
+             */
+            version: 1;
+        };
+        /** PairingTimestamp */
+        PairingTimestamp: {
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "beats" | "time";
+            /** Value */
+            value: number;
         };
         /**
          * PassiveActivityOut
@@ -4495,6 +6946,34 @@ export interface components {
             last_request_at: string | null;
             /** Seconds Since Last Request */
             seconds_since_last_request: number | null;
+        };
+        /** PeakPressureIn */
+        PeakPressureIn: {
+            /**
+             * Session Ids
+             * @description Recently played stable_ids, oldest first, most-recent last. Unknown ids are a 404, not silently dropped.
+             */
+            session_ids?: string[];
+        };
+        /** PeakPressureOut */
+        PeakPressureOut: {
+            /** Advisory */
+            advisory: string;
+            /**
+             * Cue
+             * @enum {string}
+             */
+            cue: "keep_building" | "hold" | "release" | "unknown";
+            /** Cue Label */
+            cue_label: string;
+            /** Limitation */
+            limitation: string;
+            /** Score */
+            score: number;
+            /** Scored Tracks */
+            scored_tracks: number;
+            /** Skipped Unknown */
+            skipped_unknown: number;
         };
         /**
          * PendingTrackOut
@@ -4528,6 +7007,47 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** PerfSpanIn */
+        PerfSpanIn: {
+            /** Client Event Id */
+            client_event_id: string;
+            /** Client Timestamp */
+            client_timestamp: string;
+            /** Duration Ms */
+            duration_ms: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "perf-span";
+            /** Method */
+            method: string;
+            /** Name */
+            name: string;
+            /** Stages */
+            stages?: {
+                [key: string]: number;
+            } | null;
+        };
+        /** PerformanceFeedbackMarkIn */
+        PerformanceFeedbackMarkIn: {
+            /** Decks */
+            decks: components["schemas"]["DeckMarkOut"][];
+            mixer: components["schemas"]["MixerMarkOut"];
+            /** Recorded At Ms */
+            recorded_at_ms: number;
+            /**
+             * Vote
+             * @enum {string}
+             */
+            vote: "bad" | "good" | "great";
+        };
+        /** PerformanceFeedbackMarksOut */
+        PerformanceFeedbackMarksOut: {
+            /** Count */
+            count: number;
+            last_mark: components["schemas"]["PerformanceFeedbackMarkIn"] | null;
+        };
         /**
          * PermissionsOut
          * @description The folder-access answer, and what to do about a refusal.
@@ -4541,6 +7061,65 @@ export interface components {
             how_to_grant: string;
             /** Roots */
             roots?: components["schemas"]["AccessProbeOut"][];
+        };
+        /** PinCellIn */
+        PinCellIn: {
+            /** Machine Id */
+            machine_id: string;
+            /** Mode */
+            mode: string;
+            /** Playlist Id */
+            playlist_id: string;
+        };
+        /**
+         * PinEnvironmentOut
+         * @description Non-personal runtime facts needed to reproduce a pinned UI defect.
+         *
+         *     ``machine`` and ``release_version`` are already exposed by the running
+         *     daemon's settings/health surfaces. The browser contributes only its UI
+         *     kind and viewport dimensions: no username, user agent, URL query, or
+         *     other new personal data enters the pin store.
+         */
+        PinEnvironmentOut: {
+            /** Machine */
+            machine: string;
+            /** Release Version */
+            release_version: string;
+            /**
+             * Ui
+             * @enum {string}
+             */
+            ui: "chrome-loop" | "packaged-app";
+            /** Viewport Height */
+            viewport_height: number;
+            /** Viewport Width */
+            viewport_width: number;
+        };
+        /** PinKeyIn */
+        PinKeyIn: {
+            /** Machine Id */
+            machine_id: string;
+            /** Playlist Id */
+            playlist_id: string;
+        };
+        /** PlanEntryOut */
+        PlanEntryOut: {
+            /** Action */
+            action: string;
+            /** After */
+            after: {
+                [key: string]: string | number | null;
+            } | null;
+            /** Before */
+            before: {
+                [key: string]: string | number | null;
+            } | null;
+            /** Key */
+            key: string;
+            /** Machine Id */
+            machine_id: string;
+            /** Table */
+            table: string;
         };
         /** PlanModel */
         PlanModel: {
@@ -4598,6 +7177,8 @@ export interface components {
              * @default 9
              */
             ceiling_energy: number;
+            /** Closer Pin */
+            closer_pin?: string | null;
             /**
              * Duration Min
              * @default 60
@@ -4608,8 +7189,12 @@ export interface components {
              * @default 3
              */
             floor_energy: number;
+            /** Opener Pins */
+            opener_pins?: string[];
             /** Peak At Min */
             peak_at_min?: number | null;
+            /** Peak Pins */
+            peak_pins?: string[];
         };
         /** PlayItSolveOut */
         PlayItSolveOut: {
@@ -4646,6 +7231,8 @@ export interface components {
             energy: number | null;
             /** Key Camelot */
             key_camelot: string | null;
+            /** Pin Role */
+            pin_role?: ("opener" | "peak" | "closer") | null;
             /** Position */
             position: number;
             /** Stable Id */
@@ -4783,6 +7370,17 @@ export interface components {
              */
             name?: string | null;
         };
+        /** PlaylistRewriteOut */
+        PlaylistRewriteOut: {
+            /** After */
+            after: string[];
+            /** Before */
+            before: string[];
+            /** Name */
+            name: string;
+            /** Playlist Id */
+            playlist_id: string;
+        };
         /** PlaylistSummary */
         PlaylistSummary: {
             /** Available Count */
@@ -4819,14 +7417,156 @@ export interface components {
             /** Vendor Pl Id */
             vendor_pl_id: string;
         };
-        /** ProvenanceOut */
+        /**
+         * PolicyApplyIn
+         * @description ``POST /policies/apply``. Dry-run unless ``dry_run`` is false, like the CLI's ``--live``.
+         */
+        PolicyApplyIn: {
+            changes: components["schemas"]["PolicyChangesIn"];
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+        };
+        /** PolicyCellIn */
+        PolicyCellIn: {
+            /** Asset Kind */
+            asset_kind: string;
+            /** Cache Budget Mb */
+            cache_budget_mb?: number | null;
+            /** Machine Id */
+            machine_id: string;
+            /** Mode */
+            mode: string;
+        };
+        /**
+         * PolicyChangesIn
+         * @description A change set. Every list is optional; an empty body validates the stored fleet.
+         */
+        PolicyChangesIn: {
+            /**
+             * Defaults
+             * @default []
+             */
+            defaults: components["schemas"]["KindDefaultIn"][];
+            /**
+             * Excluded Tables
+             * @default []
+             */
+            excluded_tables: string[];
+            /**
+             * Pins
+             * @default []
+             */
+            pins: components["schemas"]["PinCellIn"][];
+            /**
+             * Policies
+             * @default []
+             */
+            policies: components["schemas"]["PolicyCellIn"][];
+            /**
+             * Removed Pins
+             * @default []
+             */
+            removed_pins: components["schemas"]["PinKeyIn"][];
+            /**
+             * Removed Policies
+             * @default []
+             */
+            removed_policies: components["schemas"]["PolicyKeyIn"][];
+        };
+        /** PolicyKeyIn */
+        PolicyKeyIn: {
+            /** Asset Kind */
+            asset_kind: string;
+            /** Machine Id */
+            machine_id: string;
+        };
+        /**
+         * PolicyOutcomeOut
+         * @description :meth:`apps.sync_hub.policy_store.PolicyOutcome.to_wire`, typed.
+         */
+        PolicyOutcomeOut: {
+            /** Author Machine Id */
+            author_machine_id: string;
+            /** Blocking */
+            blocking: boolean;
+            /** Measurable */
+            measurable: boolean;
+            /** Plan */
+            plan: components["schemas"]["PlanEntryOut"][];
+            /** Violations */
+            violations: components["schemas"]["CheckedViolationOut"][];
+            /** Written */
+            written: boolean;
+        };
+        /**
+         * PreflightCheckOut
+         * @description One row of PREFLIGHT-01's boot gate (issue #771).
+         *
+         *     ``status`` is never a two-way pass/fail: ``pending`` covers a check that
+         *     genuinely could not be exercised (e.g. audio-access with no resolvable
+         *     track anywhere in a small sample), which is an honest denominator, never
+         *     a fabricated pass. ``remediation`` is null on a pass or a pending row and
+         *     a real sentence on a fail.
+         */
+        PreflightCheckOut: {
+            /** Detail */
+            detail: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Remediation */
+            remediation?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pass" | "fail" | "pending";
+        };
+        /**
+         * PreflightOut
+         * @description ``GET /api/v1/preflight`` -- the ONE source of truth for the boot
+         *     gate. ``status`` is ``fail`` iff any check is ``fail``; a ``pending``
+         *     check never blocks it, because a check that could not be exercised is
+         *     not a defect on its own.
+         */
+        PreflightOut: {
+            /** Checks */
+            checks: components["schemas"]["PreflightCheckOut"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pass" | "fail";
+        };
+        /**
+         * ProvenanceOut
+         * @description One field's value plus where it came from and whether it is real.
+         *
+         *     ``status`` has NO DEFAULT on purpose (native-analysis v1, spec section 3
+         *     and `.planning/REQUIREMENTS.md` NATIVE-04). A default of ``ok`` would let
+         *     a caller omit the field and serialize a `failed` or `missing` own-analysis
+         *     lane as a success, which is the exact silent-fallback shape this milestone
+         *     exists to remove. Every construction site states its status, and the
+         *     rekordbox/legacy boundary passes ``ok`` explicitly.
+         */
         ProvenanceOut: {
             /** Confidence */
             confidence?: number | null;
             /** Modified At */
             modified_at: string;
+            /** Reason */
+            reason?: string | null;
             /** Source */
             source: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed" | "missing";
             /** Value */
             value: unknown;
         };
@@ -4839,6 +7579,11 @@ export interface components {
             has_more: boolean;
             /** Machines */
             machines: components["schemas"]["MachineModel"][];
+            /**
+             * Quarantined
+             * @default 0
+             */
+            quarantined: number;
             /** Rows */
             rows: components["schemas"]["RowModel"][];
             /** Seq */
@@ -4851,6 +7596,8 @@ export interface components {
         };
         /** PushRequest */
         PushRequest: {
+            /** Capabilities */
+            capabilities?: string[];
             /** Machine Id */
             machine_id: string;
             /** Machines */
@@ -4859,11 +7606,21 @@ export interface components {
             rows: components["schemas"]["RowModel"][];
             /** Schema Version */
             schema_version: number;
+            /**
+             * Wire Version
+             * @description sync wire version; absent on pre-split builds
+             */
+            wire_version?: number | null;
         };
         /** PushResponse */
         PushResponse: {
             /** Accepted */
             accepted: number;
+            /**
+             * Quarantined
+             * @default 0
+             */
+            quarantined: number;
             /** Rejected */
             rejected: number;
             /** Seq */
@@ -5013,8 +7770,9 @@ export interface components {
          *
          *     ``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the
          *     rekordbox-sourced fields are then honestly empty (``vendor_id`` None,
-         *     analysis False, no cues, no genre) while ``folder_path``, ``file_exists``
-         *     and ``quality`` still carry the state layer's own disk truth.
+         *     analysis False and no cues). Genre and comment instead come from the
+         *     state layer's import-time file tags, alongside ``folder_path``,
+         *     ``file_exists`` and ``quality``.
          *     ``artwork_available`` is the one exception -- it reflects a real embedded
          *     tag picture on the local file when present, since ``/artwork`` now
          *     serves that instead of a rekordbox-rendered jpg for these rows. See
@@ -5099,6 +7857,22 @@ export interface components {
             /** Volume Uuid */
             volume_uuid: string;
         };
+        /** RecentResultOut */
+        RecentResultOut: {
+            /** Finished At */
+            finished_at: string;
+            /** Message */
+            message: string;
+            /** Pulled */
+            pulled: number;
+            /** Pushed */
+            pushed: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "error" | "inconclusive";
+        };
         /** ReconcileSummary */
         ReconcileSummary: {
             /** Orphan Broken */
@@ -5140,8 +7914,13 @@ export interface components {
             /** Session Id */
             session_id: string | null;
         };
-        /** RefreshIn */
+        /**
+         * RefreshIn
+         * @description One refresh scope, including the explicit analysis-grid track order.
+         */
         RefreshIn: {
+            /** Analysis Kind */
+            analysis_kind?: ("vocals" | "beatgrid" | "key" | "stems") | null;
             /** Batch Dir */
             batch_dir?: string | null;
             /**
@@ -5149,9 +7928,14 @@ export interface components {
              * @default library
              * @enum {string}
              */
-            scope: "library" | "unmapped";
+            scope: "library" | "unmapped" | "track";
+            /** Stable Id */
+            stable_id?: string | null;
         };
-        /** RefreshStatusOut */
+        /**
+         * RefreshStatusOut
+         * @description The one-slot job's public, serializable state.
+         */
         RefreshStatusOut: {
             /** Current Step */
             current_step: string | null;
@@ -5284,6 +8068,17 @@ export interface components {
             /** Triple Validated */
             triple_validated: boolean;
         };
+        /** RevokeOut */
+        RevokeOut: {
+            /** Changed */
+            changed: boolean;
+            /** Credential Deleted */
+            credential_deleted: boolean;
+            /** Machine Id */
+            machine_id: string;
+            /** Revoked At */
+            revoked_at: string;
+        };
         /**
          * RowModel
          * @description One offered row. ``members`` is set only on a ``playlists`` row.
@@ -5309,12 +8104,25 @@ export interface components {
         SearchHit: {
             /** Artist */
             artist: string | null;
+            /** Artwork Available */
+            artwork_available: boolean | null;
+            /**
+             * Artwork Status
+             * @enum {string}
+             */
+            artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
             /** Comments */
             comments: string | null;
             /** Duration Ms */
             duration_ms: number | null;
+            /** Energy */
+            energy: number | null;
+            /** Energy Reason */
+            energy_reason: string;
+            /** Energy Source */
+            energy_source: "mik" | null;
             /** Etag */
             etag: string;
             /** File Exists */
@@ -5323,10 +8131,29 @@ export interface components {
             genre: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /**
+             * Is Remote
+             * @default false
+             */
+            is_remote: boolean;
             /** Is Streaming */
             is_streaming: boolean;
             /** Key */
             key: string | null;
+            /** Key Reason */
+            key_reason: string | null;
+            /**
+             * Key Status
+             * @enum {string}
+             */
+            key_status: "ok" | "failed" | "missing";
+            /** Loudness Reason */
+            loudness_reason: string | null;
+            /**
+             * Loudness Status
+             * @enum {string}
+             */
+            loudness_status: "ok" | "failed" | "missing";
             /** Match Context */
             match_context: string;
             /**
@@ -5473,6 +8300,26 @@ export interface components {
             message: string;
         };
         /**
+         * SmartlistCreateIn
+         * @description Create payload matching ``python -m apps.smartlists.cli.create``.
+         */
+        SmartlistCreateIn: {
+            /**
+             * Name
+             * @description Display name (non-empty)
+             */
+            name: string;
+            /**
+             * Order By
+             * @description Sort key; defaults to 'added_date desc' like the CLI
+             */
+            order_by?: string | null;
+            /** Rule */
+            rule: {
+                [key: string]: unknown;
+            };
+        };
+        /**
          * SmartlistPreconditionRequiredBody
          * @description Structured response when an update omits its CAS precondition.
          */
@@ -5551,8 +8398,72 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** SoundcloudExportAckRequest */
+        SoundcloudExportAckRequest: {
+            /**
+             * Acknowledge Rights
+             * @default false
+             */
+            acknowledge_rights: boolean;
+        };
+        /** SoundcloudExportResponse */
+        SoundcloudExportResponse: {
+            /** Acknowledged */
+            acknowledged?: boolean | null;
+            /**
+             * Audio Upload
+             * @constant
+             */
+            audio_upload: "not_offered";
+            /** Comment */
+            comment?: string | null;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "metadata_only";
+            /** Licensing Reminder */
+            licensing_reminder: string;
+            /**
+             * Rights Position
+             * @constant
+             */
+            rights_position: "unsettled";
+            /** Session Id */
+            session_id: string;
+            /**
+             * Takeover
+             * @constant
+             */
+            takeover: "not_offered";
+            /** Tracklist */
+            tracklist: components["schemas"]["SoundcloudTracklistRowModel"][];
+        };
+        /** SoundcloudTracklistRowModel */
+        SoundcloudTracklistRowModel: {
+            /** Artist */
+            artist: string | null;
+            /** Deck */
+            deck: string | null;
+            /** Display Name */
+            display_name: string;
+            /** Source */
+            source: string | null;
+            /** Timestamp Label */
+            timestamp_label: string;
+            /** Timestamp S */
+            timestamp_s: number;
+            /** Title */
+            title: string | null;
+            /** Track Stable Id */
+            track_stable_id: string | null;
+        };
         /** StatusResponse */
         StatusResponse: {
+            /** Entitlement Provider */
+            entitlement_provider: string | null;
+            /** Hosted */
+            hosted: boolean;
             /** Hub Generation */
             hub_generation: string;
             /** Hub Machine Id */
@@ -5567,6 +8478,8 @@ export interface components {
             schema_version: number;
             /** Seq */
             seq: number;
+            /** Wire Version */
+            wire_version: number;
         };
         /**
          * StemManifestOut
@@ -5628,6 +8541,28 @@ export interface components {
             where: string;
         };
         /**
+         * StemUnavailableOut
+         * @description HTTP 200 empty-state: no stored bundle for this stable_id.
+         */
+        StemUnavailableOut: {
+            /**
+             * Code
+             * @default STEM_BUNDLE_NOT_FOUND
+             * @constant
+             */
+            code: "STEM_BUNDLE_NOT_FOUND";
+            /** Message */
+            message: string;
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * Status
+             * @default unavailable
+             * @constant
+             */
+            status: "unavailable";
+        };
+        /**
          * StemsPlanOut
          * @description What separating this library at this tier would take.
          */
@@ -5642,6 +8577,16 @@ export interface components {
              * @description GPU cost of the pending batch
              */
             estimate_usd: number;
+            /**
+             * Executor
+             * @description modal farm or local on-device worker
+             */
+            executor: string;
+            /**
+             * Local Refusal
+             * @description why local stems are inert on this build; null when allowed
+             */
+            local_refusal?: string | null;
             /**
              * Pending
              * @description audio on disk, no bundle yet: the work
@@ -5738,6 +8683,7 @@ export interface components {
             /** Context Source */
             context_source: string;
             current: components["schemas"]["CopilotTrackOut"];
+            pressure: components["schemas"]["PeakPressureOut"];
         };
         /**
          * SuggestedSourcesOut
@@ -5787,13 +8733,30 @@ export interface components {
             /** Seconds Since Request */
             seconds_since_request: number | null;
         };
+        /**
+         * SyncErrorBody
+         * @description The ``detail`` of every sync refusal: a stable code and prose.
+         */
+        SyncErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * SyncErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        SyncErrorResponse: {
+            detail: components["schemas"]["SyncErrorBody"];
+        };
         /** SyncPolicyOut */
         SyncPolicyOut: {
             /**
              * Asset Kind
              * @enum {string}
              */
-            asset_kind: "audio" | "stem_bundle" | "anlz_cache" | "vocal_cache";
+            asset_kind: "audio" | "stem_bundle" | "anlz_cache" | "vocal_cache" | "lyrics_cache" | "karaoke_words";
             /** Cache Budget Mb */
             cache_budget_mb?: number | null;
             /** Machine Id */
@@ -5814,7 +8777,7 @@ export interface components {
              * Asset Kind
              * @enum {string}
              */
-            asset_kind: "audio" | "stem_bundle" | "anlz_cache" | "vocal_cache";
+            asset_kind: "audio" | "stem_bundle" | "anlz_cache" | "vocal_cache" | "lyrics_cache" | "karaoke_words";
             /** Cache Budget Mb */
             cache_budget_mb?: number | null;
             /** Machine Id */
@@ -5824,6 +8787,127 @@ export interface components {
              * @enum {string}
              */
             mode: "pinned" | "cached" | "stream" | "excluded";
+        };
+        /** SyncRunIn */
+        SyncRunIn: {
+            /**
+             * Hub Url
+             * @description the hub base URL, e.g. http://hub.tailnet:8686 (CLI --hub)
+             */
+            hub_url: string;
+            /**
+             * Name
+             * @description this machine's display name; the hostname when omitted (CLI --name)
+             */
+            name?: string | null;
+        };
+        /**
+         * SyncRunOut
+         * @description What one ``run_sync`` observed. Every count is observed, none inferred.
+         *
+         *     ``digest_inconclusive`` True is the CLI's exit code 4: rows moved but the
+         *     post-sync digest compare excluded rows, so agreement was NOT verified.
+         *     ``hub_quarantined`` None means the hub did not report it (unknown, not 0).
+         */
+        SyncRunOut: {
+            /** Accepted */
+            accepted: number;
+            /** Applied */
+            applied: number;
+            /** Digest Inconclusive */
+            digest_inconclusive: boolean;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Hub Quarantined */
+            hub_quarantined: number | null;
+            /** Hub Restore Detected */
+            hub_restore_detected: boolean;
+            /** Hub Seq */
+            hub_seq: number;
+            /** Machine Id */
+            machine_id: string;
+            /** Pulled */
+            pulled: number;
+            /** Pushed */
+            pushed: number;
+            /** Quarantined Incoming */
+            quarantined_incoming: number;
+            /** Quarantined Rows */
+            quarantined_rows: number;
+            /** Rejected */
+            rejected: number;
+            /** Rounds */
+            rounds: number;
+        };
+        /** SyncSnapshotIn */
+        SyncSnapshotIn: {
+            /** A Position Beat N */
+            a_position_beat_n?: number | null;
+            /** A Position Ms */
+            a_position_ms: number;
+            /** A Position Phase */
+            a_position_phase?: number | null;
+            /** A Tempo Ratio */
+            a_tempo_ratio: number;
+            /** B Position Beat N */
+            b_position_beat_n?: number | null;
+            /** B Position Ms */
+            b_position_ms: number;
+            /** B Position Phase */
+            b_position_phase?: number | null;
+            /** B Tempo Ratio */
+            b_tempo_ratio: number;
+            /**
+             * Master Side
+             * @enum {string}
+             */
+            master_side: "a" | "b";
+            /** Stable A */
+            stable_a: string;
+            /** Stable B */
+            stable_b: string;
+            /**
+             * Sync Mode
+             * @enum {string}
+             */
+            sync_mode: "bar" | "beat";
+        };
+        /** SyncSnapshotOut */
+        SyncSnapshotOut: {
+            /** A Position Beat N */
+            a_position_beat_n: number | null;
+            /** A Position Ms */
+            a_position_ms: number;
+            /** A Position Phase */
+            a_position_phase: number | null;
+            /** A Tempo Ratio */
+            a_tempo_ratio: number;
+            /** B Position Beat N */
+            b_position_beat_n: number | null;
+            /** B Position Ms */
+            b_position_ms: number;
+            /** B Position Phase */
+            b_position_phase: number | null;
+            /** B Tempo Ratio */
+            b_tempo_ratio: number;
+            /** Captured At */
+            captured_at: string;
+            /** Id */
+            id: string;
+            /**
+             * Master Side
+             * @enum {string}
+             */
+            master_side: "a" | "b";
+            /** Stable A */
+            stable_a: string;
+            /** Stable B */
+            stable_b: string;
+            /**
+             * Sync Mode
+             * @enum {string}
+             */
+            sync_mode: "bar" | "beat";
         };
         /**
          * TierEstimateOut
@@ -5946,7 +9030,7 @@ export interface components {
             /** Options */
             options?: string[] | null;
             /** Title */
-            title?: string | null;
+            title?: string;
         };
         /**
          * TrackListItemOut
@@ -5970,22 +9054,44 @@ export interface components {
             album?: string | null;
             /** Artist */
             artist?: string | null;
+            /** Artwork Available */
+            artwork_available: boolean | null;
+            /**
+             * Artwork Status
+             * @enum {string}
+             */
+            artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
+            /** Auto Cues Available */
+            auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
             /** Created At */
             created_at: string;
             /** Duration Ms */
             duration_ms?: number | null;
+            /** Energy */
+            energy: number | null;
+            /** Energy Reason */
+            energy_reason: string;
+            /** Energy Source */
+            energy_source: "mik" | null;
             /** File Exists */
             file_exists: boolean;
             /** File Path */
             file_path?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /**
+             * Is Remote
+             * @default false
+             */
+            is_remote: boolean;
             /** Key */
             key?: string | null;
             /** Last Played At */
             last_played_at?: string | null;
+            /** Lyrics Available */
+            lyrics_available: boolean;
             /** Notes */
             notes?: string | null;
             /**
@@ -6013,6 +9119,8 @@ export interface components {
             stems: {
                 [key: string]: unknown;
             };
+            /** Stems Available */
+            stems_available: boolean;
             /**
              * Tags
              * @default []
@@ -6027,12 +9135,28 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * TrackLyricsOut
+         * @description Agent-native read model for cached line-synced lyrics only.
+         */
+        TrackLyricsOut: {
+            /** Lines */
+            lines: components["schemas"]["LyricLineOut"][];
+            /** Source */
+            source: string;
+            /** Stable Id */
+            stable_id: string;
+        };
         /** TrackOut */
         TrackOut: {
             /** Album */
             album?: string | null;
             /** Artist */
             artist?: string | null;
+            /** Artwork Available */
+            artwork_available: boolean | null;
+            /** Auto Cues Available */
+            auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
             /** Created At */
@@ -6047,6 +9171,8 @@ export interface components {
             key?: string | null;
             /** Last Played At */
             last_played_at?: string | null;
+            /** Lyrics Available */
+            lyrics_available: boolean;
             /** Notes */
             notes?: string | null;
             /**
@@ -6065,6 +9191,8 @@ export interface components {
             rating?: number | null;
             /** Stable Id */
             stable_id: string;
+            /** Stems Available */
+            stems_available: boolean;
             /**
              * Tags
              * @default []
@@ -6100,12 +9228,25 @@ export interface components {
         TrackRowOut: {
             /** Artist */
             artist: string | null;
+            /** Artwork Available */
+            artwork_available: boolean | null;
+            /**
+             * Artwork Status
+             * @enum {string}
+             */
+            artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
             /** Comments */
             comments: string | null;
             /** Duration Ms */
             duration_ms: number | null;
+            /** Energy */
+            energy: number | null;
+            /** Energy Reason */
+            energy_reason: string;
+            /** Energy Source */
+            energy_source: "mik" | null;
             /** Etag */
             etag: string;
             /** File Exists */
@@ -6114,10 +9255,29 @@ export interface components {
             genre: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /**
+             * Is Remote
+             * @default false
+             */
+            is_remote: boolean;
             /** Is Streaming */
             is_streaming: boolean;
             /** Key */
             key: string | null;
+            /** Key Reason */
+            key_reason: string | null;
+            /**
+             * Key Status
+             * @enum {string}
+             */
+            key_status: "ok" | "failed" | "missing";
+            /** Loudness Reason */
+            loudness_reason: string | null;
+            /**
+             * Loudness Status
+             * @enum {string}
+             */
+            loudness_status: "ok" | "failed" | "missing";
             /**
              * Play Count
              * @default 0
@@ -6183,6 +9343,22 @@ export interface components {
              */
             hide_todo_settings: boolean;
             /**
+             * Jog Radial Waveform
+             * @default false
+             */
+            jog_radial_waveform: boolean;
+            level_calibration?: components["schemas"]["LevelCalibrationOut"];
+            /**
+             * Show Agent Pins
+             * @default true
+             */
+            show_agent_pins: boolean;
+            /**
+             * Technically Working Animate
+             * @default true
+             */
+            technically_working_animate: boolean;
+            /**
              * Theme
              * @default dark
              * @enum {string}
@@ -6198,8 +9374,37 @@ export interface components {
             } | null;
             /** Hide Todo Settings */
             hide_todo_settings?: boolean | null;
+            /** Jog Radial Waveform */
+            jog_radial_waveform?: boolean | null;
+            level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
+            /** Show Agent Pins */
+            show_agent_pins?: boolean | null;
+            /** Technically Working Animate */
+            technically_working_animate?: boolean | null;
             /** Theme */
             theme?: ("dark" | "light") | null;
+        };
+        /** UndoRecordOut */
+        UndoRecordOut: {
+            /**
+             * Action
+             * @constant
+             */
+            action: "merge";
+            /** Cluster Id */
+            cluster_id: number;
+            /** Cluster Key */
+            cluster_key: string;
+            /** Decided At */
+            decided_at: string;
+            /** Pending Apply */
+            pending_apply: boolean;
+            /** Playlist Ids */
+            playlist_ids: string[];
+            /** Revision */
+            revision: string;
+            /** Survivor */
+            survivor: string;
         };
         /**
          * UpdateCheckOut
@@ -6298,6 +9503,8 @@ export interface components {
             code: "usb_volume_discovery_unavailable";
             /** Reason */
             reason: string;
+            /** Ui Title */
+            ui_title?: string | null;
         };
         /** UsbCapabilityErrorOut */
         UsbCapabilityErrorOut: {
@@ -6380,6 +9587,55 @@ export interface components {
             target_path?: string | null;
             /** Vendor */
             vendor: string;
+        };
+        /** VocalsAnalyzeIn */
+        VocalsAnalyzeIn: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "from-stems" | "one";
+            /** Playlist Id */
+            playlist_id?: string | null;
+            /** Stable Ids */
+            stable_ids?: string[] | null;
+        };
+        /** VocalsAnalyzeOut */
+        VocalsAnalyzeOut: {
+            /** Claimed */
+            claimed: string[];
+            /** Refused */
+            refused: {
+                [key: string]: string;
+            };
+        };
+        /** VocalsRegionOut */
+        VocalsRegionOut: {
+            /** Confidence */
+            confidence?: number | null;
+            /** End S */
+            end_s: number;
+            /** Intensity */
+            intensity: number;
+            /** Start S */
+            start_s: number;
+        };
+        /**
+         * VocalsStatusOut
+         * @description Same shape and four states as ``/anlz``'s ``vocals`` field.
+         */
+        VocalsStatusOut: {
+            /** Fps */
+            fps?: number | null;
+            /** Regions */
+            regions?: components["schemas"]["VocalsRegionOut"][];
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "rekordbox" | "no_vocals" | "demucs" | "not_analyzed";
         };
         /** VoiceProbeRequest */
         VoiceProbeRequest: {
@@ -6949,6 +10205,37 @@ export interface operations {
             };
         };
     };
+    api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundcloudExportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_publish_metadata_share_api_sets__session_id__share_post: {
         parameters: {
             query?: never;
@@ -6971,6 +10258,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MetadataShareResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_post_soundcloud_export_api_sets__session_id__soundcloud_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SoundcloudExportAckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundcloudExportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7188,6 +10510,69 @@ export interface operations {
             };
         };
     };
+    get_track_analysis_orders_api_v1_analysis_queue_orders__stable_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisOrdersOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    order_track_analysis_api_v1_analysis_queue_orders__stable_id___kind__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisOrderOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     run_analysis_queue_api_v1_analysis_queue_run_post: {
         parameters: {
             query?: never;
@@ -7204,6 +10589,224 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RefreshStatusOut"];
+                };
+            };
+        };
+    };
+    list_backfill_batches_api_v1_analysis_backfill_batches_get: {
+        parameters: {
+            query?: {
+                /** @description Newest first */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillBatchListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_backfill_api_v1_analysis_backfill_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackfillBatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillCancelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enqueue_backfill_api_v1_analysis_backfill_enqueue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackfillEnqueueIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillEnqueueOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_backfill_progress_api_v1_analysis_backfill_progress_get: {
+        parameters: {
+            query: {
+                /** @description Batch to report on */
+                batch_id: string;
+                /** @description Cap on listed items. Never caps the reported counts. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillProgressOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_backfill_api_v1_analysis_backfill_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackfillBatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillResumeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_analysis_source_api_v1_analysis_source_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisSourceOut"];
+                };
+            };
+        };
+    };
+    put_analysis_source_api_v1_analysis_source_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalysisSourcePut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisSourceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -7401,6 +11004,28 @@ export interface operations {
             };
         };
     };
+    get_perf_kpi_ledger_api_v1_bench_perf_kpi_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     list_ratings_api_v1_bench_ratings_get: {
         parameters: {
             query?: never;
@@ -7547,6 +11172,37 @@ export interface operations {
             };
         };
     };
+    list_client_errors_api_v1_client_errors_get: {
+        parameters: {
+            query?: {
+                untriaged?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientErrorRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     capture_client_error_api_v1_client_errors_post: {
         parameters: {
             query?: never;
@@ -7580,6 +11236,41 @@ export interface operations {
             };
         };
     };
+    triage_client_error_api_v1_client_errors__event_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientErrorTriageIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientErrorTriageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     capture_client_event_api_v1_client_events_post: {
         parameters: {
             query?: never;
@@ -7589,7 +11280,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ClientEventIn"];
+                "application/json": components["schemas"]["PageViewIn"] | components["schemas"]["PerfSpanIn"];
             };
         };
         responses: {
@@ -7600,6 +11291,371 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClientEventOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_config_api_v1_cloudsync_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudSyncConfigOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description a CloudSync state file in the data dir is malformed or unreadable */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_config_api_v1_cloudsync_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloudSyncConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudSyncConfigOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description a CloudSync state file in the data dir is malformed or unreadable */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_data_classes_api_v1_cloudsync_data_classes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: {
+                            [key: string]: unknown;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    mint_enrollment_grant_api_v1_cloudsync_enrollment_grants_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrantIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrantOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description No signed-in user on this hub has that email; none is created. code: CLOUDSYNC_GRANT_OWNER_UNKNOWN. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description This machine is not a hub (MDT_IS_HUB is not 1); a grant is an act of hub authority. code: CLOUDSYNC_NOT_A_HUB. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description MDT_IS_HUB holds a value other than 1, 0 or empty. code: CLOUDSYNC_HUB_FLAG_INVALID. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+        };
+    };
+    get_fleet_api_v1_cloudsync_fleet_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+        };
+    };
+    adopt_machine_api_v1_cloudsync_fleet_adopt_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MachineIdIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdoptOut"];
+                };
+            };
+            /** @description adopt needs a signed-in user. code: AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description No such machine on this hub. code: CLOUDSYNC_UNKNOWN_MACHINE. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description This install is not a hub (CLOUDSYNC_NOT_A_HUB), or the machine is owned by someone else (CLOUDSYNC_OWNER_CONFLICT) or revoked (CLOUDSYNC_REVOKED). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_credentials_api_v1_cloudsync_fleet_credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialsOut"];
+                };
+            };
+            /** @description Not signed in. code: AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description This install is not a hub (CLOUDSYNC_NOT_A_HUB). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+        };
+    };
+    revoke_machine_api_v1_cloudsync_fleet_revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MachineIdIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeOut"];
+                };
+            };
+            /** @description revoke needs a signed-in user. code: AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description The machine is owned by another user. code: CLOUDSYNC_NOT_YOUR_MACHINE. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description This install is not a hub (CLOUDSYNC_NOT_A_HUB), or the machine has no owner row to revoke (CLOUDSYNC_FLEET). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7630,6 +11686,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MachineOut"][];
                 };
+            };
+            /** @description CLOUDSYNC_IDENTITY_ERROR or CLOUDSYNC_CONFIG_INVALID (cloudsync-config.json is malformed, so the configured name is unknown) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -7697,7 +11760,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Successful Response */
+            /** @description The stored pin */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -7705,6 +11768,20 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["PlaylistPinOut"];
                 };
+            };
+            /** @description MACHINE_NOT_FOUND or PLAYLIST_NOT_FOUND; nothing written */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -7761,13 +11838,416 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Successful Response */
+            /** @description The stored cell */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["SyncPolicyOut"];
+                };
+            };
+            /** @description MACHINE_NOT_FOUND; nothing written */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_policies_api_v1_cloudsync_policies_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyApplyIn"];
+            };
+        };
+        responses: {
+            /** @description Gated; written is true only when dry_run is false */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyOutcomeOut"];
+                };
+            };
+            /** @description MACHINE_NOT_FOUND or PLAYLIST_NOT_FOUND or POLICY_NOT_FOUND or PIN_NOT_FOUND; nothing written */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    plan_policies_api_v1_cloudsync_policies_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyChangesIn"];
+            };
+        };
+        responses: {
+            /** @description The rows the change set would touch; CLI exit 3 when blocking */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyOutcomeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_policies_api_v1_cloudsync_policies_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PolicyChangesIn"] | null;
+            };
+        };
+        responses: {
+            /** @description The fleet with the change set applied, judged; CLI exit 3 on any error */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyOutcomeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_policy_api_v1_cloudsync_policies__machine_id___asset_kind__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                machine_id: string;
+                asset_kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The cell is tombstoned and will sync */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyOutcomeOut"];
+                };
+            };
+            /** @description MACHINE_NOT_FOUND or POLICY_NOT_FOUND; nothing written */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_status_api_v1_cloudsync_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudSyncStatusOut"];
+                };
+            };
+            /** @description a CloudSync state file in the data dir is malformed or unreadable */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    run_sync_round_api_v1_cloudsync_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncRunIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncRunOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description run_sync raised an error it does not declare (a defect). Journaled as error by maintenance.sync; the body is the server's plain 500, not an OpsErrorResponse. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The hub was unreachable or answered with something unusable. code: CLOUDSYNC_HUB_UNREACHABLE. Journaled as error. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+        };
+    };
+    post_command_api_v1_commands_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    next_command_api_v1_commands_next_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    complete_command_api_v1_commands__order_id__result_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    peak_pressure_route_api_v1_copilot_peak_pressure_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PeakPressureIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeakPressureOut"];
+                };
+            };
+            /** @description unknown session id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Validation Error */
@@ -7852,6 +12332,62 @@ export interface operations {
             };
         };
     };
+    post_dedup_apply_api_v1_dedup_clusters__cluster_id__apply_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Decision-store ETag returned by GET /api/v1/dedup/clusters */
+                "If-Match": string;
+            };
+            path: {
+                cluster_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong validator for the exact decision-store bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplyRecordOut"];
+                };
+            };
+            /** @description The decision revision or stable cluster identity is stale */
+            409: {
+                headers: {
+                    /** @description Strong validator for the exact decision-store bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description If-Match is required for every decision write */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     post_dedup_decision_api_v1_dedup_clusters__cluster_id__decision_post: {
         parameters: {
             query?: never;
@@ -7879,6 +12415,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DecisionRecordOut"];
+                };
+            };
+            /** @description The decision revision or stable cluster identity is stale */
+            409: {
+                headers: {
+                    /** @description Strong validator for the exact decision-store bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description If-Match is required for every decision write */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post_dedup_undo_api_v1_dedup_clusters__cluster_id__undo_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Decision-store ETag returned by GET /api/v1/dedup/clusters */
+                "If-Match": string;
+            };
+            path: {
+                cluster_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong validator for the exact decision-store bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UndoRecordOut"];
                 };
             };
             /** @description The decision revision or stable cluster identity is stale */
@@ -7975,6 +12567,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ArchiveOut"];
+                };
+            };
+        };
+    };
+    get_attachment_api_v1_feedback_attachments__attachment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attachment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -8098,6 +12721,41 @@ export interface operations {
             };
         };
     };
+    upload_attachment_api_v1_feedback_comments__comment_id__attachment_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_attachment_api_v1_feedback_comments__comment_id__attachment_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     follow_on_comment_api_v1_feedback_comments__comment_id__follow_on_post: {
         parameters: {
             query?: never;
@@ -8173,6 +12831,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GeneralNoteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_performance_marks_api_v1_feedback_performance_marks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PerformanceFeedbackMarksOut"];
+                };
+            };
+        };
+    };
+    create_performance_mark_api_v1_feedback_performance_marks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PerformanceFeedbackMarkIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PerformanceFeedbackMarksOut"];
                 };
             };
             /** @description Validation Error */
@@ -8716,6 +13427,265 @@ export interface operations {
             };
         };
     };
+    list_library_jobs_api_v1_library_jobs_get: {
+        parameters: {
+            query: {
+                /** @description stems or lyrics */
+                lane: "stems" | "lyrics";
+                /** @description settled to include terminals */
+                include?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryJobListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enqueue_library_jobs_api_v1_library_jobs_enqueue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LibraryJobEnqueueIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryJobEnqueueOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_library_job_api_v1_library_jobs__lane___stable_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lane: "stems" | "lyrics";
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LibraryJobReorderIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryJobItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_library_job_api_v1_library_jobs__lane___stable_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lane: "stems" | "lyrics";
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryJobItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_library_readiness_api_v1_library_readiness_get: {
+        parameters: {
+            query?: {
+                /** @description Cap on listed items. Never caps the reported counts. */
+                limit?: number;
+                /** @description Which present tracks appear in items. */
+                axis?: "not_ready" | "beatgrid" | "waveform" | "stems" | "stems_corrupt" | "sync" | "analysis" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryReadinessOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_library_wheel_api_v1_library_wheel_get: {
+        parameters: {
+            query?: {
+                /** @description Per-track overlay on the genre-grouped tree. A disabled axis (decade, overplayed_ness, set_played_in) still returns the real tree with every axis_value null and a stated reason, never a fabricated number. */
+                axis?: "genre" | "decade" | "play_count" | "popularity" | "overplayed_ness" | "playlist" | "set_played_in";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_library_wheel_axes_api_v1_library_wheel_axes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+    };
+    search_lyrics_api_v1_lyrics_search_get: {
+        parameters: {
+            query?: {
+                /** @description Search text matched against cached synced lyrics only - never title, artist, genre or tags (see GET /api/v1/search for that). */
+                q?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchResults"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_mytags_api_v1_mytags_get: {
         parameters: {
             query?: never;
@@ -8919,6 +13889,137 @@ export interface operations {
             };
         };
     };
+    list_alignments_api_v1_pairings_alignments_get: {
+        parameters: {
+            query?: {
+                stable_a?: string | null;
+                stable_b?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlignmentOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_alignment_api_v1_pairings_alignments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlignmentIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlignmentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sync_snapshots_api_v1_pairings_sync_snapshots_get: {
+        parameters: {
+            query?: {
+                stable_a?: string | null;
+                stable_b?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncSnapshotOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_sync_snapshot_api_v1_pairings_sync_snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncSnapshotIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncSnapshotOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_pairing_api_v1_pairings__pairing_id__delete: {
         parameters: {
             query?: never;
@@ -8979,6 +14080,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    machine_pressure_api_v1_performance_telemetry_pressure_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -9045,6 +14168,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_playlist_history_api_v1_playlist_history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryGetOut"];
+                };
+            };
+        };
+    };
+    redo_playlist_edit_api_v1_playlist_history_redo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryApplyOut"];
+                };
+            };
+        };
+    };
+    undo_playlist_edit_api_v1_playlist_history_undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryApplyOut"];
                 };
             };
         };
@@ -9278,6 +14461,43 @@ export interface operations {
             };
         };
     };
+    transfer_playlist_tracks_api_v1_playlists__playlist_id__tracks_transfer_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipTransferIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MembershipTransferOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     apply_writeback_api_v1_playlists__playlist_id__writeback_apply_post: {
         parameters: {
             query?: never;
@@ -9446,6 +14666,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_preflight_api_v1_preflight_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreflightOut"];
                 };
             };
         };
@@ -10021,6 +15261,41 @@ export interface operations {
             };
         };
     };
+    create_smartlist_api_v1_smartlists_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SmartlistCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    /** @description Strong validator for the complete persisted smartlist row */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SmartlistSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_smartlist_api_v1_smartlists__smartlist_id__get: {
         parameters: {
             query?: never;
@@ -10179,6 +15454,81 @@ export interface operations {
             };
         };
     };
+    get_ui_mirror_api_v1_state_ui_mirror_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    publish_ui_mirror_api_v1_state_ui_mirror_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_ui_mirror_api_v1_state_ui_mirror_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     estimate_api_v1_stems_estimate_get: {
         parameters: {
             query: {
@@ -10320,7 +15670,7 @@ export interface operations {
     get_stems_plan_api_v1_stems_plan_get: {
         parameters: {
             query?: {
-                /** @description Modal rung: S, M or L */
+                /** @description Modal rung S/M/L, or LOCAL when local-only */
                 tier?: string;
             };
             header?: never;
@@ -10374,6 +15724,8 @@ export interface operations {
             query: {
                 /** @description the calling spoke */
                 machine_id: string;
+                /** @description protocol features the caller understands */
+                capabilities?: string[];
             };
             header?: never;
             path?: never;
@@ -10390,6 +15742,13 @@ export interface operations {
                     "application/json": components["schemas"]["DigestResponse"];
                 };
             };
+            /** @description digest refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10397,6 +15756,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description digest refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    enroll_api_v1_sync_enroll_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnrollRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollResponse"];
+                };
+            };
+            /** @description The credential did not establish an owner. code: SYNC_ENROLL_CREDENTIAL. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollErrorResponse"];
+                };
+            };
+            /** @description The machine is already owned by somebody else (SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked (SYNC_ENROLL_REVOKED), the enrollment was otherwise refused (SYNC_ENROLL), or the caller speaks another sync wire version (SYNC_WIRE_VERSION, or SYNC_SCHEMA_VERSION for a pre-split build). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The credential KIND is real but this hub cannot resolve it right now: for google_id_token, no OAuth client id is configured or Google's signing keys are unreachable. Never answered with an unverified acceptance. code: SYNC_ENROLL_KIND_UNAVAILABLE. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollErrorResponse"];
                 };
             };
         };
@@ -10423,6 +15849,22 @@ export interface operations {
                     "application/json": components["schemas"]["HelloResponse"];
                 };
             };
+            /** @description hello refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10431,6 +15873,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description hello refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -10443,6 +15892,8 @@ export interface operations {
                 since_seq?: number;
                 /** @description max changelog entries to consume in this chunk */
                 limit?: number;
+                /** @description protocol features the caller understands */
+                capabilities?: string[];
             };
             header?: never;
             path?: never;
@@ -10459,6 +15910,22 @@ export interface operations {
                     "application/json": components["schemas"]["PullResponse"];
                 };
             };
+            /** @description pull refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description HOSTED hubs only. pull is refused with entitlement_not_in_plan when the calling machine's owner is archived (never read_only: a lapsed user can always pull), or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10466,6 +15933,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description HOSTED hubs only. pull cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
                 };
             };
         };
@@ -10492,6 +15968,31 @@ export interface operations {
                     "application/json": components["schemas"]["PushResponse"];
                 };
             };
+            /** @description push refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description HOSTED hubs only. push is refused with entitlement_not_in_plan when the calling machine's owner is read_only or archived, or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
+            /** @description The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10499,6 +16000,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description HOSTED hubs only. push cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
+            /** @description The hub sqlite database cannot take the write. code: SYNC_HUB_STORAGE. */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HubStorageErrorResponse"];
                 };
             };
         };
@@ -10524,6 +16043,13 @@ export interface operations {
                     "application/json": components["schemas"]["StatusResponse"];
                 };
             };
+            /** @description status refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10532,6 +16058,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description status refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -10625,6 +16158,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lyrics_cached_ids_api_v1_tracks_lyrics_cached_ids_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsCachedIdsOut"];
                 };
             };
         };
@@ -11060,6 +16613,46 @@ export interface operations {
             };
         };
     };
+    get_track_lyrics_api_v1_tracks__stable_id__lyrics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackLyricsOut"];
+                };
+            };
+            /** @description No cached line-synced lyrics exist for this track. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsUnavailableOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_track_rb_meta_api_v1_tracks__stable_id__rb_meta_get: {
         parameters: {
             query?: never;
@@ -11108,7 +16701,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StemManifestOut"];
+                    "application/json": components["schemas"]["StemManifestOut"] | components["schemas"]["StemUnavailableOut"];
                 };
             };
             /** @description Validation Error */
@@ -11349,7 +16942,7 @@ export interface operations {
                     "application/json": components["schemas"]["UsbVolumesOut"];
                 };
             };
-            /** @description USB volume discovery is unavailable on this host. */
+            /** @description USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -11378,13 +16971,77 @@ export interface operations {
                     "text/event-stream": string;
                 };
             };
-            /** @description USB volume discovery is unavailable on this host. */
+            /** @description USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look. */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["UsbCapabilityErrorOut"];
+                };
+            };
+        };
+    };
+    analyze_vocals_api_v1_vocals_analyze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VocalsAnalyzeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VocalsAnalyzeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_vocal_status_api_v1_vocals__stable_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VocalsStatusOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

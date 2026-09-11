@@ -13,13 +13,19 @@ Schema lives in :mod:`apps.shared.state.schema` migration v2.
 """
 from __future__ import annotations
 
+from .capture_repo import Alignment, PairingCaptureError, PairingCaptureRepo, SyncSnapshot
 from .models import PairingEdge
 from .repo import PairingsError, PairingsRepo
-from .schema_sql import ensure_phase08_tables
+from .schema_sql import apply_pairing_capture_migrations, ensure_phase08_tables
 
 __all__ = [
+    "Alignment",
+    "PairingCaptureError",
+    "PairingCaptureRepo",
     "PairingEdge",
     "PairingsError",
     "PairingsRepo",
+    "SyncSnapshot",
+    "apply_pairing_capture_migrations",
     "ensure_phase08_tables",
 ]

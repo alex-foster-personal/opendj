@@ -1,0 +1,85 @@
+"""Root Playwright suite must be executable and enforced.
+
+Issue #814 found that the default Playwright config selected browser specs but
+started only Vite. API requests therefore failed at the proxy, and CI never
+invoked the suite. These checks keep the runnable root command and the E2E
+workflow tied together.
+"""
+
+from pathlib import Path
+
+import yaml
+
+
+REPO = Path(__file__).resolve().parents[1]
+ROOT_CONFIG = REPO / "apps/webui/frontend/playwright.config.ts"
+SMOKE_SPEC = REPO / "apps/webui/frontend/tests/e2e/smoke.spec.ts"
+E2E_WORKFLOW = REPO / ".github/workflows/e2e.yml"
+PACKAGE = REPO / "apps/webui/frontend/package.json"
+
+
+def test_root_playwright_config_starts_the_engine_before_vite() -> None:
+    """if a root spec requests /api then its proxy has a real engine to reach"""
+    source = ROOT_CONFIG.read_text()
+
+    assert "'apps.engine_core', 'serve'" in source
+    assert "rmSync(FIXTURE_DATA_DIR, { recursive: true, force: true })" in source
+    assert "TEST_WORKER_INDEX" in source
+    assert "webServer: [" in source
+    assert "api/v1/health" in source
+    assert "root-playwright-data" in source
+    assert "fullyParallel: false" in source
+    assert "workers: 1" in source
+
+
+def test_e2e_workflow_executes_the_root_playwright_command() -> None:
+    """if the default suite is removed from CI then its regressions are invisible"""
+    workflow = yaml.safe_load(E2E_WORKFLOW.read_text())
+    commands = [
+        step.get("run", "")
+        for job in workflow["jobs"].values()
+        for step in job.get("steps") or []
+    ]
+
+    assert any("pnpm test:e2e" in command for command in commands)
+
+
+def test_root_playwright_command_claims_its_isolated_port_pair() -> None:
+    """if a clean checkout runs test:e2e then port validation has a reservation"""
+    script = PACKAGE.read_text()
+
+    assert "test:e2e" in script
+    assert "apps.webui.port_config claim" in script
+    assert "uv sync --extra dev --extra tags --extra analysis" in script
+
+
+def test_fixture_reset_is_bounded_to_the_repository_fixtures_directory() -> None:
+    """if the reset target is not the fixtures dir then the config refuses to run"""
+    source = ROOT_CONFIG.read_text()
+
+    # The recursive delete is in-process, so the only thing standing between it
+    # and an unrelated directory is this bound. Deleting the bound left every
+    # other check in this file green, which is why it is asserted here.
+    assert "FIXTURE_PARENT_DIR" in source
+    assert "dirname(FIXTURE_DATA_DIR) !== FIXTURE_PARENT_DIR" in source
+    assert "Refusing to reset fixture outside" in source
+    # And the path never reaches a shell as a bare word.
+    assert "rm -rf" not in source
+    assert "shellArgument" in source
+
+
+def test_smoke_console_exemption_stays_specific_to_the_update_failure() -> None:
+    """if another resource breaks then a failing update check cannot hide it"""
+    spec = SMOKE_SPEC.read_text()
+
+    # `Failed to load resource` is emitted verbatim for EVERY failed request,
+    # so a substring exemption swallowed unrelated breakage whenever the update
+    # check happened to be down. Relaxing it back left this file green.
+    assert "error.includes('Failed to load resource')" not in spec
+    assert "the server responded with a status of 502 (Bad Gateway)'" in spec
+    # The exemption is only reached after the response is confirmed to be the
+    # update check's own documented failure payload...
+    assert "update_check_failed" in spec
+    # ...and a request that fails before any response still fails the test.
+    assert "requestfailed" in spec
+    assert "expect(failedRequests).toEqual([])" in spec

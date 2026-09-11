@@ -7,7 +7,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 // - if createPaneStore() defaults differ from the blank pane then broken
 // - if beginLoad doesn't reset rows/selection/scroll then broken
 // - if a stale completeLoad/failLoad mutates a newer load's pane then broken
-// - if toggleSort same-key doesn't cycle asc → desc → clear then broken
+// - if ordinary toggleSort same-key doesn't cycle asc → desc → clear then broken
+// - if AutoPlay toggles only ascending → natural order, or puts unranked rows
+//   ahead of a real queue rank, then its playback order view is misleading
 // - if filterRows hide-broken doesn't compose with search then broken
 // - if sortRows doesn't keep nulls last in BOTH directions then broken
 // - if provider rows/total/truncated don't live-track sources then broken
@@ -21,6 +23,11 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 //   decode, and not a matching row's copy loaded in another pane, then broken
 // - if a row's audience-ambiguous, listing-hydrated strip survives a fresh
 //   audience-scoped /anlz decode for the same selected track then broken
+// - if a stale load's updateLoadProgress can still write load_progress then a
+//   superseded pane's late page paints over the pane that replaced it -- broken
+// - if completeLoad/failLoad don't clear load_progress then a finished pane
+//   goes on showing a loading bar with nothing left to load -- broken
+// - if library progress claims work finer than completed cursor pages then the pin is broken
 
 let contract;
 
@@ -43,6 +50,9 @@ function _row(overrides = {}) {
 		comments: null,
 		duration_ms: null,
 		genre: null,
+		energy: null,
+		energy_source: null,
+		energy_reason: 'no Mixed In Key energy has been imported',
 		file_exists: true,
 		quality: null,
 		play_count: 0,
@@ -151,6 +161,48 @@ test('failLoad records the error and clears loading for the current load', () =>
 	assert.equal(p.loading, false);
 });
 
+test('a stale page cannot overwrite the current pane\'s load progress', () => {
+	const p = contract.createPaneStore();
+	const stale = p.beginLoad('pl-1', 'First');
+	const fresh = p.beginLoad('pl-2', 'Second');
+
+	assert.equal(p.updateLoadProgress(stale, 500, null), false);
+	assert.equal(p.load_progress, null); // the newer load still owns the pane
+
+	assert.equal(p.updateLoadProgress(fresh, 500, null), true);
+	assert.deepEqual(p.load_progress, { loaded: 500, total: null });
+
+	// the stale load still cannot clobber it after the fresh one has data
+	assert.equal(p.updateLoadProgress(stale, 999999, null), false);
+	assert.deepEqual(p.load_progress, { loaded: 500, total: null });
+});
+
+test('terminal success and failure both clear load progress', () => {
+	const p = contract.createPaneStore();
+	const seq = p.beginLoad('pl-1', 'Warmup');
+	p.updateLoadProgress(seq, 500, 1000);
+	assert.deepEqual(p.load_progress, { loaded: 500, total: 1000 });
+	p.completeLoad(seq, [_row()], false);
+	assert.equal(p.load_progress, null);
+
+	const seq2 = p.beginLoad('pl-2', 'Broken');
+	p.updateLoadProgress(seq2, 250, null);
+	assert.deepEqual(p.load_progress, { loaded: 250, total: null });
+	p.failLoad(seq2, 'Error: 500');
+	assert.equal(p.load_progress, null);
+});
+
+test('if library progress claims work finer than completed cursor pages then the pin is broken', () => {
+	// updateLoadProgress must publish EXACTLY the count a completed cursor
+	// page reported - never an interpolated/smoothed value in between pages.
+	const p = contract.createPaneStore();
+	const seq = p.beginLoad('pl-1', 'Warmup');
+	p.updateLoadProgress(seq, 500, null); // page 1 of 500 rows landed
+	assert.equal(p.load_progress.loaded, 500);
+	p.updateLoadProgress(seq, 1000, null); // page 2 landed
+	assert.equal(p.load_progress.loaded, 1000); // exactly the reported cursor total, no smoothing
+});
+
 test('toggleSort: asc → desc → clear (natural order)', () => {
 	const p = contract.createPaneStore();
 	p.toggleSort('bpm');
@@ -164,6 +216,30 @@ test('toggleSort: asc → desc → clear (natural order)', () => {
 	p.toggleSort('title'); // switching keys starts ascending
 	assert.equal(p.sort_key, 'title');
 	assert.equal(p.sort_dir, 1);
+});
+
+test('toggleSort: AutoPlay is ascending once, then restores natural order', () => {
+	const p = contract.createPaneStore();
+	p.toggleSort('autoplay');
+	assert.equal(p.sort_key, 'autoplay');
+	assert.equal(p.sort_dir, 1);
+	p.toggleSort('autoplay');
+	assert.equal(p.sort_key, null);
+	assert.equal(p.sort_dir, 1);
+});
+
+test('sortRows: MIK energy is numeric and missing values stay last in both directions', () => {
+	const rows = [
+		_row({ stable_id: 'missing', energy: null }),
+		_row({ stable_id: 'nine', energy: 9 }),
+		_row({ stable_id: 'one', energy: 1 })
+	];
+	assert.deepEqual(contract.sortRows(rows, 'energy', 1).map((row) => row.stable_id), [
+		'one', 'nine', 'missing'
+	]);
+	assert.deepEqual(contract.sortRows(rows, 'energy', -1).map((row) => row.stable_id), [
+		'nine', 'one', 'missing'
+	]);
 });
 
 test('select / setSearch / rememberScroll write the pane cursor state', () => {
@@ -241,6 +317,35 @@ test('filterRows: genre: strict token vs genre:~ loose substring', () => {
 	);
 });
 
+test('filterRows: bpm/rating/key predicates and multi-term AND (pin 7ca47b21ead7)', () => {
+	const rows = [
+		_row({ stable_id: 'a', artist: 'Daft Punk', bpm: 123, rating: 5, key: '8A' }),
+		_row({ stable_id: 'b', artist: 'Daft Punk', bpm: 90, rating: 5, key: '8A' }),
+		_row({ stable_id: 'c', artist: 'Someone Else', bpm: 123, rating: 5, key: '9A' })
+	];
+	assert.deepEqual(
+		contract.filterRows(rows, 'bpm:120-128', false).map((r) => r.stable_id),
+		['a', 'c']
+	);
+	assert.deepEqual(
+		contract.filterRows(rows, 'rating:>=4', false).map((r) => r.stable_id),
+		['a', 'b', 'c']
+	);
+	assert.deepEqual(
+		contract.filterRows(rows, 'key:8a', false).map((r) => r.stable_id),
+		['a', 'b']
+	);
+	assert.deepEqual(
+		contract.filterRows(rows, 'Daft bpm:120-128 rating:>=4', false).map((r) => r.stable_id),
+		['a']
+	);
+	// Unknown field degrades to substring rather than emptying the table.
+	assert.deepEqual(
+		contract.filterRows(rows, 'foo:bar', false).map((r) => r.stable_id),
+		[]
+	);
+});
+
 // -------------------------------------------------------- sort pipeline
 
 test('sortRows: numeric asc/desc with nulls last in BOTH directions, input not mutated', () => {
@@ -277,6 +382,33 @@ test('sortRows: string keys use locale compare; null key returns rows unsorted',
 		['a', 'b', 'n']
 	);
 	assert.equal(contract.sortRows(rows, null, 1), rows);
+});
+
+test('sortRowsByAutoPlayOrder: numeric ranks ascend, unranked rows stay last and stable', () => {
+	const rows = [
+		_row({ stable_id: 'unranked-first' }),
+		_row({ stable_id: 'rank-two' }),
+		_row({ stable_id: 'rank-one' }),
+		_row({ stable_id: 'unranked-last' })
+	];
+	const ordered = contract.sortRows(
+		rows,
+		'autoplay',
+		1,
+		new Map([
+			['rank-one', 1],
+			['rank-two', 2]
+		])
+	);
+	assert.deepEqual(
+		ordered.map((row) => row.stable_id),
+		['rank-one', 'rank-two', 'unranked-first', 'unranked-last']
+	);
+	assert.deepEqual(
+		rows.map((row) => row.stable_id),
+		['unranked-first', 'rank-two', 'rank-one', 'unranked-last'],
+		'AutoPlay sorting must not mutate the pane membership order'
+	);
 });
 
 test('sortValue maps time to duration_ms and genre to the rb_meta fallback', () => {
@@ -372,9 +504,6 @@ test('fetchWindow fails fast on negative window args', () => {
 // - if shift-click range select doesn't span the visible order, or doesn't
 //   fall back to a single select when either end is missing, then broken
 // - if the two-argument select call sites change behaviour then broken
-// - if decodePlaylistDrag accepts a foreign or malformed payload, or throws
-//   instead of returning null, then a drag from another app crashes the
-//   tab bar -- broken
 
 test('a new pane is not sticky, and beginLoad leaves the lock alone', () => {
 	const p = contract.createPaneStore();
@@ -456,37 +585,6 @@ test('extend and plain select keep their pre-range behaviour', () => {
 	p.select('c', false); // plain click collapses the selection
 	assert.deepEqual(p.selected_ids, ['c']);
 });
-
-test('playlist drag payloads round-trip, and junk decodes to null', () => {
-	const payload = {
-		playlist_id: 'pl-7',
-		name: 'Peak Time',
-		track_count: 42,
-		kind: 'playlist'
-	};
-	assert.deepEqual(
-		contract.decodePlaylistDrag(contract.encodePlaylistDrag(payload)),
-		payload
-	);
-
-	for (const junk of [
-		'',
-		'   ',
-		'not json at all',
-		'null',
-		'[]',
-		'"a string"',
-		JSON.stringify({ playlist_id: '', name: 'n', track_count: 1, kind: 'playlist' }),
-		JSON.stringify({ name: 'n', track_count: 1, kind: 'playlist' }),
-		JSON.stringify({ playlist_id: 'p', track_count: 1, kind: 'playlist' }),
-		JSON.stringify({ playlist_id: 'p', name: 'n', kind: 'playlist' }),
-		JSON.stringify({ playlist_id: 'p', name: 'n', track_count: 1 }),
-		JSON.stringify({ playlist_id: 'p', name: 'n', track_count: 1, kind: 'nope' })
-	]) {
-		assert.equal(contract.decodePlaylistDrag(junk), null, `should reject ${junk}`);
-	}
-});
-
 
 // ------------------------------------------------------ strip propagation
 

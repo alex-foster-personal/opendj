@@ -50,4 +50,28 @@ shift
 readonly LOCK_PATH="${MDT_CI_HOST_LOCK_DIR:-/var/lock}/mdt-ci-${LOCK_NAME}.lock"
 readonly TIMEOUT_S="${MDT_CI_HOST_LOCK_TIMEOUT_S:-900}"
 
-exec flock --timeout "$TIMEOUT_S" "$LOCK_PATH" "$@"
+# Acquire on an inherited descriptor rather than `exec flock ... cmd`, so the
+# wait is MEASURED and printed: a suite that spends 200 s behind another job's
+# copy of itself looks exactly like a slow suite in the step timing otherwise,
+# and the CI lane needs the two apart to know whether to add runners or move
+# the suite onto lane ports. The lock stays held by fd 9 for as long as the
+# command runs and is released when it exits. Read-only open, so a lock file
+# left behind by a different user is still usable.
+[ -e "$LOCK_PATH" ] || : > "$LOCK_PATH" 2>/dev/null || true
+exec 9< "$LOCK_PATH"
+# Non-blocking first: an uncontended lock reports exactly 0, not a wall-clock
+# second boundary that happened to fall inside the syscall. Only a contended
+# lock is timed, and then in milliseconds.
+if flock --nonblock 9; then
+    waited_s="0"
+else
+    waited_from_ms=$(( $(date +%s%N) / 1000000 ))
+    if ! flock --timeout "$TIMEOUT_S" 9; then
+        echo "[ERROR] host lock '$LOCK_NAME' not acquired within ${TIMEOUT_S}s ($LOCK_PATH); the holder is a stuck job, not a busy one" >&2
+        exit 1
+    fi
+    waited_ms=$(( $(date +%s%N) / 1000000 - waited_from_ms ))
+    waited_s="$(( waited_ms / 1000 )).$(printf '%03d' $(( waited_ms % 1000 )))"
+fi
+echo "[host-lock] $LOCK_NAME acquired after ${waited_s}s"
+exec "$@"

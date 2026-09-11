@@ -59,3 +59,54 @@ export function coalesce(run: () => Promise<void>): () => Promise<void> {
 		return active;
 	};
 }
+
+/** Latest-value variant for continuous controls. The first physical input is
+ * sent promptly, inputs while it is in flight collapse to the latest value,
+ * and the final physical value is never dropped. */
+export interface LatestCoalescer<T> {
+	readonly pending: boolean;
+	request(value: T): Promise<void>;
+	cancel(): void;
+}
+
+export function coalesceLatest<T>(run: (value: T) => Promise<void>): LatestCoalescer<T> {
+	let active: Promise<void> | null = null;
+	let hasLatest = false;
+	let latest!: T;
+	let cancelled = false;
+
+	async function _drain(): Promise<void> {
+		try {
+			while (hasLatest && !cancelled) {
+				const value = latest;
+				hasLatest = false;
+				await run(value);
+			}
+		} finally {
+			hasLatest = false;
+			cancelled = false;
+		}
+	}
+
+	return {
+		get pending(): boolean {
+			return active !== null || hasLatest;
+		},
+		request(value: T): Promise<void> {
+			latest = value;
+			hasLatest = true;
+			if (active !== null) return active;
+			const drain = _drain();
+			const tracked = drain.finally(() => {
+				if (active === tracked) active = null;
+			});
+			active = tracked;
+			return tracked;
+		},
+		cancel(): void {
+			if (active === null) return;
+			hasLatest = false;
+			cancelled = true;
+		}
+	};
+}

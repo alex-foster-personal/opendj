@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI
@@ -194,13 +195,185 @@ def test_process_endpoint_reads_the_last_sample_past_probe_error_lines(
 
 
 def test_process_endpoint_is_explicit_when_native_probe_is_absent(tmp_path: Path) -> None:
-    with TestClient(_app(performance_process_log_dirs=(tmp_path,))) as client:
+    with (
+        patch(
+            "apps.webui.server.routes.performance_telemetry.live_process_family_state",
+            return_value=([], set()),
+        ),
+        TestClient(_app(performance_process_log_dirs=(tmp_path,))) as client,
+    ):
         response = client.get("/api/v1/performance/telemetry/processes")
 
     assert response.status_code == 200
     assert response.json() == {
         "available": False,
-        "reason": "native process probe has not written a sample",
+        "reason": (
+            "no live opendj-* processes and native process probe has not written a sample"
+        ),
     }
 
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_process_endpoint_labels_members_by_opendj_name(tmp_path: Path) -> None:
+    record = _captured_process_record()
+    record["processes"] = [
+        {
+            "pid": 10,
+            "role": "desktop-shell",
+            "physical_footprint_mb": 31.9,
+            "command": "/Applications/Open DJ.app/Contents/MacOS/opendj-desktop",
+        },
+        {
+            "pid": 11,
+            "role": "python-engine",
+            "physical_footprint_mb": 151.4,
+            "command": "opendj-engine --name opendj-engine --port 8585",
+        },
+    ]
+    (tmp_path / "opendj-performance-2026-08-21.jsonl").write_text(
+        json.dumps(record) + "\n", encoding="utf-8"
+    )
+    with (
+        patch(
+            "apps.webui.server.routes.performance_telemetry.live_process_family_state",
+            return_value=([], set()),
+        ),
+        TestClient(_app(performance_process_log_dirs=(tmp_path,))) as client,
+    ):
+        body = client.get("/api/v1/performance/telemetry/processes").json()
+
+    names = {member["name"] for member in body["members"]}
+    assert "opendj-desktop" in names
+    assert "opendj-engine" in names
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_process_endpoint_lists_unnamed_members(tmp_path: Path) -> None:
+    record = _captured_process_record()
+    record["processes"] = [
+        {
+            "pid": 20,
+            "role": None,
+            "physical_footprint_mb": 99.0,
+            "command": (
+                "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/"
+                "com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+            ),
+        }
+    ]
+    (tmp_path / "opendj-performance-2026-08-21.jsonl").write_text(
+        json.dumps(record) + "\n", encoding="utf-8"
+    )
+    with (
+        patch(
+            "apps.webui.server.routes.performance_telemetry.live_process_family_state",
+            return_value=([], set()),
+        ),
+        TestClient(_app(performance_process_log_dirs=(tmp_path,))) as client,
+    ):
+        body = client.get("/api/v1/performance/telemetry/processes").json()
+
+    assert any(member["name"] == "unnamed" for member in body["members"])
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_process_endpoint_omits_unread_kernel_pressure(tmp_path: Path) -> None:
+    record = _captured_process_record()
+    record["machine"] = {"load_average_1m": 1.0}
+    (tmp_path / "opendj-performance-2026-08-21.jsonl").write_text(
+        json.dumps(record) + "\n", encoding="utf-8"
+    )
+    with TestClient(_app(performance_process_log_dirs=(tmp_path,))) as client:
+        body = client.get("/api/v1/performance/telemetry/processes").json()
+
+    assert "kernel_memory_pressure_level" not in body
+
+    record["machine"] = {"kernel_memory_pressure_level": 0}
+    (tmp_path / "opendj-performance-2026-08-21.jsonl").write_text(
+        json.dumps(record) + "\n", encoding="utf-8"
+    )
+    with TestClient(_app(performance_process_log_dirs=(tmp_path,))) as client:
+        body = client.get("/api/v1/performance/telemetry/processes").json()
+
+    assert "kernel_memory_pressure_level" not in body
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_process_endpoint_never_zero_fills_kernel_pressure(tmp_path: Path) -> None:
+    record = _captured_process_record()
+    (tmp_path / "opendj-performance-2026-08-21.jsonl").write_text(
+        json.dumps(record) + "\n", encoding="utf-8"
+    )
+    with TestClient(_app(performance_process_log_dirs=(tmp_path,))) as client:
+        body = client.get("/api/v1/performance/telemetry/processes").json()
+
+    assert body.get("kernel_memory_pressure_level") != 0
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_client_sample_stamps_pressure_from_the_same_write(tmp_path: Path) -> None:
+    with TestClient(_app(performance_log_dir=tmp_path)) as client:
+        response = client.post(
+            "/api/v1/performance/telemetry/client-samples",
+            json=_captured_client_sample(),
+        )
+
+    assert response.status_code == 202
+    record = json.loads(next(tmp_path.glob("webui-performance-*.log")).read_text(encoding="utf-8"))
+    pressure = record["pressure"]
+    assert isinstance(pressure, dict)
+    if pressure.get("available"):
+        assert "cache_age_ms" in pressure
+    else:
+        assert isinstance(pressure.get("reason"), str)
+    assert pressure.get("kernel_memory_pressure_level") != 0
+
 pytestmark = pytest.mark.rb_parity
+
+
+def test_pressure_route_answers_over_real_http() -> None:
+    """The agent-native door: GET it and get a body you can act on.
+
+    Asserted as a disjunction for the reason the unit suite spells out: a dev
+    checkout returns real numbers, a packaged app (whose payload stages
+    ``apps`` and not ``scripts``) must say it cannot measure. What is NOT
+    allowed is a third shape -- available with nothing in it, or unavailable
+    with no reason -- or a zero standing in for an unread field.
+    """
+
+    with TestClient(_app()) as client:
+        response = client.get("/api/v1/performance/telemetry/pressure")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cache_age_ms"] >= 0
+    if body["available"]:
+        readings = [k for k in ("load_avg_1m", "mem_free_mb", "swap_used_mb") if k in body]
+        assert readings, "available=true must carry at least one real reading"
+    else:
+        assert body["reason"]
+        assert not {"load_avg_1m", "mem_free_mb", "swap_used_mb"} & set(body)
+
+
+def test_pressure_route_does_not_leak_process_detail() -> None:
+    """Same allowlist discipline as /processes: no command lines, no PIDs."""
+
+    with TestClient(_app()) as client:
+        body = client.get("/api/v1/performance/telemetry/pressure").json()
+
+    assert set(body) <= {
+        "available",
+        "reason",
+        "cache_age_ms",
+        "load_avg_1m",
+        "mem_free_mb",
+        "swap_used_mb",
+        "kernel_memory_pressure_level",
+        "churn_score",
+        "swap_rate",
+        "decomp_rate",
+        "compressed_mb",
+        "band",
+        "sample_interval_ms",
+        "sample_wall_ms",
+    }

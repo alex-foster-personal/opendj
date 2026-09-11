@@ -125,7 +125,7 @@ test('every module-level PARITY-TODO constant holds the identical string', () =>
 		}
 	}
 	assert.ok(
-		declarations.length >= 4,
+		declarations.length >= 3,
 		`expected the inert title to be declared in several modules, found ${declarations.length}`
 	);
 	const drifted = declarations.filter((d) => d.value !== INERT_TITLE);
@@ -190,16 +190,25 @@ test('the AI apply path refuses any key outside the allowlist', () => {
 	}
 });
 
-test('every implemented boolean or enum setting really is writable', () => {
+test('every implemented boolean, enum, multi_bool or number setting really is writable', () => {
 	// The mirror of the rule above: a control that looks live must have a
-	// mutator behind it, or clicking it throws mid-set.
+	// mutator behind it, or clicking it throws mid-set. The per-key ids of a
+	// multi_bool row are the `auto_sync.<key>` allowlist entries, so they are
+	// expanded rather than asserted against the row id.
+	const LIVE_KINDS = new Set(['boolean', 'enum', 'multi_bool', 'number']);
 	for (const def of catalog.SETTINGS_CATALOG) {
 		if (!def.implemented) continue;
-		if (def.control.kind !== 'boolean' && def.control.kind !== 'enum') continue;
-		assert.equal(
-			apply.isAllowedSettingKey(def.id),
-			true,
-			`setting ${def.id} renders live but is not in ALLOWED_SETTING_KEYS - clicking it throws`
-		);
+		if (!LIVE_KINDS.has(def.control.kind)) continue;
+		const keys =
+			def.control.kind === 'multi_bool'
+				? def.control.keys.map((key) => `${def.id}.${key.id}`)
+				: [def.id];
+		for (const key of keys) {
+			assert.equal(
+				apply.isAllowedSettingKey(key),
+				true,
+				`setting ${key} renders live but is not in ALLOWED_SETTING_KEYS - clicking it throws`
+			);
+		}
 	}
 });

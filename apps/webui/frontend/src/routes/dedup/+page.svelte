@@ -4,19 +4,20 @@
 	 *
 	 * Renders GET /api/v1/dedup/clusters: one card per cluster with a
 	 * side-by-side member comparison (artwork, title/artist, bpm/key,
-	 * duration, file_exists, rating) and a survivor picker. Decision
-	 * buttons POST to /api/v1/dedup/clusters/{id}/decision, which stores
-	 * ONLY a decision record - no playlist rewrite happens here. The
-	 * banner below is the load-bearing disclosure of that split.
+	 * duration, file_exists, rating) and a survivor picker. Merge POSTs
+	 * apply (OpenDJ playlist membership rewrite). keep-all / skip POST a
+	 * pending decision only. Undo restores the journaled memberships.
 	 */
 	import { onMount } from 'svelte';
 	import {
 		DedupConflictError,
+		applyDedupMerge,
 		dedupArtworkUrl,
 		fetchDedupClusters,
-		postDedupDecision
+		postDedupDecision,
+		undoDedupMerge
 	} from './dedup-api';
-	import type { Cluster, ClustersResponse, DecisionAction } from './types';
+	import type { Cluster, ClustersResponse, Decision, DecisionAction } from './types';
 
 	let data = $state<ClustersResponse | null>(null);
 	let error = $state<string | null>(null);
@@ -64,7 +65,28 @@
 		selectedSurvivor = { ...selectedSurvivor, [clusterKey]: stableId };
 	}
 
-	async function decide(cluster: Cluster, action: DecisionAction): Promise<void> {
+	function patchDecision(clusterKey: string, decision: Decision, revision: string): void {
+		if (data === null) return;
+		data = {
+			...data,
+			revision,
+			clusters: data.clusters.map((cluster) =>
+				cluster.cluster_key === clusterKey ? { ...cluster, decision } : cluster
+			)
+		};
+	}
+
+	async function runWrite(
+		cluster: Cluster,
+		writer: (survivor: string, revision: string, signal: AbortSignal) => Promise<{
+			cluster_key: string;
+			survivor: string;
+			action: DecisionAction;
+			decided_at: string;
+			pending_apply: boolean;
+			revision: string;
+		}>
+	): Promise<void> {
 		const signal = pageController?.signal;
 		if (data === null || signal === undefined || signal.aborted) return;
 		const clusterKey = cluster.cluster_key;
@@ -77,32 +99,15 @@
 		posting = { ...posting, [clusterKey]: true };
 		postError = { ...postError, [clusterKey]: '' };
 		try {
-			const record = await postDedupDecision(
-				cluster.cluster_id,
-				clusterKey,
-				survivor,
-				action,
-				expectedRevision,
-				signal
-			);
-			if (!signal.aborted && data !== null) {
-				data = {
-					...data,
-					revision: record.revision,
-					clusters: data.clusters.map((c) =>
-						c.cluster_key === clusterKey
-							? {
-									...c,
-									decision: {
-										cluster_key: record.cluster_key,
-										survivor: record.survivor,
-										action: record.action,
-										decided_at: record.decided_at
-									}
-								}
-							: c
-					)
-				};
+			const record = await writer(survivor, expectedRevision, signal);
+			if (!signal.aborted) {
+				patchDecision(clusterKey, {
+					cluster_key: record.cluster_key,
+					survivor: record.survivor,
+					action: record.action,
+					decided_at: record.decided_at,
+					pending_apply: record.pending_apply
+				}, record.revision);
 			}
 		} catch (caught) {
 			if (signal.aborted) return;
@@ -116,6 +121,34 @@
 		} finally {
 			if (!signal.aborted) posting = { ...posting, [clusterKey]: false };
 		}
+	}
+
+	async function decide(cluster: Cluster, action: DecisionAction): Promise<void> {
+		await runWrite(cluster, (survivor, revision, signal) =>
+			postDedupDecision(cluster.cluster_id, cluster.cluster_key, survivor, action, revision, signal)
+		);
+	}
+
+	async function applyMerge(cluster: Cluster): Promise<void> {
+		await runWrite(cluster, (survivor, revision, signal) =>
+			applyDedupMerge(cluster.cluster_id, cluster.cluster_key, survivor, revision, signal)
+		);
+	}
+
+	async function undoMerge(cluster: Cluster): Promise<void> {
+		await runWrite(cluster, (survivor, revision, signal) =>
+			undoDedupMerge(cluster.cluster_id, cluster.cluster_key, survivor, revision, signal)
+		);
+	}
+
+	function decisionBadge(decision: Decision): string {
+		if (decision.action === 'merge' && !decision.pending_apply) {
+			return `applied: merge -> ${decision.survivor}`;
+		}
+		if (decision.action === 'merge') {
+			return `decided: merge -> ${decision.survivor} (pending apply)`;
+		}
+		return `decided: ${decision.action} -> ${decision.survivor}`;
 	}
 
 	function formatDuration(ms: number | null): string {
@@ -141,8 +174,7 @@
 	<h2>Duplicate review + merge</h2>
 
 	<div class="pending-apply-banner">
-		Decisions stored, apply runs locally - see PARITY-TODO. This page never rewrites playlist
-		references; it only records what you decided so a local, real-library run can apply it later.
+		Merge rewrites OpenDJ playlist memberships; it does not delete files.
 	</div>
 
 	{#if error}
@@ -159,7 +191,7 @@
 			<p class="empty">No duplicate clusters found.</p>
 		{:else}
 			{#each data.clusters as cluster (cluster.cluster_key)}
-				<section class="cluster-card">
+				<section class="cluster-card" data-testid="dedup-cluster">
 					<header class="cluster-header">
 						<h3>Cluster #{cluster.cluster_id}</h3>
 						{#if cluster.flagged_manual_review}
@@ -170,14 +202,18 @@
 						{/if}
 						{#if cluster.decision}
 							<span class="badge decided">
-								decided: {cluster.decision.action} -&gt; {cluster.decision.survivor} (pending apply)
+								{decisionBadge(cluster.decision)}
 							</span>
 						{/if}
 					</header>
 
 					<div class="members">
 						{#each cluster.members as member (member.stable_id)}
-						<label class="member" class:selected={selectedSurvivor[cluster.cluster_key] === member.stable_id}>
+						<label
+							class="member"
+							class:selected={selectedSurvivor[cluster.cluster_key] === member.stable_id}
+							data-testid="dedup-member"
+						>
 							<input
 								type="radio"
 								name={`survivor-${cluster.cluster_key}`}
@@ -214,15 +250,36 @@
 					</div>
 
 					<div class="decision-row">
-						<button onclick={() => decide(cluster, 'merge')} disabled={posting[cluster.cluster_key]}>
+						<button
+							data-testid="dedup-merge"
+							onclick={() => applyMerge(cluster)}
+							disabled={posting[cluster.cluster_key]}
+						>
 							Merge into selected
 						</button>
-						<button onclick={() => decide(cluster, 'keep-all')} disabled={posting[cluster.cluster_key]}>
+						<button
+							data-testid="dedup-keep-all"
+							onclick={() => decide(cluster, 'keep-all')}
+							disabled={posting[cluster.cluster_key]}
+						>
 							Keep all
 						</button>
-						<button onclick={() => decide(cluster, 'skip')} disabled={posting[cluster.cluster_key]}>
+						<button
+							data-testid="dedup-skip"
+							onclick={() => decide(cluster, 'skip')}
+							disabled={posting[cluster.cluster_key]}
+						>
 							Skip
 						</button>
+						{#if cluster.decision?.action === 'merge' && cluster.decision.pending_apply === false}
+							<button
+								data-testid="dedup-undo"
+								onclick={() => undoMerge(cluster)}
+								disabled={posting[cluster.cluster_key]}
+							>
+								Undo
+							</button>
+						{/if}
 						{#if postError[cluster.cluster_key]}
 							<span class="post-error">{postError[cluster.cluster_key]}</span>
 						{/if}

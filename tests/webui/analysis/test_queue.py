@@ -31,7 +31,9 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 from fastapi.routing import APIRoute
+from pydantic import ValidationError
 
 from apps.analysis import run as analysis_run
 from apps.analysis.backends import DEFAULT_BACKEND
@@ -133,6 +135,86 @@ def test_run_is_rejected_while_a_refresh_is_running(client, app, tmp_path):
     _wait(client)
 
 
+def test_ordering_one_missing_analysis_creates_a_track_scoped_real_job(client, app, tmp_path):
+    """The hover action and an HTTP agent order share this narrow, real drain."""
+    _seed(app, "order001", _audio(tmp_path, "order.mp3"))
+    _enable_all_steps(client)
+
+    ordered = client.post("/api/v1/analysis-queue/orders/order001/beatgrid")
+    assert ordered.status_code == 202
+    ordered_body = ordered.json()
+    assert ordered_body["stable_id"] == "order001"
+    assert ordered_body["kind"] == "beatgrid"
+    assert ordered_body["phase"] in {"queued", "running"}
+
+    status = client.get("/api/v1/analysis-queue/orders/order001")
+    assert status.status_code == 200
+    items = status.json()["items"]
+    assert len(items) == 1
+    assert items[0]["stable_id"] == "order001"
+    assert items[0]["kind"] == "beatgrid"
+    assert items[0]["phase"] in {"queued", "running"}
+    duplicate = client.post("/api/v1/analysis-queue/orders/order001/beatgrid")
+    assert duplicate.status_code == 202
+    assert duplicate.json() == items[0]
+    competing = client.post("/api/v1/analysis-queue/orders/order001/key")
+    assert competing.status_code == 409
+    _wait(client)
+
+
+@pytest.mark.parametrize("kind", ["unknown", "cues", "waveform", "phrase", "other"])
+def test_order_rejects_an_unknown_or_unproducible_analysis_kind(client, app, tmp_path, kind):
+    """A 202 is reserved for a command that can materialize the requested dot."""
+    _seed(app, "order002", _audio(tmp_path, "order.mp3"))
+    _enable_all_steps(client)
+
+    response = client.post(f"/api/v1/analysis-queue/orders/order002/{kind}")
+    assert response.status_code == 422
+    assert "cannot be ordered" in response.text
+
+
+def test_order_rejects_a_missing_track_before_acknowledging(client):
+    """A 202 must mean the requested track entered the shared job."""
+    _enable_all_steps(client)
+
+    response = client.post("/api/v1/analysis-queue/orders/no-such-track/beatgrid")
+
+    assert response.status_code == 422
+    assert "not an on-disk library track" in response.text
+
+
+def test_track_refresh_input_rejects_an_unknown_kind_and_non_track_fields(tmp_path):
+    """Malformed track requests must not become a library-wide refresh."""
+    from apps.webui.server.routes.ingest_scope import RefreshIn, resolve_scope
+
+    with pytest.raises(ValidationError, match="analysis_kind"):
+        RefreshIn(scope="track", stable_id="order004", analysis_kind="beatgird")
+    with pytest.raises(HTTPException, match="require scope='track'"):
+        resolve_scope(RefreshIn(stable_id="order004"), tmp_path)
+
+
+@pytest.mark.parametrize(("kind", "step"), [("stems", "stems"), ("vocals", "vocals")])
+def test_track_order_runs_its_requested_coarse_step(client, app, tmp_path, kind, step):
+    """A track order must not silently run the generic analysis worker."""
+    _seed(app, f"{kind}001", _audio(tmp_path, f"{kind}.mp3"))
+    _enable_all_steps(client)
+
+    response = client.post(f"/api/v1/analysis-queue/orders/{kind}001/{kind}")
+
+    assert response.status_code == 202
+    assert response.json()["phase"] in {"queued", "running", "done", "error"}
+    assert ingest_mod._JOBS.current is not None
+    assert ingest_mod._JOBS.current.steps == [step]
+
+
+def test_analysis_order_phase_rejects_unknown_job_states():
+    """The analysis-order wire contract only permits frontend-renderable phases."""
+    from apps.webui.server.routes.analysis_queue import AnalysisOrderOut
+
+    with pytest.raises(ValueError, match="phase"):
+        AnalysisOrderOut(stable_id="order003", kind="beatgrid", phase="mystery")
+
+
 # ----- the drain ------------------------------------------------------------
 
 @pytest.mark.requirement("PARITY-06")
@@ -202,17 +284,38 @@ def test_the_browser_client_calls_a_route_the_app_really_serves(app):
     success outright (AGENTS.md, "No mocks and locked real fixtures").
     """
     source = API_INGEST_TS.read_text()
-    called = set(re.findall(r"fetch\(`\$\{API_BASE\}(/api/v1/[a-z0-9/-]+)", source))
-    queue_calls = {path for path in called if "analysis-queue" in path}
-    assert queue_calls == {"/api/v1/analysis-queue"}, (
-        f"unexpected analysis-queue calls in {API_INGEST_TS.name}: {sorted(queue_calls)}"
+    get_call = re.search(
+        r"getTrackAnalysisOrders.*?fetch\(`\$\{API_BASE\}"
+        r"(?P<path>/api/v1/analysis-queue/orders/\$\{encodeURIComponent\(stableId\)\})`\)",
+        source,
+        flags=re.DOTALL,
     )
+    post_call = re.search(
+        r"orderTrackAnalysis.*?fetch\(\s*`\$\{API_BASE\}"
+        r"(?P<path>/api/v1/analysis-queue/orders/\$\{encodeURIComponent\(stableId\)\}"
+        r"/\$\{encodeURIComponent\(kind\)\})`,\s*\{ method: 'POST' \}",
+        source,
+        flags=re.DOTALL,
+    )
+    assert get_call is not None, f"missing GET order call in {API_INGEST_TS.name}"
+    assert post_call is not None, f"missing POST order call in {API_INGEST_TS.name}"
+    client_routes = {
+        ("GET", re.sub(r"\$\{encodeURIComponent\(stableId\)\}", "{stable_id}", get_call["path"])),
+        ("POST", re.sub(r"\$\{encodeURIComponent\(kind\)\}", "{kind}", re.sub(
+            r"\$\{encodeURIComponent\(stableId\)\}", "{stable_id}", post_call["path"]
+        ))),
+    }
 
-    served = {r.path for r in app.routes if isinstance(r, APIRoute)}
-    assert queue_calls <= served, (
-        f"the client calls routes the app does not serve: {sorted(queue_calls - served)}"
+    served = {
+        (method, route.path)
+        for route in app.routes
+        if isinstance(route, APIRoute)
+        for method in route.methods
+    }
+    assert client_routes <= served, (
+        f"the client calls routes the app does not serve: {sorted(client_routes - served)}"
     )
-    assert "/api/v1/analysis-queue/run" in served, (
+    assert ("POST", "/api/v1/analysis-queue/run") in served, (
         "the agent-facing run endpoint must stay mounted even with no TS client"
     )
 
@@ -229,11 +332,11 @@ def test_the_queue_reads_the_same_file_the_served_backend_does():
     re-derives from ``MDT_DATA_DIR``, so selection, serving and writes are one
     file by construction.
 
-    It is specifically NOT bound to ``app.state.state_db_path``, which is not
-    a source of truth: ``_build_default_app`` never passes it, so on the real
-    daemon it holds the RELATIVE default ``"data/state/state.db"`` while the
-    backend serves the absolute ``STATE_DB``. Binding the queue to that string
-    would point the scan at a different file from the one being served.
+    It is specifically NOT bound to ``app.state.state_db_path``. ``_build_default_app``
+    now passes ``STATE_DB`` explicitly there too (#949), so in practice they
+    agree, but the queue does not rely on that: binding it to the app-state
+    string would make the scan follow whatever a future caller passes there,
+    which is a knob this reader has no business honoring.
 
     This test is the guard on that reasoning. If either default moves, the
     queue and the backend split and this reds instead of shipping a scan that

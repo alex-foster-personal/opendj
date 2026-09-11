@@ -1,0 +1,66 @@
+name: empty-playlist
+description: >
+  One spoke empties a playlist (edit playlist_memberships with members: []).
+  Membership is whole-list replacement stamped on the playlist row, so the
+  empty list must reach the peer like any other membership edit, and the
+  peer must drop both of its members rather than keep the old list. The
+  per-table digest comparison on playlist_memberships after B syncs is the
+  proof: B started with [t1, t2] and only an applied empty list can match A.
+
+machines:
+  - id: hub
+    role: hub
+  - id: spoke-a
+    role: spoke
+  - id: spoke-b
+    role: spoke
+
+seed:
+  tracks:
+    - stable_id: t1
+      title: one
+      "on": [spoke-a, spoke-b]
+    - stable_id: t2
+      title: two
+      "on": [spoke-a, spoke-b]
+  playlists:
+    - playlist_id: pl-set
+      name: Friday set
+      members: [t1, t2]
+      "on": [spoke-a, spoke-b]
+
+steps:
+  - "on": spoke-a
+    action: sync
+  - "on": spoke-b
+    action: sync
+
+  - "on": spoke-a
+    action: edit
+    args:
+      table: playlist_memberships
+      playlist_id: pl-set
+      members: []
+
+  - "on": spoke-a
+    action: sync
+  - "on": spoke-b
+    action: sync
+    args:
+      expect: { applied: 1 }
+
+  - "on": spoke-b
+    action: assert_digest
+    args:
+      tables: [playlist_memberships]
+      against: [spoke-a]
+  - "on": spoke-b
+    action: assert_converged
+    args:
+      table: playlists
+      pk: { playlist_id: pl-set }
+      field: name
+      equals: Friday set
+
+expected:
+  digest_converged: true

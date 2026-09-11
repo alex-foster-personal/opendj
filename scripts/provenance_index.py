@@ -140,4 +140,3 @@ def render_index(allrecs: list[dict]) -> str:
         lines.append(f"| {when} | {tool} | {text} | {link} |")
     return "\n".join(lines) + "\n"
 
-

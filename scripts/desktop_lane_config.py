@@ -116,29 +116,23 @@ def dmg_filename(
     """Name the artifact ``OpenDJ-B-0.1.0-aarch64.dmg``.
 
     Tauri names its own output from productName, which yields spaces and
-    parentheses once a label is applied. Renaming to this form keeps every
-    downstream command (scp, curl, shell loops) free of quoting traps.
+    parentheses once a label is applied. This form keeps every downstream
+    command (scp, curl, shell loops) free of quoting traps.
+
+    ``arch`` is passed in by the caller. It used to be parsed out of the
+    filename of the dmg Tauri bundled, but that bundle target is gone
+    (#1711), so an empty value is refused rather than joined into a name
+    like ``OpenDJ-B-0.1.0-.dmg`` that no machine can be told from.
     """
+    if not arch:
+        raise LaneLabelError(
+            "an artifact name needs an architecture; the recipe declares "
+            "arm64 only (justfile, ARM64 ONLY v1 decision)"
+        )
     stem = product_slug(base_product_name)
     parts = [stem] if label is None else [stem, label]
     parts.extend([version, arch])
     return f"{'-'.join(parts)}.dmg"
-
-
-def arch_from_built_name(built: str) -> str:
-    """Take the architecture from what Tauri actually produced.
-
-    Reading ``uname -m`` would be a guess: it reports ``arm64`` where Tauri
-    writes ``aarch64``, and it says nothing about a cross build.
-    """
-    stem = Path(built).stem
-    arch = stem.rsplit("_", 1)[-1]
-    if arch in ("", stem):
-        raise LaneLabelError(
-            f"cannot read an architecture out of {built!r}; expected Tauri's "
-            "{productName}_{version}_{arch}.dmg shape"
-        )
-    return arch
 
 
 # ----- CLI ---------------------------------------------------------------
@@ -186,7 +180,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", default=None, type=Path)
     parser.add_argument("--label", default=None)
     parser.add_argument(
-        "--built", default=None, help="the dmg Tauri produced; required for dmg-name"
+        "--arch",
+        default=None,
+        help="artifact architecture, e.g. aarch64; required for dmg-name",
     )
     parser.add_argument(
         "--manifest", default=None, type=Path, help="payload manifest; required for stamp"
@@ -208,10 +204,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.emit == "overlay":
         print(json.dumps(overlay(product_name, identifier, label), sort_keys=True))
     elif args.emit == "dmg-name":
-        if args.built is None:
-            raise LaneLabelError("dmg-name needs --built to read the architecture")
-        arch = arch_from_built_name(args.built)
-        print(dmg_filename(product_name, label, version, arch))
+        if args.arch is None:
+            raise LaneLabelError("dmg-name needs --arch to name the artifact")
+        print(dmg_filename(product_name, label, version, args.arch))
     return 0
 
 

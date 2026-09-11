@@ -34,6 +34,7 @@
 	import { accountStore } from '$lib/account/account-store.svelte';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import { entitlements, planRefusal } from '$lib/api/entitlements.svelte';
+	import { buildFlags, storeBuildRefusal } from '$lib/api/store-build.svelte';
 	import {
 		accountOverlay,
 		askAccountDeleteConfirm,
@@ -56,7 +57,50 @@
 		if (!accountOverlay.open) return;
 		void accountStore.load();
 		void entitlements.load();
+		void buildFlags.load();
 	});
+
+	/**
+	 * Every declared flag this BUILD does not have (SAND-01), read off the
+	 * server's per-flag refusal rather than inferred from `enabled` here: a
+	 * flag can be off because a developer switched it off locally, and saying
+	 * "the App Store build removed it" about that would be the fourth state
+	 * telling the same kind of lie the third one was added to stop.
+	 */
+	const absentInThisBuild = $derived(
+		buildFlags.flags
+			.map((flag) => ({ flag, refusal: storeBuildRefusal(flag.flag_id) }))
+			.filter((row) => row.refusal !== null)
+	);
+
+	/**
+	 * Flags that are OFF for a reason that is not the App Store build: a plain
+	 * override, or an explicit MDT_FEATURE_FLAGS_FILE.
+	 *
+	 * These need their own row rather than falling through the gap between the
+	 * two branches below. `storeBuildRefusal` returns null both for a flag that
+	 * is ON and for one turned off locally - correct, because neither entitles
+	 * anything to say "App Store" - so filtering only on `refusal !== null` left
+	 * a locally-disabled flag listed nowhere, and the panel then rendered "Every
+	 * capability openDJ ships is available in this build" while one was off.
+	 * A panel whose whole job is to state what this build cannot do must not
+	 * claim it can do everything (PR #1668 round-4 P2).
+	 *
+	 * The row carries NO App Store attribution, mirroring the split
+	 * `usb_export.py::_disabled_response` already makes on the server: blaming
+	 * Apple's sandbox for a decision this machine made on its own is the same
+	 * misattribution the fourth state exists to prevent, pointed the other way.
+	 */
+	const disabledLocally = $derived(
+		buildFlags.flags.filter(
+			(flag) => !flag.enabled && storeBuildRefusal(flag.flag_id) === null
+		)
+	);
+
+	/** Nothing is switched off, by the store build or by this machine. */
+	const everythingAvailable = $derived(
+		absentInThisBuild.length === 0 && disabledLocally.length === 0
+	);
 
 	onMount(() => {
 		// This overlay is mounted at the root but starts closed, so its
@@ -208,6 +252,95 @@
 									</li>
 								{/each}
 							</ul>
+						{/if}
+					</section>
+
+					<!-- ----------------------------------------- this build -->
+					<!-- SAND-01. The FOURTH reason a control is dead, and it
+					     belongs beside the plan because a user hitting a dead
+					     control has no way to tell "not on my plan" from "not
+					     in this build" without being told which. It names no
+					     download outside the store: guideline 3.2.2(vi) reads
+					     that as circumventing the store, so the honest store
+					     build states the absence and stops there. -->
+					<section class="ac-section" aria-label="This build">
+						<h3>What this build can do</h3>
+						{#if buildFlags.error !== null}
+							<p class="ac-muted" title={buildFlags.error}>
+								Could not read this build's capabilities from the daemon: {buildFlags.error}
+							</p>
+						{:else if !buildFlags.loaded}
+							<p class="ac-muted">Reading this build's capabilities from the daemon...</p>
+						{:else if everythingAvailable}
+							<p
+								class="ac-muted"
+								title="Build profile {buildFlags.profile}, sandboxed: {buildFlags.sandboxed}. No declared capability is switched off, by this build or by this machine."
+							>
+								Every capability openDJ ships is available in this build.
+							</p>
+						{:else}
+							{#if absentInThisBuild.length > 0}
+								<p class="ac-muted">
+									This build does not include the following. They are not missing from
+									openDJ and they are not withheld from your account; this particular
+									build cannot offer them.
+								</p>
+								<ul class="ac-features">
+									{#each absentInThisBuild as row (row.flag.flag_id)}
+										<li>
+											<span class="ac-store-label ac-mono">{row.flag.flag_id}</span>
+											<span class="ac-muted" title={row.refusal}>Not in this build</span>
+											<span class="ac-muted">{row.flag.note}</span>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+							{#if disabledLocally.length > 0}
+								<!-- COPY THAT COVERS BOTH WAYS A FLAG GETS HERE, deliberately
+									 (PR #1720 round-2 P2). This group is every flag that is off
+									 without the store profile refusing it, and there are two of
+									 those: a local override file, and a flag whose DECLARED
+									 DEFAULT is false. The earlier wording named the first ("this
+									 machine's own configuration ... whatever switched these off
+									 can switch them back on") and would have been simply false of
+									 the second, which no file on this machine touched.
+
+									 Branching on `flag.overridden` would separate them, and is
+									 NOT what this does: the daemon declares exactly one flag
+									 today (apps/feature_flags/store.FLAGS, usb.export, default
+									 true), so a default-off row cannot be produced by any capture
+									 and that branch would ship untested. One sentence true of
+									 both states beats two sentences where one is unreachable. -->
+								<p class="ac-muted">
+									Off in the flag configuration this daemon resolved: a declared
+									default, or a local override. Neither the App Store build nor
+									your plan is involved.
+								</p>
+								<ul class="ac-features">
+									<!-- NO `flag.note` here, unlike the store group above, and that
+									 is the point rather than an omission. The note is the flag's
+									 BUILD-time description, and usb.export's reads "ON everywhere
+									 except the Mac App Store build" - true of the flag, false of
+									 this row, which exists precisely because something on this
+									 machine turned it off instead. Rendering it beside "Turned off
+									 here" both contradicts the row and re-attributes the decision
+									 to Apple, which is the misattribution this whole group was
+									 added to stop (PR #1720 round-1 P2). The component composes no
+									 replacement sentence for the same reason it composes no
+									 refusal: a description invented here is a second truth free to
+									 drift from the daemon's. -->
+									{#each disabledLocally as flag (flag.flag_id)}
+										<li>
+											<span class="ac-store-label ac-mono">{flag.flag_id}</span>
+											<span
+												class="ac-muted"
+												title="Off in the flag configuration this daemon resolved ({buildFlags.profile} profile), from its declared default or a local override. Nothing about the App Store or your plan is involved."
+												>Turned off here</span
+											>
+										</li>
+									{/each}
+								</ul>
+							{/if}
 						{/if}
 					</section>
 

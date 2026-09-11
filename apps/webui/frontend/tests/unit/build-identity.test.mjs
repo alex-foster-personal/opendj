@@ -357,6 +357,21 @@ test('the foldout states the address, selectable, with a copy control', async ()
 	assert.match(source, /copy refused/);
 });
 
+test('the version block names itself and distinguishes Chrome from the packaged app', async () => {
+	const { readFileSync } = await import('node:fs');
+	const source = readFileSync(
+		new URL('../../src/lib/components/rb/BuildIdentity.svelte', import.meta.url),
+		'utf8'
+	);
+	assert.match(source, /app versioning:/);
+	assert.match(source, /browser identity/);
+	assert.match(source, /Chrome dev loop/);
+	assert.match(source, /DMG app version/);
+	assert.match(source, /shell\.value\.app_version/);
+	// Existing drift detection remains the authority when shell and engine differ.
+	assert.match(source, /drift === 'drifted'/);
+});
+
 test('the app shell mounts the chip inside a bottom tray', async () => {
 	const { readFileSync } = await import('node:fs');
 	const layout = readFileSync(

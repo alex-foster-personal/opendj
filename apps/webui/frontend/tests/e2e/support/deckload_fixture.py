@@ -18,7 +18,7 @@ primary checkout's ``data/``. This module builds a throwaway one instead:
 What that honestly leaves OUT is named rather than faked: these tracks have no
 rekordbox vendor mapping, so ``/anlz`` serves a payload whose beatgrid, cues
 and phrases are all empty. Since Tue 1 Sep 2026 its WAVEFORM is not: those
-peaks come from our own ffmpeg decode of the fixture audio (PARITY-03), so a
+peaks come from our own ffmpeg decode of the fixture audio (PARITY-08), so a
 lane drawn here describes the real tone. The only in-repo beatgrid producer
 for arbitrary audio is ``apps.analysis`` (librosa+madmom), which is
 deliberately absent from the repo venv, so nothing here invents a grid.
@@ -36,10 +36,48 @@ Playwright evaluates its config (and this builder) once per process. The
 generated audio is versioned by ``FIXTURE_REVISION``: bumping it wipes and
 regenerates a stale fixture dir instead of silently measuring old audio.
 
+``feedback/`` is different: it holds RUN-scoped mutations the server writes in
+response to real `feedback_mark`/pin/archive commands the specs dispatch, not
+cached content keyed by revision, so every call here wipes it unconditionally
+rather than gating it on `FIXTURE_REVISION`. Every call happens at config
+import time, before any spec's test body runs (Playwright imports this
+config once for the main process and once per worker, all during suite
+bootstrap), so this can never discard a mutation a still-running test wrote.
+Left alone, an interrupted `performance-feedback-card-dismiss.spec.ts` run
+(killed after it seeds a pin, before its `finally` archives it) would leave
+that pin behind forever, and the next run's `button.fb-pin[title^=...]`
+locator would match it plus the new one, breaking Playwright's strict-mode
+single-element assumption (Codex P2 BLOCKING, #1628).
+
 Usage::
 
-    uv run --no-sync python apps/webui/frontend/tests/e2e/support/deckload_fixture.py \
-        --data-dir /abs/path/to/tests/e2e/fixtures/deckload-data
+    uv run --no-sync python -m apps.webui.frontend.tests.e2e.support.deckload_fixture \
+        --data-dir /abs/path/to/tests/e2e/fixtures/deckload-data --seed-playlists
+
+``--manifest <abs path>`` writes a machine-readable JSON manifest (revision +
+one row per track) alongside the human-readable stdout `main()` already
+printed. Purely additive: no existing caller passes it, so nothing about the
+5 other e2e gates sharing this builder changes shape.
+
+``--seed-autoplay-chain`` is a SEPARATE opt-in, used only by the performance
+suite. It layers a 3rd real track onto the base 2-track library (own
+function, own playlist) and tags all three tracks with the SAME Camelot key
+and BPM through the real ``StateWriter.set_field`` path (source="manual",
+exactly how a manual tag edit lands in production) so AutoPlay's real
+key/BPM compatibility gate has real, non-null data to walk instead of the
+folder-ingest rows (which the module docstring above already documents as
+carrying no bpm/key/beatgrid). It is deliberately its own function rather
+than a change to ``build()``: the 2-track shape ``build()`` produces is
+shared with playwright.webkit-deckload/preflight-gate/boot-burst/
+hotcue-mapping-gate/comment-hotkey-gate configs, none of which pass this
+flag, so their fixture is byte-for-byte unchanged.
+
+``--seed-autoplay-hunt`` is another SEPARATE opt-in, used only by the
+AutoPlay/mixing error hunt (#1853). It builds a 6-track library (own
+function, own two playlists, own filenames) and is mutually exclusive with
+``--seed-autoplay-chain`` so a caller cannot accidentally enlarge the
+performance suite. Hunt files are new; ``FIXTURE_TRACKS`` and the chain
+audio are unchanged, and ``FIXTURE_REVISION`` is not bumped.
 
 Acceptance tests:
 
@@ -48,12 +86,25 @@ Acceptance tests:
 - [if] --data-dir is relative [then] it exits non-zero before writing anything.
 - [if] the dir was built by an older FIXTURE_REVISION [then] the audio and the
   state db are wiped and rebuilt, never reused.
+- [if] --seed-playlists is set [then] one populated and one empty playlist are
+  written through StateWriter, never direct SQLite inserts.
+- [if] --seed-autoplay-chain is set [then] a 3rd track is ingested and all
+  three tracks carry the same real, non-null Camelot key, while each keeps its
+  own declared BPM (128 / 124 / 128) so the distinct-BPM pair survives.
+- [if] --seed-autoplay-hunt is set [then] 6 tracks are ingested into two
+  playlists (A in declared order, B the reverse), all carrying Camelot key 8A
+  and alternating 128 / 124 BPM, and ``FIXTURE_TRACKS`` stays a 2-track tuple.
+- [if] --manifest is set [then] the written JSON's revision and track rows
+  match what was actually ingested, read back from the manifest file itself.
+- [if] ``feedback/`` holds a stale file from a prior (or interrupted) run
+  [then] the next build call removes it, matching FIXTURE_REVISION or not.
 """
 
 from __future__ import annotations
 
 import argparse
 import array
+import json
 import math
 import os
 import shutil
@@ -62,13 +113,17 @@ import subprocess
 import sys
 import wave
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+
+from apps.shared.state import db as state_db
+from apps.shared.state.writer import StateWriter
 
 REPOSITORY_ROOT: Path = Path(__file__).resolve().parents[6]
 
 #: Bump to invalidate every generated fixture dir. Anything that changes what
 #: the audio SOUNDS like must bump this, or a stale dir keeps being measured.
-FIXTURE_REVISION: int = 2
+FIXTURE_REVISION: int = 3
 REVISION_MARKER: str = "fixture-revision.txt"
 
 SAMPLE_RATE_HZ: int = 44_100
@@ -112,6 +167,49 @@ FIXTURE_TRACKS: tuple[FixtureTrack, ...] = (
 
 AUDIO_SUBDIR: str = "fixture-audio"
 
+#: Where `apps/webui/server/routes/feedback.py::_dir` writes real feedback_mark
+#: pins/comments/archives. Run-scoped mutation state, not cached content: unlike
+#: AUDIO_SUBDIR and "state/", it is reset on every build call regardless of
+#: FIXTURE_REVISION (see `_reset_feedback_dir`).
+FEEDBACK_SUBDIR: str = "feedback"
+
+POPULATED_PLAYLIST_ID: str = "e2e-fixture-populated"
+EMPTY_PLAYLIST_ID: str = "e2e-fixture-empty"
+
+#: --seed-autoplay-chain only. A 3rd track, same bpm/key family as track A
+#: below, so a real (non-null) AutoPlay compatibility walk has >1 candidate
+#: to chart. Kept out of FIXTURE_TRACKS so the 5 other e2e gates sharing
+#: this builder never see a 3-track library.
+AUTOPLAY_CHAIN_TRACK: FixtureTrack = FixtureTrack(
+    filename="webkit-fixture-c-128bpm-chain.wav", bpm=128.0, seconds=60.0
+)
+#: Same Camelot key/BPM on every chain track (distance 0, ratio 1.0) so the
+#: walk is compatible under any pitch-range tolerance, not just a generous one.
+AUTOPLAY_CHAIN_CAMELOT_KEY: str = "8A"
+AUTOPLAY_CHAIN_PLAYLIST_ID: str = "e2e-fixture-autoplay-chain"
+AUTOPLAY_CHAIN_PLAYLIST_NAME: str = "E2E AutoPlay Chain"
+
+#: --seed-autoplay-hunt only. Six tracks, own filenames, kept out of
+#: FIXTURE_TRACKS so the 5 other e2e gates sharing this builder never see a
+#: 6-track library. Alternate 128 / 124 BPM so tempo/sync have a ratio
+#: (124 vs 128 is 1.032, inside phase-lock). Same Camelot key as the chain
+#: so AutoPlay compatibility is distance 0.
+HUNT_CAMELOT_KEY: str = "8A"
+HUNT_PLAYLIST_A_ID: str = "e2e-fixture-autoplay-hunt-a"
+HUNT_PLAYLIST_A_NAME: str = "E2E AutoPlay Hunt A"
+HUNT_PLAYLIST_B_ID: str = "e2e-fixture-autoplay-hunt-b"
+HUNT_PLAYLIST_B_NAME: str = "E2E AutoPlay Hunt B"
+HUNT_TRACKS: tuple[FixtureTrack, ...] = (
+    FixtureTrack(filename="webkit-fixture-hunt-01-128bpm.wav", bpm=128.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-hunt-02-124bpm.wav", bpm=124.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-hunt-03-128bpm.wav", bpm=128.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-hunt-04-124bpm.wav", bpm=124.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-hunt-05-128bpm.wav", bpm=128.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-hunt-06-124bpm.wav", bpm=124.0, seconds=60.0),
+)
+
+MANIFEST_FILENAME: str = "fixture-manifest.json"
+
 
 # ----- audio generation ------------------------------------------------------
 def _pulse_envelope(sample_index: int, beat_period_samples: float) -> float:
@@ -130,7 +228,7 @@ def write_tone_and_pulse_wav(path: Path, track: FixtureTrack) -> int:
     a PULSE_HZ transient on every beat (so the file behaves like a track with
     onsets rather than a test tone).
     """
-    frame_count = int(round(track.seconds * SAMPLE_RATE_HZ))
+    frame_count = round(track.seconds * SAMPLE_RATE_HZ)
     beat_period_samples = SAMPLE_RATE_HZ * 60.0 / track.bpm
     peak = float(2**15 - 1)
     tone_step = 2.0 * math.pi * TONE_HZ / SAMPLE_RATE_HZ
@@ -160,12 +258,19 @@ def _wav_frame_count(path: Path) -> int:
         return handle.getnframes()
 
 
-def ensure_audio(audio_dir: Path) -> list[Path]:
-    """Generate every missing/short fixture wav. Returns the file list."""
+def ensure_audio(
+    audio_dir: Path, tracks: tuple[FixtureTrack, ...] = FIXTURE_TRACKS
+) -> list[Path]:
+    """Generate every missing/short fixture wav. Returns the file list.
+
+    ``tracks`` defaults to the 2-track library the five other e2e configs
+    share; ``build_autoplay_chain`` passes its own longer tuple so both
+    callers ensure audio through exactly this one code path.
+    """
     written: list[Path] = []
-    for track in FIXTURE_TRACKS:
+    for track in tracks:
         path = audio_dir / track.filename
-        expected = int(round(track.seconds * SAMPLE_RATE_HZ))
+        expected = round(track.seconds * SAMPLE_RATE_HZ)
         if path.is_file() and _wav_frame_count(path) == expected:
             written.append(path)
             continue
@@ -182,6 +287,34 @@ def ensure_audio(audio_dir: Path) -> list[Path]:
 
 
 # ----- real ingest -----------------------------------------------------------
+def _ingest_and_verify(
+    data_dir: Path, audio_dir: Path, files: list[Path], label: str
+) -> list[tuple[str, str | None, str | None]]:
+    """Run the REAL ingest until the DB holds one row per audio file.
+
+    Shared by ``build`` and ``build_autoplay_chain`` so the "N rows for N
+    files" invariant and the readable-``file_path`` check have exactly one
+    implementation. ``label`` only names the caller in the failure message.
+    """
+    state_db_path = data_dir / "state" / "state.db"
+    rows = _track_rows(state_db_path) if state_db_path.is_file() else []
+    if len(rows) != len(files):
+        _state_cli(data_dir, "init")
+        _state_cli(data_dir, "ingest-folder", "--root", str(audio_dir), "--write")
+        rows = _track_rows(state_db_path)
+    if len(rows) != len(files):
+        raise SystemExit(
+            f"[ERROR] {label} ingest wrote {len(rows)} track(s) for "
+            f"{len(files)} audio file(s) in {audio_dir}"
+        )
+    for stable_id, _title, file_path in rows:
+        if not file_path or not Path(file_path).is_file():
+            raise SystemExit(
+                f"[ERROR] track {stable_id} has no readable file_path: {file_path!r}"
+            )
+    return rows
+
+
 def _state_cli(data_dir: Path, *args: str) -> None:
     """Run the REAL shared-state CLI against this fixture data dir."""
     env = dict(os.environ)
@@ -199,7 +332,8 @@ def _state_cli(data_dir: Path, *args: str) -> None:
         *args,
     ]
     result = subprocess.run(
-        command, cwd=REPOSITORY_ROOT, env=env, capture_output=True, text=True
+        command, cwd=REPOSITORY_ROOT, env=env, capture_output=True, text=True,
+        check=False,
     )
     if result.returncode != 0:
         sys.stderr.write(result.stdout)
@@ -241,29 +375,290 @@ def _discard_stale_revision(data_dir: Path) -> None:
     marker.write_text(f"{FIXTURE_REVISION}\n", encoding="utf-8")
 
 
-def build(data_dir: Path) -> list[tuple[str, str | None, str | None]]:
+def _reset_feedback_dir(data_dir: Path) -> None:
+    """Wipe any feedback state left by a prior or interrupted run.
+
+    Unlike ``AUDIO_SUBDIR``/"state", this is not cached content gated on
+    ``FIXTURE_REVISION``: it is mutation state the SERVER writes when a spec
+    dispatches a real feedback_mark/pin/archive command, so it is reset on
+    EVERY call regardless of revision. A run killed after
+    `performance-feedback-card-dismiss.spec.ts` seeds a pin but before its
+    `finally` archives it would otherwise leave that pin in place forever,
+    and the next run's `button.fb-pin[title^=...]` locator would then match
+    both the stale pin and the new one, breaking Playwright's strict-mode
+    single-element assumption (Codex P2 BLOCKING, #1628).
+    """
+    feedback_dir = data_dir / FEEDBACK_SUBDIR
+    if feedback_dir.exists():
+        shutil.rmtree(feedback_dir)
+
+
+def _seed_playlists(
+    state_db_path: Path, rows: list[tuple[str, str | None, str | None]]
+) -> None:
+    """Write browser-addressable populated and empty playlists through StateWriter."""
+    stable_ids = [stable_id for stable_id, _title, _file_path in rows]
+    if len(stable_ids) < 2:
+        raise SystemExit("[ERROR] playlist fixture needs at least two ingested tracks")
+    conn = state_db.open_rw(state_db_path)
+    writer = StateWriter(conn, actor="e2e-deckload-fixture")
+    try:
+        writer.insert_playlist(
+            playlist_id=POPULATED_PLAYLIST_ID,
+            name="E2E Fixture Set",
+            vendor="fixture",
+            vendor_pl_id=POPULATED_PLAYLIST_ID,
+        )
+        writer.set_playlist_memberships(POPULATED_PLAYLIST_ID, stable_ids)
+        writer.insert_playlist(
+            playlist_id=EMPTY_PLAYLIST_ID,
+            name="E2E Empty Set",
+            vendor="fixture",
+            vendor_pl_id=EMPTY_PLAYLIST_ID,
+        )
+        writer.set_playlist_memberships(EMPTY_PLAYLIST_ID, [])
+    finally:
+        writer.close()
+        conn.close()
+
+
+def build_autoplay_chain(
+    data_dir: Path,
+) -> list[tuple[str, str | None, str | None]]:
+    """Extend ``build()``'s 2-track library with a 3rd, key/BPM-tagged track.
+
+    Own function, own playlist (``AUTOPLAY_CHAIN_PLAYLIST_ID``): ``build()``
+    itself, and the 2-track shape it produces, are untouched, so the 5 other
+    e2e configs sharing this builder never see a 3rd track. Only the
+    performance suite calls this.
+
+    Tags land through the real ``StateWriter.set_field`` path with
+    ``source="manual"`` -- the same call a manual tag edit makes in
+    production (see ``apps/webui/server/sqlite_backend.py``'s PATCH
+    /tracks/{stable_id} handler) -- never a direct SQLite write. Every track
+    gets the SAME Camelot key and BPM, so AutoPlay's real compatibility gate
+    (Camelot distance <= 1, BPM ratio inside phase-lock range) is satisfied
+    at distance 0 / ratio 1.0 regardless of whatever pitch-range tolerance
+    the page has active.
+    """
+    # Deliberately NOT `build(data_dir, seed_playlists=True)` followed by a
+    # separate ingest for the chain file: once this has run once, the audio
+    # dir holds 3 files while `build()`'s own `ensure_audio()` only ever
+    # accounts for the 2-track `FIXTURE_TRACKS` tuple, so a second call to
+    # plain `build()` on an already-chain-extended dir sees "3 rows for 2
+    # files" and raises. Playwright re-imports this config more than once
+    # per run (webServer startup + worker startup both evaluate it), so this
+    # function must tolerate being called repeatedly against its OWN fully-
+    # built output, not just against an empty dir. Folding FIXTURE_TRACKS and
+    # the chain track into one list, ensured and ingested together, keeps
+    # the "N rows for N files" invariant true no matter how many times this
+    # runs against the same dir.
+    _discard_stale_revision(data_dir)
+    _reset_feedback_dir(data_dir)
+    audio_dir = data_dir / AUDIO_SUBDIR
+    generated_unsorted = (*FIXTURE_TRACKS, AUTOPLAY_CHAIN_TRACK)
+    files = ensure_audio(audio_dir, generated_unsorted)
+    state_db_path = data_dir / "state" / "state.db"
+    rows = _ingest_and_verify(data_dir, audio_dir, files, "autoplay-chain")
+
+    # Keeps the manifest's populated/empty playlist ids honest: `write_manifest`
+    # always records them, so they must always actually exist in the DB, same
+    # as the plain `build(..., seed_playlists=True)` path.
+    _seed_playlists(state_db_path, rows)
+
+    stable_ids = [stable_id for stable_id, _title, _file_path in rows]
+    # `_track_rows` returns rows ORDER BY title, so line the generated tracks up
+    # with them by filename rather than assuming the tuple order survived.
+    by_filename = {track.filename: track for track in generated_unsorted}
+    generated = [
+        by_filename[Path(file_path).name]
+        for _stable_id, _title, file_path in rows
+        if file_path is not None and Path(file_path).name in by_filename
+    ]
+    now = datetime.now(UTC).isoformat()
+    conn = state_db.open_rw(state_db_path)
+    writer = StateWriter(conn, actor="e2e-deckload-fixture")
+    # Every track gets the SAME Camelot key, so AutoPlay's compatibility gate is
+    # satisfied at distance 0. Each track keeps its OWN declared BPM: 124 and 128
+    # are 1.032 apart, comfortably inside phase-lock range for AutoPlay, and
+    # flattening them all to one value would destroy the distinct-BPM pair
+    # `performance-controls.spec.ts::_realSyncPair` needs (it requires a ratio
+    # differing by >= 0.005, so an all-128 library makes it throw
+    # deterministically). Bot review, Wed 9 Sep 2026.
+    bpm_by_stable_id = {
+        stable_id: track.bpm
+        for (stable_id, _title, file_path), track in zip(rows, generated, strict=True)
+        if file_path is not None and Path(file_path).name == track.filename
+    }
+    if len(bpm_by_stable_id) != len(rows):
+        raise SystemExit(
+            "[ERROR] autoplay chain could not match every ingested row to its generated file"
+        )
+    try:
+        for stable_id in stable_ids:
+            writer.set_field(
+                stable_id, "bpm", bpm_by_stable_id[stable_id],
+                source="manual", modified_at=now, confidence=1.0,
+            )
+            writer.set_field(
+                stable_id, "key", AUTOPLAY_CHAIN_CAMELOT_KEY,
+                source="manual", modified_at=now, confidence=1.0,
+            )
+        writer.insert_playlist(
+            playlist_id=AUTOPLAY_CHAIN_PLAYLIST_ID,
+            name=AUTOPLAY_CHAIN_PLAYLIST_NAME,
+            vendor="fixture",
+            vendor_pl_id=AUTOPLAY_CHAIN_PLAYLIST_ID,
+        )
+        writer.set_playlist_memberships(AUTOPLAY_CHAIN_PLAYLIST_ID, stable_ids)
+    finally:
+        writer.close()
+        conn.close()
+    return rows
+
+
+def _stable_ids_in_track_order(
+    rows: list[tuple[str, str | None, str | None]],
+    tracks: tuple[FixtureTrack, ...],
+    label: str,
+) -> list[str]:
+    """Line ingested rows up with ``tracks`` by filename, in tuple order."""
+    by_filename: dict[str, str] = {}
+    for stable_id, _title, file_path in rows:
+        if file_path is None:
+            continue
+        by_filename[Path(file_path).name] = stable_id
+    ordered: list[str] = []
+    missing: list[str] = []
+    for track in tracks:
+        stable_id = by_filename.get(track.filename)
+        if stable_id is None:
+            missing.append(track.filename)
+            continue
+        ordered.append(stable_id)
+    if missing or len(ordered) != len(tracks):
+        raise SystemExit(
+            f"[ERROR] {label} could not match every generated file to an ingested row "
+            f"(missing {missing!r})"
+        )
+    return ordered
+
+
+def build_autoplay_hunt(
+    data_dir: Path,
+) -> list[tuple[str, str | None, str | None]]:
+    """Build a 6-track hunt library with two playlists. Does not call ``build()``.
+
+    Own function, own playlist ids: ``build()`` itself, and the 2-track shape
+    it produces, are untouched. Deliberately NOT ``build()`` followed by a
+    second ingest -- once this has run once, the audio dir holds 6 files
+    while ``build()``'s ``ensure_audio()`` only accounts for ``FIXTURE_TRACKS``,
+    so a later plain ``build()`` on this dir would see "6 rows for 2 files".
+    Playwright re-imports its config more than once per run, so this function
+    must tolerate being called repeatedly against its own fully-built output.
+
+    Playlist A is the 6 tracks in declared (HUNT_TRACKS) order; playlist B
+    is the reverse membership of the same 6. Tags land through
+    ``StateWriter.set_field`` with ``source="manual"``.
+    """
+    if len(HUNT_TRACKS) < 6:
+        raise SystemExit("[ERROR] HUNT_TRACKS must contain at least 6 tracks")
+    _discard_stale_revision(data_dir)
+    _reset_feedback_dir(data_dir)
+    audio_dir = data_dir / AUDIO_SUBDIR
+    files = ensure_audio(audio_dir, HUNT_TRACKS)
+    state_db_path = data_dir / "state" / "state.db"
+    rows = _ingest_and_verify(data_dir, audio_dir, files, "autoplay-hunt")
+    _seed_playlists(state_db_path, rows)
+
+    ordered_ids = _stable_ids_in_track_order(rows, HUNT_TRACKS, "autoplay-hunt")
+    bpm_by_stable_id = {
+        stable_id: track.bpm for stable_id, track in zip(ordered_ids, HUNT_TRACKS, strict=True)
+    }
+    now = datetime.now(UTC).isoformat()
+    conn = state_db.open_rw(state_db_path)
+    writer = StateWriter(conn, actor="e2e-deckload-fixture")
+    try:
+        for stable_id in ordered_ids:
+            writer.set_field(
+                stable_id, "bpm", bpm_by_stable_id[stable_id],
+                source="manual", modified_at=now, confidence=1.0,
+            )
+            writer.set_field(
+                stable_id, "key", HUNT_CAMELOT_KEY,
+                source="manual", modified_at=now, confidence=1.0,
+            )
+        writer.insert_playlist(
+            playlist_id=HUNT_PLAYLIST_A_ID,
+            name=HUNT_PLAYLIST_A_NAME,
+            vendor="fixture",
+            vendor_pl_id=HUNT_PLAYLIST_A_ID,
+        )
+        writer.set_playlist_memberships(HUNT_PLAYLIST_A_ID, ordered_ids)
+        writer.insert_playlist(
+            playlist_id=HUNT_PLAYLIST_B_ID,
+            name=HUNT_PLAYLIST_B_NAME,
+            vendor="fixture",
+            vendor_pl_id=HUNT_PLAYLIST_B_ID,
+        )
+        writer.set_playlist_memberships(HUNT_PLAYLIST_B_ID, list(reversed(ordered_ids)))
+    finally:
+        writer.close()
+        conn.close()
+    return rows
+
+
+def write_manifest(
+    manifest_path: Path,
+    rows: list[tuple[str, str | None, str | None]],
+    *,
+    autoplay_chain_playlist_id: str | None = None,
+    autoplay_chain_playlist_name: str | None = None,
+    autoplay_hunt_playlist_a_id: str | None = None,
+    autoplay_hunt_playlist_a_name: str | None = None,
+    autoplay_hunt_playlist_b_id: str | None = None,
+    autoplay_hunt_playlist_b_name: str | None = None,
+) -> None:
+    """Write the machine-readable sibling of ``main()``'s stdout listing.
+
+    Consumed by ``tests/e2e/support/fixture-manifest.ts``. Fails loudly
+    rather than writing a partial file: an empty ``rows`` here would make a
+    reader believe the fixture built successfully with zero tracks.
+    """
+    if not rows:
+        raise SystemExit("[ERROR] refusing to write a manifest with zero tracks")
+    payload = {
+        "fixture_revision": FIXTURE_REVISION,
+        "populated_playlist_id": POPULATED_PLAYLIST_ID,
+        "empty_playlist_id": EMPTY_PLAYLIST_ID,
+        "autoplay_chain_playlist_id": autoplay_chain_playlist_id,
+        "autoplay_chain_playlist_name": autoplay_chain_playlist_name,
+        "autoplay_hunt_playlist_a_id": autoplay_hunt_playlist_a_id,
+        "autoplay_hunt_playlist_a_name": autoplay_hunt_playlist_a_name,
+        "autoplay_hunt_playlist_b_id": autoplay_hunt_playlist_b_id,
+        "autoplay_hunt_playlist_b_name": autoplay_hunt_playlist_b_name,
+        "tracks": [
+            {"stable_id": stable_id, "title": title, "file_path": file_path}
+            for stable_id, title, file_path in rows
+        ],
+    }
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+
+def build(
+    data_dir: Path, *, seed_playlists: bool = False
+) -> list[tuple[str, str | None, str | None]]:
     """Generate the audio, run the real ingest, verify the result."""
     _discard_stale_revision(data_dir)
+    _reset_feedback_dir(data_dir)
     audio_dir = data_dir / AUDIO_SUBDIR
     files = ensure_audio(audio_dir)
-    state_db = data_dir / "state" / "state.db"
-    rows = _track_rows(state_db) if state_db.is_file() else []
-    if len(rows) != len(files):
-        _state_cli(data_dir, "init")
-        _state_cli(
-            data_dir, "ingest-folder", "--root", str(audio_dir), "--write"
-        )
-        rows = _track_rows(state_db)
-    if len(rows) != len(files):
-        raise SystemExit(
-            f"[ERROR] fixture ingest wrote {len(rows)} track(s) for "
-            f"{len(files)} audio file(s) in {audio_dir}"
-        )
-    for stable_id, _title, file_path in rows:
-        if not file_path or not Path(file_path).is_file():
-            raise SystemExit(
-                f"[ERROR] track {stable_id} has no readable file_path: {file_path!r}"
-            )
+    rows = _ingest_and_verify(data_dir, audio_dir, files, "fixture")
+    if seed_playlists:
+        _seed_playlists(data_dir / "state" / "state.db", rows)
     return rows
 
 
@@ -277,15 +672,78 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="absolute path of the throwaway fixture data dir",
     )
+    parser.add_argument(
+        "--seed-playlists",
+        action="store_true",
+        help="seed browser-addressable populated and empty playlists",
+    )
+    parser.add_argument(
+        "--seed-autoplay-chain",
+        action="store_true",
+        help=(
+            "add a 3rd, key/BPM-tagged track and its own AutoPlay-chain "
+            "playlist (performance suite only; implies --seed-playlists)"
+        ),
+    )
+    parser.add_argument(
+        "--seed-autoplay-hunt",
+        action="store_true",
+        help=(
+            "build a 6-track hunt library with two playlists (error-hunt "
+            "suite only; implies --seed-playlists; exclusive with "
+            "--seed-autoplay-chain)"
+        ),
+    )
+    parser.add_argument(
+        "--manifest",
+        default=None,
+        help="absolute path to write a machine-readable JSON manifest",
+    )
     args = parser.parse_args(argv)
+    if args.seed_autoplay_chain and args.seed_autoplay_hunt:
+        raise SystemExit(
+            "[ERROR] --seed-autoplay-chain and --seed-autoplay-hunt are mutually exclusive"
+        )
     data_dir = Path(args.data_dir).expanduser()
     if not data_dir.is_absolute():
         raise SystemExit(f"[ERROR] --data-dir must be absolute, got {args.data_dir!r}")
     data_dir.mkdir(parents=True, exist_ok=True)
-    rows = build(data_dir)
+    autoplay_chain_playlist_id: str | None = None
+    autoplay_chain_playlist_name: str | None = None
+    autoplay_hunt_playlist_a_id: str | None = None
+    autoplay_hunt_playlist_a_name: str | None = None
+    autoplay_hunt_playlist_b_id: str | None = None
+    autoplay_hunt_playlist_b_name: str | None = None
+    if args.seed_autoplay_hunt:
+        rows = build_autoplay_hunt(data_dir)
+        autoplay_hunt_playlist_a_id = HUNT_PLAYLIST_A_ID
+        autoplay_hunt_playlist_a_name = HUNT_PLAYLIST_A_NAME
+        autoplay_hunt_playlist_b_id = HUNT_PLAYLIST_B_ID
+        autoplay_hunt_playlist_b_name = HUNT_PLAYLIST_B_NAME
+    elif args.seed_autoplay_chain:
+        rows = build_autoplay_chain(data_dir)
+        autoplay_chain_playlist_id = AUTOPLAY_CHAIN_PLAYLIST_ID
+        autoplay_chain_playlist_name = AUTOPLAY_CHAIN_PLAYLIST_NAME
+    else:
+        rows = build(data_dir, seed_playlists=args.seed_playlists)
     print(f"[OK] fixture library at {data_dir} with {len(rows)} track(s):")
     for stable_id, title, file_path in rows:
         print(f"  {stable_id}  {title!r}  {file_path}")
+    if args.manifest is not None:
+        manifest_path = Path(args.manifest).expanduser()
+        if not manifest_path.is_absolute():
+            raise SystemExit(f"[ERROR] --manifest must be absolute, got {args.manifest!r}")
+        write_manifest(
+            manifest_path,
+            rows,
+            autoplay_chain_playlist_id=autoplay_chain_playlist_id,
+            autoplay_chain_playlist_name=autoplay_chain_playlist_name,
+            autoplay_hunt_playlist_a_id=autoplay_hunt_playlist_a_id,
+            autoplay_hunt_playlist_a_name=autoplay_hunt_playlist_a_name,
+            autoplay_hunt_playlist_b_id=autoplay_hunt_playlist_b_id,
+            autoplay_hunt_playlist_b_name=autoplay_hunt_playlist_b_name,
+        )
+        print(f"[OK] manifest written to {manifest_path}")
     return 0
 
 

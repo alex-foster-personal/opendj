@@ -58,7 +58,10 @@
 	 * preflight - on a build with no relay base and no identity token, this is
 	 * the honest "stems are not available in this build".
 	 */
-	const blocked = $derived(refusal ?? plan?.transport_refusal ?? null);
+	const blocked = $derived(
+		refusal ?? plan?.local_refusal ?? plan?.transport_refusal ?? null
+	);
+	const localExecutor = $derived(plan?.executor === 'local');
 
 	$effect(() => {
 		if (refusal !== null) return;
@@ -119,25 +122,24 @@
 		</p>
 	{:else if plan === null}
 		<p class="stems-note" role="status">Working out how many tracks need stems...</p>
-	{:else if plan.transport_refusal !== null}
+	{:else if blocked !== null && plan !== null}
 		<!--
-			STEMS ARE NOT AVAILABLE IN THIS BUILD. The counts are still shown,
-			because "217 tracks would need stems, and this build cannot run
-			them" is more use than hiding the work behind the refusal. The
-			button is rendered inert rather than removed so the step reads as a
-			real capability that is switched off, not as a missing feature -
-			and it is disabled, so nothing can enqueue a job the worker would
-			fail on after the wizard already said Done.
+			STEMS CANNOT START ON THIS BUILD. The counts are still shown so the
+			tester sees how much work exists behind the refusal. The button stays
+			visible but inert with the server's own tooltip (PERFMODE tier floor,
+			feature flag, or farm transport), never a silent no-op.
 		-->
-		<p class="stems-error" role="alert" title={plan.transport_refusal}>
-			Stems are not available in this build: {plan.transport_refusal}
+		<p class="stems-error" role="alert" title={blocked}>
+			{localExecutor
+				? `Local stems are not available on this machine: ${blocked}`
+				: `Stems are not available in this build: ${blocked}`}
 		</p>
 		<p class="stems-note" title={stemsPlanSummary(plan)}>
-			{plan.pending} of {plan.total} tracks would need separating. Nothing is queued and
-			nothing is charged.
+			{plan.pending} of {plan.total} tracks would need separating. Nothing is queued
+			{localExecutor ? '.' : ' and nothing is charged.'}
 		</p>
 		<div class="stems-actions">
-			<button class="stems-go rb-inert" disabled title={plan.transport_refusal}>
+			<button class="stems-go rb-inert" disabled title={blocked}>
 				Separate {plan.pending} tracks
 			</button>
 			<button class="stems-skip" onclick={() => onskip?.()}>Continue without stems</button>
@@ -157,8 +159,9 @@
 	{:else}
 		<p class="stems-summary" title={stemsPlanSummary(plan)}>{stemsPlanSummary(plan)}</p>
 		<p class="stems-note">
-			Separation runs on rented GPUs and is billed to the account this build is
-			configured with. It runs in the background; you can keep using the app.
+			{localExecutor
+				? 'Separation runs on this machine in the background at low priority; you can keep using the app.'
+				: 'Separation runs on rented GPUs and is billed to the account this build is configured with. It runs in the background; you can keep using the app.'}
 		</p>
 		<div class="stems-actions">
 			<button class="stems-go" disabled={busy} onclick={accept}>

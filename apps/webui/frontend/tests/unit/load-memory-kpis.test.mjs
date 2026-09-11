@@ -146,6 +146,21 @@ test('the IPC deck snapshot exposes load latency and a defensive copy of the sta
 	}
 });
 
+test('the IPC deck snapshot exposes the durable successful-load generation', () => {
+	const deck = perfIpc.deckStates[1];
+	const priorGeneration = deck.load_generation;
+	try {
+		deck.load_generation = 14;
+		assert.equal(
+			perfIpc.queryPerformanceState().decks[1].load_generation,
+			14,
+			'IPC consumers must be able to observe a completed reload after its blank state has passed'
+		);
+	} finally {
+		deck.load_generation = priorGeneration;
+	}
+});
+
 test('the IPC deck snapshot reports null stages before any load', () => {
 	const deck = perfIpc.deckStates[3];
 	const priorStages = deck.last_load_stages;

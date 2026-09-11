@@ -20,9 +20,11 @@ Regression lines:
 """
 from __future__ import annotations
 
+import json
 import shutil
 import sqlite3
 import time
+import wave
 from pathlib import Path
 
 import pytest
@@ -30,7 +32,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.analysis import store as analysis_store
+from apps.lyrics import cache as lyrics_cache
 from apps.shared.state.db import open_rw as open_state_rw
+from apps.vocals import cache as vocals_cache
+from apps.webui.server import stem_artifacts
 from apps.webui.server.routes import ingest as ingest_mod
 from apps.webui.server.routes import ingest_upload as ingest_upload_mod
 
@@ -50,6 +55,7 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr(ingest_mod, "CONFIG_PATH", tmp_path / "ingest-config.json")
     monkeypatch.setattr(ingest_mod, "INGEST_INBOX", tmp_path / "_ingest")
     monkeypatch.setattr(ingest_mod, "VOCAL_CACHE_DIR", tmp_path / "vocal-cache")
+    monkeypatch.setattr(ingest_mod, "LYRICS_CACHE_DIR", tmp_path / "lyrics-cache")
     monkeypatch.setattr(ingest_mod, "DEFAULT_STEMS_DIR", tmp_path / "stems")
     monkeypatch.setattr(ingest_mod, "open_ro", lambda: sqlite3.connect(state_db))
     monkeypatch.setattr(ingest_mod._JOBS, "current", None)
@@ -93,6 +99,32 @@ def _seed_track(app, sid, path, duration_ms=200_000, analysed=False):
         )
         conn.commit()
         conn.close()
+
+
+def _write_roformer_bundle(root: Path, stable_id: str) -> None:
+    """Write a real, aligned v3 bundle so coverage uses its production reader."""
+    bundle = root / stable_id
+    bundle.mkdir(parents=True)
+    for part in stem_artifacts.ROFORMER_PARTS:
+        with wave.open(str(bundle / f"{part}.wav"), "wb") as output:
+            output.setnchannels(2)
+            output.setsampwidth(2)
+            output.setframerate(44_100)
+            output.writeframes(b"\x00\x00" * 24)
+    (bundle / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 3,
+                "stable_id": stable_id,
+                "layout": "roformer2",
+                "model": {"name": "roformer", "version": "1"},
+                "source": {"path": "/music/source.wav", "sha256": "a" * 64},
+                "audio": {"sample_rate": 44_100, "frame_count": 12, "channels": 2},
+                "files": {"vocals": "vocals.wav", "instrumental": "instrumental.wav"},
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def _wait_refresh(client, timeout_s=600):
@@ -142,6 +174,219 @@ def test_coverage_excludes_broken_links(client, app, tmp_path):
     assert out["unreachable"] == 1
     assert out["missing"]["analysis"] == 1           # bbb only, never ccc
     assert out["missing"]["stems"] == 2
+    assert out["missing"]["vocals"] == 2
+    assert out["missing"]["lyrics"] == 2
+    assert out["corrupt"] == {"analysis": 0, "stems": 0, "vocals": 0, "lyrics": 0}
+
+
+def test_coverage_counts_a_valid_secondary_roformer_bundle(client, app, tmp_path):
+    """A RoFormer-only track is covered and never enters the stems refresh queue.
+
+    Configures the roots the same way ``create_app`` does for remote library
+    mode (``app.state.stem_roots``), not by monkeypatching the ``stem_roots``
+    helper - the route and the worker must read the SAME configured roots a
+    real deployment would set, or this test can pass while the endpoint still
+    ignores them.
+    """
+    audio = tmp_path / "real.mp3"
+    audio.write_bytes(b"x" * 4096)
+    _seed_track(app, "roformer-only", audio)
+    roformer_root = tmp_path / "stems-roformer-spike"
+    _write_roformer_bundle(roformer_root, "roformer-only")
+    app.state.stem_roots = (ingest_mod.DEFAULT_STEMS_DIR, roformer_root)
+
+    coverage = client.get("/api/v1/ingest/coverage").json()
+    targets = ingest_mod._library_targets(
+        ingest_mod._RefreshJob(0.0, []), ingest_mod._stem_roots(app)
+    )
+
+    assert coverage["missing"]["stems"] == 0
+    assert targets["stems"] == []
+
+
+def test_coverage_distinguishes_corrupt_stems(client, app, tmp_path):
+    """A stems directory load_stem_bundle rejects is corrupt, not merely missing.
+
+    Coverage keeps corrupt as a subset of missing (refresh still targets it);
+    the extra corrupt.stems count is what tells absence apart from garbage.
+    """
+    audio = tmp_path / "real.mp3"
+    audio.write_bytes(b"x" * 4096)
+    _seed_track(app, "aaa", audio)
+    stems_dir = tmp_path / "stems"
+    bundle = stems_dir / "aaa"
+    bundle.mkdir(parents=True)
+    (bundle / "manifest.json").write_text("{", encoding="utf-8")
+    app.state.stem_roots = (stems_dir,)
+
+    out = client.get("/api/v1/ingest/coverage").json()
+    assert out["on_disk"] == 1
+    assert out["missing"]["stems"] == 1
+    assert out["corrupt"]["stems"] == 1
+    assert out["corrupt"]["analysis"] == 0
+    assert out["corrupt"]["vocals"] == 0
+    assert out["corrupt"]["lyrics"] == 0
+
+
+def test_refresh_resolves_configured_stem_roots_through_the_background_worker(
+    client, app, tmp_path
+):
+    """POST /ingest/refresh must resolve ``app.state.stem_roots`` too, not just
+    GET /ingest/coverage - the route hands the roots to a background thread
+    (``_refresh_worker``), which has no ``Request`` to read them from itself.
+
+    A mutation that made ``start_refresh`` ignore the configured roots and
+    fall back to ``stem_roots(DEFAULT_STEMS_DIR)`` passed the whole suite
+    silently before this test existed: the coverage test above never drives
+    the refresh route, so nothing exercised this half of the fix.
+    """
+    audio = tmp_path / "real.mp3"
+    audio.write_bytes(b"x" * 4096)
+    _seed_track(app, "roformer-only", audio)
+    roformer_root = tmp_path / "stems-roformer-spike"
+    _write_roformer_bundle(roformer_root, "roformer-only")
+    app.state.stem_roots = (ingest_mod.DEFAULT_STEMS_DIR, roformer_root)
+
+    client.put(
+        "/api/v1/ingest/config",
+        json={"enabled": {"analysis": False, "stems": True, "vocals": False}},
+    )
+    resp = client.post("/api/v1/ingest/refresh", json={"scope": "library"})
+    assert resp.status_code == 202
+    status = _wait_refresh(client)
+
+    assert status["phase"] == "done"
+    assert any("stems: 0 missing" in line for line in status["log_tail"])
+
+
+def _vocal_worker_result(**overrides):
+    base = {
+        "schema": vocals_cache.VOCAL_CACHE_SCHEMA,
+        "source": vocals_cache.VOCAL_CACHE_SOURCE,
+        "fps": 2.0,
+        "duration_s": 120.0,
+        "coverage_pct": 41.7,
+        "regions": [{"start_s": 10.0, "end_s": 60.0, "confidence": 0.84}],
+        "params": {"hop_s": 0.5, "on_ratio": 0.1},
+        "device": "cpu",
+        "timings": {"load_s": 1.0, "separate_s": 100.0},
+        "source_sample_rate": 44100,
+        "analysis_sample_rate": 44100,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_coverage_reports_lyrics_completion(client, app, tmp_path):
+    """The lyrics dot on the browser panel reads this key - a track with a
+    REAL, valid lyrics-cache entry (written through the production
+    apps.lyrics.cache writer, not a fabricated file) must count as covered,
+    one without must count as missing, and a broken-link track must never
+    appear in either."""
+    real = tmp_path / "real.mp3"
+    real.write_bytes(b"x" * 4096)
+    _seed_track(app, "aaa", real)
+    _seed_track(app, "bbb", real)
+    _seed_track(app, "ccc", tmp_path / "gone.mp3")   # broken link
+    lyrics_dir = ingest_mod.LYRICS_CACHE_DIR
+    lyrics_dir.mkdir(parents=True)
+    lyrics_cache.write(
+        lyrics_dir / "aaa.json",
+        lyrics_cache.Lyrics(
+            stable_id="aaa", source="lrclib",
+            lines=(lyrics_cache.LyricLine(start_ms=0, text="la la"),),
+        ),
+    )
+    out = client.get("/api/v1/ingest/coverage").json()
+    assert out["on_disk"] == 2
+    assert out["missing"]["lyrics"] == 1             # bbb only, never ccc
+    assert out["corrupt"]["lyrics"] == 0             # a real entry is not corrupt
+
+
+def test_coverage_rejects_malformed_lyrics_cache_entry(client, app, tmp_path):
+    """An empty/truncated/schema-invalid lyrics-cache write (an interrupted
+    worker's leftover, exactly what a naive filename-only check would count
+    as done - the P1 bug this coverage path used to have) must count as
+    MISSING, never as complete."""
+    real = tmp_path / "real.mp3"
+    real.write_bytes(b"x" * 4096)
+    _seed_track(app, "aaa", real)
+    lyrics_dir = ingest_mod.LYRICS_CACHE_DIR
+    lyrics_dir.mkdir(parents=True)
+    (lyrics_dir / "aaa.json").write_text("{}")       # malformed: no schema
+    out = client.get("/api/v1/ingest/coverage").json()
+    assert out["missing"]["lyrics"] == 1
+    assert out["corrupt"]["lyrics"] == 1             # distinct from ordinary missing
+
+
+def test_coverage_rejects_identity_mismatched_lyrics_cache_entry(client, app, tmp_path):
+    """A lyrics-cache file named for one stable_id but whose own contents
+    describe a DIFFERENT stable_id (the same identity-mismatch
+    LyricsService.fetch guards against) must not count that filename as
+    complete."""
+    real = tmp_path / "real.mp3"
+    real.write_bytes(b"x" * 4096)
+    _seed_track(app, "aaa", real)
+    lyrics_dir = ingest_mod.LYRICS_CACHE_DIR
+    lyrics_dir.mkdir(parents=True)
+    lyrics_cache.write(
+        lyrics_dir / "aaa.json",
+        lyrics_cache.Lyrics(
+            stable_id="not-aaa", source="lrclib",
+            lines=(lyrics_cache.LyricLine(start_ms=0, text="la la"),),
+        ),
+    )
+    out = client.get("/api/v1/ingest/coverage").json()
+    assert out["missing"]["lyrics"] == 1
+    assert out["corrupt"]["lyrics"] == 1             # identity mismatch is corruption
+
+
+def test_coverage_reports_vocals_completion(client, app, tmp_path):
+    """The vocals dot: a REAL vocal-cache entry (written through the
+    production apps.vocals.cache writer, valid for the on-disk audio file)
+    counts as covered."""
+    real = tmp_path / "real.mp3"
+    real.write_bytes(b"x" * 4096)
+    _seed_track(app, "aaa", real)
+    _seed_track(app, "bbb", real)
+    vocal_dir = ingest_mod.VOCAL_CACHE_DIR
+    vocals_cache.write_entry(vocal_dir / "aaa.json", _vocal_worker_result(), real)
+    out = client.get("/api/v1/ingest/coverage").json()
+    assert out["missing"]["vocals"] == 1             # bbb only
+    assert out["corrupt"]["vocals"] == 0             # a real entry is not corrupt
+
+
+def test_coverage_rejects_malformed_vocal_cache_entry(client, app, tmp_path):
+    """Same P1 hazard as lyrics: a filename alone is not proof of work.
+    A corrupt/invalid vocal-cache JSON must count as missing."""
+    real = tmp_path / "real.mp3"
+    real.write_bytes(b"x" * 4096)
+    _seed_track(app, "aaa", real)
+    vocal_dir = ingest_mod.VOCAL_CACHE_DIR
+    vocal_dir.mkdir(parents=True)
+    (vocal_dir / "aaa.json").write_text("not even json")
+    out = client.get("/api/v1/ingest/coverage").json()
+    assert out["missing"]["vocals"] == 1
+    assert out["corrupt"]["vocals"] == 1             # distinct from ordinary missing
+
+
+def test_coverage_rejects_stale_vocal_cache_entry(client, app, tmp_path):
+    """A vocal-cache entry computed for a PRIOR generation of the audio file
+    (the file was since replaced, so its audio_signature no longer matches)
+    must count as missing, exactly like the live /anlz merge path treats it -
+    never silently served as still-complete."""
+    real = tmp_path / "real.mp3"
+    real.write_bytes(b"x" * 4096)
+    _seed_track(app, "aaa", real)
+    vocal_dir = ingest_mod.VOCAL_CACHE_DIR
+    vocals_cache.write_entry(vocal_dir / "aaa.json", _vocal_worker_result(), real)
+    real.write_bytes(b"y" * 8192)                    # replaced -> new signature
+    out = client.get("/api/v1/ingest/coverage").json()
+    assert out["missing"]["vocals"] == 1
+    # THE distinction that matters: stale is not corrupt. A track whose audio
+    # was simply replaced needs a routine re-run, not an alarm - conflating
+    # the two would make every stale entry scream as if it were corruption.
+    assert out["corrupt"]["vocals"] == 0
 
 
 # ----- refresh job ----------------------------------------------------------

@@ -62,6 +62,7 @@ export interface SmartlistTrackRow {
 	preview_max: number | null;
 	file_exists: boolean;
 	is_streaming: boolean;
+	is_remote?: boolean;
 	vocals: Vocals;
 	stems: StemSummary;
 }

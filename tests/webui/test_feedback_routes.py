@@ -116,6 +116,24 @@ def test_todo_empty_title_422s(fb: TestClient) -> None:
     assert fb.post("/api/v1/feedback/todos", json={"title": ""}).status_code == 422
 
 
+@pytest.mark.requirement("FB-02")
+def test_todo_patch_rejects_explicit_null_title_and_does_not_advertise_it(
+    fb: TestClient,
+) -> None:
+    todo = fb.post("/api/v1/feedback/todos", json={"title": "original"}).json()
+
+    response = fb.patch(f"/api/v1/feedback/todos/{todo['id']}", json={"title": None})
+
+    assert response.status_code == 422, response.text
+    title_schema = fb.get("/openapi.json").json()["components"]["schemas"][
+        "TodoPatchIn"
+    ]["properties"]["title"]
+    assert "anyOf" not in title_schema, (
+        "if title accepts null in OpenAPI then typed clients can send a request "
+        "the server cannot store - broken"
+    )
+
+
 # ----- comments -----------------------------------------------------------
 @pytest.mark.requirement("FB-03")
 def test_comment_roundtrip_and_bounds(fb: TestClient) -> None:
@@ -127,11 +145,21 @@ def test_comment_roundtrip_and_bounds(fb: TestClient) -> None:
             "anchor": "#vibe-meter",
             "page": "/performance",
             "text": "this overlaps the clock",
+            "ui": "chrome-loop",
+            "viewport_width": 1280,
+            "viewport_height": 800,
         },
     )
     assert r.status_code == 201
     pin = r.json()
     assert pin["build"]["git_sha"]
+    assert pin["environment"] == {
+        "ui": "chrome-loop",
+        "viewport_width": 1280,
+        "viewport_height": 800,
+        "machine": "test-host",
+        "release_version": "0.1.0",
+    }
 
     listed = fb.get("/api/v1/feedback/comments").json()["comments"]
     assert [c["id"] for c in listed] == [pin["id"]]
@@ -176,7 +204,15 @@ def test_archive_moves_never_deletes(fb: TestClient) -> None:
     )
     fb.post(
         "/api/v1/feedback/comments",
-        json={"x_pct": 1, "y_pct": 1, "page": "/performance", "text": "pin"},
+        json={
+            "x_pct": 1,
+            "y_pct": 1,
+            "page": "/performance",
+            "text": "pin",
+            "ui": "chrome-loop",
+            "viewport_width": 1280,
+            "viewport_height": 800,
+        },
     )
     fb.put("/api/v1/feedback/general", json={"text": "general thoughts"})
 

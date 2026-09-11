@@ -10,7 +10,10 @@ from __future__ import annotations
 import pytest
 
 from scripts.review_coverage import (
+    CHECKLESS_REVIEWERS,
     EXPECTED_REVIEWERS,
+    REVIEWER_LOGINS,
+    ReviewerEvidence,
     ReviewerVerdict,
     TriageError,
     classify_reviewer,
@@ -104,8 +107,6 @@ def test_triage_error_is_distinct_from_a_verdict() -> None:
 # ----- artifacts, not status ---------------------------------------------
 # Added Tue 1 Sep 2026 after the status layer alone proved insufficient live.
 
-from scripts.review_coverage import ReviewerEvidence  # noqa: E402
-
 
 def _evid(reviews: int = 0, inline: int = 0, bodies: tuple[str, ...] = ()) -> ReviewerEvidence:
     return ReviewerEvidence(reviews, inline, bodies)
@@ -181,10 +182,24 @@ def test_exempt_reviewers_are_reviewers_we_actually_expect() -> None:
 from scripts.review_coverage import partition_verdicts  # noqa: E402
 
 
-def _verdicts(checks: list[dict[str, str]]) -> list[ReviewerVerdict]:
+def _verdicts(
+    checks: list[dict[str, str]],
+    names: tuple[str, ...] = ("CodeRabbit", "Devin Review"),
+) -> list[ReviewerVerdict]:
     """Real verdicts, produced by the production classifier from real check
-    payload shapes. No stand-in stands in front of `classify_reviewer`."""
-    return [classify_reviewer(name, checks) for name in EXPECTED_REVIEWERS]
+    payload shapes. No stand-in stands in front of `classify_reviewer`.
+
+    `names` defaults to two representative CHECK-BASED reviewer names, not to
+    the live `EXPECTED_REVIEWERS` (Codex-only and checkless since issue #1016,
+    Thu 3 Sep 2026). The exemption mechanism this section pins is generic over
+    any reviewer that posts a check, and exercising it needs a name that CAN
+    reach `pending` and outage states, which a checkless entry never can (see
+    CHECKLESS_REVIEWERS in scripts/review_coverage.py). The default parameter
+    binding under test -- `partition_verdicts` reading production
+    `KNOWN_UNAVAILABLE_REVIEWERS` when no policy is passed -- does not depend
+    on which names are currently expected either.
+    """
+    return [classify_reviewer(name, checks) for name in names]
 
 
 def test_an_exempt_reviewer_that_is_still_running_still_blocks() -> None:
@@ -406,3 +421,104 @@ def test_a_restored_reviewer_is_not_exempted_by_its_own_historical_outage_commen
     unavailable, unreviewed, _ = partition_verdicts(verdicts)
     assert [v.name for v in unavailable] == []
     assert "Devin Review" in [v.name for v in unreviewed]
+
+
+# ----- reviewer coverage policy, issue #1016 (Thu 3 Sep 2026) -------------
+# Codex in; CodeRabbit and Devin out of EXPECTED_REVIEWERS. CodeRabbit is
+# rate-limited on every PR and Devin's trial expired at #530, so neither
+# produces a real review to require; CodeRabbit's auto-review is disabled via
+# the committed .coderabbit.yaml instead of the app dashboard.
+
+
+def test_codex_sol_and_claude_are_the_expected_reviewers() -> None:
+    """Sol joined Fri 5 Sep 2026 (issue #1211) and Claude Sun 6 Sep 2026, each
+    as an ALTERNATIVE to the others rather than as a further requirement: see
+    `review_sol.substitute_alternatives` and this suite's companions
+    tests/scripts/test_review_sol.py and tests/scripts/test_review_claude.py,
+    which pin that any one alone covers the set and that none reviewing still
+    fails."""
+    assert EXPECTED_REVIEWERS == ("Codex", "Sol", "Claude")
+    assert "CodeRabbit" not in EXPECTED_REVIEWERS
+    assert "Devin Review" not in EXPECTED_REVIEWERS
+
+
+def test_codex_alias_maps_to_its_real_bot_login() -> None:
+    """`chatgpt-codex-connector` is the login `_matches` needs, verified live
+    (#1049, #1051, Thu 3 Sep 2026): `pulls/<n>/reviews` carries a real
+    `COMMENTED` review from `chatgpt-codex-connector[bot]`."""
+    assert REVIEWER_LOGINS["Codex"] == ("chatgpt-codex-connector",)
+
+
+# ----- Codex is checkless: evidence is the only instrument ----------------
+# Confirmed live (#1049, #1051, Thu 3 Sep 2026): `gh pr checks` lists no
+# "Codex" row at all, even on a PR carrying a real Codex review. A reviewer
+# that never posts a check-run cannot be classified by the check-based path,
+# which reads a permanently absent check as "no check reported" -- exactly
+# indistinguishable from a reviewer that never ran.
+
+
+def test_codex_is_registered_checkless() -> None:
+    assert "Codex" in CHECKLESS_REVIEWERS
+
+
+def test_codex_present_is_recognized_from_evidence_alone() -> None:
+    """THE CONTROL THAT MATTERS for the checkless path: an empty checks list
+    (Codex's permanent live shape) must not by itself mean NOT REVIEWED. Body
+    text taken from a real captured Codex finding, tests/fixtures/review_threads/
+    pr-576.json ('BLOCKING Validate a terminal disposition before clearing
+    the gate')."""
+    body = (
+        "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)"
+        "</sub></sub>  BLOCKING Validate a terminal disposition before clearing "
+        "the gate**\n\nWhen a thread is merely resolved without a reply..."
+    )
+    verdict = classify_reviewer("Codex", [], _evid(reviews=1, bodies=(body,)))
+    assert verdict.reviewed is True
+    assert "2 artifact" in verdict.reason
+
+
+def test_codex_absent_is_not_a_pass() -> None:
+    """The other half of the control: zero artifacts on the checkless path is
+    still NOT REVIEWED, exactly as a status-based MISS is for CodeRabbit/Devin.
+    An always-True checkless classifier would satisfy the test above and be
+    worthless; this is what rules that out."""
+    verdict = classify_reviewer("Codex", [], _evid())
+    assert verdict.reviewed is False
+    assert "no status check to fall back on" in verdict.reason
+
+
+def test_codex_ignores_any_check_payload_since_it_never_posts_one() -> None:
+    """A checkless reviewer takes the evidence path even when `checks` is
+    non-empty (e.g. carrying an unrelated CI job named "Codex" by coincidence
+    is not something this repo has, but the branch must not depend on
+    `checks` being empty to behave correctly)."""
+    checks = [_check("Codex", "some unrelated status", bucket="pending")]
+    verdict = classify_reviewer("Codex", checks, _evid(reviews=1, bodies=("finding",)))
+    assert verdict.reviewed is True
+    assert verdict.in_progress is False, "the check-based pending bucket must not be consulted"
+
+
+def test_codex_inline_comments_alone_are_valid_evidence() -> None:
+    verdict = classify_reviewer("Codex", [], _evid(inline=3))
+    assert verdict.reviewed is True
+
+
+def test_codex_a_reported_skip_in_the_body_still_fails() -> None:
+    """Codex has never been observed to self-report a skip, but the checkless
+    path scans bodies for the same NOT_REVIEWED_MARKERS vocabulary the
+    check-based path watches for, so an artifact is not automatically a pass
+    if its own text says the reviewer did not really look."""
+    verdict = classify_reviewer("Codex", [], _evid(reviews=1, bodies=("review skipped: no diff",)))
+    assert verdict.reviewed is False
+
+
+def test_checkless_path_ignored_for_a_non_checkless_name() -> None:
+    """Guards the guard: a name NOT in CHECKLESS_REVIEWERS must still take the
+    check-based path even when it is handed evidence, so CodeRabbit and Devin
+    (still parsed by review_thread_parse.py for triage, just no longer
+    EXPECTED) keep their existing pre-#1016 behavior verbatim."""
+    assert "CodeRabbit" not in CHECKLESS_REVIEWERS
+    assert "Devin Review" not in CHECKLESS_REVIEWERS
+    verdict = classify_reviewer("CodeRabbit", [], _evid(reviews=1, bodies=("x",)))
+    assert verdict.reviewed is False
+    assert "no check" in verdict.reason

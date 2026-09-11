@@ -10,10 +10,20 @@ const REAL_PQTZ_BEATS = [
 	{ n: 4, bpm: 127, t: 1.553 }
 ];
 let audio;
+let presentation;
 let headphones;
 let computeFollowerSyncPlan;
+// The pure SLIP hidden-timeline math lives in the player's pure leaf
+// (transport/schedule-math.ts); the two timeline-shaped helpers
+// (presentedSlipAnchor, slipTempoBoundariesAfterAnchor) live in
+// transport/presentation.ts and reach here through the engine barrel.
+let slip;
 let disposeAudioResources;
 let beatLoopFitsWithinDuration;
+let shiftLiveBeatLoopRangeMs;
+let targetWithinShiftedLiveLoopMs;
+let loopExitOnSeekMs;
+let quantizedSeekDecisionMs;
 
 // The engine reaches the daemon through the generated OpenAPI client, which
 // builds a `new Request(url)` before any stub sees it. Node has no document to
@@ -26,12 +36,20 @@ before(async () => {
 	audio = await loadTypeScriptModule('src/lib/rb/audio-engine.svelte.ts', {
 		viteApiBase: API_BASE
 	});
+	presentation = await loadTypeScriptModule('src/lib/player/transport/presentation.ts');
 	headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
 	({ disposeAudioResources } = await loadTypeScriptModule(
 		'src/lib/rb/audio-resource-disposal.ts'
 	));
 	({ computeFollowerSyncPlan } = await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts'));
-	({ beatLoopFitsWithinDuration } = await loadTypeScriptModule('src/lib/player/transport/loops.ts'));
+	slip = await loadTypeScriptModule('src/lib/player/transport/slip-anchor.ts');
+	({
+		beatLoopFitsWithinDuration,
+		shiftLiveBeatLoopRangeMs,
+		targetWithinShiftedLiveLoopMs,
+		loopExitOnSeekMs,
+		quantizedSeekDecisionMs
+	} = await loadTypeScriptModule('src/lib/player/transport/loops.ts'));
 });
 
 test('controller defaults enable quantize, Beat Sync, and Master Tempo with no static master', () => {
@@ -422,12 +440,12 @@ test('KEY SYNC reads effective offsets from the last output-presented schedule o
 	);
 
 	assert.ok(
-		Math.abs(audio.presentedEffectiveAudibleSemitones(timeline) - (12 * Math.log2(1.1) + 2)) <
+		Math.abs(presentation.presentedEffectiveAudibleSemitones(timeline) - (12 * Math.log2(1.1) + 2)) <
 			1e-12,
 		'the unpresented revision at contextTime 10 must not affect KEY SYNC'
 	);
 	assert.throws(
-		() => audio.presentedEffectiveAudibleSemitones(audio.createPresentedTransportTimeline(0)),
+		() => presentation.presentedEffectiveAudibleSemitones(audio.createPresentedTransportTimeline(0)),
 		/presentation truth/i
 	);
 });
@@ -471,6 +489,22 @@ test('KEY SYNC uses desired controls for a fresh paused target and output truth 
 		'the audible master must ignore its render/control settings'
 	);
 	assert.equal(Number.isInteger(audio.deriveKeySyncNudge('8A', '9B', targetEffective, masterEffective, 2)), true);
+	const targetManualShift = audio.deriveKeySyncTargetManualShift(
+		'8A',
+		'10A',
+		targetEffective,
+		masterEffective,
+		2
+	);
+	assert.equal(Number.isInteger(targetManualShift), true);
+	assert.ok(
+		targetManualShift >= -12 && targetManualShift <= 12,
+		'authoritative target keeps an existing manual shift within the real DSP range'
+	);
+});
+
+test('KEY SYNC preview is explicitly unavailable with no elected master', () => {
+	assert.equal(audio.keySyncPreview(1), null);
 });
 
 test('KEY SYNC supports two fresh paused loaded decks but rejects live or pending decks without presentation truth', () => {
@@ -562,17 +596,17 @@ test('key shift composes with Master Tempo compensation in the native Signalsmit
 });
 
 test('Slip hidden playhead advances linearly from its acknowledged loop schedule without wrapping', () => {
-	const anchor = audio.createSlipAnchor({
+	const anchor = slip.createSlipAnchor({
 		startContextTime: 10,
 		startPositionSec: 30,
 		tempoRatio: 1.25,
 		durationSec: 120
 	});
-	assert.equal(audio.slipHiddenPositionSec(anchor, 10), 30);
-	assert.equal(audio.slipHiddenPositionSec(anchor, 14), 35);
-	assert.equal(audio.slipHiddenPositionSec(anchor, 200), 120);
+	assert.equal(slip.slipHiddenPositionSec(anchor, 10), 30);
+	assert.equal(slip.slipHiddenPositionSec(anchor, 14), 35);
+	assert.equal(slip.slipHiddenPositionSec(anchor, 200), 120);
 	assert.throws(
-		() => audio.createSlipAnchor({ startContextTime: 1, startPositionSec: 2, tempoRatio: 0, durationSec: 3 }),
+		() => slip.createSlipAnchor({ startContextTime: 1, startPositionSec: 2, tempoRatio: 0, durationSec: 3 }),
 		/tempoRatio must be positive/i
 	);
 });
@@ -615,7 +649,7 @@ test('SLIP activation carries acknowledged future tempo boundaries through loop 
 	const boundaries = audio.slipTempoBoundariesAfterAnchor(timeline, anchor);
 	assert.deepEqual(boundaries, [{ startContextTime: 15, tempoRatio: 1.5 }]);
 	assert.equal(
-		audio.slipHiddenPositionWithTempoBoundaries(anchor, boundaries, 17),
+		slip.slipHiddenPositionWithTempoBoundaries(anchor, boundaries, 17),
 		18,
 		'loop release at 17s resumes 4s at the old rate plus 2s at 1.5x'
 	);
@@ -663,15 +697,167 @@ test('KEY SYNC uses the same presented manual-shift baseline for pending desired
 	assert.equal(target, 2, 'the second unpresented command must not compound the pending +1 into +3');
 });
 test('Slip activation is limited to playing decks with SLIP enabled', () => {
-	assert.equal(audio.shouldActivateSlip(true, true), true);
-	assert.equal(audio.shouldActivateSlip(false, true), false);
-	assert.equal(audio.shouldActivateSlip(true, false), false);
+	assert.equal(slip.shouldActivateSlip(true, true), true);
+	assert.equal(slip.shouldActivateSlip(false, true), false);
+	assert.equal(slip.shouldActivateSlip(true, false), false);
 });
 
 test('central seek quantization snaps to real PQTZ and missing grids fail explicitly', () => {
 	assert.equal(audio.quantizedPositionMs(REAL_PQTZ_BEATS, 590, true), 608);
 	assert.equal(audio.quantizedPositionMs(REAL_PQTZ_BEATS, 590, false), 590);
 	assert.throws(() => audio.quantizedPositionMs([], 590, true), /beat grid/i);
+});
+
+/**
+ * Pin a67bafbfc4b0 follow-up (bot review P1): the deck's selected quantize
+ * grid (1/4/8 beats) must actually change what a seek/cue/loop snaps to, not
+ * just sit in deckStates unread. A regular 120bpm, 8-bar grid (32 beats)
+ * gives every-beat, every-bar-downbeat, and every-OTHER-bar-downbeat targets
+ * that all differ at position 5.4s: nearest beat 5.5, nearest downbeat 6.0,
+ * nearest 2-bar downbeat 4.0. If gridBeats stopped being threaded through
+ * (e.g. a caller reverting to the 1-only default) this test would see grid 4
+ * and grid 8 collapse back onto the grid-1 answer.
+ */
+function _regularGrid(bpm, beatCount) {
+	const beatIntervalSec = 60 / bpm;
+	return Array.from({ length: beatCount }, (_, index) => ({
+		n: (index % 4) + 1,
+		bpm,
+		t: index * beatIntervalSec
+	}));
+}
+const GRID_120BPM_8BAR = _regularGrid(120, 32);
+
+test('quantizedPositionMs snaps to a different beat depending on the selected grid (1 vs 4 vs 8)', () => {
+	assert.equal(audio.quantizedPositionMs(GRID_120BPM_8BAR, 5400, true, 1), 5500);
+	assert.equal(audio.quantizedPositionMs(GRID_120BPM_8BAR, 5400, true, 4), 6000);
+	assert.equal(audio.quantizedPositionMs(GRID_120BPM_8BAR, 5400, true, 8), 4000);
+	// Unchanged when quantize is off, regardless of which grid is selected.
+	assert.equal(audio.quantizedPositionMs(GRID_120BPM_8BAR, 5400, false, 8), 5400);
+	// Omitting gridBeats still defaults to the old grid-1 behaviour.
+	assert.equal(audio.quantizedPositionMs(GRID_120BPM_8BAR, 5400, true), 5500);
+});
+
+test('quantizedLoopEndpointsMs snaps both endpoints to the selected grid, not always grid-1', () => {
+	const loop = { in_ms: 5400, out_ms: 9900 };
+	assert.deepEqual(audio.quantizedLoopEndpointsMs(GRID_120BPM_8BAR, loop, true, 1), {
+		in_ms: 5500,
+		out_ms: 10000
+	});
+	assert.deepEqual(audio.quantizedLoopEndpointsMs(GRID_120BPM_8BAR, loop, true, 4), {
+		in_ms: 6000,
+		out_ms: 10000
+	});
+	assert.deepEqual(audio.quantizedLoopEndpointsMs(GRID_120BPM_8BAR, loop, true, 8), {
+		in_ms: 4000,
+		out_ms: 8000
+	});
+});
+
+/**
+ * Pin 334a50710ef0 defect A: a beat-jump target landing exactly on a shifted
+ * live loop's EXCLUSIVE out boundary must not disengage the loop. This is
+ * the exact composition `quantizedSeek` runs for beatJump's in-loop branch:
+ * shift the loop, pull the target off the exclusive boundary
+ * (targetWithinShiftedLiveLoopMs), then decide whether to exit
+ * (loopExitOnSeekMs) using the FINAL seek target quantizedSeek would use.
+ *
+ * A regular 4/4, 500ms/beat, 4-bar grid (16 beats): a 4-beat loop shifted by
+ * 8 beats lands at {in:4000, out:6000}; the beat jump's raw target is chosen
+ * to equal that new out (6000) exactly, so targetWithinShiftedLiveLoopMs
+ * pulls it back one real beat to 5500.
+ */
+const GRID_4BAR_500MS = _regularGrid(120, 16);
+
+test('a beat jump exactly at a shifted loop out boundary must not disengage the loop', () => {
+	const shiftedLoop = shiftLiveBeatLoopRangeMs(GRID_4BAR_500MS, { in_ms: 0, out_ms: 2000 }, 8, 10_000);
+	assert.deepEqual(shiftedLoop, { in_ms: 4000, out_ms: 6000 });
+	const inLoopTargetMs = targetWithinShiftedLiveLoopMs(GRID_4BAR_500MS, 6000, shiftedLoop);
+	assert.equal(inLoopTargetMs, 5500, 'exclusive out must resolve to the preceding real beat');
+	const engagedLoop = { ...shiftedLoop, engaged: true };
+
+	// This is the exact call quantizedSeek makes (production quantizedSeekDecisionMs,
+	// not a reimplementation): gridBeats=4 is the deck's own coarser quantize
+	// grid (nearest bar downbeat). Without skipGridQuantize, 5500ms is nearer
+	// the 6000ms downbeat than the 4000ms one, so the deck's own coarser grid
+	// would resnap the already-safe in-loop target right back onto the
+	// excluded out boundary and exit the loop - the reproduction of the bug.
+	const withoutFix = quantizedSeekDecisionMs(GRID_4BAR_500MS, inLoopTargetMs, 4, false, engagedLoop);
+	assert.equal(withoutFix.targetMs, 6000, 'the coarse grid resnaps the safe target back onto the out boundary');
+	assert.equal(withoutFix.exitLoop, true, 'the pre-fix composition disengages the loop - defect A reproduction');
+
+	// beatJump's in-loop branch calls quantizedSeek with skipGridQuantize=true,
+	// so the coarse-grid re-quantization above never runs and the exact
+	// in-loop target reaches the exit decision unchanged.
+	const withFix = quantizedSeekDecisionMs(GRID_4BAR_500MS, inLoopTargetMs, 4, true, engagedLoop);
+	assert.equal(withFix.targetMs, 5500, 'skipGridQuantize passes the exact beat-jump target through unchanged');
+	assert.equal(withFix.exitLoop, false, 'skipping the coarse re-quantize keeps the beat jump inside the shifted loop');
+
+	// quantizedSeekDecisionMs delegates its exit call to loopExitOnSeekMs - assert
+	// the two agree directly on both targets rather than trusting it silently.
+	assert.equal(loopExitOnSeekMs(withoutFix.targetMs, engagedLoop), withoutFix.exitLoop);
+	assert.equal(loopExitOnSeekMs(withFix.targetMs, engagedLoop), withFix.exitLoop);
+});
+
+// Blinded-reviewer P0, pin 334a50710ef0: defect A resurfaces for exactly the
+// loops defect B exists to preserve. beatJumpTargetMs always returns a
+// grid-EXACT time, but a preserved manual endpoint can be off-grid - an
+// exact-equality check against loop.out_ms (the pre-fix contract) can never
+// fire for an off-grid out, and the mirrored case (an off-grid in) was never
+// checked at all. Real PQTZ grid, drifting BPM, same fixture as
+// deck-loop-beatjump.test.mjs: beats at 135/608/1080/1553/2040/2530/3030/3540/4060ms.
+const DRIFTING_GRID_FOR_BOUNDARY = [
+	{ n: 1, bpm: 127, t: 0.135 },
+	{ n: 2, bpm: 127, t: 0.608 },
+	{ n: 3, bpm: 127, t: 1.08 },
+	{ n: 4, bpm: 127, t: 1.553 },
+	{ n: 1, bpm: 126, t: 2.04 },
+	{ n: 2, bpm: 126, t: 2.53 },
+	{ n: 3, bpm: 126, t: 3.03 },
+	{ n: 4, bpm: 126, t: 3.54 },
+	{ n: 1, bpm: 125, t: 4.06 }
+];
+
+test('a forward beat jump onto an off-grid loop-out must not disengage the loop', () => {
+	// out_ms sits 10ms EARLY of its nearest real beat (3540ms) - a manual
+	// nudge preserved by defect B's fix. The beat jump's own target is always
+	// grid-exact, so it lands on 3540 itself, never on the off-grid 3530.
+	const shiftedLoop = { in_ms: 1553, out_ms: 3530 };
+
+	// Pre-fix contract: only an EXACT match against loop.out_ms pulled the
+	// target back. 3540 !== 3530, so the exact-equality check never fires and
+	// the grid-exact target passes straight through.
+	assert.equal(
+		loopExitOnSeekMs(3540, { ...shiftedLoop, engaged: true }),
+		true,
+		'an uncorrected grid-exact target 10ms past an off-grid out disengages the loop - the P0 reproduction'
+	);
+
+	// Fixed contract: targetWithinShiftedLiveLoopMs compares against the real
+	// (possibly off-grid) out_ms with < / >=, not equality, so it still pulls
+	// back to the preceding real beat (3030ms).
+	const correctedMs = targetWithinShiftedLiveLoopMs(DRIFTING_GRID_FOR_BOUNDARY, 3540, shiftedLoop);
+	assert.equal(correctedMs, 3030, 'must pull back to the last real beat before the off-grid out, not 3540');
+	assert.equal(loopExitOnSeekMs(correctedMs, { ...shiftedLoop, engaged: true }), false);
+});
+
+test('a backward beat jump onto an off-grid loop-in must not disengage the loop', () => {
+	// in_ms sits 10ms LATE of its nearest real beat (1553ms) - the symmetric
+	// manual nudge. The beat jump's own target is grid-exact, so a backward
+	// jump lands on 1553 itself, never on the off-grid 1563.
+	const shiftedLoop = { in_ms: 1563, out_ms: 3540 };
+
+	// Pre-fix contract had no in-side correction at all: 1553 passes straight
+	// through and is strictly less than the off-grid in (1563).
+	assert.equal(
+		loopExitOnSeekMs(1553, { ...shiftedLoop, engaged: true }),
+		true,
+		'an uncorrected grid-exact target 10ms before an off-grid in disengages the loop - the symmetric P0 case'
+	);
+
+	const correctedMs = targetWithinShiftedLiveLoopMs(DRIFTING_GRID_FOR_BOUNDARY, 1553, shiftedLoop);
+	assert.equal(correctedMs, 2040, 'must pull forward to the first real beat at or after the off-grid in, not 1553');
+	assert.equal(loopExitOnSeekMs(correctedMs, { ...shiftedLoop, engaged: true }), false);
 });
 
 test('paused seek produces one frozen UI and runtime clock position', () => {
@@ -1455,7 +1641,10 @@ test('analysis retrieval failure rejects before an unusable deck candidate can p
 				{ status: 200, headers: { 'content-type': 'application/json' } }
 			);
 		}
-		if (url.endsWith('/anlz?points=38400')) {
+		// includes(), not endsWith(): fetchAnlz appends a `&gen=` cache-buster
+		// (anlz-fetch-generation.ts, PARITY-02 discussion_r3921839825) after
+		// the points param.
+		if (url.includes('/anlz?points=38400')) {
 			return new Response(
 				JSON.stringify({
 					detail: { code: 'ANALYSIS_NOT_FOUND', message: 'track has no analysis' }

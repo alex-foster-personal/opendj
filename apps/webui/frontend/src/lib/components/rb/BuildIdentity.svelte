@@ -232,9 +232,9 @@
 	{#if expanded}
 		<dl class="detail">
 			<dt
-				title="The product this engine believes it is packaged as, from the payload manifest. Per-lane builds carry different product names and bundle identifiers, so this is how two installed copies are told apart."
+				title="Version identities for the engine and the surface running this page. The surface says whether feedback came from the Chrome dev loop or a packaged DMG app."
 			>
-				app
+				app versioning:
 			</dt>
 			<dd>
 				{#if engine.kind === 'ok'}
@@ -244,6 +244,15 @@
 					</span>
 				{:else}
 					<span class="reason">{engine.kind === 'loading' ? 'reading...' : engine.reason}</span>
+				{/if}
+				{#if shell.kind === 'absent'}
+					<span class="meta">browser identity: Chrome dev loop</span>
+				{:else if shell.kind === 'ok'}
+					<span class="meta">DMG app version: v{shell.value.app_version ?? UNKNOWN}</span>
+				{:else if shell.kind === 'fault'}
+					<span class="reason">DMG app version unavailable: {shell.reason}</span>
+				{:else}
+					<span class="reason">DMG app version unavailable: reading...</span>
 				{/if}
 			</dd>
 

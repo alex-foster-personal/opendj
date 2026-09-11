@@ -214,9 +214,9 @@ def _write_tracks(
         else:
             report.tracks_unchanged += 1
         report.tier_counts[tier] = report.tier_counts.get(tier, 0) + 1
-        # No set_field call anywhere in this loop, and that is the honest
-        # part: a folder import knows no bpm, no key and no rating, so it
-        # writes none and says so.
+        _write_file_tag_metadata(writer, stable_id, metadata)
+        # A folder import knows no bpm, no key and no rating. It retains only
+        # genre and comment read from the file tags, with explicit provenance.
         report.tracks_without_analysis += 1
 
         if on_progress is not None:
@@ -261,6 +261,27 @@ def _title(
 def _artists(metadata: audio_files.AudioMetadata | None) -> list[str]:
     artist = metadata.artist if metadata is not None else None
     return [artist] if artist else []
+
+
+def _write_file_tag_metadata(
+    writer: StateWriter,
+    stable_id: str,
+    metadata: audio_files.AudioMetadata | None,
+) -> None:
+    """Persist the non-analysis file tags needed by unmapped browser rows."""
+    if metadata is None:
+        return
+    modified_at = _dt.datetime.now(_dt.UTC).isoformat()
+    for field_name, value in (
+        ("genre", metadata.genre),
+        ("comments", metadata.comment),
+    ):
+        if value is None:
+            continue
+        writer.set_field(
+            stable_id, field_name, value, source="inferred",
+            confidence=0.7, modified_at=modified_at,
+        )
 
 
 # ----- CLI ---------------------------------------------------------------

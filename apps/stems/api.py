@@ -68,6 +68,7 @@ class StemsPlanOut(BaseModel):
 
     tier: str
     tier_name: str
+    executor: str = Field(description="modal farm or local on-device worker")
     # THE DENOMINATOR, spelled out. pending + ready + unavailable == total.
     total: int = Field(description="library rows carrying a file path")
     pending: int = Field(description="audio on disk, no bundle yet: the work")
@@ -86,46 +87,17 @@ class StemsPlanOut(BaseModel):
         default=None,
         description="why a run cannot start on this build; null when it can",
     )
+    local_refusal: str | None = Field(
+        default=None,
+        description="why local stems are inert on this build; null when allowed",
+    )
 
 
 def stems_transport_state() -> tuple[str, str | None]:
-    """The build's GPU transport, and why it cannot be used (or None).
+    """Re-export for callers that still import from the plan module."""
+    from apps.stems.transport_state import stems_transport_state as _state
 
-    Asks the transport's OWN preflight rather than re-deriving the rules here,
-    so the answer the prompt shows and the answer the worker hits are the same
-    code. A build with no relay base and no identity token cannot separate
-    anything, and saying so up front is the difference between an honest inert
-    step and a job that is accepted, queued, and then dies on a credential the
-    tester was never given.
-
-    Imported locally: the relay client pulls httpx, and the plan endpoint is on
-    the engine boot path.
-    """
-    from apps.stems.job import (
-        DEFAULT_TRANSPORT,
-        StemsJobPayloadError,
-        resolve_transport,
-    )
-
-    try:
-        transport = resolve_transport()
-    except StemsJobPayloadError as exc:
-        # A misconfigured transport env is itself a refusal, and naming it is
-        # more useful than pretending the default applies.
-        return DEFAULT_TRANSPORT, str(exc)
-    if transport != "relay":
-        # 'direct' is opt-in through MDT_STEMS_TRANSPORT and means the operator
-        # deliberately supplied a Modal credential on this machine. The worker
-        # verifies it for real; there is nothing to preflight from here.
-        return transport, None
-    from apps.stems.relay.client import RelayUnavailable, identity_token, relay_base_url
-
-    try:
-        relay_base_url()
-        identity_token()
-    except RelayUnavailable as exc:
-        return transport, str(exc)
-    return transport, None
+    return _state()
 
 
 def _data_dir(request: Request) -> Path:
@@ -138,12 +110,30 @@ def _data_dir(request: Request) -> Path:
 @router.get("/plan", response_model=StemsPlanOut)
 def get_stems_plan(
     request: Request,
-    tier: Annotated[str, Query(description="Modal rung: S, M or L")] = DEFAULT_TIER,
+    tier: Annotated[
+        str,
+        Query(description="Modal rung S/M/L, or LOCAL when local-only"),
+    ] = DEFAULT_TIER,
 ) -> dict[str, Any]:
-    if tier not in MODAL_TIER_KEYS:
+    from apps.stems.local_gate import local_stems_gate
+    from apps.stems.routing import (
+        EXECUTOR_LOCAL,
+        EXECUTOR_MODAL,
+        effective_tier,
+        resolve_stems_executor,
+    )
+
+    executor = resolve_stems_executor()
+    tier = effective_tier(tier, executor)
+    if executor == EXECUTOR_MODAL and tier not in MODAL_TIER_KEYS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"tier {tier!r} is not a Modal tier; known: {list(MODAL_TIER_KEYS)}",
+        )
+    if executor == EXECUTOR_LOCAL and tier != "LOCAL":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="local executor requires tier LOCAL",
         )
     from apps.stems.tiers import get_tier
 
@@ -156,24 +146,27 @@ def get_stems_plan(
         ) from exc
 
     durations = buckets.pending_durations_s()
-    try:
-        seconds = estimate_batch_seconds(durations, tier)
-        usd = sum(estimate_usd(duration, tier) for duration in durations)
-    except ThroughputNotMeasured as exc:
-        # An unmeasured pair is a real gap, and a plausible-looking number
-        # here would be spent money justified by a guess.
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-        ) from exc
-
-    # The counts are reported even when the transport is refused: "217 tracks
-    # would need stems, and this build cannot run them" is a more useful truth
-    # than hiding the work behind the refusal.
-    transport, transport_refusal = stems_transport_state()
+    local_refusal: str | None = None
+    if executor == EXECUTOR_LOCAL:
+        seconds = 0.0
+        usd = 0.0
+        transport = "local"
+        transport_refusal = None
+        local_refusal = local_stems_gate()
+    else:
+        try:
+            seconds = estimate_batch_seconds(durations, tier)
+            usd = sum(estimate_usd(duration, tier) for duration in durations)
+        except ThroughputNotMeasured as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+            ) from exc
+        transport, transport_refusal = stems_transport_state()
 
     return {
         "tier": tier,
         "tier_name": get_tier(tier).name,
+        "executor": executor,
         "total": buckets.total,
         "pending": len(buckets.pending),
         "ready": len(buckets.ready),
@@ -182,6 +175,7 @@ def get_stems_plan(
         "estimate_usd": round(usd, 4),
         "transport": transport,
         "transport_refusal": transport_refusal,
+        "local_refusal": local_refusal,
     }
 
 

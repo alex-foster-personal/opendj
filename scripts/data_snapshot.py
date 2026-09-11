@@ -63,7 +63,7 @@ MAX_JSON_MEMBER_BYTES: int = 16 * 1024**2
 def _discover_folder_path_roots(master_plain_db: Path) -> list[str]:
     """Return the distinct absolute FolderPath top-level roots in ``djmdContent``.
 
-    A "root" here is the first two path segments (e.g. ``/Users/dev``) so the
+    A "root" here is the first two path segments (e.g. ``/Users/user``) so the
     generated path-map stub stays small and generically rewritable, rather
     than one entry per track. Streaming / empty FolderPaths are excluded.
     """

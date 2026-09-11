@@ -29,6 +29,8 @@ let webmidi; // webmidi.svelte.ts module
 let glue; // action-glue.svelte.ts module
 let stores; // $lib/stores.svelte
 let audioEngine; // $lib/rb/audio-engine.svelte
+let performanceIpc;
+let uninstallPerformanceIpc;
 
 before(async () => {
 	vite = await createServer({
@@ -47,9 +49,14 @@ before(async () => {
 	glue = await vite.ssrLoadModule('/src/lib/rb/midi/action-glue.svelte.ts');
 	stores = await vite.ssrLoadModule('/src/lib/stores.svelte.ts');
 	audioEngine = await vite.ssrLoadModule('/src/lib/rb/audio-engine.svelte.ts');
+	performanceIpc = await vite.ssrLoadModule('/src/lib/rb/performance-ipc.svelte.ts');
+	globalThis.window = {};
+	uninstallPerformanceIpc = performanceIpc.installPerformanceBrowserIpc();
 });
 
 after(async () => {
+	uninstallPerformanceIpc();
+	delete globalThis.window;
 	await vite.close();
 });
 
@@ -183,34 +190,39 @@ test('hot cue press on an empty slot toasts the missing-slot state', () => {
 	assert.match(lastToast().message, /Deck 3 is empty/);
 });
 
-test('mixer_global actions drive mixerState directly', () => {
+test('mixer_global actions dispatch through the performance command bus', async () => {
 	glue.handleMidiAction(
 		{ type: 'mixer_global', target: 'master' },
 		{ kind: 'continuous', value01: 0.5, raw: 64 }
 	);
+	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(audioEngine.mixerState.master, 0.5);
 	glue.handleMidiAction(
 		{ type: 'mixer_global', target: 'crossfader' },
 		{ kind: 'continuous', value01: 0.25, raw: 32 }
 	);
+	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(audioEngine.mixerState.crossfader, 0.25);
 });
 
-test('mixer_channel actions drive the channel strip state', () => {
+test('mixer_channel actions dispatch through the performance command bus', async () => {
 	glue.handleMidiAction(
 		{ type: 'mixer_channel', deck: 2, target: 'trim' },
 		{ kind: 'continuous', value01: 0.75, raw: 95 }
 	);
+	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(audioEngine.mixerState.channels[2].trim, 0.75);
 	glue.handleMidiAction(
 		{ type: 'mixer_channel', deck: 2, target: 'eq', band: 'low' },
 		{ kind: 'continuous', value01: 0.1, raw: 13 }
 	);
+	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(audioEngine.mixerState.channels[2].eq_low, 0.1);
 	glue.handleMidiAction(
 		{ type: 'mixer_channel', deck: 4, target: 'fader' },
 		{ kind: 'continuous14', value01: 0.5, raw: 8192 }
 	);
+	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(audioEngine.mixerState.channels[4].fader, 0.5);
 });
 

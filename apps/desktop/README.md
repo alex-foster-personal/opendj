@@ -39,9 +39,13 @@ maintenance trap this thin-shell rule exists to avoid.
 - The window no longer points straight at the engine. It loads the bundled
   bootstrap page in `setup/`, which probes the engine and either navigates
   to it or renders the setup screen (see "The engine gap" below).
-- `bundle.active` is `true` with a `dmg` target. `just dmg` builds and then
-  proves the artifact by mounting it, and is the only supported way to
-  produce one.
+- `bundle.active` is `true` with an `app` target ONLY. Tauri's own dmg
+  bundler lays the image's window out by driving Finder over AppleScript,
+  which times out (AppleEvent -1712) on any machine nobody is interactively
+  logged into, so `just dmg` builds the app and then creates the image
+  itself with `hdiutil create -format UDZO` -- a plain file operation that
+  needs no Finder and no logged-in user (#1711). It proves the artifact by
+  mounting it, and is the only supported way to produce one.
 - Icons under `src-tauri/icons/` are generated from the existing open-dj
   brand mark (`apps/webui/frontend/static/icon-512.png`), converted to RGBA
   (Tauri's `generate_context!` requires RGBA source icons; the brand PNG is
@@ -69,31 +73,31 @@ control arm, not the final browser-engine verdict.
 
 ### WebKit-truthful UI loop
 
-Start the production-bundle watcher first and wait for its initial `built in`
-line:
+Run the coupled production-bundle watcher and engine:
 
 ```sh
-cd apps/webui/frontend
-pnpm build --watch
+just webui-webkit-watch
 ```
 
-Only then start `just webui-backend` in another terminal. The engine chooses
-between the SPA mount and its no-build placeholder at startup, so starting it
-before the initial build would leave Safari on the placeholder until the
-engine restarts.
+The recipe runs `pnpm build --watch`, waits for its initial production build,
+then starts the reloadable engine with `MDT_FRONTEND_BUILD_DIR` pointed at that
+bundle. Keep this terminal running. On every save, Vite rebuilds the same
+production output that the engine is already serving. If the watcher exits or
+does not finish its initial build within 12 seconds, the loop fails loudly.
 
 Open the claimed backend URL in Safari. The engine serves the rebuilt bundle,
 so Safari exercises the system WebKit and the same production transforms used
-by the packaged interface. DEVLOOP-03 (#852) owns reliable persistent watch
-mode. Until it lands, treat a stopped watcher as an explicit failure and rerun
-`pnpm build` after the next save; the engine continues serving that output.
+by the packaged interface.
 
 ### Engine loop
 
-Run `just webui-backend`. It starts the FastAPI engine with `--reload`, so
-Python changes restart the daemon while the browser or attached shell stays on
-the same claimed backend origin. A reload that cannot boot fails in that
-terminal instead of falling through to another engine.
+Run `just webui-backend`. It starts the FastAPI engine with `--reload` through
+this worktree's `.venv/bin/python`, so Python changes restart the daemon while
+the browser or attached shell stays on the same claimed backend origin. This
+is deliberately not `uv run`: macOS attributes a Media Library permission to
+the executable that touches the protected track, so the engine must be the
+venv Python rather than uv. A reload that cannot boot fails in that terminal
+instead of falling through to another engine.
 
 ### Shell loop
 
@@ -320,9 +324,12 @@ holds each stage and `just dmg` calls it at three points:
 2. `verify-dmg-app` -- mounts the built image and asserts the `.app` really
    carries a `Developer ID Application` authority, the hardened runtime flag
    and a secure timestamp. These are checked here because the notary service
-   reports them slowly and confusingly, and because `cargo tauri build`
-   deletes the staged `.app` once the image exists, making the image the only
-   surviving copy.
+   reports them slowly and confusingly, and because the image is the copy a
+   tester actually receives.
+   The staged `.app` in `bundle/macos` survives the build. Tauri no longer
+   creates an image, so it no longer deletes the app it bundled: `just dmg`
+   picks that app up and runs `hdiutil create` on it itself, on the signed
+   and the unsigned path alike (#1711).
 3. `dmg` then `notarize` -- signs the image itself (Gatekeeper assesses the
    dmg a tester double-clicks, not only the app inside it), submits, staples,
    and runs `spctl -a` to confirm the ticket takes.

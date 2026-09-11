@@ -1,0 +1,101 @@
+name: tombstone-vs-stale-edit
+description: >
+  Spoke B edits a track with an EARLIER stamp while spoke A deletes it with a
+  later one, and B's stale edit reaches the hub first. The tombstone is the
+  later write, so it must win everywhere; the stale edit must not resurrect
+  the row. B then reinserts the track with a still later stamp, which is a
+  deliberate undelete, and that must win in turn on every machine.
+
+machines:
+  - id: hub
+    role: hub
+  - id: spoke-a
+    role: spoke
+  - id: spoke-b
+    role: spoke
+
+seed:
+  tracks:
+    - stable_id: trk-gone
+      title: original
+      "on": [spoke-a, spoke-b]
+
+steps:
+  - "on": spoke-b
+    action: edit
+    args:
+      table: tracks
+      stable_id: trk-gone
+      set: { title: stale edit on B }
+      updated_at: "2026-02-01T00:00:00+00:00"
+
+  - "on": spoke-a
+    action: delete
+    args:
+      table: tracks
+      pk: { stable_id: trk-gone }
+      updated_at: "2026-02-02T00:00:00+00:00"
+
+  # The stale edit arrives first; the tombstone still beats it.
+  - "on": spoke-b
+    action: sync
+    args:
+      expect: { accepted: 1 }
+  - "on": spoke-a
+    action: sync
+    args:
+      expect: { accepted: 1 }
+  - "on": spoke-b
+    action: sync
+    args:
+      expect: { applied: 1 }
+
+  - "on": spoke-b
+    action: assert_converged
+    args:
+      table: tracks
+      pk: { stable_id: trk-gone }
+      field: deleted_at
+      equals: "2026-02-02T00:00:00.000000+00:00"
+  - "on": spoke-a
+    action: assert_converged
+    args:
+      table: tracks
+      pk: { stable_id: trk-gone }
+      field: deleted_at
+      equals: "2026-02-02T00:00:00.000000+00:00"
+
+  # A deliberate undelete, later than the tombstone.
+  - "on": spoke-b
+    action: reinsert
+    args:
+      table: tracks
+      pk: { stable_id: trk-gone }
+      set: { title: back on B }
+      updated_at: "2026-02-03T00:00:00+00:00"
+  - "on": spoke-b
+    action: sync
+    args:
+      expect: { accepted: 1 }
+  - "on": spoke-a
+    action: sync
+    args:
+      expect: { applied: 1 }
+
+  - "on": spoke-a
+    action: assert_converged
+    args:
+      table: tracks
+      pk: { stable_id: trk-gone }
+      field: deleted_at
+      equals: null
+  - "on": spoke-a
+    action: assert_converged
+    args:
+      table: tracks
+      pk: { stable_id: trk-gone }
+      field: title
+      equals: back on B
+
+expected:
+  digest_converged: true

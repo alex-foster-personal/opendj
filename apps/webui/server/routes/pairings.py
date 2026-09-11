@@ -21,7 +21,7 @@ def _to_out(p: Pairing) -> PairingOut:
     return PairingOut(
         pairing_id=p.pairing_id, from_stable_id=p.from_stable_id,
         to_stable_id=p.to_stable_id, direction=p.direction,
-        source=p.source, notes=p.notes,
+        source=p.source, notes=p.notes, snapshot=p.snapshot,
         created_at=p.created_at, updated_at=p.updated_at,
     )
 
@@ -49,6 +49,7 @@ def create_pairing(
         pairing_id=str(uuid.uuid4()),
         from_stable_id=body.from_stable_id, to_stable_id=body.to_stable_id,
         direction=body.direction, source=body.source, notes=body.notes,
+        snapshot=None if body.snapshot is None else body.snapshot.model_dump(),
         created_at=now, updated_at=now,
     )
     created = backend.create_pairing(p)

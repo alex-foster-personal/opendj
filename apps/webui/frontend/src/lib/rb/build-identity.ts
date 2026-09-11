@@ -50,7 +50,7 @@
  *     127.0.0.1 address [then ⛔️] broken
  */
 
-import { API_BASE } from '$lib/api/client';
+import { API_BASE } from '$lib/api/base';
 
 /** The route both daemons' engine build serves. Spelled once. */
 export const BUILD_INFO_PATH = '/api/v1/build-info';

@@ -6,7 +6,8 @@
 	 * History: localStorage via vibe.svelte.ts.
 	 */
 	import { onMount } from 'svelte';
-	import { startVibeMeter, stopVibeMeter, voteVibe, vibeState } from '$lib/rb/vibe.svelte';
+	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
+	import { startVibeMeter, stopVibeMeter, vibeState } from '$lib/rb/vibe.svelte';
 
 	onMount(() => {
 		startVibeMeter();
@@ -20,6 +21,10 @@
 				? ` | sens ${vibeState.sensitivity} decay ${vibeState.decay_per_sec}`
 				: '')
 	);
+
+	function recordFeedback(vote: 'bad' | 'good' | 'great', event: MouseEvent): void {
+		void runPerformanceCommandFromUi({ type: 'feedback_mark', vote }, event.timeStamp);
+	}
 </script>
 
 	<div class="vibe-wrap" data-topbar-priority="low">
@@ -27,11 +32,11 @@
 		type="button"
 		class="vibe-thumb down"
 		aria-label="thumbs down"
-		title="mark: not vibing"
-		onclick={() => voteVibe('down')}
+		title="record performance: sounded bad"
+		onclick={(event) => recordFeedback('bad', event)}
 	>
-		<svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
-			<path d="M4.2 1.2h3.6v4.2h1.5L6 10.8 2.7 5.4H4.2V1.2z" fill="currentColor" />
+		<svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true">
+			<path d="M5 2.2h5.1l-.7 4.1h3c.8 0 1.3.8.9 1.5l-2 4.2c-.2.4-.6.7-1.1.7H5V2.2Zm-2 0h1v10.5H3a1 1 0 0 1-1-1v-8.5a1 1 0 0 1 1-1Z" fill="currentColor" />
 		</svg>
 	</button>
 
@@ -58,11 +63,11 @@
 		type="button"
 		class="vibe-thumb up"
 		aria-label="thumbs up"
-		title="mark: vibing"
-		onclick={() => voteVibe('up')}
+		title="record performance: sounded good. Shift+click or Shift+Enter: sounded great"
+		onclick={(event) => recordFeedback(event.shiftKey ? 'great' : 'good', event)}
 	>
-		<svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
-			<path d="M4.2 10.8h3.6V6.6h1.5L6 1.2 2.7 6.6H4.2v4.2z" fill="currentColor" />
+		<svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true">
+			<path d="M5 13.8h5.1l-.7-4.1h3c.8 0 1.3-.8.9-1.5l-2-4.2c-.2-.4-.6-.7-1.1-.7H5v10.5Zm-2 0h1V3.3H3a1 1 0 0 0-1 1v8.5a1 1 0 0 0 1 1Z" fill="currentColor" />
 		</svg>
 	</button>
 </div>

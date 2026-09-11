@@ -120,6 +120,11 @@ export interface TrackRow {
 	artist: string | null;
 	/** K column - Camelot key; null renders empty. */
 	key: string | null;
+	/** Own-lane key read model for failed/missing tooltips (NATIVE-04). */
+	key_status?: 'ok' | 'failed' | 'missing';
+	key_reason?: string | null;
+	loudness_status?: 'ok' | 'failed' | 'missing';
+	loudness_reason?: string | null;
 	/** B column - BPM; null renders empty. */
 	bpm: number | null;
 	/** Analyzer-only dynamic key/tempo facts. Absence is explicitly not analyzed. */
@@ -143,7 +148,9 @@ export interface TrackRow {
 /** One node in the playlist tree panel (5b). state.db has NO folder
  * hierarchy, so v1 produces: one 'all_tracks' node + flat 'playlist' nodes. */
 export interface PlaylistNode {
-	/** Playlist id from PlaylistSummary; 'all' for the All Tracks node. */
+	/** Playlist id from PlaylistSummary; 'all' for the All Tracks node.
+	 * 'missing' is the All-Tracks-style Missing Tracks sentinel, not a
+	 * server playlist id. */
 	playlist_id: string;
 	/** Display name. */
 	name: string;
@@ -151,8 +158,10 @@ export interface PlaylistNode {
 	track_count: number;
 	/** Broken tracks omitted from the displayed playable count. */
 	broken_count: number;
-	/** Node flavour; 'folder' reserved for future hierarchy, unused v1. */
-	kind: 'all_tracks' | 'playlist' | 'folder';
+	/** Node flavour; 'folder' reserved for future hierarchy, unused v1.
+	 * 'missing_tracks' is the reserved Missing Tracks view (playlist_id
+	 * 'missing'), never matched by a user playlist's display name. */
+	kind: 'all_tracks' | 'playlist' | 'folder' | 'missing_tracks';
 	/** Fewer than 30% of tracks exist on disk; tree row renders dimmed. */
 	mostly_broken?: boolean;
 	/** Children for folder nodes; always [] at v1. */

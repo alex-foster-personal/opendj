@@ -78,11 +78,11 @@ def _foreign_prefix() -> str:
     non-win32 (macOS AND Linux) treats a drive-letter/UNC path as foreign, and
     only win32 treats a POSIX-rooted path as foreign. Branching on IS_DARWIN
     instead read "not macOS" as "Windows", so on the Linux CI runner this handed
-    back ``/Users/dev/Music`` -- an ordinary native POSIX path there, not a
+    back ``/Users/user/Music`` -- an ordinary native POSIX path there, not a
     foreign one -- and both callers silently exercised the local-file-missing
     branch instead of the unmapped branch they assert on.
     """
-    prefix = "/Users/dev/Music" if pp.IS_WINDOWS else "D:/music-library"
+    prefix = "/Users/user/Music" if pp.IS_WINDOWS else "D:/music-library"
     # Fail loudly rather than let a future platform silently re-run these tests
     # against the wrong branch, which is precisely how the IS_DARWIN bug hid.
     assert pp._is_foreign_absolute(f"{prefix}/x.mp3"), (
@@ -292,6 +292,74 @@ def test_analysis_paths_reject_share_root_symlink_escape(
     assert "unsafe:share-symlink" in exc_info.value.detail["message"]
     assert rb_vendor.preview_strip(analysis_path) == (None, None)
     assert rb_vendor.bulk_file_exists([analysis_path]) == {analysis_path: False}
+
+
+def _minimal_pwav_dat(entries: int = 1200) -> bytes:
+    """A minimal, real, parseable PWAV .DAT payload (PMAI container, one
+    PWAV section). Byte-exact to the on-disk format `_read_pwav_mono` reads
+    (`apps/webui/server/rb_vendor_pkg/anlz.py`): `PMAI` + u32 first-section
+    offset, then per-section `fourcc` + u32 head_len + u32 total_len, PWAV's
+    own u32 entry count at +12, then `entries` payload bytes starting at
+    `off + head_len`. `entries` is >= PREVIEW_COLUMNS (120) so the peak
+    downsample in `preview_strip` has enough columns to reduce from.
+    """
+    import struct as _struct
+
+    head_len = 16
+    section = (
+        b"PWAV"
+        + _struct.pack(">II", head_len, head_len + entries)
+        + _struct.pack(">I", entries)
+        + bytes((i * 7) % 32 for i in range(entries))
+    )
+    return b"PMAI" + _struct.pack(">I", 8) + section
+
+
+def test_preview_strip_falls_back_past_a_broken_sibling_not_the_whole_chain(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Pin 66b9602c5887: a missing preview, reported live, traced to a single
+    fallback candidate's containment failure aborting the ENTIRE PWV6 -> PWV4
+    -> PWAV chain instead of ruling out only that one candidate.
+
+    [if] the .2EX (PWV6) sibling resolves to a share-root symlink escape, but
+         the .DAT (PWAV) sibling is a real, valid, in-bounds file [then]
+         preview_strip must still return the PWAV preview - the analysis was
+         never actually missing, only the FIRST fallback candidate was
+         ⛔️ (None, None): a decodable fallback source sitting right next to
+         the broken one was thrown away with it.
+    """
+    fake_share_root = tmp_path / "share"
+    anlz_dir = fake_share_root / "PIONEER" / "USBANLZ" / "P1" / "00000001"
+    anlz_dir.mkdir(parents=True)
+    dat = anlz_dir / "ANLZ0000.DAT"
+    dat.write_bytes(_minimal_pwav_dat())
+
+    outside = tmp_path / "outside.2EX"
+    outside.write_bytes(b"not a real PWV6 file")
+    twoex = anlz_dir / "ANLZ0000.2EX"
+    try:
+        twoex.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable in this test environment: {exc}")
+    # ANLZ0000.EXT (PWV4) is deliberately absent, exercising the pre-existing
+    # "file doesn't exist: continue" branch too, so all three fallback states
+    # (symlink-escape, missing file, real hit) are covered in one chain walk.
+
+    monkeypatch.setattr(pp, "SHARE_ROOT", fake_share_root)
+    analysis_path = "/PIONEER/USBANLZ/P1/00000001/ANLZ0000.DAT"
+
+    preview_b64, preview_max = rb_vendor.preview_strip(analysis_path)
+
+    assert preview_b64 is not None, (
+        "the .2EX containment failure must rule out only .2EX, not the whole "
+        "chain - a real .DAT sibling one suffix later must still be served"
+    )
+    assert preview_max is not None and preview_max > 0
+    import base64 as _b64
+
+    raw = _b64.b64decode(preview_b64)
+    assert len(raw) == 120 * 3, "preview strip must be uint8[120][3] regardless of source"
 
 
 def test_audio_file_resolves_via_path_map_entry(

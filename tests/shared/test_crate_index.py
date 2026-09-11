@@ -24,8 +24,8 @@ def _manifest(crate: Path, audio: Path) -> dict[str, object]:
             "kind": "audio",
             "mtime_s": int(stat.st_mtime),
             "relative": "Music/Tina.mp3",
-            "source": "/Users/dev/Music/Tina.mp3",
-            "source_root": "/Users/dev",
+            "source": "/Users/user/Music/Tina.mp3",
+            "source_root": "/Users/user",
             "stable_ids": [SID],
         }
     ]

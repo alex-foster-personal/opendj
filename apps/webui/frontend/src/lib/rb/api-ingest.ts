@@ -12,7 +12,7 @@
  */
 
 import { API_BASE } from '$lib/api';
-import { RbApiError } from './api-rb';
+import { RbApiError } from './api-rb-error';
 
 export type IngestStep = {
 	id: 'analysis' | 'stems' | 'vocals';
@@ -30,8 +30,24 @@ export type IngestCoverage = {
 	on_disk: number;
 	unreachable: number;
 	missing: Record<string, number>;
+	/** Per-step count of entries that PARSE-FAIL their real contract (malformed JSON, invalid fields, identity mismatch) - a subset of `missing`, distinct from an ordinary not-yet-run or stale-needs-rerun verdict. */
+	corrupt: Record<string, number>;
 	generated_at: number;
 };
+
+/** Fired with the fresh config after every successful putIngestConfig, so a
+ * module-scope cache of ingest config elsewhere (AnalysisDotsPopover.svelte's
+ * shared 15s-TTL cache, see its `_sharedIngestConfig`) can update itself the
+ * instant the config actually changes, instead of serving a stale verdict
+ * for up to its own TTL. Deliberately a plain listener set, not a store: the
+ * cache is not reactive UI state, and this keeps the two modules decoupled
+ * (api-ingest.ts does not need to know its callers exist). */
+type IngestConfigWriteListener = (cfg: IngestConfig) => void;
+const _writeListeners = new Set<IngestConfigWriteListener>();
+
+export function onIngestConfigWrite(listener: IngestConfigWriteListener): void {
+	_writeListeners.add(listener);
+}
 
 export type RefreshStatus = {
 	running: boolean;
@@ -80,6 +96,12 @@ export type AnalysisQueue = {
 	auto: AutoAnalyze;
 };
 
+export type AnalysisOrder = {
+	stable_id: string;
+	kind: string;
+	phase: 'queued' | 'running' | 'done' | 'error';
+};
+
 export type UploadFileResult = {
 	filename: string;
 	staged_path: string | null;
@@ -117,7 +139,9 @@ export async function putIngestConfig(enabled: Record<string, boolean>): Promise
 		body: JSON.stringify({ enabled })
 	});
 	if (!r.ok) await _err(r);
-	return (await r.json()) as IngestConfig;
+	const cfg = (await r.json()) as IngestConfig;
+	for (const listener of _writeListeners) listener(cfg);
+	return cfg;
 }
 
 export async function getIngestCoverage(): Promise<IngestCoverage> {
@@ -150,6 +174,21 @@ export async function getAnalysisQueue(limit?: number): Promise<AnalysisQueue> {
 	const r = await fetch(`${API_BASE}/api/v1/analysis-queue${query}`);
 	if (!r.ok) await _err(r);
 	return (await r.json()) as AnalysisQueue;
+}
+
+export async function getTrackAnalysisOrders(stableId: string): Promise<AnalysisOrder[]> {
+	const r = await fetch(`${API_BASE}/api/v1/analysis-queue/orders/${encodeURIComponent(stableId)}`);
+	if (!r.ok) await _err(r);
+	return ((await r.json()) as { items: AnalysisOrder[] }).items;
+}
+
+export async function orderTrackAnalysis(stableId: string, kind: string): Promise<AnalysisOrder> {
+	const r = await fetch(
+		`${API_BASE}/api/v1/analysis-queue/orders/${encodeURIComponent(stableId)}/${encodeURIComponent(kind)}`,
+		{ method: 'POST' }
+	);
+	if (!r.ok) await _err(r);
+	return (await r.json()) as AnalysisOrder;
 }
 
 export async function uploadIngestFiles(

@@ -20,9 +20,14 @@ test('real event-store analytics render and filter through the HTTP contract', a
 	const initialResponse = page.waitForResponse(
 		(response) => response.url().includes('/api/play-analytics?') && response.status() === 200
 	);
-	const updateCheck = page.waitForResponse((response) => response.url().includes('/api/v1/update/check'), {
-		timeout: 15_000,
-	});
+	// No private 15 s bound: the check is issued from BuildIdentity's onMount,
+	// which under a saturated runner host (nightly 34311277173, Wed 9 Sep 2026,
+	// nine e2e jobs on sixteen threads) landed later than that while the
+	// analytics response itself had already arrived. The test's own timeout
+	// bounds it; a missing check still fails, only not ahead of the page.
+	const updateCheck = page.waitForResponse((response) =>
+		response.url().includes('/api/v1/update/check')
+	);
 	await page.goto('/play-analytics');
 	await initialResponse;
 
@@ -49,20 +54,17 @@ test('real event-store analytics render and filter through the HTTP contract', a
 	);
 	await expect(page.getByText('warehouse-2026-07-21')).not.toBeVisible();
 	await expect(page.getByText('studio-2026-07-20')).toBeVisible();
-	// /update/check faults 502 identity-unavailable in every unbuilt engine
-	// (no OPENDJ_PAYLOAD_MANIFEST -> no app_version to compare), the same fault
-	// setup-entry-points.spec.ts already carves out against the real route.
-	// Scoped to this endpoint AND this status: removal, mis-mounting, or any
-	// other status from this route still fails the gate.
+	// Repo checkouts carry app_version from tauri.conf.json. The public
+	// manifest is still unpublished, so /update/check answers HTTP 200 with
+	// endpoint-refused rather than 502. setup-entry-points.spec.ts already
+	// carves out payload 502 console noise for the app shell.
 	expect(
-		failedResources.every(
-			({ url, status }) => url.endsWith('/favicon.svg') || (url.includes('/update/check') && status === 502)
-		)
+		failedResources.every(({ url }) => url.endsWith('/favicon.svg'))
 	).toBe(true);
 	const updateCheckResponse = await updateCheck;
-	expect(updateCheckResponse.status()).toBe(502);
-	expect((await updateCheckResponse.json()).status).toBe('identity-unavailable');
+	expect(updateCheckResponse.status()).toBe(200);
+	expect((await updateCheckResponse.json()).status).toBe('endpoint-refused');
 	expect(
-		consoleErrors.filter((error) => !error.startsWith('Failed to load resource:'))
+		consoleErrors.filter((error) => !error.includes('favicon'))
 	).toEqual([]);
 });

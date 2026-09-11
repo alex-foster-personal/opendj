@@ -1,0 +1,81 @@
+name: restore-mid-fleet
+description: >
+  The hub is restored from a backup taken BEFORE an edit both spokes have
+  already seen. The restored hub has lost that edit and its changelog has
+  moved backwards. The spokes must notice (the generation anchor on disk
+  outlives the restore), re-offer what they hold, and bring the hub back to
+  the fleet's state, with nothing lost on either spoke.
+
+machines:
+  - id: hub
+    role: hub
+  - id: spoke-a
+    role: spoke
+  - id: spoke-b
+    role: spoke
+
+seed:
+  tracks:
+    - stable_id: trk-1
+      title: original
+      "on": [spoke-a, spoke-b]
+
+steps:
+  - "on": spoke-a
+    action: sync
+  - "on": spoke-b
+    action: sync
+
+  - "on": hub
+    action: restore_hub
+    args: { op: snapshot, name: before-edit }
+
+  - "on": spoke-a
+    action: edit
+    args:
+      table: tracks
+      stable_id: trk-1
+      set: { title: edited after the snapshot }
+  - "on": spoke-a
+    action: sync
+    args:
+      expect: { accepted: 1 }
+  - "on": spoke-b
+    action: sync
+    args:
+      expect: { applied: 1 }
+
+  # Disaster recovery: the hub goes back to the snapshot.
+  - "on": hub
+    action: restore_hub
+    args: { op: restore, name: before-edit }
+  - "on": hub
+    action: assert_converged
+    args:
+      table: tracks
+      pk: { stable_id: trk-1 }
+      field: title
+      equals: original
+
+  - "on": spoke-a
+    action: sync
+  - "on": spoke-b
+    action: sync
+
+  - "on": hub
+    action: assert_converged
+    args:
+      table: tracks
+      pk: { stable_id: trk-1 }
+      field: title
+      equals: edited after the snapshot
+  - "on": spoke-b
+    action: assert_converged
+    args:
+      table: tracks
+      pk: { stable_id: trk-1 }
+      field: title
+      equals: edited after the snapshot
+
+expected:
+  digest_converged: true

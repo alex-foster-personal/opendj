@@ -145,6 +145,14 @@ def _make_state_db(path: Path) -> None:
                 "position) VALUES ('pl-mixed', ?, ?)",
                 (sid, position),
             )
+        conn.executemany(
+            "INSERT INTO track_fields (stable_id, field_name, value_json, source, "
+            "confidence, modified_at) VALUES (?, ?, ?, 'inferred', 0.7, '2026-01-01')",
+            [
+                (LOCAL_ONLY, "genre", '"House"'),
+                (LOCAL_ONLY, "comments", '"Imported from file tags"'),
+            ],
+        )
         conn.commit()
     finally:
         conn.close()
@@ -214,31 +222,40 @@ def test_flag_agrees_with_rb_meta_vendor(
     assert body["vendor"] == ("rekordbox" if expected_flag else "local")
 
 
-def test_skipped_local_payload_carries_nothing_the_row_lacks(
+def test_unmapped_rows_and_meta_read_file_tag_metadata_from_state(
     client: TestClient,
 ) -> None:
-    """Justifies the skip itself, not just the flag.
+    """Local rows use import-time file tag values from the state layer.
 
-    The browser declines to fetch rb-meta for a has_rb_mapping-false row. That
-    is only lossless while every rekordbox-sourced field in the local payload
-    is empty -- quality and file_exists are the two real values, and the
-    listing row already carries both. If #505's local payload ever starts
-    serving something else, the skip begins dropping information and this
-    test is the thing that says so.
+    A track without a live rekordbox mapping has no djmdContent genre or
+    comment to read. Its file-tag metadata belongs to state.db instead, and
+    the two shapes that carry those columns -- rb-meta and the hydrated
+    playlist row -- must expose the same values from it. The /tracks listing
+    row is deliberately NOT one of them: genre and comment have never been in
+    that contract (BrowserPanel's _rowFromListWire says so, and fills them
+    from the lazy rb-meta fetch instead), so widening it here would add a
+    field with no reader.
     """
     body = client.get(f"/api/v1/tracks/{LOCAL_ONLY}/rb-meta").json()
     assert body["vendor"] == "local"
     assert body["vendor_id"] is None
-    assert body["genre"] is None
-    assert body["comment"] is None
+    assert body["genre"] == "House"
+    assert body["comment"] == "Imported from file tags"
     assert body["artwork_available"] is False
     assert body["analysis_available"] is False
     assert body["beatgrid_issue"] is None
     assert body["cue_count"] == 0
 
-    row = _rows_by_id(client)[LOCAL_ONLY]
+    detail = client.get("/api/v1/playlists/pl-mixed").json()
+    row = {track["stable_id"]: track for track in detail["tracks"]}[LOCAL_ONLY]
+    assert row["genre"] == "House"
+    assert row["comments"] == "Imported from file tags"
     assert row["file_exists"] == body["file_exists"]
     assert row["quality"] == body["quality"]
+
+    listing_row = _rows_by_id(client)[LOCAL_ONLY]
+    assert "genre" not in listing_row
+    assert "comments" not in listing_row
 
 
 def test_unknown_stable_id_still_404s_loudly(client: TestClient) -> None:

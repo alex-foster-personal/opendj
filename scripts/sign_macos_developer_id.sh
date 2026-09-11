@@ -23,6 +23,7 @@
 # USAGE
 #   sign_macos_developer_id.sh payload <staged-payload-dir>
 #   sign_macos_developer_id.sh verify-dmg-app <dmg>
+#   sign_macos_developer_id.sh notarize-app <app>
 #   sign_macos_developer_id.sh dmg <dmg>
 #   sign_macos_developer_id.sh notarize <dmg>
 #
@@ -160,6 +161,69 @@ cmd_verify_dmg_app() {
     ok "$(basename "$app") is Developer ID signed, hardened, and timestamped"
 }
 
+#----- notarize-app -------------------------------------------------------
+
+# A stapled app is required for the updater archive, not only the dmg. Apple
+# accepts app bundles only as a zip submission, then staples the original app.
+#
+# The temp archive path lives in a GLOBAL rather than a `local`, and the trap
+# below dereferences it when it fires. bash 3.2 (what `/usr/bin/env bash` is on
+# macOS) does not scope a RETURN trap to the function that set it: it stays
+# armed and fires AGAIN when the CALLER returns. A `local` is gone by then, so
+# `set -u` aborted a run that had already notarized, stapled and passed spctl.
+# Measured Tue 9 Sep 2026 on the Air: notarization printed
+# "[OK] app notarized, stapled and accepted by spctl in 86s" and the run then
+# died with "zip: unbound variable" attributed to main(), losing a 504s build.
+#
+# A global outlives the caller, so the second firing is an `rm -f` of a path
+# that is already gone, which is a no-op. Expanding the path INTO the trap
+# STRING would survive the same way, and was the first fix here, but a trap
+# string is re-parsed as CODE when it fires, so that form embeds an
+# environment-derived value (TMPDIR, below) into code. A global is
+# dereferenced as DATA and is never re-parsed, so no quoting question arises.
+# The sibling EXIT trap in cmd_verify_dmg_app does interpolate, and is safe for
+# a different reason: its path comes from `mktemp -d /tmp/...` with a hardcoded
+# prefix, so no part of it is environment-derived.
+#
+# A DIRECTORY, not a suffixed file. BSD mktemp randomizes only TRAILING X's,
+# so the old `opendj-notary-app.XXXXXX.zip` template was one fixed literal
+# name, and a failed run that left it behind made every later signed build on
+# that host die with "mkstemp failed ... File exists" (silver, Thu 10 Sep
+# 2026). The EXIT trap is what cleans up after `die`: die exits, and an exit
+# never fires a RETURN trap, which is how that file was left behind at all.
+NOTARY_APP_DIR=""
+
+cmd_notarize_app() {
+    local app="${1:-}"
+    [ -n "$app" ] || die "usage: $0 notarize-app <app>"
+    _require_identity
+    _require_notary_profile
+    _require_tool ditto
+    _require_tool xcrun
+    _require_tool spctl
+    [ -d "$app" ] || die "no app bundle at $app"
+
+    local out started elapsed
+    NOTARY_APP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/opendj-notary-app.XXXXXX")
+    trap 'rm -rf "$NOTARY_APP_DIR"' RETURN
+    trap 'rm -rf "$NOTARY_APP_DIR"' EXIT
+    ditto -c -k --keepParent "$app" "$NOTARY_APP_DIR/app.zip" || die "could not archive app for notarization"
+    started=$(date +%s)
+    out=$(xcrun notarytool submit "$NOTARY_APP_DIR/app.zip" \
+        --keychain-profile "$MDT_MACOS_NOTARY_KEYCHAIN_PROFILE" --wait 2>&1) || {
+        printf '%s\n' "$out"
+        die "notarytool submit failed for app"
+    }
+    printf '%s\n' "$out"
+    elapsed=$(($(date +%s) - started))
+    printf '%s\n' "$out" | grep -q 'status: Accepted' || die \
+        "the notary service did not accept the app submission"
+    xcrun stapler staple "$app" || die "stapling app failed"
+    xcrun stapler validate "$app" || die "the app staple does not validate"
+    spctl -a -t exec -vv "$app" || die "spctl rejected the stapled app"
+    ok "app notarized, stapled and accepted by spctl in ${elapsed}s"
+}
+
 #----- dmg ----------------------------------------------------------------
 
 # Sign the image itself. Gatekeeper assesses the dmg a tester double-clicks,
@@ -237,10 +301,11 @@ main() {
     case "$action" in
     payload) cmd_payload "$@" ;;
     verify-dmg-app) cmd_verify_dmg_app "$@" ;;
+    notarize-app) cmd_notarize_app "$@" ;;
     dmg) cmd_dmg "$@" ;;
     notarize) cmd_notarize "$@" ;;
-    "") die "usage: $0 {payload|verify-dmg-app|dmg|notarize} <path>" ;;
-    *) die "unknown subcommand '$action'; expected one of payload, verify-dmg-app, dmg, notarize" ;;
+    "") die "usage: $0 {payload|verify-dmg-app|notarize-app|dmg|notarize} <path>" ;;
+    *) die "unknown subcommand '$action'; expected one of payload, verify-dmg-app, notarize-app, dmg, notarize" ;;
     esac
 }
 

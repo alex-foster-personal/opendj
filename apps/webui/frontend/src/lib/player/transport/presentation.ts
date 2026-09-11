@@ -33,13 +33,15 @@
  * side `undefined` and the waveform renders blank until a hot reload.
  */
 
-import { _assertKeyShift } from '$lib/player/key/camelot';
+import { _assertKeyShift, composeStretchSemitones } from '$lib/player/key/camelot';
 import {
 	_positionForSegment,
 	deckReachedEnd,
 	pausedSeekClock
 } from '$lib/player/transport/schedule-math';
 import type { _ClockSegment } from '$lib/player/transport/schedule-math';
+import { createSlipAnchor } from '$lib/player/transport/slip-anchor';
+import type { SlipAnchor, SlipTempoBoundary } from '$lib/player/transport/slip-anchor';
 
 export interface PresentedTransportSchedule extends _ClockSegment {
 	revision: number;
@@ -75,6 +77,99 @@ export interface PresentedTransportTimeline {
 	 */
 	output_frozen_since_ms: number | null;
 	schedules: PresentedTransportSchedule[];
+}
+
+/** Inputs shared by KEY SYNC commands and its listener-facing UI preview. */
+interface KeySyncEffectiveOffsetSource {
+	audible: boolean;
+	transportPending: boolean;
+	pendingMutation: boolean;
+	control: {
+		tempoRatio: number;
+		masterTempoEnabled: boolean;
+		keyShiftSemitones: number;
+	};
+	presentation: PresentedTransportTimeline;
+}
+
+function _keySyncIsQuiescent(source: KeySyncEffectiveOffsetSource): boolean {
+	return (
+		!source.audible &&
+		!source.transportPending &&
+		!source.pendingMutation &&
+		!source.presentation.presented_active &&
+		source.presentation.desired_revision === source.presentation.presented_revision
+	);
+}
+
+export function keySyncPreviewAvailable(source: KeySyncEffectiveOffsetSource): boolean {
+	if (_keySyncIsQuiescent(source)) return true;
+	const presentedAt = source.presentation.last_presentation_context_time_s;
+	return presentedAt !== null && _effectivePresentedScheduleAt(source.presentation, presentedAt) !== null;
+}
+
+/** The key UI may read only the schedule that has crossed presentation time. */
+export function presentedKeyShiftSemitonesAt(
+	timeline: PresentedTransportTimeline,
+	contextTime: number
+): number | null {
+	if (!Number.isFinite(contextTime) || contextTime < 0) {
+		throw new RangeError(`presentation context time must be finite and non-negative, got ${contextTime}`);
+	}
+	return _effectivePresentedScheduleAt(timeline, contextTime)?.keyShiftSemitones ?? null;
+}
+
+export function presentedEffectiveAudibleSemitones(timeline: PresentedTransportTimeline): number {
+	const presentedAt = timeline.last_presentation_context_time_s;
+	if (presentedAt === null) {
+		throw new Error('KEY SYNC requires output presentation truth before deriving effective offsets');
+	}
+	const schedule = _effectivePresentedScheduleAt(timeline, presentedAt);
+	if (schedule === null) {
+		throw new Error('KEY SYNC requires an output-presented schedule before deriving effective offsets');
+	}
+	return composeStretchSemitones(
+		schedule.tempoRatio,
+		schedule.masterTempoEnabled ?? true,
+		schedule.keyShiftSemitones ?? 0
+	);
+}
+
+/** A stopped deck uses its desired controls; live or queued decks use output truth. */
+export function keySyncEffectiveAudibleSemitones(source: KeySyncEffectiveOffsetSource): number {
+	for (const [name, value] of Object.entries({
+		audible: source.audible,
+		transportPending: source.transportPending,
+		pendingMutation: source.pendingMutation
+	})) {
+		if (typeof value !== 'boolean') throw new TypeError(`KEY SYNC ${name} must be boolean`);
+	}
+	if (_keySyncIsQuiescent(source)) {
+		return composeStretchSemitones(
+			source.control.tempoRatio,
+			source.control.masterTempoEnabled,
+			source.control.keyShiftSemitones
+		);
+	}
+	return presentedEffectiveAudibleSemitones(source.presentation);
+}
+
+/** A live command must start from its output-presented manual shift. */
+export function keySyncManualShiftBaseline(source: KeySyncEffectiveOffsetSource): number {
+	if (_keySyncIsQuiescent(source)) {
+		_assertKeyShift(source.control.keyShiftSemitones);
+		return source.control.keyShiftSemitones;
+	}
+	const presentedAt = source.presentation.last_presentation_context_time_s;
+	if (presentedAt === null) {
+		throw new Error('KEY SYNC requires output presentation truth before deriving its manual baseline');
+	}
+	const baseline = presentedKeyShiftSemitonesAt(source.presentation, presentedAt);
+	if (baseline === null) {
+		throw new Error('KEY SYNC requires an output-presented schedule before deriving its manual baseline');
+	}
+	_assertKeyShift(baseline);
+	return baseline;
 }
 
 export interface PresentedTransportObservation {
@@ -386,3 +481,70 @@ export function observePresentedTransportTimeline(
 
 	return _presentedObservation(timeline, false, outputStarted, clockStalled, 'output');
 }
+
+/** Retain accepted, effective future presentation schedules after a SLIP anchor. */
+export function slipTempoBoundariesAfterAnchor(
+	timeline: PresentedTransportTimeline,
+	anchor: SlipAnchor
+): SlipTempoBoundary[] {
+	const validAnchor = createSlipAnchor(anchor);
+	const candidates = timeline.schedules
+		.filter(
+			(schedule) =>
+				schedule.supersededByRevision === null &&
+				schedule.active &&
+				schedule.startContextTime > validAnchor.startContextTime
+		)
+		.sort(
+			(left, right) =>
+				left.startContextTime - right.startContextTime || left.revision - right.revision
+		);
+	const boundaries: SlipTempoBoundary[] = [];
+	for (const schedule of candidates) {
+		const previous = boundaries[boundaries.length - 1];
+		if (previous?.startContextTime === schedule.startContextTime) {
+			previous.tempoRatio = schedule.tempoRatio;
+		} else {
+			boundaries.push({ startContextTime: schedule.startContextTime, tempoRatio: schedule.tempoRatio });
+		}
+	}
+	return boundaries;
+}
+
+/** Create a hidden SLIP anchor from the listener-facing engaged loop only. */
+export function presentedSlipAnchor(
+	timeline: PresentedTransportTimeline,
+	durationSec: number
+): SlipAnchor {
+	if (!Number.isFinite(durationSec) || durationSec <= 0) {
+		throw new RangeError(`SLIP duration must be positive and finite, got ${durationSec}`);
+	}
+	const presentedAt = timeline.last_presentation_context_time_s;
+	if (presentedAt === null) throw new Error('SLIP requires output presentation truth before activation');
+	const schedule = _effectivePresentedScheduleAt(timeline, presentedAt);
+	if (schedule === null || !schedule.active || schedule.loop?.engaged !== true) {
+		throw new Error('SLIP requires an output-presented engaged loop before activation');
+	}
+	return createSlipAnchor({
+		startContextTime: presentedAt,
+		startPositionSec: _positionForSegment(schedule, presentedAt, durationSec),
+		tempoRatio: schedule.tempoRatio,
+		durationSec
+	});
+}
+
+// ---------------------------------------------------- slip anchor re-export
+//
+// The SLIP hidden-transport algebra lives WHOLE in transport/slip-anchor.ts
+// (pure, importless). It is re-exported here so the engine reaches it through
+// the presentation barrel it already imports, rather than taking a new direct
+// module edge.
+
+export {
+	createSlipAnchor,
+	rebaseSlipAnchor,
+	shouldActivateSlip,
+	slipHiddenPositionSec,
+	slipHiddenPositionWithTempoBoundaries
+} from '$lib/player/transport/slip-anchor';
+export type { SlipAnchor, SlipTempoBoundary } from '$lib/player/transport/slip-anchor';

@@ -11,12 +11,26 @@
  * the typeof guard only protects unit tests.
  */
 
-import { api, unwrap } from '../api/client';
+import {
+	validateDeckLayoutFields,
+	makeDeckLayoutSetters,
+	DECK_LAYOUT_DURATIONS_MS,
+	type DeckLayoutDurationMs,
+	type DeckLayoutMode
+} from './deck-layout-prefs';
+import { makeJogRadialWaveformSetters } from './jog-radial-prefs';
+import { makeLevelCalibrationSetters } from './level-calibration-prefs';
+import { createDiskPrefsSync, makePrefsHydrator } from './prefs-hydrate';
+import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLibrary } from './prefs-fields';
+import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
+import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
+import { validateActiveScheme } from './theme-tokens';
+export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
+export type { AutoSyncPrefs, LastPlaylistPref } from './prefs-types';
 
 const STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 
-/** Playlist tree width bounds in CSS pixels. Keep enough room for hierarchy
- * labels while preserving a useful track pane on compact displays. */
+/** Playlist tree width bounds in CSS pixels (220-520). */
 export const PLAYLIST_TREE_WIDTH_MIN = 220;
 export const PLAYLIST_TREE_WIDTH_MAX = 520;
 export const PLAYLIST_TREE_WIDTH_DEFAULT = 300;
@@ -24,24 +38,19 @@ export const PLAYLIST_TREE_WIDTH_DEFAULT = 300;
 /** Library track-table row density (browser list only - not decks/mixer). */
 export type LibraryDensity = 'compact' | 'cosy';
 
+/** The two optional suggestion panels below the library table. */
+export type LibraryPanel = 'next' | 'recommended';
+
 /** App + /performance chrome theme. Default dark. */
 export type UiTheme = 'dark' | 'light';
 
 /** Preferred vendor writeback targets (preference only; CLI writeback today). */
 export type AutoSyncDestination = 'rekordbox' | 'djay' | 'open_dj';
 
-export interface AutoSyncPrefs {
-	rekordbox: boolean;
-	djay: boolean;
-	open_dj: boolean;
-}
-
 export interface RbUiPrefs {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
-	/** FR-1: when true, missing-file tracks are hidden from every pane's
-	 * track list AND playlists with available_count == 0 are hidden from
-	 * the tree. Default OFF (broken rows render grayed-out but visible). */
+	/** FR-1: hide missing-file tracks and playlists with available_count == 0. Default OFF. */
 	hide_broken_links: boolean;
 	/** Track-table row height: compact = current tight rows; cosy = taller. */
 	library_density: LibraryDensity;
@@ -51,6 +60,9 @@ export interface RbUiPrefs {
 	/** Library list: keep only tracks appropriate as next (Camelot + BPM
 	 * window vs master / loaded reference). Toggle with Tab. */
 	next_only_filter: boolean;
+	/** Persisted independently so either collapsed rail entry can restore its panel. */
+	next_panel_collapsed: boolean;
+	recommended_panel_collapsed: boolean;
 	/**
 	 * Auto-play next track onto a free/stopped follower when the playing
 	 * source enters the remaining-time window (~16s). Hard-cut v1.
@@ -87,6 +99,15 @@ export interface RbUiPrefs {
 	 */
 	usb_auto_open_panel: boolean;
 	/**
+	 * LIBUX-05: "Technically-working mode" edge-reveal overlay. True = smooth
+	 * fade transitions (default); false = instant appear/disappear.
+	 */
+	technically_working_animate: boolean;
+	/** DECKUX-02: polar preview waveform on jog dials instead of the red tick. */
+	jog_radial_waveform: boolean;
+	/** PIN-AGENT-01: agent findings stay independently visible from operator pins. */
+	show_agent_pins: boolean;
+	/**
 	 * Destructive / move confirms: false = skip the prompt forever.
 	 * Missing keys mean "ask". Persisted under the same blob.
 	 */
@@ -104,15 +125,14 @@ export interface RbUiPrefs {
 	 * never restored, so a stale number can never reach the screen.
 	 */
 	last_playlist: LastPlaylistPref | null;
-}
-
-/** Persisted pane identity. Mirrors BootPlaylistChoice in the pane contract,
- * declared here so prefs owns its own storage shape rather than importing a
- * component module into the prefs layer. */
-export interface LastPlaylistPref {
-	playlist_id: string;
-	name: string;
-	kind: 'all_tracks' | 'playlist';
+	spotify_library: SpotifyLibraryPref;
+	/** Pin 862cd3: MORE/LESS two-deck performance layout. Default 'more'. */
+	deck_layout: DeckLayoutMode;
+	/** Animate the deck_layout switch. Off = instant swap (reduced-motion always 0ms). */
+	deck_layout_animate: boolean;
+	/** Transition duration in ms when deck_layout_animate is true. */
+	deck_layout_duration_ms: DeckLayoutDurationMs;
+	level_calibration: LevelCalibrationPrefs;
 }
 
 const DEFAULTS: RbUiPrefs = {
@@ -121,6 +141,8 @@ const DEFAULTS: RbUiPrefs = {
 	library_density: 'compact',
 	beat_sync_max: true,
 	next_only_filter: false,
+	next_panel_collapsed: false,
+	recommended_panel_collapsed: false,
 	auto_play_enabled: true,
 	auto_play_enforce_order: false,
 	auto_play_maximize_reach: true,
@@ -130,8 +152,16 @@ const DEFAULTS: RbUiPrefs = {
 	usb_toast_enabled: true,
 	usb_toast_ms: 5000,
 	usb_auto_open_panel: false,
+	technically_working_animate: true,
+	jog_radial_waveform: false,
+	show_agent_pins: true,
 	confirm: {},
-	last_playlist: null
+	last_playlist: null,
+	spotify_library: { pinned_ids: [], recent_ids: [] },
+	deck_layout: 'more',
+	deck_layout_animate: true,
+	deck_layout_duration_ms: 200,
+	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false }
 };
 
 // ----------------------------------------------------------- _helpers
@@ -144,6 +174,7 @@ function _applyThemeDom(theme: UiTheme): void {
 	if (typeof document === 'undefined') return;
 	document.documentElement.dataset.theme = theme;
 	document.documentElement.style.colorScheme = theme;
+	validateActiveScheme(theme);
 }
 
 function _load(): RbUiPrefs {
@@ -189,6 +220,21 @@ function _load(): RbUiPrefs {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (next_only_filter is not a boolean) - ` +
 				'clear the localStorage key to recover'
+		);
+	}
+	if (parsed.next_panel_collapsed !== undefined && typeof parsed.next_panel_collapsed !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (next_panel_collapsed is not a boolean) - ` +
+				'clear the key to recover'
+		);
+	}
+	if (
+		parsed.recommended_panel_collapsed !== undefined &&
+		typeof parsed.recommended_panel_collapsed !== 'boolean'
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (recommended_panel_collapsed is not a boolean) - ` +
+				'clear the key to recover'
 		);
 	}
 	if (parsed.auto_play_enabled !== undefined && typeof parsed.auto_play_enabled !== 'boolean') {
@@ -254,8 +300,34 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
-	const lastPlaylist = _parseLastPlaylist(parsed.last_playlist);
-	const autoSync = _parseAutoSync(parsed.auto_sync);
+	if (
+		parsed.technically_working_animate !== undefined &&
+		typeof parsed.technically_working_animate !== 'boolean'
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (technically_working_animate is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	if (parsed.jog_radial_waveform !== undefined && typeof parsed.jog_radial_waveform !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (jog_radial_waveform is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	if (parsed.show_agent_pins !== undefined && typeof parsed.show_agent_pins !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (show_agent_pins is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	const {
+		deck_layout: deckLayout,
+		deck_layout_animate: deckLayoutAnimate,
+		deck_layout_duration_ms: deckLayoutDurationMs
+	} = validateDeckLayoutFields(parsed, STORAGE_KEY);
+	const lastPlaylist = parseLastPlaylist(parsed.last_playlist, STORAGE_KEY);
+	const autoSync = parseAutoSync(parsed.auto_sync, STORAGE_KEY, DEFAULTS.auto_sync);
 	const confirm = parsed.confirm ?? DEFAULTS.confirm;
 	if (confirm !== null && typeof confirm !== 'object') {
 		throw new Error(
@@ -276,6 +348,9 @@ function _load(): RbUiPrefs {
 		library_density: density ?? DEFAULTS.library_density,
 		beat_sync_max: parsed.beat_sync_max ?? DEFAULTS.beat_sync_max,
 		next_only_filter: parsed.next_only_filter ?? DEFAULTS.next_only_filter,
+		next_panel_collapsed: parsed.next_panel_collapsed ?? DEFAULTS.next_panel_collapsed,
+		recommended_panel_collapsed:
+			parsed.recommended_panel_collapsed ?? DEFAULTS.recommended_panel_collapsed,
 		auto_play_enabled: parsed.auto_play_enabled ?? DEFAULTS.auto_play_enabled,
 		auto_play_enforce_order:
 			parsed.auto_play_enforce_order ?? DEFAULTS.auto_play_enforce_order,
@@ -287,87 +362,26 @@ function _load(): RbUiPrefs {
 		usb_toast_enabled: parsed.usb_toast_enabled ?? DEFAULTS.usb_toast_enabled,
 		usb_toast_ms: parsed.usb_toast_ms ?? DEFAULTS.usb_toast_ms,
 		usb_auto_open_panel: parsed.usb_auto_open_panel ?? DEFAULTS.usb_auto_open_panel,
+		technically_working_animate:
+			parsed.technically_working_animate ?? DEFAULTS.technically_working_animate,
+		jog_radial_waveform: parsed.jog_radial_waveform ?? DEFAULTS.jog_radial_waveform,
+		show_agent_pins: parsed.show_agent_pins ?? DEFAULTS.show_agent_pins,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) },
-		last_playlist: lastPlaylist
+		last_playlist: lastPlaylist,
+		spotify_library: parseSpotifyLibrary(parsed.spotify_library, STORAGE_KEY),
+		deck_layout: deckLayout ?? DEFAULTS.deck_layout,
+		deck_layout_animate: deckLayoutAnimate ?? DEFAULTS.deck_layout_animate,
+		deck_layout_duration_ms: deckLayoutDurationMs ?? DEFAULTS.deck_layout_duration_ms,
+		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration)
 	};
-}
-
-function _parseAutoSync(raw: unknown): AutoSyncPrefs {
-	if (raw === undefined) return { ...DEFAULTS.auto_sync };
-	if (raw === null || typeof raw !== 'object') {
-		throw new Error(
-			`${STORAGE_KEY}: malformed prefs blob (auto_sync must be an object) - ` +
-				'clear the localStorage key to recover'
-		);
-	}
-	const obj = raw as Partial<AutoSyncPrefs>;
-	for (const key of ['rekordbox', 'djay', 'open_dj'] as const) {
-		if (obj[key] !== undefined && typeof obj[key] !== 'boolean') {
-			throw new Error(
-				`${STORAGE_KEY}: malformed prefs blob (auto_sync.${key} is not a boolean) - ` +
-					'clear the localStorage key to recover'
-			);
-		}
-	}
-	return {
-		rekordbox: obj.rekordbox ?? DEFAULTS.auto_sync.rekordbox,
-		djay: obj.djay ?? DEFAULTS.auto_sync.djay,
-		open_dj: obj.open_dj ?? DEFAULTS.auto_sync.open_dj
-	};
-}
-
-/** Absent (old blob written before this field existed) is the real first-run
- * state and yields null; present but the wrong shape throws, same as every
- * other field here - a half-valid pane identity would restore into a load
- * against an id that is not a string. */
-function _parseLastPlaylist(raw: unknown): LastPlaylistPref | null {
-	if (raw === undefined || raw === null) return null;
-	if (typeof raw !== 'object') {
-		throw new Error(
-			`${STORAGE_KEY}: malformed prefs blob (last_playlist must be an object or null) - ` +
-				'clear the localStorage key to recover'
-		);
-	}
-	const obj = raw as Partial<LastPlaylistPref>;
-	if (typeof obj.playlist_id !== 'string' || obj.playlist_id === '') {
-		throw new Error(
-			`${STORAGE_KEY}: malformed prefs blob (last_playlist.playlist_id must be a non-empty string) - ` +
-				'clear the localStorage key to recover'
-		);
-	}
-	if (typeof obj.name !== 'string') {
-		throw new Error(
-			`${STORAGE_KEY}: malformed prefs blob (last_playlist.name must be a string) - ` +
-				'clear the localStorage key to recover'
-		);
-	}
-	if (obj.kind !== 'all_tracks' && obj.kind !== 'playlist') {
-		throw new Error(
-			`${STORAGE_KEY}: malformed prefs blob (last_playlist.kind must be 'all_tracks'|'playlist') - ` +
-				'clear the localStorage key to recover'
-		);
-	}
-	return { playlist_id: obj.playlist_id, name: obj.name, kind: obj.kind };
 }
 
 function _persist(): void {
 	_storage()?.setItem(STORAGE_KEY, JSON.stringify($state.snapshot(uiPrefs)));
 }
 
-type DiskPrefsPatch = {
-	confirm?: RbUiPrefs['confirm'];
-	theme?: UiTheme;
-	hide_todo_settings?: boolean;
-	auto_sync?: AutoSyncPrefs;
-};
-
-async function _syncDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
-	try {
-		await api.PUT('/api/v1/ui-prefs', { body: patch });
-	} catch {
-		/* localStorage remains authoritative if daemon is down */
-	}
-}
+/** One shared write queue (issue #1578) - see disk-write-chain.ts. */
+const _syncDiskPrefs = createDiskPrefsSync();
 
 // -------------------------------------------------------- public API
 
@@ -416,6 +430,7 @@ export function setLastPlaylist(next: LastPlaylistPref | null): void {
 	_persist();
 }
 
+export const { toggleSpotifyPinned, rememberSpotifyRecent } = makeSpotifyLibrarySetters(uiPrefs, _persist);
 export function setLibraryDensity(next: LibraryDensity): void {
 	uiPrefs.library_density = next;
 	_persist();
@@ -446,6 +461,13 @@ export function setNextOnlyFilter(next: boolean): void {
 	_persist();
 }
 
+/** Collapse one suggestion panel while retaining the other panel's state. */
+export function setLibraryPanelCollapsed(panel: LibraryPanel, collapsed: boolean): void {
+	if (panel === 'next') uiPrefs.next_panel_collapsed = collapsed;
+	else uiPrefs.recommended_panel_collapsed = collapsed;
+	_persist();
+}
+
 export function toggleNextOnlyFilter(): void {
 	setNextOnlyFilter(!uiPrefs.next_only_filter);
 }
@@ -467,6 +489,32 @@ export function setHideTodoSettings(next: boolean): void {
 	void _syncDiskPrefs({ hide_todo_settings: next });
 }
 
+export function setTechnicallyWorkingAnimate(next: boolean): void {
+	uiPrefs.technically_working_animate = next;
+	_persist();
+	void _syncDiskPrefs({ technically_working_animate: next });
+}
+
+export const { setJogRadialWaveform } = makeJogRadialWaveformSetters(uiPrefs, _persist, (patch) =>
+	void _syncDiskPrefs(patch)
+);
+
+/** Persist the agent-pin layer through both local state and its HTTP twin. */
+export function setShowAgentPins(next: boolean): void {
+	uiPrefs.show_agent_pins = next;
+	_persist();
+	void _syncDiskPrefs({ show_agent_pins: next });
+}
+
+/** The MORE/LESS deck-layout setters (pin 862cd3), built against this
+ * module's own uiPrefs/_persist/_syncDiskPrefs (deck-layout-prefs.ts). */
+export const {
+	setDeckLayoutMode,
+	toggleDeckLayoutMode,
+	setDeckLayoutAnimate,
+	setDeckLayoutDurationMs
+} = makeDeckLayoutSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
+
 export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean): void {
 	uiPrefs.auto_sync[dest] = next;
 	_persist();
@@ -478,6 +526,12 @@ export function setAutoSync(next: AutoSyncPrefs): void {
 	_persist();
 	void _syncDiskPrefs({ auto_sync: { ...uiPrefs.auto_sync } });
 }
+
+export const { setLevelCalibrationCapture, setLevelCalibrationDisabled } = makeLevelCalibrationSetters(
+	uiPrefs,
+	_persist,
+	(patch) => void _syncDiskPrefs(patch)
+);
 
 /** Persist a confirm skip / remembered choice. Pass `undefined` to clear. */
 export function setConfirmPref<K extends keyof RbUiPrefs['confirm']>(
@@ -494,29 +548,10 @@ export function setConfirmPref<K extends keyof RbUiPrefs['confirm']>(
 }
 
 /** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */
-export async function hydrateConfirmPrefsFromDisk(): Promise<void> {
-	try {
-		const body = await unwrap(api.GET('/api/v1/ui-prefs')) as {
-			confirm?: RbUiPrefs['confirm'];
-			theme?: UiTheme;
-			hide_todo_settings?: boolean;
-			auto_sync?: AutoSyncPrefs;
-		};
-		if (body.confirm !== undefined) {
-			uiPrefs.confirm = { ...uiPrefs.confirm, ...body.confirm };
-		}
-		if (body.theme === 'dark' || body.theme === 'light') {
-			uiPrefs.theme = body.theme;
-			_applyThemeDom(body.theme);
-		}
-		if (typeof body.hide_todo_settings === 'boolean') {
-			uiPrefs.hide_todo_settings = body.hide_todo_settings;
-		}
-		if (body.auto_sync !== undefined && typeof body.auto_sync === 'object') {
-			uiPrefs.auto_sync = _parseAutoSync(body.auto_sync);
-		}
-		_persist();
-	} catch {
-		/* ignore */
-	}
-}
+export const hydrateConfirmPrefsFromDisk = makePrefsHydrator({
+	uiPrefs,
+	persist: _persist,
+	applyThemeDom: _applyThemeDom,
+	storageKey: STORAGE_KEY,
+	defaults: DEFAULTS
+});

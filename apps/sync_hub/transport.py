@@ -24,7 +24,40 @@ DEFAULT_TIMEOUT_S: float = 30.0
 
 
 class SyncTransportError(RuntimeError):
-    """The hub was unreachable or answered with something unusable."""
+    """The hub was unreachable or answered with something unusable.
+
+    ``status_code`` and ``code`` are set only when the hub ANSWERED with a
+    non-2xx: the HTTP status and the ``detail.code`` of its JSON body. Both
+    stay None for an unreachable hub or a body with no code, which a caller
+    must read as "not a declared refusal", never as any particular one.
+    """
+
+    def __init__(
+        self, message: str, *, status_code: int | None = None, code: str | None = None
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+
+
+def _detail_code(body: str) -> str | None:
+    """The ``detail.code`` FastAPI wraps a declared refusal in, when present."""
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    detail = parsed.get("detail") if isinstance(parsed, dict) else None
+    code = detail.get("code") if isinstance(detail, dict) else None
+    return code if isinstance(code, str) else None
+
+
+def refused(label: str, status_code: int, body: str) -> SyncTransportError:
+    """The error for a non-2xx answer. Shared by every :class:`HubTransport`."""
+    return SyncTransportError(
+        f"{label} -> HTTP {status_code}: {body}",
+        status_code=status_code,
+        code=_detail_code(body),
+    )
 
 
 # ----- transport -----------------------------------------------------------
@@ -48,11 +81,24 @@ class HubTransport(Protocol):
 class HttpTransport:
     """stdlib-only JSON transport. Any non-2xx is an error, never a default."""
 
-    def __init__(self, base_url: str, *, timeout_s: float = DEFAULT_TIMEOUT_S) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        timeout_s: float = DEFAULT_TIMEOUT_S,
+        bearer: str | None = None,
+    ) -> None:
+        """``bearer`` is this machine's sync credential
+        (:mod:`apps.sync_hub.spoke_credential`), sent as ``Authorization:
+        Bearer`` on every call. None sends no header, which an OBSERVE hub
+        accepts and reports as ``missing``."""
         if not base_url:
             raise SyncTransportError("hub_url is empty")
         self._base = base_url.rstrip("/")
         self._timeout_s = timeout_s
+        self._auth: dict[str, str] = (
+            {} if bearer is None else {"Authorization": f"Bearer {bearer}"}
+        )
 
     def _url(self, path: str, params: Mapping[str, str] | None = None) -> str:
         url = f"{self._base}{path}"
@@ -66,9 +112,8 @@ class HttpTransport:
                 body = response.read()
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
-            raise SyncTransportError(
-                f"{request.get_method()} {request.full_url} -> HTTP "
-                f"{exc.code}: {detail}"
+            raise refused(
+                f"{request.get_method()} {request.full_url}", exc.code, detail
             ) from exc
         except urllib.error.URLError as exc:
             raise SyncTransportError(
@@ -80,13 +125,15 @@ class HttpTransport:
         request = urllib.request.Request(
             self._url(path),
             data=json.dumps(dict(payload)).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **self._auth},
             method="POST",
         )
         return self._send(request)
 
     def get(self, path: str, params: Mapping[str, str]) -> dict[str, Any]:
-        request = urllib.request.Request(self._url(path, params), method="GET")
+        request = urllib.request.Request(
+            self._url(path, params), headers=dict(self._auth), method="GET"
+        )
         return self._send(request)
 
 
@@ -106,4 +153,5 @@ __all__ = [
     "HttpTransport",
     "HubTransport",
     "SyncTransportError",
+    "refused",
 ]

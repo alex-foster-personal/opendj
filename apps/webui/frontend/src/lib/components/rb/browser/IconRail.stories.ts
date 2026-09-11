@@ -9,8 +9,9 @@ import IconRail from './IconRail.svelte';
  *
  * The rail is the clearest example in the codebase: Spotify is the only
  * source wired to real data, so it alone is clickable. Every other glyph is
- * `disabled`, carries `.rb-inert`, and its title reads
- * 'not implemented - see PARITY-TODO'. Hover any dimmed icon to see it.
+ * `disabled`, carries `.rb-inert`, and its title comes from
+ * `plannedTitle(id)` (name + what it will do + Not built yet). Hover any
+ * dimmed icon to see it.
  */
 const meta = {
 	title: 'Components/Browser/IconRail',

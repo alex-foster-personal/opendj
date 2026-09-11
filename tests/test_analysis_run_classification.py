@@ -32,6 +32,7 @@ from pathlib import Path
 import pytest
 
 from apps.analysis import config as analysis_config
+from apps.analysis import pool as pool_mod
 from apps.analysis import run as run_mod
 from apps.analysis.backends import DEFAULT_BACKEND
 
@@ -81,7 +82,7 @@ def test_a_backend_setup_failure_is_not_reported_as_a_failed_track(
     audio.write_bytes(b"\x00" * 32)
 
     with pytest.raises(FileNotFoundError):
-        run_mod._analyze_one("librosa", "sid00001", str(audio))
+        pool_mod.analyze_one("librosa", "sid00001", str(audio))
 
 
 @pytest.mark.requires_audio_stack

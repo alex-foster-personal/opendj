@@ -27,6 +27,7 @@ export interface Decision {
 	survivor: string;
 	action: DecisionAction;
 	decided_at: string;
+	pending_apply: boolean;
 }
 
 export interface Cluster {
@@ -53,4 +54,33 @@ export interface DecisionRecord {
 	decided_at: string;
 	pending_apply: boolean;
 	revision: string;
+}
+
+export interface PlaylistRewrite {
+	playlist_id: string;
+	name: string;
+	before: string[];
+	after: string[];
+}
+
+export interface ApplyRecord {
+	cluster_id: number;
+	cluster_key: string;
+	survivor: string;
+	action: 'merge';
+	decided_at: string;
+	pending_apply: boolean;
+	revision: string;
+	playlists: PlaylistRewrite[];
+}
+
+export interface UndoRecord {
+	cluster_id: number;
+	cluster_key: string;
+	survivor: string;
+	action: 'merge';
+	decided_at: string;
+	pending_apply: boolean;
+	revision: string;
+	playlist_ids: string[];
 }

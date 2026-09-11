@@ -26,6 +26,22 @@ const urlSuffixImports = {
 	}
 };
 
+/**
+ * A data-URL test module cannot resolve a separately bundled lazy chunk.
+ * Keep dynamic imports external while compiling the rune graph: tests that
+ * exercise a deferred module use load-typescript.mjs, while rune tests retain
+ * the production module's laziness without wrapping rune declarations in an
+ * esbuild callback before Svelte sees them.
+ */
+const dynamicImportExternal = {
+	name: 'dynamic-import-external',
+	setup(build) {
+		build.onResolve({ filter: /.*/ }, (args) =>
+			args.kind === 'dynamic-import' ? { path: args.path, external: true } : undefined
+		);
+	}
+};
+
 function _bundle(entry, { stdin = false } = {}) {
 	return build({
 		...(stdin
@@ -38,7 +54,7 @@ function _bundle(entry, { stdin = false } = {}) {
 		format: 'esm',
 		logLevel: 'silent',
 		platform: 'browser',
-		plugins: [urlSuffixImports],
+		plugins: [urlSuffixImports, dynamicImportExternal],
 		target: 'es2022',
 		write: false
 	});

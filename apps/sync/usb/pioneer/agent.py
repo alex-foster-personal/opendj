@@ -371,9 +371,16 @@ def run_export_agent(
     # Pre-flight: bring Rekordbox to the front BEFORE the first
     # capture so the window-isolated path finds it on-screen (Fix 3).
     # Non-fatal if it can't — capture_window falls back to display.
+    # allow_launch=True is deliberate and is the ONLY caller that may
+    # start Rekordbox: a real export run needs the app up, and the user
+    # asked for it by invoking agent-export. Every other caller (the
+    # per-click re-focus in Actuator._dispatch) keeps the safe default,
+    # so a stray focus check can never cold-start the app.
     if cfg.frontmost_app:
         try:
-            ok = ensure_frontmost(cfg.frontmost_app, max_attempts=3)
+            ok = ensure_frontmost(
+                cfg.frontmost_app, max_attempts=3, allow_launch=True
+            )
             trace.record(
                 "preflight_frontmost",
                 {"app": cfg.frontmost_app, "ok": bool(ok)},

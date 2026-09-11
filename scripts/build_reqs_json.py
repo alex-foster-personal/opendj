@@ -22,6 +22,7 @@ file has a stable shape):
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import re
 import sys
@@ -39,21 +40,26 @@ COVERAGE_MATRIX_TEMPLATE: Path = REPO_ROOT / "coverage-matrix.md"
 # still matches, so every pre-existing ID parses exactly as it did before.
 # This widened after SYNC-ONEWAY-01..04 parsed as nothing at all: the
 # requirement count simply did not move, which is a silent miss, not an error.
-_CODE = r"[A-Z]+(?:-[A-Z]+)*"
+# Each segment can also mix in digits after its leading letter (A11Y), which
+# widened it a second time after A11Y-01/A11Y-02 parsed as nothing at all --
+# same silent-miss shape, caught only by grepping reqs.json by hand.
+_CODE = r"[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*"
+# A full requirement id (e.g. "A11Y-01", "SYNC-ONEWAY-04c"): a category code
+# plus its numeric suffix. Every place in this file that recognizes a
+# requirement id token -- bullets, and the Traceability table -- must build
+# off this one pattern rather than hand-duplicating a letters-only variant,
+# which is exactly how the Traceability table kept silently dropping
+# alphanumeric ids (A11Y-01 etc.) after _CODE was widened for the bullet
+# parsers but the table's own regex was not.
+_REQ_ID = rf"{_CODE}-(?:\d+[a-z]?|S\d+)"
 _CATEGORY_RE = re.compile(rf"^###\s+(.+?)\s+\(({_CODE})\)\s*$")
-_BULLET_V1_RE = re.compile(
-    rf"^-\s+(?:\[( |x)\]\s+)?\*\*({_CODE}-\d+[a-z]?)\*\*(.*)$"
-)
+_BULLET_V1_RE = re.compile(rf"^-\s+(?:\[( |x)\]\s+)?\*\*({_REQ_ID})\*\*(.*)$")
 # v2 bullets often lack a checkbox (`- **CROSS-01**: Linux support`), but a
 # shipped one carries the same `[x]` marker v1 uses (`- [x] **DEVLOOP-01**: ...`).
 _BULLET_V2_RE = re.compile(
-    rf"^-\s+(?:\[( |x)\]\s+)?\*\*({_CODE}-\d+[a-z]?)\*\*\s*:?\s*(.*)$"
+    rf"^-\s+(?:\[( |x)\]\s+)?\*\*({_REQ_ID})\*\*\s*:?\s*(.*)$"
 )
 _SHIPPED_PHASE_RE = re.compile(r"\(shipped\s+(Phase\s+[\w.]+)\)", re.IGNORECASE)
-_TRACE_ROW_RE = re.compile(
-    r"^\|\s*([A-Z]+-\d+|[A-Z]+-\*|[A-Z]+-[\d.]+(?:\.\.\d+)?(?:,\s*[A-Z]+-\d+)*)"
-    r"\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*$"
-)
 
 
 def _read_lines(src: Path) -> list[str]:
@@ -220,12 +226,36 @@ def _parse_traceability(lines: list[str]) -> dict[str, str]:
         if "*" in req_spec or ".." in req_spec:
             continue
         for token in (t.strip() for t in req_spec.split(",")):
-            if re.fullmatch(r"[A-Z]+-\d+[a-z]?", token):
+            if re.fullmatch(_REQ_ID, token):
                 mapping[token] = phase
     return mapping
 
 
 # ------------------------------------------------------------------ build
+
+
+def _duplicate_ids(*buckets: dict) -> dict[str, int]:
+    """Requirement ids that ``REQUIREMENTS.md`` defines more than once.
+
+    Nothing else in the pipeline notices these. The parser keeps both copies,
+    so ``reqs.json`` faithfully reflects a source file that defines one id
+    twice, and both existing gates stay green: ``--check`` compares the file
+    with the source, and the "regenerating must produce no diff" step compares
+    regeneration with itself. Measured Fri 4 Sep 2026 on a planted duplicate of
+    RECON-01: 211 ids -> 212, still 211 distinct, both gates green.
+
+    This matters because ``.planning/REQUIREMENTS.md`` is an append-only ledger
+    that 11 open PRs conflict on, and every proposed fix for that (a union
+    merge driver above all) works by keeping BOTH sides of an append. Keeping
+    both sides is right for text and wrong for identifiers, so the id space
+    needs its own gate before that policy is safe to adopt.
+    """
+    counts: collections.Counter[str] = collections.Counter()
+    for bucket in buckets:
+        for category in bucket.values():
+            for requirement in category["requirements"]:
+                counts[requirement["id"]] += 1
+    return {rid: n for rid, n in counts.items() if n > 1}
 
 
 def _build_payload() -> dict:
@@ -234,6 +264,15 @@ def _build_payload() -> dict:
     lines = _read_lines(SOURCE)
     v1 = _parse_v1(lines)
     v2 = _parse_v2(lines)
+    duplicates = _duplicate_ids(v1, v2)
+    if duplicates:
+        listed = ", ".join(f"{rid} x{n}" for rid, n in sorted(duplicates.items()))
+        raise ValueError(
+            f"{SOURCE} defines {len(duplicates)} requirement id(s) more than "
+            f"once: {listed}. Two branches appending the same id is the normal "
+            f"way this happens; renumber one side rather than deleting either, "
+            f"since a traceability row may already point at it."
+        )
     trace = _parse_traceability(lines)
     oos = _parse_out_of_scope(lines)
 

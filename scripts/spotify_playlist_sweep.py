@@ -35,7 +35,7 @@ from apps.spotify.client import SpotifyClient
 # ----- config -------------------------------------------------------------
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[1]
-STATE_DB: Path = Path("/Users/dev/Music/music-dj-tools/data/state/state.db")
+STATE_DB: Path = REPO_ROOT / "data" / "state" / "state.db"
 OUT_CSV: Path = REPO_ROOT / "data" / "spotify" / "playlist-sweep.csv"
 PAGE_SIZE: int = 50
 

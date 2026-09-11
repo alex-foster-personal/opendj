@@ -14,130 +14,48 @@ from __future__ import annotations
 
 import logging
 import os
-import socket
-from collections.abc import AsyncIterator, Callable, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.responses import Response
-from starlette.types import Scope
+from fastapi import FastAPI
 
-from apps.play_analytics.api import router as play_analytics_router
-from apps.sets.api import router as sets_router
+from apps.feature_flags import FlagStore
 from apps.sets.share import SetShareConfig
 from apps.sets.share_page import router as set_share_page_router
-from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
-from apps.sync_hub.service import router as sync_hub_router
-from apps.webui.port_config import (
-    PortConfigError,
-    resolve_backend_port,
-    resolve_frontend_port,
-)
 
-from . import analysis_autostart
-from .backend import BackendError, ConflictError, InMemoryBackend, NotFoundError, StateBackend
-from .cloud_sync import probe_syncthing_status
-from .errors import (
-    handle_backend_error,
-    handle_conflict,
-    handle_not_found,
-    handle_rekordbox_writeback_disabled,
+from . import (
+    analysis_autostart,
+    analysis_serving_bootstrap,  # noqa: F401 - PARITY-02 lane registration
+    library_jobs_autostart,
+    lyric_index_autostart,
 )
-from .routes import analysis as analysis_routes
-from .routes import analysis_queue as analysis_queue_routes
-from .routes import auth as auth_routes
-from .routes import bench as bench_routes
-from .routes import bulk_edit as bulk_edit_routes
-from .routes import client_errors as client_errors_routes
-from .routes import client_events as client_events_routes
-from .routes import cloudsync as cloudsync_routes
-from .routes import copilot as copilot_routes
-from .routes import dedup_review as dedup_review_routes
-from .routes import feedback as feedback_routes
-from .routes import feedback_pins as feedback_pins_routes
-from .routes import find_replace as find_replace_routes
-from .routes import health as health_routes
+from .app_wiring import (
+    _bind_core_state,
+    _bind_feature_state,
+    _bind_stem_and_usage,
+    _configure_cors,
+    _configure_http_middleware,
+    _install_exception_handlers,
+    _lifespan_context,
+    _mount_api_routers,
+    _mount_frontend_or_placeholder,
+    _resolve_ports,
+    _SpaStaticFiles,
+)
+from .backend import StateBackend
+from .cloud_sync import probe_syncthing_status
+from .frontend_build import frontend_build_dir
 from .routes import ingest as ingest_routes
-from .routes import ingest_upload as ingest_upload_routes
-from .routes import mytag as mytag_routes
-from .routes import pairings as pairings_routes
-from .routes import performance_telemetry as performance_telemetry_routes
-from .routes import play_it as play_it_routes
-from .routes import playlist_write as playlist_write_routes
-from .routes import playlist_writeback as playlist_writeback_routes
-from .routes import playlists as playlists_routes
-from .routes import progress as progress_routes
-from .routes import quality as quality_routes
-from .routes import queues as queues_routes
-from .routes import rb_assets as rb_assets_routes
-from .routes import rb_hot_cues as rb_hot_cues_routes
-from .routes import reconcile as reconcile_routes
-from .routes import rekordbox_gate as rekordbox_gate_routes
-from .routes import relocate as relocate_routes
-from .routes import search as search_routes
-from .routes import settings as settings_routes
-from .routes import settings_ai as settings_ai_routes
-from .routes import share as share_routes
-from .routes import smartlists as smartlists_routes
-from .routes import spotify as spotify_routes
-from .routes import stem_tiers as stem_tiers_routes
-from .routes import stems as stems_routes
-from .routes import telemetry as telemetry_routes
-from .routes import tracks as tracks_routes
-from .routes import ui_prefs as ui_prefs_routes
-from .routes import usb_export as usb_export_routes
-from .routes import usb_volumes as usb_volumes_routes
-from .routes import usb_volumes_sim as usb_volumes_sim_routes
-from .routes import voice_probe as voice_probe_routes
-from .share_gate import ShareConfig, share_gate_middleware
+from .share_gate import ShareConfig
 from .usage_telemetry import UsageStore
 
 log = logging.getLogger(__name__)
 
-FRONTEND_BUILD_DIR: Path = Path(__file__).resolve().parent.parent / "frontend" / "build"
+FRONTEND_BUILD_DIR: Path = frontend_build_dir()
 
 
-class _SpaStaticFiles(StaticFiles):
-    """Serve the SPA shell for extensionless client-side routes.
-
-    Chrome (and WKWebView in the installed desktop app) heuristically caches
-    index.html and even hashed chunks with no Cache-Control header, so a
-    rebuilt app can keep serving a stale bundle. Vite content-hashes
-    everything under _app/immutable/, so that path is safe to cache forever;
-    the HTML entry point is never hashed, so it must always be revalidated.
-    """
-
-    async def get_response(self, path: str, scope: Scope) -> Response:
-        try:
-            response = await super().get_response(path, scope)
-        except StarletteHTTPException as exc:
-            if exc.status_code != 404 or not self._is_client_route(path):
-                raise
-            response = await super().get_response("index.html", scope)
-        return self._with_cache_control(path, response)
-
-    @staticmethod
-    def _with_cache_control(path: str, response: Response) -> Response:
-        normalized_path = path.replace("\\", "/").lstrip("/")
-        if normalized_path.startswith("_app/immutable/"):
-            response.headers["cache-control"] = "public, max-age=31536000, immutable"
-        elif getattr(response, "media_type", None) == "text/html":
-            response.headers["cache-control"] = "no-cache"
-        return response
-
-    @staticmethod
-    def _is_client_route(path: str) -> bool:
-        normalized_path = path.replace("\\", "/").lstrip("/")
-        is_api_path = normalized_path == "api" or normalized_path.startswith("api/")
-        return not is_api_path and not Path(normalized_path).suffix
-
-
-def create_app(
+def create_app(  # noqa: PLR0913
     *,
     backend: StateBackend | None = None,
     bind_host: str = "127.0.0.1",
@@ -158,6 +76,9 @@ def create_app(
     set_share_config: SetShareConfig | None = None,
     sets_root: Path | None = None,
     auto_analyze: bool = False,
+    lyric_index: bool = False,
+    auto_user_jobs: bool = False,
+    feature_flags: FlagStore | None = None,
 ) -> FastAPI:
     """Build a configured FastAPI app.
 
@@ -166,230 +87,63 @@ def create_app(
     the loop shells out to ``apps.analysis.run``, so only the real daemon
     entry point (``_build_default_app``) turns it on, from
     ``MUSIC_DJ_AUTO_ANALYZE``. Tests opt in explicitly.
+
+    ``lyric_index`` arms the pausable background lyric-index reconcile loop
+    (see :mod:`apps.webui.server.lyric_index_autostart`). It is OFF here on
+    purpose too: only ``_build_default_app`` turns it on, from
+    ``MUSIC_DJ_LYRIC_INDEX``, so no test builds a thread.
+
+    ``feature_flags`` is UNLIKE those two: it is wired here, not left for
+    ``_build_default_app``, because ``load_flags`` reads one small on-disk
+    file with no side effect worth deferring, and a USB route gated on
+    ``app.state.feature_flags`` (SAND-01) must not 500 on the daemon this
+    app boots directly (``python -m apps.webui.server``, the legacy entry
+    point that never passes through ``apps.engine_core.app.create_app``).
+    Pass an explicit ``FlagStore`` to pin the flags a test resolves against;
+    the default reads ``apps.shared.paths.DATA_DIR``.
     """
 
-    if port is None:
-        try:
-            port = resolve_backend_port(None)
-        except PortConfigError:
-            port = None
-    if frontend_port is None:
-        try:
-            frontend_port = resolve_frontend_port()
-        except PortConfigError:
-            frontend_port = None
-
-    @asynccontextmanager
-    async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-        # Kept ON THE APP, not rebuilt per lifespan. stop() joins with a
-        # timeout, so a shutdown that gives up on a slow scan leaves a live
-        # thread whose only handle is the watcher that owns it. A fresh
-        # watcher on the next start of the SAME app would know nothing about
-        # that thread and would start a second reconcile loop beside it,
-        # which is the one thing the retained handle exists to prevent.
-        watcher = getattr(app.state, "auto_analyze_watcher", None)
-        if watcher is None:
-            watcher = build_auto_analyze_watcher(app)
-            app.state.auto_analyze_watcher = watcher
-        watcher.start()
-        try:
-            yield
-        finally:
-            watcher.stop()
-            # playlist_write builds its PlaylistStore lazily from
-            # app.state.state_db_path; release its sqlite handle on shutdown.
-            playlist_write_routes.close_store(app)
-
+    port, frontend_port = _resolve_ports(port, frontend_port)
     app = FastAPI(
         title="music-dj-tools webui",
         version=version,
-        lifespan=_lifespan,
+        lifespan=_lifespan_context,
         description=(
             "Local-first web UI for music-dj-tools. Binds to 127.0.0.1 by "
             "default (D5 / CAT-05b). Override via MUSIC_DJ_BIND_HOST."
         ),
     )
-    app.state.backend = backend or InMemoryBackend()
-    app.state.bind_host = bind_host
-    app.state.port = port
-    app.state.hostname = hostname or socket.gethostname()
-    app.state.lock_status_fn = lock_status_fn
-    app.state.syncthing_status_fn = syncthing_status_fn
-    app.state.state_db_path = state_db_path
-    app.state.version = version
-    app.state.usb_simulation_enabled = usb_volumes_sim_routes.simulation_enabled()
-    app.state.share_config = share_config or ShareConfig.from_environ()
+    _bind_core_state(
+        app,
+        backend,
+        bind_host,
+        hostname,
+        port,
+        lock_status_fn,
+        syncthing_status_fn,
+        state_db_path,
+    )
     app.state.set_share_config = set_share_config or SetShareConfig.from_environ()
     app.state.sets_root = Path(sets_root) if sets_root is not None else None
-    app.state.auto_analyze = analysis_autostart.build(enabled=auto_analyze)
-    app.state.client_error_log_dir = (
-        client_error_log_dir
-        if client_error_log_dir is not None
-        else client_errors_routes.DEFAULT_LOG_DIR
+    _bind_feature_state(
+        app,
+        version,
+        feature_flags,
+        share_config,
+        auto_analyze,
+        lyric_index,
+        client_error_log_dir,
+        client_event_log_dir,
     )
-    app.state.client_event_log_dir = (
-        client_event_log_dir
-        if client_event_log_dir is not None
-        else client_events_routes.DEFAULT_LOG_DIR
-    )
-    if stem_roots is not None:
-        app.state.stem_roots = tuple(Path(root) for root in stem_roots)
-    # Usage telemetry is per-process by design: "is the app open" is a
-    # question about now, so a restart honestly resets it to "nobody has
-    # checked in yet". Tests inject a store with a fake clock.
-    app.state.usage_store = usage_store if usage_store is not None else UsageStore()
-
-    app.add_exception_handler(NotFoundError, handle_not_found)
-    app.add_exception_handler(RekordboxWritebackDisabled, handle_rekordbox_writeback_disabled)
-    app.add_exception_handler(ConflictError, handle_conflict)
-    app.add_exception_handler(BackendError, handle_backend_error)
-
+    _bind_stem_and_usage(app, stem_roots, usage_store)
+    app.state.auto_user_jobs = library_jobs_autostart.build(enabled=auto_user_jobs)
+    _install_exception_handlers(app)
     if enable_cors:
-        # NOTE: wildcard allow_methods/allow_headers is safe because
-        # allow_origins is restricted to the SvelteKit dev server on
-        # loopback. If you set MUSIC_DJ_BIND_HOST to expose the daemon
-        # on LAN / Tailscale, tighten these to an explicit list:
-        # allow_methods=["GET","POST","PATCH","DELETE"] and
-        # allow_headers=["Content-Type","If-Match"]. The If-Match header
-        # must remain allowed for optimistic-concurrency preflights.
-        # See apps/webui/README.md -> "CORS policy" for rationale.
-        worktree_origins = (
-            [
-                f"http://localhost:{frontend_port}",
-                f"http://127.0.0.1:{frontend_port}",
-            ]
-            if frontend_port is not None
-            else []
-        )
-        share_origin = os.environ.get("MUSIC_DJ_SHARE_ORIGIN", "").strip()
-        if not share_origin and app.state.share_config.host:
-            share_origin = f"https://{app.state.share_config.host}"
-        share_origins = [share_origin] if share_origin else []
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=[
-                *worktree_origins,
-                *share_origins,
-                # Isolated e2e verify stacks (loopback-only, see
-                # .planning/rekordbox-parity/e2e*): frontend :5273/:5275
-                # talks to daemons :8686/:8688 via VITE_API_BASE.
-                "http://localhost:5273",
-                "http://127.0.0.1:5273",
-                "http://localhost:5275",
-                "http://127.0.0.1:5275",
-            ],
-            # scripts/bench/serve.py is a loopback static server for the
-            # vocal quality rater; its port is a CLI arg (8791 by default,
-            # 87xx in parallel runs), so it needs a pattern, not a literal.
-            # POST /bench/ratings from that page is preflighted.
-            allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):87\d\d$",
-            allow_credentials=False,
-            allow_methods=["*"],
-            allow_headers=["*"],
-            expose_headers=[
-                "ETag",
-                "X-Bind-Warning",
-                "X-Audio-Kind",
-                "X-Audio-Venue",
-                "X-Audio-Source",
-            ],
-        )
-
-    app.middleware("http")(share_gate_middleware)
-
-    @app.middleware("http")
-    async def record_passive_usage(request: Request, call_next):
-        # Backstop for the heartbeat: ordinary traffic from a real webview or
-        # browser is evidence someone has the app open. The store drops
-        # telemetry/health paths and non-app user agents, so agents polling
-        # this API cannot manufacture the activity they are asking about.
-        app.state.usage_store.record_request(
-            path=request.url.path,
-            user_agent=request.headers.get("user-agent", ""),
-        )
-        return await call_next(request)
-
-    @app.middleware("http")
-    async def add_bind_warning(request: Request, call_next):
-        response = await call_next(request)
-        if bind_host and bind_host != "127.0.0.1" and bind_host != "localhost":
-            response.headers["X-Bind-Warning"] = (
-                f"server is bound to {bind_host}; do not expose without Tailscale"
-            )
-        return response
-
-    api_prefix = "/api/v1"
-    app.include_router(tracks_routes.router, prefix=api_prefix)
-    app.include_router(client_errors_routes.router, prefix=api_prefix)
-    app.include_router(client_events_routes.router, prefix=api_prefix)
-    app.include_router(performance_telemetry_routes.router, prefix=api_prefix)
-    app.include_router(bench_routes.router, prefix=api_prefix)
-    app.include_router(bulk_edit_routes.router, prefix=api_prefix)
-    app.include_router(find_replace_routes.router, prefix=api_prefix)
-    app.include_router(mytag_routes.router, prefix=api_prefix)
-    app.include_router(playlists_routes.router, prefix=api_prefix)
-    app.include_router(playlist_write_routes.router, prefix=api_prefix)
-    app.include_router(play_it_routes.router, prefix=api_prefix)
-    app.include_router(playlist_writeback_routes.router, prefix=api_prefix)
-    app.include_router(pairings_routes.router, prefix=api_prefix)
-    app.include_router(queues_routes.router, prefix=api_prefix)
-    app.include_router(dedup_review_routes.router, prefix=api_prefix)
-    app.include_router(feedback_routes.router, prefix=api_prefix)
-    app.include_router(feedback_pins_routes.router, prefix=api_prefix)
-    app.include_router(share_routes.router, prefix=api_prefix)
-    app.include_router(rb_assets_routes.router, prefix=api_prefix)
-    app.include_router(search_routes.router, prefix=api_prefix)
-    app.include_router(rb_hot_cues_routes.router, prefix=api_prefix)
-    app.include_router(progress_routes.router, prefix=api_prefix)
-    app.include_router(quality_routes.router, prefix=api_prefix)
-    app.include_router(smartlists_routes.router, prefix=api_prefix)
-    app.include_router(stems_routes.router, prefix=api_prefix)
-    app.include_router(stem_tiers_routes.router, prefix=api_prefix)
-    app.include_router(reconcile_routes.router, prefix=api_prefix)
-    app.include_router(rekordbox_gate_routes.router, prefix=api_prefix)
-    app.include_router(relocate_routes.router, prefix=api_prefix)
-    app.include_router(copilot_routes.router, prefix=api_prefix)
-    app.include_router(analysis_routes.router, prefix=api_prefix)
-    app.include_router(analysis_queue_routes.router, prefix=api_prefix)
-    app.include_router(auth_routes.router, prefix=api_prefix)
-    app.include_router(ingest_routes.router, prefix=api_prefix)
-    app.include_router(ingest_upload_routes.router, prefix=api_prefix)
-    app.include_router(health_routes.router, prefix=api_prefix)
-    app.include_router(settings_routes.router, prefix=api_prefix)
-    app.include_router(settings_ai_routes.router, prefix=api_prefix)
-    app.include_router(ui_prefs_routes.router, prefix=api_prefix)
-    app.include_router(cloudsync_routes.router, prefix=api_prefix)
-    app.include_router(spotify_routes.router, prefix=api_prefix)
-    app.include_router(usb_export_routes.router, prefix=api_prefix)
-    app.include_router(usb_volumes_routes.router, prefix=api_prefix)
-    if app.state.usb_simulation_enabled:
-        # Test/dev only (MDT_USB_SIMULATION=1): production apps never mount
-        # the simulated-volume POST, so fake volumes cannot be injected.
-        app.include_router(usb_volumes_sim_routes.router, prefix=api_prefix)
-    app.include_router(telemetry_routes.router, prefix=api_prefix)
-    app.include_router(voice_probe_routes.router, prefix=api_prefix)
-    app.include_router(sync_hub_router, prefix=api_prefix)
-    app.include_router(sets_router)
+        _configure_cors(app, frontend_port)
+    _configure_http_middleware(app, bind_host)
+    _mount_api_routers(app)
     app.include_router(set_share_page_router)
-    app.include_router(play_analytics_router)
-
-    if mount_frontend and FRONTEND_BUILD_DIR.exists() and any(FRONTEND_BUILD_DIR.iterdir()):
-        app.mount("/", _SpaStaticFiles(directory=str(FRONTEND_BUILD_DIR), html=True), name="spa")
-    else:
-
-        @app.get("/", include_in_schema=False)
-        def _index_placeholder() -> dict[str, str]:
-            return {
-                "status": "ok",
-                "message": (
-                    "music-dj-tools webui API running. Build the frontend "
-                    "(cd apps/webui/frontend && pnpm install && pnpm build) "
-                    "to serve the SPA here."
-                ),
-                "api_docs": "/docs",
-                "openapi": "/openapi.json",
-            }
-
+    _mount_frontend_or_placeholder(app, mount_frontend, FRONTEND_BUILD_DIR)
     return app
 
 
@@ -444,6 +198,7 @@ def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWa
         """
         started = ingest_routes._start_refresh_job(
             ingest_routes.RefreshIn(scope="unmapped"),
+            ingest_routes._stem_roots(app),
             lambda: guard(last_attempted_queue()),
         )
 
@@ -539,17 +294,62 @@ def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWa
     )
 
 
+def build_lyric_index_watcher(app: FastAPI) -> lyric_index_autostart.LyricIndexWatcher:
+    """Bind the lyric-index reconcile loop to this app's data and usage store.
+
+    Public because it IS the wiring under test: ``create_app`` supplies
+    ``state_db_path`` (whose grandparent directory is the data root that
+    holds ``state/`` - the lyrics cache and the index file both live under
+    ``data_dir/state/``) and ``usage_store`` (the UI-activity probe that
+    pauses the job while someone is using the app).
+    """
+    state_db_path = Path(app.state.state_db_path).resolve()
+    data_dir = state_db_path.parent.parent
+    # A layout mismatch (state_db_path not exactly two levels under the data
+    # root) makes the derivation above point at the wrong tree: the watcher
+    # would then find zero candidates, write the index into that wrong tree,
+    # and report idle forever with no error. Fail loud instead - but only
+    # when the daemon is actually armed to do that reconcile work, so an app
+    # built with the feature off (the default in every test but the lyric
+    # daemon's own) is free to pass a state_db_path with no such layout.
+    if app.state.lyric_index.enabled and (
+        state_db_path.parent.name != "state" or not (data_dir / "state").is_dir()
+    ):
+        raise RuntimeError(
+            f"lyric index data_dir {data_dir} guessed from state_db_path "
+            f"{state_db_path} does not match the required data_dir/state/"
+            "state.db layout; refusing to reconcile a directory that cannot "
+            "hold the lyrics cache."
+        )
+
+    def ui_active() -> bool:
+        # "is the app open and on screen" is the DJ-safe pause signal: index
+        # work never runs while a client could be at the decks.
+        return bool(
+            app.state.usage_store.snapshot()["summary"]["any_client_in_use"]
+        )
+
+    return lyric_index_autostart.LyricIndexWatcher(
+        app.state.lyric_index, data_dir=data_dir, activity_fn=ui_active
+    )
+
+
 def _build_default_app() -> FastAPI:
     from apps.shared import platform_paths
     from apps.shared.library_mode import apply_library_env, assert_ready
+    from apps.shared.sync_bind_guard import assert_sync_bind_allowed
     from apps.webui.library_assets import ensure_stem_storage, stem_storage
 
+    bind_host = os.environ.get("MUSIC_DJ_BIND_HOST", "127.0.0.1")
+    # W3, before any disk work: this app mounts /api/v1/sync/*. Covers the bare
+    # `uvicorn ...app:app` entry via MUSIC_DJ_BIND_HOST; uvicorn's own --host
+    # never reaches the app, so that flag alone is unguarded (sync_bind_guard).
+    assert_sync_bind_allowed(bind_host)
     apply_library_env()
     platform_paths.refresh_share_root()
     assert_ready()
     stems = stem_storage()
     ensure_stem_storage(stems)
-    bind_host = os.environ.get("MUSIC_DJ_BIND_HOST", "127.0.0.1")
     hostname = os.environ.get("MUSIC_DJ_HOSTNAME")
     # Phase 5 wiring: prefer SqliteBackend when ``data/state/state.db`` exists,
     # else fall back to the in-memory backend (keeps dev + tests fast).
@@ -560,13 +360,32 @@ def _build_default_app() -> FastAPI:
     from .sqlite_backend import make_backend
 
     backend: StateBackend = make_backend()
+    # Late import, same reason as make_backend()'s: apply_library_env() above
+    # must run first so STATE_DB (re-exported from platform_paths.DATA_DIR)
+    # reflects this process's MDT_DATA_DIR rather than whatever value it
+    # froze to at whatever module happened to import it first.
+    #
+    # Without this, create_app()'s own default for state_db_path is the
+    # literal "data/state/state.db", resolved relative to CWD rather than
+    # MDT_DATA_DIR. That mismatch was silent until debc73644 started binding
+    # app.state.analysis_db_path to state_db_path unconditionally: before
+    # that commit, the analysis routes' _analysis_db_path() saw no override
+    # (getattr returned None) and fell back to STATE_DB directly, so they
+    # happened to be correct by omission. After it, the real daemon's
+    # analysis/beatgrid-fallback routes read the wrong file whenever
+    # MDT_DATA_DIR diverges from CWD/data -- e.g. every e2e suite that boots
+    # this entrypoint against a fixture data dir with an unmapped track (#949).
+    from apps.shared.paths import STATE_DB
     return create_app(
         backend=backend,
         bind_host=bind_host,
         hostname=hostname,
         syncthing_status_fn=probe_syncthing_status,
         stem_roots=stems.roots,
+        state_db_path=str(STATE_DB),
         auto_analyze=analysis_autostart.arm_from_environ(os.environ),
+        lyric_index=lyric_index_autostart.enabled_from_environ(os.environ),
+        auto_user_jobs=library_jobs_autostart.arm_from_environ(os.environ),
     )
 
 
@@ -591,4 +410,4 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["FRONTEND_BUILD_DIR", "app", "create_app", "create_process_app"]  # noqa: F822 -- "app" is a PEP 562 lazy attribute, not a real binding
+__all__ = ["FRONTEND_BUILD_DIR", "_SpaStaticFiles", "app", "create_app", "create_process_app"]  # noqa: F822 -- "app" is a PEP 562 lazy attribute, not a real binding
