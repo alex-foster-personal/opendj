@@ -91,6 +91,7 @@ export default defineConfig({
 		'**/playlist-detail.spec.ts', // playwright.webkit-deckload.config.ts (built artifact, fixture playlists, #859)
 		'**/desktop-setup.spec.ts', // playwright.desktop-setup.config.ts (static http.server)
 		'**/play-analytics.spec.ts', // playwright.play-analytics.config.ts (fixture server)
+		'**/library-wheel.spec.ts', // playwright.library-wheel.config.ts (real engine, genre fixture)
 		'**/rekordbox-writeback-disabled.spec.ts', // playwright.rekordbox-gate.config.ts
 		'**/hot-cue-mapping-gate.spec.ts', // playwright.hotcue-mapping-gate.config.ts (real backend, fixture library)
 		'**/stems-progress.spec.ts', // playwright.stems.config.ts (engine + ffmpeg)

@@ -990,6 +990,21 @@ jobs:
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 9414 5214 -- \
             pnpm exec playwright test --config tests/e2e/playwright.play-analytics.config.ts
 
+      - name: Extended - library wheel
+        working-directory: apps/webui/frontend
+        # Real engine over a throwaway genre-family fixture (state.db +
+        # master.plain.db). The root deckload library has no vendor mapping
+        # and 503s this route, so this suite is the UI evidence for LIBUX-06.
+        # Fixed loopback port (see the vite/playwright config it names) on a
+        # host that runs up to eight e2e jobs at once: hold the per-suite host
+        # lock so a second copy of this step WAITS instead of dying on
+        # 'is already used'. Same reason as the webkit-deckload steps.
+        if: ${{ !cancelled() }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" library-wheel \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 9428 5228 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.library-wheel.config.ts
+
       - name: Extended - stretch artifact (chromium + webkit)
         working-directory: apps/webui/frontend
         # Fixed loopback port (see the vite/playwright config it names) on a

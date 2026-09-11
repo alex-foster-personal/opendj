@@ -148,7 +148,10 @@ const BUDGETS = [
   // than adding to it, this limit comes back down with it. Merge note (PR #1010 x
   // #1691): PR #1010 touches only the `performance` surface, so this `other-lazy`
   // ceiling and its measured figure are carried from main unchanged.
-  { name: 'other-lazy', limit: 110592, measured: 107319, note: 'all other routes plus deferred shell' },
+  // RAISED Fri 11 Sep 2026: the Library Wheel route (/library-wheel SVG sunburst,
+  // axis picker, fail-fast wheel-api client) is a new lazy SvelteKit node in this
+  // shared bucket; measured 113,342, same +5% ceil-to-KiB rule => 119,808 (117 KiB).
+  { name: 'other-lazy', limit: 119808, measured: 113342, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

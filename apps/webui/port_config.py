@@ -100,6 +100,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         4456,  # apps/desktop/mcp/smoke.ts WEBDRIVER_PORT
         5214,  # tests/e2e/vite.play-analytics.config.ts frontend port
         5216,  # tests/e2e/playwright.desktop-setup.config.ts SETUP_PAGE_PORT
+        5228,  # tests/e2e/vite.library-wheel.config.ts frontend port
         5273,  # tests/e2e/vite.performance.config.ts DEFAULT_FRONTEND_BASE
         5311,  # tests/e2e/playwright.stretch-artifact.config.ts STRETCH_ARTIFACT_PORT
         5320,  # tests/e2e/vite.hotcue-mapping-gate.config.ts frontend port
@@ -120,6 +121,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8699,  # tests/e2e/vite.autoplay-stall-gate.config.ts API port
         9408,  # tests/e2e/stems-e2e-endpoints.ts DEFAULT_FRONTEND_PORT
         9414,  # tests/e2e/playwright.play-analytics.config.ts backend port
+        9428,  # tests/e2e/playwright.library-wheel.config.ts engine port
         9473,  # tests/e2e/playwright.desktop-setup.config.ts DEAD_ENGINE_PORT
     }
 )
