@@ -33,7 +33,7 @@ def test_identity_envelopes_score_exact_without_claiming_parity() -> None:
                 own_preview=_ramp(),
             )
         ],
-        round=1,
+        round_n=1,
     )
     report = score_payload(data)
     figure = report.figure("waveform_preview")
@@ -58,7 +58,7 @@ def test_reversed_preview_is_disagreement_not_agreement() -> None:
                 own_preview=list(reversed(ramp)),
             )
         ],
-        round=1,
+        round_n=1,
     )
     report = score_payload(data)
     figure = report.figure("waveform_preview")
@@ -88,7 +88,7 @@ def test_missing_preview_truth_is_ungradable_without_scoring_other_lanes() -> No
                 own_triband=triband,
             )
         ],
-        round=1,
+        round_n=1,
     )
     report = score_payload(data)
     preview = report.figure("waveform_preview")
@@ -122,7 +122,7 @@ def test_unreadable_ext_excludes_detail_only() -> None:
                 own_triband=triband,
             )
         ],
-        round=1,
+        round_n=1,
     )
     report = score_payload(data)
     detail = report.figure("waveform_detail")
@@ -155,7 +155,7 @@ def test_missing_detail_truth_is_ungradable() -> None:
                 own_triband=_triband(),
             )
         ],
-        round=1,
+        round_n=1,
     )
     report = score_payload(data)
     detail = report.figure("waveform_detail")
@@ -182,7 +182,7 @@ def test_missing_triband_truth_leaves_phrase_not_scored() -> None:
                 own_triband=_triband(),
             )
         ],
-        round=1,
+        round_n=1,
     )
     report = score_payload(data)
     triband = report.figure("waveform_triband")
@@ -205,7 +205,7 @@ def test_truth_without_own_stays_in_denominator_as_no_own() -> None:
                 own_preview=None,
             )
         ],
-        round=1,
+        round_n=1,
     )
     report = score_payload(data)
     figure = report.figure("waveform_preview")
@@ -233,7 +233,7 @@ def test_pwv4_rgb_trap_field_is_ignored() -> None:
                 rb_pwv4_rgb=rgb_trap,
             )
         ],
-        round=1,
+        round_n=1,
     )
     report = score_payload(data)
     figure = report.figure("waveform_detail")
