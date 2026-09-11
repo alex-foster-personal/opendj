@@ -71,6 +71,77 @@ def _now_iso() -> str:
 # pointer
 #-----------------------------------------------------------------------------
 
+def _canonical_beatgrid_record(
+    conn: sqlite3.Connection, stable_id: str,
+) -> AnalysisRecord | None:
+    """The canonical own beatgrid record visible on ``conn`` (same transaction)."""
+    pointer = canonical_pointer(conn, stable_id, "beatgrid")
+    if pointer is None:
+        return None
+    row = conn.execute(
+        "SELECT record_json FROM analysis "
+        "WHERE stable_id = ? AND backend = ? AND backend_version = ?",
+        (stable_id, pointer[0], pointer[1]),
+    ).fetchone()
+    if row is None:
+        return None
+    record = AnalysisRecord.from_json(row[0])
+    beatgrid_lane = record.lanes.get("beatgrid")
+    if beatgrid_lane is None or beatgrid_lane.status != "ok":
+        return None
+    return record
+
+
+def _key_row_is_stale(
+    conn: sqlite3.Connection, stable_id: str, record_json: str,
+) -> bool:
+    """True when an ok key record's beatgrid dependency no longer matches."""
+    from apps.analysis_key.lane_payload import (
+        beatgrid_dependency_matches,
+        beatgrid_identity_from_record,
+    )
+
+    record = AnalysisRecord.from_json(record_json)
+    key_lane = record.lanes.get("key")
+    if key_lane is None or key_lane.status != "ok":
+        return False
+    depends_on = key_lane.payload.get("depends_on", {}).get("beatgrid")
+    if not isinstance(depends_on, dict):
+        return False
+    current = _canonical_beatgrid_record(conn, stable_id)
+    if current is None:
+        # No canonical beatgrid to compare against yet: the row may still win
+        # canonical for scalar projection. Segment staleness is enforced at
+        # read time in the /anlz overlay.
+        return False
+    return not beatgrid_dependency_matches(
+        depends_on, beatgrid_identity_from_record(current)
+    )
+
+
+def key_lane_stale_but_unpromoted(
+    conn: sqlite3.Connection, stable_id: str,
+) -> bool:
+    """True when ok own key rows exist but canonical is empty due to stale beatgrid."""
+    if canonical_pointer(conn, stable_id, "key") is not None:
+        return False
+    rows = conn.execute(
+        "SELECT record_json FROM analysis WHERE stable_id = ?",
+        (stable_id,),
+    ).fetchall()
+    for (record_json,) in rows:
+        record = AnalysisRecord.from_json(record_json)
+        parsed = parse_own_backend(record.backend)
+        if parsed is None or parsed.lane != "key" or parsed.producer == "cand":
+            continue
+        key_lane = record.lanes.get("key")
+        if key_lane is None or key_lane.status != "ok":
+            continue
+        if _key_row_is_stale(conn, stable_id, record_json):
+            return True
+    return False
+
+
 def _eligible_rows(
     conn: sqlite3.Connection, stable_id: str, lane: str,
 ) -> list[tuple[str, str, str]]:
@@ -83,6 +154,8 @@ def _eligible_rows(
     for backend, backend_version, record_json in rows:
         parsed = parse_own_backend(backend)
         if parsed is None or parsed.lane != lane or parsed.producer == "cand":
+            continue
+        if lane == "key" and _key_row_is_stale(conn, stable_id, record_json):
             continue
         out.append((backend, backend_version, record_json))
     return out
@@ -357,7 +430,14 @@ def refresh_for_record(conn: sqlite3.Connection, record: AnalysisRecord) -> None
     parsed = parse_own_backend(record.backend)
     if parsed is None:
         return
-    refresh_lanes(conn, record.stable_id, sorted(set(record.lanes) | {parsed.lane}))
+    lanes = set(record.lanes) | {parsed.lane}
+    if parsed.lane == "beatgrid":
+        # An own beatgrid write can stale every ok key record that names it.
+        # Recompute key canonical + projection in the same transaction so
+        # effective_fields() does not keep serving a scalar from a dependency
+        # the /anlz overlay already treats as stale_dependency.
+        lanes.add("key")
+    refresh_lanes(conn, record.stable_id, sorted(lanes))
 
 
 def refresh_lanes(
