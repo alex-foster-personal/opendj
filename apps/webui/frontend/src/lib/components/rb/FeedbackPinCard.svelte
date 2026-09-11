@@ -49,6 +49,11 @@
 
 	const thread = $derived(pinThread(pin));
 
+	/** FBSYNC-05: a pin synced from another machine carries its screenshot's
+	 * metadata but not its bytes, so the image 404s here. Keyed on the
+	 * attachment id so a card reused for another pin starts clean. */
+	let unsyncedAttachmentId = $state<string | null>(null);
+
 	/** Re-clamp against the card's REAL measured size, not the guess. Runs
 	 * once pinBodyElement mounts, again whenever `pin` changes (a different
 	 * marker opened into this same instance), and again on every resize,
@@ -70,6 +75,7 @@
 		void pin;
 		measuredPos = null;
 		lightboxOpen = false;
+		unsyncedAttachmentId = null;
 		replyText = readPinReplyDraft(localStorage, pin.id);
 		if (pinBodyElement !== null) _reposition();
 	});
@@ -83,11 +89,6 @@
 	/** An outside pointer closes only this reopened card. The widget owns a
 	 * separate new-pin draft, so it remains intact. Pointerdown precedes a
 	 * marker click, letting another marker reopen its own card immediately. */
-	/** FBSYNC-05: a pin synced from another machine carries its screenshot's
-	 * metadata but not its bytes, so the image 404s here. Keyed on the
-	 * attachment id so a card reused for another pin starts clean. */
-	let unsyncedAttachmentId = $state<string | null>(null);
-
 	function handleOutsidePinPointerDown(event: PointerEvent): void {
 		const target = event.target;
 		if (!(target instanceof Node)) return;
