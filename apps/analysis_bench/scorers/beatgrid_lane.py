@@ -70,7 +70,7 @@ def _cells(fixtures: dict[str, Any], payload: dict[str, Any]) -> tuple[dict, dic
         row = beatgrid_report.score_track(fixture, result)
         if row is None:
             continue
-        (dynamic if fixture["is_dynamic"] else fixed).append(row)
+        (dynamic if row["is_dynamic"] else fixed).append(row)
     return beatgrid_report.aggregate(fixed), beatgrid_report.aggregate(dynamic), omitted
 
 
@@ -96,6 +96,7 @@ def score_bundle(bundle: Path, arms: dict[str, dict[str, Any]]) -> dict[str, Any
         "scorer_version": SCORER_VERSION,
         "n_fixtures": len(fixtures),
         "truth": (manifest.get("reads") or {}).get("truth", "inline ref_beats"),
+        "eval_partition": beatgrid_report.eval_partition_for_fixtures(fixtures),
         "arms": scored,
     }
 

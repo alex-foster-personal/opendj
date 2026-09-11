@@ -47,8 +47,12 @@ from typing import Any
 from apps.analysis_bench.scorers.beatgrid import (
     BEAT_TOLERANCE_S,
     SCORER_VERSION,
+    WEIGHTS_NOT_RELEASED,
+    grid_is_dynamic,
     least_squares_bpm,
+    partition_counts,
     percentile,
+    reserved_table_cells,
     score_bpm,
     score_continuity,
     score_downbeats,
@@ -160,7 +164,7 @@ def score_track(fixture: dict[str, Any], result: dict[str, Any]) -> dict[str, An
 
     return {
         "stable_id": fixture["stable_id"],
-        "is_dynamic": fixture["is_dynamic"],
+        "is_dynamic": grid_is_dynamic(fixture["ref_beats"]),
         "rb_bpm_stored": round(rb_stored, 2),
         "rb_bpm_window": round(rb_window, 3) if rb_window else None,
         "cand_bpm_derived": round(cand_bpm, 3) if cand_bpm else None,
@@ -326,6 +330,22 @@ def _unit(value: Any, spec: str, unit: str) -> str:
     return "n/a" if value is None else f"{format(value, spec)}{unit}"
 
 
+def eval_partition_for_fixtures(fixtures: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Re-count fixed vs dynamic for fixtures that survive the scoring window guard."""
+    ref_beats_by_track: list[list] = []
+    for fixture in fixtures.values():
+        start, end = fixture["score_start_s"], fixture["score_end_s"]
+        ref_beats = [b[1] for b in fixture["ref_beats"]]
+        if len(window_slice(ref_beats, start, end)) >= 8:
+            ref_beats_by_track.append(fixture["ref_beats"])
+    n_fixed, n_dynamic = partition_counts(ref_beats_by_track)
+    return {
+        "n_fixed": n_fixed,
+        "n_dynamic": n_dynamic,
+        "predicate": "grid_is_dynamic",
+    }
+
+
 def render_table(title: str, cells: list[tuple[str, dict, dict]]) -> list[str]:
     """One markdown table: a row per candidate for a single cell of the split."""
     head = (
@@ -335,7 +355,11 @@ def render_table(title: str, cells: list[tuple[str, dict, dict]]) -> list[str]:
     )
     rule = "|" + "|".join(["---"] * 17) + "|"
     lines = [f"### {title}", "", head, rule]
-    for label, cell, meta in cells:
+    for label, cell, meta in cells + reserved_table_cells():
+        status = cell.get("status") or meta.get("status")
+        if status == WEIGHTS_NOT_RELEASED:
+            lines.append(f"| {label} | {WEIGHTS_NOT_RELEASED} |" + " n/a |" * 15)
+            continue
         if not cell.get("n"):
             lines.append(f"| {label} | 0 |" + " n/a |" * 15)
             continue
@@ -409,6 +433,16 @@ def render_report(payload: dict[str, Any]) -> str:
         f"## Round-{payload['round']} table",
         "",
     ]
+    eval_part = payload.get("eval_partition") or {}
+    if eval_part:
+        lines += [
+            f"Partition at evaluation (`{eval_part.get('predicate', 'grid_is_dynamic')}` "
+            f"over reference beats scored): **{eval_part.get('n_fixed', 0)} fixed**, "
+            f"**{eval_part.get('n_dynamic', 0)} dynamic**. "
+            "Survey denominators above are the Wed 19 Aug 2026 library snapshot; "
+            "these cell `n` values are the re-count for this fixture set.",
+            "",
+        ]
 
     cells_fixed = [(c["label"], c["fixed"], c) for c in payload["candidates"]]
     cells_dyn = [(c["label"], c["dynamic"], c) for c in payload["candidates"]]
@@ -562,12 +596,15 @@ def main(argv: list[str] | None = None) -> int:
             "tracks": rows,
         })
 
+    eval_partition = eval_partition_for_fixtures(fixtures)
+
     payload = {
         "schema": 1,
         "round": args.round,
         "scorer_version": SCORER_VERSION,
         "beat_tolerance_s": BEAT_TOLERANCE_S,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "eval_partition": eval_partition,
         "manifest": {
             "denominator": manifest["denominator"],
             "population": manifest["population"],
@@ -584,13 +621,20 @@ def main(argv: list[str] | None = None) -> int:
         fh.write(render_report(payload) + "\n")
 
     print(f"[report] scorer v{SCORER_VERSION} -> {args.out_md}")
+    print(
+        f"[report] eval partition ({eval_partition['predicate']}): "
+        f"{eval_partition['n_fixed']} fixed, {eval_partition['n_dynamic']} dynamic"
+    )
     for cand in candidates:
         fixed, dyn = cand["fixed"], cand["dynamic"]
         print(
-            f"[report]   {cand['label']:24s} fixed F={fixed.get('f_measure_mean') or 0:.3f} "
+            f"[report]   {cand['label']:24s} "
+            f"fixed n={fixed.get('n', 0)} "
+            f"F={fixed.get('f_measure_mean') or 0:.3f} "
             f"CMLt={fixed.get('cmlt_mean') or 0:.3f} AMLt={fixed.get('amlt_mean') or 0:.3f} "
             f"BPM<=1.0 {fixed.get('bpm_within_1_0_pct') or 0:.1f}% | "
-            f"dyn F={dyn.get('f_measure_mean') or 0:.3f} "
+            f"dyn n={dyn.get('n', 0)} "
+            f"F={dyn.get('f_measure_mean') or 0:.3f} "
             f"CMLt={dyn.get('cmlt_mean') or 0:.3f} AMLt={dyn.get('amlt_mean') or 0:.3f}"
         )
     return 0

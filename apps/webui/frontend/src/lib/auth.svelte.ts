@@ -103,7 +103,10 @@ export async function startLogin(): Promise<LoginStart> {
 	markLoginSubmit();
 	const response = await authFetch('/api/v1/auth/login', {
 		method: 'POST',
-		body: JSON.stringify({ origin: window.location.origin })
+		body: JSON.stringify({
+			origin: window.location.origin,
+			return_to: window.location.pathname
+		})
 	});
 	if (!response.ok) {
 		throw new Error(await errorMessage(response, `could not start sign-in (${response.status})`));
@@ -111,6 +114,26 @@ export async function startLogin(): Promise<LoginStart> {
 	const payload = (await response.json()) as LoginStart;
 	markLoginNavigate();
 	return payload;
+}
+
+/**
+ * Read and strip an auth error query param left by the OAuth callback redirect.
+ *
+ * Returns the decoded message when present, otherwise null. Does not touch
+ * auth.user; the caller decides how to surface the error (toast, etc.).
+ */
+export function consumeAuthErrorFromLocation(): string | null {
+	const params = new URLSearchParams(window.location.search);
+	const message = params.get('opendj_auth_error');
+	if (!message) return null;
+	params.delete('opendj_auth_error');
+	const query = params.toString();
+	const nextUrl =
+		window.location.pathname +
+		(query ? `?${query}` : '') +
+		(window.location.hash || '');
+	window.history.replaceState(window.history.state, '', nextUrl);
+	return message;
 }
 
 /** Drop the session server-side, then clear it locally. */
