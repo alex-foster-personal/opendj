@@ -18,7 +18,14 @@
 	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import ControlExplainer from './ControlExplainer.svelte';
+	import {
+		blitJogRadial,
+		JOG_RADIAL_INNER_RADIUS,
+		type JogRadialFrame,
+		type StripVocals
+	} from './jog-radial-render';
 
 	let {
 		deck,
@@ -40,6 +47,22 @@
 		onMasterTempo: () => Promise<void>;
 		onSlip: () => Promise<void>;
 	} = $props();
+
+	const DIAL_CSS_PX = 104;
+	let radialCanvas: HTMLCanvasElement | undefined = $state();
+
+	const radialOn: boolean = $derived(uiPrefs.jog_radial_waveform);
+	const previewBands = $derived(deck.anlz?.waveform.preview ?? null);
+	const hasPreview: boolean = $derived(previewBands !== null && previewBands.length > 0);
+	const radialVocals: StripVocals | null = $derived.by(() => {
+		if (deck.anlz === null) return null;
+		const raw = (deck.anlz as { vocals?: StripVocals }).vocals;
+		return raw ?? null;
+	});
+	const radialDurationSec: number | null = $derived(
+		deck.duration_ms === null || deck.duration_ms <= 0 ? null : deck.duration_ms / 1000
+	);
+	const showRadialCanvas: boolean = $derived(radialOn && hasPreview);
 
 	// Live BPM = PQTZ grid BPM x playback ratio (Beat Sync plans from PQTZ,
 	// not rekordbox tag BPM - tag*pitch desyncs the dial after Bsync).
@@ -168,12 +191,38 @@
 	const dialTitle: string = $derived(
 		[
 			`Jog dial: live BPM ${bpmText}, pitch ${pitchText}, range ${rangeText}`,
+			showRadialCanvas ? 'radial waveform on' : null,
 			phaseTitle,
 			offTempoTitle
 		]
 			.filter((part): part is string => part !== null)
 			.join('. ')
 	);
+
+	$effect(() => {
+		const c = radialCanvas;
+		if (c === undefined || !showRadialCanvas || previewBands === null || deck.anlz === null) return;
+		const ctx = c.getContext('2d');
+		if (ctx === null) throw new Error('JogDial: radial canvas 2d context unavailable');
+		const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio ?? 1;
+		const css = DIAL_CSS_PX;
+		const backing = Math.round(css * dpr);
+		if (c.width !== backing || c.height !== backing) {
+			c.width = backing;
+			c.height = backing;
+		}
+		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		const frame: JogRadialFrame = {
+			widthPx: css,
+			heightPx: css,
+			playingFace: deck.audible,
+			kind: deck.anlz.waveform.kind,
+			preview: previewBands,
+			vocals: radialVocals,
+			durationSec: radialDurationSec
+		};
+		blitJogRadial(ctx, frame, previewBands, radialVocals, dpr);
+	});
 </script>
 
 	<div class="jog" role="group" aria-label={`jog controls deck ${deck.deck_id}`}>
@@ -181,11 +230,51 @@
 		class="dial-wrap"
 		class:jog-off-tempo={offTempoTitle !== null}
 		class:dial-playing={deck.audible}
+		class:dial-radial-wave={showRadialCanvas}
 		title={dialTitle}
 	>
+		{#if showRadialCanvas}
+			<canvas
+				class="radial-wave"
+				bind:this={radialCanvas}
+				data-testid={`jog-radial-waveform-deck-${deck.deck_id}`}
+				width={DIAL_CSS_PX}
+				height={DIAL_CSS_PX}
+				aria-hidden="true"
+			></canvas>
+		{/if}
 		<svg viewBox="0 0 100 100" class="dial" role="img" aria-label={`jog dial readout, ${phaseTitle}`}>
-			<circle cx="50" cy="50" r="47" fill="#0a0c0f" stroke="#23282f" stroke-width="2.5" />
-			<circle class="wheel-fill" cx="50" cy="50" r={JOG_WHEEL_FACE_RADIUS} fill="#14171d" stroke="#1a1e25" stroke-width="1" />
+			{#if showRadialCanvas}
+				<circle cx="50" cy="50" r="47" fill="none" stroke="#23282f" stroke-width="2.5" />
+				<circle
+					class="wheel-fill-inner"
+					cx="50"
+					cy="50"
+					r={JOG_RADIAL_INNER_RADIUS}
+					fill="#14171d"
+					stroke="none"
+				/>
+				<circle
+					class="wheel-fill"
+					cx="50"
+					cy="50"
+					r={JOG_WHEEL_FACE_RADIUS}
+					fill="none"
+					stroke="#1a1e25"
+					stroke-width="1"
+				/>
+			{:else}
+				<circle cx="50" cy="50" r="47" fill="#0a0c0f" stroke="#23282f" stroke-width="2.5" />
+				<circle
+					class="wheel-fill"
+					cx="50"
+					cy="50"
+					r={JOG_WHEEL_FACE_RADIUS}
+					fill="#14171d"
+					stroke="#1a1e25"
+					stroke-width="1"
+				/>
+			{/if}
 			{#if deck.audible}
 				<g class="phase-marks" transform={`rotate(${phaseAngle} 50 50)`}>
 					{#each phaseMarks as mark (mark.angleDeg)}
@@ -209,17 +298,19 @@
 					transform="rotate(-90 50 50)"
 				/>
 				<line class="progress-zero" x1="50" y1="3" x2="50" y2="13" stroke="#fff" stroke-opacity="0.3" stroke-width="1" />
-				<line
-					class="position-tick"
-					x1="50"
-					y1={markOuterY}
-					x2="50"
-					y2={markInnerY}
-					stroke="#d0342c"
-					stroke-width="3"
-					stroke-linecap="round"
-					transform={`rotate(${tickAngle} 50 50)`}
-				/>
+				{#if !(radialOn && hasPreview)}
+					<line
+						class="position-tick"
+						x1="50"
+						y1={markOuterY}
+						x2="50"
+						y2={markInnerY}
+						stroke="#d0342c"
+						stroke-width="3"
+						stroke-linecap="round"
+						transform={`rotate(${tickAngle} 50 50)`}
+					/>
+				{/if}
 			{/if}
 			<text x="50" y="47" class="bpm">{bpmText}</text>
 			<text x="50" y="61" class="pitch">{pitchText}</text>
@@ -322,11 +413,22 @@
 		min-height: 0;
 	}
 	.dial-wrap {
+		position: relative;
 		width: 104px;
 		height: 104px;
 		flex: 0 0 auto;
 	}
+	.radial-wave {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+		z-index: 0;
+	}
 	.dial {
+		position: relative;
+		z-index: 1;
 		width: 100%;
 		height: 100%;
 	}
@@ -367,6 +469,22 @@
 	.dial-wrap.dial-playing .wheel-fill {
 		fill: #f2f0e8;
 		stroke: #fff;
+	}
+	/* DECKUX-02: keep the polar band (r=18..39) open over the canvas; only
+	 * the inner text disc stays opaque. Playing-face CSS must not refill the
+	 * full r=40 face over the waveform. */
+	.dial-wrap.dial-radial-wave .wheel-fill {
+		fill: none;
+	}
+	.dial-wrap.dial-radial-wave .wheel-fill-inner {
+		fill: #14171d;
+	}
+	.dial-wrap.dial-radial-wave.dial-playing .wheel-fill {
+		fill: none;
+		stroke: #fff;
+	}
+	.dial-wrap.dial-radial-wave.dial-playing .wheel-fill-inner {
+		fill: #f2f0e8;
 	}
 	/* Pin f19a1b2a455a: white rim marks only. .downbeat (beat 1) is thicker
 	 * than the rest; nothing here reaches inside the r=40 wheel face. */

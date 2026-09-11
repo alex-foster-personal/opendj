@@ -39,6 +39,15 @@ test('filterSettings appends AI ids without duplicates', async () => {
 	);
 });
 
+test('filterSettings finds DECKUX-02 jog radial waveform setting', async () => {
+	const mod = await loadTypeScriptModule('src/lib/settings/search.ts');
+	const hits = mod.filterSettings('radial jog waveform', { hideTodo: true, group: null });
+	const def = hits.keyword.find((s) => s.id === 'jog_radial_waveform');
+	assert.ok(def, 'jog_radial_waveform must be searchable');
+	assert.equal(def.implemented, true);
+	assert.equal(def.control.kind, 'boolean');
+});
+
 test('filterSettings finds pin 862cd3 deck layout settings, implemented via existing controls', async () => {
 	const mod = await loadTypeScriptModule('src/lib/settings/search.ts');
 

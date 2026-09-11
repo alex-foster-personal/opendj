@@ -29,6 +29,7 @@ _DEFAULT_AUTO_SYNC: dict[str, bool] = {
 # LIBUX-05: "smooth fade rather than instant appear/disappear" config option
 # for technically-working mode's edge-reveal overlay. Default on (animated).
 _DEFAULT_TECH_WORKING_ANIMATE = True
+_DEFAULT_JOG_RADIAL_WAVEFORM = False
 _DEFAULT_SHOW_AGENT_PINS = True
 
 
@@ -166,6 +167,7 @@ def _load(path: Path) -> dict[str, Any]:
             "hide_todo_settings": False,
             "auto_sync": dict(_DEFAULT_AUTO_SYNC),
             "technically_working_animate": _DEFAULT_TECH_WORKING_ANIMATE,
+            "jog_radial_waveform": _DEFAULT_JOG_RADIAL_WAVEFORM,
             "show_agent_pins": _DEFAULT_SHOW_AGENT_PINS,
             "level_calibration": dict(_DEFAULT_LEVEL_CALIBRATION),
         }
@@ -205,6 +207,15 @@ def _load(path: Path) -> dict[str, Any]:
                 "message": "technically_working_animate must be a boolean",
             },
         )
+    jog_radial = raw.get("jog_radial_waveform", _DEFAULT_JOG_RADIAL_WAVEFORM)
+    if not isinstance(jog_radial, bool):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "jog_radial_waveform must be a boolean",
+            },
+        )
     show_agent_pins = raw.get("show_agent_pins", _DEFAULT_SHOW_AGENT_PINS)
     if not isinstance(show_agent_pins, bool):
         raise HTTPException(
@@ -220,6 +231,7 @@ def _load(path: Path) -> dict[str, Any]:
         "hide_todo_settings": hide_todo,
         "auto_sync": _parse_auto_sync(raw.get("auto_sync")),
         "technically_working_animate": animate,
+        "jog_radial_waveform": jog_radial,
         "show_agent_pins": show_agent_pins,
         "level_calibration": _parse_level_calibration(raw.get("level_calibration")),
     }
@@ -257,6 +269,7 @@ class UiPrefsOut(BaseModel):
     hide_todo_settings: bool = False
     auto_sync: AutoSyncOut = Field(default_factory=AutoSyncOut)
     technically_working_animate: bool = _DEFAULT_TECH_WORKING_ANIMATE
+    jog_radial_waveform: bool = _DEFAULT_JOG_RADIAL_WAVEFORM
     show_agent_pins: bool = _DEFAULT_SHOW_AGENT_PINS
     level_calibration: LevelCalibrationOut = Field(default_factory=LevelCalibrationOut)
 
@@ -269,6 +282,7 @@ class UiPrefsPatch(BaseModel):
     hide_todo_settings: bool | None = None
     auto_sync: AutoSyncOut | None = None
     technically_working_animate: bool | None = None
+    jog_radial_waveform: bool | None = None
     show_agent_pins: bool | None = None
     level_calibration: LevelCalibrationOut | None = None
 
@@ -294,6 +308,8 @@ def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
         current["auto_sync"] = _parse_auto_sync(body.auto_sync.model_dump())
     if body.technically_working_animate is not None:
         current["technically_working_animate"] = body.technically_working_animate
+    if body.jog_radial_waveform is not None:
+        current["jog_radial_waveform"] = body.jog_radial_waveform
     if body.show_agent_pins is not None:
         current["show_agent_pins"] = body.show_agent_pins
     if body.level_calibration is not None:

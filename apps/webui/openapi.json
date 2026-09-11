@@ -12400,6 +12400,11 @@
             "title": "Hide Todo Settings",
             "type": "boolean"
           },
+          "jog_radial_waveform": {
+            "default": false,
+            "title": "Jog Radial Waveform",
+            "type": "boolean"
+          },
           "level_calibration": {
             "$ref": "#/components/schemas/LevelCalibrationOut"
           },
@@ -12460,6 +12465,17 @@
               }
             ],
             "title": "Hide Todo Settings"
+          },
+          "jog_radial_waveform": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jog Radial Waveform"
           },
           "level_calibration": {
             "anyOf": [

@@ -197,6 +197,17 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	{
+		id: 'jog_radial_waveform',
+		label: 'Jog dial radial waveform',
+		group: 'performance',
+		keywords: ['radial', 'jog', 'waveform', 'wheel', 'polar', 'dial', 'preview'],
+		title: 'Show preview waveform as a polar plot on jog dials',
+		detail:
+			'When on, each loaded deck paints its 400-point preview waveform radially on the jog wheel face and hides the red position tick. The white progress trail still shows playback position. Default off.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
 		id: 'deck_layout',
 		label: 'Deck layout (MORE/LESS)',
 		group: 'performance',
