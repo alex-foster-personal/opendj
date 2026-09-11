@@ -81,6 +81,13 @@ from apps.shared.state.writer import StateWriter, compute_playlist_id
 
 from .backend import BackendError, ConflictError, NotFoundError
 from .etag import compute_etag, strip_quotes
+from .playlist_transfer import (
+    apply_dest_write,
+    apply_source_write,
+    membership_plan,
+    skip_writes,
+    validate_transfer,
+)
 from .playlist_history import (
     HISTORY_LIMIT,
     PlaylistEditCommand,
@@ -456,14 +463,7 @@ class PlaylistStore:
         Move also removes every matching stable_id from source. Both writes
         happen inside one ``playlist_transaction`` so an interrupt rolls back.
         """
-        if not stable_ids:
-            raise BackendError("stable_ids must be a non-empty list")
-        if mode == "move" and (source_id is None or source_etag is None):
-            raise BackendError(
-                "mode=move requires source_playlist_id and source_etag"
-            )
-        if source_id is not None and source_id == dest_id:
-            raise BackendError("cannot transfer a playlist onto itself")
+        validate_transfer(stable_ids, mode, source_id, source_etag, dest_id)
 
         with self._lock:
             with self._writer.playlist_transaction():
@@ -472,42 +472,27 @@ class PlaylistStore:
                 self._check_etag(dest, dest_etag)
 
                 source: PlaylistRow | None = None
-                source_next: list[str] | None = None
                 if source_id is not None:
                     source = self._load(source_id)
                     if source_etag is not None:
                         self._check_etag(source, source_etag)
 
-                dest_set = set(dest.items)
-                dest_next = list(dest.items)
-                pending: set[str] = set()
-                for sid in stable_ids:
-                    if sid in dest_set:
-                        continue
-                    if sid not in pending:
-                        dest_next.append(sid)
-                        pending.add(sid)
-
-                if mode == "move" and source is not None:
-                    drop = set(stable_ids)
-                    source_next = [sid for sid in source.items if sid not in drop]
-                else:
-                    source_next = source.items if source is not None else None
-
-                dest_unchanged = dest_next == list(dest.items)
-                source_unchanged = (
-                    source is None
-                    or source_next == list(source.items)
+                source_items = list(source.items) if source is not None else None
+                dest_items, moved_source, dest_unchanged, source_unchanged = (
+                    membership_plan(list(dest.items), source_items, stable_ids, mode)
                 )
-                if dest_unchanged and (mode == "add" or source_unchanged):
+                if skip_writes(mode, dest_unchanged, source_unchanged):
                     return dest, source if mode == "move" else None
 
-                if not dest_unchanged:
-                    self._writer.set_playlist_memberships(dest_id, dest_next)
-
-                if mode == "move" and source is not None and not source_unchanged:
-                    self._writer.set_playlist_memberships(source_id, source_next)
-
+                apply_dest_write(self._writer, dest_id, dest_items, dest_unchanged)
+                apply_source_write(
+                    self._writer,
+                    source_id,
+                    moved_source,
+                    mode,
+                    source is not None,
+                    source_unchanged,
+                )
                 dest_row = self._load(dest_id)
                 source_row = (
                     self._load(source_id) if mode == "move" and source_id else None

@@ -455,9 +455,10 @@ def test_notary_profile_without_a_signing_identity_is_refused() -> None:
 
     The guard runs ahead of the cargo build, so this costs about a second.
     """
-    just = shutil.which("just")
-    if just is None:
+    just_bin = shutil.which("just")
+    if just_bin is None:
         pytest.skip("just is not installed")
+    assert just_bin is not None
     # Scrub any ambient MDT_LANE_LABEL: this test targets the notary/signing
     # guard, not OPS-09's lane double-intent gate, and must not depend on
     # the invoking shell being free of a stray lane label.
@@ -465,7 +466,7 @@ def test_notary_profile_without_a_signing_identity_is_refused() -> None:
     env["MDT_MACOS_NOTARY_KEYCHAIN_PROFILE"] = "some-profile"
     env["MDT_MACOS_SIGNING_IDENTITY"] = ""
     result = subprocess.run(
-        [just, "dmg"],
+        [just_bin, "dmg"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,

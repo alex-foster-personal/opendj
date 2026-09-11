@@ -101,7 +101,7 @@ def test_crate_sync_playlist_lookup_on_v6(pre_v7_path: Path) -> None:
 def test_crate_sync_collect_plan_on_v6(pre_v7_path: Path, tmp_path: Path) -> None:
     crate_root = tmp_path / "crate"
     crate_root.mkdir()
-    user_maps = ("/Users/dev", str(crate_root / "Contents"))
+    user_maps = (("/Users/dev", str(crate_root / "Contents")),)
 
     for playlist in (PLAYLIST_NAME, None):
         plan = crate_sync.collect_plan(
@@ -177,7 +177,7 @@ def test_soft_deletes_filter_after_v7_migration(tmp_path: Path, monkeypatch) -> 
         state_db=migrated,
         master_db=None,
         crate_root=tmp_path / "crate",
-        user_maps=("/Users/dev", str(tmp_path / "crate" / "Contents")),
+        user_maps=(("/Users/dev", str(tmp_path / "crate" / "Contents")),),
         playlist=None,
     )
     assert plan.skipped_absent == 0
