@@ -3954,7 +3954,7 @@ export interface components {
             stable_id: string;
             /**
              * State
-             * @description pending, running, done, skipped, failed, refused or cancelled
+             * @description pending, running, done, skipped, failed, refused, cancelled, or deferred (path vanished; retryable on resume)
              */
             state: string;
         };

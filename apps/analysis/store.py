@@ -444,11 +444,18 @@ def upsert_record(
     *,
     db_path: Path | None = None,
     conn: sqlite3.Connection | None = None,
+    cascade: bool = True,
+    version_bump: bool = True,
 ) -> UpsertResult:
     """Persist ``record``; emit an ``analyze`` event on insert/update.
 
     When ``conn`` is provided it is reused for both the upsert and the
     follow-up event publish, avoiding two open/close cycles per record.
+
+    ``cascade`` and ``version_bump`` run the NATIVE-10 side effects every
+    non-unchanged write path shares. The queue runner passes ``False`` for
+    both inside its item commit transaction and applies cascade itself so
+    outcomes stay visible on ``RunSummary``.
     """
     result = upsert(record, db_path=db_path, conn=conn)
     if not result.unchanged:
@@ -468,6 +475,22 @@ def upsert_record(
             db_path=db_path,
             conn=conn,
         )
+        if cascade or version_bump:
+            from .queue_effects import apply_record_write_effects
+
+            owned_effects = conn is None
+            effect_conn = conn if conn is not None else open_conn(db_path)
+            try:
+                apply_record_write_effects(
+                    effect_conn,
+                    record,
+                    result,
+                    cascade=cascade,
+                    version_bump=version_bump,
+                )
+            finally:
+                if owned_effects:
+                    effect_conn.close()
     return result
 
 

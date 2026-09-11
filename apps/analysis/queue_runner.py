@@ -38,10 +38,12 @@ from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, field
 
 from . import queue_store
-from .backends.base import AnalyzerBackend
-from .canonical import canonical_pointer
+from ._warmup_lock import ensure_owned_numba_cache_dir
+from .backends.base import AnalyzerBackend, TrackVanished
+from .jit_warmup import warm_backend_jit
 from .pool import analyze_one
-from .queue import CascadeOutcome, QueueError, cascade_dependents, enqueue
+from .queue import CascadeOutcome, QueueError, enqueue
+from .queue_effects import cascade_if_canonical
 from .record import AnalysisRecord
 from .store import upsert_record
 from .worker_diagnostics import init_worker, pool_death_message, worker_exit_signals
@@ -60,6 +62,7 @@ class RunSummary:
     completed: int = 0
     skipped: int = 0
     failed: int = 0
+    deferred: int = 0
     #: Results thrown away because `/cancel` took the claim while the worker
     #: was still analyzing. Counted, never folded into completed or failed:
     #: the work happened and its output was deliberately discarded.
@@ -135,18 +138,8 @@ def _commit_record(
             backend=record.backend,
             backend_version=record.backend_version,
         )
-        upsert_record(record, conn=conn)
-        outcomes: list[CascadeOutcome] = []
-        if canonical_pointer(conn, item.stable_id, item.lane) == (
-            record.backend,
-            record.backend_version,
-        ):
-            outcomes = cascade_dependents(
-                conn,
-                stable_id=item.stable_id,
-                lane=item.lane,
-                dependency_record=record,
-            )
+        upsert_record(record, conn=conn, cascade=False, version_bump=False)
+        outcomes: list[CascadeOutcome] = cascade_if_canonical(conn, record)
         settled = queue_store.finish_item(
             conn,
             batch_id=batch_id,
@@ -203,6 +196,22 @@ def _fill_pool(
         )
         if item is None:
             return
+        if item.backend != ctx.backend_name:
+            settled = queue_store.finish_item(
+                ctx.conn,
+                batch_id=ctx.batch_id,
+                stable_id=item.stable_id,
+                lane=item.lane,
+                state=queue_store.ITEM_FAILED,
+                reason=(
+                    f"runner backend {ctx.backend_name!r} does not match "
+                    f"item backend {item.backend!r}"
+                ),
+                claimed_by=ctx.runner_id,
+            )
+            if settled:
+                ctx.summary.failed += 1
+            continue
         if _already_current(ctx.conn, item, ctx.backend_name, ctx.version):
             settled = queue_store.finish_item(
                 ctx.conn,
@@ -236,6 +245,7 @@ def _fill_pool(
 #: it per track would write a capability fault as a terminal per-track verdict
 #: that ``resume`` can never undo.
 _BACKEND_UNAVAILABLE: str = "BackendNotAvailable:"
+_TRACK_VANISHED: str = f"{TrackVanished.__name__}:"
 
 
 class BackendUnavailable(QueueError):
@@ -268,21 +278,29 @@ def _settle_one(
                 f"so batch {ctx.batch_id} stopped with {released} item(s) "
                 f"returned to pending and nothing marked failed: {error}"
             )
+        terminal_state = (
+            queue_store.ITEM_DEFERRED
+            if error.startswith(_TRACK_VANISHED)
+            else queue_store.ITEM_FAILED
+        )
         settled = queue_store.finish_item(
             ctx.conn,
             batch_id=ctx.batch_id,
             stable_id=item.stable_id,
             lane=item.lane,
-            state=queue_store.ITEM_FAILED,
+            state=terminal_state,
             reason=error,
             claimed_by=ctx.runner_id,
         )
         if not settled:
             ctx.summary.discarded_on_cancel += 1
             return
-        ctx.summary.failed += 1
+        if terminal_state == queue_store.ITEM_DEFERRED:
+            ctx.summary.deferred += 1
+        else:
+            ctx.summary.failed += 1
         if ctx.on_item is not None:
-            ctx.on_item(item, queue_store.ITEM_FAILED)
+            ctx.on_item(item, terminal_state)
         return
     if record is None:
         raise QueueError(
@@ -336,6 +354,22 @@ def _pump_pool(
         _snapshot_workers(pool, seen)
 
 
+def _effective_version(backend_cls: type[AnalyzerBackend]) -> str:
+    """Producer version for skip checks, resolved before any worker spawn.
+
+    ``LibrosaBackend.version`` is populated lazily inside ``analyze`` in the
+    child; reading the class attribute in the parent would query for an empty
+    version and re-analyze every item instead of skipping.
+    """
+    version = backend_cls.version
+    if version:
+        return version
+    resolver = getattr(backend_cls, "_version", None)
+    if callable(resolver):
+        return str(resolver())
+    return version
+
+
 def run_batch(
     conn: sqlite3.Connection,
     batch_id: str,
@@ -358,20 +392,30 @@ def run_batch(
     rid = runner_id or queue_store.new_runner_id()
     summary = RunSummary(batch_id=batch_id, runner_id=rid, workers=batch.workers)
 
-    # Fresh-process takeover: anything a dead runner was holding was never
-    # committed, so it goes back in the queue exactly once.
-    summary.released_on_takeover = queue_store.release_running_items(conn, batch_id)
+    try:
+        summary.released_on_takeover = queue_store.take_batch_runner(
+            conn, batch_id, runner_id=rid, runner_pid=os.getpid()
+        )
+    except RuntimeError as exc:
+        raise QueueError(str(exc)) from exc
     if batch.state == queue_store.BATCH_CANCELLED:
         raise QueueError(
             f"batch {batch_id!r} is cancelled; resume it before running it"
         )
     if batch.workers < 1:
         queue_store.set_batch_state(conn, batch_id, queue_store.BATCH_DONE)
+        queue_store.clear_batch_runner(conn, batch_id)
         return summary
-    queue_store.set_batch_state(conn, batch_id, queue_store.BATCH_RUNNING)
 
-    version = backend_cls.version
+    version = _effective_version(backend_cls)
     backend_name = backend_cls.name
+    owned_cache = ensure_owned_numba_cache_dir()
+    warm_backend_jit(
+        backend_cls,
+        backend_name=backend_name,
+        purge_stale=owned_cache is not None,
+    )
+
     pool = ProcessPoolExecutor(
         max_workers=batch.workers,
         mp_context=multiprocessing.get_context("spawn"),
@@ -401,25 +445,24 @@ def run_batch(
         try:
             _pump_pool(ctx, pool, seen_workers)
         finally:
-            # Snapshot BEFORE the shutdown, read exit codes AFTER: while the
-            # executor is tearing workers down every ``Process.exitcode`` is
-            # still None, and a real crash would report only the generic
-            # fallback.
             _snapshot_workers(pool, seen_workers)
             pool.shutdown(wait=True, cancel_futures=True)
+    except BackendUnavailable:
+        queue_store.clear_batch_runner(conn, batch_id)
+        raise
     except BrokenProcessPool as exc:
-        # The claimed items stay ``running``: they were never committed, so a
-        # resume returns them to pending and re-runs them exactly once. That
-        # is the same path a SIGKILL of the whole runner takes.
+        queue_store.clear_batch_runner(conn, batch_id)
         raise RuntimeError(
             pool_death_message(worker_exit_signals(seen_workers.values()))
         ) from exc
 
     if summary.cancelled_midway:
+        queue_store.clear_batch_runner(conn, batch_id)
         return summary
     counts = queue_store.counts_by_state(conn, batch_id)
     if counts[queue_store.ITEM_PENDING] == 0 and counts[queue_store.ITEM_RUNNING] == 0:
         queue_store.set_batch_state(conn, batch_id, queue_store.BATCH_DONE)
+    queue_store.clear_batch_runner(conn, batch_id)
     if cascade_resolver is not None:
         summary.cascade_batch_id = _enqueue_cascade(
             conn, summary.cascade_outcomes, cascade_resolver
@@ -491,22 +534,9 @@ def drain(
     return summaries
 
 
-def pid_is_alive(pid: int) -> bool:
-    """Whether ``pid`` still exists. Used by the CLI's takeover guard."""
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        # Alive, owned by somebody else.
-        return True
-    return True
-
-
 __all__ = [
     "BackendUnavailable",
     "RunSummary",
     "drain",
-    "pid_is_alive",
     "run_batch",
 ]

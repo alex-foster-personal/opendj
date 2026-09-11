@@ -22,9 +22,32 @@ from . import admission
 from .backlog import _candidate_paths
 from .queue import QueueError, TargetResolver
 
+# Keep IN (...) under SQLite's default 999 bind cap (see apps.shared.state.queries).
+_SQL_CHUNK: int = 500
+
 #-----------------------------------------------------------------------------
 # target resolution
 #-----------------------------------------------------------------------------
+
+def _tracks_by_stable_id(
+    conn: sqlite3.Connection, stable_ids: Sequence[str]
+) -> list[tuple[str, str | None, int | None]]:
+    """Live track rows for ``stable_ids``, chunked for SQLite bind limits."""
+    wanted = list(dict.fromkeys(stable_ids))
+    if not wanted:
+        return []
+    rows: list[tuple[str, str | None, int | None]] = []
+    for offset in range(0, len(wanted), _SQL_CHUNK):
+        chunk = wanted[offset : offset + _SQL_CHUNK]
+        placeholders = ",".join("?" * len(chunk))
+        rows.extend(
+            conn.execute(
+                f"SELECT stable_id, file_path, duration_ms FROM tracks "
+                f"WHERE stable_id IN ({placeholders}) AND deleted_at IS NULL",
+                chunk,
+            ).fetchall()
+        )
+    return rows
 
 def candidates_from_state(
     conn: sqlite3.Connection,
@@ -55,12 +78,7 @@ def candidates_from_state(
     if not stable_ids:
         return []
     wanted = list(stable_ids)
-    placeholders = ",".join("?" * len(wanted))
-    rows = conn.execute(
-        f"SELECT stable_id, file_path, duration_ms FROM tracks "
-        f"WHERE stable_id IN ({placeholders}) AND deleted_at IS NULL",
-        wanted,
-    ).fetchall()
+    rows = _tracks_by_stable_id(conn, wanted)
     found = {row[0] for row in rows}
     missing = [sid for sid in wanted if sid not in found]
     if missing:

@@ -54,7 +54,7 @@ from . import queue as queue_api
 from . import queue_store, queue_targets
 from .backends import get_backend
 from .backends.base import AnalyzerBackend
-from .queue_runner import run_batch
+from .queue_runner import drain, run_batch
 from .store import open_conn
 
 log = logging.getLogger("apps.analysis.queue_cli")
@@ -225,7 +225,34 @@ def cmd_run(args: argparse.Namespace) -> int:
     backend_cls = resolve_backend(args.backend)
     conn = _conn(args.db)
     try:
-        summary = run_batch(conn, args.batch_id, backend_cls=backend_cls)
+        def cascade_resolver(
+            conn_: sqlite3.Connection,
+            stable_ids: list[str],
+            *,
+            lane: str,
+            backend: str | None = None,
+        ) -> list:
+            return queue_targets.candidates_from_state(
+                conn_, stable_ids, lane=lane, backend=backend or backend_cls.name
+            )
+
+        summaries = drain(
+            conn,
+            args.batch_id,
+            backend_for_lane=lambda _lane: backend_cls,
+            cascade_resolver=cascade_resolver,
+        )
+        summary = summaries[-1] if summaries else None
+        if summary is None:
+            items = queue_store.list_items(conn, args.batch_id, limit=1)
+            if not items:
+                raise queue_api.QueueError(f"batch {args.batch_id!r} has no items")
+            summary = run_batch(
+                conn,
+                args.batch_id,
+                backend_cls=backend_cls,
+                cascade_resolver=cascade_resolver,
+            )
     finally:
         conn.close()
     payload = {
@@ -236,12 +263,15 @@ def cmd_run(args: argparse.Namespace) -> int:
         "completed": summary.completed,
         "skipped": summary.skipped,
         "failed": summary.failed,
+        "deferred": summary.deferred,
         "cancelled_midway": summary.cancelled_midway,
         "cascade_requeued": [
             {"stable_id": o.stable_id, "lane": o.lane, "reason": o.reason}
             for o in summary.cascade_outcomes
             if o.requeued
         ],
+        "cascade_batch_id": summary.cascade_batch_id,
+        "drain_batches": len(summaries),
     }
     if not args.json:
         console.print(

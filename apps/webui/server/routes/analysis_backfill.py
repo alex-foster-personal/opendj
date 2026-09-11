@@ -95,7 +95,8 @@ class BackfillItemOut(BaseModel):
     backend: str
     state: str = Field(
         description=(
-            "pending, running, done, skipped, failed, refused or cancelled"
+            "pending, running, done, skipped, failed, refused, cancelled, or "
+            "deferred (path vanished; retryable on resume)"
         )
     )
     reason: str | None = Field(

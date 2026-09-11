@@ -167,43 +167,49 @@ def enqueue(
 
     batch_id = queue_store.new_batch_id()
     queue_store.ensure_queue_tables(conn)
-    queue_store.create_batch(
-        conn,
-        batch_id=batch_id,
-        workers=plan.workers,
-        band=plan.band,
-        memory_model=_model_dict(plan.model),
-        note=note,
-    )
-    for item in plan.admitted:
-        queue_store.add_item(
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        queue_store.create_batch(
             conn,
-            batch_id,
-            queue_store.NewItem(
-                stable_id=item.stable_id,
-                lane=item.lane,
-                backend=item.backend,
-                file_path=item.file_path,
-                duration_s=item.duration_s,
-                predicted_peak_mb=item.predicted_peak_mb,
-                state=queue_store.ITEM_PENDING,
-            ),
+            batch_id=batch_id,
+            workers=plan.workers,
+            band=plan.band,
+            memory_model=_model_dict(plan.model),
+            note=note,
         )
-    for refusal in plan.refused:
-        queue_store.add_item(
-            conn,
-            batch_id,
-            queue_store.NewItem(
-                stable_id=refusal.stable_id,
-                lane=refusal.lane,
-                backend=refusal.backend,
-                file_path="",
-                duration_s=refusal.duration_s,
-                predicted_peak_mb=refusal.predicted_peak_mb,
-                state=queue_store.ITEM_REFUSED,
-                reason=f"{refusal.reason}: {refusal.detail}",
-            ),
-        )
+        for item in plan.admitted:
+            queue_store.add_item(
+                conn,
+                batch_id,
+                queue_store.NewItem(
+                    stable_id=item.stable_id,
+                    lane=item.lane,
+                    backend=item.backend,
+                    file_path=item.file_path,
+                    duration_s=item.duration_s,
+                    predicted_peak_mb=item.predicted_peak_mb,
+                    state=queue_store.ITEM_PENDING,
+                ),
+            )
+        for refusal in plan.refused:
+            queue_store.add_item(
+                conn,
+                batch_id,
+                queue_store.NewItem(
+                    stable_id=refusal.stable_id,
+                    lane=refusal.lane,
+                    backend=refusal.backend,
+                    file_path="",
+                    duration_s=refusal.duration_s,
+                    predicted_peak_mb=refusal.predicted_peak_mb,
+                    state=queue_store.ITEM_REFUSED,
+                    reason=f"{refusal.reason}: {refusal.detail}",
+                ),
+            )
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
     return EnqueueResult(
         batch_id=batch_id,
         admitted=len(plan.admitted),

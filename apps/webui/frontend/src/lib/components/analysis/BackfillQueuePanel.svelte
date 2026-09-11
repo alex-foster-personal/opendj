@@ -75,9 +75,11 @@
 	);
 
 	const drainCommand = $derived(
-		watchedId
-			? `python -m apps.analysis.queue_cli run --batch-id ${watchedId} --backend ${backend}`
-			: null
+		watchedId && watched && watched.items.length > 0
+			? `python -m apps.analysis.queue_cli run --batch-id ${watchedId} --backend ${watched.items[0].backend}`
+			: watchedId
+				? `python -m apps.analysis.queue_cli run --batch-id ${watchedId} --backend ${backend}`
+				: null
 	);
 
 	function fail(err: unknown): void {
