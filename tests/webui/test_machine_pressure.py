@@ -18,8 +18,15 @@ import pytest
 from apps.webui.server import machine_pressure
 from apps.webui.server.machine_pressure import (
     CACHE_TTL_SECONDS,
+    PRESSURE_CHURN_WEIGHT_SWAP,
     MachinePressureCache,
+    ProcessInfo,
+    live_process_family_members,
+    opendj_process_name,
     read_machine_pressure,
+)
+from scripts.diagnostics.probe_process_family import (
+    opendj_process_name as probe_opendj_process_name,
 )
 
 FULL_SAMPLE: dict[str, Any] = {
@@ -50,7 +57,7 @@ def test_full_sample_exposes_the_three_load_row_fields() -> None:
     cache = MachinePressureCache()
     sampler, _ = _counting_sampler(FULL_SAMPLE)
 
-    body = cache.read(now=100.0, sampler=sampler)
+    body = cache.read(now=100.0, sampler=sampler, vm_stat_reader=lambda: None)
 
     assert body["available"] is True
     assert body["load_avg_1m"] == pytest.approx(5.76)
@@ -65,34 +72,45 @@ def test_the_response_is_an_allowlist_not_a_passthrough() -> None:
     cache = MachinePressureCache()
     sampler, _ = _counting_sampler({**FULL_SAMPLE, "command_line": "/secret/path --token=abc"})
 
-    body = cache.read(now=0.0, sampler=sampler)
+    body = cache.read(now=0.0, sampler=sampler, vm_stat_reader=lambda: None)
 
     assert "command_line" not in body
     assert "swap_raw" not in body
     assert "physical_memory_mb" not in body
-    assert set(body) == {"available", "cache_age_ms", "load_avg_1m", "mem_free_mb", "swap_used_mb"}
+    allowed = {
+        "available",
+        "cache_age_ms",
+        "load_avg_1m",
+        "mem_free_mb",
+        "swap_used_mb",
+        "kernel_memory_pressure_level",
+        "band",
+        "sample_interval_ms",
+        "sample_wall_ms",
+    }
+    assert set(body) <= allowed
 
 
 def test_a_second_read_inside_the_ttl_reuses_the_sample_and_ages_it() -> None:
-    cache = MachinePressureCache(ttl_seconds=5.0)
+    cache = MachinePressureCache()
     sampler, calls = _counting_sampler(FULL_SAMPLE)
 
-    first = cache.read(now=1000.0, sampler=sampler)
-    second = cache.read(now=1002.5, sampler=sampler)
+    first = cache.read(now=1000.0, sampler=sampler, vm_stat_reader=lambda: None)
+    second = cache.read(now=1000.5, sampler=sampler, vm_stat_reader=lambda: None)
 
     assert len(calls) == 1, "the second read must not shell out again"
     assert first["cache_age_ms"] == pytest.approx(0.0)
     # The age is the POINT of the cache being visible: a caller that gets a
-    # 2.5 s old reading has to be told so, or it will stamp it as fresh.
-    assert second["cache_age_ms"] == pytest.approx(2500.0)
+    # 0.5 s old reading has to be told so, or it will stamp it as fresh.
+    assert second["cache_age_ms"] == pytest.approx(500.0)
 
 
 def test_a_read_past_the_ttl_takes_a_new_sample() -> None:
-    cache = MachinePressureCache(ttl_seconds=5.0)
+    cache = MachinePressureCache()
     sampler, calls = _counting_sampler(FULL_SAMPLE)
 
-    cache.read(now=1000.0, sampler=sampler)
-    fresh = cache.read(now=1005.1, sampler=sampler)
+    cache.read(now=1000.0, sampler=sampler, vm_stat_reader=lambda: None)
+    fresh = cache.read(now=1001.1, sampler=sampler, vm_stat_reader=lambda: None)
 
     assert len(calls) == 2
     assert fresh["cache_age_ms"] == pytest.approx(0.0)
@@ -104,7 +122,7 @@ def test_a_missing_sampler_reports_unavailable_and_NEVER_a_zero() -> None:
     def sampler() -> dict[str, Any]:
         raise ImportError("No module named 'scripts'")
 
-    body = cache.read(now=0.0, sampler=sampler)
+    body = cache.read(now=0.0, sampler=sampler, vm_stat_reader=lambda: None)
 
     assert body["available"] is False
     assert "scripts" in body["reason"]
@@ -118,7 +136,7 @@ def test_a_sampler_that_raises_os_error_reports_unavailable() -> None:
     def sampler() -> dict[str, Any]:
         raise OSError("vm_stat: no such file")
 
-    body = cache.read(now=0.0, sampler=sampler)
+    body = cache.read(now=0.0, sampler=sampler, vm_stat_reader=lambda: None)
 
     assert body["available"] is False
     assert "vm_stat" in body["reason"]
@@ -130,7 +148,7 @@ def test_a_sampler_that_reads_nothing_is_unavailable_rather_than_empty_true() ->
     cache = MachinePressureCache()
     sampler, _ = _counting_sampler({"physical_memory_mb": 16384.0})
 
-    body = cache.read(now=0.0, sampler=sampler)
+    body = cache.read(now=0.0, sampler=sampler, vm_stat_reader=lambda: None)
 
     assert body["available"] is False
     assert "no readable field" in body["reason"]
@@ -140,7 +158,7 @@ def test_a_partial_sample_exposes_only_what_was_read() -> None:
     cache = MachinePressureCache()
     sampler, _ = _counting_sampler({"load_average_1m": 12.5})
 
-    body = cache.read(now=0.0, sampler=sampler)
+    body = cache.read(now=0.0, sampler=sampler, vm_stat_reader=lambda: None)
 
     assert body["available"] is True
     assert body["load_avg_1m"] == pytest.approx(12.5)
@@ -230,3 +248,189 @@ def test_the_real_load_average_is_a_plausible_reading_not_a_placeholder() -> Non
         "a load average of exactly zero on a machine busy enough to run pytest "
         "is the sampler failing, not the machine idling"
     )
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_unreadable_kernel_pressure_is_absent_never_zero() -> None:
+    cache = MachinePressureCache()
+    sampler, _ = _counting_sampler({"load_average_1m": 1.0})
+
+    body = cache.read(now=0.0, sampler=sampler, vm_stat_reader=lambda: None)
+
+    assert "kernel_memory_pressure_level" not in body
+    assert body.get("kernel_memory_pressure_level") != 0
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_kernel_pressure_zero_is_treated_as_unreadable() -> None:
+    cache = MachinePressureCache()
+    sampler, _ = _counting_sampler(
+        {"load_average_1m": 1.0, "kernel_memory_pressure_level": 0}
+    )
+
+    body = cache.read(now=0.0, sampler=sampler, vm_stat_reader=lambda: None)
+
+    assert "kernel_memory_pressure_level" not in body
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_churn_score_uses_ram_cleanup_weight_ten() -> None:
+    cache = MachinePressureCache()
+    sampler, _ = _counting_sampler({"load_average_1m": 1.0})
+    prior = {
+        "swapins": 0,
+        "swapouts": 0,
+        "decompressions": 0,
+        "page_size": 16384,
+    }
+    current = {
+        "swapins": 2,
+        "swapouts": 1,
+        "decompressions": 20,
+        "page_size": 16384,
+    }
+    reads = [prior, current]
+    cache.read(now=0.0, sampler=sampler, vm_stat_reader=lambda: reads.pop(0))
+    body = cache.read(now=1.0, sampler=sampler, vm_stat_reader=lambda: reads.pop(0))
+
+    assert body["churn_score"] == pytest.approx(3 * PRESSURE_CHURN_WEIGHT_SWAP + 20)
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_first_sample_omits_churn_rather_than_zero() -> None:
+    cache = MachinePressureCache()
+    sampler, _ = _counting_sampler({"load_average_1m": 1.0})
+    snapshot = {
+        "swapins": 1,
+        "swapouts": 1,
+        "decompressions": 1,
+        "page_size": 16384,
+    }
+
+    body = cache.read(now=0.0, sampler=sampler, vm_stat_reader=lambda: dict(snapshot))
+
+    assert "churn_score" not in body
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_elevated_kernel_lengthens_the_ttl_to_five_seconds() -> None:
+    cache = MachinePressureCache()
+    sampler, calls = _counting_sampler(
+        {"load_average_1m": 1.0, "kernel_memory_pressure_level": 2}
+    )
+
+    cache.read(now=0.0, sampler=sampler, vm_stat_reader=lambda: None)
+    cache.read(now=1.1, sampler=sampler, vm_stat_reader=lambda: None)
+    cache.read(now=5.1, sampler=sampler, vm_stat_reader=lambda: None)
+
+    assert len(calls) == 2
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_elevated_churn_lengthens_even_when_kernel_is_fine() -> None:
+    cache = MachinePressureCache()
+    sampler, calls = _counting_sampler(
+        {"load_average_1m": 1.0, "kernel_memory_pressure_level": 1}
+    )
+    prior = {
+        "swapins": 0,
+        "swapouts": 0,
+        "decompressions": 0,
+        "page_size": 16384,
+    }
+    current = {
+        "swapins": 50,
+        "swapouts": 0,
+        "decompressions": 0,
+        "page_size": 16384,
+    }
+    reads = [prior, current, current]
+
+    cache.read(now=0.0, sampler=sampler, vm_stat_reader=lambda: reads.pop(0))
+    cache.read(now=1.0, sampler=sampler, vm_stat_reader=lambda: reads.pop(0))
+    cache.read(now=5.1, sampler=sampler, vm_stat_reader=lambda: reads.pop(0))
+
+    assert len(calls) == 2
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_idle_ttl_is_one_second() -> None:
+    cache = MachinePressureCache()
+    sampler, calls = _counting_sampler(
+        {"load_average_1m": 1.0, "kernel_memory_pressure_level": 1}
+    )
+    prior = {
+        "swapins": 0,
+        "swapouts": 0,
+        "decompressions": 0,
+        "page_size": 16384,
+    }
+    current = {"swapins": 1, "swapouts": 0, "decompressions": 1, "page_size": 16384}
+    reads = [prior, current, current]
+
+    cache.read(now=0.0, sampler=sampler, vm_stat_reader=lambda: reads.pop(0))
+    cache.read(now=1.1, sampler=sampler, vm_stat_reader=lambda: reads.pop(0))
+
+    assert len(calls) == 2
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_sampler_does_not_sleep_to_build_churn(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_sleep(_seconds: float) -> None:
+        raise AssertionError("time.sleep must not run on the request path")
+
+    monkeypatch.setattr("time.sleep", fail_sleep)
+    cache = MachinePressureCache()
+    sampler, _ = _counting_sampler({"load_average_1m": 1.0})
+    snapshot = {
+        "swapins": 1,
+        "swapouts": 1,
+        "decompressions": 1,
+        "page_size": 16384,
+    }
+
+    cache.read(now=0.0, sampler=sampler, vm_stat_reader=lambda: dict(snapshot))
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_live_members_list_unnamed_rather_than_omitting() -> None:
+    rows = [
+        ProcessInfo(pid=100, ppid=1, command="opendj-engine --name opendj-engine", rss_bytes=1000),
+        ProcessInfo(pid=101, ppid=100, command="python3 -m apps.engine_core serve", rss_bytes=500),
+    ]
+
+    members = live_process_family_members(engine_pid=100, process_iter=lambda: rows)
+
+    assert len(members) == 2
+    unnamed = [member for member in members if member["name"] == "unnamed"]
+    assert len(unnamed) == 1
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_live_walk_does_not_emit_command_or_pid() -> None:
+    rows = [
+        ProcessInfo(pid=100, ppid=1, command="opendj-engine --name opendj-engine", rss_bytes=1000),
+    ]
+
+    members = live_process_family_members(engine_pid=100, process_iter=lambda: rows)
+
+    assert set(members[0]) <= {"name", "rss_mb", "physical_footprint_mb", "role"}
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_opendj_process_name_matches_probe_parser() -> None:
+    fixtures = [
+        ("opendj-engine --name opendj-engine --port 8585 [/usr/bin/python3 ...]", "opendj-engine"),
+        ("opendj-worker --name opendj-worker [...]", "opendj-worker"),
+        ("opendj-backend --name opendj-backend --port 8787 [...]", "opendj-backend"),
+        ("/Applications/Open DJ.app/Contents/MacOS/opendj-desktop", "opendj-desktop"),
+        (
+            "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/"
+            "com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+            "unnamed",
+        ),
+        ("python3 -m apps.engine_core serve", "unnamed"),
+    ]
+    for command, expected in fixtures:
+        assert opendj_process_name(command) == expected
+        assert probe_opendj_process_name(command) == expected

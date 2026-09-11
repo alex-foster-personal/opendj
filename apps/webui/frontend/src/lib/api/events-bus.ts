@@ -52,7 +52,8 @@ export const LIBRARY_KINDS = [
 	'dedup',
 	'reconcile',
 	'ui_prefs',
-	'pairings'
+	'pairings',
+	'library_jobs'
 ] as const;
 
 export type LibraryKind = (typeof LIBRARY_KINDS)[number];
