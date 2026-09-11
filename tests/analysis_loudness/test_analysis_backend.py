@@ -1,6 +1,6 @@
 """Registration and CLI round-trip for own_loudness.backfill.
 
-[if] own_loudness.backfill cannot be selected or cannot write a record [then] fail.
+[if] own_loudness.backfill cannot be selected or cannot write a record [then] fail, [else stop].
 """
 
 from __future__ import annotations
