@@ -67,10 +67,14 @@ def open_rw(
     After migrations and machine-id backfill,
     :func:`apps.database.regenerate_agents_md_if_writable` regenerates
     ``<state_dir>/AGENTS.md`` when the state directory is writable; a docs
-    gap (:class:`apps.database.generate_agents_md.MissingColumnDocsError`)
-    still fails the open. An unwritable directory is a spec-mandated skip,
-    not a caught failure. ``MissingColumnDocsError`` is intentionally not
-    caught here.
+    gap on an owned table
+    (:class:`apps.database.generate_agents_md.MissingColumnDocsError`)
+    still fails the open. Leftover tables that are not in
+    :data:`apps.shared.state.schema.TABLES` (plus ``schema_meta``) are
+    omitted from the sidecar rather than aborting the open -- they are
+    one-shot conversion leftovers, not a forgotten schema column. An
+    unwritable directory is a spec-mandated skip, not a caught failure.
+    ``MissingColumnDocsError`` is intentionally not caught here.
     """
     target = Path(path) if path is not None else state_paths.STATE_DB
     _ensure_parent(target)
@@ -84,7 +88,11 @@ def open_rw(
             _schema.apply_migrations(conn)
             _sync_stamp.backfill_local_machine_id(conn)
             from apps.database import regenerate_agents_md_if_writable
-            regenerate_agents_md_if_writable(conn, target.parent)
+            regenerate_agents_md_if_writable(
+                conn,
+                target.parent,
+                owned_tables=frozenset(_schema.TABLES) | {"schema_meta"},
+            )
     except Exception:
         conn.close()
         raise

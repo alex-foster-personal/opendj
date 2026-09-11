@@ -102,14 +102,48 @@ def test_regenerate_raises_on_undocumented_table(tmp_path: Path) -> None:
 
 
 def test_open_rw_propagates_missing_column_docs_error_on_reopen(tmp_path: Path) -> None:
-    """if reopen hits a docs gap then open_rw propagates MissingColumnDocsError - broken"""
+    """if reopen hits a docs gap on an owned table then open_rw raises - broken"""
     db_path = tmp_path / "state.db"
     conn = open_rw(db_path)
-    conn.execute("CREATE TABLE undocumented_xyz (id INTEGER PRIMARY KEY)")
+    conn.execute("ALTER TABLE tracks ADD COLUMN totally_fake_injected_column TEXT")
     conn.close()
 
-    with pytest.raises(MissingColumnDocsError):
+    with pytest.raises(MissingColumnDocsError) as excinfo:
         open_rw(db_path)
+    assert "tracks.totally_fake_injected_column" in str(excinfo.value)
+
+
+def test_open_rw_omits_legacy_leftover_tables_and_still_opens(tmp_path: Path) -> None:
+    """if leftover lyric_*_legacy tables exist then open_rw still writes AGENTS.md - broken"""
+    db_path = tmp_path / "state.db"
+    conn = open_rw(db_path)
+    conn.execute(
+        "CREATE TABLE lyric_verdict_legacy (stable_id TEXT PRIMARY KEY)"
+    )
+    conn.execute(
+        "CREATE TABLE lyric_word_legacy ("
+        "stable_id TEXT NOT NULL, idx INTEGER NOT NULL, PRIMARY KEY (stable_id, idx))"
+    )
+    conn.close()
+
+    reopened = open_rw(db_path)
+    try:
+        live = {
+            row[0]
+            for row in reopened.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        assert "lyric_verdict_legacy" in live
+        assert "lyric_word_legacy" in live
+    finally:
+        reopened.close()
+
+    text = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert _AGENTS_HEADER in text
+    assert "## `tracks`" in text
+    assert "lyric_verdict_legacy" not in text
+    assert "lyric_word_legacy" not in text
 
 
 def test_open_dry_run_does_not_create_agents_md(tmp_path: Path) -> None:

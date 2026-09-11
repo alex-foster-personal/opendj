@@ -138,12 +138,22 @@ def _is_fts5_shadow_table(name: str, virtual_tables: set[str]) -> bool:
     )
 
 
-def introspect(conn: sqlite3.Connection) -> list[TableInfo]:
+def introspect(
+    conn: sqlite3.Connection,
+    *,
+    owned_tables: frozenset[str] | None = None,
+) -> list[TableInfo]:
     """Return every live, documentable table in ``conn``, name-sorted.
 
     Excludes sqlite-internal tables (``sqlite_%``) and fts5 shadow tables.
     Everything else -- including infrastructure tables like ``schema_meta``
     -- is documentable and therefore subject to the drift guard.
+
+    When ``owned_tables`` is set, live tables outside that set are omitted
+    rather than becoming a coverage failure. ``open_rw`` passes
+    ``schema.TABLES | {schema_meta}`` so a leftover one-shot table
+    (``lyric_verdict_legacy``, ``lyric_word_legacy``) cannot abort opening
+    the app. The CLI leaves this unset, so extras still fail there.
     """
     virtual_tables = _virtual_table_names(conn)
     names = [
@@ -151,6 +161,8 @@ def introspect(conn: sqlite3.Connection) -> list[TableInfo]:
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
         if not row[0].startswith("sqlite_") and not _is_fts5_shadow_table(row[0], virtual_tables)
     ]
+    if owned_tables is not None:
+        names = [name for name in names if name in owned_tables]
 
     tables: list[TableInfo] = []
     for name in names:
@@ -268,14 +280,19 @@ def render(tables: list[TableInfo]) -> str:
     return "\n".join(sections).rstrip() + "\n"
 
 
-def write_agents_md(conn: sqlite3.Connection, out_path: Path) -> str:
+def write_agents_md(
+    conn: sqlite3.Connection,
+    out_path: Path,
+    *,
+    owned_tables: frozenset[str] | None = None,
+) -> str:
     """Introspect ``conn``, render, and write to ``out_path``.
 
     Returns the text written. Raises :class:`MissingColumnDocsError` before
     writing anything if coverage is incomplete -- no partial file is ever
-    left behind.
+    left behind. ``owned_tables`` is forwarded to :func:`introspect`.
     """
-    tables = introspect(conn)
+    tables = introspect(conn, owned_tables=owned_tables)
     text = render(tables)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(text, encoding="utf-8")

@@ -23,7 +23,12 @@ from pathlib import Path
 __all__ = ["regenerate_agents_md_if_writable"]
 
 
-def regenerate_agents_md_if_writable(conn: sqlite3.Connection, state_dir: Path) -> bool:
+def regenerate_agents_md_if_writable(
+    conn: sqlite3.Connection,
+    state_dir: Path,
+    *,
+    owned_tables: frozenset[str] | None = None,
+) -> bool:
     """Regenerate ``<state_dir>/AGENTS.md`` from ``conn``, if ``state_dir`` is writable.
 
     Called from ``apps.shared.state.db.open_rw`` after migrations and machine-id
@@ -41,6 +46,11 @@ def regenerate_agents_md_if_writable(conn: sqlite3.Connection, state_dir: Path) 
     :class:`apps.database.generate_agents_md.MissingColumnDocsError`, the
     drift guard) still propagates: migrations succeeding does not make a
     stale ``column_docs.py`` acceptable.
+
+    ``owned_tables`` is forwarded to :func:`write_agents_md`. ``open_rw``
+    passes ``schema.TABLES | {schema_meta}`` so leftover tables that are
+    not on the current ladder cannot abort the open. The CLI and tests
+    that omit it keep the strict every-live-table guard.
     """
     if not os.access(state_dir, os.W_OK):
         return False
@@ -53,5 +63,5 @@ def regenerate_agents_md_if_writable(conn: sqlite3.Connection, state_dir: Path) 
     # avoids it.
     from apps.database.generate_agents_md import write_agents_md
 
-    write_agents_md(conn, state_dir / "AGENTS.md")
+    write_agents_md(conn, state_dir / "AGENTS.md", owned_tables=owned_tables)
     return True
