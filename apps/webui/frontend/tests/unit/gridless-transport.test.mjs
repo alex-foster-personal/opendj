@@ -66,7 +66,7 @@ function _deck(overrides = {}) {
 }
 
 function _withGrid(beats = REAL_PQTZ_BEATS) {
-	return { beatgrid: { beats } };
+	return { beatgrid: { source: 'rekordbox', beats, status: 'ok' } };
 }
 
 before(async () => {
@@ -169,8 +169,8 @@ test('_quantizeGrid returns null instead of throwing, which is what un-refuses p
 		'if _quantizeGrid throws then pause is refusable again and a playing deck cannot be stopped'
 	);
 	assert.ok(
-		body.includes('hasRealBeatGrid('),
-		'if _quantizeGrid stops asking hasRealBeatGrid then its null case has drifted from ' +
+		body.includes('effectiveQuantize('),
+		'if _quantizeGrid stops asking effectiveQuantize then its null case has drifted from ' +
 			'what the UI calls inert'
 	);
 });
@@ -181,7 +181,7 @@ test('saving a hot cue asks for a USABLE grid, not merely a non-empty one', () =
 	assert.notEqual(at, -1, 'if saveHotCueAt moved then this guard is pointed at nothing');
 	const body = deckSrc.slice(at, at + 900);
 	assert.ok(
-		body.includes('hasRealBeatGrid('),
+		body.includes('effectiveQuantize('),
 		'if the hot-cue snap only checks beats.length then a one-beat or malformed grid ' +
 			'clears the check and throws inside quantizeToNearestBeat, refusing the save'
 	);
@@ -262,7 +262,7 @@ test('turning quantize or beat sync ON without a grid says so out loud', () => {
 				'flip a flag that does nothing, with no feedback at all'
 		);
 		assert.ok(
-			body.includes('GRID_FEATURE_TIP'),
+			body.includes('gridFeatureInertTip('),
 			`if ${anchor.trim()} words the reason itself then the toast and the tooltip can drift`
 		);
 	}
@@ -304,7 +304,7 @@ test('the gridless tip is one shared constant, and is NOT the PARITY-TODO wordin
 test('the Q button goes inert with the shared tip when the loaded track has no grid', () => {
 	assert.match(
 		JOG_DIAL_SRC,
-		/import \{[^}]*GRID_FEATURE_TIP[^}]*\} from '\$lib\/player\/grid-features'/s,
+		/import \{[^}]*gridFeatureInertTip[^}]*\} from '\$lib\/player\/grid-features'/s,
 		'if JogDial spells the tip itself then the wording can drift from DeckHeader'
 	);
 	assert.match(
@@ -325,7 +325,7 @@ test('the Q button goes inert with the shared tip when the loaded track has no g
 	);
 	assert.match(
 		JOG_DIAL_SRC,
-		/qTitle[\s\S]{0,200}GRID_FEATURE_TIP/,
+		/qTitle[\s\S]{0,200}gridInertTip/,
 		'if qTitle stops resolving to the shared tip when gridless then the button is dead and silent'
 	);
 });
@@ -333,7 +333,7 @@ test('the Q button goes inert with the shared tip when the loaded track has no g
 test('the BEAT SYNC button goes inert with the same shared tip', () => {
 	assert.match(
 		DECK_HEADER_SRC,
-		/import \{[^}]*GRID_FEATURE_TIP[^}]*\} from '\$lib\/player\/grid-features'/s,
+		/import \{[^}]*gridFeatureInertTip[^}]*\} from '\$lib\/player\/grid-features'/s,
 		'if DeckHeader spells the tip itself then the wording can drift from JogDial'
 	);
 	assert.match(
@@ -349,7 +349,7 @@ test('the BEAT SYNC button goes inert with the same shared tip', () => {
 	);
 	assert.match(
 		DECK_HEADER_SRC,
-		/beatSyncTitle[\s\S]{0,300}GRID_FEATURE_TIP/,
+		/beatSyncTitle[\s\S]{0,300}gridInertTip/,
 		'if beatSyncTitle stops resolving to the shared tip when gridless then the hover lies'
 	);
 });

@@ -8,13 +8,13 @@
 	import {
 		DECK_IDS,
 		deckStates,
-		effectiveCamelotKey,
 		keySyncPreview,
 		pitchRanges,
 		rateDeckTrack
 	} from '$lib/rb/audio-engine.svelte';
 	import { tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
-	import { GRID_FEATURE_TIP, gridFeaturesInert } from '$lib/player/grid-features';
+	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
+	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import ControlExplainer from './ControlExplainer.svelte';
@@ -62,9 +62,10 @@
 	// BEAT SYNC is inert rather than lit-but-dead. Transport is deliberately
 	// NOT gated the same way - play, pause and cue always run.
 	const gridless: boolean = $derived(gridFeaturesInert(deck));
+	const gridInertTip: string = $derived(gridFeatureInertTip(deck));
 	const beatSyncTitle: string = $derived(
 		gridless
-			? GRID_FEATURE_TIP
+			? gridInertTip
 			: deck.beat_sync_enabled
 				? 'BEAT SYNC ON - lock beat phase to the tempo MASTER (BAR phase, folding if it must)'
 				: 'BEAT SYNC OFF - this deck keeps its own tempo and phase'
@@ -137,12 +138,14 @@
 			? 'Master Tempo is OFF. Tempo changes affect vocal pitch; KEY SYNC itself does not change playback speed.'
 			: null
 	);
-	/** Show audible Camelot after KEY SYNC / nudge; raw metadata stays in the tooltip. */
-	const keyText: string = $derived(
-		effectiveCamelotKey(deck.key, deck.key_shift_semitones) ?? deck.key ?? '--'
+	/** Show audible Camelot after KEY SYNC / nudge; playhead segments override metadata. */
+	const keyPlayhead = $derived(
+		keyAtPlayheadNow(deck.anlz, deck.position_ms, deck.key_shift_semitones, deck.key)
 	);
+	const keyText: string = $derived(keyPlayhead.display ?? '--');
 	const keyColor: string | null = $derived(camelotKeyColor(keyText === '--' ? null : keyText));
 	const keyHover: string | null = $derived.by(() => {
+		if (keyPlayhead.title !== null) return keyPlayhead.title;
 		const effective = keyText === '--' ? null : keyText;
 		const base = camelotKeyHoverLabel(effective);
 		const raw = deck.key;

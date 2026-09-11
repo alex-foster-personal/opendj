@@ -147,7 +147,14 @@ import {
 } from '$lib/rb/beat-sync-math';
 import type { TempoRampStep } from '$lib/rb/beat-sync-math';
 import { beatSyncOutcomeNotices } from '$lib/rb/beat-sync-math';
-import { deckHasRealBeatGrid, effectiveBeatSync, effectiveQuantize, GRID_FEATURE_TIP, gridFeaturesInert, hasRealBeatGrid } from '$lib/player/grid-features';
+import {
+	deckHasTrustedBeatGrid,
+	effectiveBeatSync,
+	effectiveQuantize,
+	gridFeatureInertTip,
+	gridFeaturesInert,
+	hasRealBeatGrid
+} from '$lib/player/grid-features';
 import {
 	beatFourLeadInSec,
 	beatSyncMaxFollowers,
@@ -1006,7 +1013,7 @@ function _setPausedPosition(deck: DeckId, positionMs: number): void {
  */
 function _quantizeGrid(st: DeckState): readonly AnlzBeat[] | null {
 	const beats = st.anlz?.beatgrid.beats;
-	return effectiveQuantize(st) && hasRealBeatGrid(beats) ? beats : null;
+	return effectiveQuantize(st) && beats !== undefined ? beats : null;
 }
 
 /**
@@ -2464,7 +2471,7 @@ const _resyncTracking = createBeatgridResyncTracking(); // pending/gridless trac
 const _beatgridResyncPorts: BeatgridResyncPorts = {
 	deckIds: DECK_IDS, syncMaster: _syncMaster, playing: (deck) => deckStates[deck].playing,
 	beatSyncEnabled: (deck) => deckStates[deck].beat_sync_enabled, setBeatSyncEnabled: (deck, enabled) => (deckStates[deck].beat_sync_enabled = enabled),
-	hasRealBeatGrid: (deck) => deckHasRealBeatGrid(deckStates[deck]), hasSyncError: (deck) => deckStates[deck].sync_error !== null,
+	hasRealBeatGrid: (deck) => deckHasTrustedBeatGrid(deckStates[deck]), hasSyncError: (deck) => deckStates[deck].sync_error !== null,
 	setSyncError: (deck, message) => (deckStates[deck].sync_error = message), requiresReschedule: syncChangeRequiresReschedule,
 	synchronizeFollowers: _synchronizeFollowers, ..._resyncTracking
 };
@@ -3554,7 +3561,7 @@ class RbAudioEngine implements AudioEngine {
 		// exact sentence; the toast is for the IPC and CLI paths, where there
 		// is no hovered button to read and a silent no-op would be a lie.
 		if (enabled && gridFeaturesInert(st)) {
-			pushToast(`Deck ${deck} QUANTIZE ${GRID_FEATURE_TIP}`, 'info');
+			pushToast(`Deck ${deck} QUANTIZE ${gridFeatureInertTip(st)}`, 'info');
 		}
 	}
 
@@ -3590,7 +3597,7 @@ class RbAudioEngine implements AudioEngine {
 		// the deck has nothing to lock to, and that is said out loud rather
 		// than thrown into command_error.
 		if (gridFeaturesInert(st)) {
-			pushToast(`Deck ${deck} BEAT SYNC ${GRID_FEATURE_TIP}`, 'info');
+			pushToast(`Deck ${deck} BEAT SYNC ${gridFeatureInertTip(st)}`, 'info');
 			return Promise.resolve();
 		}
 		if (!_rt[deck].desiredActive) return Promise.resolve();
