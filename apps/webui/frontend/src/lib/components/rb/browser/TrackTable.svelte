@@ -722,7 +722,7 @@
 	const renderedRowCapacity = $derived(
 		Math.min(
 			rows.length,
-			Math.max(0, Math.floor((viewportHeight - AUTOPLAY_THEAD_H) / rowHeight))
+			Math.max(0, Math.floor((viewportHeight - TRACK_TABLE_THEAD_PX) / rowHeight))
 		)
 	);
 
