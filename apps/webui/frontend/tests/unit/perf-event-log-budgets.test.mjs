@@ -429,3 +429,17 @@ test('flushPerfEventLog persists on demand for a caller that cannot wait', async
 	assert.equal(store.writes, 1);
 	assert.ok(store.getItem(STORAGE_KEY).includes('AUDIO_FILE_MISSING'));
 });
+
+test('resetPerfEventLog empties the ring and persists the empty store', async () => {
+	const { perfLog, store } = await freshLog();
+	mock.timers.enable({ apis: ['setTimeout'] });
+
+	perfLog.recordPerfEvent('deck-load-fail', 'before-reset', 1);
+	perfLog.flushPerfEventLog();
+	assert.ok(store.getItem(STORAGE_KEY).includes('before-reset'));
+
+	perfLog.resetPerfEventLog();
+	assert.equal(perfLog.readPerfEvents().length, 0);
+	const stored = JSON.parse(store.getItem(STORAGE_KEY));
+	assert.equal(stored.length, 0, 'reset must flush an empty ring to localStorage');
+});
