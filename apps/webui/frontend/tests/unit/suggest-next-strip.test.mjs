@@ -101,3 +101,26 @@ test('play label and dispatch share the reservation-aware picker', () => {
 	assert.match(source, /const destination = \(play \? playTargetLabel : targetLabel\)/);
 	assert.match(source, /disabled=\{playTargetLabel === null\}/);
 });
+
+const COACH = fileURLToPath(
+	new URL('../../src/lib/components/rb/PeakPressureCoach.svelte', import.meta.url)
+);
+const coachSource = readFileSync(COACH, 'utf8');
+const coachTemplate = coachSource.slice(coachSource.lastIndexOf('</script>'));
+
+test('peak pressure coach uses educational explainer and status role', () => {
+	assert.match(coachSource, /data-testid="peak-pressure-coach"/);
+	assert.match(coachSource, /Peak energy pressure \(educational\)/);
+	assert.match(coachSource, /Metadata energy is not crowd response\./);
+	assert.match(coachTemplate, /role="status"/);
+	assert.doesNotMatch(coachTemplate, /role="alert"/);
+});
+
+test('peak pressure coach markup is not alarmist', () => {
+	assert.doesNotMatch(coachTemplate, /\b(warning|danger|alarm)\b/i);
+});
+
+test('SuggestNextStrip still posts suggest-next through the generated client', () => {
+	assert.match(source, /api\.POST\('\/api\/v1\/copilot\/suggest-next'/);
+	assert.doesNotMatch(source, /(^|[^A-Za-z0-9_])fetch\(/);
+});

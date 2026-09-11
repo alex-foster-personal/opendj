@@ -25,6 +25,7 @@ from apps.webui.server.backend import InMemoryBackend, Pairing, Provenance, Trac
 from apps.webui.server.routes import copilot as copilot_routes
 
 BASE = "/api/v1/copilot/suggest-next"
+PEAK_BASE = "/api/v1/copilot/peak-pressure"
 
 
 def _iso(dt: datetime) -> str:
@@ -99,6 +100,8 @@ def test_suggest_next_returns_ranked_candidates(client: TestClient) -> None:
     assert body["current"]["energy"] == 6
     assert body["context_source"] == "empty"
     assert body["context_size"] == 0
+    assert body["pressure"]["cue"] == "unknown"
+    assert body["pressure"]["scored_tracks"] == 0
 
     ids = [c["stable_id"] for c in body["candidates"]]
     assert "cur-001" not in ids, "current track must never suggest itself"
@@ -239,3 +242,70 @@ def test_standard_key_notation_is_normalised(
     r = client.post(BASE, json={"stable_id": "am-001"})
     assert r.status_code == 200
     assert r.json()["current"]["key_camelot"] == "8A"
+
+
+@pytest.mark.requirement("AI-05")
+def test_peak_pressure_route_release_after_four_high_energy(
+    client: TestClient, backend: InMemoryBackend
+) -> None:
+    for i in range(4):
+        _seed_track(
+            backend, f"peak-{i}", title=f"Peak {i}", artist=f"P{i}",
+            bpm=124.0, key="8A", energy=8,
+        )
+    r = client.post(
+        PEAK_BASE,
+        json={"session_ids": ["peak-0", "peak-1", "peak-2", "peak-3"]},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["cue"] == "release"
+    assert body["limitation"] == "Metadata energy is not crowd response."
+
+
+@pytest.mark.requirement("AI-05")
+def test_peak_pressure_unknown_session_is_404(client: TestClient) -> None:
+    r = client.post(PEAK_BASE, json={"session_ids": ["ghost-peak"]})
+    assert r.status_code == 404
+    assert "ghost-peak" in r.json()["message"]
+
+
+@pytest.mark.requirement("AI-05")
+def test_suggest_next_includes_pressure_and_release_prior(
+    client: TestClient, backend: InMemoryBackend
+) -> None:
+    for i in range(4):
+        _seed_track(
+            backend, f"peak-{i}", title=f"Peak {i}", artist=f"P{i}",
+            bpm=124.0, key="8A", energy=8,
+        )
+    _seed_track(
+        backend, "cand-126", title="High", artist="High",
+        bpm=126.0, key="8A", energy=9,
+    )
+    r = client.post(
+        BASE,
+        json={
+            "stable_id": "cur-001",
+            "session_ids": ["peak-0", "peak-1", "peak-2", "peak-3"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["pressure"]["cue"] == "release"
+    tags = [t for c in body["candidates"] for t in c["rationale_tags"]]
+    assert "release_a_little" in tags
+    high_energy = [
+        c for c in body["candidates"]
+        if c.get("energy") is not None and c["energy"] >= 8
+    ]
+    assert high_energy, "high-energy candidates must remain listed"
+
+
+@pytest.mark.requirement("AI-05")
+def test_copilot_route_has_no_camera_import() -> None:
+    import re
+    from pathlib import Path
+
+    source = Path(copilot_routes.__file__).read_text(encoding="utf-8")
+    assert re.search(r"(?i)camera|cv2|webcam", source) is None
