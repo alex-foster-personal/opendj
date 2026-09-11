@@ -214,7 +214,9 @@ export type PerformanceCommand =
 	| { type: 'tech_mode_edge_hover'; edge: EdgeRegion; hovered: boolean }
 	| { type: 'pairing_snapshot_open' }
 	| { type: 'pairing_snapshot_remove_eq_adjuster'; deck: DeckId; band: EqBand }
-	| { type: 'pairing_snapshot_save'; from_deck: DeckId; to_deck: DeckId };
+	| { type: 'pairing_snapshot_save'; from_deck: DeckId; to_deck: DeckId }
+	| { type: 'playlist_undo' }
+	| { type: 'playlist_redo' };
 
 export interface PerformanceDeckSnapshot {
 	deck_id: DeckId;
@@ -373,6 +375,20 @@ export function registerAutoPlayNextController(controller: AutoPlayNextControlle
 	_autoPlayNextController = controller;
 	return () => {
 		if (_autoPlayNextController === controller) _autoPlayNextController = null;
+	};
+}
+
+export interface PlaylistHistoryAdapter {
+	undo(): Promise<void>;
+	redo(): Promise<void>;
+}
+
+let _playlistHistoryAdapter: PlaylistHistoryAdapter | null = null;
+
+export function registerPlaylistHistoryAdapter(adapter: PlaylistHistoryAdapter): () => void {
+	_playlistHistoryAdapter = adapter;
+	return () => {
+		if (_playlistHistoryAdapter === adapter) _playlistHistoryAdapter = null;
 	};
 }
 
@@ -868,6 +884,10 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	if (type === 'tech_mode_edge_hover') {
 		_exactKeys(record, ['type', 'edge', 'hovered']);
 		return { type, edge: _edge(record.edge), hovered: _boolean('hovered', record.hovered) };
+	}
+	if (type === 'playlist_undo' || type === 'playlist_redo') {
+		_exactKeys(record, ['type']);
+		return { type };
 	}
 	if (type === 'pairing_snapshot_open') {
 		_exactKeys(record, ['type']);
@@ -1409,6 +1429,8 @@ export function performanceCommandQueueScopes(
 		|| command.type === 'auto_play_next_arm'
 		|| command.type === 'auto_play_next_cancel'
 		|| command.type === 'load_play_intent'
+		|| command.type === 'playlist_undo'
+		|| command.type === 'playlist_redo'
 	) {
 		return null;
 	}
@@ -1720,6 +1742,16 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		});
 	} else if (command.type === 'feedback_mark') {
 		throw new Error('feedback_mark must be captured at the dispatch boundary');
+	} else if (command.type === 'playlist_undo') {
+		if (_playlistHistoryAdapter === null) {
+			throw new Error('playlist_undo requires a mounted playlist history panel');
+		}
+		await _playlistHistoryAdapter.undo();
+	} else if (command.type === 'playlist_redo') {
+		if (_playlistHistoryAdapter === null) {
+			throw new Error('playlist_redo requires a mounted playlist history panel');
+		}
+		await _playlistHistoryAdapter.redo();
 	} else {
 		const _exhaustive: never = command;
 		throw new Error(`Unhandled performance command: ${JSON.stringify(_exhaustive)}`);
