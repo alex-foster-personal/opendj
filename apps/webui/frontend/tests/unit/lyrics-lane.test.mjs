@@ -5,9 +5,10 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let lyricLanePositionPercent;
 let activeLyricLineIndex;
+let lyricLinesSpanningRange;
 
 before(async () => {
-	({ lyricLanePositionPercent, activeLyricLineIndex } = await loadTypeScriptModule(
+	({ lyricLanePositionPercent, activeLyricLineIndex, lyricLinesSpanningRange } = await loadTypeScriptModule(
 		'src/lib/components/rb/wave/lyrics-lane.ts'
 	));
 });
@@ -29,4 +30,44 @@ test('lyrics lane follows the latest line at or before the playhead', () => {
 	assert.equal(activeLyricLineIndex(lines, 2_499), 1);
 	assert.equal(activeLyricLineIndex(lines, 2_500), 2);
 	assert.equal(activeLyricLineIndex(lines, -1), -1);
+});
+
+test('lyricLinesSpanningRange includes active-at-in and later lines inside range', () => {
+	const lines = [
+		{ start_ms: 115_000, text: 'alpha bravo' },
+		{ start_ms: 120_000, text: 'delta echo' },
+		{ start_ms: 130_000, text: 'golf hotel' }
+	];
+	assert.deepEqual(lyricLinesSpanningRange(lines, 115_147, 122_952), [
+		{ start_ms: 115_000, text: 'alpha bravo' },
+		{ start_ms: 120_000, text: 'delta echo' }
+	]);
+});
+
+test('lyricLinesSpanningRange returns empty when out is before in', () => {
+	const lines = [{ start_ms: 0, text: 'alpha' }];
+	assert.deepEqual(lyricLinesSpanningRange(lines, 5_000, 4_000), []);
+});
+
+test('lyricLinesSpanningRange starts at first in-range line when cue is before first lyric', () => {
+	const lines = [
+		{ start_ms: 5_000, text: 'alpha' },
+		{ start_ms: 8_000, text: 'bravo' },
+		{ start_ms: 12_000, text: 'charlie' }
+	];
+	assert.deepEqual(lyricLinesSpanningRange(lines, 1_000, 10_000), [
+		{ start_ms: 5_000, text: 'alpha' },
+		{ start_ms: 8_000, text: 'bravo' }
+	]);
+});
+
+test('lyricLinesSpanningRange includes a line that starts exactly at out_ms', () => {
+	const lines = [
+		{ start_ms: 1_000, text: 'alpha' },
+		{ start_ms: 5_000, text: 'bravo' }
+	];
+	assert.deepEqual(lyricLinesSpanningRange(lines, 500, 5_000), [
+		{ start_ms: 1_000, text: 'alpha' },
+		{ start_ms: 5_000, text: 'bravo' }
+	]);
 });
