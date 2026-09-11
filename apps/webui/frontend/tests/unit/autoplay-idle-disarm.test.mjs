@@ -39,7 +39,7 @@ function stopEveryDeck(mod) {
 let autoPlay;
 
 test.before(async () => {
-	autoPlay = await loadTypeScriptModule('src/lib/rb/auto-play.ts');
+	autoPlay = await loadTypeScriptModule('src/lib/rb/autoplay-idle.ts');
 });
 
 test('shouldDisarmAutoPlayIdle waits for the hunt threshold', () => {
