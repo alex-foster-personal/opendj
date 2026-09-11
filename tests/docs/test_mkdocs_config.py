@@ -168,6 +168,10 @@ def test_docs_publish_guards_target_release_branch_only():
 
     assert text.count("github.ref == 'refs/heads/main'") == 2
     assert "github.ref == 'refs/heads/af--rekordbox-parity-ui'" not in text
+    # Pages publish is main-only at the step, not the job: a job-level
+    # `if: github.ref == main` reports SKIPPED on pull requests.
+    deploy = _load_workflow("docs.yml")["jobs"]["deploy"]
+    assert "if" not in deploy
 
 
 @pytest.mark.parametrize(
