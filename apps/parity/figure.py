@@ -49,6 +49,9 @@ class LaneFigure:
     iou_mean: float | None = None
     precision_mean: float | None = None
     recall_mean: float | None = None
+    boundary_f_0_5: float | None = None
+    boundary_f_3_0: float | None = None
+    label_acc: float | None = None
     failed_own_n: int = 0
     no_own_n: int = 0
     at_parity: bool = False
@@ -60,6 +63,7 @@ class LaneFigure:
     no_own_ids: tuple[str, ...] = ()
     ungradable_ids: tuple[str, ...] = ()
     ungradable: Mapping[str, int] = field(default_factory=dict)
+    details: Mapping[str, int | float | None] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         refuse_forbidden_denominator(self.denominator_n, what=self.lane)
@@ -100,6 +104,9 @@ class LaneFigure:
             "iou_mean": self.iou_mean,
             "precision_mean": self.precision_mean,
             "recall_mean": self.recall_mean,
+            "boundary_f_0_5": self.boundary_f_0_5,
+            "boundary_f_3_0": self.boundary_f_3_0,
+            "label_acc": self.label_acc,
             "failed_own_n": self.failed_own_n,
             "no_own_n": self.no_own_n,
             "at_parity": self.at_parity,
@@ -111,4 +118,5 @@ class LaneFigure:
             "no_own_ids": list(self.no_own_ids),
             "ungradable_ids": list(self.ungradable_ids),
             "ungradable": dict(self.ungradable),
+            "details": dict(self.details),
         }

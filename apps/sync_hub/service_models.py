@@ -18,6 +18,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from apps.sync_hub import enrollment, service_enroll
+from apps.sync_hub.machine_credentials import CredentialVerdict
 
 
 class MachineModel(BaseModel):
@@ -41,9 +42,47 @@ class RowModel(BaseModel):
     members: list[dict[str, Any]] | None = None
 
 
+#: Carried on every request that can move rows (``hello``, ``push``,
+#: ``enroll``) and gated per request, like the capability tokens. ``None`` --
+#: the field absent -- is a build from before the wire/schema split, judged by
+#: exact schema equality instead (:mod:`apps.sync_hub.wire_version`).
+_WIRE_VERSION_FIELD: Any = Field(
+    default=None, description="sync wire version; absent on pre-split builds"
+)
+
+
+class SyncErrorBody(BaseModel):
+    """The ``detail`` of every sync refusal: a stable code and prose."""
+
+    code: str
+    message: str
+
+
+class SyncErrorResponse(BaseModel):
+    """FastAPI wraps an ``HTTPException`` detail under ``detail``."""
+
+    detail: SyncErrorBody
+
+
+#: What ``hello`` and ``push`` can answer besides 200, for the OpenAPI
+#: document and everything generated from it.
+SYNC_VERSION_RESPONSES: dict[int | str, dict[str, object]] = {
+    409: {
+        "model": SyncErrorResponse,
+        "description": (
+            "The peers must not exchange rows. code: SYNC_WIRE_VERSION (a "
+            "different sync wire version), SYNC_SCHEMA_VERSION (a pre-split "
+            "peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN "
+            "or SYNC_UNKNOWN_MACHINE."
+        ),
+    },
+}
+
+
 class HelloRequest(BaseModel):
     machine: MachineModel
     schema_version: int
+    wire_version: int | None = _WIRE_VERSION_FIELD
     #: Protocol features the CALLER understands (round 5 gate B-1). Absent on
     #: any build before this one. Discovery only -- ``hello`` never answers
     #: partially, so nothing here is gated on it; the endpoints that CAN
@@ -59,7 +98,19 @@ class HelloRequest(BaseModel):
 class HelloResponse(BaseModel):
     hub_machine_id: str
     schema_version: int
+    #: The wire version this hub speaks. The spoke gates on it, not on
+    #: ``schema_version``, which only describes the hub's own storage.
+    wire_version: int
     seq: int
+    #: Every machine this hub knows, peers included. NOT withheld from the
+    #: caller, though it hands out other machines' ids (plan X5): a spoke
+    #: holds its peers' ``track_locations``, ``sync_policies`` and
+    #: ``playlist_pins`` rows, which REFERENCE ``machines``, so a spoke
+    #: denied the peer rows would FK-refuse every pulled row that names a
+    #: peer (round 2 finding N4). What changed instead is that a machine id
+    #: stopped being the credential: under ENFORCE this response only reaches
+    #: a caller holding a valid sync credential, and knowing another
+    #: machine's id no longer lets anybody act as it.
     machines: list[MachineModel]
     #: This hub's generation token (round 2 finding N6). It changes when the
     #: hub's DB moves backwards under a data dir that did not -- a restore --
@@ -94,6 +145,13 @@ class HelloResponse(BaseModel):
     #: (the spoke reads the raw JSON), so requiring it costs no mixed-version
     #: compatibility.
     ownership: enrollment.OwnershipState
+    #: How this hub read the caller's sync credential (plan X5): ``valid``,
+    #: ``missing``, ``invalid``, ``revoked`` or ``unowned``. This IS the OBSERVE
+    #: report: a machine learns on every handshake that ENFORCE would refuse
+    #: it, rather than on the day ENFORCE is switched on. Under ENFORCE only
+    #: ``valid`` ever reaches a response; anything else is a 401 first.
+    #: Required, no default, for the reason ``ownership`` gives.
+    credential: CredentialVerdict
 
 
 class EnrollRequest(BaseModel):
@@ -102,12 +160,14 @@ class EnrollRequest(BaseModel):
 
     machine: MachineModel
     schema_version: int
+    wire_version: int | None = _WIRE_VERSION_FIELD
     credential: service_enroll.EnrollCredentialModel
 
 
 class PushRequest(BaseModel):
     machine_id: str = Field(min_length=1)
     schema_version: int
+    wire_version: int | None = _WIRE_VERSION_FIELD
     rows: list[RowModel]
     #: The pusher's ``machines`` snapshot, merged before the rows are applied
     #: (round 2 finding N4, round 1 A4). ``sync_policies``, ``playlist_pins``
@@ -139,6 +199,8 @@ class PushResponse(BaseModel):
 class PullResponse(BaseModel):
     rows: list[RowModel]
     seq: int
+    #: Every machine this hub knows, for the FK reason ``HelloResponse``
+    #: gives; only a credentialed caller reaches it under ENFORCE.
     machines: list[MachineModel]
     #: True when the hub still holds changelog entries above ``seq``. The
     #: client loops on it rather than inferring "done" from an empty page:
@@ -158,10 +220,16 @@ class PullResponse(BaseModel):
 class StatusResponse(BaseModel):
     hub_machine_id: str
     schema_version: int
+    wire_version: int
     seq: int
     machines: list[MachineModel]
     row_counts: dict[str, int]
     hub_generation: str
+    #: True only on a HOSTED hub (``MDT_SYNC_HUB_HOSTED=1``), which checks
+    #: each caller's owner against ``entitlement_provider``. A self-hosted
+    #: hub reports False and None: it never consults a source.
+    hosted: bool
+    entitlement_provider: str | None
 
 
 class DigestResponse(BaseModel):
@@ -181,6 +249,7 @@ class DigestResponse(BaseModel):
 
 
 __all__ = [
+    "SYNC_VERSION_RESPONSES",
     "DigestResponse",
     "EnrollRequest",
     "HelloRequest",
@@ -191,4 +260,6 @@ __all__ = [
     "PushResponse",
     "RowModel",
     "StatusResponse",
+    "SyncErrorBody",
+    "SyncErrorResponse",
 ]

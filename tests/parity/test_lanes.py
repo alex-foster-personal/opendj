@@ -6,7 +6,7 @@ import pytest
 
 from apps.parity.lanes import BEATMAP_OWNER, LANE_IDS, SCORED_THIS_ROUND
 from apps.parity.score import render_report, score_payload
-from tests.parity.payloads import round0_fixture, round1_fixture
+from tests.parity.payloads import round0_fixture
 
 pytestmark = pytest.mark.requirement("PARITY-01")
 
@@ -54,11 +54,18 @@ def test_beatgrid_and_downbeat_delegate_to_beatmap_and_do_not_invent_a_metric() 
 
 
 def test_unscored_lanes_are_not_scored_as_agreement_or_as_a_miss() -> None:
-    """Round 1 scores BPM, Key, and Vocal. Every other remaining lane is
+    """Round 1 scores BPM, Key, phrase, cues, and Vocal. Waveform lanes stay
     `not_scored_this_round` with a named reason, never 0-of-N agreement.
     """
-    report = score_payload(round1_fixture())
-    assert SCORED_THIS_ROUND == ("bpm", "key", "vocal")
+    report = score_payload(round0_fixture())
+    assert SCORED_THIS_ROUND == (
+        "bpm",
+        "key",
+        "phrase",
+        "cues_db",
+        "cues_anlz",
+        "vocal",
+    )
     for figure in report.figures:
         if figure.lane in SCORED_THIS_ROUND:
             assert figure.status == "scored"

@@ -24,6 +24,7 @@ from apps.feature_flags import FlagStore, load_flags
 from apps.play_analytics.api import router as play_analytics_router
 from apps.sets.api import router as sets_router
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
+from apps.sync_hub import hosted_config as sync_hub_hosted_config
 from apps.sync_hub.service import router as sync_hub_router
 from apps.webui.port_config import (
     PortConfigError,
@@ -55,6 +56,8 @@ from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes
 from .routes import client_events as client_events_routes
 from .routes import cloudsync as cloudsync_routes
+from .routes import cloudsync_config as cloudsync_config_routes
+from .routes import cloudsync_fleet as cloudsync_fleet_routes
 from .routes import cloudsync_ops as cloudsync_ops_routes
 from .routes import cloudsync_policy as cloudsync_policy_routes
 from .routes import cloudsync_status as cloudsync_status_routes
@@ -238,6 +241,8 @@ def _bind_core_state(
     app.state.state_db_path = state_db_path
     app.state.analysis_db_path = state_db_path
     app.state.usb_simulation_enabled = usb_volumes_sim_routes.simulation_enabled()
+    # MDT_SYNC_HUB_HOSTED: off unless "1"; hosted mode fails fast right here.
+    sync_hub_hosted_config.configure(app, os.environ, db_path=Path(state_db_path))
 
 
 def _bind_feature_state(
@@ -427,6 +432,8 @@ def _mount_api_routers(app: FastAPI) -> None:
         cloudsync_ops_routes.router,
         cloudsync_policy_routes.router,
         cloudsync_status_routes.router,
+        cloudsync_config_routes.router,
+        cloudsync_fleet_routes.router,
         spotify_routes.router,
         usb_export_routes.router,
         usb_volumes_routes.router,

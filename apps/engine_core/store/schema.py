@@ -88,7 +88,7 @@ _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 4
+SCHEMA_VERSION: int = 5
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -368,6 +368,24 @@ _ENROLLMENT: tuple[str, ...] = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_enrollment_grants_expires "
     "ON enrollment_grants(expires_at)",
+)
+
+
+# ==========================================================================
+# DOMAIN: per-machine sync credentials (legacy v11, ADR 12 amendment)
+# Legacy source: apps/shared/state/migrations_v11.py (_V11). Its own domain
+# for the reason _ENROLLMENT gives: never synced, hub is the only writer.
+# ==========================================================================
+
+_CREDENTIALS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS machine_credentials (
+        machine_id         TEXT PRIMARY KEY
+                             REFERENCES machines(machine_id) ON DELETE CASCADE,
+        credential_sha256  TEXT NOT NULL UNIQUE,
+        minted_at          TEXT NOT NULL
+    )
+    """,
 )
 
 
@@ -989,6 +1007,7 @@ DOMAINS: dict[str, tuple[str, ...]] = {
     "state_core": _STATE_CORE,
     "sync_infra": _SYNC_INFRA,
     "enrollment": _ENROLLMENT,
+    "credentials": _CREDENTIALS,
     "analysis": _ANALYSIS,
     "analysis_retention": _ANALYSIS_RETENTION,
     "lyrics": _LYRICS,
@@ -1018,6 +1037,7 @@ LEGACY_SOURCES: dict[str, str] = {
     "state_core": "apps/shared/state/schema.py",
     "sync_infra": "apps/shared/state/schema.py",
     "enrollment": "apps/shared/state/migrations_v9.py",
+    "credentials": "apps/shared/state/migrations_v11.py",
     "analysis": "apps/analysis/store.py",
     "native_analysis_v1": "apps/analysis/store.py",
     "analysis_retention": "apps/shared/state/schema.py",
@@ -1062,6 +1082,7 @@ TABLES: dict[str, tuple[str, ...]] = {
         "machine_owners",
         "enrollment_grants",
     ),
+    "credentials": ("machine_credentials",),
     "analysis": ("analysis", "analysis_events"),
     "native_analysis_v1": (
         "analysis_canonical",
@@ -1114,7 +1135,7 @@ ALL_CACHE_TABLES: tuple[str, ...] = tuple(
 #: its own rung. Named here rather than inline so the exclusion and the rung
 #: that compensates for it cannot drift apart silently.
 _POST_V1_DOMAINS: frozenset[str] = frozenset(
-    {"native_analysis_v1", "enrollment", "lyrics"}
+    {"native_analysis_v1", "enrollment", "lyrics", "credentials"}
 )
 
 _V1: list[str] = [
@@ -1154,7 +1175,13 @@ already in ``_SYNC_INFRA``. ``LEGACY_SHARED_STATE_VERSION`` deliberately stays
 where scripts/sync_drift_rules.MIRROR_VERSION_DEBT pins it; REPORT.md O-16
 records what that costs."""
 
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4]
+_V5: list[str] = list(_CREDENTIALS)
+"""4 -> 5: the per-machine sync credential (legacy ladder v11).
+
+Its own rung for the reason _V2 and _V3 spell out: an install already
+stamped at v4 never re-runs an earlier rung."""
+
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
 """Every rung, flattened. What both the fresh path and adoption execute.

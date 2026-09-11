@@ -155,22 +155,70 @@ def window_slice(times: Iterable[float], start_s: float, end_s: float) -> list[f
 
 # ----- Grid shape helpers -------------------------------------------------
 
+WEIGHTS_NOT_RELEASED = "weights-not-released"
 
-def grid_is_dynamic(beats: Sequence[dict[str, Any]]) -> bool:
+RESERVED_CANDIDATES: tuple[dict[str, str], ...] = (
+    {
+        "name": "masked_diffusion_beat_this",
+        "label": "Masked Diffusion Beat This!",
+        "status": WEIGHTS_NOT_RELEASED,
+    },
+)
+
+
+def _tempo_of(beat: Any) -> float:
+    """BPM from either a rekordbox dict beat or a fixture ``[n, t, bpm]`` triple."""
+    if isinstance(beat, dict):
+        return round(float(beat["bpm"]), 2)
+    return round(float(beat[2]), 2)
+
+
+def grid_is_dynamic(beats: Sequence[Any]) -> bool:
     """True when a rekordbox grid carries more than one tempo.
 
     Dynamic grids are the population that a fixed-BPM analyzer silently
     flatters itself on, so this predicate drives the fixed-vs-dynamic split
     that every table in the report is required to show.
+
+    Accepts both wire shapes: ``{..., "bpm": ...}`` dicts and fixture
+    ``[n, t, bpm]`` triples.
     """
     seen: list[float] = []
     for beat in beats:
-        bpm = round(float(beat["bpm"]), 2)
+        bpm = _tempo_of(beat)
         if not any(abs(bpm - s) < BPM_EXACT_TOL for s in seen):
             seen.append(bpm)
             if len(seen) > 1:
                 return True
     return False
+
+
+def eval_grid_is_dynamic(beats: Sequence[Any]) -> bool:
+    """Same as ``grid_is_dynamic``; name exists so call sites read as eval-time."""
+    return grid_is_dynamic(beats)
+
+
+def partition_counts(beats_by_track: Iterable[Sequence[Any]]) -> tuple[int, int]:
+    """``(n_fixed, n_dynamic)`` from eval-time ``grid_is_dynamic``, never a stored flag."""
+    n_fixed = n_dynamic = 0
+    for beats in beats_by_track:
+        if grid_is_dynamic(beats):
+            n_dynamic += 1
+        else:
+            n_fixed += 1
+    return n_fixed, n_dynamic
+
+
+def reserved_table_cells() -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
+    """Display-only rows for candidates registered but not runnable."""
+    return [
+        (
+            cand["label"],
+            {"n": 0, "status": WEIGHTS_NOT_RELEASED},
+            {"status": WEIGHTS_NOT_RELEASED, "emits_downbeats": False},
+        )
+        for cand in RESERVED_CANDIDATES
+    ]
 
 
 def downbeat_times(beats: Sequence[dict[str, Any]]) -> list[float]:

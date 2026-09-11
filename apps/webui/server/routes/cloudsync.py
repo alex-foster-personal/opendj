@@ -78,6 +78,7 @@ from apps.shared.state.machine_identity import (
     MachineIdentityError,
     register_machine,
 )
+from apps.sync_hub import config as sync_config
 from apps.sync_hub.policy_rules import PinCell, PolicyCell
 from apps.sync_hub.policy_store import empty_proposal
 from apps.webui.server.cloudsync_policy_http import (
@@ -291,12 +292,26 @@ def _row_to_pin(row: tuple) -> PlaylistPinOut:
 # output), so a config change belongs to whichever lane owns pyproject.toml's
 # ruff block, not this one.
 
-@router.get("/machines", response_model=list[MachineOut])
+@router.get("/machines", response_model=list[MachineOut], responses={500: {
+    "description": "CLOUDSYNC_IDENTITY_ERROR or CLOUDSYNC_CONFIG_INVALID "
+    "(cloudsync-config.json is malformed, so the configured name is unknown)",
+}})
 def list_machines(
     conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),  # noqa: B008
 ) -> list[MachineOut]:
+    # Register under the CONFIGURED name, the one Sync now and the scheduler
+    # use; the hostname default would rename this machine back (and collide
+    # with a same-host hub's row on UNIQUE machines.name).
+    data_dir = _data_dir(conn)
     try:
-        register_machine(conn, data_dir=_data_dir(conn))
+        stored = sync_config.read_config(data_dir)
+        register_machine(
+            conn, data_dir=data_dir, name=None if stored is None else stored.machine_name
+        )
+    except sync_config.CloudSyncConfigError as exc:
+        raise HTTPException(status_code=500, detail={
+            "code": "CLOUDSYNC_CONFIG_INVALID", "message": str(exc),
+        }) from exc
     except MachineIdentityError as exc:
         raise HTTPException(status_code=500, detail={
             "code": "CLOUDSYNC_IDENTITY_ERROR", "message": str(exc),

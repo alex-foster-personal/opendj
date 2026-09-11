@@ -11,7 +11,7 @@ from apps.parity.score import render_report, score_payload
 from apps.parity.vocal import vocal_iou
 from apps.vocals.cli import pvdi_present
 from scripts.parity.run_vocal import worker_stdout_to_payload
-from tests.parity.payloads import MEASURED_AT, payload, round1_fixture, track
+from tests.parity.payloads import MEASURED_AT, payload, round1_vocal_fixture, track
 
 pytestmark = pytest.mark.requirement("PARITY-01")
 
@@ -111,7 +111,7 @@ def test_missing_duration_is_failed_own() -> None:
 
 
 def test_round1_fixture_vocal_cases() -> None:
-    report = score_payload(round1_fixture())
+    report = score_payload(round1_vocal_fixture())
     vocal = report.figure("vocal")
     assert vocal.status == "scored"
     assert vocal.denominator_n == 7
@@ -124,7 +124,7 @@ def test_round1_fixture_vocal_cases() -> None:
 
 
 def test_report_names_denominator_date_and_not_at_parity() -> None:
-    text = render_report(score_payload(round1_fixture()))
+    text = render_report(score_payload(round1_vocal_fixture()))
     assert MEASURED_AT in text
     assert "tracks with rekordbox PVDI among present audio" in text
     assert "reporting, not a threshold" in text

@@ -284,6 +284,7 @@ HARD_ZERO: frozenset[str] = frozenset({
     "sync_drift.mirror_version_mismatch",
     "sync_drift.migration_step_changed",
     "sync_drift.undeclared_state_table",
+    "sync_drift.wire_shape_changed",
 })
 
 # Metrics that are measured and printed but never gated, because their value

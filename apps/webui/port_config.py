@@ -19,6 +19,11 @@ Requirements:
   port, so a process running as a DIFFERENT unix user on the same host (a
   self-hosted CI runner sharing the box with this fleet's worktrees) can name
   the claimant instead of reporting an unreadable ``/proc`` entry.
+- ✔︎ A worktree's CONFIGURED pair (from ``.env``, or an explicit request) is
+  kept when that worktree's own backend already holds it, exactly as the
+  REMEMBERED registry pair already is, so a config reload cannot evict a
+  worktree from ports its own running engine is serving (issue observed on
+  the Air's preview worktree, 8728/9448 -> 8700/9420, Fri 11 Sep 2026).
 
 Acceptance tests:
 
@@ -34,6 +39,11 @@ Acceptance tests:
   binds directly [then ⛔️] the pair is returned or restored.
 - [if] a claimed port has no ownership marker afterward [then ⛔️] a foreign
   user's process on it can be named.
+- [if] a worktree's configured pair has no registry entry yet and that
+  worktree's own backend already listens on it [then ⛔️] the claim moves it
+  to a fresh pair instead of keeping the configured one.
+- [if] a genuinely foreign process holds the configured pair [then ⛔️] the
+  claim keeps that pair rather than moving off it.
 """
 
 from __future__ import annotations
@@ -772,7 +782,7 @@ def claim_ports(
                 reservations,
                 excluding_path=root_key,
             )
-            and _pair_is_available(configured)
+            and (_pair_is_available(configured) or _backend_listener_matches_pair(configured))
         ):
             selected = configured
         else:

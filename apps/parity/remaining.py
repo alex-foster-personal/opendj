@@ -19,20 +19,13 @@ from apps.parity.lanes import (
 )
 
 _UNGRADABLE_REASON: dict[str, str] = {
-    "phrase": "missing_pssi",
-    "cues_db": "missing_djmd_cue",
-    "cues_anlz": "unreadable_ext",
     "waveform_detail": "unreadable_ext",
     "vocal": "missing_pvdi",
 }
 
 
 def _ungradable_pred(lane: str) -> Callable[[dict[str, Any]], bool]:
-    if lane == "phrase":
-        return lambda row: not row.get("rb_pssi")
-    if lane == "cues_db":
-        return lambda row: not row.get("rb_cue_db")
-    if lane in {"cues_anlz", "waveform_detail"}:
+    if lane == "waveform_detail":
         return lambda row: not row.get("rb_ext_readable", True)
     return lambda _row: False
 

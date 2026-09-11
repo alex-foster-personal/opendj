@@ -332,12 +332,13 @@ class BeatFarm:
         import tempfile
 
         suffix = Path(key).suffix or ".wav"
+        activations_dir = tempfile.mkdtemp()
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as fh:
             fh.write(audio)
             path = fh.name
         try:
             result = self.runner.analyze_one(
-                path, self.model, self.runner.DEFAULT_PEAK_THRESHOLD, None
+                path, self.model, self.runner.DEFAULT_PEAK_THRESHOLD, activations_dir
             )
         # Broad on purpose: one unreadable clip must not kill a 998-way
         # fan-out, and the failure is RECORDED per clip rather than swallowed.

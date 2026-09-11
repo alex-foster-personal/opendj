@@ -433,12 +433,8 @@
 		flex: 0 0 50%;
 		transition: flex-basis 150ms ease;
 	}
-	.cue-col.grow {
-		flex-basis: 80%;
-	}
-	.cue-col.shrink {
-		flex-basis: 20%;
-	}
+	.cue-col.grow { flex-basis: 80%; z-index: 2; background: var(--rb-panel); }
+	.cue-col.shrink { flex-basis: 20%; overflow: hidden; }
 	@media (prefers-reduced-motion: reduce) {
 		.cue-col {
 			transition: none;

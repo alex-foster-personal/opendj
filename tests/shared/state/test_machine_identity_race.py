@@ -13,6 +13,9 @@ file ``os.link``-ed into place), so the final path never exists empty.
 Acceptance, one test each:
 - if threads racing the first mint on a fresh dir can error or disagree then broken
 - if the atomic mint leaves a temp file behind or loosens the 0600 mode then broken
+- if reading an existing id writes to the data dir then broken (a read-only
+  hub data dir answered every /hello with 500 SYNC_HUB_IDENTITY on main
+  51af5613b, because each lookup staged a temp file before looking)
 """
 
 from __future__ import annotations
@@ -75,6 +78,22 @@ def test_racing_first_mints_on_a_fresh_dir_all_return_the_same_id(tmp_path: Path
         assert len(set(ids)) == 1, f"round {round_index}: racers disagree on the id: {set(ids)}"
         on_disk = machine_identity.machine_id_path(data_dir).read_text(encoding="utf-8")
         assert on_disk == ids[0], f"round {round_index}: the file holds {on_disk!r}"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX directory permission bits")
+def test_an_existing_id_is_read_from_a_read_only_data_dir(tmp_path: Path) -> None:
+    """if reading an existing id writes to the data dir then broken"""
+    print("if reading an existing id writes to the data dir then broken")
+    minted = machine_identity.get_or_create_machine_id(tmp_path)
+    tmp_path.chmod(0o500)
+    try:
+        read_back = machine_identity.get_or_create_machine_id(tmp_path)
+    finally:
+        tmp_path.chmod(0o700)
+    assert read_back == minted, f"the lookup returned {read_back!r}, the dir holds {minted!r}"
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        machine_identity.MACHINE_ID_FILENAME
+    ], "a lookup of an existing id must not leave a staging file"
 
 
 def test_the_atomic_mint_leaves_only_the_id_file_at_0600(tmp_path: Path) -> None:

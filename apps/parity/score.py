@@ -9,9 +9,11 @@ from typing import Any
 
 from apps.parity import SCORER_VERSION
 from apps.parity.bpm import score_bpm
+from apps.parity.cues import refuse_forbidden_cue_banklist_keys, score_cues_anlz, score_cues_db
 from apps.parity.figure import LaneFigure, ParityThresholdNotCalibrated
 from apps.parity.key import score_key
 from apps.parity.lanes import DELEGATED_THIS_ROUND, LANE_IDS, SCORED_THIS_ROUND
+from apps.parity.phrase import score_phrase
 from apps.parity.remaining import classify_remaining
 from apps.parity.vocal import score_vocal
 
@@ -63,6 +65,7 @@ def _present_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 def score_payload(payload: dict[str, Any]) -> ParityReport:
     """Score every enumerated lane. Missing measured_at is a refusal, not now()."""
+    refuse_forbidden_cue_banklist_keys(payload)
     measured_at = payload.get("measured_at")
     if not measured_at:
         raise ValueError(
@@ -75,6 +78,12 @@ def score_payload(payload: dict[str, Any]) -> ParityReport:
             figures.append(score_bpm(rows, measured_at=measured_at))
         elif lane == "key":
             figures.append(score_key(rows, measured_at=measured_at))
+        elif lane == "phrase":
+            figures.append(score_phrase(rows, measured_at=measured_at))
+        elif lane == "cues_db":
+            figures.append(score_cues_db(rows, measured_at=measured_at))
+        elif lane == "cues_anlz":
+            figures.append(score_cues_anlz(rows, measured_at=measured_at))
         elif lane == "vocal":
             figures.append(score_vocal(rows, measured_at=measured_at))
         else:
@@ -86,10 +95,10 @@ def score_payload(payload: dict[str, Any]) -> ParityReport:
     )
 
 
-def render_report(report: ParityReport, *, parity_round: int = 1) -> str:
+def render_report(report: ParityReport, *, round_n: int = 1) -> str:
     """Markdown a later session can resume from. Never says 'at parity'."""
     lines = [
-        f"# PARITY-01 round {parity_round}",
+        f"# PARITY-01 round {round_n}",
         "",
         f"Measured {report.measured_at}. Scorer {report.scorer_version}.",
         "No lane is described as matching a calibrated threshold; "
@@ -116,16 +125,58 @@ def render_report(report: ParityReport, *, parity_round: int = 1) -> str:
                 f"related {related}; failed_own {figure.failed_own_n}. "
                 "Reuses analysis_bench key weighted_score."
             )
-        if figure.lane == "vocal" and figure.iou_mean is not None:
+        if figure.lane == "phrase" and figure.status == "scored":
+            if figure.scored_n > 0:
+                notes = (
+                    f"boundary F@0.5s {figure.boundary_f_0_5:.3f} of {figure.scored_n} scored; "
+                    f"F@3.0s {figure.boundary_f_3_0:.3f}; kind acc {figure.label_acc:.3f}. "
+                    "Reporting bands, not a threshold. Denominator is PSSI-present tracks "
+                    "in this fixture, never the beatgrid pool."
+                )
+            elif figure.denominator_n == 0:
+                missing = figure.ungradable.get("missing_pssi", 0)
+                notes = (
+                    f"no PSSI in this fixture; missing_pssi {missing}. "
+                    "Phrase denominator is PSSI-present tracks, never the beatgrid pool."
+                )
+            else:
+                notes = (
+                    f"no own phrase analysis on {figure.no_own_n} PSSI-present tracks. "
+                    "Native phrase producer is v2; reporting the wait, not a miss."
+                )
+        if figure.lane == "cues_db" and figure.status == "scored":
+            matched = figure.details.get("matched_cues_n", 0)
+            rb_cues = figure.details.get("rb_cues_n", 0)
+            own_only = figure.details.get("own_only_cues_n", 0)
+            conflicts = figure.details.get("conflicts_n", 0)
             notes = (
-                f"mean IoU {figure.iou_mean:.3f} of {figure.scored_n} scored; "
-                f"exact (IoU=1) {figure.exact_n}; reporting, not a threshold."
+                f"20 ms grain, not a threshold. "
+                f"matched {matched}/{rb_cues} rb cues; "
+                f"own-only {own_only}; conflicts {conflicts}. "
+                f"exact {figure.exact_n}/{figure.scored_n} scored; "
+                f"no_own {figure.no_own_n}."
             )
-        elif figure.lane == "vocal" and figure.status == "scored":
+        if figure.lane == "cues_anlz" and figure.status == "scored":
+            pcob_n = figure.details.get("pcob_n", 0)
+            pco2_n = figure.details.get("pco2_n", 0)
+            unreadable = figure.ungradable.get("unreadable_ext", 0)
+            ext_note = f" ({unreadable} unreadable_ext)" if unreadable else ""
             notes = (
-                f"mean IoU - of {figure.scored_n} scored; "
-                f"exact (IoU=1) {figure.exact_n or 0}; reporting, not a threshold."
+                f"PCOB {pcob_n}; PCO2 {pco2_n}{ext_note}. "
+                f"20 ms grain, not a threshold. "
+                f"exact {figure.exact_n}/{figure.scored_n} scored."
             )
+        if figure.lane == "vocal":
+            if figure.iou_mean is not None:
+                notes = (
+                    f"mean IoU {figure.iou_mean:.3f} of {figure.scored_n} scored; "
+                    f"exact (IoU=1) {figure.exact_n}; reporting, not a threshold."
+                )
+            elif figure.status == "scored":
+                notes = (
+                    f"mean IoU - of {figure.scored_n} scored; "
+                    f"exact (IoU=1) {figure.exact_n or 0}; reporting, not a threshold."
+                )
         lines.append(
             f"| {figure.lane} | {figure.status} | {figure.denominator_n} | "
             f"{figure.denominator_name} | {figure.scored_n} | {exact} | "

@@ -372,7 +372,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		],
 		title: 'Open the CloudSync policy matrix (/cloudsync)',
 		detail:
-			'Per-machine, per-asset-kind sync policy (pinned/cached/stream/excluded) for audio, stem bundles, ANLZ cache, and vocal cache. GET+PUT /api/v1/cloudsync/policies.',
+			'Per-machine, per-asset-kind sync policy (pinned/cached/stream/excluded) for audio, stem bundles, ANLZ cache, vocal cache, lyrics cache, and karaoke word timings. GET+PUT /api/v1/cloudsync/policies.',
 		implemented: true,
 		control: { kind: 'link', href: '/cloudsync?tab=policies' }
 	},

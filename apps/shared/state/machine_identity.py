@@ -124,8 +124,12 @@ def get_or_create_machine_id(data_dir: Path) -> str:
         ) from exc
 
     path = machine_id_path(target_dir)
-    if _write_machine_id(path, uuid.uuid4().hex):
-        return _validate_machine_id(path.read_text(encoding="utf-8"), path)
+    # Read first: every lookup after the first mint is a plain read, so a
+    # hub whose data dir is not writable still answers /hello, and the
+    # request path pays no create/fsync/unlink (PR #1993 review, P0). Only an
+    # absent file goes through the staged, link-based first-writer-wins mint.
+    if not path.exists():
+        _write_machine_id(path, uuid.uuid4().hex)
     try:
         existing = path.read_text(encoding="utf-8")
     except OSError as exc:
