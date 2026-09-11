@@ -43,6 +43,7 @@ guards against drift; this file only supplies the meaning.
 from __future__ import annotations
 
 from apps.database.column_docs_analysis_retention import ANALYSIS_RETENTION_COLUMN_DOCS
+from apps.database.column_docs_feedback import FEEDBACK_COLUMN_DOCS
 from apps.database.column_docs_lyrics import LYRICS_COLUMN_DOCS
 from apps.database.column_docs_native_analysis import NATIVE_ANALYSIS_COLUMN_DOCS
 from apps.database.column_docs_pairing_capture import PAIRING_CAPTURE_COLUMN_DOCS
@@ -580,6 +581,8 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     **ENROLLMENT_COLUMN_DOCS,
     # Migration v10 lyric_verdict (specs/karaoke-lyrics-operational-plan.md D13.1).
     **LYRICS_COLUMN_DOCS,
+    # Migration v12 feedback_pins (FBSYNC-01, ADR-0013).
+    **FEEDBACK_COLUMN_DOCS,
 }
 
 

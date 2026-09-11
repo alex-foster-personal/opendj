@@ -380,7 +380,7 @@ def test_a_stale_index_name_on_a_renamed_aside_table_fails_the_migration(
             state_schema.apply_migrations(conn)
         # Every rung below v10 (v9 enrollment included) succeeds and stamps;
         # only the lyric_verdict rung fails, so the DB sits one below IT.
-        # Derived from the ladder rather than SCHEMA_VERSION - 1: v11 landed above.
+        # Derived from the ladder rather than SCHEMA_VERSION - 1: v11+ landed above.
         assert conn.execute(
             "SELECT MAX(version) FROM schema_meta"
         ).fetchone()[0] == state_schema.MIGRATIONS.index(_V10), (
