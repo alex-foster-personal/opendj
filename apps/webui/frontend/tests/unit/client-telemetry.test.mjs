@@ -121,6 +121,43 @@ test('markLoginSubmit then completeLibraryUsable posts one perf-span with inject
 	assert.ok(body.duration_ms >= 200);
 });
 
+test('completeLibraryUsable excludes Google consent from duration_ms', async () => {
+	let body;
+	let resolvePosted;
+	const posted = new Promise((resolve) => {
+		resolvePosted = resolve;
+	});
+	globalThis.fetch = async (input) => {
+		body = await input.clone().json();
+		resolvePosted();
+		return new Response(JSON.stringify({ event_id: 'e2b', stored: true }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' }
+		});
+	};
+	const storage = new Map();
+	defineGlobal('sessionStorage', {
+		getItem: (key) => storage.get(key) ?? null,
+		setItem: (key, value) => {
+			storage.set(key, value);
+		},
+		removeItem: (key) => {
+			storage.delete(key);
+		}
+	});
+	defineGlobal('performance', { timeOrigin: 5000 });
+
+	telemetry.markLoginSubmit(1000);
+	telemetry.markLoginNavigate(1100);
+	telemetry.completeLibraryUsable({ source: 'all-tracks', now: 5300 });
+	await posted;
+
+	assert.equal(body.duration_ms, 400);
+	assert.equal(body.stages.pre_navigate_ms + body.stages.post_navigate_ms, 400);
+	assert.notEqual(body.duration_ms, body.stages.full_wall_ms);
+	assert.equal(body.stages.full_wall_ms, 4300);
+});
+
 test('completeLibraryUsable without a pending submit is a no-op', async () => {
 	let posts = 0;
 	globalThis.fetch = async () => {

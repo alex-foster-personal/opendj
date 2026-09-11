@@ -51,7 +51,7 @@ _CODE = r"[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*"
 # which is exactly how the Traceability table kept silently dropping
 # alphanumeric ids (A11Y-01 etc.) after _CODE was widened for the bullet
 # parsers but the table's own regex was not.
-_REQ_ID = rf"{_CODE}-\d+[a-z]?"
+_REQ_ID = rf"{_CODE}-(?:\d+[a-z]?|S\d+)"
 _CATEGORY_RE = re.compile(rf"^###\s+(.+?)\s+\(({_CODE})\)\s*$")
 _BULLET_V1_RE = re.compile(rf"^-\s+(?:\[( |x)\]\s+)?\*\*({_REQ_ID})\*\*(.*)$")
 # v2 bullets often lack a checkbox (`- **CROSS-01**: Linux support`), but a
