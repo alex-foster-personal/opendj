@@ -4409,34 +4409,6 @@ export interface components {
             /** Ref */
             ref: string;
         };
-        /** ClientEventIn */
-        ClientEventIn: {
-            /** Client Event Id */
-            client_event_id: string;
-            /** Client Timestamp */
-            client_timestamp: string;
-            /**
-             * Kind
-             * @constant
-             */
-            kind: "page-view";
-            /** Language */
-            language?: string | null;
-            /** Path */
-            path: string;
-            /** Referrer */
-            referrer?: string | null;
-            /** Secure Context */
-            secure_context: boolean;
-            /** Url */
-            url: string;
-            /** User Agent */
-            user_agent: string;
-            /** Viewport Height */
-            viewport_height: number;
-            /** Viewport Width */
-            viewport_width: number;
-        };
         /** ClientEventOut */
         ClientEventOut: {
             /** Event Id */
@@ -6038,6 +6010,34 @@ export interface components {
             /** Total Tracks */
             total_tracks: number;
         };
+        /** PageViewIn */
+        PageViewIn: {
+            /** Client Event Id */
+            client_event_id: string;
+            /** Client Timestamp */
+            client_timestamp: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "page-view";
+            /** Language */
+            language?: string | null;
+            /** Path */
+            path: string;
+            /** Referrer */
+            referrer?: string | null;
+            /** Secure Context */
+            secure_context: boolean;
+            /** Url */
+            url: string;
+            /** User Agent */
+            user_agent: string;
+            /** Viewport Height */
+            viewport_height: number;
+            /** Viewport Width */
+            viewport_width: number;
+        };
         /** PairingCreate */
         PairingCreate: {
             /**
@@ -6183,6 +6183,28 @@ export interface components {
             suggested_sources: components["schemas"]["SuggestedSourcesOut"];
             /** Title */
             title: string;
+        };
+        /** PerfSpanIn */
+        PerfSpanIn: {
+            /** Client Event Id */
+            client_event_id: string;
+            /** Client Timestamp */
+            client_timestamp: string;
+            /** Duration Ms */
+            duration_ms: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "perf-span";
+            /** Method */
+            method: string;
+            /** Name */
+            name: string;
+            /** Stages */
+            stages?: {
+                [key: string]: number;
+            } | null;
         };
         /** PerformanceFeedbackMarkIn */
         PerformanceFeedbackMarkIn: {
@@ -10041,7 +10063,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ClientEventIn"];
+                "application/json": components["schemas"]["PageViewIn"] | components["schemas"]["PerfSpanIn"];
             };
         };
         responses: {
