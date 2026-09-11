@@ -12,6 +12,9 @@
 
 // ------------------------------------------------------------ row window
 
+/** Sticky TrackTable thead height. Must match `thead th { height: 20px }`. */
+export const TRACK_TABLE_THEAD_PX = 20;
+
 export interface VirtualWindow {
 	/** First row index to render (inclusive). */
 	startIndex: number;
@@ -34,8 +37,11 @@ export function computeVirtualWindow(params: {
 	rowHeight: number;
 	rowCount: number;
 	overscan: number;
+	/** Sticky header height inside the scrollport (e.g. TrackTable thead). */
+	headerOffsetPx?: number;
 }): VirtualWindow {
-	const { scrollTop, viewportHeight, rowHeight, rowCount, overscan } = params;
+	const { scrollTop, viewportHeight, rowHeight, rowCount, overscan, headerOffsetPx = 0 } =
+		params;
 	if (rowHeight <= 0) {
 		throw new Error(`computeVirtualWindow: rowHeight must be positive, got ${rowHeight}`);
 	}
@@ -52,7 +58,7 @@ export function computeVirtualWindow(params: {
 		maxFirstVisible,
 		Math.floor(Math.max(0, scrollTop) / rowHeight)
 	);
-	const visibleCount = Math.ceil(viewportHeight / rowHeight);
+	const visibleCount = Math.ceil(Math.max(0, viewportHeight - headerOffsetPx) / rowHeight);
 	const startIndex = Math.max(0, firstVisible - overscan);
 	const endIndex = Math.min(rowCount, firstVisible + visibleCount + overscan);
 	return {
@@ -61,6 +67,41 @@ export function computeVirtualWindow(params: {
 		topPad: startIndex * rowHeight,
 		bottomPad: (rowCount - endIndex) * rowHeight
 	};
+}
+
+/** Scroll position that places a row at the given offset from the top of the
+ * row-visible band (below a sticky header). */
+export function scrollTopForRowIndex(params: {
+	rowIndex: number;
+	rowHeight: number;
+	headerOffsetPx?: number;
+	offsetFromTopPx?: number;
+}): number {
+	const header = params.headerOffsetPx ?? 0;
+	const offset = params.offsetFromTopPx ?? 0;
+	const rowPixels = params.rowIndex * params.rowHeight - offset;
+	// Row 0 is already visible at scrollTop 0 below the sticky header.
+	return Math.max(0, rowPixels + (params.rowIndex > 0 ? header : 0));
+}
+
+/** Whether a row is scrolled above or below the row-visible band. */
+export function masterFoldVisibility(params: {
+	rowIndex: number;
+	rowHeight: number;
+	scrollTop: number;
+	viewportHeight: number;
+	headerOffsetPx?: number;
+	slopPx?: number;
+}): 'above' | 'below' | null {
+	const { rowIndex, rowHeight, scrollTop, viewportHeight } = params;
+	if (rowIndex < 0 || viewportHeight <= 0) return null;
+	const header = params.headerOffsetPx ?? 0;
+	const slop = params.slopPx ?? 2;
+	const top = header + rowIndex * rowHeight;
+	const bottom = top + rowHeight;
+	if (bottom <= scrollTop + header + slop) return 'above';
+	if (top >= scrollTop + viewportHeight - slop) return 'below';
+	return null;
 }
 
 // ------------------------------------------------------- cursor pagination
