@@ -1,0 +1,214 @@
+"""PERFBATCH-02/03 gate: no pipeline throughput/latency change without idle+quality.
+
+A PR that does not touch a stems or lyrics pipeline path is measurement-only
+and passes with no markers. A PR that does touch a pipeline-mutation path
+must carry both of these on ONE line each, horizontal whitespace only:
+
+    perfbatch: pipelines-idle <non-empty-evidence>
+    perfbatch-03: quality-ok reqs=<ID> signal=<path> before_after=<path>
+
+`gh pr view` failing prints UNKNOWN and exits 2, never a silent pass.
+
+    python -m scripts.perf.perfbatch_gate --pr N
+    python -m scripts.perf.perfbatch_gate --diff
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_REPO = "maintainer/music-dj-tools"
+DEFAULT_BASE = "origin/main"
+
+PIPELINE_PREFIXES: tuple[str, ...] = (
+    "apps/stems/",
+    "apps/lyrics/",
+    "scripts/stems_modal_worker.py",
+    "scripts/stems_local_worker.py",
+    "scripts/stem_bundle_worker.py",
+    "scripts/stem_farm_runner.py",
+    "scripts/stem_farm_watch_pull_down.sh",
+    "scripts/modal_vocal_farm.py",
+    "scripts/modal_demucs_ab.py",
+    "apps/webui/server/lyric_index_autostart.py",
+    "apps/webui/frontend/src/lib/components/rb/wave/lyrics-fetch.svelte.ts",
+)
+
+MEASUREMENT_ONLY_PREFIXES: tuple[str, ...] = (
+    "scripts/perf/",
+    "tests/perf/",
+    "tests/fixtures/perf/",
+    "docs/perf/",
+    "specs/perf-latency-program.md",
+    ".planning/REQUIREMENTS.md",
+    "reqs.json",
+    "justfile",
+    ".github/workflows/perfbatch-gate.yml",
+)
+
+# Horizontal whitespace only. Never `\\s`: a newline as the "reason" must fail.
+_IDLE = re.compile(r"perfbatch:[ \t]*pipelines-idle[ \t]+\S", re.IGNORECASE)
+_QUALITY = re.compile(
+    r"perfbatch-03:[ \t]*quality-ok[ \t]+reqs=\S+[ \t]+signal=\S+[ \t]+before_after=\S+",
+    re.IGNORECASE,
+)
+
+
+def pipeline_mutation_paths(paths: list[str]) -> list[str]:
+    hits: list[str] = []
+    for path in paths:
+        normalized = path.replace("\\", "/")
+        if any(normalized == prefix or normalized.startswith(prefix) for prefix in PIPELINE_PREFIXES):
+            hits.append(path)
+    return hits
+
+
+def idle_marker(body: str) -> bool:
+    return bool(_IDLE.search(body))
+
+
+def quality_marker(body: str) -> bool:
+    return bool(_QUALITY.search(body))
+
+
+def pr_view(pr: int, repo: str = DEFAULT_REPO) -> dict:
+    proc = subprocess.run(
+        ["gh", "pr", "view", str(pr), "--repo", repo, "--json", "number,title,body"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"gh pr view failed rc={proc.returncode}: {proc.stderr.strip()}")
+    return json.loads(proc.stdout)
+
+
+def pr_diff_names(pr: int, repo: str = DEFAULT_REPO) -> list[str]:
+    proc = subprocess.run(
+        ["gh", "pr", "diff", str(pr), "--repo", repo, "--name-only"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"gh pr diff failed rc={proc.returncode}: {proc.stderr.strip()}")
+    return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+
+
+def local_diff_names(repo_root: Path = REPO_ROOT, base: str = DEFAULT_BASE) -> list[str]:
+    names: set[str] = set()
+    commands = (
+        ["git", "diff", "--name-only", f"{base}...HEAD"],
+        ["git", "diff", "--name-only"],
+        ["git", "diff", "--name-only", "--cached"],
+    )
+    for argv in commands:
+        proc = subprocess.run(
+            argv,
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"{' '.join(argv)} failed rc={proc.returncode}: {proc.stderr.strip()}")
+        names.update(line.strip() for line in proc.stdout.splitlines() if line.strip())
+    return sorted(names)
+
+
+def verdict(paths: list[str], body: str) -> tuple[int, str]:
+    mutations = pipeline_mutation_paths(paths)
+    if not mutations:
+        return 0, "[perfbatch-gate] OK -- measurement-only"
+    missing: list[str] = []
+    if not idle_marker(body):
+        missing.append("perfbatch: pipelines-idle <evidence>")
+    if not quality_marker(body):
+        missing.append("perfbatch-03: quality-ok reqs= signal= before_after=")
+    if not missing:
+        return 0, "[perfbatch-gate] OK -- pipeline mutation cited idle+quality"
+    listed = ", ".join(mutations)
+    needed = "; ".join(missing)
+    return (
+        1,
+        f"[perfbatch-gate] pipeline-mutation path(s) {listed} need {needed}",
+    )
+
+
+def main(
+    argv: list[str] | None = None,
+    *,
+    fetch=pr_view,
+    fetch_files=pr_diff_names,
+    diff_names: list[str] | None = None,
+    body: str | None = None,
+    repo_root: Path = REPO_ROOT,
+) -> int:
+    parser = argparse.ArgumentParser(prog="perfbatch_gate")
+    parser.add_argument("--pr", type=int)
+    parser.add_argument("--diff", action="store_true")
+    parser.add_argument("--repo", default=DEFAULT_REPO)
+    args = parser.parse_args(argv)
+    if not args.pr and not args.diff:
+        print("[perfbatch-gate] UNKNOWN: pass --pr N or --diff", file=sys.stderr)
+        return 2
+
+    pr_body = body if body is not None else ""
+    paths = list(diff_names) if diff_names is not None else None
+
+    if args.pr:
+        try:
+            pr = fetch(args.pr, args.repo) if fetch is not pr_view else fetch(args.pr)
+        except TypeError:
+            try:
+                pr = fetch(args.pr)
+            except Exception as exc:
+                print(f"[perfbatch-gate] UNKNOWN: could not read PR #{args.pr} ({exc})", file=sys.stderr)
+                return 2
+        except Exception as exc:
+            print(f"[perfbatch-gate] UNKNOWN: could not read PR #{args.pr} ({exc})", file=sys.stderr)
+            return 2
+        pr_body = body if body is not None else (pr.get("body") or "")
+        if paths is None:
+            try:
+                paths = fetch_files(args.pr, args.repo) if fetch_files is not pr_diff_names else fetch_files(args.pr)
+            except TypeError:
+                try:
+                    paths = fetch_files(args.pr)
+                except Exception as exc:
+                    print(
+                        f"[perfbatch-gate] UNKNOWN: could not list PR #{args.pr} files ({exc})",
+                        file=sys.stderr,
+                    )
+                    return 2
+            except Exception as exc:
+                print(
+                    f"[perfbatch-gate] UNKNOWN: could not list PR #{args.pr} files ({exc})",
+                    file=sys.stderr,
+                )
+                return 2
+
+    if paths is None:
+        try:
+            paths = local_diff_names(repo_root)
+        except Exception as exc:
+            print(f"[perfbatch-gate] UNKNOWN: could not read local diff ({exc})", file=sys.stderr)
+            return 2
+
+    code, message = verdict(paths, pr_body)
+    stream = sys.stdout if code == 0 else sys.stderr
+    print(message, file=stream)
+    return code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
