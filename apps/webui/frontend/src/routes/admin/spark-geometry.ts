@@ -6,6 +6,9 @@
  * dashed - never a point plotted at the axis floor, which would read as a
  * collapse to zero. A genuine `0` is an ordinary plotted value.
  *
+ * PERF-DASH-02: perf cards opt into calendar-date x via SparkAxis mode 'date';
+ * farm cards keep index-based spacing (default mode 'index').
+ *
  * Lives outside Sparkline.svelte so the rule is unit-testable: the server-side
  * sibling of this rule IS covered (test_api_reports_unmeasured_rather_than_a_number)
  * which is precisely what made the frontend gap easy to miss.
@@ -17,9 +20,15 @@ export const SPARK_W = 180;
 export const SPARK_H = 44;
 export const SPARK_PAD = 6;
 
+export interface SparkAxis {
+	mode?: 'index' | 'date';
+	today?: string;
+}
+
 export interface SparkPoint {
 	index: number;
 	value: number;
+	x: number;
 }
 
 export interface SparkSegment {
@@ -42,15 +51,74 @@ export interface SparkGeometry {
 	bounds: { lo: number; hi: number };
 	/** y for the midline the not-measured ticks sit on. */
 	midlineY: number;
+	/** x for every snapshot index; geometry is the single source of truth. */
+	xs: number[];
 }
 
-export function sparkGeometry(metric: string, snapshots: KpiSnapshot[]): SparkGeometry {
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export function snapshotDay(ts: string): string {
+	const match = /^(\d{4}-\d{2}-\d{2})/.exec(ts);
+	if (!match) throw new Error(`ts does not start with YYYY-MM-DD: ${ts}`);
+	return match[1];
+}
+
+export function utcToday(now?: Date): string {
+	return (now ?? new Date()).toISOString().slice(0, 10);
+}
+
+export function calendarDays(fromDay: string, toDay: string): number {
+	const from = Date.parse(`${fromDay}T00:00:00Z`);
+	const to = Date.parse(`${toDay}T00:00:00Z`);
+	return Math.round((to - from) / DAY_MS);
+}
+
+function indexXs(snapshotCount: number): number[] {
+	return Array.from({ length: snapshotCount }, (_, index) => sparkX(index, snapshotCount));
+}
+
+function dateXs(snapshots: KpiSnapshot[], today: string): number[] {
+	const startDay = snapshotDay(snapshots[0].ts);
+	const windowDays = calendarDays(startDay, today);
+	if (windowDays === 0) return indexXs(snapshots.length);
+
+	const dayCounts = new Map<string, number>();
+	for (const snapshot of snapshots) {
+		const day = snapshotDay(snapshot.ts);
+		dayCounts.set(day, (dayCounts.get(day) ?? 0) + 1);
+	}
+	const dayRanks = new Map<string, number>();
+	const span = SPARK_W - 2 * SPARK_PAD;
+
+	return snapshots.map((snapshot) => {
+		const day = snapshotDay(snapshot.ts);
+		const rank = dayRanks.get(day) ?? 0;
+		dayRanks.set(day, rank + 1);
+		const count = dayCounts.get(day)!;
+		const dayOffset = calendarDays(startDay, day) + rank / count;
+		return SPARK_PAD + span * (dayOffset / windowDays);
+	});
+}
+
+function computeXs(snapshots: KpiSnapshot[], axis?: SparkAxis): number[] {
+	if (snapshots.length === 0) return [];
+	const mode = axis?.mode ?? 'index';
+	if (mode === 'index') return indexXs(snapshots.length);
+	return dateXs(snapshots, axis?.today ?? utcToday());
+}
+
+export function sparkGeometry(
+	metric: string,
+	snapshots: KpiSnapshot[],
+	axis?: SparkAxis
+): SparkGeometry {
 	const raw = snapshots.map((snapshot) => snapshot.values[metric] ?? null);
+	const xs = computeXs(snapshots, axis);
 	const present: SparkPoint[] = [];
 	const missing: number[] = [];
 	raw.forEach((value, index) => {
 		// typeof, NOT truthiness: a real 0 is a measurement and must plot.
-		if (typeof value === 'number') present.push({ index, value });
+		if (typeof value === 'number') present.push({ index, value, x: xs[index] });
 		else missing.push(index);
 	});
 
@@ -62,26 +130,22 @@ export function sparkGeometry(metric: string, snapshots: KpiSnapshot[]): SparkGe
 		hi += 1;
 	}
 
-	const xAt = (index: number): number =>
-		snapshots.length <= 1
-			? SPARK_W / 2
-			: SPARK_PAD + ((SPARK_W - 2 * SPARK_PAD) * index) / (snapshots.length - 1);
 	const yAt = (value: number): number =>
 		SPARK_H - SPARK_PAD - (SPARK_H - 2 * SPARK_PAD) * ((value - lo) / (hi - lo));
 
 	const segments = present.slice(0, -1).map((from, i) => {
 		const to = present[i + 1];
 		return {
-			x1: xAt(from.index),
+			x1: from.x,
 			y1: yAt(from.value),
-			x2: xAt(to.index),
+			x2: to.x,
 			y2: yAt(to.value),
 			last: i === present.length - 2,
 			gapped: to.index - from.index > 1
 		};
 	});
 
-	return { present, missing, segments, bounds: { lo, hi }, midlineY: SPARK_H / 2 };
+	return { present, missing, segments, bounds: { lo, hi }, midlineY: SPARK_H / 2, xs };
 }
 
 /** x for a snapshot index, exported so the component and the tests agree. */

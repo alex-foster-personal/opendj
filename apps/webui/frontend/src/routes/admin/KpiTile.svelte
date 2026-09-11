@@ -6,11 +6,15 @@
 	 * explainer (what the number is, which way is better, why it matters, where
 	 * the latest reading came from). Sparkline dots override it with their own
 	 * per-run readout while pointed at, then it comes back.
+	 *
+	 * PERF-DASH-02: perf cards pass timeAxis for calendar-date sparklines and
+	 * a reading-age chip when the latest measurement is stale.
 	 */
 	import Sparkline from './Sparkline.svelte';
 	import { ARROW, formatDeltaWithUnit, formatValue, isDuration } from './format';
 	import { buildKpiCard } from './kpi-card';
 	import { originText } from './kpi-provenance';
+	import { utcToday } from './spark-geometry';
 	import { tip } from './tooltip.svelte';
 	import type { KpiDef, KpiSnapshot } from './kpi-api';
 
@@ -18,11 +22,15 @@
 		metric: string;
 		kpi: KpiDef;
 		snapshots: KpiSnapshot[];
+		timeAxis?: boolean;
 	}
 
-	const { metric, kpi, snapshots }: Props = $props();
+	const { metric, kpi, snapshots, timeAxis = false }: Props = $props();
 
-	const card = $derived(buildKpiCard(metric, kpi, snapshots));
+	const today = utcToday();
+	const card = $derived(
+		buildKpiCard(metric, kpi, snapshots, timeAxis ? { timeAxis: true, today } : undefined)
+	);
 	const points = $derived(card.points);
 	const latest = $derived(card.latest);
 	const previous = $derived(card.previous);
@@ -58,8 +66,11 @@
 					first reading
 				{/if}
 			</span>
+			{#if card.ageDays !== null && card.ageDays > 0}
+				<span class="age" title={card.ageTitle}>{card.ageDays}d old</span>
+			{/if}
 		</div>
-		<Sparkline {metric} {kpi} {snapshots} {verdict} />
+		<Sparkline {metric} {kpi} {snapshots} {verdict} {timeAxis} {today} />
 		{#if points.length === 1 && snapshots.length > 1}
 			<div class="spark-note">single reading</div>
 		{/if}
@@ -121,7 +132,8 @@
 		font-size: 0.8rem;
 		color: var(--muted);
 	}
-	.delta {
+	.delta,
+	.age {
 		font-size: 0.78rem;
 		font-variant-numeric: tabular-nums;
 	}
@@ -132,7 +144,8 @@
 		color: var(--danger);
 	}
 	.delta.flat,
-	.delta.first {
+	.delta.first,
+	.age {
 		color: var(--muted);
 	}
 	.spark-note {
