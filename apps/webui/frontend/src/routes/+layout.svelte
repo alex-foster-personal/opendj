@@ -7,6 +7,7 @@
 	import { health, refreshHealth, toasts } from '$lib/stores.svelte';
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
 	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
+	import StageOverlay from '$lib/components/lyrics/StageOverlay.svelte';
 	import UserBauble from '$lib/components/UserBauble.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import SetupOverlay from '$lib/components/setup/SetupOverlay.svelte';
@@ -189,6 +190,7 @@
 {/if}
 
 <SettingsOverlay />
+<StageOverlay />
 <!-- The first-run wizard, over whatever route is on screen. Mounted at the
      root for the same reason SettingsOverlay is: /performance bypasses the app
      shell, and the one surface a brand new user meets cannot be missing there

@@ -1,11 +1,13 @@
 """Health endpoint (CAT-05)."""
 from __future__ import annotations
 
+import os
 from typing import Any, Callable, Optional
 
 from fastapi import APIRouter, Depends, Request
 
 from .. import rb_vendor
+from ..auth import GoogleOAuthConfig
 from ..backend import StateBackend
 from ..deps import get_read_state
 from ..models import (
@@ -65,5 +67,7 @@ def health(
         waveform_materialization=HealthWaveformMaterialization(
             **rb_vendor.waveform_materialization_status()
         ),
-        bind_host=bind_host, version=version,
+        bind_host=bind_host,
+        version=version,
+        google_oauth_configured=GoogleOAuthConfig.is_configured(dict(os.environ)),
     )
