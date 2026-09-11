@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://music-dj-tools.local/ops/quality/rubric/schema.json",
+  "title": "Code quality rubric",
+  "type": "object",
+  "required": ["version", "surfaces", "dimensions"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "surfaces": {
+      "type": "object",
+      "minProperties": 4,
+      "maxProperties": 4,
+      "propertyNames": {
+        "enum": ["spec", "python_cli", "vendor_adapter", "svelte_ui"]
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["root"],
+        "additionalProperties": false,
+        "properties": {
+          "root": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "dimensions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/dimension"
+      }
+    }
+  },
+  "$defs": {
+    "surface_id": {
+      "type": "string",
+      "enum": ["spec", "python_cli", "vendor_adapter", "svelte_ui"]
+    },
+    "dimension": {
+      "type": "object",
+      "required": [
+        "id",
+        "surfaces",
+        "probe",
+        "evidence",
+        "anchors",
+        "deductions"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "surfaces": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/surface_id"
+          }
+        },
+        "probe": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "type": "object",
+          "required": ["role_model_repo", "artefact", "full_marks"],
+          "additionalProperties": false,
+          "properties": {
+            "role_model_repo": {
+              "type": "string",
+              "format": "uri"
+            },
+            "artefact": {
+              "type": "string",
+              "minLength": 20
+            },
+            "full_marks": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "anchors": {
+          "type": "object",
+          "required": ["0", "1", "2", "3", "4", "5"],
+          "additionalProperties": false,
+          "properties": {
+            "0": { "type": "string" },
+            "1": { "type": "string" },
+            "2": { "type": "string" },
+            "3": { "type": "string" },
+            "4": { "type": "string" },
+            "5": { "type": "string" }
+          }
+        },
+        "deductions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["finding", "points"],
+            "additionalProperties": false,
+            "properties": {
+              "finding": {
+                "type": "string",
+                "minLength": 1
+              },
+              "points": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
