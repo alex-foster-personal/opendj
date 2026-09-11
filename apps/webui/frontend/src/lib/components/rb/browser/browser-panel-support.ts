@@ -1,6 +1,7 @@
 export { plannedTitle } from '$lib/rb/planned-explainers';
 export { enqueueLibraryJobsBatched } from '$lib/rb/api-library-jobs';
 export { libraryJobsStore } from '$lib/rb/library-jobs-store.svelte';
+export { default as LibraryJobsChrome } from '../library-jobs/LibraryJobsChrome.svelte';
 export { anyDeckPlaying, createPlayingGate } from '$lib/rb/playing-gate';
 export { resolveRowVocals } from '$lib/rb/row-vocals';
 export {

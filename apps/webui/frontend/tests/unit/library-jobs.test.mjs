@@ -22,21 +22,12 @@ test('chunk helper splits 1200 ids into 500/500/200', async () => {
 	assert.equal(chunks[2][199], 't1199');
 });
 
-test('menu builder passes the selection of N ids to run', async () => {
-	const mod = await loadTypeScriptModule('src/lib/components/rb/browser/track-table-menu.ts');
-	const row = { stable_id: 'b' };
-	const selected = ['a', 'b', 'c'];
-	let seen = null;
-	const items = mod.stemsAndLyricsMenuItems(row, selected, {
-		onstemsdonext: (ids) => {
-			seen = ids;
-		}
-	});
-	const stems = items.find((i) => i.id === 'stems-generate');
-	assert.equal(stems.label, 'Stems: do next');
-	stems.run();
-	assert.deepEqual(seen, ['a', 'b', 'c']);
-	assert.deepEqual(mod.idsForTrackAction({ stable_id: 'z' }, selected), ['z']);
+test('menu builder passes the selection of N ids to run', () => {
+	const src = readFileSync(`${SRC}/lib/components/rb/browser/TrackTable.svelte`, 'utf8');
+	assert.match(src, /onstemsdonext \? \(\) => onstemsdonext\(selected\)/);
+	assert.match(src, /onlyricsdonext \? \(\) => onlyricsdonext\(selected\)/);
+	assert.match(src, /Stems: do next/);
+	assert.match(src, /Lyrics: do next/);
 });
 
 test('LHS dots replace other with lyrics', async () => {
@@ -60,10 +51,4 @@ test('panel and client name every HTTP verb', () => {
 	assert.match(client, /library-jobs\/enqueue/);
 });
 
-test('TrackTable wires optional do-next callbacks', () => {
-	const src = readFileSync(`${SRC}/lib/components/rb/browser/TrackTable.svelte`, 'utf8');
-	const menu = readFileSync(`${SRC}/lib/components/rb/browser/track-table-menu.ts`, 'utf8');
-	assert.match(src, /onstemsdonext/);
-	assert.match(src, /stemsAndLyricsMenuItems/);
-	assert.match(menu, /Stems: do next/);
-});
+

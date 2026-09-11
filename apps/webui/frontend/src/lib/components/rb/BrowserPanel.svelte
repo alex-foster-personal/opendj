@@ -43,6 +43,7 @@
 		selectSearchFilterFallback,
 		enqueueLibraryJobsBatched,
 		libraryJobsStore,
+		LibraryJobsChrome,
 		type NextOnlyRef
 	} from './browser/browser-panel-support';
 	import type {
@@ -64,7 +65,6 @@
 		recordLibraryLoadTiming
 	} from '$lib/rb/library-perf';
 	import type { FilterDebounce, FilterSettle } from '$lib/rb/library-perf';
-	import LibraryJobsChrome from './library-jobs/LibraryJobsChrome.svelte';
 	import {
 		dispatchPerformanceCommand,
 		registerPerformanceBrowserAdapter,
