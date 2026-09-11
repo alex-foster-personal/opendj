@@ -186,6 +186,10 @@ export class PaneStore {
 	/** Loaded rows in membership order (pre filter/sort). */
 	rows = $state<BrowserRow[]>([]);
 	loading = $state(false);
+	/** False until this pane's current load has returned or failed. This keeps
+	 * consumers from mistaking the deliberate empty pre-mount state for an
+	 * empty library result. */
+	has_settled_result = $state(false);
 	error = $state<string | null>(null);
 	/** Client search query (composes AFTER the FR-1 hide-broken filter). */
 	search = $state('');
@@ -240,6 +244,7 @@ export class PaneStore {
 		this.title = title;
 		this.rows = [];
 		this.loading = true;
+		this.has_settled_result = false;
 		this.error = null;
 		this.selected_id = null;
 		this.selected_ids = [];
@@ -276,6 +281,7 @@ export class PaneStore {
 		this.rows = rows;
 		this.truncated = truncated;
 		this.loading = false;
+		this.has_settled_result = true;
 		this.etag = etag;
 		this.load_progress = null;
 		return true;
@@ -286,6 +292,7 @@ export class PaneStore {
 		if (!this.isCurrentLoad(seq)) return false;
 		this.error = error;
 		this.loading = false;
+		this.has_settled_result = true;
 		this.load_progress = null;
 		return true;
 	}

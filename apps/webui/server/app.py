@@ -79,6 +79,7 @@ def create_app(  # noqa: PLR0913
     lyric_index: bool = False,
     auto_user_jobs: bool = False,
     feature_flags: FlagStore | None = None,
+    cloudsync_scheduler: bool = False,
 ) -> FastAPI:
     """Build a configured FastAPI app.
 
@@ -92,6 +93,11 @@ def create_app(  # noqa: PLR0913
     (see :mod:`apps.webui.server.lyric_index_autostart`). It is OFF here on
     purpose too: only ``_build_default_app`` turns it on, from
     ``MUSIC_DJ_LYRIC_INDEX``, so no test builds a thread.
+
+    ``cloudsync_scheduler`` arms the CloudSync scheduler (FBSYNC-01, see
+    :mod:`apps.webui.server.cloudsync_scheduler`). OFF here for the same
+    reason: only the daemon entry points arm it, and even armed it runs only
+    when ``MDT_CLOUDSYNC_SCHEDULER=1`` and a hub URL are set.
 
     ``feature_flags`` is UNLIKE those two: it is wired here, not left for
     ``_build_default_app``, because ``load_flags`` reads one small on-disk
@@ -136,6 +142,7 @@ def create_app(  # noqa: PLR0913
         client_event_log_dir,
     )
     _bind_stem_and_usage(app, stem_roots, usage_store)
+    app.state.cloudsync_scheduler_armed = cloudsync_scheduler
     app.state.auto_user_jobs = library_jobs_autostart.build(enabled=auto_user_jobs)
     _install_exception_handlers(app)
     if enable_cors:
@@ -385,6 +392,7 @@ def _build_default_app() -> FastAPI:
         state_db_path=str(STATE_DB),
         auto_analyze=analysis_autostart.arm_from_environ(os.environ),
         lyric_index=lyric_index_autostart.enabled_from_environ(os.environ),
+        cloudsync_scheduler=True,
         auto_user_jobs=library_jobs_autostart.arm_from_environ(os.environ),
     )
 
