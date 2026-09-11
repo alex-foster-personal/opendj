@@ -36,9 +36,9 @@ FIELD_TYPES: dict[str, str] = {
 }
 ALLOWED_FIELDS: tuple[str, ...] = tuple(FIELD_TYPES.keys())
 
-_NUMERIC_OPS: tuple[str, ...] = ("=", "!=", "<", "<=", ">", ">=", "between")
-_STRING_OPS: tuple[str, ...] = ("=", "!=", "contains", "in")
-_DATE_OPS: tuple[str, ...] = ("=", "<", "<=", ">", ">=", "between")
+_NUMERIC_OPS: tuple[str, ...] = ("=", "!=", "<", "<=", ">", ">=", "between", "missing")
+_STRING_OPS: tuple[str, ...] = ("=", "!=", "contains", "in", "missing")
+_DATE_OPS: tuple[str, ...] = ("=", "<", "<=", ">", ">=", "between", "missing")
 _LIST_OPS: tuple[str, ...] = ("contains", "in")
 
 ALLOWED_OPS_BY_FIELD: dict[str, tuple[str, ...]] = {
@@ -127,6 +127,10 @@ def _validate_predicate(node: dict, path: str) -> None:
         if not isinstance(value, str):
             raise _err(f"{path}.value",
                        "contains op expects a string value")
+    elif op == "missing":
+        if value is not None:
+            raise _err(f"{path}.value",
+                       "missing op requires value null")
     else:
         ftype = FIELD_TYPES[field]
         if ftype == "number" and not isinstance(value, (int, float)):

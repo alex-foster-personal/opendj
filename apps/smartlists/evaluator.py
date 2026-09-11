@@ -150,6 +150,8 @@ def _compile_predicate(node: dict, selection: Selection) -> tuple[str, list[Any]
             return "0", []
         placeholders = ", ".join("?" for _ in value)
         return f"{col} IN ({placeholders})", list(value)
+    if op == "missing":
+        return f"({col}) IS NULL", []
     if op == "contains":
         if ftype == "list":
             sql = (

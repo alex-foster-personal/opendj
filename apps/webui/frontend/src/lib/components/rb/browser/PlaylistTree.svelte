@@ -3,13 +3,11 @@
 	// total (never the screenshot's 9862); 'Playlists' folder lists real
 	// playlists with right-aligned counts in rekordbox custom tree order
 	// (djmdPlaylist Seq, sorted upstream in BrowserPanel - COMPONENT-MAP
-	// 1.5). The Column View tab (column-view lane) swaps this panel's body
-	// for ColumnBrowser - self-contained (own library fetch), same pattern
-	// as the smartlist self-fetch below.
+	// 1.5). Column View and Autolists tabs live in LibraryBrowseViews.svelte.
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { PlaylistNode } from '$lib/rb/library-types';
 	import { type SmartlistSummary } from '$lib/rb/api-smartlists';
-	import ColumnBrowser, { type ColumnTrackRow } from './ColumnBrowser.svelte';
+	import type { ColumnTrackRow } from './ColumnBrowser.svelte';
 	import {
 		acceptTrackDragOver,
 		droppedStableIds,
@@ -124,14 +122,16 @@
 
 	/** Make a playlist row draggable onto the pane tab bar. */
 	function _onPlaylistDragStart(event: DragEvent, node: PlaylistNode): void {
-		if (node.kind === 'missing_tracks') return;
+		if (node.kind === 'missing_tracks' || node.kind === 'autolist') return;
+		const dragKind =
+			node.kind === 'all_tracks' ? 'all_tracks' : node.kind === 'folder' ? 'folder' : 'playlist';
 		event.dataTransfer?.setData(
 			PLAYLIST_DRAG_MIME,
 			encodePlaylistDrag({
 				playlist_id: node.playlist_id,
 				name: node.name,
 				track_count: node.track_count,
-				kind: node.kind
+				kind: dragKind
 			})
 		);
 		if (event.dataTransfer !== null) event.dataTransfer.effectAllowed = 'copy';
@@ -144,16 +144,6 @@
 		() => oncreateplaylist
 	);
 
-	let mode = $state<'tree' | 'column'>('tree');
-	// ColumnBrowser mounts lazily on first activation (its onMount walks
-	// every /tracks cursor page - no point paying that for users who never
-	// open Column View) but then STAYS mounted (visibility toggled via CSS
-	// below, not {#if}/{:else}) so switching back to Tree View and back
-	// doesn't re-trigger the full-library fetch every time.
-	let columnMounted = $state(false);
-	$effect(() => {
-		if (mode === 'column') columnMounted = true;
-	});
 	let playlistsOpen = $state(true);
 	/** Smartlists tree-section state (tree-smartlists.svelte.ts). */
 	const smartlists = new TreeSmartlists(() => onselectsmartlist);
@@ -208,23 +198,9 @@
 <div class="tree-root">
 	<PlaylistHistoryPanel />
 	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} {onselect} />
-	<div class="view-tabs">
-		<button class="vt" class:active={mode === 'tree'} onclick={() => (mode = 'tree')}>
-			Tree View
-		</button>
-		<button class="vt" class:active={mode === 'column'} onclick={() => (mode = 'column')}>
-			Column View
-		</button>
-	</div>
-	{#if columnMounted}
-		<div class="tree-scroll column-mode" class:hidden={mode !== 'column'}>
-			<ColumnBrowser selectedId={trackSelectedId} {onselecttrack} {onloadtrack} />
-		</div>
-	{/if}
 	<TreeCurrentFold fold={foldTracker.current} onjump={() => foldTracker.jumpToCurrent()} />
 	<div
 		class="tree-scroll"
-		class:hidden={mode === 'column'}
 		bind:this={foldTracker.scrollEl}
 		bind:clientHeight={foldTracker.viewportHeight}
 		onscroll={foldTracker.onScroll}
@@ -440,47 +416,11 @@
 	.row.child.tint-multi:not(.selected):hover {
 		background: color-mix(in srgb, var(--rb-accent) 40%, transparent);
 	}
-	.view-tabs {
-		display: flex;
-		flex: none;
-		border-bottom: 1px solid var(--rb-border);
-	}
-	.vt {
-		flex: 1;
-		padding: 3px 0;
-		background: var(--rb-panel);
-		border: none;
-		border-right: 1px solid var(--rb-border);
-		color: var(--rb-text-dim);
-		font-family: var(--rb-font);
-		font-size: var(--rb-fs-label);
-		cursor: pointer;
-	}
-	.vt:last-child {
-		border-right: none;
-	}
-	.vt.active {
-		color: var(--rb-text);
-		background: var(--rb-panel-raised);
-		border-bottom: 1px solid var(--rb-accent);
-	}
 	.tree-scroll {
 		flex: 1;
 		min-height: 0;
 		overflow-y: auto;
 		padding: 2px 0;
-	}
-	.tree-scroll.column-mode {
-		/* ColumnBrowser owns its own column padding/scroll regions. */
-		padding: 0;
-		overflow: hidden;
-	}
-	/* Both tree-scroll blocks stay mounted once ColumnBrowser has first
-	 * activated (see columnMounted) - toggling visibility this way instead
-	 * of {#if}/{:else} keeps ColumnBrowser's fetched rows/selection alive
-	 * across repeated view switches. */
-	.tree-scroll.hidden {
-		display: none;
 	}
 	.row {
 		display: flex;
