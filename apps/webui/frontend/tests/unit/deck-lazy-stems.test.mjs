@@ -16,6 +16,10 @@
  *   [if] stem decode is back in the pre-swap section [then ⛔️]
  *   [if] 'loading' collapses back into 'unavailable' [then ⛔️]
  *   [if] a held stem upgrade is not released on unload/dispose [then ⛔️]
+ *   [if] a retired processor is only .disconnect()-ed, never .dispose()-ed
+ *        [then ⛔️] (retired worklet + its transferred PCM leak until the whole
+ *        AudioContext is torn down; disconnect() alone never releases it -
+ *        see StretchDeckProcessor.dispose's docstring)
  */
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
@@ -119,4 +123,43 @@ test('a held stem upgrade is released on every path that abandons it', () => {
 		source.includes('_drainPendingStemUpgrade(deck)'),
 		'nothing lands a bundle that finished while the deck was playing'
 	);
+});
+
+test('every processor retirement path releases PCM, not just the audio graph', () => {
+	const helperStart = source.indexOf('function _retireProcessor');
+	assert.ok(
+		helperStart > 0,
+		'no _retireProcessor helper: a retirement site calling only .disconnect() ' +
+			'leaves the worklet and its transferred PCM alive until the whole ' +
+			'AudioContext is torn down'
+	);
+	const helperBody = source.slice(helperStart, source.indexOf('\n}\n', helperStart));
+	assert.ok(
+		helperBody.includes('.disconnect()') && helperBody.includes('.dispose()'),
+		'_retireProcessor must both disconnect (synchronous silence) and dispose ' +
+			'(async PCM release), per StretchDeckProcessor.dispose\'s docstring'
+	);
+
+	for (const site of [
+		'function _adoptStemProcessor',
+		'function _releasePendingStemUpgrade',
+		'function _drainPendingStemUpgrade',
+		'async function _upgradeDeckStems'
+	]) {
+		const start = source.indexOf(site);
+		assert.ok(start > 0, `${site} not found`);
+		const body = source.slice(start, source.indexOf('\n}\n', start));
+		assert.ok(
+			/_retireProcessor\(/.test(body),
+			`${site} retires a processor without calling _retireProcessor - it will ` +
+				'leak PCM on this path'
+		);
+		assert.ok(
+			!/\bretired\.disconnect\(\)|pending\.processor\.disconnect\(\)|\bbuilt\??\.disconnect\(\)/.test(
+				body
+			),
+			`${site} still calls .disconnect() directly on a retired processor ` +
+				'instead of going through _retireProcessor'
+		);
+	}
 });

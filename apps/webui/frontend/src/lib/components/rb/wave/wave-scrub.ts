@@ -8,7 +8,64 @@
  *     [if] a 400px-wide waveform moves right by 100px [then] audio moves earlier by 6s
  *   ✔︎ A release target cannot disappear behind an in-flight seek.
  *     [if] movement and release arrive during a pending seek [then] the final release is dispatched
+ *   ✔︎ A scrub target snaps to the nearest downbeat by default (pin a705aebfbeae).
+ *     [if] no modifier is held and a beatgrid is loaded [then] the target lands on a real downbeat
+ *   ✔︎ Shift restores exact click-anywhere behaviour.
+ *     [if] shiftKey is held [then] the target is the raw, unsnapped position
+ *   ✔︎ Cmd+Shift snaps to the nearest individual beat instead of a downbeat.
+ *     [if] shiftKey and metaKey are both held [then] the target lands on any real beat
  */
+
+import {
+	quantizeToNearestBeat,
+	quantizeToNearestDownbeat,
+	validateBeatGrid
+} from '$lib/rb/beat-sync-math';
+import type { AnlzBeat } from '$lib/rb/anlz-types';
+
+/** 'downbeat' (default): nearest bar downbeat. 'beat': nearest real beat
+ * (Cmd+Shift). 'exact': the raw, unsnapped position (Shift alone). */
+export type WaveSnapMode = 'downbeat' | 'beat' | 'exact';
+
+/** Cmd+Shift takes priority over plain Shift so a DJ never loses the "snap
+ * to individual beats" reading by also holding the plain-Shift modifier. */
+export function waveSnapModeFromModifiers(modifiers: {
+	shiftKey: boolean;
+	metaKey: boolean;
+}): WaveSnapMode {
+	if (modifiers.shiftKey && modifiers.metaKey) return 'beat';
+	if (modifiers.shiftKey) return 'exact';
+	return 'downbeat';
+}
+
+/**
+ * Snap a raw scrub target to the requested grid line. A missing/empty
+ * beatgrid, or a grid this analysis's snap mode cannot resolve (e.g. no
+ * downbeat detected), falls back to the raw target rather than breaking the
+ * scrubber - a DJ without beatgrid data still gets ordinary click-anywhere
+ * seeking, exactly today's behaviour.
+ */
+export function snapWaveTargetMs(
+	targetMs: number,
+	beats: readonly AnlzBeat[] | null | undefined,
+	mode: WaveSnapMode
+): number {
+	if (mode === 'exact' || beats === null || beats === undefined) return targetMs;
+	try {
+		validateBeatGrid(beats);
+	} catch {
+		return targetMs;
+	}
+	try {
+		const snappedSec =
+			mode === 'beat'
+				? quantizeToNearestBeat(beats, targetMs / 1000)
+				: quantizeToNearestDownbeat(beats, targetMs / 1000);
+		return snappedSec * 1000;
+	} catch {
+		return targetMs;
+	}
+}
 
 interface WaveClickTarget {
 	centerPositionMs: number;

@@ -6,6 +6,7 @@ here is private to how one batch of offered rows gets merged.
 """
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -15,40 +16,127 @@ from apps.shared.state import sync_stamp
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
 from apps.sync_hub import protocol
 from apps.sync_hub.engine_common import (
-    _APPLY_ORDER,
     HUB_CHANGELOG_TABLE,
     SyncApplyError,
     SyncSchemaMismatch,
     _pk_predicate,
+    apply_rank,
 )
 from apps.sync_hub.engine_watermark import current_seq
 from apps.sync_hub.protocol import MEMBERSHIP_TABLE, SPEC_BY_TABLE, RowChange, TableSpec
+
+#: Same logger name as :mod:`apps.sync_hub.engine_changes`, for the reason
+#: given there: ``caplog.at_level(..., logger="apps.sync_hub.engine")`` is an
+#: existing test contract that predates the module split.
+log = logging.getLogger("apps.sync_hub.engine")
+
+#: The two columns the merge orders a stored row by. Read together so one
+#: SELECT serves both the sort key and the fault check.
+_STAMP_COLUMNS: tuple[str, str] = (protocol.UPDATED_AT, protocol.ORIGIN_DEVICE_ID)
+
 
 # ----- apply -----------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class ApplyResult:
-    """Outcome of applying a batch of offered rows."""
+    """Outcome of applying a batch of offered rows.
+
+    ``quarantined`` counts INCOMING rows refused because the LOCAL row they
+    would be compared against carries a stamp this machine cannot order
+    (round 5). Distinct from ``rejected``, which means the incoming row lost
+    a comparison that actually happened: a quarantined row was never
+    compared at all, and the local row it met is untouched.
+
+    ``faults`` names the stored values behind that count (round 5 gate B-1).
+    A caller that has to REFUSE the batch rather than report the shortfall --
+    :mod:`apps.sync_hub.service` answering a peer too old to understand a
+    partial answer -- needs the same detail ``origin/main``'s 422 carried, or
+    the operator is handed a number and told to go looking.
+    """
 
     accepted: int
     rejected: int
     seq: int
+    quarantined: int = 0
+    faults: tuple[protocol.StampFault, ...] = ()
 
 
-def _stored_sort_key(
+@dataclass(frozen=True)
+class _Resolution:
+    """What the merge decided about one incoming row, before it is written.
+
+    Exactly one of the three states holds. ``faults`` non-empty is the
+    quarantine: the comparison could not be made, so nothing is written and
+    the local row is left byte-identical.
+    """
+
+    loses: bool
+    faults: tuple[protocol.StampFault, ...] = ()
+
+
+def _stored_stamps(
     conn: sqlite3.Connection, spec: TableSpec, pk: Sequence[str]
-) -> tuple[str, str] | None:
-    row = conn.execute(
+) -> tuple[Any, Any] | None:
+    """The ``(updated_at, origin_device_id)`` stored at ``pk``, or None.
+
+    One read serving both :func:`_sort_key_of` and :func:`_faults_of`, so
+    quarantining costs no extra query on the apply path.
+    """
+    return conn.execute(
         f"SELECT {protocol.UPDATED_AT}, {protocol.ORIGIN_DEVICE_ID} "
         f"FROM {spec.name} WHERE {_pk_predicate(spec)}",
         tuple(pk),
     ).fetchone()
-    if row is None:
-        return None
+
+
+def _sort_key_of(stored: Sequence[Any]) -> tuple[str, str]:
+    """Pure key. Only valid once :func:`_faults_of` came back empty."""
     return protocol.lww_key(
-        {protocol.UPDATED_AT: row[0], protocol.ORIGIN_DEVICE_ID: row[1]}
+        {protocol.UPDATED_AT: stored[0], protocol.ORIGIN_DEVICE_ID: stored[1]}
     )
+
+
+def _faults_of(table: str, stored: Sequence[Any]) -> tuple[protocol.StampFault, ...]:
+    return protocol.stored_stamp_faults(table, _STAMP_COLUMNS, stored)
+
+
+def _membership_faults(
+    conn: sqlite3.Connection, playlist_id: str
+) -> tuple[protocol.StampFault, ...]:
+    """Stamp faults in the STORED bundle :func:`_replace_members` would delete.
+
+    The OUTBOUND side already holds a whole playlist whose bundle carries an
+    unorderable stamp (:func:`apps.sync_hub.sync_set.membership_reason`),
+    because membership is whole-playlist (ADR 04 c5): dropping one member is
+    not a quarantine, it is a silent edit telling the peer that track was
+    REMOVED. The INBOUND side read only the ``playlists`` row, so a newer
+    incoming playlist was accepted and :func:`_replace_members` DELETED the
+    whole local bundle before reinserting the peer's -- destroying the exact
+    rows the outbound quarantine refused to guess about, with no comparison
+    ever made and nothing logged. That is the one loss
+    :func:`_duplicate_stamps` and rule 4 of
+    :mod:`apps.shared.state.sync_stamp` both exist to refuse.
+
+    Reads :func:`apps.sync_hub.protocol.stored_stamp_faults` -- the same
+    predicate as :func:`_faults_of`, the digest and the offer -- so the two
+    directions cannot disagree about which bundle is orderable. Both stamp
+    columns are checked, not ``updated_at`` alone: a tombstone's
+    ``deleted_at`` decides whether the member is in the bundle at all
+    (round 3 finding R8).
+    """
+    columns: tuple[str, str] = (protocol.UPDATED_AT, protocol.DELETED_AT)
+    cursor = conn.execute(
+        f"SELECT {', '.join(columns)} FROM {MEMBERSHIP_TABLE} "
+        f"WHERE playlist_id = ?",
+        (playlist_id,),
+    )
+    faults: list[protocol.StampFault] = []
+    for row in cursor:
+        faults.extend(
+            protocol.stored_stamp_faults(MEMBERSHIP_TABLE, columns, row)
+        )
+    return tuple(faults)
 
 
 def _natural_conflict_pks(
@@ -83,20 +171,20 @@ def _natural_conflict_pks(
     return tuple(found)
 
 
-def _duplicate_sort_key(
+def _duplicate_stamps(
     conn: sqlite3.Connection,
     spec: TableSpec,
     change: RowChange,
     conflict_pk: Sequence[str],
-) -> tuple[str, str]:
-    """Sort key of the local duplicate at ``conflict_pk``. Never None.
+) -> tuple[Any, Any]:
+    """Stored stamps of the local duplicate at ``conflict_pk``. Never None.
 
     A row that holds another row's natural key but carries no sort key was
     written by something that bypassed the sync columns entirely. The merge
     cannot order it against anything, and guessing is how a real edit gets
     overwritten by a row nothing can date.
     """
-    stored = _stored_sort_key(conn, spec, conflict_pk)
+    stored = _stored_stamps(conn, spec, conflict_pk)
     if stored is None:
         raise SyncApplyError(
             f"{change.table}: row {list(conflict_pk)} holds the natural key of "
@@ -159,8 +247,9 @@ def _checked_values(
         extra = sorted(offered - expected)
         raise SyncSchemaMismatch(
             f"{table}: peer row does not match this schema "
-            f"(missing={missing}, unexpected={extra}). Both machines must be "
-            f"on the same apps.shared.state.schema.SCHEMA_VERSION."
+            f"(missing={missing}, unexpected={extra}). Both machines must "
+            f"speak the same apps.sync_hub.wire_version.WIRE_VERSION; if they "
+            f"already do, a synced column changed without a wire bump."
         )
     for index, column in enumerate(spec.pk):
         declared = change.pk[index]
@@ -245,15 +334,25 @@ def _apply(
     # stamp naming the same instant -- hub_changelog.received_at would look a
     # fraction of a second older than it really is.
     stamp = received_at or sync_stamp.canonical_now()
-    ordered = sorted(changes, key=lambda change: _APPLY_ORDER[change.table])
+    ordered = sorted(
+        changes,
+        key=lambda change: apply_rank(change.table, source="the offered batch"),
+    )
     accepted = 0
     rejected = 0
+    quarantined = 0
+    faults: list[protocol.StampFault] = []
     for change in ordered:
-        spec = SPEC_BY_TABLE.get(change.table)
-        if spec is None:
-            raise SyncApplyError(f"{change.table!r} is not in the sync set")
+        # apply_rank refused any out-of-set name during the sort above.
+        spec = SPEC_BY_TABLE[change.table]
         columns, values = _checked_values(conn, change.table, spec, change)
-        if _loses_to_a_stored_row(conn, spec, change):
+        verdict = _resolve_against_stored(conn, spec, change)
+        if verdict.faults:
+            quarantined += 1
+            faults.extend(verdict.faults)
+            _log_quarantine(change, verdict.faults)
+            continue
+        if verdict.loses:
             rejected += 1
             continue
         _upsert(conn, change.table, spec, columns, values)
@@ -262,42 +361,103 @@ def _apply(
         if record_changelog:
             _log_hub_change(conn, change, stamp)
         accepted += 1
-    return ApplyResult(accepted=accepted, rejected=rejected, seq=current_seq(conn))
+    return ApplyResult(
+        accepted=accepted,
+        rejected=rejected,
+        seq=current_seq(conn),
+        quarantined=quarantined,
+        faults=tuple(faults),
+    )
 
 
-def _loses_to_a_stored_row(
+def _log_quarantine(
+    change: RowChange, faults: Sequence[protocol.StampFault]
+) -> None:
+    log.error(
+        "refusing the incoming %s row %s: the LOCAL row it would be compared "
+        "against cannot be ordered (%s), so the merge has no comparison to "
+        "make. The local row is untouched and every other row in this batch "
+        "still applies; repair it with `python -m apps.shared.state."
+        "normalize_stamps --live`.",
+        change.table,
+        list(change.pk),
+        protocol.describe_faults(faults),
+    )
+
+
+def _resolve_against_stored(
     conn: sqlite3.Connection, spec: TableSpec, change: RowChange
-) -> bool:
-    """True if ``change`` is stale against what is already stored.
+) -> _Resolution:
+    """Decide ``change`` against what is already stored, or quarantine it.
 
     Drops any duplicate it beats along the way as a side effect. Split out
     of :func:`_apply` to keep its own branch count under the quality-gate
     mccabe limit; the two paths are exactly what the loop body inlined
     before: no natural-key collision means a plain LWW compare against the
     primary key, a collision means beating EVERY duplicate it collides with.
+
+    A LOCAL row whose stamp cannot be ordered quarantines the incoming row
+    rather than raising (round 5): raising aborted the whole 200-row chunk,
+    so one legacy row on the hub refused 199 innocent ones with it.
+
+    For a ``playlists`` change carrying a bundle, the stored MEMBERSHIP rows
+    are part of "what is stored" and are checked first: accepting the row is
+    what licenses :func:`_replace_members` to delete them, so the bundle has
+    to be judged before the playlist row wins, not after. See
+    :func:`_membership_faults`.
     """
+    if change.table == "playlists" and change.members is not None:
+        member_faults = _membership_faults(conn, change.pk[0])
+        if member_faults:
+            return _Resolution(loses=False, faults=member_faults)
     conflict_pks = _natural_conflict_pks(conn, spec, change)
     if not conflict_pks:
-        stored = _stored_sort_key(conn, spec, change.pk)
-        return stored is not None and change.sort_key <= stored
-    # The incoming row has to beat EVERY duplicate it collides with; losing
-    # to one of them means the row it lost to is the survivor and this one
-    # is the stale copy.
-    if not all(
-        _duplicate_incoming_wins(
-            change, _duplicate_sort_key(conn, spec, change, pk), pk
-        )
-        for pk in conflict_pks
-    ):
-        return True
+        stored = _stored_stamps(conn, spec, change.pk)
+        if stored is None:
+            return _Resolution(loses=False)
+        faults = _faults_of(spec.name, stored)
+        if faults:
+            return _Resolution(loses=False, faults=faults)
+        return _Resolution(loses=change.sort_key <= _sort_key_of(stored))
+    return _resolve_against_duplicates(conn, spec, change, conflict_pks)
+
+
+def _resolve_against_duplicates(
+    conn: sqlite3.Connection,
+    spec: TableSpec,
+    change: RowChange,
+    conflict_pks: Sequence[tuple[str, ...]],
+) -> _Resolution:
+    """LWW against every local row sharing this row's natural key.
+
+    The incoming row has to beat EVERY duplicate it collides with; losing to
+    one of them means the row it lost to is the survivor and this one is the
+    stale copy. A duplicate whose own stamp cannot be ordered quarantines the
+    incoming row: the alternative is hard-deleting that duplicate on a
+    comparison that was never made, which is the exact loss
+    :func:`_duplicate_stamps` refuses to guess at.
+    """
+    faults: list[protocol.StampFault] = []
+    keys: list[tuple[tuple[str, ...], tuple[str, str]]] = []
+    for pk in conflict_pks:
+        stored = _duplicate_stamps(conn, spec, change, pk)
+        row_faults = _faults_of(spec.name, stored)
+        if row_faults:
+            faults.extend(row_faults)
+            continue
+        keys.append((tuple(pk), _sort_key_of(stored)))
+    if faults:
+        return _Resolution(loses=False, faults=tuple(faults))
+    if not all(_duplicate_incoming_wins(change, key, pk) for pk, key in keys):
+        return _Resolution(loses=True)
     for conflict_pk in conflict_pks:
         _drop_superseded(conn, spec, conflict_pk)
-    return False
+    return _Resolution(loses=False)
 
 
 def _log_hub_change(conn: sqlite3.Connection, change: RowChange, stamp: str) -> None:
     """One ``hub_changelog`` append for an accepted row. Split out of
-    :func:`_apply` for the same reason as :func:`_loses_to_a_stored_row`."""
+    :func:`_apply` for the same reason as :func:`_resolve_against_stored`."""
     conn.execute(
         """
         INSERT INTO hub_changelog(

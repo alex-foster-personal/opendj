@@ -51,3 +51,5 @@ def test_lock_probe_failures_deny_writes(seed_backend):
         )
         assert r.status_code == 503
         assert r.json()["detail"]["error"] == "lock_probe_failed"
+
+pytestmark = pytest.mark.rb_parity

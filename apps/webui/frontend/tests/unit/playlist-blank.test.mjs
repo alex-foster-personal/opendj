@@ -144,6 +144,51 @@ describe('decideBlankPlaylistDelete safety', () => {
 		);
 		assert.equal(d.action, 'delete');
 	});
+
+	it('keeps a freshly created blank across a reload via updated_at alone (no _graceUntil entry)', () => {
+		const now = 5_000_000;
+		const d = decideBlankPlaylistDelete(
+			{
+				playlist_id: 'reloaded-fresh',
+				name: DEFAULT_PLAYLIST_NAME,
+				track_count: 0,
+				vendor: 'webui',
+				updated_at: new Date(now - 1000).toISOString()
+			},
+			now
+		);
+		assert.equal(d.action, 'keep');
+		assert.match(d.reason, /grace/i);
+	});
+
+	it('deletes once updated_at grace has also elapsed, with no _graceUntil entry', () => {
+		const now = 5_000_000;
+		const d = decideBlankPlaylistDelete(
+			{
+				playlist_id: 'reloaded-stale',
+				name: DEFAULT_PLAYLIST_NAME,
+				track_count: 0,
+				vendor: 'webui',
+				updated_at: new Date(now - BLANK_PLAYLIST_GRACE_MS).toISOString()
+			},
+			now
+		);
+		assert.equal(d.action, 'delete');
+	});
+
+	it('treats a missing updated_at as no server-grace signal', () => {
+		const now = 5_000_000;
+		const d = decideBlankPlaylistDelete(
+			{
+				playlist_id: 'no-updated-at',
+				name: DEFAULT_PLAYLIST_NAME,
+				track_count: 0,
+				vendor: 'webui'
+			},
+			now
+		);
+		assert.equal(d.action, 'delete');
+	});
 });
 
 describe('collectBlankPlaylistDeletes logging', () => {

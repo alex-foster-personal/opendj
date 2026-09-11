@@ -30,10 +30,13 @@ does not duplicate it.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from apps.dj_copilot.pinning import PinUnsatisfiableError
 from apps.dj_copilot.set_goal import SetGoal
 from apps.dj_copilot.solver import suggest_order
 from apps.shared.harmonic import TrackFeature, key_to_camelot
@@ -53,6 +56,9 @@ class PlayItGoalIn(BaseModel):
     peak_at_min: int | None = Field(None, ge=0)
     floor_energy: int = Field(3, ge=1, le=10)
     ceiling_energy: int = Field(9, ge=1, le=10)
+    peak_pins: list[str] = Field(default_factory=list)
+    opener_pins: list[str] = Field(default_factory=list)
+    closer_pin: str | None = None
 
 
 class PlayItStepOut(BaseModel):
@@ -68,6 +74,7 @@ class PlayItStepOut(BaseModel):
     bpm_delta_pct: float | None
     target_energy: float
     actual_energy: float
+    pin_role: Literal["opener", "peak", "closer"] | None = None
 
 
 class PlayItUnmetOut(BaseModel):
@@ -188,6 +195,9 @@ def solve_play_it(
             peak_at_min=body.peak_at_min,
             floor_energy=body.floor_energy,
             ceiling_energy=body.ceiling_energy,
+            peak_pins=tuple(body.peak_pins),
+            opener_pins=tuple(body.opener_pins),
+            closer_pin=body.closer_pin,
         )
     except ValueError as exc:
         return JSONResponse(
@@ -195,7 +205,17 @@ def solve_play_it(
             content=ErrorBody(error="invalid_goal", message=str(exc)).model_dump(),
         )
 
-    result = suggest_order(tracks=features, goal=goal)
+    try:
+        result = suggest_order(tracks=features, goal=goal)
+    except PinUnsatisfiableError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content=ErrorBody(
+                error="pin_unsatisfiable",
+                message=str(exc),
+                details={"reason": exc.reason, "missing": list(exc.missing)},
+            ).model_dump(),
+        )
 
     titles = {t.stable_id: t for t in ordered_tracks}
     feature_by_id = {f.stable_id: f for f in features}
@@ -213,6 +233,7 @@ def solve_play_it(
             bpm_delta_pct=trace.bpm_delta_pct,
             target_energy=trace.target_energy,
             actual_energy=trace.actual_energy,
+            pin_role=trace.pin_role,
         )
         for trace in result.per_step_trace
     ]

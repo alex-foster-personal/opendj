@@ -102,8 +102,9 @@ def enqueue_job(request: Request, body: JobIn) -> dict[str, Any]:
     # payload is the same class of caller error as naming a kind that does
     # not exist, and letting it out as a 500 told an agent to retry a request
     # that will never succeed.
+    payload = body.payload
     try:
-        worker_argv(body.kind, body.payload)
+        worker_argv(body.kind, payload)
     except (UnknownJobKind, ValueError) as exc:
         # The kind knows the shape of its own payload and this one is wrong.
         # That is the caller's mistake, so it is a 400 carrying the kind's own
@@ -113,8 +114,12 @@ def enqueue_job(request: Request, body: JobIn) -> dict[str, Any]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
+    if body.kind == "stems.separate":
+        from apps.stems.job import canonical_payload as canonical_stems_payload
+
+        payload = canonical_stems_payload(payload)
     return _store(request).enqueue(
-        body.kind, body.payload, external_ref=body.external_ref
+        body.kind, payload, external_ref=body.external_ref
     )
 
 

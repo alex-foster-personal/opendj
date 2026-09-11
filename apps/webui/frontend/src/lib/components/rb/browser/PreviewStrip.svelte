@@ -70,7 +70,7 @@
 	});
 
 	$effect(() => {
-		if (canvas !== undefined && strip !== null && revealed) {
+		if (canvas && strip !== null && revealed) {
 			_draw(canvas, strip, vocals, duration_ms, dpr);
 		}
 	});

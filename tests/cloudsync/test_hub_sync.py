@@ -31,7 +31,7 @@ would test a spoke whose edits are invisible to its own push.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +42,7 @@ from fastapi.testclient import TestClient
 from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
 from apps.sync_hub import client, engine, protocol, service
+from tests.cloudsync.enrollment_transport import TestClientTransport
 
 pytestmark = pytest.mark.requirement("CAT-04")
 
@@ -61,30 +62,12 @@ _DEV_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 # ----- transport -----------------------------------------------------------
 
 
-class _TestClientTransport:
-    """A :class:`apps.sync_hub.client.HubTransport` backed by ``TestClient``.
-
-    Not a mock of the hub: it drives the real router through the real ASGI
-    stack. It exists only because ``TestClient`` is not a URL.
-    """
-
-    def __init__(self, http: TestClient) -> None:
-        self._http = http
-
-    def _decoded(self, response: Any, label: str) -> dict[str, Any]:
-        if response.status_code >= 400:
-            raise client.SyncTransportError(
-                f"{label} -> HTTP {response.status_code}: {response.text}"
-            )
-        return dict(response.json())
-
-    def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
-        return self._decoded(self._http.post(path, json=dict(payload)), f"POST {path}")
-
-    def get(self, path: str, params: Mapping[str, str]) -> dict[str, Any]:
-        return self._decoded(
-            self._http.get(path, params=dict(params)), f"GET {path}"
-        )
+# The class lives in tests/cloudsync/enrollment_transport.py so `conftest`
+# can build a hub fixture without importing this test module. Re-exported
+# under its original private name: every existing importer keeps working,
+# and there is still exactly ONE implementation of it rather than two that
+# agree today.
+_TestClientTransport = TestClientTransport
 
 
 # ----- fixtures ------------------------------------------------------------
@@ -98,21 +81,44 @@ def _no_hub_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def hub_dir(tmp_path: Path) -> Path:
+    """The hub's DATA DIR, which does not exist yet.
+
+    Guarantees it is empty and private to this test: no state DB, no
+    ``machine-id`` file, no ``machines`` row. The first ``_open`` or the
+    ``hub`` fixture below creates them, so a test observes the bootstrap
+    rather than inheriting one.
+    """
     return tmp_path / "hub"
 
 
 @pytest.fixture
 def spoke_a(tmp_path: Path) -> Path:
+    """Spoke A's empty data dir. Same guarantees as :func:`hub_dir`.
+
+    Its machine id is minted from this path on first open, so A and B are
+    distinct machines with distinct ``origin_device_id`` values without any
+    test saying so. ``_DEV_A`` / ``_DEV_B`` are the ids fixtures WRITE onto
+    rows; they are deliberately not these machines' ids.
+    """
     return tmp_path / "spoke-a"
 
 
 @pytest.fixture
 def spoke_b(tmp_path: Path) -> Path:
+    """Spoke B's empty data dir. Same guarantees as :func:`spoke_a`."""
     return tmp_path / "spoke-b"
 
 
 @pytest.fixture
 def hub(hub_dir: Path) -> Iterator[_TestClientTransport]:
+    """The real sync router over the real ASGI stack, on an EMPTY hub DB.
+
+    Guarantees: the hub holds no synced rows and no changelog entries until a
+    spoke pushes, its machine name is ``hub``, and every call a test makes
+    goes through the same routing, validation and error handling a network
+    client would hit. Nothing here is a stub of the hub -- only the socket is
+    absent.
+    """
     app = FastAPI()
     app.state.state_db_path = str(client.state_db_path(hub_dir))
     app.state.sync_hub_data_dir = str(hub_dir)

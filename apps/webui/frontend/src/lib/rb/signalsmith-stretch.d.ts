@@ -26,6 +26,7 @@ declare module 'signalsmith-stretch' {
 		addBuffers(buffers: Float32Array[], transfer?: Transferable[]): Promise<number>;
 		configure(configuration: SignalsmithStretchConfiguration): Promise<void>;
 		dropBuffers(toSeconds?: number): Promise<{ start: number; end: number }>;
+		dispose(): Promise<void>;
 		latency(): Promise<number>;
 		schedule(schedule: SignalsmithStretchSchedule): Promise<SignalsmithStretchSchedule>;
 		setUpdateInterval(seconds: number, callback: (inputTime: number) => void): Promise<void>;

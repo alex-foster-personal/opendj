@@ -3,53 +3,110 @@
 	// and why a row holds its rank. Modeled on TopBar's ap-wrap/ap-menu
 	// interactive floating panel (not ControlExplainer's inert, pointer-events
 	// none tooltip) because it must host a real, clickable Warnsdorff link.
-	// Opens to the LEFT of its trigger, top-anchored, with a downward nudge
-	// only when that would clip the top of the viewport.
+	// Opens to the LEFT of its trigger. Column explainers default upward so they
+	// do not obscure the table below; a caller may deliberately opt below.
+	import { onDestroy } from 'svelte';
 	import type { Snippet } from 'svelte';
+	import type { AutoPlayQueueEntry } from '$lib/rb/auto-play';
 	import { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import {
+		columnExplainerStyle,
+		type ColumnExplainerPlacement
+	} from './column-explainer-placement';
 
 	const WARNSDORFF_LABEL = "Warnsdorff's rule";
 	const WARNSDORFF_HREF = 'https://en.wikipedia.org/wiki/Warnsdorff%27s_rule';
-	const PANEL_GAP_PX = 6;
-	const VIEWPORT_TOP_MARGIN_PX = 8;
+	const HIDE_DELAY_MS = 150;
 
 	let {
 		demo,
+		queue = [],
+		placement = 'above',
 		children
 	}: {
 		/** Reserved mount point for the mini-library walkthrough animation. */
 		demo?: Snippet;
+		/** Frozen handoff rows, preserved independently of the live browser filter. */
+		queue?: readonly AutoPlayQueueEntry[];
+		/** Column explainers normally clear the table; below is opt-in. */
+		placement?: ColumnExplainerPlacement;
 		/** The robot header trigger this panel opens from. */
 		children: Snippet;
 	} = $props();
 
 	let wrapEl: HTMLSpanElement | undefined = $state();
+	let panelEl: HTMLDivElement | undefined = $state();
 	let open = $state(false);
 	let panelStyle = $state('');
+	let hideTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const mode = $derived(describeAutoPlayMode(uiPrefs));
 
 	function _place(): void {
-		if (wrapEl === undefined) return;
-		const r = wrapEl.getBoundingClientRect();
-		const top = Math.max(VIEWPORT_TOP_MARGIN_PX, Math.round(r.top));
-		const right = Math.round(window.innerWidth - r.left + PANEL_GAP_PX);
-		panelStyle = `right:${right}px;top:${top}px;`;
+		if (!wrapEl || !panelEl) return;
+		panelStyle = columnExplainerStyle(
+			wrapEl.getBoundingClientRect(),
+			panelEl.getBoundingClientRect(),
+			window,
+			placement
+		);
+	}
+
+	function _cancelHide(): void {
+		if (hideTimer === undefined) return;
+		clearTimeout(hideTimer);
+		hideTimer = undefined;
+	}
+
+	function _close(): void {
+		_cancelHide();
+		open = false;
+	}
+
+	/**
+	 * Keep the interactive panel out of the sticky table-header stacking context.
+	 * This is deliberately a DOM portal rather than the Popover API: the shipped
+	 * macOS 11 WKWebView predates HTMLElement.showPopover().
+	 */
+	function _portalToBody(node: HTMLElement): { destroy: () => void } {
+		document.body.appendChild(node);
+		return {
+			destroy: () => node.remove()
+		};
 	}
 
 	function _show(): void {
-		_place();
+		_cancelHide();
 		open = true;
 	}
 
 	function _hide(e: FocusEvent | PointerEvent): void {
 		const next = e instanceof FocusEvent ? e.relatedTarget : (e as PointerEvent).relatedTarget;
 		if (next instanceof Node && wrapEl?.contains(next)) return;
-		// Fixed panel is outside the wrap - keep open when moving into it.
+		// The panel is portalled to document.body, outside the wrapper's DOM branch.
 		if (next instanceof Element && next.closest?.('.ap-explain-panel')) return;
-		open = false;
+		if (e instanceof PointerEvent) {
+			_cancelHide();
+			hideTimer = setTimeout(_close, HIDE_DELAY_MS);
+			return;
+		}
+		_close();
 	}
+
+	$effect(() => {
+		if (!open || !panelEl) return;
+		_place();
+		const reposition = () => _place();
+		window.addEventListener('resize', reposition);
+		window.addEventListener('scroll', reposition, true);
+		return () => {
+			window.removeEventListener('resize', reposition);
+			window.removeEventListener('scroll', reposition, true);
+		};
+	});
+
+	onDestroy(_cancelHide);
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -66,15 +123,30 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="ap-explain-panel"
+			bind:this={panelEl}
+			use:_portalToBody
 			style={panelStyle}
 			role="dialog"
 			tabindex="-1"
 			aria-label="AutoPlay order"
 			onpointerenter={_show}
-			onpointerleave={() => (open = false)}
+			onpointerleave={_hide}
 		>
 			<p class="ap-explain-head">AutoPlay order</p>
 			<p class="ap-explain-mode">{mode.short} - {mode.detail}</p>
+			<p class="ap-explain-sub">Published queue:</p>
+			{#if queue.length === 0}
+				<p class="ap-explain-queue-empty">No handoffs planned yet.</p>
+			{:else}
+				<ol class="ap-explain-queue" aria-label="Published AutoPlay queue">
+					{#each queue as entry, index (entry.stable_id)}
+						<li>
+							<strong>{index + 1}. {entry.title}</strong>
+							{entry.artist === null ? '' : ` - ${entry.artist}`}
+						</li>
+					{/each}
+				</ol>
+			{/if}
 
 			<p class="ap-explain-sub">How AutoPlay ranks the next tracks in this playlist:</p>
 			<ul class="ap-explain-bullets">
@@ -128,8 +200,11 @@
 	}
 	.ap-explain-panel {
 		position: fixed;
-		z-index: 90;
-		width: 300px;
+		inset: auto;
+		margin: 0;
+		width: min(300px, calc(100vw - 16px));
+		max-height: calc(100vh - 16px);
+		overflow-y: auto;
 		padding: 8px 9px 9px;
 		background: #0a0c0f;
 		border: 1px solid var(--rb-border);
@@ -152,6 +227,19 @@
 	}
 	.ap-explain-sub {
 		margin: 6px 0 3px;
+		color: var(--rb-text-dim);
+	}
+	.ap-explain-queue,
+	.ap-explain-queue-empty {
+		margin: 0;
+	}
+	.ap-explain-queue {
+		padding: 0 0 0 18px;
+	}
+	.ap-explain-queue li {
+		margin: 0 0 2px;
+	}
+	.ap-explain-queue-empty {
 		color: var(--rb-text-dim);
 	}
 	.ap-explain-bullets {

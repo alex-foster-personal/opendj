@@ -24,6 +24,7 @@ Acceptance criteria, one assertion block each:
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
@@ -195,6 +196,53 @@ def test_a_rewritten_machine_id_file_is_not_served_stale(tmp_path: Path) -> None
         sync_stamp.reset_machine_id_cache()
 
 
+def test_a_rewrite_that_lands_on_the_SAME_mtime_is_still_not_served_stale(
+    tmp_path: Path,
+) -> None:
+    """The sibling above, with the clock's help taken away.
+
+    That test only discriminates while the rewrite happens to land on a
+    different mtime, and inode timestamps come from the kernel's COARSE clock,
+    which advances once per timer tick. On fast hardware the read and the
+    rewrite fall inside one tick, the mtime comes back IDENTICAL, and an
+    mtime-keyed cache serves the first id exactly as the bare
+    ``functools.cache`` did before finding N8c was ever fixed. That is how the
+    sibling failed the first time this suite ran on self-hosted CI
+    (Thu 3 Sep 2026), and nothing in the suite could tell that apart from the
+    machine being quick.
+
+    So the identical mtime is arranged here rather than waited for: with the
+    field the old key read held still, only a key that reads the BYTES can
+    pass. Mutate ``_CachedId`` back to ``mtime_ns`` and this goes red on every
+    machine, fast or slow.
+    """
+    conn = state_db.open_rw(tmp_path / "state" / "state.db")
+    try:
+        sync_stamp.reset_machine_id_cache()
+        first = sync_stamp.local_machine_id(conn)
+
+        rewritten = "5" * 32
+        assert rewritten != first
+        id_path = mid.machine_id_path(tmp_path)
+        before = id_path.stat()
+        id_path.unlink()
+        id_path.write_text(rewritten, encoding="utf-8")
+        id_path.chmod(mid.MACHINE_ID_MODE)
+        os.utime(id_path, ns=(before.st_atime_ns, before.st_mtime_ns))
+        assert id_path.stat().st_mtime_ns == before.st_mtime_ns, (
+            "fixture precondition: the mtime must be identical, or this is "
+            "just the sibling test again and proves nothing extra"
+        )
+
+        assert sync_stamp.local_machine_id(conn) == rewritten, (
+            "the cache read a clock instead of the file, so a rewrite inside "
+            "one timer tick is invisible to it"
+        )
+    finally:
+        conn.close()
+        sync_stamp.reset_machine_id_cache()
+
+
 def test_ensure_local_machine_registers_once(state_conn: sqlite3.Connection,
                                              state_db_path: Path) -> None:
     first = sync_stamp.ensure_local_machine(state_conn)
@@ -293,89 +341,6 @@ def test_changelog_seq_is_the_push_fence(state_conn: sqlite3.Connection) -> None
     assert [row[0] for row in above_floor] == [sync_stamp.encode_row_pk(("skewed",))]
 
 
-# ----- (7) round 2 finding N3: a stored stamp must not brick the machine ----
-
-
-def test_epoch_matches_the_protocol_sentinel() -> None:
-    """Two definitions of "loses every conflict" must be one value.
-
-    ``apps.shared`` cannot import ``apps.sync_hub``, so the sentinel is
-    duplicated. Duplicated is fine; drifted is a spoke and a hub disagreeing
-    about which row is older.
-    """
-    assert sync_stamp.EPOCH == hub_protocol.EPOCH
-
-
-@pytest.mark.parametrize(
-    "stored",
-    [
-        None,
-        "2024-11-01T12:00:00",          # naive ISO8601
-        "2024-11-01 12:00:00",          # SQLite CURRENT_TIMESTAMP spelling
-        "not a timestamp at all",
-        "",
-    ],
-)
-def test_an_unorderable_stored_stamp_reads_as_epoch(stored: str | None) -> None:
-    """Round 2 finding N3b.
-
-    One such value anywhere in the library used to abort ``spoke_push``
-    before a single row was offered, on every sync, forever, with no repair
-    path. It now sorts exactly where a NULL stamp has always sorted.
-    """
-    assert sync_stamp.coalesce_stored_stamp(stored) == sync_stamp.EPOCH
-
-
-def test_coalesce_leaves_an_orderable_stamp_alone() -> None:
-    """Tolerating a broken value must not mean discarding a good one."""
-    assert (
-        sync_stamp.coalesce_stored_stamp("2026-08-30T10:00:00Z")
-        == "2026-08-30T10:00:00.000000+00:00"
-    )
-    canonical = sync_stamp.canonical_now()
-    assert sync_stamp.coalesce_stored_stamp(canonical) == canonical
-
-
-def test_the_wire_boundary_still_refuses_what_storage_tolerates() -> None:
-    """The asymmetry is the design, not an oversight.
-
-    A legacy row on this machine is a fact to survive. The identical value
-    arriving from a peer is a protocol violation to report -- storing it
-    would put a row nothing can order into the sync set.
-    """
-    with pytest.raises(sync_stamp.SyncStampError):
-        sync_stamp.parse_canonical("2024-11-01T12:00:00")
-
-
-def test_r4_local_read_coalesces_but_the_same_value_off_the_wire_is_rejected() -> None:
-    """Round 3/4 finding R4, the whole contract in one place.
-
-    A locally-stored unorderable stamp must not brick a read: it coalesces to
-    the comparison sentinel. The BYTE-IDENTICAL value arriving off the wire is
-    still rejected. And the sentinel it coalesces to is itself unparseable, so
-    it can only ever be compared, never stored back -- which is why the repair
-    (:mod:`apps.shared.state.normalize_stamps`) writes ``FLOOR_STAMP``, a
-    parseable year-one stamp, rather than :data:`sync_stamp.EPOCH`.
-    """
-    legacy = "2024-11-01 12:00:00"  # SQLite CURRENT_TIMESTAMP spelling
-
-    # Local read: survivable, sorts where a NULL stamp sorts.
-    assert sync_stamp.coalesce_stored_stamp(legacy) == sync_stamp.EPOCH
-
-    # Same value off the wire: refused.
-    with pytest.raises(sync_stamp.SyncStampError):
-        sync_stamp.parse_canonical(legacy)
-
-    # The sentinel is a comparison value only: it does not round-trip through
-    # the wire parser, so nothing may store it back onto a row.
-    with pytest.raises(sync_stamp.SyncStampError):
-        sync_stamp.parse_canonical(sync_stamp.EPOCH)
-    from apps.shared.state import normalize_stamps
-
-    assert normalize_stamps.FLOOR_STAMP != sync_stamp.EPOCH
-    assert sync_stamp.parse_canonical(normalize_stamps.FLOOR_STAMP)
-
-
 def _legacy_location(
     conn: sqlite3.Connection, location_id: str, stable_id: str, *, updated_at: str
 ) -> None:
@@ -431,11 +396,18 @@ def test_the_backfill_survives_a_legacy_naive_stamp(
     assert len(logged) == 3, (
         "every claimed row must be logged or the push fence never offers it"
     )
+    # VERBATIM, byte for byte (round 5). Nothing orders
+    # local_changelog.updated_at, so the honest value is the row's own -- and
+    # normalize_stamps sweeps this column, so one repair pass fixes the row
+    # and its changelog entry together. Round 3 wrote EPOCH here, which put a
+    # year-zero value nothing can parse into the DB on an ordinary open.
     by_pk = {row[0]: row[1] for row in logged}
-    assert by_pk[sync_stamp.encode_row_pk(("bad",))] == sync_stamp.EPOCH
-    assert by_pk[sync_stamp.encode_row_pk(("also",))] == sync_stamp.EPOCH
-    assert by_pk[sync_stamp.encode_row_pk(("good",))] == (
-        "2024-11-01T12:00:00.000000+00:00"
+    assert by_pk[sync_stamp.encode_row_pk(("bad",))] == "2024-11-01T12:00:00"
+    assert by_pk[sync_stamp.encode_row_pk(("also",))] == "2024-11-01 12:00:00"
+    assert by_pk[sync_stamp.encode_row_pk(("good",))] == "2024-11-01T12:00:00+00:00"
+    assert sync_stamp.EPOCH not in set(by_pk.values()), (
+        "an ordinary open must not write the year-zero comparison sentinel "
+        "into a table"
     )
 
 

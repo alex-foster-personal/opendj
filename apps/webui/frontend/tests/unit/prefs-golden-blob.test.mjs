@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { before, describe, it } from 'node:test';
 
-import { loadTypeScriptModule } from './load-typescript.mjs';
+import { bundleTypeScriptModule, loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
  * CAPTURED PREFS BLOBS LOAD: a blob a PREVIOUS build persisted must load
@@ -81,13 +81,16 @@ function verifiedCapture(manifest, name) {
  *
  * A child process, because real `localStorage` needs flags the unit runner does
  * not set. Each call gets its own storage file, so no test can observe
- * another's writes.
+ * another's writes. `bundlePath` is compiled once by the caller and reused
+ * across every capture - the module under test does not vary between them,
+ * only the seeded storage does, so recompiling it per capture would be
+ * three identical esbuild runs for one answer.
  */
-function loadThroughRealStorage(storageKey, blob) {
+function loadThroughRealStorage(storageKey, blob, bundlePath) {
 	const store = join(mkdtempSync(join(tmpdir(), 'mdt-prefs-')), 'localstorage.db');
 	const proc = spawnSync(
 		process.execPath,
-		['--experimental-webstorage', `--localstorage-file=${store}`, PROBE, storageKey, blob],
+		['--experimental-webstorage', `--localstorage-file=${store}`, PROBE, storageKey, blob, bundlePath],
 		{ encoding: 'utf8', timeout: 120000 }
 	);
 	assert.equal(proc.status, 0, `probe failed:\n${proc.stderr}`);
@@ -102,12 +105,18 @@ const CAPTURES = Object.keys(MANIFEST.files).map((name) => {
 });
 
 let autoPlay;
+let prefsBundlePath;
 /** name -> what the production loader produced from that capture. */
 const loaded = new Map();
 
 before(async () => {
 	autoPlay = await loadTypeScriptModule('src/lib/rb/auto-play.ts');
-	for (const c of CAPTURES) loaded.set(c.name, loadThroughRealStorage(STORAGE_KEY, c.text));
+	const bundled = await bundleTypeScriptModule('src/lib/rb/prefs.svelte.ts');
+	prefsBundlePath = join(mkdtempSync(join(tmpdir(), 'mdt-prefs-bundle-')), 'prefs.mjs');
+	writeFileSync(prefsBundlePath, bundled);
+	for (const c of CAPTURES) {
+		loaded.set(c.name, loadThroughRealStorage(STORAGE_KEY, c.text, prefsBundlePath));
+	}
 });
 
 describe('captured prefs blobs load in the current build', () => {
@@ -140,6 +149,23 @@ describe('captured prefs blobs load in the current build', () => {
 			}
 		});
 	}
+
+	it('captures without jog_radial_waveform default it to false', () => {
+		for (const { name } of CAPTURES) {
+			const got = loaded.get(name);
+			assert.equal(
+				got.jog_radial_waveform,
+				false,
+				`${name} must default jog_radial_waveform to false when the key is absent`
+			);
+		}
+		const handBuilt = loadThroughRealStorage(
+			STORAGE_KEY,
+			JSON.stringify({ hide_broken_links: false }),
+			prefsBundlePath
+		);
+		assert.equal(handBuilt.jog_radial_waveform, false);
+	});
 
 	it('a capture written before AutoPlay existed still yields usable AutoPlay prefs', () => {
 		// The failure this guards is not a throw. An 8-key blob that loads but
@@ -177,11 +203,13 @@ describe('captured prefs blobs load in the current build', () => {
 		assert.equal(got.auto_play_enabled, true, 'the capture must actually carry enabled=true');
 
 		const snap = autoPlay.createAutoPlayFeedSnapshot();
-		const atMount = snap.step(got.auto_play_enabled, []);
+		// Pin 0e5fa1 added the playlist scope: the same playlist across both
+		// observations, so this still exercises hydration and not a switch.
+		const atMount = snap.step(got.auto_play_enabled, 'playlist:vas', []);
 		assert.equal(atMount.snapshotted, false, 'persisted-on + empty view must not freeze');
 		assert.equal(snap.active, false);
 
-		const hydrated = snap.step(got.auto_play_enabled, [
+		const hydrated = snap.step(got.auto_play_enabled, 'playlist:vas', [
 			{ stable_id: 'a', key: '8A', bpm: 128, file_exists: true }
 		]);
 		assert.equal(hydrated.snapshotted, true, 'first rows take the activation snapshot');

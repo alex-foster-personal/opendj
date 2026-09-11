@@ -115,20 +115,57 @@ function parseLedger(raw: unknown): KpiLedger {
 	return { kpis, snapshots: obj.snapshots.map(parseSnapshot) };
 }
 
+/**
+ * The perf ledger (docs/perf/kpi-ledger.json) as served by GET
+ * /api/v1/bench/perf-kpi: the same cards shape, plus the first measurement
+ * date and any KPI the ledger records that has no card declaration yet.
+ */
+export interface PerfKpiLedger extends KpiLedger {
+	/** First perf measurement, weekday-stamped, e.g. "Wed 22 Jul 2026". */
+	sinceLabel: string;
+	/** Ledger KPIs missing from docs/perf/kpi-cards.json - rendered as a warning, never dropped quietly. */
+	undeclared: string[];
+}
+
+function parsePerfLedger(raw: unknown): PerfKpiLedger {
+	const obj = asObject(raw, 'response');
+	const undeclared = obj.undeclared;
+	if (!Array.isArray(undeclared) || !undeclared.every((name) => typeof name === 'string')) {
+		throw new Error('kpi ledger: undeclared is not an array of strings');
+	}
+	return { ...parseLedger(raw), sinceLabel: asString(obj.since_label, 'since_label'), undeclared };
+}
+
 /** TEST-ONLY: the validator half, without a network round trip. */
 export const _parseLedgerForTests = parseLedger;
+/** TEST-ONLY: the perf validator half. */
+export const _parsePerfLedgerForTests = parsePerfLedger;
 
 //----- fetch ----------------------------------------------------------------
 
-export async function fetchKpiLedger(): Promise<KpiLedger> {
+/** Runs one GET, turning an HTTP failure into an error naming status and body. */
+async function readOrExplain(path: string, request: () => Promise<unknown>): Promise<unknown> {
 	try {
-		const data = await unwrap(api.GET('/api/v1/bench/kpi', { cache: 'no-store' }));
-		return parseLedger(data);
+		return await request();
 	} catch (error) {
 		if (error instanceof ApiError) {
 			const bodyText = await error.response.text();
-			throw new Error(`GET /api/v1/bench/kpi failed (HTTP ${error.status}): ${bodyText}`);
+			throw new Error(`GET ${path} failed (HTTP ${error.status}): ${bodyText}`);
 		}
 		throw error;
 	}
+}
+
+export async function fetchKpiLedger(): Promise<KpiLedger> {
+	const data = await readOrExplain('/api/v1/bench/kpi', () =>
+		unwrap(api.GET('/api/v1/bench/kpi', { cache: 'no-store' }))
+	);
+	return parseLedger(data);
+}
+
+export async function fetchPerfKpiLedger(): Promise<PerfKpiLedger> {
+	const data = await readOrExplain('/api/v1/bench/perf-kpi', () =>
+		unwrap(api.GET('/api/v1/bench/perf-kpi', { cache: 'no-store' }))
+	);
+	return parsePerfLedger(data);
 }

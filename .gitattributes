@@ -1,0 +1,8 @@
+*.patch -whitespace
+
+# Append-only planning ledgers: union removes local rebase merge work only.
+# GitHub does not honor .gitattributes merge strategies for PR mergeability.
+.planning/REQUIREMENTS.md merge=union
+.planning/TECH-DEBT.md merge=union
+# reqs.json is generated structured JSON. Leave it unassigned so divergent edits
+# conflict instead of silently producing invalid JSON.

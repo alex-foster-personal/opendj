@@ -513,3 +513,5 @@ def test_a_shutdown_at_the_slot_claim_starts_no_drain(app, client, tmp_path):
     assert ingest_mod._JOBS.current is None, (
         "a refresh worker was started after shutdown was requested"
     )
+
+pytestmark = pytest.mark.rb_parity

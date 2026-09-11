@@ -168,3 +168,5 @@ def test_non_anlz_files_in_the_directory_are_ignored_not_reported_unreadable(
     (directory / "notes.txt").write_text("scratch", encoding="utf-8")
     _tags, unreadable = rb_vendor._first_tags(directory)
     assert unreadable == []
+
+pytestmark = pytest.mark.rb_parity

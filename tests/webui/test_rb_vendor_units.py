@@ -33,7 +33,7 @@ from apps.adapters.rekordbox import config as rb_config
 from apps.webui.server import rb_vendor
 from apps.webui.server.routes.tracks import keep_by_availability
 
-pytestmark = pytest.mark.requirement("CAT-05")
+pytestmark = [pytest.mark.requirement("CAT-05"), pytest.mark.rb_parity]
 
 FPS = 22050 / 1024  # 21.53 -- the only rate PVDI has ever been observed at
 
@@ -168,7 +168,7 @@ def _content_for_2ex(monkeypatch: pytest.MonkeyPatch, twoex: Path) -> rb_vendor.
     monkeypatch.setattr(
         rb_paths,
         "resolve_asset_path",
-        lambda original: pp.MappedPath(
+        lambda original, *, resolver=None: pp.MappedPath(
             original=original,
             resolved=twoex.with_suffix(".DAT"),
             mapped=True,
@@ -178,7 +178,7 @@ def _content_for_2ex(monkeypatch: pytest.MonkeyPatch, twoex: Path) -> rb_vendor.
     monkeypatch.setattr(
         rb_paths,
         "_asset_sibling",
-        lambda _mapped, candidate: pp.MappedPath(
+        lambda _mapped, candidate, *, resolver=None: pp.MappedPath(
             original=str(candidate), resolved=candidate, mapped=True, reason="test"
         ),
     )
@@ -420,3 +420,83 @@ def test_bulk_file_exists_treats_dataless_stub_as_missing(
     rb_config._FILE_EXISTS_CACHE.clear()
     assert rb_vendor.bulk_file_exists([str(stub)]) == {str(stub): False}
     assert rb_vendor.bulk_file_size([str(stub)]) == {str(stub): None}
+
+
+# ----- build_track_rows: AssetResolver dedup across a page (pin ad59ac) ---
+
+
+def test_build_track_rows_dedupes_shared_analysis_data_path_resolution(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """[if] 50 listing rows share one AnalysisDataPath and ImagePath
+    [then ⛔️] resolving them costs nowhere near rows*3 real filesystem
+    walks -- pins the fix for pin ad59ac's per-row cost (each row's
+    preview/vocals/artwork lookup used to resolve the same asset path
+    independently). Call-count, not wall-clock, per house convention."""
+    from apps.adapters.rekordbox.models import RbRowMeta
+    from apps.webui.server import backend
+    from apps.webui.server.rb_vendor_pkg import track_rows
+
+    # A minimal, valid, EMPTY PMAI container: header + offset-to-first-section
+    # (8) with no bytes beyond it, so every PWV6/PWV4/PWAV/PVDI reader's
+    # section walk finds nothing and returns None cleanly (no crash, no
+    # invented data) -- same shape as this file's own "no_pvdi" fixture above.
+    empty_pmai = b"PMAI" + struct.pack(">I", 8)
+    shared_dat = tmp_path / "ANLZ0000.DAT"
+    shared_dat.write_bytes(empty_pmai)
+    shared_2ex = tmp_path / "ANLZ0000.2EX"
+    shared_2ex.write_bytes(empty_pmai)
+    shared_image = tmp_path / "artwork.jpg"
+    shared_image.write_bytes(b"jpg")
+    (tmp_path / "artwork_s.jpg").write_bytes(b"jpg-s")
+
+    n_rows = 50
+    tracks = [backend.Track(stable_id=f"t{i}") for i in range(n_rows)]
+    meta = RbRowMeta(
+        vendor_id="v1",
+        folder_path=None,
+        analysis_data_path=str(shared_dat),
+        comment=None,
+        genre=None,
+        play_count=0,
+        image_path=str(shared_image),
+    )
+    metas = {t.stable_id: meta for t in tracks}
+
+    monkeypatch.setattr(track_rows, "bulk_rb_meta", lambda stable_ids: metas)
+    monkeypatch.setattr(
+        track_rows,
+        "bulk_availability",
+        lambda *a, **k: {t.stable_id: True for t in tracks},
+    )
+    monkeypatch.setattr(
+        track_rows, "bulk_quality", lambda *a, **k: {t.stable_id: {} for t in tracks}
+    )
+    monkeypatch.setattr(
+        track_rows,
+        "bulk_stem_summaries",
+        lambda stable_ids: {t.stable_id: {} for t in tracks},
+    )
+
+    real_resolve = Path.resolve
+    calls = {"n": 0}
+
+    def counting_resolve(self: Path, strict: bool = False) -> Path:
+        calls["n"] += 1
+        return real_resolve(self, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", counting_resolve)
+
+    rows = track_rows.build_track_rows(tracks)
+
+    assert len(rows) == n_rows
+    # Uncached, each row independently resolves the shared AnalysisDataPath
+    # (preview strip's own resolve + its .2EX/.EXT/.DAT sibling candidates,
+    # vocals' resolve + its .2EX sibling) plus the shared ImagePath
+    # (artwork) -- comfortably >= 3 real resolve() calls per row with no
+    # dedup, so rows*3 is a conservative ceiling for "dedup did not happen".
+    assert calls["n"] < n_rows * 3, (
+        f"expected one AssetResolver per build_track_rows call to dedupe the "
+        f"shared AnalysisDataPath/ImagePath across {n_rows} rows to far "
+        f"fewer than {n_rows * 3} real Path.resolve() calls, got {calls['n']}"
+    )

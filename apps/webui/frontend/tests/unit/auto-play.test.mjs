@@ -218,6 +218,24 @@ describe('auto-play track pick', () => {
 		row('e', '8A', 160)
 	];
 
+	it('falls back to the earliest unplayed playable row when compatibility candidates are exhausted', () => {
+		const { pickNextStableId } = mod;
+		assert.equal(
+			pickNextStableId({
+				playlist: [row('source', '8A', 120), row('incompatible', '1A', 90), row('broken', '8A', 122, false)],
+				current_stable_id: 'source',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: false,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
+			}),
+			'incompatible'
+		);
+	});
+
 	it('enforce order: next membership row after current, skipping played/excluded', () => {
 		const { pickNextStableId } = mod;
 		assert.equal(
@@ -248,6 +266,11 @@ describe('auto-play track pick', () => {
 			}),
 			'd'
 		);
+		// Pin 0e5fa1 (playlist switch) deliberately supersedes the previous
+		// "unknown current id => null" contract. The deck's playing track is
+		// NOT a member of the playlist the user just switched to, and stopping
+		// there is exactly the stall that left the old playlist's queue in
+		// charge. Enforced order now resumes at the head of the new playlist.
 		assert.equal(
 			pickNextStableId({
 				playlist,
@@ -260,7 +283,23 @@ describe('auto-play track pick', () => {
 				min_tempo_ratio: 0.84,
 				max_tempo_ratio: 1.16
 			}),
-			null
+			'a',
+			'when the source is absent after a playlist switch, ordered mode begins at the new feed start'
+		);
+		assert.equal(
+			pickNextStableId({
+				playlist: [row('first', '8A', 120), row('last', '8A', 122)],
+				current_stable_id: 'last',
+				current_key: '8A',
+				current_bpm: 122,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: true,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
+			}),
+			null,
+			'ordered playback never wraps after the true final membership row'
 		);
 	});
 
@@ -333,7 +372,8 @@ describe('auto-play track pick', () => {
 			}),
 			'd'
 		);
-		// nothing left in range
+		// No compatible rows remain; keep playback moving with the first
+		// unplayed row, as requested by pin 2e6a9258927c.
 		assert.equal(
 			pickNextStableId({
 				playlist,
@@ -346,7 +386,60 @@ describe('auto-play track pick', () => {
 				min_tempo_ratio: 0.84,
 				max_tempo_ratio: 1.16
 			}),
-			null
+			'c'
+		);
+	});
+
+	it('pin 0a047b: smart mode continues from the loaded track\'s own position, never the list top', () => {
+		// the maintainer, pin 0a047b8a4e4d: a double-clicked (instant-loaded) track must
+		// have its successor computed from ITS position in the current view,
+		// not from row 0 onward. Every row here is mutually compatible (same
+		// key, same BPM), so the ONLY thing that can decide the pick is
+		// position - if 'early' (unplayed, sits before 'mid') is ever picked
+		// over 'late' (sits after 'mid'), AutoPlay just walked back to the top
+		// of the list instead of continuing from the loaded track.
+		const { pickNextStableId } = mod;
+		const viewOrder = [row('early', '8A', 120), row('mid', '8A', 120), row('late', '8A', 120)];
+		for (const maximize_reach of [false, true]) {
+			assert.equal(
+				pickNextStableId({
+					playlist: viewOrder,
+					current_stable_id: 'mid',
+					current_key: '8A',
+					current_bpm: 120,
+					exclude_ids: new Set(),
+					played_ids: new Set(),
+					enforce_play_order: false,
+					maximize_reach,
+					min_tempo_ratio: 0.84,
+					max_tempo_ratio: 1.16
+				}),
+				'late',
+				`maximize_reach=${maximize_reach}: must continue forward from 'mid', not back to 'early'`
+			);
+		}
+	});
+
+	it('pin 0a047b: smart mode wraps to a row before the loaded track only when nothing compatible follows it', () => {
+		// The forward-first rule must not turn into a dead end: if nothing
+		// after the loaded track is compatible, AutoPlay still has to keep
+		// playing rather than stall, so it falls back to a compatible row
+		// before it.
+		const { pickNextStableId } = mod;
+		const viewOrder = [row('before', '8A', 120), row('mid', '8A', 120), row('after', '1A', 120)];
+		assert.equal(
+			pickNextStableId({
+				playlist: viewOrder,
+				current_stable_id: 'mid',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: false,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
+			}),
+			'before'
 		);
 	});
 
@@ -357,7 +450,7 @@ describe('auto-play track pick', () => {
 		assert.equal(bpmWithinPhaseLockRange(60, 120, 0.84, 1.16), false);
 	});
 
-	it('publishes browser feed getters; epoch only on membership identity change', () => {
+	it('publishes browser feed getters; epoch follows playlist scope and membership identity', () => {
 		const {
 			setAutoPlayTrackFeed,
 			getAutoPlayPlaylist,
@@ -365,17 +458,26 @@ describe('auto-play track pick', () => {
 			getAutoPlayFeedEpoch
 		} = mod;
 		const before = getAutoPlayFeedEpoch();
-		setAutoPlayTrackFeed([
+		setAutoPlayTrackFeed('playlist-a', [
 			{ stable_id: 'p1', key: '1A', bpm: 120, file_exists: true },
 			{ stable_id: 'p2', key: '2A', bpm: 124, file_exists: false }
 		]);
 		const afterId = getAutoPlayFeedEpoch();
 		assert.equal(afterId > before, true);
-		setAutoPlayTrackFeed([
+		setAutoPlayTrackFeed('playlist-a', [
 			{ stable_id: 'p1', key: '9A', bpm: 128, file_exists: true },
 			{ stable_id: 'p2', key: '2A', bpm: 124, file_exists: true }
 		]);
 		assert.equal(getAutoPlayFeedEpoch(), afterId);
+		setAutoPlayTrackFeed('playlist-b', [
+			{ stable_id: 'p1', key: '9A', bpm: 128, file_exists: true },
+			{ stable_id: 'p2', key: '2A', bpm: 124, file_exists: true }
+		]);
+		assert.equal(
+			getAutoPlayFeedEpoch() > afterId,
+			true,
+			'a different playlist with identical ordered members must advance the feed epoch'
+		);
 		assert.deepEqual(
 			[...getAutoPlayPlaylist()],
 			[
@@ -384,6 +486,80 @@ describe('auto-play track pick', () => {
 			]
 		);
 		assert.deepEqual([...getAutoPlayPlaylistIds()], ['p1', 'p2']);
+	});
+});
+
+describe('auto-play fold-lock preference', () => {
+	const wide = { min_tempo_ratio: 0.84, max_tempo_ratio: 1.16 };
+
+	function pickInput(playlist, current, key, bpm, extra = {}) {
+		return {
+			playlist,
+			current_stable_id: current,
+			current_key: key,
+			current_bpm: bpm,
+			exclude_ids: new Set(),
+			played_ids: new Set(),
+			enforce_play_order: false,
+			...wide,
+			...extra
+		};
+	}
+
+	function assertBoth(playlist, current, key, bpm, expected, bounds = wide) {
+		const { pickNextStableId } = chain;
+		assert.equal(
+			pickNextStableId(pickInput(playlist, current, key, bpm, { maximize_reach: false, ...bounds })),
+			expected
+		);
+		assert.equal(
+			pickNextStableId(pickInput(playlist, current, key, bpm, { maximize_reach: true, ...bounds })),
+			expected
+		);
+	}
+
+	it('tempoLockClass table: exact, fold, and still-not-a-lock pairs', () => {
+		const { tempoLockClass } = chain;
+		assert.equal(tempoLockClass(120, 120, 0.84, 1.16), 'exact');
+		assert.equal(tempoLockClass(64, 128, 0.84, 1.16), 'fold');
+		assert.equal(tempoLockClass(256, 128, 0.84, 1.16), 'fold');
+		assert.equal(tempoLockClass(160, 120, 0.84, 1.16), null);
+		assert.equal(tempoLockClass(220, 128, 0.84, 1.16), null);
+	});
+
+	it('exact always wins even when a fold sits earlier in membership', () => {
+		const playlist = [row('cur', '8A', 128), row('fold', '8A', 64), row('exact', '8A', 124)];
+		assertBoth(playlist, 'cur', '8A', 128, 'exact');
+	});
+
+	it('fold when nothing exact: 128→64 and 128→256', () => {
+		assertBoth([row('cur', '8A', 128), row('half', '8A', 64)], 'cur', '8A', 128, 'half');
+		assertBoth([row('cur', '8A', 128), row('double', '8A', 256)], 'cur', '8A', 128, 'double');
+	});
+
+	it('still not a lock: 160 vs 120, 220 vs 128, 40 vs 128', () => {
+		assertBoth([row('cur', '8A', 120), row('off', '8A', 160)], 'cur', '8A', 120, null);
+		assertBoth([row('cur', '8A', 128), row('demo4', '8A', 220)], 'cur', '8A', 128, null);
+		assertBoth([row('cur', '8A', 128), row('low', '8A', 40)], 'cur', '8A', 128, null);
+	});
+
+	it('key still gates folds', () => {
+		assertBoth([row('cur', '8A', 128), row('wrong', '2A', 64)], 'cur', '8A', 128, null);
+	});
+
+	it('pitch range still hard: 70 vs 128 folds at ±16% and misses at ±8%', () => {
+		const { tempoBoundsFromPitchRange } = mod;
+		const at16 = tempoBoundsFromPitchRange(16);
+		const at8 = tempoBoundsFromPitchRange(8);
+		const playlist = [row('cur', '8A', 128), row('seventy', '8A', 70)];
+		assertBoth(playlist, 'cur', '8A', 128, 'seventy', {
+			min_tempo_ratio: at16.min,
+			max_tempo_ratio: at16.max
+		});
+		assertBoth(playlist, 'cur', '8A', 128, null, {
+			min_tempo_ratio: at8.min,
+			max_tempo_ratio: at8.max
+		});
 	});
 });
 
@@ -429,6 +605,39 @@ describe('auto-play maximize reach (slack path)', () => {
 		);
 	});
 
+	it('Warnsdorff unchanged when a fold row sits beside exact matches', () => {
+		const { pickNextStableId } = mod;
+		const withFold = [...strand, row('fold64', '8A', 64)];
+		assert.equal(
+			pickNextStableId({
+				playlist: withFold,
+				current_stable_id: 'a',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: false,
+				maximize_reach: false,
+				...tight
+			}),
+			'b'
+		);
+		assert.equal(
+			pickNextStableId({
+				playlist: withFold,
+				current_stable_id: 'a',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: false,
+				maximize_reach: true,
+				...tight
+			}),
+			'c'
+		);
+	});
+
 	it('simulated chain: slack last track is last accessible; longer than greedy', () => {
 		const { simulateAutoPlayChain } = mod;
 		const greedy = simulateAutoPlayChain({
@@ -449,6 +658,62 @@ describe('auto-play maximize reach (slack path)', () => {
 		assert.deepEqual([...slack], ['a', 'c', 'd']);
 		assert.equal(slack[slack.length - 1], 'd');
 		assert.equal(slack.length > greedy.length, true);
+	});
+
+	it('charted replay includes the live fallback after compatible tracks are exhausted', () => {
+		for (const [maximize_reach, expected] of [
+			[false, ['a', 'b', 'c', 'd']],
+			[true, ['a', 'c', 'd', 'b']]
+		]) {
+			const result = mod.simulateAutoPlayChain({
+				playlist: strand,
+				start_stable_id: 'a',
+				enforce_play_order: false,
+				maximize_reach,
+				select_next: mod.pickNextStableId,
+				...tight
+			});
+			assert.deepEqual([...result], expected);
+			assert.equal(new Set(result).size, result.length, 'fallback must never repeat a row');
+		}
+	});
+
+	it('charted fallback retains exclusions, played rows, and the visible horizon', () => {
+		const input = {
+			playlist: strand,
+			start_stable_id: 'a',
+			enforce_play_order: false,
+			maximize_reach: false,
+			select_next: mod.pickNextStableId,
+			...tight
+		};
+		assert.deepEqual([...mod.simulateAutoPlayChain({
+			...input, exclude_ids: new Set(['c']), played_ids: new Set(['d'])
+		})], ['a', 'b']);
+		assert.deepEqual([...mod.simulateAutoPlayChain({ ...input, max_chain_length: 3 })], ['a', 'b', 'c']);
+		assert.deepEqual([...mod.simulateAutoPlayChain({ ...input, enforce_play_order: true })], ['a', 'b', 'c', 'd']);
+	});
+
+	it('charts a switched playlist from the external source metadata', () => {
+		const result = chain.simulateAutoPlayChain({
+			playlist: [row('b', '8A', 120), row('c', '8A', 120)],
+			start_stable_id: 'external', start_key: '8A', start_bpm: 120,
+			enforce_play_order: false, maximize_reach: false,
+			min_tempo_ratio: 0.84, max_tempo_ratio: 1.16
+		});
+		assert.deepEqual([...result], ['external', 'b', 'c']);
+	});
+
+	it('never substitutes external-source metadata for an existing unknown row', () => {
+		for (const [key, bpm] of [[null, 120], ['8A', null]]) {
+			const result = chain.simulateAutoPlayChain({
+				playlist: [row('source', key, bpm), row('b', '8A', 120)],
+				start_stable_id: 'source', start_key: '8A', start_bpm: 120,
+				enforce_play_order: false, maximize_reach: false,
+				min_tempo_ratio: 0.84, max_tempo_ratio: 1.16
+			});
+			assert.deepEqual([...result], ['source']);
+		}
 	});
 
 	it('no-stranding fixture: greedy and slack produce identical order', () => {
@@ -536,32 +801,104 @@ describe('auto-play Beat Sync handoff policy', () => {
 		);
 	});
 
-	it('never auto-selects BEAT; toast points at BAR pitch window or BEAT tip', () => {
+	// The error this toast formats is DERIVED from the real planner, never
+	// hand-written. The previous version built the string it wanted to see,
+	// which is how it went on asserting a "Select BEAT mode for half/double"
+	// branch for a message `computeFollowerSyncPlan` had stopped being able to
+	// produce: pin 9bf12adccb45 made BAR fold rather than throw in that case,
+	// so the only surviving BAR throw is pitch-range exhaustion. A synthetic
+	// fixture cannot notice that. Blinded review, Thu 10 Sep 2026.
+	it('formats the toast from the error the real planner actually throws', async () => {
 		const { formatAutoPlaySyncSkipToast } = mod;
-		const outOfRange = formatAutoPlaySyncSkipToast({
+		const math = await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts');
+		const grid = (bpm, count) => {
+			const beats = [];
+			let t = 0;
+			for (let index = 0; index < count; index++) {
+				beats.push({ n: (index % 4) + 1, bpm, t });
+				t += 60 / bpm;
+			}
+			return beats;
+		};
+		// 128 against 40 is out of range raw (3.2), halved (1.6) and doubled
+		// (6.4), so no normalization rescues it and BAR has nothing to fold to.
+		let planError = null;
+		try {
+			math.computeFollowerSyncPlan({
+				masterGrid: grid(128, 400),
+				followerGrid: grid(40, 400),
+				masterPositionAtSyncSec: 20,
+				followerPositionSec: 20,
+				currentContextTimeSec: 0.5,
+				syncAtContextTimeSec: 1,
+				masterTempoRatio: 1,
+				minFollowerTempoRatio: 0.84,
+				maxFollowerTempoRatio: 1.16,
+				mode: 'bar'
+			});
+		} catch (error) {
+			planError = error.message;
+		}
+		assert.ok(planError !== null, 'a 128:40 pair must still be refused outright');
+		// Guard against the trap this test fell into while being written: an
+		// incomplete request throws a RangeError from argument validation, and
+		// every assertion below would then be inspecting the wrong message
+		// while looking green.
+		assert.match(
+			planError,
+			/no phase-capable bar anchor/,
+			`the refusal must be the real pitch-range one, not a validation error: ${planError}`
+		);
+		// The load-bearing assertion, and the one the deleted branch needed:
+		// BAR's surviving refusal carries no `tempoNormalization` substring, so
+		// a tip branching on it could never fire.
+		assert.doesNotMatch(
+			planError,
+			/tempoNormalization/,
+			"BAR's only remaining refusal must not mention normalization - if it does, " +
+				'the half/double tip removed from formatAutoPlaySyncSkipToast belongs back'
+		);
+
+		const toast = formatAutoPlaySyncSkipToast({
 			follower_deck: 2,
 			mode: 'bar',
-			plan_error:
-				'follower grid has no phase-capable bar anchor with tempo ratio within [0.84, 1.16] for beat n=2',
+			plan_error: planError,
 			min_ratio: 0.84,
 			max_ratio: 1.16
 		});
-		assert.match(outOfRange, /Beat Sync skipped \(bar\)/);
-		assert.match(outOfRange, /BAR needs a twin within pitch range/);
-		assert.doesNotMatch(outOfRange, /Select BEAT mode/);
+		assert.match(toast, /Beat Sync skipped \(bar\)/);
+		assert.match(toast, /BAR needs a twin within pitch range \[0.84, 1.16\]/);
+		assert.doesNotMatch(toast, /Select BEAT mode/);
+		assert.doesNotMatch(toast, /auto-switch/);
+	});
 
-		const halfDouble = formatAutoPlaySyncSkipToast({
-			follower_deck: 3,
-			mode: 'bar',
-			plan_error:
-				'strict BAR sync requires tempoNormalization=1 to preserve raw PQTZ cadence; ' +
-				'the available anchor requires tempoNormalization=0.5. ' +
-				'Select BEAT mode for half/double tempo matching or widen the follower tempo range.',
-			min_ratio: 0.84,
-			max_ratio: 1.16
+	// The other half of the same claim: a pair that CAN fold no longer reaches
+	// this toast at all, because BAR locks it instead of throwing.
+	it('a foldable pair never reaches the skip toast, because BAR locks it', async () => {
+		const math = await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts');
+		const grid = (bpm, count) => {
+			const beats = [];
+			let t = 0;
+			for (let index = 0; index < count; index++) {
+				beats.push({ n: (index % 4) + 1, bpm, t });
+				t += 60 / bpm;
+			}
+			return beats;
+		};
+		const plan = math.computeFollowerSyncPlan({
+			masterGrid: grid(128, 400),
+			followerGrid: grid(64, 400),
+			masterPositionAtSyncSec: 20,
+			followerPositionSec: 20,
+			currentContextTimeSec: 0.5,
+			syncAtContextTimeSec: 1,
+			masterTempoRatio: 1,
+			minFollowerTempoRatio: 0.84,
+			maxFollowerTempoRatio: 1.16,
+			mode: 'bar'
 		});
-		assert.match(halfDouble, /Select BEAT mode for half\/double/);
-		assert.doesNotMatch(halfDouble, /auto-switch/);
+		assert.equal(plan.mode, 'bar');
+		assert.equal(plan.tempoNormalization, 0.5, '128 against 64 must lock as a half-tempo fold');
 	});
 });
 
@@ -771,6 +1108,7 @@ describe('auto-play live-set replay (bugs 1 and 2, Mon 31 Aug 2026)', () => {
 			max_tempo_ratio: 1.16
 		});
 		if (next === null) {
+			if (state.playlist.length === 0) return null;
 			state.triggeredFor = source.stable_id;
 			return null;
 		}

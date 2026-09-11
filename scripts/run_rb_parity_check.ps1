@@ -84,20 +84,10 @@ if (Test-Path -LiteralPath $PytestBaseTemp) {
     Remove-Item -LiteralPath $PytestBaseTemp -Recurse -Force
 }
 
-$FocusedTests = @(
-    "tests/reconcile/test_prefix_dead_playlists.py",
-    "tests/shared/test_rekordbox_db.py",
-    "tests/test_progress_interprocess.py",
-    "tests/test_rb_assets.py",
-    "tests/webui"
-)
-# Keep the real-process progress lock coverage in this Windows gate. The wider
-# tests/test_progress.py and test_codex_followups_c.py suites remain in general
-# Python CI because their unrelated ledger/Spotify/USB coverage is slow here.
 $PytestArgs = @(
-    "-m", "pytest", "-q", "--no-coverage-matrix",
+    "-m", "pytest", "-q", "-m", "rb_parity", "--no-coverage-matrix",
     "--basetemp", $PytestBaseTemp
-) + $FocusedTests
+)
 
 Invoke-Checked -Label "focused Python parity tests" -Executable $PythonExe `
     -CommandArgs $PytestArgs -WorkingDirectory $RepoRoot

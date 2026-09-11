@@ -1,0 +1,14 @@
+[
+  {
+    "t": "2026-08-31T22:59:20.100Z",
+    "kind": "audio-context",
+    "deck": null,
+    "message": "sample_rate_hz=48000 ...",
+    "stages": {
+      "sample_rate_hz": 48000,
+      "base_latency_ms": 5.333,
+      "output_latency_ms": 21.333,
+      "context_running": 1
+    }
+  }
+]

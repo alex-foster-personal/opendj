@@ -36,7 +36,7 @@
  *     [if] it resolves successfully with no shell [then ⛔️] broken
  */
 
-import { API_BASE } from '$lib/api/client';
+import { API_BASE } from '$lib/api/base';
 
 /** The route the engine serves. Spelled once. */
 export const UPDATE_CHECK_PATH = '/api/v1/update/check';

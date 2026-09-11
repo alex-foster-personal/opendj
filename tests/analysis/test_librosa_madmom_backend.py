@@ -11,22 +11,71 @@ half / double tempo ambiguity it sometimes falls into.
 """
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from apps.analysis.backends import get_backend
+from apps.analysis.backends import NONSHIPPABLE_ENV, get_backend
 from apps.analysis.backends.base import TrackTooLong
 from apps.analysis.backends.librosa import _energy_from_rms_dbfs, _estimate_key
 from apps.analysis.backends.librosa_madmom import LibrosaMadmomBackend
 from apps.analysis.record import AnalysisRecord
 
+REPO_ROOT: Path = Path(__file__).resolve().parents[2]
+
+_GET_MADMOM_BACKEND_PROBE = """
+import json
+from apps.analysis.backends import get_backend
+from apps.analysis.backends.base import BackendNonshippable
+try:
+    backend = get_backend("librosa+madmom")
+    print(json.dumps({"ok": True, "name": backend.name}))
+except BackendNonshippable as exc:
+    print(json.dumps({"ok": False, "message": str(exc)}))
+"""
+
+
+def _resolve_madmom_backend_in_subprocess(env: dict[str, str]) -> dict[str, object]:
+    """Exercise the real registry in its own process -- AGENTS.md's
+    fail-closed test contract bans monkeypatching, so the flag must be a
+    genuine subprocess environment variable, never an in-process patch."""
+    proc = subprocess.run(
+        [sys.executable, "-c", _GET_MADMOM_BACKEND_PROBE],
+        capture_output=True, text=True, cwd=REPO_ROOT, env=env, timeout=60, check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout.strip().splitlines()[-1])
+
 
 @pytest.mark.requirement("META-01")
 def test_registry_has_both_backends() -> None:
-    assert get_backend("librosa+madmom").name == "librosa+madmom"
+    result = _resolve_madmom_backend_in_subprocess({**os.environ, NONSHIPPABLE_ENV: "1"})
+    assert result == {"ok": True, "name": "librosa+madmom"}
     assert get_backend("mik").name == "mik"
+
+
+@pytest.mark.requirement("NATIVE-08")
+def test_registry_refuses_madmom_without_the_flag_and_names_the_license() -> None:
+    env = {k: v for k, v in os.environ.items() if k != NONSHIPPABLE_ENV}
+    result = _resolve_madmom_backend_in_subprocess(env)
+    assert result["ok"] is False
+    assert "CC BY-NC-SA" in str(result["message"])
+    assert "MDT_BENCH_NONSHIPPABLE" in str(result["message"])
+
+
+@pytest.mark.requirement("NATIVE-08")
+@pytest.mark.parametrize("value", ["0", "false", "", "no"])
+def test_registry_refuses_madmom_on_any_falsy_flag_value(value: str) -> None:
+    """[if] the flag is set to anything other than the literal "1" [then]
+    the registry still refuses, [else stop] -- "0", "false" and "" must not
+    be read as opt-in."""
+    result = _resolve_madmom_backend_in_subprocess({**os.environ, NONSHIPPABLE_ENV: value})
+    assert result["ok"] is False
 
 
 @pytest.mark.requirement("META-01")

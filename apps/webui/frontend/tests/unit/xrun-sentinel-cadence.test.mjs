@@ -218,6 +218,14 @@ test('a healthy device cadence reports zero xruns, whatever its buffer size', ()
 	}
 });
 
+test('a healthy device cadence reports callbacks for the live liveness tier', () => {
+	const observed = runSentinel(healthyCadenceGapsMs(DEVICES[0], 800), shippedThresholdMs(DEVICES[0]));
+	assert.ok(
+		observed.reports.some((report) => report.callbacks > 0 && report.xruns === 0 && report.parked === 0),
+		'if a healthy sentinel posts no callback count then LIVE-01 cannot distinguish it from a stalled worklet'
+	);
+});
+
 test('the live Wed 2 Sep 2026 report is reproduced exactly, so the fixture is honest', () => {
 	// Not an acceptance criterion - a proof that the stream above IS the machine
 	// that failed, rather than a scenario invented to make a point. If this stops

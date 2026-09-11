@@ -63,3 +63,5 @@ def test_macos_and_tmux_argv_are_literal() -> None:
     assert new_session[-1] == backend
     assert new_window[:5] == ["tmux", "new-window", "-t", session, "-n"]
     assert new_window[-1] == frontend
+
+pytestmark = pytest.mark.rb_parity

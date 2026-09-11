@@ -14,6 +14,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from apps.feature_flags import load_flags
+from apps.feature_flags.profiles import BUILD_PROFILE_ENV, STORE_PROFILE
+from apps.shared.sandbox import STORE_BUILD_REFUSAL_CODE, STORE_BUILD_REFUSAL_TITLE
 from apps.sync.usb.pioneer import export_workflow as workflow
 from apps.sync.usb.pioneer import writer_rbox
 from apps.webui.server.app import create_app
@@ -22,7 +25,7 @@ from tests.fixtures.conftest import resolve_required_fixture
 
 # Live-write MECHANICS against tmp fixtures: runs with the one-way rekordbox
 # import gate ON (root conftest reads the marker). Never a real rb target.
-pytestmark = [pytest.mark.requirement("CAT-06"), pytest.mark.rekordbox_writeback]
+pytestmark = [pytest.mark.requirement("CAT-06"), pytest.mark.rekordbox_writeback, pytest.mark.rb_parity]
 
 
 def _fixture_db() -> Path:
@@ -85,9 +88,12 @@ def target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    monkeypatch.delenv("MDT_BUILD_PROFILE", raising=False)
+    monkeypatch.delenv("MDT_FEATURE_FLAGS_FILE", raising=False)
     app = FastAPI()
     app.include_router(usb_export.router, prefix="/api/v1")
+    app.state.feature_flags = load_flags(tmp_path / "data")
     return TestClient(app)
 
 
@@ -109,6 +115,22 @@ def test_production_app_registers_all_usb_export_contracts() -> None:
     assert "/api/v1/usb-export/plan" in paths
     assert "/api/v1/usb-export/apply" in paths
     assert "/api/v1/usb-export/readback" in paths
+
+
+def test_the_legacy_app_always_wires_a_flag_store() -> None:
+    """SAND-01 review round 2 (Finding A): the real daemon entry point
+    (``python -m apps.webui.server``, ``apps.webui.server.app:create_process_app``)
+    never passes through ``apps.engine_core.app.create_app``, so it is the
+    ONLY place that ever calls this legacy ``create_app()``. If it did not
+    wire ``app.state.feature_flags`` itself, every USB route's fail-fast gate
+    would turn into a 500 on every request in that real daemon, not just
+    under the App Store profile.
+    """
+    from apps.feature_flags import FlagStore
+
+    app = create_app(mount_frontend=False)
+    assert isinstance(app.state.feature_flags, FlagStore)
+    assert app.state.feature_flags.enabled("usb.export") is True
 
 
 def test_http_plan_apply_readback_matches_core_schema(
@@ -176,3 +198,139 @@ def test_standalone_openapi_lists_all_workflow_operations(client: TestClient) ->
     assert "/api/v1/usb-export/plan" in paths
     assert "/api/v1/usb-export/apply" in paths
     assert "/api/v1/usb-export/readback" in paths
+
+
+# ----- SAND-01/Thread-1: the flag actually gates this route ---------------
+def test_appstore_profile_refuses_plan_before_touching_a_template(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A store build's ONLY production read of usb.export used to be the
+    /flags disclosure. This route never consulted app.state.feature_flags,
+    so the "disabled" capability stayed callable under MDT_BUILD_PROFILE
+    =appstore. The refusal must fire before the route ever opens the
+    template path, so a nonexistent template proves nothing was reached
+    downstream of the gate.
+    """
+    monkeypatch.delenv("MDT_FEATURE_FLAGS_FILE", raising=False)
+    monkeypatch.setenv(BUILD_PROFILE_ENV, STORE_PROFILE)
+    app = FastAPI()
+    app.include_router(usb_export.router, prefix="/api/v1")
+    app.state.feature_flags = load_flags(tmp_path / "data")
+    with TestClient(app) as appstore_client:
+        response = appstore_client.post(
+            "/api/v1/usb-export/plan",
+            json={
+                "template_path": str(tmp_path / "does-not-exist.db"),
+                "target_root": str(tmp_path / "target"),
+                "playlists": [],
+                "track_updates": [],
+            },
+        )
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["code"] == STORE_BUILD_REFUSAL_CODE
+    assert detail["ui_title"] == STORE_BUILD_REFUSAL_TITLE
+    assert "usb.export" in detail["message"]
+
+
+def test_full_profile_still_reaches_the_workflow_for_a_bad_template(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control: an unrelated failure (a template that does not exist)
+    must not be reported as the store-build refusal. If the gate keyed on
+    anything broader than usb.export's resolved value, this would come back
+    503/usb_export_disabled_in_this_build instead of the workflow's own
+    error, hiding a real bug behind the fourth refusal.
+    """
+    monkeypatch.delenv("MDT_BUILD_PROFILE", raising=False)
+    monkeypatch.delenv("MDT_FEATURE_FLAGS_FILE", raising=False)
+    app = FastAPI()
+    app.include_router(usb_export.router, prefix="/api/v1")
+    app.state.feature_flags = load_flags(tmp_path / "data")
+    with TestClient(app) as full_client:
+        response = full_client.post(
+            "/api/v1/usb-export/plan",
+            json={
+                "template_path": str(tmp_path / "does-not-exist.db"),
+                "target_root": str(tmp_path / "target"),
+                "playlists": [],
+                "track_updates": [],
+            },
+        )
+    assert response.status_code != 503 or (
+        response.json()["detail"].get("code") != "usb_export_disabled_in_this_build"
+    )
+
+
+_STUB_PLAN = {
+    "plan_id": "plan-1",
+    "schema_version": 1,
+    "scope": "onelibrary_overlay_only",
+    "template_path": "/nonexistent/template.db",
+    "template_sha256": "0" * 64,
+    "target_root": "/nonexistent/target",
+    "volume_label": "STUB",
+    "volume_uuid": "stub-uuid",
+    "authorization_id": "stub-auth",
+    "output_relative_path": "PIONEER/rekordbox/export.db",
+    "playlists": [],
+    "track_updates": [],
+}
+
+
+def test_apply_reports_the_same_store_refusal_as_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SAND-01 review round 2 (Finding B): apply() used to check the
+    writeback gate BEFORE usb.export, so a store build with the shipped
+    default (writeback also off) reported the one-way-import 403 instead of
+    the SAME fourth refusal plan/readback report for the identical disabled
+    capability. usb.export must be checked first so every disabled USB
+    operation is refused for the SAME reason.
+    """
+    monkeypatch.delenv("MDT_FEATURE_FLAGS_FILE", raising=False)
+    monkeypatch.setenv(BUILD_PROFILE_ENV, STORE_PROFILE)
+    monkeypatch.delenv("MDT_REKORDBOX_WRITEBACK_ENABLED", raising=False)
+    app = FastAPI()
+    app.include_router(usb_export.router, prefix="/api/v1")
+    app.state.feature_flags = load_flags(tmp_path / "data")
+    with TestClient(app) as appstore_client:
+        response = appstore_client.post(
+            "/api/v1/usb-export/apply",
+            json={"plan": _STUB_PLAN, "confirmation": "plan-1"},
+        )
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["code"] == STORE_BUILD_REFUSAL_CODE
+    assert detail["ui_title"] == STORE_BUILD_REFUSAL_TITLE
+
+
+def test_a_local_override_refuses_apply_without_blaming_the_sandbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SAND-01 review round 2 (Finding C): usb.export off via an explicit
+    MDT_FEATURE_FLAGS_FILE on the FULL profile is this machine's own
+    decision, not Apple's sandbox, so the refusal must carry no App Store
+    sentence -- unlike the appstore-profile case above.
+    """
+    monkeypatch.delenv(BUILD_PROFILE_ENV, raising=False)
+    flags_file = tmp_path / "feature-flags.json"
+    flags_file.write_text('{"usb.export": false}', encoding="utf-8")
+    monkeypatch.setenv("MDT_FEATURE_FLAGS_FILE", str(flags_file))
+    app = FastAPI()
+    app.include_router(usb_export.router, prefix="/api/v1")
+    app.state.feature_flags = load_flags(tmp_path / "data")
+    with TestClient(app) as overridden_client:
+        response = overridden_client.post(
+            "/api/v1/usb-export/plan",
+            json={
+                "template_path": str(tmp_path / "does-not-exist.db"),
+                "target_root": str(tmp_path / "target"),
+                "playlists": [],
+                "track_updates": [],
+            },
+        )
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["code"] == "usb_export_disabled_in_this_build"
+    assert detail.get("ui_title") is None

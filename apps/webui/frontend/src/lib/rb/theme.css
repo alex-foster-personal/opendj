@@ -9,9 +9,17 @@
 	--rb-bg: #0d0f12;            /* near-black window background */
 	--rb-panel: #14171d;         /* panel surface, slightly lighter */
 	--rb-panel-raised: #1a1e25;  /* raised chrome (buttons, chips) */
+	--rb-waverow-secondary: #1a1f28; /* decks 3/4 waveform row and canvas fill;
+	                                    lighter than --rb-bg so 1/2 keep the eye */
 	--rb-border: #23282f;        /* panel dividers */
 	--rb-text: #c8cdd2;          /* primary text */
-	--rb-text-dim: #7a8088;      /* dim/secondary text */
+	--rb-text-dim: #838990;      /* dim/secondary text - lightened from #7a8088
+	                                Thu 4 Sep 2026 (colour-contrast validator,
+	                                pin 5503680a4e0f): on --rb-panel-raised
+	                                (fb-btn, rb-lit-button) the old value
+	                                measured 4.195:1, under the 4.5:1 AA body
+	                                floor every other text/surface pairing
+	                                already met */
 	--rb-accent: #2f6fd6;        /* active-blue: toggles, faders, lit buttons */
 	--rb-accent-glow: rgba(47, 111, 214, 0.55); /* lit-button glow */
 	--rb-green: #35c04f;         /* loaded-track rows, loop-out chip */
@@ -46,10 +54,56 @@
 	user-select: none;
 }
 
+/* Warm light palette. Every foreground/background token pair is AA at the
+ * token level: --rb-text on --rb-bg/panel and --rb-text-dim on --rb-bg meet
+ * 4.5:1. User scheme overrides must preserve those pairs, rather than adding
+ * component-local colours that can become unreadable. */
+html[data-theme='light'] .perf-root {
+	--rb-bg: #f7f3eb;
+	--rb-panel: #fffdf8;
+	--rb-panel-raised: #eee8dd;
+	--rb-waverow-secondary: #fffdf8; /* same role as dark: lighter than --rb-bg
+	                                    so 3/4 recede; light --rb-panel hex */
+	--rb-border: #b8b0a3;
+	--rb-text: #27241f;
+	--rb-text-dim: #5d574e;
+	--rb-accent: #175ea8;
+	--rb-accent-glow: rgba(23, 94, 168, 0.35);
+	--rb-green: #1d7035;
+	--rb-orange: #a44b11;
+	--rb-wave-mid: #2166b1;
+	--rb-wave-high: #3a4653;
+	--rb-red: #ad2420;
+	--rb-yellow: #927000;
+	--rb-select: #d6e5f5;
+}
+
 /* -------- panel chrome -------- */
 .perf-root .rb-panel {
 	background: var(--rb-panel);
 	border: 1px solid var(--rb-border);
+}
+
+/* Deck warning chrome follows the jog's engine-derived audible warning.
+ * Sharing its rendered state avoids a second set of sync thresholds. */
+.perf-root .rb-deck:has(.jog-off-tempo)::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: 5;
+	pointer-events: none;
+	background: var(--rb-red, #d0342c);
+	opacity: 0.07;
+	animation: deck-tempo-warning 1.6s ease-in-out infinite alternate;
+}
+@keyframes deck-tempo-warning {
+	from { opacity: 0.025; }
+	to { opacity: 0.1; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.perf-root .rb-deck:has(.jog-off-tempo)::before {
+		animation: none;
+	}
 }
 
 /* -------- knob: dark ring + blue indicator line (rotate the indicator
@@ -161,7 +215,9 @@
 /* -------- star rating: outline stars per SCREENSHOT-SPEC 6 -------- */
 .perf-root .rb-star {
 	color: #3a3f46;
-	font-size: var(--rb-fs-browser);
+	/* Set by the rating cell when the column is too narrow for five stars at
+	 * full size; falls back to normal browser text everywhere else. */
+	font-size: var(--rb-star-size, var(--rb-fs-browser));
 	line-height: 1;
 	transition: color 60ms linear;
 }
@@ -184,4 +240,25 @@
 }
 .perf-root .rb-row-selected {
 	background: var(--rb-select); /* blue full-row highlight */
+}
+
+/* -------- finished-track eject: overlaid on the waveform once the transport
+ * has actually settled at silence, reusing WaveRow's own unload dispatcher -------- */
+.perf-root .rb-waverow .finished-eject {
+	position: absolute;
+	left: calc(50% + 10px);
+	top: 50%;
+	transform: translateY(-50%);
+	max-width: calc(50% - 18px);
+	z-index: 2;
+	padding: 4px 8px;
+	color: var(--rb-text);
+	background: var(--rb-panel);
+	border: 1px solid var(--rb-border);
+	border-radius: 3px;
+	font-size: var(--rb-fs-label);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	cursor: pointer;
 }

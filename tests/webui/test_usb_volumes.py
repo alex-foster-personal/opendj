@@ -15,14 +15,29 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from apps.feature_flags import FlagRefusal, load_flags
+from apps.feature_flags.profiles import BUILD_PROFILE_ENV, STORE_PROFILE
+from apps.shared.sandbox import STORE_BUILD_REFUSAL_CODE, STORE_BUILD_REFUSAL_TITLE
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.routes import usb_volumes as usb_mod
 from apps.webui.server.routes import usb_volumes_sim as sim_mod
+from apps.webui.server.routes.usb_gate import UsbExportGate
 from apps.webui.server.routes.usb_volumes import (
     classify_mount,
     classify_role,
     hide_reason_for,
+)
+
+_ENABLED_GATE = UsbExportGate(flag_enabled=True, refusal=None)
+_DISABLED_LOCALLY_GATE = UsbExportGate(flag_enabled=False, refusal=None)
+_DISABLED_BY_STORE_PROFILE_GATE = UsbExportGate(
+    flag_enabled=False,
+    refusal=FlagRefusal(
+        code=STORE_BUILD_REFUSAL_CODE,
+        message="usb.export is off in this build.",
+        ui_title=STORE_BUILD_REFUSAL_TITLE,
+    ),
 )
 
 
@@ -46,10 +61,13 @@ def _make_app(*, simulation: bool, monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    monkeypatch.delenv("MDT_BUILD_PROFILE", raising=False)
+    monkeypatch.delenv("MDT_FEATURE_FLAGS_FILE", raising=False)
     data_dir = tmp_path / "data"
     (data_dir / "state").mkdir(parents=True)
     app = _make_app(simulation=True, monkeypatch=monkeypatch)
     app.state.data_dir = data_dir
+    app.state.feature_flags = load_flags(data_dir)
     with TestClient(app) as c:
         yield c
 
@@ -116,6 +134,41 @@ def test_classify_role_usb_removable_vs_fixed() -> None:
         == "mounted_drive"
     )
     assert classify_role(protocol="Disk Image", removable=True) == "disk_image"
+
+
+def test_music_kind_survives_missing_diskutil_metadata() -> None:
+    """classify_role(protocol=None, removable=None) falls to "other"; when
+    classify_mount() still proved music content, that must not be hidden
+    behind a metadata gap that never asserted the volume is non-usb."""
+    unclassifiable = usb_mod.UsbVolume(
+        id="path:MYSTERY",
+        name="MYSTERY",
+        mount_path="/Volumes/MYSTERY",
+        kind="music",
+        role="other",
+        protocol=None,
+        removable=None,
+    )
+    out = usb_mod._to_out(unclassifiable)
+    assert out.is_music is True
+    assert out.hide_reason is None
+
+
+def test_music_kind_stays_hidden_for_a_known_non_usb_role() -> None:
+    """A role of "other" backed by an actual known protocol (just not one
+    that maps to usb_stick/mounted_drive/disk_image) is a real non-usb bus,
+    not a metadata gap, so it must stay hidden even if it contains audio."""
+    known_other_bus = usb_mod.UsbVolume(
+        id="path:THUNDER",
+        name="THUNDER",
+        mount_path="/Volumes/THUNDER",
+        kind="music",
+        role="other",
+        protocol="Thunderbolt",
+        removable=None,
+    )
+    out = usb_mod._to_out(known_other_bus)
+    assert out.is_music is False
 
 
 def test_hide_reason_tags() -> None:
@@ -336,6 +389,7 @@ def test_discovery_contract_distinguishes_unsupported_from_no_devices(
             platform_name="linux",
             volumes_root=tmp_path,
             diskutil_command="/usr/bin/diskutil",
+            usb_export_gate=_ENABLED_GATE,
         )
     assert unsupported.value.reason == "unsupported_platform:linux"
 
@@ -344,6 +398,7 @@ def test_discovery_contract_distinguishes_unsupported_from_no_devices(
             platform_name="darwin",
             volumes_root=tmp_path,
             diskutil_command=None,
+            usb_export_gate=_ENABLED_GATE,
         )
     assert missing_diskutil.value.reason == "diskutil_unavailable"
 
@@ -353,5 +408,108 @@ def test_discovery_contract_distinguishes_unsupported_from_no_devices(
         platform_name="darwin",
         volumes_root=empty_root,
         diskutil_command="/usr/bin/diskutil",
+        usb_export_gate=_ENABLED_GATE,
     )
     assert usb_mod._scan_volumes(force=True, discovery=discovery) == []
+
+
+def test_a_disabled_flag_refuses_before_the_platform_check() -> None:
+    """SAND-01/Thread-1, at the pure-function level: usb.export off must
+    win over every other branch, so a developer testing the appstore
+    profile on a non-darwin host sees the same refusal a real store build
+    would, not "unsupported platform".
+    """
+    with pytest.raises(usb_mod.UsbDiscoveryUnavailable) as excinfo:
+        usb_mod._resolve_discovery(
+            platform_name="linux",
+            volumes_root=Path("/nonexistent"),
+            diskutil_command=None,
+            usb_export_gate=_DISABLED_BY_STORE_PROFILE_GATE,
+        )
+    assert excinfo.value.reason == "usb_export_disabled_in_this_build"
+    assert excinfo.value.ui_title == STORE_BUILD_REFUSAL_TITLE
+
+
+def test_a_locally_disabled_flag_does_not_blame_the_sandbox() -> None:
+    """SAND-01 review round 2 (Finding C): a flag off for a reason OTHER
+    than the shipped store profile (a plain override, an explicit
+    MDT_FEATURE_FLAGS_FILE) must still refuse, but must not claim Apple's
+    sandbox forbids it -- that would blame the wrong party for a decision
+    this machine made on its own.
+    """
+    with pytest.raises(usb_mod.UsbDiscoveryUnavailable) as excinfo:
+        usb_mod._resolve_discovery(
+            platform_name="linux",
+            volumes_root=Path("/nonexistent"),
+            diskutil_command=None,
+            usb_export_gate=_DISABLED_LOCALLY_GATE,
+        )
+    assert excinfo.value.reason == "usb_export_disabled_in_this_build"
+    assert excinfo.value.ui_title is None
+
+
+# ----- SAND-01/Thread-1: the flag actually gates the HTTP route -----------
+def test_appstore_profile_refuses_volume_listing_via_the_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The USB volumes route never read app.state.feature_flags, so the
+    capability `/api/v1/flags` reports disabled stayed callable under the
+    appstore profile. This drives the SAME flag store `/flags` reads.
+    """
+    monkeypatch.delenv("MDT_FEATURE_FLAGS_FILE", raising=False)
+    monkeypatch.setenv(BUILD_PROFILE_ENV, STORE_PROFILE)
+    data_dir = tmp_path / "data"
+    (data_dir / "state").mkdir(parents=True)
+    app = _make_app(simulation=True, monkeypatch=monkeypatch)
+    app.state.data_dir = data_dir
+    app.state.feature_flags = load_flags(data_dir)
+    with TestClient(app) as appstore_client:
+        response = appstore_client.get("/api/v1/usb/volumes")
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["code"] == "usb_volume_discovery_unavailable"
+    assert detail["reason"] == "usb_export_disabled_in_this_build"
+    assert detail["ui_title"] == STORE_BUILD_REFUSAL_TITLE
+
+
+def test_a_local_override_refuses_volume_listing_without_blaming_the_sandbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SAND-01 review round 2 (Finding C), at the HTTP level: a full-profile
+    build with usb.export turned off via an explicit MDT_FEATURE_FLAGS_FILE
+    (an operator's own choice, not the shipped store profile) must still
+    refuse the route, but the refusal must not carry the App Store sandbox
+    sentence -- that sentence is a lie about who made this decision.
+    """
+    monkeypatch.delenv(BUILD_PROFILE_ENV, raising=False)
+    flags_file = tmp_path / "feature-flags.json"
+    flags_file.write_text('{"usb.export": false}', encoding="utf-8")
+    monkeypatch.setenv("MDT_FEATURE_FLAGS_FILE", str(flags_file))
+    data_dir = tmp_path / "data"
+    (data_dir / "state").mkdir(parents=True)
+    app = _make_app(simulation=True, monkeypatch=monkeypatch)
+    app.state.data_dir = data_dir
+    app.state.feature_flags = load_flags(data_dir)
+    with TestClient(app) as overridden_client:
+        response = overridden_client.get("/api/v1/usb/volumes")
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["reason"] == "usb_export_disabled_in_this_build"
+    assert detail.get("ui_title") is None
+
+
+def test_full_profile_volume_listing_is_not_refused_by_the_flag(
+    client: TestClient,
+) -> None:
+    """The control: the default full-profile client (usb.export ON) must
+    never carry this reason, even when discovery is unavailable for an
+    unrelated reason (no darwin host in CI). If the gate keyed on anything
+    but the resolved flag value, this would start failing for every
+    developer running the plain build.
+    """
+    response = client.get("/api/v1/usb/volumes")
+    if response.status_code == 503:
+        assert response.json()["detail"]["reason"] != "usb_export_disabled_in_this_build"
+
+
+pytestmark = pytest.mark.rb_parity

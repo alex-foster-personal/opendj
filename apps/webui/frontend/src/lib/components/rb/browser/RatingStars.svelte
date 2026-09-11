@@ -55,12 +55,17 @@
 </span>
 
 <style>
+	/* Gap and glyph size come from the cell (see TrackTable .c-rating): it is
+	 * the thing that knows how much room there is. Standalone fallbacks keep
+	 * this component correct anywhere the variables are not set. */
 	.rb-stars {
 		display: inline-flex;
-		gap: 1px;
+		flex-wrap: nowrap;
+		max-width: 100%;
+		gap: var(--rb-star-gap, 1px);
 	}
 	.rb-stars.unrated {
-		gap: 3px;
+		gap: calc(3 * var(--rb-star-gap, 1px));
 	}
 	button {
 		padding: 0;

@@ -11,7 +11,7 @@ R1. Given the Rekordbox library, classify every non-streaming track as
       - MISSING: not found at FolderPath nor after re-homing — the bytes are
         genuinely not on this machine.
       [if 9,766/9,824 files are absent on disk then missing_ratio≈0.994 ⛔️]
-      [if a file lives at $HOME instead of /Users/dev then REHOMABLE ⛔️]
+      [if a file lives at $HOME instead of /Users/old then REHOMABLE ⛔️]
 
 R2. Expose a single ``assert_healthy()`` invariant for tests/CI/pre-sync:
     broken_ratio (missing+rehomable over tracks-with-paths) must be <= a
@@ -56,7 +56,7 @@ __all__ = [
 ]
 
 #: Matches a leading POSIX home prefix, tolerating Rekordbox's ``//`` and any
-#: username: ``//Users/dev/Music/x`` -> capture group 1 = ``Music/x``.
+#: username: ``//Users/old/Music/x`` -> capture group 1 = ``Music/x``.
 _HOME_PREFIX_RE = re.compile(r"^/{1,2}Users/[^/]+/(.*)$")
 
 #: Default invariant ceiling. A healthy library should have ~zero broken links;
@@ -107,7 +107,7 @@ class IntegrityReport:
     missing: int = 0
     #: Sample of genuinely-missing paths (capped) for fast triage.
     missing_examples: list[str] = field(default_factory=list)
-    #: Distinct stale home prefixes seen on broken rows, e.g. ``/Users/dev``.
+    #: Distinct stale home prefixes seen on broken rows, e.g. ``/Users/old``.
     stale_home_prefixes: dict[str, int] = field(default_factory=dict)
 
     @property

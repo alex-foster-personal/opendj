@@ -83,6 +83,7 @@ def _sample_library() -> OpenDjLibrary:
 
 @pytest.mark.requirement("OPEN-01")
 class TestDataclasses:
+    """[if] Open DJ data classes are constructed [then] their contract is preserved, [else stop]."""
     def test_track_defaults(self) -> None:
         t = Track(track_id="x", file_path="/x.mp3")
         assert t.title == ""
@@ -164,12 +165,14 @@ class _MissingName:
 
 @pytest.mark.requirement("OPEN-01")
 class TestAdapterProtocol:
+    """[if] an adapter implements the protocol [then] its contract is preserved, [else stop]."""
     def test_structural_match(self) -> None:
         assert isinstance(_GoodAdapter(), Adapter)
 
 
 @pytest.mark.requirement("OPEN-01")
 class TestAdapterReport:
+    """[if] an adapter report is created [then] its contract is preserved, [else stop]."""
     def test_bump_increments(self) -> None:
         r = AdapterReport()
         r.bump("tracks", 2)
@@ -196,6 +199,7 @@ class TestAdapterReport:
 
 @pytest.mark.requirement("OPEN-01")
 class TestSerializeJcs:
+    """[if] data is serialized as JCS [then] the canonical encoding is preserved, [else stop]."""
     def test_dataclass_to_canonical_bytes(self) -> None:
         lib = _sample_library()
         b = serialize_jcs(lib)

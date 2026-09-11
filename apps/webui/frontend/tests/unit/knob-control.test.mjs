@@ -78,6 +78,11 @@ beforeEach(() => {
 	knobs.clearKnobLink();
 	knobs.knobUi.selectedId = null;
 	knobs.knobUi.hoveredId = null;
+	// _registry is module-level state, not reset by the clears above - without
+	// this, a dial id reused across test cases (every case below reuses
+	// '1:low'/'2:low') carries a leftover registration stack into the next
+	// test and silently changes its unregisterKnob() behavior.
+	knobs._resetKnobRegistryForTests();
 	dials = new Map();
 });
 
@@ -236,6 +241,28 @@ test('unregistering half a pair clears the link rather than leaving a dangling p
 	assert.equal(knobs.linkedPartnerId(a), null, 'a is still linked to a dial that no longer exists');
 	knobs.nudgeKnob(a, 0.1);
 	assert.equal(valueOf(a), 0.6, 'the survivor must behave as an ordinary unlinked dial');
+});
+
+test('unregistering a shadowing registration (EqOverlay closing over a mixer knob) preserves the surviving link', () => {
+	// Two widgets can register the SAME knob id at once - e.g. the mixer's
+	// always-mounted low knob, shadowed by an EqOverlay's own copy of the same
+	// dial while it is open. Closing the overlay must only pop ITS
+	// registration, not clear state the still-mounted mixer knob is relying on.
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.5);
+	knobs.altClickKnob(a);
+	knobs.altClickKnob(b);
+
+	knobs.registerKnob({
+		id: a,
+		getValue: () => dials.get(a).value,
+		setValue: (next) => dials.set(a, { value: next })
+	});
+	knobs.unregisterKnob(a); // pops the shadow registration only
+
+	assert.equal(knobs.linkedPartnerId(a), b, 'the mixer knob underneath lost its link when only the shadow unregistered');
+	knobs.nudgeKnob(a, 0.1);
+	assert.equal(valueOf(b), 0.4, 'the link must still drive the partner after the shadow registration is gone');
 });
 
 // ============================================ selection + the global wheel

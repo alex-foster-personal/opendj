@@ -325,6 +325,8 @@ function stateOf(el) {
   const parts = [];
   if (el.disabled) parts.push('disabled');
   if (el.checked) parts.push('checked');
+  if (el.getAttribute('aria-pressed') !== null) parts.push('pressed=' + el.getAttribute('aria-pressed'));
+  if (el.getAttribute('aria-valuenow') !== null) parts.push('value=' + el.getAttribute('aria-valuenow'));
   if (el.getAttribute('aria-expanded')) parts.push('expanded=' + el.getAttribute('aria-expanded'));
   if (el.getAttribute('aria-selected') === 'true') parts.push('selected');
   if (el.value !== undefined && el.value !== '' && el.tagName !== 'BUTTON' && typeof el.value === 'string') {

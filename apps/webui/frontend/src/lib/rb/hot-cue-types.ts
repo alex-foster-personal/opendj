@@ -19,7 +19,8 @@ export interface HotCue {
 	out_ms: number | null;
 	/** True when the slot stores a loop (renders loop glyph + time chips). */
 	is_loop: boolean;
-	/** Beat length when beat-quantised (djmdCue BeatLoopSize / decoded); null otherwise. */
+	/** Vendor loop-size metadata; djmdCue values may be packed, not a beat count.
+	 * Derive displayed beat lengths from the actual PQTZ grid. */
 	beat_loop_size: number | null;
 	/** rekordbox ColorTableIndex (0..62); null = default colour. */
 	color_table_index: number | null;

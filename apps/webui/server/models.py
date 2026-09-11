@@ -8,10 +8,22 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ProvenanceOut(BaseModel):
+    """One field's value plus where it came from and whether it is real.
+
+    ``status`` has NO DEFAULT on purpose (native-analysis v1, spec section 3
+    and `.planning/REQUIREMENTS.md` NATIVE-04). A default of ``ok`` would let
+    a caller omit the field and serialize a `failed` or `missing` own-analysis
+    lane as a success, which is the exact silent-fallback shape this milestone
+    exists to remove. Every construction site states its status, and the
+    rekordbox/legacy boundary passes ``ok`` explicitly.
+    """
+
     value: Any
     source: str
     confidence: float | None = None
     modified_at: str
+    status: Literal["ok", "failed", "missing"]
+    reason: str | None = None
 
 
 class TempoPrefOut(BaseModel):
@@ -67,6 +79,18 @@ class TrackOut(BaseModel):
     # deck-load path (GET /tracks/{sid}, never the listing row) can gate
     # hot-cue SAVE without guessing (PARITY-TODO, issue #736).
     has_rb_mapping: bool
+    # Whether the matching optional GET would succeed, so the browser can skip
+    # a fetch that would 404 (Chromium logs those unsuppressably). Same job as
+    # has_rb_mapping: predict empty-state before issuing the request.
+    lyrics_available: bool
+    auto_cues_available: bool
+    stems_available: bool
+    # Same tri-state as RbMetaOut / listing: True = GET /artwork would 200,
+    # False = would 404 ARTWORK_NOT_FOUND, None = would 503
+    # ARTWORK_READER_UNAVAILABLE. Deck-load GET /tracks/{sid} carries this so
+    # the browser can skip the img GET (same job as has_rb_mapping /
+    # lyrics_available).
+    artwork_available: bool | None
 
 
 class QualityOut(BaseModel):
@@ -115,9 +139,42 @@ class TrackListItemOut(TrackOut):
     preview_b64: str | None
     preview_max: int | None
     file_exists: bool
+    # LIBUX-07: our own audio in non-local storage, not streaming and not
+    # awaiting-volume. False (the default) is the honest common case.
+    is_remote: bool = False
     quality: QualityOut
     vocals: dict[str, Any]
     stems: dict[str, Any]
+    # Artwork facts are computed in the listing's existing bulk row assembly,
+    # so TrackTable does not depend on IntersectionObserver hydration.
+    # artwork_available is inherited from TrackOut (same tri-state).
+    artwork_status: Literal["ok", "no_image_path", "unresolved", "file_missing"]
+    # Display-only MIK value. Null means the browser must render an empty
+    # Energy cell and use energy_reason rather than inventing a number.
+    energy: int | None
+    energy_source: Literal["mik"] | None
+    energy_reason: str
+
+
+class LyricLineOut(BaseModel):
+    """One cache-backed line timestamp in integer track milliseconds."""
+
+    start_ms: int = Field(ge=0)
+    text: str = Field(min_length=1)
+
+
+class TrackLyricsOut(BaseModel):
+    """Agent-native read model for cached line-synced lyrics only."""
+
+    stable_id: str
+    source: str
+    lines: list[LyricLineOut] = Field(min_length=1)
+
+
+class LyricsUnavailableOut(BaseModel):
+    """The explicit cache-miss response for one track's lyrics timeline."""
+
+    detail: str
 
 
 class TracksPage(BaseModel):
@@ -189,6 +246,8 @@ class TrackRowOut(BaseModel):
     preview_max: int | None
     file_exists: bool
     is_streaming: bool
+    # LIBUX-07: our own audio in non-local storage. False when unset.
+    is_remote: bool = False
     # Unmatched Spotify placeholder (synthetic spotify-pending:* stable_id).
     # Distinct from generic streaming so the browser can light-green tint.
     spotify_pending: bool = False
@@ -198,6 +257,15 @@ class TrackRowOut(BaseModel):
     stems: dict[str, Any]
     # Whether GET /tracks/{sid}/rb-meta can resolve (see TrackListItemOut).
     has_rb_mapping: bool
+    artwork_available: bool | None
+    artwork_status: Literal["ok", "no_image_path", "unresolved", "file_missing"]
+    energy: int | None
+    energy_source: Literal["mik"] | None
+    energy_reason: str
+    key_status: Literal["ok", "failed", "missing"]
+    key_reason: str | None
+    loudness_status: Literal["ok", "failed", "missing"]
+    loudness_reason: str | None
 
 
 class PlaylistDetail(BaseModel):
@@ -220,8 +288,34 @@ class PairingOut(BaseModel):
     direction: Literal["->", "<->"]
     source: Literal["manual", "learned", "ai"]
     notes: str | None = None
+    snapshot: PairingSnapshot | None = None
     created_at: str
     updated_at: str
+
+
+class PairingTimestamp(BaseModel):
+    unit: Literal["beats", "time"]
+    value: float = Field(ge=0)
+
+
+class PairingEqAdjust(BaseModel):
+    band: Literal["low", "mid", "high"]
+    value: float = Field(ge=0, le=1)
+
+
+class PairingDeckSnapshot(BaseModel):
+    deck_id: Literal[1, 2, 3, 4]
+    stable_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    position_ms: int = Field(ge=0)
+    timestamp: PairingTimestamp
+    eq_adjusts: list[PairingEqAdjust]
+
+
+class PairingSnapshot(BaseModel):
+    version: Literal[1]
+    beat_sync_max: bool
+    decks: list[PairingDeckSnapshot] = Field(min_length=2, max_length=2)
 
 
 class PairingCreate(BaseModel):
@@ -230,6 +324,22 @@ class PairingCreate(BaseModel):
     direction: Literal["->", "<->"] = "->"
     source: Literal["manual", "learned", "ai"] = "manual"
     notes: str | None = Field(default=None, max_length=1000)
+    snapshot: PairingSnapshot | None = None
+
+    @model_validator(mode="after")
+    def validate_snapshot_decks_match_pair(self) -> PairingCreate:
+        if self.snapshot is None:
+            return self
+        snapshot_ids = {deck.stable_id for deck in self.snapshot.decks}
+        pair_ids = {self.from_stable_id, self.to_stable_id}
+        if len(snapshot_ids) != 2 or snapshot_ids != pair_ids:
+            raise ValueError("snapshot decks must match the selected pairing tracks exactly")
+        if len({deck.deck_id for deck in self.snapshot.decks}) != 2:
+            raise ValueError("snapshot decks must use two distinct deck IDs")
+        unit = "beats" if self.snapshot.beat_sync_max else "time"
+        if any(deck.timestamp.unit != unit for deck in self.snapshot.decks):
+            raise ValueError("snapshot timestamp units must match beat_sync_max")
+        return self
 
 
 class QueueItemOut(BaseModel):
@@ -281,21 +391,53 @@ class HealthOut(BaseModel):
     version: str
 
 
+class PreflightCheckOut(BaseModel):
+    """One row of PREFLIGHT-01's boot gate (issue #771).
+
+    ``status`` is never a two-way pass/fail: ``pending`` covers a check that
+    genuinely could not be exercised (e.g. audio-access with no resolvable
+    track anywhere in a small sample), which is an honest denominator, never
+    a fabricated pass. ``remediation`` is null on a pass or a pending row and
+    a real sentence on a fail.
+    """
+
+    id: str
+    label: str
+    status: Literal["pass", "fail", "pending"]
+    detail: str
+    remediation: str | None = None
+
+
+class PreflightOut(BaseModel):
+    """``GET /api/v1/preflight`` -- the ONE source of truth for the boot
+    gate. ``status`` is ``fail`` iff any check is ``fail``; a ``pending``
+    check never blocks it, because a check that could not be exercised is
+    not a defect on its own.
+    """
+
+    status: Literal["pass", "fail"]
+    checks: list[PreflightCheckOut]
+
+
 __all__ = [
     "HealthCloud",
     "HealthOut",
     "HealthStateDb",
     "HealthSyncthing",
     "HealthWaveformMaterialization",
+    "LyricLineOut",
     "PairingCreate",
     "PairingOut",
     "PlaylistDetail",
     "PlaylistDiff",
     "PlaylistSummary",
+    "PreflightCheckOut",
+    "PreflightOut",
     "ProvenanceOut",
     "QueueItemOut",
     "QueueOut",
     "TrackListItemOut",
+    "TrackLyricsOut",
     "TrackOut",
     "TrackPatch",
     "TrackRowOut",

@@ -14,9 +14,11 @@ is bound.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from apps.engine_core.config import (
     ENGINE_VERSION,
@@ -35,6 +37,7 @@ from apps.feature_flags.profiles import (
     available_profiles,
     profile_path,
 )
+from apps.shared.sync_bind_guard import SyncBindRefused, assert_sync_bind_allowed
 
 EXIT_OK: int = 0
 EXIT_LOCKED: int = 1
@@ -104,8 +107,21 @@ def _apply_build_profile(name: str | None) -> None:
     os.environ[BUILD_PROFILE_ENV] = name
 
 
+def _assert_sync_bind(host: str) -> None:
+    """The engine mounts ``/api/v1/sync/*``: a wide bind needs explicit trust.
+
+    Checked here, before the lock and the socket, so a refused bind exits
+    EXIT_REFUSED with the ADR named instead of after the port is open.
+    """
+    try:
+        assert_sync_bind_allowed(host)
+    except SyncBindRefused as exc:
+        raise EngineBootError(str(exc)) from exc
+
+
 def _preflight(cfg: EngineConfig, *, workers: int) -> None:
     assert_single_worker(workers)
+    _assert_sync_bind(cfg.host)
     if not cfg.data_dir.is_dir():
         # Never invent a library root: a typo in --data-dir would otherwise
         # produce a silently empty library that looks like a real one.
@@ -152,19 +168,35 @@ def _telemetry_decision():
 
 
 def _serve(cfg: EngineConfig, *, log_level: str) -> int:
-    lock = EngineLock(cfg.lock_path)
+    lock = EngineLock(cfg.lock_path, host=cfg.host, port=cfg.port)
     try:
         lock.acquire()
     except EngineLockError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return EXIT_LOCKED
     try:
+        from apps.shared.process_identity import set_process_identity
+
+        set_process_identity(
+            "Engine", cfg.port, invocation_marker="apps.engine_core serve"
+        )
         # Imported here, never at module scope: this pulls in apps.webui,
         # which reads MDT_DATA_DIR at import time.
         import uvicorn
 
         from apps.engine_core.app import create_app
+        from apps.engine_core.warning_log import configure_warning_log
         from apps.shared.telemetry import TelemetryConfigError, init_telemetry
+
+        warning_log = os.environ.get("OPENDJ_ENGINE_WARN_LOG")
+        warning_boot_id = os.environ.get("OPENDJ_ENGINE_LOG_BOOT_ID")
+        if (warning_log is None) != (warning_boot_id is None):
+            raise EngineBootError(
+                "OPENDJ_ENGINE_WARN_LOG and OPENDJ_ENGINE_LOG_BOOT_ID must be set together"
+            )
+        if warning_log is not None:
+            logging.basicConfig(level=logging.INFO)
+            configure_warning_log(Path(warning_log), warning_boot_id)
 
         # BEFORE create_app, not after: the Sentry FastAPI integration wraps
         # route handlers as they are registered, so a later init would leave
@@ -186,7 +218,12 @@ def _serve(cfg: EngineConfig, *, log_level: str) -> int:
             flush=True,
         )
         uvicorn.run(
-            app, host=cfg.host, port=cfg.port, log_level=log_level, workers=1
+            app,
+            host=cfg.host,
+            port=cfg.port,
+            log_level=log_level,
+            log_config=None,
+            workers=1,
         )
     finally:
         lock.release()

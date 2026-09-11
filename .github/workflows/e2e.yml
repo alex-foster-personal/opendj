@@ -26,6 +26,9 @@ on:
   pull_request:
     branches: [main]
     # Mirrors ci.yml: a docs-only PR cannot change runtime behavior.
+    # Extra ignores: workflow YAML and pytest-only trees cannot change
+    # Playwright behaviour. Scheduling E2E for those would skip the nightly
+    # `extended` job on the PR, and a SKIPPED check is not a pass.
     paths-ignore:
       - "**.md"
       - "docs/**"
@@ -33,6 +36,10 @@ on:
       - ".planning/**"
       - "specs/**"
       - "blog/**"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/e2e.yml"
+      - "tests/perf/**"
+      - "tests/docs/**"
   push:
     branches: [main]
     paths-ignore:
@@ -42,6 +49,10 @@ on:
       - ".planning/**"
       - "specs/**"
       - "blog/**"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/e2e.yml"
+      - "tests/perf/**"
+      - "tests/docs/**"
   schedule:
     # 04:17 UTC daily, for the extended tier. Off-peak and deliberately not on
     # the hour, where GitHub's scheduler queues are busiest.
@@ -68,12 +79,31 @@ concurrency:
 
 permissions:
   contents: read
+  # Cross-workflow artifact download from ci.yml (issue #1513).
+  actions: read
 
 env:
   # apps.shared.library_mode refuses to import on non-darwin platforms without
   # this. ci.yml sets the same value for its openapi dump. 'local' is
   # schema-and-fixture only; no real library is reachable from a runner.
   MDT_LIBRARY_MODE: local
+
+  # Keep .pyc out of the workspace: root-owned bytecode under .venv is what
+  # made actions/checkout fail with EACCES and skip every test step (#1338).
+  # This covers interpreters these workflows start directly. It does NOT reach
+  # anything run through `sudo`, which resets the environment with no env_keep
+  # for this name, so the pre-checkout hygiene step below is the repair path
+  # for a root-run interpreter.
+  PYTHONDONTWRITEBYTECODE: "1"
+  # Every Python this workflow starts, including the engine the Playwright
+  # webServer boots and the `apps.analysis.run` it shells out to during the
+  # ingest-refresh spec, dumps the Python stack of a fatal signal to stderr.
+  # Since Tue 8 Sep 2026 19:53 UTC agentbox's kernel log shows
+  # `python3: segfault at 0 ip 0` about once a minute under this workflow's
+  # jobs, attributed to that subprocess, and the daemon reports only
+  # "apps.analysis.run exited -11" (trunk red 8a17e7ade, run 34335714597).
+  # The kernel names the binary; faulthandler names the frame.
+  PYTHONFAULTHANDLER: "1"
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -87,12 +117,179 @@ jobs:
   # ---------------------------------------------------------------------------
   gate:
     name: e2e gate (webkit artifact + hermetic chromium)
-    runs-on: ubuntu-latest
+    # Runner is a repo-variable switch (see ci.yml's `test` job for the full
+    # rationale). vars.CI_RUNS_ON_E2E absent -> hosted ubuntu-latest; set to
+    # '["self-hosted","linux","e2e"]' it targets agentbox specifically, the
+    # only self-hosted runner carrying the `e2e` label and the apt access
+    # `playwright install --with-deps` needs.
+    #
+    # That access is now sudo rather than root: agentbox's runners were moved
+    # off root on Thu 3 Sep 2026 because the pytest lane's permission tests
+    # cannot be arranged as a user who bypasses permissions (see "Self-hosted
+    # runner provisioning" in docs/ci-actions-cost-review-2026-08-16.md).
+    # --with-deps below stays unconditional because it is safe either way:
+    # Playwright runs its apt step directly when uid 0 and through `sudo`
+    # otherwise, and the runner user has NOPASSWD sudo.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     timeout-minutes: 30
+    env:
+      # One native thread per process. This job's "Root Playwright suite" step
+      # runs the webui refresh job, which shells out to
+      # `apps.analysis.run --backend librosa --workers 2` (see
+      # apps/webui/server/routes/ingest_analysis_argv.py). Without a cap,
+      # OpenBLAS and numba fan every call out across every thread the host
+      # has, exactly the failure mode ci.yml's `test` job already documents
+      # (tests/scripts/test_ci_thread_caps.py) and was never carried over
+      # here: this job shares the same self-hosted agentbox host with up to
+      # ten other concurrent runner jobs. Under that contention a
+      # ProcessPoolExecutor worker fork can land mid-BLAS-thread-activity and
+      # die outright - concurrent.futures.process.BrokenProcessPool,
+      # tests/e2e/ingest-refresh.spec.ts:56 - intermittently, worse the busier
+      # the host is, and with no OOM-kill line because nothing here is short
+      # on memory. Seen on PR #1092, PR #1306 (run 33981951903 attempt 2) and
+      # elsewhere Fri-Sat 4-5 Sep 2026. One thread each removes the
+      # oversubscription rather than papering over a dead worker.
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMBA_NUM_THREADS: "1"
 
     steps:
+      # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).
+      # checkout cleans the tree as the runner user, so one root-owned file in
+      # it fails the unlink with EACCES, dies at step 2, and skips every test
+      # step after it -- a red carrying no test evidence. The runner user has
+      # NOPASSWD sudo (e2e.yml documents it). This runs as root, so it is
+      # bounded three ways, and each bound is load-bearing. A mount point
+      # beneath the workspace fails the step outright: `-xdev` alone is not
+      # enough, because a bind mount from elsewhere on the SAME filesystem
+      # keeps the same st_dev and is traversed regardless (measured on the
+      # runner host, Fri 5 Sep 2026). `-xdev` then stops a cross-filesystem
+      # mount appearing after that check. The workspace path is escaped the way
+      # mountinfo escapes field 5 and handed to awk through ENVIRON, NOT `-v`:
+      # `-v` processes escape sequences, so it decodes \040 straight back to a
+      # space and undoes the escaping it was given. `chown -h` acts on a symlink
+      # itself rather than its referent, so a link pointing out of the tree cannot
+      # drag the repair outside. One `find` expression drives the count and
+      # the repair, so the number reported is the set acted on.
+      #
+      # The counts come from `find`, not from `chown -c`: GNU coreutils prints
+      # that report on stdout but uutils prints it on stderr, so a piped count
+      # reads 0 forever on a uutils host and the log would claim the step found
+      # nothing when it had just repaired thousands of files. `remaining` is
+      # the proof the repair landed, and a non-zero one fails here rather than
+      # letting checkout die at the next step with a worse message.
+      #
+      # It also NAMES the offending entries -- owner, UTC mtime, path -- and
+      # names them BEFORE the chown, because the repair destroys the very
+      # evidence that identifies the writer. #1338 could say 957 to 1130 files
+      # per runner but not which process wrote them, and cost a forensic
+      # session for want of exactly this. The listing goes to a file rather
+      # than into `head` down a pipe: under `pipefail` a SIGPIPE'd `find`
+      # fails the step. TZ reaches `find` through `env` because sudo here is
+      # `env_reset` with no SETENV, so `sudo TZ=UTC find` is refused outright,
+      # and an mtime printed in local time under a `Z` suffix is a lie.
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17), matching ci.yml.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Derive the worktree-port lane from the runner identity
+        # This job is the only one that claims a dynamic pair from the pool
+        # (apps/webui/port_config.py, via `pnpm test:e2e` below): each
+        # self-hosted runner is a separate clone with its own registry and
+        # lock (issue #1301), so two runners on one host both start
+        # allocating from slot 0 of the SAME pool and can select the same
+        # pair. MUSIC_DJ_PORT_LANE shifts one runner's whole pool window
+        # clear of every other lane's.
+        #
+        # RUNNER_NAME is the self-hosted agent's registered name (`agentName`
+        # in its `.runner` file), e.g. "agentbox-2", or "nucbox-wsl" with no
+        # trailing number for a host's first-registered runner. Lane 0 is
+        # left unclaimed for local dev (unset var, e.g. `just webui-ports` on
+        # a developer machine that is also a runner host), so an unsuffixed
+        # name gets lane 1 and a suffixed name gets its numeric index plus 1.
+        # Thus an unsuffixed runner never collides with local dev or suffix 1.
+        run: |
+          set -euo pipefail
+          runner_name="${RUNNER_NAME:-}"
+          if [[ -z "$runner_name" ]]; then
+            echo "::error::RUNNER_NAME is unset; cannot derive a safe port lane" >&2
+            exit 1
+          fi
+          if [[ "$runner_name" =~ -([0-9]+)$ ]]; then
+            lane=$((BASH_REMATCH[1] + 1))
+          else
+            lane=1
+          fi
+          echo "MUSIC_DJ_PORT_LANE=${lane}" >> "$GITHUB_ENV"
+          echo "[OK] runner ${runner_name} -> MUSIC_DJ_PORT_LANE=${lane}"
+
+      - name: Assert MUSIC_DJ_PORT_LANE is set
+        run: |
+          set -euo pipefail
+          lane="${MUSIC_DJ_PORT_LANE:-}"
+          [[ "$lane" =~ ^[0-9]+$ ]] || {
+            echo "::error::MUSIC_DJ_PORT_LANE is unset or invalid after lane derivation" >&2
+            exit 1
+          }
+          echo "[OK] MUSIC_DJ_PORT_LANE=${lane}"
+
+      - name: Reclaim stale E2E servers before port claim
+        run: bash scripts/ci_e2e_port_hygiene.sh
 
       - name: Enable pinned pnpm
         # Order matters: corepack before setup-node, so a `pnpm` shim exists on
@@ -106,7 +303,14 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22.14.0"
-          cache: pnpm
+          # pnpm on GitHub-hosted runners only. A self-hosted runner's store
+          # already persists at the runner user's `pnpm store path` and is
+          # SHARED by every runner service on the host; setup-node restores its
+          # cache tarball with absolute paths straight into that store,
+          # index.db included, under jobs that are reading it (trunk e14bd2f0a3,
+          # Sat 5 Sep 2026: `[ERR_PNPM_ERR_SQLITE_ERROR] disk I/O error` on a
+          # healthy disk). tests/scripts/test_ci_pnpm_cache_self_hosted.py.
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
           cache-dependency-path: apps/webui/frontend/pnpm-lock.yaml
 
       - name: Setup Python
@@ -118,14 +322,20 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
-          enable-cache: true
+          # Hosted-only, like the pnpm cache (tests/scripts/test_ci_pnpm_cache_self_hosted.py).
+          # On a self-hosted host the persistent ~/.cache/uv IS the cache, and with the
+          # action's cache on, its post step runs `uv cache prune --ci` against that
+          # directory while fifteen sibling jobs hold its lock: trunk E2E red on
+          # 227fb7c86 (Wed 9 Sep 2026, "Timeout (300s) when waiting for lock on
+          # /home/ghrunner/.cache/uv"), and a sibling's prune is what tore an
+          # archive entry out from under `uv sync` on 34275041870 the day before.
+          enable-cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: System deps for pyrekordbox (SQLCipher)
         # The engine imports pyrekordbox, which links libsqlcipher at runtime.
         # Ubuntu noble ships the runtime .so inside libsqlcipher-dev.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libsqlcipher-dev
+          scripts/ci_apt_present.sh libsqlcipher-dev || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev'
 
       - name: Install Python deps into the project venv
         # `uv sync`, NOT `uv run --no-sync`. The webkit config boots the engine
@@ -133,7 +343,7 @@ jobs:
         # against an unpopulated one it resolves somewhere else entirely and
         # reports success while binding the wrong thing. Populating the venv
         # here is what makes that command mean what it says.
-        run: uv sync
+        run: uv sync --extra tags --extra analysis
 
       - name: Prove the venv is populated and is this checkout's
         # Fail fast and loudly rather than letting the engine boot fail 180s
@@ -146,6 +356,77 @@ jobs:
           .venv/bin/python -c "import apps.engine_core" \
             || { echo "[ERROR] engine package not importable from the project venv"; exit 1; }
           echo "[OK] apps.engine_core imports"
+
+      - name: Keep the numba JIT cache across jobs on this runner
+        # librosa's numba artifacts live beside its source by default, and this
+        # job recreated `.venv` every run, so every job paid a 25-45 s cold
+        # compile in the warm-up step (measured Tue 8 Sep 2026: 41-46 s on
+        # every shard, 0.3 s once the cache survives venv recreation). One
+        # directory per RUNNER: a runner runs one job at a time, so the
+        # warm-up below is the only cold writer it ever sees, and the stamp
+        # next to it is what lets the warm-up prove the cache is still what
+        # that serial writer left. Hosted runners get a fresh HOME per job
+        # and simply compile once, as before.
+        # Keyed by the toolchain too (python, numba, llvmlite, librosa, numpy
+        # versions, printed by the module that owns the cache): an upgrade
+        # lands in an empty directory and compiles once under the lock,
+        # instead of numba rejecting stale artifacts at first use in whatever
+        # processes got there first, concurrently and cold.
+        run: |
+          identity="$(.venv/bin/python -m apps.analysis.jit_warmup --identity)"
+          dir="$HOME/.cache/mdt-numba/${RUNNER_NAME:?RUNNER_NAME is unset}/${identity:?identity is empty}"
+          mkdir -p "$dir/cache" "$dir/lock"
+          chmod 700 "$HOME/.cache/mdt-numba" "$dir" "$dir/lock"
+          { echo "NUMBA_CACHE_DIR=$dir/cache"; echo "MDT_NUMBA_WARMUP_DIR=$dir/lock"; } >> "$GITHUB_ENV"
+
+      - name: Purge and warm the numba JIT cache (#1316)
+        # The crash this job kept dying on was never fork, the pool, or thread
+        # oversubscription. librosa marks several hot paths
+        # `@numba.guvectorize(..., cache=True)`, which compile on first call
+        # and write `.nbi`/`.nbc` artifacts beside the librosa source. Two
+        # `apps.analysis.run` processes meeting a COLD cache interleave those
+        # writes, the index and the object file stop agreeing, and from then
+        # on every process that LOADS the cache jumps into a partially-mapped
+        # object and dies at a NULL instruction pointer - including runs with
+        # `--workers 1` and no child process at all. Measured on agentbox: 12
+        # concurrent cold-cache processes poisoned the cache, 5 later
+        # SEQUENTIAL runs against it were 5/5 dead, and the same cache warmed
+        # once serially first survived 28/28 concurrent runs.
+        #
+        # Two halves, both load-bearing and in this order:
+        #
+        # PURGE IF STALE, because the corruption OUTLIVES the job. The workspace and
+        # its `.venv` persist between runs on this self-hosted runner, so one
+        # poisoned cache killed every later e2e job on that runner until the
+        # artifacts were deleted by hand (five runner workspaces on Sat 5 Sep
+        # 2026). Warming cannot repair it: loading the corrupt entry is what
+        # segfaults, so no in-process code runs after it. Only deletion does.
+        #
+        # `--purge-if-stale` purges exactly when the stamp does not vouch for the
+        # cache on disk: the cache is per runner and persistent (step above), a
+        # runner runs one job at a time, so a stamped cache is one this serial
+        # warm-up left and is kept (0.3 s); anything else is purged first.
+        #
+        # WARM, because a purge alone leaves the cache cold, which is the
+        # state that corrupts. The engine's refresh route spawns
+        # `apps.analysis.run` per chunk, so a cold cache plus a real drain is
+        # exactly the race. Warming serially here means every process this
+        # job starts finds a complete cache and only ever reads it.
+        #
+        # `apps.analysis.jit_warmup` is the same code path `apps.analysis.run`
+        # calls internally, invoked as a module rather than reimplemented
+        # inline, so this step cannot drift from the warm-up that ships. It
+        # exits non-zero if it warms zero artifacts onto disk, which is the
+        # positive check: a warm-up step that silently warmed nothing is
+        # exactly the green-but-useless signal this issue hid behind.
+        # Pinned by tests/scripts/test_ci_jit_warmup.py.
+        run: .venv/bin/python -m apps.analysis.jit_warmup --backend librosa --purge-if-stale
+
+      - name: Runner preflight - node tools and disk
+        # Fail here, naming the runner, rather than mid-install with a cryptic
+        # pnpm error on a missing tool or a full disk. scripts/ci_node_preflight.sh
+        # (it deliberately does not run `pnpm store status`; see the script).
+        run: scripts/ci_node_preflight.sh apps/webui/frontend
 
       - name: Install frontend dependencies
         working-directory: apps/webui/frontend
@@ -161,6 +442,10 @@ jobs:
 
       - name: Cache Playwright browsers
         id: pw-cache
+        # Hosted-only: this uploads to GitHub's cache storage, which still
+        # costs and buys nothing on agentbox, whose ~/.cache/ms-playwright
+        # already persists locally between runs. Empty var means hosted.
+        if: vars.CI_RUNS_ON_E2E == ''
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
@@ -186,7 +471,9 @@ jobs:
         #
         # --with-deps even on a cache hit: the apt libraries live outside
         # ~/.cache/ms-playwright and are not restored by it.
-        run: pnpm exec playwright install --with-deps webkit chromium
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" packages \
+            pnpm exec playwright install --with-deps webkit chromium
 
       - name: Virtual audio sink (PulseAudio null sink)
         # WITHOUT THIS THE WEBKIT GATE IS FLAKY, and flaky is worse than absent:
@@ -205,22 +492,24 @@ jobs:
         # samples. It does NOT fake the audio graph: decode, the worklet and
         # the analyser all still run for real, which is what the suite measures.
         run: |
-          sudo apt-get install -y pulseaudio
-          pulseaudio --start --exit-idle-time=-1
-          pactl load-module module-null-sink sink_name=DummyOutput
-          pactl set-default-sink DummyOutput
-          echo "[OK] default sink: $(pactl get-default-sink)"
+          scripts/ci_apt_present.sh pulseaudio || scripts/ci_host_lock.sh packages sudo env -C / apt-get install -y pulseaudio
+          # Setup and restore both run under the pulse-sink host lock: the server
+          # is shared by every job of this user on the host, and the ownership
+          # check plus the mutation must be one critical section. See the script.
+          scripts/ci_host_lock.sh pulse-sink scripts/ci_pulse_sink.sh setup
 
-      - name: Build the production frontend
-        working-directory: apps/webui/frontend
-        # The webkit gate refuses to load without this and says so at config
-        # time. It deliberately does NOT use vite: dev serves packages
-        # untransformed and the artifact does not, which is exactly where the
-        # faults it hunts for live.
-        run: pnpm build
+      - name: Acquire production frontend artifact from CI
+        # The webkit gate refuses to load without a production build and says
+        # so at config time. Poll CI for the stamped artifact; never rebuild
+        # locally (issue #1513).
+        id: frontend-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci_frontend_build_acquire_from_ci.sh "${{ github.sha }}"
 
       # -- TIER 1a: the WebKit artifact gate ----------------------------------
       - name: WebKit artifact gate (production build, named subset)
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
         working-directory: apps/webui/frontend
         # Engine-served production build, webkit, one worker, zero retries.
         # Retries stay at zero because a flaky worklet IS the defect under
@@ -228,8 +517,8 @@ jobs:
         # throwaway fixture the repo generates from stdlib `wave` and ingests
         # through the real folder adapter, inside a sandboxed HOME.
         #
-        # NAMED QUARANTINE, not a silent skip. This runs 10 of the suite's 23
-        # tests: all of setup-entry-points, and none of webkit-deckload.
+        # NAMED QUARANTINE, not a silent skip. This runs only setup-entry-points
+        # (--grep "setup entry points") and none of webkit-deckload.
         #
         # WHY THE DECK-LOAD TESTS ARE NOT HERE, measured rather than assumed.
         # Across 5 runs on ubuntu-latest AFTER the audio sink landed, 2 had a
@@ -258,12 +547,15 @@ jobs:
         # worklet path. That limit is real and is stated in the PR body rather
         # than papered over.
         #
-        # The FULL 23-test suite runs nightly in the extended job, so every
-        # quarantined test stays visible and red. Quarantined is not unwatched,
-        # and the end state once #637 and #680 are fixed is the whole suite
-        # blocking and this --grep deleted.
+        # The nightly extended job runs the whole config (no grep) with a
+        # presence check so serial skip cannot report as a complete run.
+        # Quarantined tests may still be red; that is the point. Once #637 and
+        # #680 are fixed the end state is the whole suite blocking and this
+        # --grep deleted.
         run: |
-          pnpm exec playwright test \
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" webkit-deckload \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8690 -- \
+            pnpm exec playwright test \
             --config tests/e2e/playwright.webkit-deckload.config.ts \
             --project webkit --grep "setup entry points" \
             --output test-results/setup-entry-points
@@ -271,7 +563,7 @@ jobs:
       # -- TIER 1a-bis: cross-browser deck-load smoke (#770) -------------------
       - name: Deck-load smoke (chromium + webkit, production build)
         working-directory: apps/webui/frontend
-        if: ${{ !cancelled() }}
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
         # Separate step, same engine-served artifact and fixture library as
         # the step above (webServer boots fresh per `playwright test`
         # invocation, so this pays one more ~1s engine boot -- everything
@@ -306,7 +598,9 @@ jobs:
         # failure here would ship with no diagnosable artifact (flagged on
         # review, PR #860).
         run: |
-          pnpm exec playwright test \
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" webkit-deckload \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8690 -- \
+            pnpm exec playwright test \
             --config tests/e2e/playwright.webkit-deckload.config.ts \
             --project webkit --project chromium --grep "deck-load smoke" \
             --output test-results/deckload-smoke
@@ -326,7 +620,14 @@ jobs:
         if: ${{ !cancelled() }}
         # Every /api/v1/** call is fulfilled in-page, so this suite needs no
         # backend and no library and can run literally anywhere.
-        run: pnpm exec playwright test --config tests/e2e/playwright.rekordbox-gate.config.ts --output test-results/rekordbox-gate
+        # Fixed loopback port (see the vite/playwright config it names) on a
+        # host that runs up to eight e2e jobs at once: hold the per-suite host
+        # lock so a second copy of this step WAITS instead of dying on
+        # 'is already used'. Same reason as the webkit-deckload steps.
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" rekordbox-gate \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5399 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.rekordbox-gate.config.ts --output test-results/rekordbox-gate
 
       - name: Hermetic gate - stretch quality smoke
         working-directory: apps/webui/frontend
@@ -340,16 +641,93 @@ jobs:
         # the full grid stays skipped: the grid is a quality sweep, not a gate.
         run: pnpm exec playwright test --config tests/e2e/playwright.stretch-quality.config.ts --output test-results/stretch-quality
 
+      # -- Comment-hotkey gate, real backend + fixture library ---------------
+      # NOT hermetic like the two steps above: this suite needs a real
+      # backend and a real (throwaway, generated-audio) fixture library --
+      # PREFLIGHT-01's library-attached check holds the whole app on its
+      # "Starting up" screen for an empty library, so /performance cannot
+      # even mount without one (playwright.comment-hotkey-gate.config.ts's
+      # own header explains this in full; T6, Sun 6 Sep 2026). Still cheap
+      # enough for a per-PR gate rather than the nightly `extended` job:
+      # measured 13/13 green in ~2m9s on a quiet 8-core machine (load ~50,
+      # climbing to ~270 mid-run without going red) and ~4m50s on a heavily
+      # contended one (load 90-427) -- both well inside this job's existing
+      # per-suite budget, unlike the ffmpeg/webkit suites the `extended` job
+      # exists for. This suite went un-runnable from Sat 5 Sep 2026 (#1308)
+      # until #1337 + this fix (T6) restored it, and was never wired into
+      # any workflow in the meantime -- confirmed by grepping every
+      # playwright.*.config.ts against .github/workflows/*.yml.
+      - name: Comment-hotkey gate - real backend, fixture library
+        working-directory: apps/webui/frontend
+        # `!cancelled()` so a red webkit gate does not SKIP this one and turn
+        # two independent answers into one -- same reasoning as the two
+        # hermetic gates above.
+        if: ${{ !cancelled() }}
+        # Fixed loopback port (see the vite/playwright config it names) on a
+        # host that runs up to eight e2e jobs at once: hold the per-suite host
+        # lock so a second copy of this step WAITS instead of dying on
+        # 'is already used'. Same reason as the webkit-deckload steps.
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" comment-hotkey-gate \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5321 8696 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.comment-hotkey-gate.config.ts --output test-results/comment-hotkey-gate
+
+      # -- AutoPlay stall-banner gate, real backend + fixture library --------
+      # Same PREFLIGHT-01 library-attached reason as comment-hotkey: without
+      # a fixture library, /performance parks on "Starting up" and the banner
+      # never mounts. Own ports 5324/8699. Host lock because eight e2e jobs
+      # share a host. Issue #1659: a gate that never runs is the original
+      # defect one level up.
+      - name: AutoPlay stall-banner gate - real backend, fixture library
+        working-directory: apps/webui/frontend
+        if: ${{ !cancelled() }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" autoplay-stall-gate \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5324 8699 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.autoplay-stall-gate.config.ts --output test-results/autoplay-stall-gate
+
+      - name: Root Playwright suite (real engine + Vite)
+        working-directory: apps/webui/frontend
+        # `test:e2e` fixes a pair reserved for this suite, builds its own
+        # generated-audio library, and starts the engine before Vite. This is
+        # the default Playwright command developers run, so running it here
+        # keeps its API-backed specs from becoming an unobserved test estate.
+        if: ${{ !cancelled() }}
+        run: pnpm test:e2e --output test-results/root-playwright
+
+      - name: Library jobs ordering (chromium, dry runner)
+        working-directory: apps/webui/frontend
+        if: ${{ !cancelled() }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" library-jobs \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8704 5277 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.library-jobs.config.ts --output test-results/library-jobs
+
+      - name: Restore the PulseAudio server (unload our null sink, previous default back)
+        # Always, even after a red suite: the server may be the host's shared,
+        # long-lived one, and the next job (or anything else on the host) must
+        # not inherit a discarding default sink or one more null-sink module.
+        if: always()
+        run: |
+          scripts/ci_host_lock.sh pulse-sink scripts/ci_pulse_sink.sh restore
+
       - name: Upload failure artifacts
         if: failure()
+        # Non-fatal: a byproduct upload must not red a job on a storage 403.
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: e2e-gate-failures
+          # The engine's own logs from the Root suite's fixture data dir travel
+          # with the Playwright output: twice on Sat 5 Sep 2026 the suite failed
+          # on "apps.analysis.run exited 5" and the traceback lived only here,
+          # cleaned by the next checkout before anyone read it.
           path: |
             apps/webui/frontend/test-results/**
             apps/webui/frontend/playwright-report/**
+            apps/webui/frontend/tests/e2e/fixtures/root-playwright-data/logs/**
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 3
 
   # ---------------------------------------------------------------------------
   # TIER 2, NIGHTLY. Not a PR gate, but a real red when it breaks.
@@ -365,12 +743,158 @@ jobs:
   # ---------------------------------------------------------------------------
   extended:
     name: e2e extended (nightly)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    # ORDERED AFTER `gate`, not merely locked against it. Both jobs run the
+    # webkit-deckload suite on the same fixed port, and on a schedule or
+    # dispatch run both are eligible at once, so on a host with two runner
+    # services they would start together. The host lock below would then make
+    # one of them WAIT on the other, and this one runs the full 23-test suite:
+    # a `gate` blocked behind it for up to 45 minutes would hit its own
+    # 30-minute job timeout and report a red that means nothing.
+    # `needs` removes the contention instead of queueing it (Codex P1 on
+    # #1014, discussion_r3924582000).
+    #
+    # `!cancelled()` rather than `success()`: a failing gate is exactly when the
+    # nightly full suite is most worth having, and quarantined is not the same
+    # as unwatched.
+    needs: gate
+    if: >-
+      !cancelled()
+      && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    # See the `gate` job above for the runner-selection and --with-deps note.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     timeout-minutes: 45
+    env:
+      # One native thread per process, as on the pytest jobs (#1157). The
+      # engine this job boots forks apps.analysis.run's process pool; on
+      # agentbox that fork with OpenBLAS/numba threads live produced 238
+      # python3 "segfault at 0" kernel entries on Sat 5 Sep 2026 and five
+      # BrokenProcessPool failures in the Root Playwright suite once eight
+      # e2e runners shared the host. tests/scripts/test_ci_thread_caps.py.
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMBA_NUM_THREADS: "1"
 
     steps:
+      # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).
+      # checkout cleans the tree as the runner user, so one root-owned file in
+      # it fails the unlink with EACCES, dies at step 2, and skips every test
+      # step after it -- a red carrying no test evidence. The runner user has
+      # NOPASSWD sudo (e2e.yml documents it). This runs as root, so it is
+      # bounded three ways, and each bound is load-bearing. A mount point
+      # beneath the workspace fails the step outright: `-xdev` alone is not
+      # enough, because a bind mount from elsewhere on the SAME filesystem
+      # keeps the same st_dev and is traversed regardless (measured on the
+      # runner host, Fri 5 Sep 2026). `-xdev` then stops a cross-filesystem
+      # mount appearing after that check. The workspace path is escaped the way
+      # mountinfo escapes field 5 and handed to awk through ENVIRON, NOT `-v`:
+      # `-v` processes escape sequences, so it decodes \040 straight back to a
+      # space and undoes the escaping it was given. `chown -h` acts on a symlink
+      # itself rather than its referent, so a link pointing out of the tree cannot
+      # drag the repair outside. One `find` expression drives the count and
+      # the repair, so the number reported is the set acted on.
+      #
+      # The counts come from `find`, not from `chown -c`: GNU coreutils prints
+      # that report on stdout but uutils prints it on stderr, so a piped count
+      # reads 0 forever on a uutils host and the log would claim the step found
+      # nothing when it had just repaired thousands of files. `remaining` is
+      # the proof the repair landed, and a non-zero one fails here rather than
+      # letting checkout die at the next step with a worse message.
+      #
+      # It also NAMES the offending entries -- owner, UTC mtime, path -- and
+      # names them BEFORE the chown, because the repair destroys the very
+      # evidence that identifies the writer. #1338 could say 957 to 1130 files
+      # per runner but not which process wrote them, and cost a forensic
+      # session for want of exactly this. The listing goes to a file rather
+      # than into `head` down a pipe: under `pipefail` a SIGPIPE'd `find`
+      # fails the step. TZ reaches `find` through `env` because sudo here is
+      # `env_reset` with no SETENV, so `sudo TZ=UTC find` is refused outright,
+      # and an mtime printed in local time under a `Z` suffix is a lie.
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Derive the worktree-port lane from the runner identity
+        run: |
+          set -euo pipefail
+          runner_name="${RUNNER_NAME:-}"
+          if [[ -z "$runner_name" ]]; then
+            echo "::error::RUNNER_NAME is unset; cannot derive a safe port lane" >&2
+            exit 1
+          fi
+          if [[ "$runner_name" =~ -([0-9]+)$ ]]; then
+            lane=$((BASH_REMATCH[1] + 1))
+          else
+            lane=1
+          fi
+          echo "MUSIC_DJ_PORT_LANE=${lane}" >> "$GITHUB_ENV"
+          echo "[OK] runner ${runner_name} -> MUSIC_DJ_PORT_LANE=${lane}"
+
+      - name: Assert MUSIC_DJ_PORT_LANE is set
+        run: |
+          set -euo pipefail
+          lane="${MUSIC_DJ_PORT_LANE:-}"
+          [[ "$lane" =~ ^[0-9]+$ ]] || {
+            echo "::error::MUSIC_DJ_PORT_LANE is unset or invalid after lane derivation" >&2
+            exit 1
+          }
+          echo "[OK] MUSIC_DJ_PORT_LANE=${lane}"
+
+      - name: Reclaim stale E2E servers before port claim
+        run: bash scripts/ci_e2e_port_hygiene.sh
 
       - name: Enable pinned pnpm
         run: |
@@ -381,7 +905,14 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22.14.0"
-          cache: pnpm
+          # pnpm on GitHub-hosted runners only. A self-hosted runner's store
+          # already persists at the runner user's `pnpm store path` and is
+          # SHARED by every runner service on the host; setup-node restores its
+          # cache tarball with absolute paths straight into that store,
+          # index.db included, under jobs that are reading it (trunk e14bd2f0a3,
+          # Sat 5 Sep 2026: `[ERR_PNPM_ERR_SQLITE_ERROR] disk I/O error` on a
+          # healthy disk). tests/scripts/test_ci_pnpm_cache_self_hosted.py.
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
           cache-dependency-path: apps/webui/frontend/pnpm-lock.yaml
 
       - name: Setup Python
@@ -392,18 +923,30 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
-          enable-cache: true
+          # Hosted-only, like the pnpm cache (tests/scripts/test_ci_pnpm_cache_self_hosted.py).
+          # On a self-hosted host the persistent ~/.cache/uv IS the cache, and with the
+          # action's cache on, its post step runs `uv cache prune --ci` against that
+          # directory while fifteen sibling jobs hold its lock: trunk E2E red on
+          # 227fb7c86 (Wed 9 Sep 2026, "Timeout (300s) when waiting for lock on
+          # /home/ghrunner/.cache/uv"), and a sibling's prune is what tore an
+          # archive entry out from under `uv sync` on 34275041870 the day before.
+          enable-cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: System deps (SQLCipher for pyrekordbox, ffmpeg for the stems fixture)
         # tests.stems.seed_e2e_library shells out to ffmpeg to build its
         # throwaway library. Without it that suite fails on a missing binary,
         # which reads as a product failure and is not one.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libsqlcipher-dev ffmpeg
+          scripts/ci_apt_present.sh libsqlcipher-dev ffmpeg || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev ffmpeg'
 
       - name: Install Python deps into the project venv
         run: uv sync
+
+      - name: Runner preflight - node tools and disk
+        # Fail here, naming the runner, rather than mid-install with a cryptic
+        # pnpm error on a missing tool or a full disk. scripts/ci_node_preflight.sh
+        # (it deliberately does not run `pnpm store status`; see the script).
+        run: scripts/ci_node_preflight.sh apps/webui/frontend
 
       - name: Install frontend dependencies
         working-directory: apps/webui/frontend
@@ -415,6 +958,8 @@ jobs:
         run: echo "version=$(pnpm exec playwright --version | tr -d '\n' | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
+        # Hosted-only; see the `gate` job's identical step above.
+        if: vars.CI_RUNS_ON_E2E == ''
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
@@ -422,7 +967,9 @@ jobs:
 
       - name: Install Playwright browsers
         working-directory: apps/webui/frontend
-        run: pnpm exec playwright install --with-deps webkit chromium
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" packages \
+            pnpm exec playwright install --with-deps webkit chromium
 
       - name: Virtual audio sink (PulseAudio null sink)
         # WITHOUT THIS THE WEBKIT GATE IS FLAKY, and flaky is worse than absent:
@@ -441,37 +988,95 @@ jobs:
         # samples. It does NOT fake the audio graph: decode, the worklet and
         # the analyser all still run for real, which is what the suite measures.
         run: |
-          sudo apt-get install -y pulseaudio
-          pulseaudio --start --exit-idle-time=-1
-          pactl load-module module-null-sink sink_name=DummyOutput
-          pactl set-default-sink DummyOutput
-          echo "[OK] default sink: $(pactl get-default-sink)"
+          scripts/ci_apt_present.sh pulseaudio || scripts/ci_host_lock.sh packages sudo env -C / apt-get install -y pulseaudio
+          # Setup and restore both run under the pulse-sink host lock: the server
+          # is shared by every job of this user on the host, and the ownership
+          # check plus the mutation must be one critical section. See the script.
+          scripts/ci_host_lock.sh pulse-sink scripts/ci_pulse_sink.sh setup
 
-      - name: Build the production frontend
-        working-directory: apps/webui/frontend
-        # stretch-artifact globs the built immutable assets, so the build is a
-        # prerequisite here too.
-        run: pnpm build
+      - name: Acquire production frontend artifact from CI
+        id: frontend-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci_frontend_build_acquire_from_ci.sh "${{ github.sha }}"
 
       - name: Extended - FULL webkit artifact suite (no grep)
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
         working-directory: apps/webui/frontend
-        # All 23 tests, including the four rate-measurement tests the
-        # blocking gate quarantines under issue #637. Nightly is where that
-        # failure stays visible: quarantined is not the same as unwatched.
-        run: pnpm exec playwright test --config tests/e2e/playwright.webkit-deckload.config.ts
+        # Whole webkit-deckload config, no grep. Serial skip is gone (#712);
+        # the next step asserts every listed test executed. Quarantined tests
+        # may still be red; that is the point. 1800s host lock and global
+        # timeout: a PR gate waiting behind this needs a bound longer than the
+        # suite, or the wait itself becomes the failure.
+        env:
+          MDT_CI_HOST_LOCK_TIMEOUT_S: 1800
+          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/webkit-full/results.json
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" webkit-deckload \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8690 -- \
+            pnpm exec playwright test \
+            --config tests/e2e/playwright.webkit-deckload.config.ts \
+            --output test-results/webkit-full \
+            --reporter=list --reporter=json \
+            --global-timeout=1800000
+
+      - name: Assert nightly webkit suite executed every listed test
+        if: always() && !cancelled()
+        working-directory: apps/webui/frontend
+        run: |
+          "${GITHUB_WORKSPACE}/.venv/bin/python" \
+            "${GITHUB_WORKSPACE}/scripts/playwright_presence_check.py" \
+            --floor 41 \
+            test-results/webkit-full/results.json
 
       - name: Extended - desktop setup page
         working-directory: apps/webui/frontend
-        run: pnpm exec playwright test --config tests/e2e/playwright.desktop-setup.config.ts
+        # Fixed loopback port (see the vite/playwright config it names) on a
+        # host that runs up to eight e2e jobs at once: hold the per-suite host
+        # lock so a second copy of this step WAITS instead of dying on
+        # 'is already used'. Same reason as the webkit-deckload steps.
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" desktop-setup \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5216 9473 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.desktop-setup.config.ts
 
       - name: Extended - play analytics
         working-directory: apps/webui/frontend
         # Boots a self-seeding SQLite fixture server; no real library.
-        run: pnpm exec playwright test --config tests/e2e/playwright.play-analytics.config.ts
+        # Fixed loopback port (see the vite/playwright config it names) on a
+        # host that runs up to eight e2e jobs at once: hold the per-suite host
+        # lock so a second copy of this step WAITS instead of dying on
+        # 'is already used'. Same reason as the webkit-deckload steps.
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" play-analytics \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 9414 5214 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.play-analytics.config.ts
+
+      - name: Extended - library wheel
+        working-directory: apps/webui/frontend
+        # Real engine over a throwaway genre-family fixture (state.db +
+        # master.plain.db). The root deckload library has no vendor mapping
+        # and 503s this route, so this suite is the UI evidence for LIBUX-06.
+        # Fixed loopback port (see the vite/playwright config it names) on a
+        # host that runs up to eight e2e jobs at once: hold the per-suite host
+        # lock so a second copy of this step WAITS instead of dying on
+        # 'is already used'. Same reason as the webkit-deckload steps.
+        if: ${{ !cancelled() }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" library-wheel \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 9428 5228 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.library-wheel.config.ts
 
       - name: Extended - stretch artifact (chromium + webkit)
         working-directory: apps/webui/frontend
-        run: pnpm exec playwright test --config tests/e2e/playwright.stretch-artifact.config.ts
+        # Fixed loopback port (see the vite/playwright config it names) on a
+        # host that runs up to eight e2e jobs at once: hold the per-suite host
+        # lock so a second copy of this step WAITS instead of dying on
+        # 'is already used'. Same reason as the webkit-deckload steps.
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" stretch-artifact \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5311 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.stretch-artifact.config.ts
 
       - name: Extended - stems progress
         working-directory: apps/webui/frontend
@@ -481,8 +1086,59 @@ jobs:
         # own design, not something this workflow introduces.
         run: pnpm exec playwright test --config tests/e2e/playwright.stems.config.ts
 
+      - name: Extended - hot-cue mapping gate, real backend + fixture library
+        working-directory: apps/webui/frontend
+        # Guards the user-facing safety property from #736/#804 that an empty
+        # hot-cue pad on an unmapped or never-loaded deck must not fire a
+        # rekordbox write. Never wired into any workflow before #949 --
+        # confirmed by grepping every playwright.*.config.ts against
+        # .github/workflows/*.yml, the same way the comment-hotkey gate in
+        # the `gate` job was found unwired.
+        #
+        # NOT placed in the blocking `gate` job despite passing locally
+        # (~10s, 2 specs): #949's own issue body flagged this exact risk
+        # unconfirmed -- "I did not check whether it is stable under CI's
+        # parallelism ... that last one is the assumption most likely to be
+        # wrong, and it should be confirmed before the step is added." PR
+        # #1446 confirmed it wrong on the first CI run: the unmapped-deck
+        # spec timed out in `page.waitForFunction` waiting on
+        # `decks[1].stable_id`, immediately after an `xrun` (audio underrun)
+        # warning, on run 34208199917 job 102002652185 -- the identical
+        # failure shape already quarantined here for `webkit-deckload`
+        # (#680/#637): correct app state observed within ~3s by direct
+        # instrumentation, but never observed by Playwright's rAF-driven
+        # poll. Quarantined into nightly per that precedent rather than
+        # forced green; promote back to `gate` if a future investigation
+        # roots out the flake source.
+        #
+        # Placed LAST and guarded `!cancelled()` (Codex, PR #1446 review
+        # r3956492935): every other step above uses the default `success()`
+        # condition, so a failure anywhere upstream would otherwise SKIP this
+        # step, and a failure IN this known-flaky suite would otherwise skip
+        # every step below it -- exactly the independent-evidence loss the
+        # `gate` job's own `!cancelled()` steps already guard against.
+        # Running it last means its expected flake cannot suppress
+        # desktop-setup/play-analytics/stretch-artifact/stems, and running it
+        # unconditionally means an upstream failure cannot suppress its own
+        # independent answer either.
+        if: ${{ !cancelled() }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" hotcue-mapping-gate \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5320 8695 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.hotcue-mapping-gate.config.ts --output test-results/hotcue-mapping-gate
+
+      - name: Restore the PulseAudio server (unload our null sink, previous default back)
+        # Always, even after a red suite: the server may be the host's shared,
+        # long-lived one, and the next job (or anything else on the host) must
+        # not inherit a discarding default sink or one more null-sink module.
+        if: always()
+        run: |
+          scripts/ci_host_lock.sh pulse-sink scripts/ci_pulse_sink.sh restore
+
       - name: Upload failure artifacts
         if: failure()
+        # Non-fatal: a byproduct upload must not red a job on a storage 403.
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: e2e-extended-failures
@@ -490,4 +1146,4 @@ jobs:
             apps/webui/frontend/test-results/**
             apps/webui/frontend/playwright-report/**
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 3

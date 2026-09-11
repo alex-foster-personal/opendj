@@ -416,10 +416,10 @@ describe('BrowserPanel wires the pure picker to live state, not fabricated input
 		assert.match(panel, /<TrackTable[\s\S]{0,2000}?onpickdoubledeck=\{pickDoubleDeck\}/);
 	});
 
-	it('pickDoubleDeck reads every DeckSlotState field from live reactive state', () => {
+	it('the shared pick target reads every DeckSlotState field from live reactive state', () => {
 		const fn = panel.slice(
-			panel.indexOf('function pickDoubleDeck('),
-			panel.indexOf('function ', panel.indexOf('function pickDoubleDeck(') + 1)
+			panel.indexOf('function _pickDoubleDeckTarget('),
+			panel.indexOf('function ', panel.indexOf('function _pickDoubleDeckTarget(') + 1)
 		);
 		assert.match(fn, /stable_id:\s*decks\[d\]\.stable_id/, 'stable_id is not read from live decks');
 		assert.match(fn, /playing:\s*decks\[d\]\.playing/, 'playing is not read from live decks');
@@ -441,8 +441,8 @@ describe('BrowserPanel wires the pure picker to live state, not fabricated input
 		);
 		assert.match(fn, /pickDoubleClickDeck\(\{/, 'the wired glue no longer calls the tested picker');
 		assert.match(
-			fn,
-			/_reserveDeckSlot\(result\.deck\)/,
+			panel.slice(panel.indexOf('function pickDoubleDeck('), panel.indexOf('function previewSeek(')),
+			/const result = _pickDoubleDeckTarget\(opts\);[\s\S]*?_reserveDeckSlot\(result\.deck\)/,
 			'the returned deck is not reserved synchronously - see the race this guards against above'
 		);
 	});
@@ -537,14 +537,14 @@ describe('a reservation is only released by the call that owns it', () => {
 		assert.match(fn, /const reservation = picked != null \? picked\.reservation : null;/);
 		assert.match(
 			fn,
-			/onloadrow\(row, deck, reservation !== null \? \{ play: true, reservation \} : \{ play: true \}\);/
+			/reservation !== null\s*\? \{ play: true, reservation, pressT0Ms: event\.timeStamp \}\s*: \{ play: true, pressT0Ms: event\.timeStamp \}/
 		);
 	});
 
 	it('the confirm dialog carries the reservation generation through to both Yes and the overwrite-release guard', () => {
 		assert.match(
 			table,
-			/pending\.reservation !== null\s*\? \{ play: true, reservation: pending\.reservation \}\s*: \{ play: true \}/,
+			/pending\.reservation !== null\s*\? \{ play: true, reservation: pending\.reservation, pressT0Ms: e\.timeStamp \}\s*: \{ play: true, pressT0Ms: e\.timeStamp \}/,
 			'Yes button does not forward it'
 		);
 		assert.match(
@@ -559,7 +559,10 @@ describe('a reservation is only released by the call that owns it', () => {
 			panel.indexOf('function loadSuggest('),
 			panel.indexOf('\n\tconst playlistMemberIds')
 		);
-		assert.match(fn, /loadRow\(row, picked\.deck, \{ play: true, reservation: picked\.reservation \}\);/);
+		assert.match(
+			fn,
+			/loadRow\(row, picked\.deck, \{\s*play: true,\s*reservation: picked\.reservation,\s*\.\.\.\(opts\.pressT0Ms === undefined \? \{\} : \{ pressT0Ms: opts\.pressT0Ms \}\)\s*\}\);/
+		);
 	});
 });
 
@@ -794,5 +797,75 @@ describe('the master deck is rechecked inside the queued command execution, opt-
 			/command\.type === 'master'[\s\S]*?return \[deck, 'sync'\];/,
 			"master's scope no longer includes the plain deck scope 'load'/'unload' fall through to"
 		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// P1 BLOCKING r3974057968: load-spanning press classification registry
+// ---------------------------------------------------------------------------
+describe('a marked press stamp is claimable exactly once', () => {
+	it('an unmarked stamp claims false', async () => {
+		const slots = await _mod();
+		assert.equal(slots.claimLoadSpanningPress(111.1), false);
+	});
+
+	it('claim is undefined-safe, so callers need not guard a missing stamp', async () => {
+		const slots = await _mod();
+		assert.equal(slots.claimLoadSpanningPress(undefined), false);
+	});
+
+	it('a marked stamp claims true once, then false - the mark does not leak to a later press', async () => {
+		const slots = await _mod();
+		slots.markLoadSpanningPress(222.2);
+		assert.equal(slots.claimLoadSpanningPress(222.2), true);
+		assert.equal(
+			slots.claimLoadSpanningPress(222.2),
+			false,
+			'a second schedule reusing the same float must not inherit the first one\'s classification'
+		);
+	});
+
+	it('marking one stamp does not classify a different one', async () => {
+		const slots = await _mod();
+		slots.markLoadSpanningPress(333.3);
+		assert.equal(slots.claimLoadSpanningPress(444.4), false);
+		// The original mark is still there, unaffected by the miss above.
+		assert.equal(slots.claimLoadSpanningPress(333.3), true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// P1 BLOCKING PRRT_kwDOSEvNd86g96Le: armed hot-cue press classification registry
+// ---------------------------------------------------------------------------
+describe('a marked armed-hot-cue stamp is claimable exactly once, independent of the load-span registry', () => {
+	it('an unmarked stamp claims false', async () => {
+		const slots = await _mod();
+		assert.equal(slots.claimArmedHotCuePress(555.5), false);
+	});
+
+	it('claim is undefined-safe, so callers need not guard a missing stamp', async () => {
+		const slots = await _mod();
+		assert.equal(slots.claimArmedHotCuePress(undefined), false);
+	});
+
+	it('a marked stamp claims true once, then false - the mark does not leak to a later press', async () => {
+		const slots = await _mod();
+		slots.markArmedHotCuePress(666.6);
+		assert.equal(slots.claimArmedHotCuePress(666.6), true);
+		assert.equal(
+			slots.claimArmedHotCuePress(666.6),
+			false,
+			'a second schedule reusing the same float must not inherit the first one\'s classification'
+		);
+	});
+
+	it('marking an armed stamp does not classify it as load-spanning, or vice versa', async () => {
+		const slots = await _mod();
+		slots.markArmedHotCuePress(777.7);
+		assert.equal(slots.claimLoadSpanningPress(777.7), false);
+		assert.equal(slots.claimArmedHotCuePress(777.7), true);
+		slots.markLoadSpanningPress(888.8);
+		assert.equal(slots.claimArmedHotCuePress(888.8), false);
+		assert.equal(slots.claimLoadSpanningPress(888.8), true);
 	});
 });

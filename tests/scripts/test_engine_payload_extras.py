@@ -26,9 +26,13 @@ from typing import Any
 import pytest
 
 from scripts.build_engine_payload import (
+    NEVER_SHIP,
     OMITTED_OPTIONAL_EXTRAS,
     PayloadBuildError,
+    _assert_never_ship_absent,
+    _requirement_name,
     _verify_omitted_extras,
+    locked_requirements,
     parse_locked_export,
 )
 from tests.scripts.test_engine_payload import LOCK_SAMPLE
@@ -104,3 +108,58 @@ def test_a_registry_entry_pyproject_no_longer_defines_fails_the_build() -> None:
 def test_every_omitted_extra_states_why_it_is_safe() -> None:
     for name, reason in OMITTED_OPTIONAL_EXTRAS.items():
         assert len(reason) > 80, f"{name} has no real justification recorded"
+
+
+@pytest.mark.requirement("NATIVE-08")
+def test_madmom_is_declared_nowhere_uv_export_could_read_it_from() -> None:
+    """[if] `uv export` (this build's only source of the locked closure,
+    never requirements.txt) is asked for pyproject.toml's core dependencies
+    plus every optional-dependencies group [then] "madmom" is absent from
+    the names it could resolve, [else stop] -- a shipped payload can only
+    ever include what pyproject.toml declares, so this is a structural
+    guarantee rather than a snapshot of one `uv export` run."""
+    declared_extras: dict[str, list[str]] = PYPROJECT["project"]["optional-dependencies"]
+    core_names = {_requirement_name(r) for r in PYPROJECT["project"]["dependencies"]}
+    extra_names = {
+        _requirement_name(r) for reqs in declared_extras.values() for r in reqs
+    }
+    assert "madmom" not in core_names
+    assert "madmom" not in extra_names
+    # control: librosa DOES live in the "analysis" extra, so this probe can
+    # find a real package and is not just returning an empty set by accident.
+    assert "librosa" in extra_names
+
+
+@pytest.mark.requirement("NATIVE-08")
+def test_madmom_is_absent_from_the_real_resolved_locked_closure() -> None:
+    """[if] the checked-in test above only reads pyproject.toml's flat
+    declared strings [then] it could stay green even if madmom arrived
+    through a transitive dependency of some other, legitimately-requested
+    package [else stop] -- so this probe instead runs the real `uv export`
+    this build actually installs from (locked_requirements) and inspects
+    the resolved closure, not a subset of it."""
+    entries, _dropped = locked_requirements(REPO_ROOT)
+    names = {entry.name for entry in entries}
+    assert "madmom" not in names
+    # control: numpy is a real core dependency, present in every resolved
+    # closure regardless of extras, so this probe is not just reading an
+    # empty export by accident.
+    assert "numpy" in names
+
+
+@pytest.mark.requirement("NATIVE-08")
+def test_a_madmom_line_in_the_lock_fails_the_build() -> None:
+    """Even if madmom slipped into a future export -- a stray dependency, a
+    renamed extra, a transitive pull-in -- the build must reject it
+    explicitly rather than rely solely on it never being declared."""
+    lock = LOCK_SAMPLE + "madmom==0.17.dev0\n    # via music-dj-tools\n"
+    with pytest.raises(PayloadBuildError) as excinfo:
+        _assert_never_ship_absent(parse_locked_export(lock))
+    assert "madmom" in str(excinfo.value)
+    assert "CC BY-NC-SA" in str(excinfo.value)
+
+
+@pytest.mark.requirement("NATIVE-08")
+def test_never_ship_states_why_each_package_is_permanently_unshippable() -> None:
+    for name, reason in NEVER_SHIP.items():
+        assert len(reason) > 40, f"{name} has no real justification recorded"

@@ -101,6 +101,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_FAILED
 
     os.environ["MDT_DATA_DIR"] = str(data_dir)
+    from apps.shared.process_identity import set_process_identity
+
+    set_process_identity("worker", invocation_argv=sys.orig_argv)
     from apps.engine_core.setup.importer import (
         SetupImportError,
         run_folder_import,

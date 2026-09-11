@@ -48,10 +48,10 @@ single-writer lock (D2) and a Syncthing bootstrap for audio files.
 brew install litestream syncthing
 
 # 2. Doppler bootstrap (one-off; follow Doppler CLI docs).
-doppler setup -p music-dj-tools -c prod
+doppler setup -p general -c dev_personal
 
 # 3. Create R2 buckets + lifecycle.
-doppler run -p music-dj-tools -c prod -- bash scripts/r2-bootstrap.sh
+doppler run -p general -c dev_personal -- bash scripts/r2-bootstrap.sh
 
 # 4. Configure Syncthing folder share.
 bash scripts/setup-syncthing.sh
@@ -78,7 +78,7 @@ LaunchAgent (user scope). Default to the plist.
 
 ```bash
 # Pull the latest replica.
-doppler run -p music-dj-tools -c prod -- \
+doppler run -p general -c dev_personal -- \
     litestream restore -config apps/cloud/litestream.yml data/state/state.db
 
 # Sanity-check.

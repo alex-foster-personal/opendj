@@ -74,7 +74,7 @@ so both decks' beat boundaries coincide at `syncAtContextTimeSec`.
 
 | Mode | Constraints |
 |:---------|:--------------------------------------------------------------|
-| `BAR` (default) | candidate must share the master's beat number (`beat.n`), and any candidate needing 0.5x/2x normalisation is rejected |
+| `BAR` (default) | an exact lock must share the master's beat number (`beat.n`). Half/double folds are the fallback when nothing else fits (pin 9bf12adccb45); they warn in orange because phase holds and the bar count does not |
 | `BEAT` | both constraints dropped |
 
 That is the literal mechanism preserving PQTZ 1->1 through 4->4.
@@ -162,7 +162,7 @@ bad grid throws synchronously up through the IPC dispatcher.
 
 ## Drift: a deliberate non-choice
 
-**There is no continuous drift-correction loop.** This is a design decision, not an
+**There is no Mixxx-style per-tick drift-correction loop.** This is a design decision, not an
 oversight, and the code contrasts itself with Mixxx explicitly:
 
 > Unlike Mixxx's open-ended per-tick phase-error nudge, the target here is already known...
@@ -170,17 +170,17 @@ oversight, and the code contrasts itself with Mixxx explicitly:
 > loop.
 
 Beat Sync computes one target position and tempo, then ramps to it over
-`REANCHOR_RAMP_DURATION_SEC = 0.25`. After that ramp, nothing keeps master and follower
-locked.
+`REANCHOR_RAMP_DURATION_SEC = 0.25`. After that ramp, with Beat Sync Max **off**, nothing
+keeps master and follower locked. Grid-noise bias produced a ~0.18 BPM residual error,
+which is one beat of drift every ~5.5 minutes, until the user re-triggers sync or seeks.
 
-The consequence is documented in the same file: grid-noise bias produced a ~0.18 BPM residual
-error, which is **one beat of drift every ~5.5 minutes**. Nothing re-corrects it until the
-user re-triggers sync or seeks.
+With Beat Sync Max **on**, DECKUX-14 forbids walking downbeats. Every relocate uses BAR
+(`syncModeForBeatSyncMax`), and `tests/unit/beat-sync-max-downbeat-hold.test.mjs` samples
+PQTZ n=1 coincidence over 8 minutes of projected playback on production schedule math.
 
-Whether that is acceptable is a real product question. A bounded, predictable correction is
-easier to reason about and cannot oscillate; an unbounded loop holds lock indefinitely but
-can hunt. The current choice favours predictability, which is consistent with the rest of the
-build, but it means long blends will walk.
+Whether an extra bounded re-lock is needed is an empirical question those tests answer. A
+Mixxx per-tick nudge is still out of scope. A bounded, predictable correction is easier to
+reason about and cannot oscillate; an unbounded loop holds lock indefinitely but can hunt.
 
 There is also **no system output-latency compensation**. The worklet's own reported
 `latencySec()` is folded into scheduling safety margins, but that covers only that deck's

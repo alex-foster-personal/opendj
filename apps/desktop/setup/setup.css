@@ -2,7 +2,19 @@
  *
  * Self-contained on purpose: no webfonts, no CDN, no imports. This page
  * has to render correctly on a machine where nothing else works yet.
+ * The one font it uses ships in this directory beside it (no network), and
+ * every rule that uses it falls back to the system stack if it is missing.
  */
+
+/* Headlines match the launch wordmark: Anybody 800 at width 150, ALL CAPS,
+   the maintainer's pick on Thu 10 Sep 2026 (docs/brand/wordmark-font/). A static
+   instance subset to A-Z, a-z, digits and basic punctuation. */
+@font-face {
+	font-family: 'Anybody Wordmark';
+	src: url('./anybody-800-w150-headline.woff2') format('woff2');
+	font-weight: 800;
+	font-display: swap;
+}
 
 :root {
 	--bg: #14151a;
@@ -34,8 +46,11 @@ main {
 
 h1 {
 	margin: 0 0 0.5rem;
-	font-size: 1.6rem;
+	font-family: 'Anybody Wordmark', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+	font-size: 1.35rem;
+	font-weight: 800;
 	letter-spacing: -0.01em;
+	text-transform: uppercase;
 }
 
 h2 {

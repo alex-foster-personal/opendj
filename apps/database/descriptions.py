@@ -27,6 +27,12 @@ TABLES: dict[str, str] = {
         "means the audio is unresolvable, which is what the 'present' "
         "denominator in docs/library-availability.md counts."
     ),
+    "track_availability": (
+        "One track's current playability verdict (present, absent, "
+        "awaiting_volume or streaming), with the path that was checked and "
+        "when. NO row at all means UNKNOWN, which is why `tracks_available` "
+        "excludes it: absence of evidence is not evidence of presence."
+    ),
     "track_fields": (
         "One field value for one track from one adapter, so rekordbox, djay "
         "and serato can each hold a different opinion about the same track "
@@ -80,8 +86,8 @@ TABLES: dict[str, str] = {
     "sync_policies": (
         "One machine's sync mode (pinned, cached, stream, or excluded) and "
         "optional cache budget for one asset kind (audio, stem_bundle, "
-        "anlz_cache, vocal_cache). The CloudSync config UI's per-machine "
-        "toggles write here."
+        "anlz_cache, vocal_cache, lyrics_cache, karaoke_words). The "
+        "CloudSync config UI's per-machine toggles write here."
     ),
     "playlist_pins": (
         "One machine's sync-mode override for one playlist, taking "
@@ -107,6 +113,34 @@ TABLES: dict[str, str] = {
         "watermark fences against. Machine-local; it never rides sync "
         "itself."
     ),
+    # ----- enrollment: who OWNS a machine (ADR 12) -----------------------
+    "machine_owners": (
+        "One machine's owner, as ONE hub recorded it. Never synced: a "
+        "restored or hostile spoke must not be able to push ownership rows "
+        "and adopt machines under last-write-wins like any other row, so "
+        "the hub that performed the enrollment is the only writer. Every "
+        "row carries the enrolling hub's own machine_id, and a row whose "
+        "hub_machine_id is not this hub's live id reads as FOREIGN, not as "
+        "ownership -- a hub restored from another machine's backup inherits "
+        "this table but not the machine-id file that sits outside the "
+        "database."
+    ),
+    "enrollment_grants": (
+        "One short-lived single-use credential minted by an authenticated "
+        "operator on the hub and carried, once, to the machine that is "
+        "joining. Only the sha256 of the token is stored, never the token, "
+        "for the same reason as auth_sessions: a stolen database must not "
+        "hand anybody a redeemable credential. Redeemed rows keep their row "
+        "so a replay is refused rather than silently re-enrolled."
+    ),
+    "machine_credentials": (
+        "One machine's sync credential, as the hub that minted it at enroll "
+        "recorded it. Only the sha256 is stored; the raw bearer was returned "
+        "once to the enrolling machine, which keeps it in <data-dir>/"
+        "sync-credential at 0600 and sends it on hello, push, pull, status "
+        "and digest. Hub-local and never synced, like machine_owners, so a "
+        "spoke cannot push itself a credential."
+    ),
     # ----- analysis ------------------------------------------------------
     "analysis": (
         "One track's computed audio analysis (BPM, key, beatgrid, loudness). "
@@ -115,6 +149,81 @@ TABLES: dict[str, str] = {
     "analysis_events": (
         "One analysis run's outcome, including failures, so a track that "
         "cannot be analysed is distinguishable from one never attempted."
+    ),
+    "analysis_canonical": (
+        "Which analysis row is canonical for one track and one selection lane. "
+        "Recomputed from every row on each write by one rule (highest producer "
+        "semver, tie to in-app over backfill, bench candidates never eligible), "
+        "so the answer depends on what was produced and never on write order. "
+        "Derived: safe to delete and recompute, never hand-edited."
+    ),
+    "analysis_queue_batch": (
+        "One enqueue call on the native-analysis v1 backfill queue, plus the "
+        "admission decision it was planned under: the worker count and band the "
+        "spec section 4 memory rule chose from the LONGEST ADMITTED track, and "
+        "the measured memory model those numbers came from. Written by "
+        "apps.analysis.queue."
+    ),
+    "analysis_queue_item": (
+        "One (track, lane) of backfill work and its state: pending, running, "
+        "done, skipped, failed, refused or cancelled. The record write and the "
+        "move to done are ONE transaction, which is what makes a resume after a "
+        "process kill re-run an interrupted item exactly once and never re-run a "
+        "completed one. A refused item is a row with its named reason, never a "
+        "silently absent one."
+    ),
+    "analysis_stale": (
+        "Records whose DEPENDENCY moved underneath them (today only key -> "
+        "beatgrid). The row keeps its record but stops being eligible for "
+        "analysis_canonical until it is recomputed, so a key computed against a "
+        "superseded beatgrid never reads as canonical. Written by the queue's "
+        "dependency cascade, read by apps.analysis.canonical."
+    ),
+    "analysis_source_default": (
+        "The persisted per-lane source (rbx or own), one row per selection lane, "
+        "absent until that lane is promoted. This is what a PROMOTION writes and "
+        "the only half of the source selection that survives a relaunch; the "
+        "PARITY-02 dev toggle is in-memory and is deliberately not stored."
+    ),
+    "analysis_projection": (
+        "Own-analysis scalars (bpm, key, loudness_lufs, loudness_dbtp, "
+        "key_change_count, tempo_change_count) read at query time when a lane's "
+        "source is `own`, rebuilt whenever that track's canonical pointer moves. "
+        "This is the ONLY place own values live: they are never written into "
+        "track_fields, so nothing here reaches track_field_history or the sync "
+        "path. `value` is deliberately typeless so numbers stay numbers. Read it "
+        "through apps.analysis.selection.effective_fields, never directly."
+    ),
+    "track_energy_segments": (
+        "One contiguous stretch of one track's timeline carrying an energy "
+        "rating of 1 to 10, as a single source heard it, ordered by `seq`. "
+        "A track has many rows per source; the series IS the shape of the "
+        "track, so reading one row alone tells you almost nothing."
+    ),
+    "unmatched_source_analysis": (
+        "One field value a source offered that could not be attached to any "
+        "track, kept with the identifying metadata it arrived with (title, "
+        "artist, isrc, source path) and the reason it failed to land "
+        "(no_candidate, ambiguous_candidates, lost_collision). This is how "
+        "analysis for audio we do not have yet survives until the track "
+        "turns up."
+    ),
+    "analysis_field_verification": (
+        "One verdict on whether a given source's values for a given field "
+        "can be trusted, and on what basis (cross_source, single_source or "
+        "unverified). What the equivalence gate consults before letting that "
+        "source's analysis be promoted onto a track."
+    ),
+    # ----- lyrics --------------------------------------------------------
+    "lyric_verdict": (
+        "One track's karaoke lyrics standing: whether it has vocals worth "
+        "aligning (vocal, sparse, no-lyrics, unknown), where the text came "
+        "from, how much of it aligned, how suspect the alignment looked, and "
+        "the sha256 of the word-timing artifact that carries the timings "
+        "themselves. `override` is the human's answer and beats the computed "
+        "`verdict` -- read the two together, never `verdict` alone. Synced, "
+        "and deleted only by tombstone: the licensing purge stamps "
+        "`deleted_at` so peers stop hydrating the words too."
     ),
     # ----- curation ------------------------------------------------------
     "pairings": (

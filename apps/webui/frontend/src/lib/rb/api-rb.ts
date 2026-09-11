@@ -15,6 +15,11 @@
 
 import { API_BASE } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
+import type { components } from '$lib/api-types';
+import { api, unwrap } from '$lib/api/client';
+import { RbApiError } from './api-rb-error';
+import { currentAnlzFetchGeneration } from './anlz-fetch-generation';
+import { optionalResources } from './optional-resource-availability';
 import type { AnlzCue, AnlzData } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
@@ -27,7 +32,9 @@ export {
 	getTrack,
 	listPlaylists,
 	listTracks,
-	patchTrack
+	patchTrack,
+	pingHealth,
+	timeoutSignal
 } from '$lib/api';
 export type {
 	HealthOut,
@@ -39,31 +46,45 @@ export type {
 
 export const RB_API_BASE: string = API_BASE;
 
-/** Explicit backend error: HTTP status + the contract's detail.code. */
-export class RbApiError extends Error {
-	constructor(
-		public status: number,
-		public code: string,
-		message: string
-	) {
-		super(`${code}: ${message}`);
-		this.name = 'RbApiError';
-	}
-}
+export { RbApiError } from './api-rb-error';
+
+export type TrackLyrics = {
+	stable_id: string;
+	source: string;
+	lines: Array<{ start_ms: number; text: string }>;
+};
 
 // ----------------------------------------------------------- _helpers
 
 async function _throwRbApiError(r: Response): Promise<never> {
 	// Backend contract: errors are explicit JSON {"detail": {code, message}}
-	// (COMPONENT-MAP 2 shared plumbing). If the body is not that shape the
-	// json()/field access fails loudly, which is the behaviour we want.
-	const body = (await r.json()) as { detail?: { code?: string; message?: string } | string };
-	const detail = typeof body.detail === 'object' && body.detail !== null ? body.detail : undefined;
-	throw new RbApiError(
-		r.status,
-		detail?.code ?? `HTTP_${r.status}`,
-		detail?.message ?? r.statusText
-	);
+	// (COMPONENT-MAP 2 shared plumbing). ServerErrorMiddleware emits plain
+	// text for unhandled errors, so parse text defensively to preserve the
+	// HTTP status rather than leaking a JSON SyntaxError to the user.
+	const text = await r.text();
+	let body: unknown;
+	try {
+		body = JSON.parse(text) as unknown;
+	} catch {
+		throw new RbApiError(r.status, `HTTP_${r.status}`, text.slice(0, 200));
+	}
+
+	const detail =
+		typeof body === 'object' && body !== null && 'detail' in body
+			? body.detail
+			: undefined;
+	if (
+		typeof detail === 'object' &&
+		detail !== null &&
+		'code' in detail &&
+		'message' in detail &&
+		typeof detail.code === 'string' &&
+		typeof detail.message === 'string'
+	) {
+		throw new RbApiError(r.status, detail.code, detail.message);
+	}
+
+	throw new RbApiError(r.status, `HTTP_${r.status}`, text.slice(0, 200));
 }
 
 async function _fetchJson<T>(path: string, cache?: RequestCache): Promise<T> {
@@ -72,6 +93,49 @@ async function _fetchJson<T>(path: string, cache?: RequestCache): Promise<T> {
 	const r = await fetch(`${RB_API_BASE}${path}`, init);
 	if (!r.ok) await _throwRbApiError(r);
 	return (await r.json()) as T;
+}
+
+function _parseTrackLyrics(raw: unknown, stableId: string): TrackLyrics {
+	if (typeof raw !== 'object' || raw === null) throw new Error('lyrics response must be an object');
+	const lyrics = raw as { stable_id?: unknown; source?: unknown; lines?: unknown };
+	if (lyrics.stable_id !== stableId || typeof lyrics.source !== 'string' || !lyrics.source) {
+		throw new Error('lyrics response has invalid stable_id or source');
+	}
+	if (!Array.isArray(lyrics.lines) || lyrics.lines.length === 0) {
+		throw new Error('lyrics response has no line-level lyrics');
+	}
+	let previousStartMs = -1;
+	const lines = lyrics.lines.map((line, index) => {
+		if (typeof line !== 'object' || line === null) throw new Error(`lyrics line ${index} is invalid`);
+		const value = line as { start_ms?: unknown; text?: unknown };
+		if (
+			typeof value.start_ms !== 'number' ||
+			!Number.isInteger(value.start_ms) ||
+			value.start_ms < 0 ||
+			value.start_ms <= previousStartMs ||
+			typeof value.text !== 'string' ||
+			!value.text.trim()
+		) {
+			throw new Error(`lyrics line ${index} is invalid`);
+		}
+		previousStartMs = value.start_ms;
+		return { start_ms: value.start_ms, text: value.text };
+	});
+	return { stable_id: stableId, source: lyrics.source, lines };
+}
+
+/** GET cached line-synced lyrics. A 404 is the explicit no-lyrics state. */
+export async function fetchTrackLyrics(stableId: string): Promise<TrackLyrics | null> {
+	if (optionalResources(stableId).lyrics === false) return null;
+	try {
+		return _parseTrackLyrics(
+			await _fetchJson<unknown>(`/api/v1/tracks/${encodeURIComponent(stableId)}/lyrics`),
+			stableId
+		);
+	} catch (error) {
+		if (error instanceof RbApiError && error.status === 404) return null;
+		throw error;
+	}
 }
 
 async function _putJson<T>(path: string, body: unknown, ifMatch?: string): Promise<T> {
@@ -287,6 +351,13 @@ export interface PlaylistTrackRowWire {
 	key: string | null;
 	bpm: number | null;
 	rating: number | null;
+	energy: number | null;
+	energy_source: 'mik' | null;
+	energy_reason: string;
+	key_status?: 'ok' | 'failed' | 'missing';
+	key_reason?: string | null;
+	loudness_status?: 'ok' | 'failed' | 'missing';
+	loudness_reason?: string | null;
 	duration_ms: number | null;
 	genre: string | null;
 	comments: string | null;
@@ -295,6 +366,8 @@ export interface PlaylistTrackRowWire {
 	preview_max: number | null;
 	file_exists: boolean;
 	is_streaming: boolean;
+	/** LIBUX-07: our own audio in non-local storage. Optional for older payloads. */
+	is_remote?: boolean;
 	/** Unmatched Spotify placeholder row (light green). Optional for older payloads. */
 	spotify_pending?: boolean;
 	quality: TrackQuality;
@@ -308,6 +381,8 @@ export interface PlaylistTrackRowWire {
 	 * CONTRACT - the browser skips the lazy per-row fetch rather than
 	 * provoke a 404 the console logs unsuppressably on every visible row. */
 	has_rb_mapping: boolean;
+	artwork_available: boolean | null;
+	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 }
 
 /** `tracks` is Omit-ed off `PlaylistDetail` rather than narrowed, because the
@@ -364,6 +439,28 @@ export async function searchCollection(params: {
 	return _fetchJson<SearchResultsWire>(`/api/v1/search?${qs.toString()}`);
 }
 
+// -------------------------------------------- lyric-only search (Part 3 of #935, #1344)
+// Matches cached synced lyrics only (never title/artist/genre/tags), over the
+// durable background index Part 2 builds. Rendered below a divider AFTER the
+// whole-collection search above settles - see LyricSearchResults.svelte.
+//
+// Reuses SearchHitWire/SearchResultsWire rather than declaring a
+// near-identical sibling: a hit is a hydrated track row plus an excerpt of
+// what matched either way. Here `match_context` is the one lyric line that
+// best carries the query, never the full transcript or a bare title.
+
+/** GET /lyrics/search - lyric-only search, not scoped to the active pane. */
+export async function searchLyrics(params: {
+	q: string;
+	limit?: number;
+	offset?: number;
+}): Promise<SearchResultsWire> {
+	const qs = new URLSearchParams({ q: params.q });
+	if (params.limit !== undefined) qs.set('limit', String(params.limit));
+	if (params.offset !== undefined) qs.set('offset', String(params.offset));
+	return _fetchJson<SearchResultsWire>(`/api/v1/lyrics/search?${qs.toString()}`);
+}
+
 /** PlaylistSummary + contract point 2's available_count. */
 export interface PlaylistSummaryHydrated extends PlaylistSummary {
 	/** Tracks whose audio file exists on disk (bulk-stat pass, cached). */
@@ -374,13 +471,39 @@ export interface PlaylistSummaryHydrated extends PlaylistSummary {
 export async function listPlaylistsHydrated(): Promise<PlaylistSummaryHydrated[]> {
 	const lists = await _fetchJson<PlaylistSummaryHydrated[]>('/api/v1/playlists');
 	for (const p of lists) {
-		if (typeof p.available_count !== 'number') {
+		if (
+			typeof p.available_count !== 'number' ||
+			!Number.isInteger(p.available_count) ||
+			p.available_count < 0 ||
+			p.available_count > p.track_count
+		) {
 			throw new Error(
-				`playlist ${p.playlist_id}: no available_count - backend contract point 2 not met`
+				`playlist ${p.playlist_id}: invalid available_count - backend contract point 2 not met`
 			);
 		}
 	}
 	return lists;
+}
+
+/** Validated generated-contract summary of playable and broken library rows. */
+export type ReconcileSummary = components['schemas']['ReconcileSummary'];
+
+/** Fetch aggregate reconciliation counts without inventing a usable library state. */
+export async function getReconcileSummary(): Promise<ReconcileSummary> {
+	const summary = await unwrap(api.GET('/api/v1/reconcile/summary'));
+	const { total_tracks, total_broken } = summary;
+	if (
+		typeof total_tracks !== 'number' ||
+		typeof total_broken !== 'number' ||
+		!Number.isInteger(total_tracks) ||
+		!Number.isInteger(total_broken) ||
+		total_tracks < 0 ||
+		total_broken < 0 ||
+		total_broken > total_tracks
+	) {
+		throw new Error('reconcile summary has invalid total_tracks or total_broken counts');
+	}
+	return summary;
 }
 
 /** Track listing item + contract point 1's per-row fields. is_streaming
@@ -388,15 +511,22 @@ export async function listPlaylistsHydrated(): Promise<PlaylistSummaryHydrated[]
  * absent here - the browser falls back to lazy rb-meta for those. */
 export type TrackListItemWire = Track & {
 	duration_ms?: number | null;
+	energy: number | null;
+	energy_source: 'mik' | null;
+	energy_reason: string;
 	preview_b64: string | null;
 	preview_max: number | null;
 	file_exists: boolean;
+	/** LIBUX-07: our own audio in non-local storage. Optional for older payloads. */
+	is_remote?: boolean;
 	quality: TrackQuality;
 	play_count: number;
 	vocals: Vocals;
 	stems: StemSummary;
 	/** See PlaylistTrackRowWire.has_rb_mapping - same flag, same purpose. */
 	has_rb_mapping: boolean;
+	artwork_available: boolean | null;
+	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 };
 
 export interface TracksPageHydrated {
@@ -445,16 +575,38 @@ export async function listTracksHydrated(params: {
  * a library prefetch and a deck load do not double-hit the backend. */
 const _inflightAnlz = new Map<string, Promise<AnlzWithVocals>>();
 
-export async function fetchAnlz(stable_id: string, points = 38400): Promise<AnlzWithVocals> {
-	const key = `${stable_id}:${points}`;
-	const existing = _inflightAnlz.get(key);
-	if (existing !== undefined) return existing;
+/** The daemon's selected source is authoritative and can outlive this
+ * document, so the ordinary path never permits the browser's shared HTTP
+ * cache to reuse an /anlz payload from another tab or a prior reload, whose
+ * document-local generation might coincidentally be the same
+ * (discussion_r3923593660): `cache: 'no-store'` and the `gen` cache-buster
+ * (anlz-fetch-generation.ts) both apply unconditionally, and `gen` stays
+ * part of the in-flight key so a live source switch still splits concurrent
+ * requests within this document.
+ *
+ * `bypassCache: true` additionally skips the in-flight de-dup below: an
+ * authoritative recheck (a vendor mapping that may have landed after the
+ * deck's own /anlz already served the empty local payload) must never be
+ * handed a promise some unrelated in-flight call is already waiting on. */
+export async function fetchAnlz(
+	stable_id: string,
+	points = 38400,
+	bypassCache = false
+): Promise<AnlzWithVocals> {
+	const gen = currentAnlzFetchGeneration();
+	const key = `${stable_id}:${points}:${gen}`;
+	if (!bypassCache) {
+		const existing = _inflightAnlz.get(key);
+		if (existing !== undefined) return existing;
+	}
 	const pending = _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}`
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}&gen=${gen}`,
+		'no-store'
 	).then((data) => {
 		vocalsOf(data);
 		return data;
 	});
+	if (bypassCache) return pending;
 	const tracked = pending.finally(() => {
 		if (_inflightAnlz.get(key) === tracked) _inflightAnlz.delete(key);
 	});
@@ -464,21 +616,31 @@ export async function fetchAnlz(stable_id: string, points = 38400): Promise<Anlz
 
 /** Like {@link fetchAnlz}, but for the one caller (`refreshHotCues`,
  * audio-engine) that cannot accept a browser-HTTP-cache hit: the backend
- * marks a decoded /anlz response `Cache-Control: public, max-age=3600`
- * (`rb_assets.py` `_CACHE_ANLZ`), so a plain `fetch` of the same URL within
- * that hour can be satisfied straight out of the HTTP cache with no network
- * round trip - "fresh" in name only, right after the mutation it's meant to
- * observe. `cache: 'reload'` forces the round trip and re-primes the HTTP
- * cache with the new response, so ordinary reads right after this one still
- * benefit from it. Deliberately bypasses the in-flight dedupe map above: an
+ * marks a decoded /anlz response `private, no-cache` with an ETag over the
+ * body (`rb_assets.py` `_CACHE_ANLZ`). That was `public, max-age=3600` when
+ * this helper was written, and a plain `fetch` of the same URL inside the
+ * hour could be satisfied from the HTTP cache with no round trip - "fresh" in
+ * name only, right after the mutation it is meant to observe. `no-cache` now
+ * forces a revalidation on every read, so the unconditional replay is gone;
+ * `cache: 'reload'` additionally skips the conditional request, which keeps
+ * this caller's guarantee independent of the server's cache-control policy
+ * rather than resting on it. It re-primes the HTTP cache with the new
+ * response, so ordinary reads right after this one still benefit from it. Deliberately bypasses the in-flight dedupe map above: an
  * ordinary in-flight `fetchAnlz` for the same key must not be handed this
- * stale-cache-tolerant promise, and vice versa. */
+ * stale-cache-tolerant promise, and vice versa.
+ *
+ * Includes the same `gen` cache-buster `fetchAnlz` reads (anlz-fetch-
+ * generation.ts) so the URL it re-primes is the EXACT one an ordinary
+ * `fetchAnlz` call issued after the same switch will request - without it,
+ * this would prime a `gen`-less URL nothing else ever asks for, and every
+ * subsequent read would still take a real round trip instead of benefiting
+ * from this one. */
 export async function fetchAnlzBypassingHttpCache(
 	stable_id: string,
 	points = 38400
 ): Promise<AnlzWithVocals> {
 	const data = await _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}`,
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}&gen=${currentAnlzFetchGeneration()}`,
 		'reload'
 	);
 	vocalsOf(data);
@@ -702,13 +864,29 @@ function _validateStemManifest(raw: unknown, stableId: string): StemArtifactMani
 	return manifest as StemArtifactManifest;
 }
 
-/** Probe the optional precomputed artifact capability. A 404 is published as
- * explicit unavailable state; malformed or broken artifacts still reject. */
+/** Probe the optional precomputed artifact capability. A 404 or HTTP 200
+ * unavailable envelope is published as explicit unavailable state; malformed
+ * or broken artifacts still reject. */
 export async function probeStemArtifact(stableId: string): Promise<StemArtifactProbe> {
+	if (optionalResources(stableId).stems === false) {
+		return { status: 'unavailable', error: 'no stem bundle advertised' };
+	}
 	try {
 		const raw = await _fetchJson<unknown>(
 			`/api/v1/tracks/${encodeURIComponent(stableId)}/stems`
 		);
+		if (
+			typeof raw === 'object' &&
+			raw !== null &&
+			'status' in raw &&
+			(raw as { status: unknown }).status === 'unavailable'
+		) {
+			const code =
+				'code' in raw ? String((raw as { code: unknown }).code) : 'STEM_BUNDLE_NOT_FOUND';
+			const message =
+				'message' in raw ? String((raw as { message: unknown }).message) : 'no stem bundle';
+			return { status: 'unavailable', error: `${code}: ${message}` };
+		}
 		return { status: 'ready', manifest: _validateStemManifest(raw, stableId) };
 	} catch (error) {
 		if (error instanceof RbApiError && error.status === 404) {
@@ -848,4 +1026,24 @@ export async function startStemGeneration(
 /** GET /stems/jobs/{id} - live state, including the real returncode. */
 export async function fetchStemJob(job_id: string): Promise<StemJob> {
 	return _fetchJson<StemJob>(`/api/v1/stems/jobs/${encodeURIComponent(job_id)}`);
+}
+
+// --------------------------------------------- vocal analysis trigger (PARITY-08)
+
+export interface VocalsAnalyzeResult {
+	claimed: string[];
+	refused: Record<string, string>;
+}
+
+/** POST /vocals/analyze - derive vocals from an existing stem bundle (CPU,
+ * no demucs). Refuses (not silently skips) any track outside the classifier's
+ * `todo` category; check `result.refused[stable_id]` for the reason. */
+export async function analyzeVocalsFromStems(stable_id: string): Promise<VocalsAnalyzeResult> {
+	const r = await fetch(`${RB_API_BASE}/api/v1/vocals/analyze`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+		body: JSON.stringify({ stable_ids: [stable_id], mode: 'from-stems' })
+	});
+	if (!r.ok) await _throwRbApiError(r);
+	return await r.json();
 }

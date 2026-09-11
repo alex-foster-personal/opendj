@@ -122,6 +122,87 @@ test('listPairings encodes a source filter', async () => {
 	assert.equal(seen.request.url, `${API_BASE}/api/v1/pairings?source=a%20i`);
 });
 
+test('listSyncSnapshots hits the PAIR-02 route with stable_a, stable_b and limit', async () => {
+	const seen = captureRequest([]);
+
+	await api.listSyncSnapshots('track-a', 'track-b', 1);
+
+	assert.equal(
+		seen.request.url,
+		`${API_BASE}/api/v1/pairings/sync-snapshots?stable_a=track-a&stable_b=track-b&limit=1`
+	);
+	assert.equal(seen.request.method, 'GET');
+});
+
+test('createAlignment POSTs the alignment body to the PAIR-02 route', async () => {
+	const seen = captureRequest({
+		id: 'al-1',
+		stable_a: 'track-a',
+		stable_b: 'track-b',
+		anchor_a_kind: 'hotcue',
+		anchor_b_kind: 'hotcue',
+		anchor_a_slot: 'A',
+		anchor_b_slot: 'A',
+		anchor_a_ms: 1000,
+		anchor_b_ms: 1500,
+		label: 'HC A',
+		created_at: '2026-09-01T00:00:00Z'
+	}, { status: 201 });
+
+	const row = await api.createAlignment({
+		stable_a: 'track-a',
+		stable_b: 'track-b',
+		anchor_a_kind: 'hotcue',
+		anchor_b_kind: 'hotcue',
+		anchor_a_slot: 'A',
+		anchor_b_slot: 'A',
+		anchor_a_ms: 1000,
+		anchor_b_ms: 1500,
+		label: 'HC A'
+	});
+
+	assert.equal(seen.request.url, `${API_BASE}/api/v1/pairings/alignments`);
+	assert.equal(seen.request.method, 'POST');
+	assert.deepEqual(seen.body, {
+		stable_a: 'track-a',
+		stable_b: 'track-b',
+		anchor_a_kind: 'hotcue',
+		anchor_b_kind: 'hotcue',
+		anchor_a_slot: 'A',
+		anchor_b_slot: 'A',
+		anchor_a_ms: 1000,
+		anchor_b_ms: 1500,
+		label: 'HC A'
+	});
+	assert.equal(row.id, 'al-1');
+});
+
+test('createAlignment surfaces a 422 as an ApiError with the route code', async () => {
+	globalThis.fetch = async () =>
+		jsonResponse(
+			{ detail: { code: 'PAIRING_CAPTURE_INVALID', message: 'pairing capture requires two distinct tracks' } },
+			{ status: 422 }
+		);
+
+	const caught = await api
+		.createAlignment({
+			stable_a: 'track-a',
+			stable_b: 'track-a',
+			anchor_a_kind: 'hotcue',
+			anchor_b_kind: 'hotcue',
+			anchor_a_slot: 'A',
+			anchor_b_slot: 'A',
+			anchor_a_ms: 1000,
+			anchor_b_ms: 1500,
+			label: null
+		})
+		.then(() => null, (error) => error);
+
+	assert.equal(caught.name, 'ApiError');
+	assert.equal(caught.status, 422);
+	assert.equal(caught.code, 'PAIRING_CAPTURE_INVALID');
+});
+
 test('getQueue and getSettings hit their documented paths', async () => {
 	const queue = captureRequest({ items: [], note: null });
 	await api.getQueue('next up');
@@ -166,6 +247,28 @@ test('solvePlayIt posts the goal to the play-it route', async () => {
 	assert.equal(seen.request.url, `${API_BASE}/api/v1/play-it/pl%2F1/solve`);
 	assert.equal(seen.request.method, 'POST');
 	assert.deepEqual(seen.body, { duration_min: 90, peak_at_min: 60 });
+});
+
+// requirement: SET-04
+// [if] solvePlayIt is given pin fields [then] they are posted on the solve body
+test('solvePlayIt posts pin fields when provided', async () => {
+	const seen = captureRequest({ playlist_id: 'pl-1', etag: '"rev-1"', steps: [] });
+
+	await api.solvePlayIt('pl-1', {
+		duration_min: 60,
+		peak_at_min: 30,
+		peak_pins: ['a', 'b'],
+		opener_pins: ['c'],
+		closer_pin: 'd'
+	});
+
+	assert.deepEqual(seen.body, {
+		duration_min: 60,
+		peak_at_min: 30,
+		peak_pins: ['a', 'b'],
+		opener_pins: ['c'],
+		closer_pin: 'd'
+	});
 });
 
 test('replacePlaylistTracks PUTs the complete membership under If-Match', async () => {

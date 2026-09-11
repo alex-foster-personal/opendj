@@ -47,7 +47,7 @@ def test_locations_reads_are_scoped_to_the_writing_machine(
         "INSERT INTO track_locations(location_id, stable_id, machine_id, kind, "
         "file_path, created_at, updated_at, origin_device_id) "
         "VALUES ('deadbeef', ?, 'm-silver', 'local', "
-        "'/Users/dev/Music/only-on-silver.aiff', ?, ?, 'm-silver')",
+        "'/Users/old/Music/only-on-silver.aiff', ?, ?, 'm-silver')",
         (SID, _TS, _TS),
     )
 
@@ -55,19 +55,19 @@ def test_locations_reads_are_scoped_to_the_writing_machine(
     assert local, "the local machine's own rows must still be visible"
     assert {loc.machine_id for loc in local} == {mine}
     assert all(
-        loc.file_path != "/Users/dev/Music/only-on-silver.aiff"
+        loc.file_path != "/Users/old/Music/only-on-silver.aiff"
         for loc in local
     )
 
     paths = state_locations.list_location_paths(state_conn, [SID])
-    assert "/Users/dev/Music/only-on-silver.aiff" not in paths[SID]
+    assert "/Users/old/Music/only-on-silver.aiff" not in paths[SID]
 
     # The fleet view is still reachable, but only by asking for it.
     remote = state_locations.list_locations(
         state_conn, SID, machine_id="m-silver",
     )
     assert [loc.file_path for loc in remote] == [
-        "/Users/dev/Music/only-on-silver.aiff"
+        "/Users/old/Music/only-on-silver.aiff"
     ]
 
 

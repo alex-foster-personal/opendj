@@ -10,6 +10,7 @@ Package layout::
   watermark    -- ID3 COMM 'personal-review-only' stamping (stdlib impl)
   retention    -- prune old MP3 segments, keep timeline.jsonl
   sources/     -- deck-state pollers (djay_source, rb_source)
+  soundcloud_export -- SET-06a metadata-only SoundCloud tracklist comment
 
 Safety posture (CONTEXT D6): share_state defaults to 'private'; every
 recorded MP3 carries an ID3 COMM watermark tagging it for personal review

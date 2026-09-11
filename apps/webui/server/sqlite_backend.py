@@ -46,10 +46,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator, Optional, Sequence
 
+from apps.analysis.selection import EffectiveField
 from apps.shared.state import db as _state_db
+from apps.shared.state import queries as _state_queries
 from apps.shared.state import schema as _state_schema
 from apps.shared.state.writer import StateWriter
 
+from .analysis_overlay import lane_owned_fields as _lane_owned_fields
+from .analysis_overlay import selection_tag as _selection_tag
 from .backend import (
     MAX_LIMIT,
     BackendError,
@@ -90,21 +94,22 @@ class StaleStateSchemaError(RuntimeError):
     """
 
 
-def _stale_tracks_schema_version(path: Path) -> Optional[int]:
-    """Return the on-disk ``schema_meta`` version iff migration was skipped.
+def read_tracks_schema_version(path: Path) -> tuple[bool, int]:
+    """Return ``(has_tracks_table, schema_meta_version)`` read fresh off disk.
 
-    ``None`` means either "not a Phase 5 db at all" (no ``tracks`` table --
-    the existing per-table InMemory-fallback tests deliberately construct
-    dbs like this and must keep working) or "already current". A non-None
-    result means a real Phase 5 db exists but predates SCHEMA_VERSION.
+    Shared by :func:`_stale_tracks_schema_version` (the boot-time construction
+    guard) and the PREFLIGHT-01 state-db check (``apps.webui.server.
+    preflight_checks``), which polls the SAME question live after boot rather
+    than trusting whatever an already-constructed backend decided once. A db
+    with no ``tracks`` table at all (not yet a Phase 5 db) reads back version
+    0 alongside ``has_tracks_table=False`` so a caller can tell "nothing here
+    yet" from "here, but behind".
     """
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
         has_tracks = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracks'"
         ).fetchone() is not None
-        if not has_tracks:
-            return None
         has_meta = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_meta'"
         ).fetchone() is not None
@@ -114,7 +119,42 @@ def _stale_tracks_schema_version(path: Path) -> Optional[int]:
             ).fetchone()[0]
             if has_meta else 0
         )
-        return version if version < _state_schema.SCHEMA_VERSION else None
+        return has_tracks, version
+    finally:
+        conn.close()
+
+
+def _stale_tracks_schema_version(path: Path) -> Optional[int]:
+    """Return the on-disk ``schema_meta`` version iff migration was skipped.
+
+    ``None`` means either "not a Phase 5 db at all" (no ``tracks`` table --
+    the existing per-table InMemory-fallback tests deliberately construct
+    dbs like this and must keep working) or "already current". A non-None
+    result means a real Phase 5 db exists but predates SCHEMA_VERSION.
+    """
+    has_tracks, version = read_tracks_schema_version(path)
+    if not has_tracks:
+        return None
+    return version if version < _state_schema.SCHEMA_VERSION else None
+
+
+def _tracks_table_missing_schema_meta(path: Path) -> bool:
+    """Return whether a foreign ``tracks`` table lacks migration metadata.
+
+    A genuine historical state DB has ``schema_meta`` and is safe for the
+    migration ladder. Without it, migration starts at v0 and ``CREATE TABLE
+    IF NOT EXISTS tracks`` retains an incompatible pre-existing table, so
+    later v0 statements leak a low-level missing-column error.
+    """
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        has_tracks = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracks'"
+        ).fetchone() is not None
+        has_meta = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_meta'"
+        ).fetchone() is not None
+        return has_tracks and not has_meta
     finally:
         conn.close()
 
@@ -148,7 +188,14 @@ def _reset_warnings_for_tests() -> None:
 # Fields the webui Track exposes that live in track_fields (EAV). Any field
 # name listed here is JSON-decoded on the way out.
 _EAV_FIELDS: tuple[str, ...] = (
-    "bpm", "key", "rating", "tags", "notes", "last_played_at", "tempo_pref",
+    "bpm", "key", "rating", "tags", "notes", "last_played_at", "genre", "comments",
+    "energy", "tempo_pref",
+)
+
+_TRACKS_PROJECTION = (
+    "SELECT stable_id, title, artists_json, album, "
+    "       duration_ms, file_path, created_at, updated_at "
+    "FROM tracks WHERE deleted_at IS NULL"
 )
 
 
@@ -167,7 +214,7 @@ def _parse_rfc3339(ts: str) -> datetime:
 
 def _effective_updated_at(
     row_updated_at: str,
-    fields: dict[str, tuple[Any, str, Optional[float], str]],
+    fields: dict[str, EffectiveField],
 ) -> str:
     """Latest of the row ``updated_at`` and every field ``modified_at``.
 
@@ -175,19 +222,26 @@ def _effective_updated_at(
     ``StateWriter.set_field`` must advance the etag even though they never
     touch the ``tracks`` identity row. Returns the original string of the
     winning stamp so the derivation is byte-stable across restarts.
+
+    A field with an EMPTY stamp is skipped: an own lane with no analysis
+    record yet reports ``status: missing`` and no time, and there is no
+    stamp to compare. Parsing "" here would raise on every unanalyzed
+    track the moment a lane is switched to own.
     """
     best = row_updated_at
     best_dt = _parse_rfc3339(row_updated_at)
-    for _value, _source, _confidence, modified_at in fields.values():
-        dt = _parse_rfc3339(modified_at)
+    for view in fields.values():
+        if not view.modified_at:
+            continue
+        dt = _parse_rfc3339(view.modified_at)
         if dt > best_dt:
-            best, best_dt = modified_at, dt
+            best, best_dt = view.modified_at, dt
     return best
 
 
 def _row_to_track(
     row: sqlite3.Row,
-    fields: dict[str, tuple[Any, str, Optional[float], str]],
+    fields: dict[str, EffectiveField],
 ) -> Track:
     """Project a ``tracks`` row + its ``track_fields`` entries into ``Track``.
 
@@ -206,13 +260,17 @@ def _row_to_track(
         except (json.JSONDecodeError, TypeError):
             artist = None
 
-    bpm = fields.get("bpm", (None,))[0]
-    key = fields.get("key", (None,))[0]
-    rating = fields.get("rating", (None,))[0]
-    tags_val = fields.get("tags", (None,))[0]
-    notes = fields.get("notes", (None,))[0]
-    last_played_at = fields.get("last_played_at", (None,))[0]
-    tempo_pref_val = fields.get("tempo_pref", (None,))[0]
+    def _val(name: str) -> Any:
+        view = fields.get(name)
+        return view.value if view is not None else None
+
+    bpm = _val("bpm")
+    key = _val("key")
+    rating = _val("rating")
+    tags_val = _val("tags")
+    notes = _val("notes")
+    last_played_at = _val("last_played_at")
+    tempo_pref_val = _val("tempo_pref")
 
     if isinstance(bpm, (int, float)):
         bpm = float(bpm)
@@ -243,10 +301,10 @@ def _row_to_track(
         tempo_pref = None
 
     provenance: dict[str, Provenance] = {}
-    for fname, (value, source, confidence, modified_at) in fields.items():
+    for fname, view in fields.items():
         provenance[fname] = Provenance(
-            value=value, source=source, confidence=confidence,  # type: ignore[arg-type]
-            modified_at=modified_at,
+            value=view.value, source=view.source, confidence=view.confidence,
+            modified_at=view.modified_at, status=view.status, reason=view.reason,
         )
 
     return Track(
@@ -265,23 +323,35 @@ def _row_to_track(
         file_path=row["file_path"],
         created_at=row["created_at"],
         updated_at=_effective_updated_at(row["updated_at"], fields),
+        selection_tag=_selection_tag(fields),
         provenance=provenance,
     )
 
 
 def _fetch_fields(
     conn: sqlite3.Connection, stable_ids: list[str],
-) -> dict[str, dict[str, tuple[Any, str, Optional[float], str]]]:
-    """Fetch the EAV-projected fields for ``stable_ids``.
+) -> dict[str, dict[str, EffectiveField]]:
+    """Fetch the effective projected fields for ``stable_ids``.
 
-    Returns ``{stable_id: {field_name: (value, source, confidence, modified_at)}}``.
-    Only fields in :data:`_EAV_FIELDS` are returned.
+    Returns ``{stable_id: {field_name: EffectiveField}}``.
+
+    Two sources, one function. The ordinary EAV fields
+    (:data:`_EAV_FIELDS`) come from ``track_fields`` as they always have.
+    The LANE-OWNED fields (``bpm``, ``key``, ``loudness_lufs``,
+    ``loudness_dbtp``, ``key_change_count``, ``tempo_change_count``) come
+    from :func:`apps.analysis.selection.effective_fields`, which reads
+    ``track_fields`` for a lane on rbx and ``analysis_projection`` for a
+    lane on own. Its answer OVERRIDES the EAV pass, so switching a lane to
+    own cannot leave the rekordbox value showing, and an own lane with no
+    record shows ``status: missing`` rather than silently falling back --
+    which is the substitution native-analysis v1 exists to remove.
+
+    Nothing here writes. An own value never reaches ``track_fields`` or
+    ``track_field_history``.
     """
     if not stable_ids:
         return {}
-    out: dict[str, dict[str, tuple[Any, str, Optional[float], str]]] = {
-        sid: {} for sid in stable_ids
-    }
+    out: dict[str, dict[str, EffectiveField]] = {sid: {} for sid in stable_ids}
     # Use chunked IN (...) to avoid SQLite's default 999 variable cap.
     chunk = 500
     eav_placeholders = ",".join("?" * len(_EAV_FIELDS))
@@ -302,10 +372,40 @@ def _fetch_fields(
                 value = json.loads(row["value_json"])
             except (json.JSONDecodeError, TypeError):
                 value = row["value_json"]
-            out[sid][fname] = (
-                value, row["source"], row["confidence"], row["modified_at"],
+            out[sid][fname] = EffectiveField(
+                value=value, source=row["source"], confidence=row["confidence"],
+                modified_at=row["modified_at"], status="ok", reason=None,
             )
+
+    for sid, lane_fields in _lane_owned_fields(conn, stable_ids).items():
+        out[sid].update(lane_fields)
     return out
+
+
+def _matches_track_filter(track: Track, flt: TrackFilter) -> bool:
+    """Keep list-track filtering semantics independent of SQLite collation."""
+    if flt.q:
+        needle = flt.q.casefold()
+        if not (
+            (track.title and needle in track.title.casefold())
+            or (track.artist and needle in track.artist.casefold())
+        ):
+            return False
+    if flt.bpm_min is not None and not (
+        track.bpm is not None and track.bpm >= flt.bpm_min
+    ):
+        return False
+    if flt.bpm_max is not None and not (
+        track.bpm is not None and track.bpm <= flt.bpm_max
+    ):
+        return False
+    if flt.key and track.key != flt.key:
+        return False
+    if flt.rating_min is not None and not (
+        track.rating is not None and track.rating >= flt.rating_min
+    ):
+        return False
+    return not flt.tag or flt.tag in (track.tags or [])
 
 
 def _field_writes(current: Track, patch: dict[str, Any]) -> dict[str, Any]:
@@ -428,60 +528,38 @@ class SqliteBackend:
             if not self._table_exists(conn, "tracks"):
                 _warn_fallback_once("list_tracks", "no tracks table")
                 return self._fallback.list_tracks(flt)
-            rows = list(
-                conn.execute(
-                    "SELECT stable_id, title, artists_json, album, "
-                    "       duration_ms, file_path, created_at, updated_at "
-                    "FROM tracks "
-                    "WHERE deleted_at IS NULL "
-                    "ORDER BY stable_id"
-                )
-            )
-            fields_map = _fetch_fields(
-                conn, [r["stable_id"] for r in rows],
-            )
-        tracks = [
-            _row_to_track(r, fields_map.get(r["stable_id"], {}))
-            for r in rows
-        ]
-        if flt.q:
-            needle = flt.q.casefold()
-            tracks = [
-                t for t in tracks
-                if (t.title and needle in t.title.casefold())
-                or (t.artist and needle in t.artist.casefold())
-            ]
-        if flt.bpm_min is not None:
-            tracks = [
-                t for t in tracks
-                if t.bpm is not None and t.bpm >= flt.bpm_min
-            ]
-        if flt.bpm_max is not None:
-            tracks = [
-                t for t in tracks
-                if t.bpm is not None and t.bpm <= flt.bpm_max
-            ]
-        if flt.key:
-            tracks = [t for t in tracks if t.key == flt.key]
-        if flt.rating_min is not None:
-            tracks = [
-                t for t in tracks
-                if t.rating is not None and t.rating >= flt.rating_min
-            ]
-        if flt.tag:
-            tracks = [t for t in tracks if flt.tag in (t.tags or [])]
-        limit = max(1, min(flt.limit, MAX_LIMIT))
-        start = 0
-        if flt.cursor:
-            for i, t in enumerate(tracks):
-                if t.stable_id > flt.cursor:
-                    start = i
+            limit = max(1, min(flt.limit, MAX_LIMIT))
+            page: list[Track] = []
+            scan_cursor = flt.cursor
+            while len(page) < limit:
+                cursor_predicate = ""
+                params: tuple[str | int, ...] = (limit,)
+                if scan_cursor is not None:
+                    cursor_predicate = " AND stable_id > ?"
+                    params = (scan_cursor, limit)
+                rows = list(conn.execute(
+                    _TRACKS_PROJECTION + cursor_predicate
+                    + " ORDER BY stable_id LIMIT ?",
+                    params,
+                ))
+                if not rows:
                     break
-            else:
-                start = len(tracks)
-        page = tracks[start : start + limit]
-        next_cursor = page[-1].stable_id if len(page) == limit else None
-        return Page(items=page, next_cursor=next_cursor)
+                fields_map = _fetch_fields(
+                    conn, [row["stable_id"] for row in rows],
+                )
+                for row in rows:
+                    track = _row_to_track(
+                        row, fields_map.get(row["stable_id"], {}),
+                    )
+                    if _matches_track_filter(track, flt):
+                        page.append(track)
+                        if len(page) == limit:
+                            break
+                if len(page) == limit or len(rows) < limit:
+                    break
+                scan_cursor = rows[-1]["stable_id"]
+            next_cursor = page[-1].stable_id if len(page) == limit else None
+            return Page(items=page, next_cursor=next_cursor)
 
     def get_track(self, stable_id: str) -> Track:
         with self._ro() as conn:
@@ -513,24 +591,32 @@ class SqliteBackend:
             if not self._table_exists(conn, "tracks"):
                 _warn_fallback_once("get_tracks_bulk", "no tracks table")
                 return self._fallback.get_tracks_bulk(ids)
-            rows: list[sqlite3.Row] = []
-            chunk = 500
-            for i in range(0, len(ids), chunk):
-                sub = ids[i : i + chunk]
-                placeholders = ",".join("?" * len(sub))
-                rows.extend(
-                    conn.execute(
-                        "SELECT stable_id, title, artists_json, album, "
-                        "       duration_ms, file_path, created_at, updated_at "
-                        f"FROM tracks WHERE stable_id IN ({placeholders})",
-                        tuple(sub),
-                    )
-                )
+            rows = _state_queries.bulk_select_by_stable_id(
+                conn, "tracks",
+                "stable_id, title, artists_json, album, duration_ms, "
+                "file_path, created_at, updated_at",
+                ids,
+            )
             fields_map = _fetch_fields(conn, [r["stable_id"] for r in rows])
         return {
             r["stable_id"]: _row_to_track(r, fields_map.get(r["stable_id"], {}))
             for r in rows
         }
+
+    def get_file_paths_bulk(self, stable_ids: Sequence[str]) -> dict[str, str | None]:
+        """``file_path`` only, skipping the ``_fetch_fields`` EAV pass -- see
+        ``routes/playlists.py`` for why (pin e0f3a90652a9)."""
+        ids = list(dict.fromkeys(stable_ids))
+        if not ids:
+            return {}
+        with self._ro() as conn:
+            if not self._table_exists(conn, "tracks"):
+                _warn_fallback_once("get_file_paths_bulk", "no tracks table")
+                return self._fallback.get_file_paths_bulk(ids)
+            rows = _state_queries.bulk_select_by_stable_id(
+                conn, "tracks", "stable_id, file_path", ids,
+            )
+        return {r["stable_id"]: r["file_path"] for r in rows}
 
     def list_playlists(self) -> list[Playlist]:
         with self._ro() as conn:
@@ -703,7 +789,7 @@ class SqliteBackend:
                     fields = _fetch_fields(conn, [update.stable_id])
                     current = _row_to_track(row, fields.get(update.stable_id, {}))
                     current_rows.append(current)
-                    current_etag = compute_etag(current.stable_id, current.updated_at)
+                    current_etag = compute_etag(current.stable_id, current.updated_at, current.selection_tag)
                     if strip_quotes(current_etag) != strip_quotes(update.expected_etag):
                         conflicts.append({
                             "stable_id": update.stable_id,
@@ -817,14 +903,14 @@ class SqliteBackend:
                         {"tags_remove": [old_name]} if new_name is None else {
                             "tags_add": [new_name], "tags_remove": [old_name],
                         },
-                        compute_etag(track.stable_id, track.updated_at),
+                        compute_etag(track.stable_id, track.updated_at, track.selection_tag),
                     )
                     for track in members
                 ]
 
                 conflicts: list[dict[str, str]] = []
                 for track, update in zip(members, updates):
-                    current_etag = compute_etag(track.stable_id, track.updated_at)
+                    current_etag = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
                     if strip_quotes(current_etag) != strip_quotes(update.expected_etag):
                         conflicts.append({"stable_id": track.stable_id, "current_etag": current_etag})
                 if conflicts:
@@ -911,6 +997,18 @@ def make_backend(
     else:
         target = Path(state_db_path)
     if Path(target).is_file():
+        if _tracks_table_missing_schema_meta(target):
+            raise StaleStateSchemaError(
+                f"{target} has a tracks table but schema_meta reports "
+                f"version 0, below SCHEMA_VERSION "
+                f"{_state_schema.SCHEMA_VERSION}. Refusing to migrate an "
+                "unversioned tracks table. Migration was skipped somewhere "
+                "in the boot path; refusing to serve a mismatched schema. "
+                "Run `python -m "
+                "apps.shared.state.cli init` (or "
+                "apps.shared.state.schema.apply_migrations) on this DB "
+                "before booting."
+            )
         _migrate_before_serving(target)
         log.info("webui backend: using SqliteBackend at %s", target)
         return SqliteBackend(target)
@@ -922,4 +1020,5 @@ def make_backend(
 
 __all__ = [
     "SqliteBackend", "StaleStateSchemaError", "make_backend",
+    "read_tracks_schema_version",
 ]

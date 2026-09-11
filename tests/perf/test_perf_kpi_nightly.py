@@ -1,0 +1,96 @@
+"""Nightly warm median and ceiling integration for perf KPI job."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from scripts.perf.perf_kpi_config import PerfKpiConfig, TrackProfile
+from scripts.perf.perf_kpi_nightly import (
+    WarmMedian,
+    find_ceiling_breaches,
+    run_nightly,
+    warm_median_ms,
+)
+
+
+def test_warm_median_uses_samples_after_first() -> None:
+    """If the first sample is cold then the warm median ignores it."""
+    samples = [(200, 2000.0), (200, 80.0), (200, 90.0), (200, 85.0), (200, 88.0)]
+    median, error = warm_median_ms(samples)
+    assert error is None
+    assert median == 86.5
+
+
+def test_warm_median_errors_without_2xx() -> None:
+    """If warm samples are all failures then no numeric median is produced."""
+    median, error = warm_median_ms([(200, 10.0), (500, 1.0), (500, 2.0)])
+    assert median is None
+    assert error
+
+
+def test_run_nightly_appends_and_flags_ceiling(tmp_path: Path) -> None:
+    """If warm anlz exceeds 3x trailing median then nightly exits non-zero and logs breach."""
+    ledger = tmp_path / "kpi-ledger.json"
+    ledger.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "entries": [
+                    {
+                        "date": "2026-09-08",
+                        "kpi": "deck_load_anlz_warm_median_ms_small_mp3",
+                        "value": 50.0,
+                        "unit": "ms",
+                        "measured": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    state_dir = tmp_path / "state"
+    config = PerfKpiConfig(
+        ledger_path=ledger,
+        state_dir=state_dir,
+        health_log=state_dir / "health.jsonl",
+        history_log=state_dir / "history.jsonl",
+        health_state=state_dir / "health-state.json",
+        preview_health_url="http://127.0.0.1:8728/api/v1/health",
+        preview_engine_label="com.af.opendj-preview-engine",
+        scratch_port=8699,
+        samples=3,
+        machine="air",
+        tracks=(TrackProfile("small_mp3", "sid-small", "small"),),
+    )
+
+    def probe(_base: str, path: str) -> tuple[int, float]:
+        if path.endswith("/anlz"):
+            return 200, 200.0
+        return 200, 150.0
+
+    outcome = run_nightly(
+        config,
+        base_url="http://127.0.0.1:8699",
+        git_sha="deadbeef",
+        probe=probe,
+        today=__import__("datetime").date(2026, 9, 11),
+        file_issue=False,
+    )
+    assert outcome.exit_code == 3
+    assert outcome.breaches
+    doc = json.loads(ledger.read_text(encoding="utf-8"))
+    assert doc["entries"][-1]["git_sha"] == "deadbeef"
+    history = state_dir / "history.jsonl"
+    assert history.exists()
+    assert "ceiling_breach" in history.read_text(encoding="utf-8")
+
+
+def test_find_ceiling_ignores_audio_legs() -> None:
+    """If only audio is slow then the anlz ceiling check does not fire."""
+    breaches = find_ceiling_breaches(
+        [{"date": "2026-09-08", "kpi": "deck_load_anlz_warm_median_ms_small_mp3", "value": 50.0}],
+        [WarmMedian("small_mp3", "audio", 500.0, None, "n=4")],
+        today=__import__("datetime").date(2026, 9, 11),
+    )
+    assert breaches == []

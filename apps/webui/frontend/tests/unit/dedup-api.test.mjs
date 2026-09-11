@@ -42,7 +42,8 @@ function clusterPayload({ decisionAction = null } = {}) {
 								cluster_key: CLUSTER_KEY,
 								survivor: 'track-canon',
 								action: decisionAction,
-								decided_at: '2026-07-22T12:00:00.000000Z'
+								decided_at: '2026-07-22T12:00:00.000000Z',
+								pending_apply: true
 							}
 			}
 		],
@@ -208,4 +209,107 @@ test('decision response cannot claim that irreversible apply already ran', async
 		),
 		/dedup: decision response must remain pending apply/
 	);
+});
+
+test('GET with two clusters sharing cluster_key throws', async () => {
+	const payload = clusterPayload();
+	payload.clusters.push({ ...payload.clusters[0], cluster_id: 8 });
+	globalThis.fetch = async () =>
+		new Response(JSON.stringify(payload), {
+			status: 200,
+			headers: { 'content-type': 'application/json', etag: INITIAL_REVISION }
+		});
+
+	await assert.rejects(dedupApi.fetchDedupClusters(), /dedup: duplicate cluster_key/);
+});
+
+test('applyDedupMerge posts apply with If-Match and accepts pending_apply false', async () => {
+	const controller = new AbortController();
+	let request;
+	let body;
+	globalThis.fetch = async (input) => {
+		request = input;
+		body = await input.clone().json();
+		return new Response(
+			JSON.stringify({
+				cluster_id: 7,
+				cluster_key: CLUSTER_KEY,
+				survivor: 'track-canon',
+				action: 'merge',
+				decided_at: '2026-07-22T12:00:00.000000Z',
+				pending_apply: false,
+				revision: NEXT_REVISION,
+				playlists: [
+					{
+						playlist_id: 'pl-1',
+						name: 'Warmup',
+						before: ['track-alias'],
+						after: ['track-canon']
+					}
+				]
+			}),
+			{
+				status: 200,
+				headers: { 'content-type': 'application/json', etag: NEXT_REVISION }
+			}
+		);
+	};
+
+	const record = await dedupApi.applyDedupMerge(
+		7,
+		CLUSTER_KEY,
+		'track-canon',
+		INITIAL_REVISION,
+		controller.signal
+	);
+
+	assert.equal(request.url, `${API_BASE}/api/v1/dedup/clusters/7/apply`);
+	assert.equal(request.method, 'POST');
+	assert.equal(request.headers.get('if-match'), INITIAL_REVISION);
+	assert.deepEqual(body, { cluster_key: CLUSTER_KEY, survivor: 'track-canon' });
+	assert.equal(record.pending_apply, false);
+	assert.equal(record.playlists[0].playlist_id, 'pl-1');
+});
+
+test('undoDedupMerge posts undo and a 409 becomes DedupConflictError', async () => {
+	let request;
+	globalThis.fetch = async (input) => {
+		request = input;
+		return new Response(
+			JSON.stringify({
+				cluster_id: 7,
+				cluster_key: CLUSTER_KEY,
+				survivor: 'track-canon',
+				action: 'merge',
+				decided_at: '2026-07-22T12:00:00.000000Z',
+				pending_apply: true,
+				revision: NEXT_REVISION,
+				playlist_ids: ['pl-1']
+			}),
+			{
+				status: 200,
+				headers: { 'content-type': 'application/json', etag: NEXT_REVISION }
+			}
+		);
+	};
+
+	const record = await dedupApi.undoDedupMerge(7, CLUSTER_KEY, 'track-canon', INITIAL_REVISION);
+	assert.equal(request.url, `${API_BASE}/api/v1/dedup/clusters/7/undo`);
+	assert.equal(record.pending_apply, true);
+
+	globalThis.fetch = async () =>
+		new Response(null, {
+			status: 409,
+			statusText: 'Conflict',
+			headers: { etag: NEXT_REVISION }
+		});
+
+	const caught = await dedupApi
+		.applyDedupMerge(7, CLUSTER_KEY, 'track-canon', INITIAL_REVISION)
+		.then(
+			() => null,
+			(error) => error
+		);
+	assert.ok(caught instanceof dedupApi.DedupConflictError, 'expected a DedupConflictError');
+	assert.equal(caught.revision, NEXT_REVISION);
 });

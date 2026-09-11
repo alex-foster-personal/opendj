@@ -162,7 +162,7 @@ def _require_current_etag(track: Track, if_match: str | None) -> None:
             "code": "PRECONDITION_REQUIRED",
             "message": "POST /relocate/{stable_id}/apply requires If-Match",
         })
-    current = compute_etag(track.stable_id, track.updated_at)
+    current = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
     if strip_quotes(current) != strip_quotes(if_match):
         raise HTTPException(status_code=409, detail={
             "code": "RELOCATE_ETAG_CONFLICT",

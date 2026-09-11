@@ -1,37 +1,64 @@
 <script lang="ts">
 	// Hover/focus teaching chrome for performance controls. Native `title` stays
-	// on the wrapped control; this popover adds short bullets + optional SVG demos.
-	// UI-only - does not invent engine behavior. Copy must match audio-engine.
+	// on the wrapped control by convention; this popover adds short bullets +
+	// optional SVG demos. UI-only - does not invent engine behavior. Copy must
+	// match audio-engine.
+	//
+	// A caller whose wrapped control would otherwise show BOTH the native
+	// title and this popover at once (the overlap pin dd4f0f5ae33f flagged)
+	// should drop that control's own `title` and keep only `aria-label` -
+	// this component's own `title` prop still reaches screen readers via the
+	// popover's heading and, on slow/no-hover, is unaffected either way.
+	import { onDestroy } from 'svelte';
 	import type { Snippet } from 'svelte';
+
+	const INTERACTIVE_HIDE_DELAY_MS = 150;
 
 	export type ExplainerDemo = 'cue' | 'slip';
 
 	let {
 		title,
 		bullets = [],
+		warning = null,
+		action = null,
 		demo = null,
 		placement = 'auto',
+		showDelayMs = 0,
 		children
 	}: {
 		/** Native tooltip text mirrored for screen readers / slow hover. */
 		title: string;
 		/** Short factual bullets shown in the rich popover. */
 		bullets?: readonly string[];
+		/** Red, factual warning shown above an optional interactive action. */
+		warning?: string | null;
+		/** Optional action that must drive an existing typed UI dispatcher. */
+		action?: Snippet | null;
 		/** Optional mini SVG animation that teaches the control. */
 		demo?: ExplainerDemo | null;
 		/** Prefer above; `auto` flips below when near the top of the viewport. */
 		placement?: 'auto' | 'above' | 'below';
+		/**
+		 * Trailing show debounce in ms. Default 0 = show immediately, which
+		 * preserves every existing caller's current behavior. A caller with a
+		 * reason to debounce (e.g. several of these packed edge to edge, where
+		 * a fast skim across them would otherwise flash a popover per item)
+		 * sets its own value and states that reason at the call site.
+		 */
+		showDelayMs?: number;
 		children: Snippet;
 	} = $props();
 
 	let wrapEl: HTMLSpanElement | undefined = $state();
 	let open = $state(false);
 	let popStyle = $state('');
+	let hideTimer: ReturnType<typeof setTimeout> | undefined;
+	let showTimer: ReturnType<typeof setTimeout> | undefined;
 
-	const hasRich: boolean = $derived(bullets.length > 0 || demo !== null);
+	const hasRich: boolean = $derived(bullets.length > 0 || warning !== null || action !== null || demo !== null);
 
 	function _place(): void {
-		if (wrapEl === undefined) return;
+		if (!wrapEl) return;
 		const r = wrapEl.getBoundingClientRect();
 		const preferAbove =
 			placement === 'above' || (placement === 'auto' && r.top > 170);
@@ -43,15 +70,52 @@
 		}
 	}
 
-	function _show(): void {
-		if (!hasRich) return;
+	function _openNow(): void {
+		showTimer = undefined;
 		_place();
 		open = true;
 	}
 
-	function _hide(): void {
+	function _show(): void {
+		if (hideTimer !== undefined) clearTimeout(hideTimer);
+		hideTimer = undefined;
+		if (showTimer !== undefined) clearTimeout(showTimer);
+		showTimer = undefined;
+		if (!hasRich) return;
+		if (showDelayMs > 0) {
+			showTimer = setTimeout(_openNow, showDelayMs);
+		} else {
+			_openNow();
+		}
+	}
+
+	function _close(): void {
+		if (hideTimer !== undefined) clearTimeout(hideTimer);
+		hideTimer = undefined;
+		if (showTimer !== undefined) clearTimeout(showTimer);
+		showTimer = undefined;
 		open = false;
 	}
+
+	function _hide(event: FocusEvent | PointerEvent): void {
+		const next = event.relatedTarget;
+		if (next instanceof Node && wrapEl?.contains(next)) return;
+		if (event instanceof PointerEvent && action !== null) {
+			if (hideTimer !== undefined) clearTimeout(hideTimer);
+			hideTimer = setTimeout(_close, INTERACTIVE_HIDE_DELAY_MS);
+			return;
+		}
+		_close();
+	}
+
+	function _onKeydown(event: KeyboardEvent): void {
+		if (event.key !== 'Escape') return;
+		event.preventDefault();
+		wrapEl?.querySelector<HTMLElement>('button, [tabindex]')?.focus();
+		_close();
+	}
+
+	onDestroy(_close);
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -61,16 +125,23 @@
 	onpointerenter={_show}
 	onpointerleave={_hide}
 	onfocusin={_show}
-	onfocusout={(e) => {
-		const next = e.relatedTarget;
-		if (next instanceof Node && wrapEl?.contains(next)) return;
-		_hide();
-	}}
+	onfocusout={_hide}
+	onkeydown={_onKeydown}
 >
 	{@render children()}
 	{#if open && hasRich}
-		<div class="pop" style={popStyle} role="tooltip">
+		<div
+			class="pop"
+			style={popStyle}
+			role={action === null ? 'tooltip' : 'dialog'}
+			aria-label={action === null ? undefined : title}
+			onpointerenter={_show}
+			onpointerleave={_hide}
+		>
 			<p class="head">{title}</p>
+			{#if warning !== null}
+				<p class="warning">{warning}</p>
+			{/if}
 			{#if demo === 'cue'}
 				<svg class="demo" viewBox="0 0 120 36" aria-hidden="true">
 					<rect x="2" y="14" width="116" height="8" rx="1" class="track" />
@@ -98,6 +169,9 @@
 					{/each}
 				</ul>
 			{/if}
+			{#if action !== null}
+				<div class="action">{@render action()}</div>
+			{/if}
 		</div>
 	{/if}
 </span>
@@ -124,7 +198,7 @@
 		font-family: var(--rb-font);
 		font-size: 10px;
 		line-height: 1.35;
-		pointer-events: none;
+		pointer-events: auto;
 		text-align: left;
 	}
 	.head {
@@ -132,6 +206,14 @@
 		font-weight: 650;
 		color: var(--rb-text);
 		letter-spacing: 0.02em;
+	}
+	.warning {
+		margin: 0 0 5px;
+		color: var(--rb-red);
+		font-weight: 650;
+	}
+	.action {
+		margin-top: 6px;
 	}
 	ul {
 		margin: 0;
