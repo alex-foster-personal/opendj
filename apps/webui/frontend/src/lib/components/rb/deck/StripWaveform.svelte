@@ -13,6 +13,7 @@
 	// PVDI regions (status 'rekordbox'); the two barless states surface as
 	// explicit tooltips - three mandatory states, nothing invented.
 	import { vocalsOf, type Vocals } from '$lib/rb/api-rb';
+	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { drawStripWaveform } from './strip-waveform-render';
@@ -26,7 +27,8 @@
 		deck: DeckState;
 		pending: boolean;
 		onSeek: (ms: number) => Promise<void>;
-		onPlay: () => Promise<void>;
+		/** Q1: carries the originating click's own `event.timeStamp`. */
+		onPlay: (pressT0Ms?: number) => Promise<void>;
 	} = $props();
 
 	// Canvas backing resolution (CSS scales to 100% x var(--rb-strip-h)).
@@ -60,6 +62,15 @@
 			: deck.anlz.cues.filter((c) => c.kind === 'memory').map((c) => c.in_ms)
 	);
 
+	// PARITY-02: OWN selected but this track has no own analysis to serve -
+	// the backend already returns the real empty grid plus this reason
+	// (rb_assets.py _resolve_beatgrid_source); nothing previously read it, so
+	// the strip went inert with no explanation beyond the toggle itself
+	// (discussion_r3921839841).
+	const ownGridUnavailable: string | null = $derived(
+		deck.anlz?.beatgrid_source === 'own' ? deck.anlz.beatgrid_own_unavailable_reason : null
+	);
+
 	// First stored loop in the hot-cue bank -> in/out time chips (display-only
 	// at v1 per COMPONENT-MAP 1.3; sparse coverage is real).
 	const loopCue: { slot: HotCueSlot; in_ms: number; out_ms: number } | null = $derived.by(() => {
@@ -70,6 +81,14 @@
 		}
 		return null;
 	});
+
+	const loopCues: { in_ms: number; out_ms: number }[] = $derived(
+		deck.hot_cues.flatMap((hc) => (hc.is_loop && hc.out_ms !== null ? [{ in_ms: hc.in_ms, out_ms: hc.out_ms }] : []))
+	);
+
+	const keySegmentMarkersS: readonly number[] = $derived(
+		keyAtPlayheadNow(deck.anlz, deck.position_ms, deck.key_shift_semitones, deck.key).markerTimesS
+	);
 
 	// ----------------------------------------------------------- _helpers
 
@@ -98,7 +117,8 @@
 			durationMs: deck.duration_ms,
 			waveform: deck.anlz === null ? null : deck.anlz.waveform,
 			vocals,
-			loop: deck.loop
+			loop: deck.loop,
+			loopCues
 		});
 	});
 
@@ -118,7 +138,7 @@
 	async function handlePlayHint(e: MouseEvent): Promise<void> {
 		e.stopPropagation();
 		playHintPct = null;
-		await onPlay();
+		await onPlay(e.timeStamp);
 	}
 </script>
 
@@ -128,7 +148,8 @@
 			type="button"
 			class="play-hint"
 			style={`left:${playHintPct}%`}
-			aria-label="Play from here"
+			aria-label={`play from waveform deck ${deck.deck_id}`}
+			data-testid={`waveform-play-deck-${deck.deck_id}`}
 			title="Play"
 			onclick={(e) => void handlePlayHint(e)}
 		>
@@ -139,17 +160,28 @@
 		class="strip"
 		onclick={(e) => void handleClick(e)}
 		disabled={deck.stable_id === null || pending}
-		aria-label="track overview waveform - click to seek"
+		aria-label={`waveform seek deck ${deck.deck_id}`}
+		data-testid={`waveform-seek-deck-${deck.deck_id}`} data-wave-surface="strip"
 		title={vocalsTitle ?? undefined}
 	>
 		<canvas bind:this={canvas} width={W} height={H}></canvas>
 
 		{#if deck.anlz_error !== null}
-			<span class="no-anlz">NO ANALYSIS</span>
+			<span class="no-anlz" title="No rekordbox ANLZ for this track - the strip has no waveform, beatgrid, or cue overlay">NO ANALYSIS</span>
+		{:else if ownGridUnavailable !== null}
+			<span class="no-anlz" title={ownGridUnavailable}>NO OWN GRID</span>
 		{/if}
 
 		{#each memoryCuesMs as ms, i (i)}
 			<span class="mem-cue" style={`left:${_pctOf(ms)}%`}></span>
+		{/each}
+
+		{#each keySegmentMarkersS as atS, i (i)}
+			<span
+				class="key-seg-marker"
+				style={`left:${_pctOf(atS * 1000)}%`}
+				title={`key change at ${_fmtMmSs(atS * 1000)}`}
+			></span>
 		{/each}
 
 		{#each deck.hot_cues as hc (hc.slot)}
@@ -157,10 +189,10 @@
 		{/each}
 
 		{#if loopCue !== null}
-			<span class="loop-chip in" style={`left:${_pctOf(loopCue.in_ms)}%`}>
+			<span class="loop-chip in" style={`left:${_pctOf(loopCue.in_ms)}%`} title={`Loop in at ${_fmtMmSs(loopCue.in_ms)} (hot cue ${loopCue.slot})`}>
 				{loopCue.slot} {_fmtMmSs(loopCue.in_ms)}
 			</span>
-			<span class="loop-chip out" style={`left:${_pctOf(loopCue.out_ms)}%`}>
+			<span class="loop-chip out" style={`left:${_pctOf(loopCue.out_ms)}%`} title={`Loop out at ${_fmtMmSs(loopCue.out_ms)}`}>
 				{_fmtMmSs(loopCue.out_ms)}
 			</span>
 		{/if}
@@ -241,6 +273,14 @@
 		border-right: 3px solid transparent;
 		border-top: 4px solid var(--rb-red);
 	}
+	.key-seg-marker {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 1px;
+		margin-left: -1px;
+		background: rgba(230, 180, 60, 0.85);
+	}
 	.cue-letter {
 		position: absolute;
 		top: 0;
@@ -248,7 +288,7 @@
 		padding: 0 1px;
 		font-size: 8px;
 		line-height: 9px;
-		color: #fff;
+		color: var(--rb-bg);
 		background: var(--rb-green);
 		border-radius: 1px;
 	}

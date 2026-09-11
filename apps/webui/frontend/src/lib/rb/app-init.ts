@@ -12,8 +12,66 @@
  */
 
 import { bootScheduler, type BootScheduler } from './boot-scheduler';
+import { pressureIsElevated, readMachinePressure, startMachinePressurePolling } from './machine-pressure';
 import { installPerfEventLogGlobal } from './perf-event-log';
+import { anyDeckPlaying, startBackgroundDemandShed } from './playing-gate';
+import { installReloadCountdown } from './reload-countdown';
+import { readXrunSessionCounter } from './xrun-sentinel';
+import { pushToast } from '$lib/stores.svelte';
 import { startUsageHeartbeat } from './usage-heartbeat';
+import { DECK_IDS, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
+import { getAutoPlayPlaylist, pickNextStableId, tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
+import { uiPrefs } from '$lib/rb/prefs.svelte';
+import {
+	setSilenceDropoutContextReader,
+	setSilenceDropoutHandler
+} from '$lib/rb/master-silence-report';
+import { handleSilenceDropoutPlan } from '$lib/rb/silence-dropout-act';
+import type { SilenceDropoutDeckSnap } from '$lib/rb/silence-dropout';
+import type { DeckId } from '$lib/rb/deck-slots';
+
+function _readSilenceDropoutDecks(): readonly SilenceDropoutDeckSnap[] {
+	return DECK_IDS.map((id: DeckId) => {
+		const deck = deckStates[id];
+		return {
+			id,
+			playing: deck.playing,
+			audible: deck.audible,
+			bpm: deck.bpm,
+			beat_sync_enabled: deck.beat_sync_enabled,
+			sync_mode: deck.sync_mode,
+			sync_error: deck.sync_error,
+			processor_error: deck.processor_error,
+			is_master: deck.is_master
+		};
+	});
+}
+
+function _hasPlayableAutoPlayNext(): boolean {
+	if (!uiPrefs.auto_play_enabled) return false;
+	const master = DECK_IDS.find((id) => deckStates[id].is_master && deckStates[id].stable_id !== null);
+	if (master === undefined) return false;
+	const follower = DECK_IDS.find((id) => id !== master && deckStates[id].stable_id === null);
+	const bounds = tempoBoundsFromPitchRange(pitchRanges[follower ?? master]);
+	const source = deckStates[master];
+	if (source.stable_id === null) return false;
+	return (
+		pickNextStableId({
+			playlist: getAutoPlayPlaylist(),
+			current_stable_id: source.stable_id,
+			current_key: source.key,
+			current_bpm: source.bpm,
+			exclude_ids: new Set<string>(),
+			played_ids: new Set<string>(),
+			enforce_play_order: uiPrefs.auto_play_enforce_order,
+			min_tempo_ratio: bounds.min,
+			max_tempo_ratio: bounds.max,
+			maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach
+		}) !== null
+	);
+}
+
+let _xrunsAtPrevious = 0;
 
 /**
  * Start the page-lifetime instruments. Returns the teardown, which the
@@ -24,18 +82,39 @@ import { startUsageHeartbeat } from './usage-heartbeat';
  * nothing and gets the page's one scheduler.
  */
 export function startAppInstruments(scheduler: BootScheduler = bootScheduler): () => void {
-	// DevTools + e2e read the client's own timing ring through these:
-	// __mdtPerfLog() for the full ring, __mdtLastLoads() for deck loads.
 	installPerfEventLogGlobal();
-	// The boot request window (PERF-R6): everything nobody is waiting on
-	// queues behind the deck load instead of racing it for the daemon's
-	// single worker and the origin's six connections. See boot-scheduler.
 	const stopBootScheduler = scheduler.start();
-	// Tell the engine this page exists, so "is the app open" is a question
-	// it can answer on its own instead of anyone having to ask a human.
 	const stopUsageHeartbeat = startUsageHeartbeat(scheduler);
+	const stopReloadCountdown = installReloadCountdown();
+	const stopMachinePressurePolling = startMachinePressurePolling(scheduler);
+	const stopBackgroundDemandShed = startBackgroundDemandShed({
+		isPlaying: anyDeckPlaying,
+		pressureElevated: () => pressureIsElevated(readMachinePressure()),
+		readXruns: () => readXrunSessionCounter().xruns,
+		notify: (suggestion) => pushToast(suggestion.message, 'warn'),
+		jobs: []
+	});
+	_xrunsAtPrevious = readXrunSessionCounter().xruns;
+	setSilenceDropoutHandler(handleSilenceDropoutPlan);
+	setSilenceDropoutContextReader(() => {
+		const xruns = readXrunSessionCounter().xruns;
+		const ctx = {
+			decks: _readSilenceDropoutDecks(),
+			autoplay_enabled: uiPrefs.auto_play_enabled,
+			has_playable_next: _hasPlayableAutoPlayNext(),
+			xruns,
+			xruns_at_previous: _xrunsAtPrevious
+		};
+		_xrunsAtPrevious = xruns;
+		return ctx;
+	});
 
 	return () => {
+		setSilenceDropoutHandler(null);
+		setSilenceDropoutContextReader(null);
+		stopBackgroundDemandShed();
+		stopMachinePressurePolling();
+		stopReloadCountdown();
 		stopUsageHeartbeat();
 		stopBootScheduler();
 	};

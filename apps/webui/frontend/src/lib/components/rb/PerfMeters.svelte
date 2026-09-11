@@ -20,23 +20,46 @@
 	import {
 		audioHealthHover,
 		audioHealthHz,
-		audioHealthLevel
+		audioHealthLevel,
+		audioHealthQuality,
+		waveformStutterHover,
+		waveformStutterSnapshot
 	} from '$lib/rb/audio-health.svelte';
 	import {
 		audioPrefetchReadyBytes,
 		audioPrefetchReadyCount,
+		clearAudioPrefetchCache,
 		MAX_AUDIO_PREFETCH_BYTES,
 		MAX_AUDIO_PREFETCH_TRACKS
 	} from '$lib/rb/audio-prefetch-cache.svelte';
 	import {
 		anlzCacheEntryCount,
-		anlzCacheEstimatedBytes
+		anlzCacheEstimatedBytes,
+		invalidateAllAnlzCacheEntries
 	} from '$lib/components/rb/wave/anlz-cache.svelte';
 	import { deckPcmEstimatedBytes } from '$lib/rb/audio-engine.svelte';
 	import { hasJsHeapApi, memoryReadout, readJsHeapMB } from '$lib/rb/memory-meter-model';
+	import { readMachinePressure } from '$lib/rb/machine-pressure';
+	import {
+		fetchProcessFamilySnapshot,
+		readProcessFamilySnapshot
+	} from '$lib/rb/process-family-snapshot';
+	import {
+		breakdownLines,
+		type ChartSample,
+		perfMeterSampleIntervalMs,
+		pushSample
+	} from '$lib/rb/perf-meter-model';
+	import { readPerfEvents, recordPerfEvent, resetPerfEventLog } from '$lib/rb/perf-event-log';
+	import PerfMeterSpark from './PerfMeterSpark.svelte';
+
+	const CHART_CAP = 60;
 
 	const hz = $derived(audioHealthHz());
 	const hzLevel = $derived(audioHealthLevel());
+	const hzQuality = $derived(audioHealthQuality());
+	const waveformStutter = $derived(waveformStutterSnapshot());
+	const waveformStutterWarn = $derived(waveformStutter.stutters > 0);
 	const cacheN = $derived(audioPrefetchReadyCount());
 	const cacheBytes = $derived(audioPrefetchReadyBytes());
 	const cacheHover = $derived(
@@ -45,20 +68,45 @@
 			'LRU + byte budget - prevents RAM pressure that causes audible skips.'
 	);
 
-	// Memory tracking (sampled every 2s to avoid perf impact)
+	let monitorOpen = $state(false);
 	let memoryText = $state('0M');
 	let memoryLevel: 'ok' | 'warn' | 'crit' = $state('ok');
 	let memoryHover = $state('');
+	let chartHistory = $state<ChartSample[]>([]);
+	let hzDriftLogged = $state(false);
 
-	/** Feature-detected ONCE, not per sample. performance.memory is a
-	 * Chromium-only API: it is either there for the whole session or never,
-	 * and re-probing it every 2s invites treating "absent" as a transient 0. */
 	const HEAP_API_PRESENT = typeof performance !== 'undefined' && hasJsHeapApi(performance);
+
+	const hzDisplayLevel = $derived(
+		!hzQuality.ok ? 'crit' : hzLevel === 'warn' ? 'warn' : hzLevel === 'crit' ? 'crit' : 'ok'
+	);
+
+	const breakdown = $derived(
+		breakdownLines({
+			hz,
+			hzQualityOk: hzQuality.ok,
+			hzTickHz: hzQuality.tickHz,
+			prefetchCount: cacheN,
+			prefetchMB: Math.round(cacheBytes / (1024 * 1024)),
+			anlzCount: anlzCacheEntryCount(),
+			anlzMB: Math.round(anlzCacheEstimatedBytes() / (1024 * 1024)),
+			pcmMB: Math.round(deckPcmEstimatedBytes() / (1024 * 1024)),
+			jsHeapMB: HEAP_API_PRESENT ? readJsHeapMB(performance) : null,
+			ringCount: readPerfEvents().length,
+			swapMB: readMachinePressure()?.swapUsedMb ?? null,
+			kernelLevel: readProcessFamilySnapshot()?.kernelLevel ?? null,
+			churnScore: readProcessFamilySnapshot()?.churnScore ?? null,
+			compressorRate: readProcessFamilySnapshot()?.compressorRate ?? null,
+			processes: readProcessFamilySnapshot()
+		})
+	);
+
+	const hzChart = $derived(chartHistory.map((s) => s.hz));
+	const cacheChart = $derived(chartHistory.map((s) => s.cacheMB));
+	const memoryChart = $derived(chartHistory.map((s) => s.memoryMB));
 
 	function _updateMemory(): void {
 		const readout = memoryReadout({
-			// null, not 0, when this webview cannot measure the heap - the
-			// difference is what drives the marker and the threshold pair.
 			jsHeapMB: HEAP_API_PRESENT ? readJsHeapMB(performance) : null,
 			pcmMB: Math.round(deckPcmEstimatedBytes() / (1024 * 1024)),
 			anlzMB: Math.round(anlzCacheEstimatedBytes() / (1024 * 1024)),
@@ -66,9 +114,6 @@
 			prefetchMB: Math.round(cacheBytes / (1024 * 1024)),
 			prefetchCount: cacheN
 		});
-		// Idle gate: an identical readout means no work landed in the last 2s,
-		// so skip the $state writes that would otherwise dirty the TopBar on
-		// every sample while the page sits open doing nothing.
 		if (
 			readout.text === memoryText &&
 			readout.level === memoryLevel &&
@@ -81,37 +126,217 @@
 		memoryHover = readout.hover;
 	}
 
-	// Sample every 2s, and mean it.
-	//
-	// The previous version READ reactive state (cacheBytes, cacheN and the
-	// rune-backed cache totals) inside the effect body, so every cache
-	// mutation invalidated the effect, tore the interval down and started a
-	// fresh one. The "every 2s" comment was false: the sampler re-armed on
-	// each mutation and could sample far more often than it claimed. untrack
-	// keeps the reads out of the dependency set, so the effect runs once on
-	// mount and the interval genuinely owns the cadence.
-	$effect(() => {
+	function _pushChartSample(): void {
+		const pressure = readMachinePressure();
+		const processes = readProcessFamilySnapshot();
+		const jsHeap = HEAP_API_PRESENT ? readJsHeapMB(performance) : null;
+		const pcmMB = Math.round(deckPcmEstimatedBytes() / (1024 * 1024));
+		const totalMB = (jsHeap ?? 0) + pcmMB;
+		const point: ChartSample = {
+			tMs: Date.now(),
+			hz: audioHealthHz(),
+			cacheN: audioPrefetchReadyCount(),
+			cacheMB: Math.round(audioPrefetchReadyBytes() / (1024 * 1024)),
+			memoryMB: totalMB,
+			anlzMB: Math.round(anlzCacheEstimatedBytes() / (1024 * 1024)),
+			prefetchMB: Math.round(audioPrefetchReadyBytes() / (1024 * 1024)),
+			swapMB: pressure?.swapUsedMb ?? null,
+			kernelLevel: processes?.kernelLevel ?? null,
+			churnScore: processes?.churnScore ?? null
+		};
+		chartHistory = pushSample(chartHistory, point, CHART_CAP);
+	}
+
+	function _sampleTick(): void {
 		untrack(_updateMemory);
-		const timer = setInterval(() => untrack(_updateMemory), 2000);
-		return () => clearInterval(timer);
+		untrack(_pushChartSample);
+	}
+
+	function _kernelAndChurn(): { kernelLevel: number | null; churnScore: number | null } {
+		const processes = readProcessFamilySnapshot();
+		return {
+			kernelLevel: processes?.kernelLevel ?? null,
+			churnScore: processes?.churnScore ?? null
+		};
+	}
+
+	function _toggleMonitor(): void {
+		monitorOpen = !monitorOpen;
+	}
+
+	function _handleReset(reset: 'prefetch' | 'anlz' | 'perf-ring'): void {
+		if (reset === 'prefetch') clearAudioPrefetchCache();
+		else if (reset === 'anlz') invalidateAllAnlzCacheEntries();
+		else if (reset === 'perf-ring') resetPerfEventLog();
+		_sampleTick();
+	}
+
+	$effect(() => {
+		if (!hzQuality.ok && !hzDriftLogged) {
+			hzDriftLogged = true;
+			recordPerfEvent(
+				'hz-meter-drift',
+				`meter=${hzQuality.meterHz} tick=${hzQuality.tickHz?.toFixed(1)} error=${hzQuality.absError?.toFixed(1)}`,
+				null,
+				'error'
+			);
+		}
+		if (hzQuality.ok) {
+			hzDriftLogged = false;
+		}
+	});
+
+	$effect(() => {
+		if (!monitorOpen || typeof document === 'undefined') return;
+		let intervalMs = perfMeterSampleIntervalMs(_kernelAndChurn());
+		let timer: ReturnType<typeof setInterval> | null = null;
+
+		const start = (): void => {
+			if (timer !== null) return;
+			_sampleTick();
+			void fetchProcessFamilySnapshot();
+			timer = setInterval(() => {
+				untrack(_sampleTick);
+				void fetchProcessFamilySnapshot();
+			}, intervalMs);
+		};
+
+		const stop = (): void => {
+			if (timer === null) return;
+			clearInterval(timer);
+			timer = null;
+		};
+
+		const reschedule = (): void => {
+			const nextMs = perfMeterSampleIntervalMs(_kernelAndChurn());
+			if (nextMs === intervalMs) return;
+			intervalMs = nextMs;
+			stop();
+			if (document.visibilityState === 'visible') start();
+		};
+
+		const onVisibility = (): void => {
+			if (document.visibilityState === 'visible') {
+				start();
+			} else {
+				stop();
+			}
+		};
+
+		if (document.visibilityState === 'visible') start();
+		document.addEventListener('visibilitychange', onVisibility);
+		const checkInterval = setInterval(reschedule, intervalMs);
+
+		return () => {
+			stop();
+			clearInterval(checkInterval);
+			document.removeEventListener('visibilitychange', onVisibility);
+		};
+	});
+
+	$effect(() => {
+		if (monitorOpen) return;
+		untrack(_updateMemory);
+		let intervalMs = perfMeterSampleIntervalMs(_kernelAndChurn());
+		let timer: ReturnType<typeof setInterval> | null = null;
+
+		const start = (): void => {
+			if (timer !== null) return;
+			untrack(_updateMemory);
+			timer = setInterval(() => untrack(_updateMemory), intervalMs);
+		};
+
+		const stop = (): void => {
+			if (timer === null) return;
+			clearInterval(timer);
+			timer = null;
+		};
+
+		const onVisibility = (): void => {
+			if (document.visibilityState === 'visible') start();
+			else stop();
+		};
+
+		if (typeof document !== 'undefined') {
+			if (document.visibilityState === 'visible') start();
+			document.addEventListener('visibilitychange', onVisibility);
+		}
+
+		return () => {
+			stop();
+			if (typeof document !== 'undefined') {
+				document.removeEventListener('visibilitychange', onVisibility);
+			}
+		};
 	});
 </script>
 
-<span
-	class="perf-meter"
-	class:warn={hzLevel === 'warn'}
-	class:crit={hzLevel === 'crit'}
-	title={audioHealthHover()}
->{hz === null ? '--' : `${hz}`}</span>
-<span class="perf-meter cache-n" title={cacheHover}>{cacheN}</span>
-<span
-	class="perf-meter memory-mb"
-	class:warn={memoryLevel === 'warn'}
-	class:crit={memoryLevel === 'crit'}
-	title={memoryHover}
->{memoryText}</span>
+<div class="perf-meters-root">
+	<button
+		type="button"
+		class="perf-meters-compact"
+		aria-expanded={monitorOpen}
+		aria-controls="perf-meters-panel"
+		onclick={_toggleMonitor}
+	>
+		<span
+			class="perf-meter"
+			class:warn={hzDisplayLevel === 'warn'}
+			class:crit={hzDisplayLevel === 'crit'}
+			title={audioHealthHover()}
+		>{hz === null ? '--' : `${hz}`}</span>
+		<span class="perf-meter cache-n" title={cacheHover}>{cacheN}</span>
+		<span class="perf-meter" class:warn={waveformStutterWarn} title={waveformStutterHover()}>{waveformStutter.active ? `W${waveformStutter.stutters}` : 'W--'}</span>
+		<span
+			class="perf-meter memory-mb"
+			class:warn={memoryLevel === 'warn'}
+			class:crit={memoryLevel === 'crit'}
+			title={memoryHover}
+		>{memoryText}</span>
+	</button>
+
+	{#if monitorOpen}
+		<div id="perf-meters-panel" class="perf-meters-panel" role="region" aria-label="Performance monitor">
+			<div class="perf-meters-charts">
+				<PerfMeterSpark values={hzChart} label="Hz" title="Presentation publish rate over recent samples." />
+				<PerfMeterSpark values={cacheChart} label="Cache MB" title="Prefetch + ANLZ cache footprint over recent samples." />
+				<PerfMeterSpark values={memoryChart} label="Memory MB" title="JS heap + decoded PCM over recent samples." />
+			</div>
+			<ul class="perf-meters-breakdown">
+				{#each breakdown as line (line.key)}
+					<li class="perf-breakdown-row" title={line.title}>
+						<span class="perf-breakdown-label">{line.label}</span>
+						<span class="perf-breakdown-value">{line.value}</span>
+						{#if line.reset}
+							<button
+								type="button"
+								class="perf-breakdown-reset"
+								onclick={() => _handleReset(line.reset!)}
+							>Reset</button>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
+</div>
 
 <style>
+	.perf-meters-root {
+		position: relative;
+		display: inline-flex;
+	}
+	.perf-meters-compact {
+		display: inline-flex;
+		align-items: center;
+		gap: 0;
+		padding: 0;
+		margin: 0;
+		border: none;
+		background: transparent;
+		cursor: pointer;
+		font: inherit;
+	}
 	.perf-meter {
 		font-size: 10px;
 		font-variant-numeric: tabular-nums;
@@ -134,5 +359,56 @@
 	}
 	.perf-meter.crit {
 		color: #e05555;
+	}
+	.perf-meters-panel {
+		position: absolute;
+		top: 100%;
+		right: 0;
+		z-index: 200;
+		margin-top: 4px;
+		padding: 8px;
+		min-width: 280px;
+		background: var(--rb-surface, #1a1a1a);
+		border: 1px solid var(--rb-border, #333);
+		border-radius: 4px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+	}
+	.perf-meters-charts {
+		display: flex;
+		gap: 8px;
+		margin-bottom: 8px;
+	}
+	.perf-meters-breakdown {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		font-size: 10px;
+	}
+	.perf-breakdown-row {
+		display: grid;
+		grid-template-columns: 1fr auto auto;
+		gap: 6px;
+		align-items: center;
+		padding: 2px 0;
+		color: var(--rb-text-dim);
+	}
+	.perf-breakdown-label {
+		text-align: left;
+	}
+	.perf-breakdown-value {
+		font-variant-numeric: tabular-nums;
+		text-align: right;
+	}
+	.perf-breakdown-reset {
+		font-size: 9px;
+		padding: 1px 4px;
+		border: 1px solid var(--rb-border, #444);
+		border-radius: 2px;
+		background: transparent;
+		color: var(--rb-text-dim);
+		cursor: pointer;
+	}
+	.perf-breakdown-reset:hover {
+		border-color: var(--rb-text-dim);
 	}
 </style>

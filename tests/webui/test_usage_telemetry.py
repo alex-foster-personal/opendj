@@ -7,6 +7,7 @@ any test sleeping through it.
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.webui.server.app import create_app
@@ -244,3 +245,5 @@ def test_passive_seconds_since_last_request_uses_the_injected_clock() -> None:
 
     assert passive["seconds_since_last_request"] == 12.0
     assert passive["by_surface"]["desktop-shell"]["seconds_since_request"] == 12.0
+
+pytestmark = pytest.mark.rb_parity

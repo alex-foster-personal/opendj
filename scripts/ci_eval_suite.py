@@ -22,19 +22,20 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from scripts.ci_cost_guard import price_jobs
-except ModuleNotFoundError:  # Direct execution: python scripts/ci_eval_suite.py
-    from ci_cost_guard import price_jobs
-
+    from scripts.ci_eval_collection import (
+        CampaignError,
+        collect_campaign,
+        render_campaign_report,
+    )
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.ci_eval_suite") from None
+    raise
 
 CASE_COUNT = 10
 EXPECTED_WORKFLOWS = ("CI", "Build docs")
 TARGET_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 RUN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{2,47}$")
-
-
-class CampaignError(RuntimeError):
-    """Raised when the campaign cannot proceed safely."""
 
 
 @dataclass
@@ -176,7 +177,7 @@ def plan_command(args: argparse.Namespace) -> int:
         workspace=workspace,
     )
     if args.manifest.exists() and not args.replace:
-        raise CampaignError(f"manifest already exists: {args.manifest}; pass --replace to overwrite")
+        raise CampaignError(f"manifest already exists: {args.manifest}; pass --replace to overwrite")  # noqa: E501
     write_json(args.manifest, campaign)
     print(json.dumps(campaign, indent=2))
     return 0
@@ -198,7 +199,7 @@ def prepare_command(args: argparse.Namespace, runner: CommandRunner) -> int:
     if existing.returncode == 0:
         payload = json.loads(existing.stdout)
         if not args.resume:
-            raise CampaignError(f"target repository already exists: {target}; use --resume only for this campaign")
+            raise CampaignError(f"target repository already exists: {target}; use --resume only for this campaign")  # noqa: E501
         if payload.get("description") != description or not payload.get("isPrivate"):
             raise CampaignError("existing target is not this campaign's private disposable mirror")
     else:
@@ -253,6 +254,126 @@ def prepare_command(args: argparse.Namespace, runner: CommandRunner) -> int:
     return 0
 
 
+def _remote_branch_sha(runner: CommandRunner, checkout: Path, branch: str) -> str | None:
+    result = runner.run(
+        ["git", "ls-remote", "--heads", "origin", f"refs/heads/{branch}"],
+        cwd=checkout,
+    )
+    line = result.stdout.strip().splitlines()
+    if not line:
+        return None
+    return line[0].split()[0]
+
+
+def _existing_pr(runner: CommandRunner, target: str, branch: str) -> dict[str, Any] | None:
+    result = runner.run(
+        ["gh", "pr", "view", branch, "--repo", target, "--json", "number,url"],
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    payload = json.loads(result.stdout)
+    return {"number": int(payload["number"]), "url": payload["url"]}
+
+
+def _ensure_pushed_case(
+    runner: CommandRunner,
+    campaign: dict[str, Any],
+    case: dict[str, Any],
+    checkout: Path,
+) -> str:
+    if _remote_branch_sha(runner, checkout, case["branch"]):
+        runner.run(["git", "fetch", "origin", case["branch"]], cwd=checkout)
+        runner.run(
+            ["git", "switch", "--force-create", case["branch"], "FETCH_HEAD"],
+            cwd=checkout,
+        )
+        return runner.run(["git", "rev-parse", "HEAD"], cwd=checkout).stdout.strip()
+
+    runner.run(
+        ["git", "switch", "--force-create", case["branch"], campaign["base_branch"]],
+        cwd=checkout,
+    )
+    write_json(
+        checkout / case["marker"],
+        {
+            "case_id": case["id"],
+            "run_id": campaign["run_id"],
+            "purpose": "harmless PR fan-out for occasional CI evaluation",
+            "expected_workflows": campaign["expected_workflows"],
+        },
+    )
+    runner.run(["git", "add", case["marker"]], cwd=checkout)
+    runner.run(
+        [
+            "git",
+            "-c",
+            "user.name=AF CI Eval Suite",
+            "-c",
+            "user.email=ci-eval@users.noreply.github.com",
+            "commit",
+            "-m",
+            case["title"],
+        ],
+        cwd=checkout,
+    )
+    head_sha = runner.run(["git", "rev-parse", "HEAD"], cwd=checkout).stdout.strip()
+    runner.run(["git", "push", "-u", "origin", case["branch"]], cwd=checkout)
+    return head_sha
+
+
+def _upsert_pushed_pr_row(
+    campaign: dict[str, Any], case: dict[str, Any], head_sha: str
+) -> dict[str, Any]:
+    prs = campaign.setdefault("prs", [])
+    for row in prs:
+        if row["case_id"] == case["id"]:
+            row["branch"] = case["branch"]
+            row["head_sha"] = head_sha
+            return row
+    row = {"case_id": case["id"], "branch": case["branch"], "head_sha": head_sha}
+    prs.append(row)
+    return row
+
+
+def _create_or_reuse_pr(
+    runner: CommandRunner, campaign: dict[str, Any], case: dict[str, Any]
+) -> tuple[int, str]:
+    existing = _existing_pr(runner, campaign["target_repository"], case["branch"])
+    if existing:
+        return existing["number"], existing["url"]
+    body = (
+        f"Disposable CI evaluation case `{case['id']}` for `{campaign['run_id']}`.\n\n"
+        "No product behavior changes. Keep this PR open until the campaign report is complete."
+    )
+    created = runner.run(
+        [
+            "gh",
+            "pr",
+            "create",
+            "--repo",
+            campaign["target_repository"],
+            "--base",
+            campaign["base_branch"],
+            "--head",
+            case["branch"],
+            "--title",
+            case["title"],
+            "--body",
+            body,
+        ]
+    )
+    pr_url = created.stdout.strip().splitlines()[-1]
+    match = re.search(r"/(\d+)$", pr_url)
+    if not match:
+        raise CampaignError(f"could not parse PR URL from gh output: {pr_url!r}")
+    return int(match.group(1)), pr_url
+
+
+def _fully_submitted_prs(prs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [row for row in prs if row.get("number") and row.get("url")]
+
+
 def submit_command(args: argparse.Namespace, runner: CommandRunner) -> int:
     campaign = load_manifest(args.manifest)
     require_live_confirmation(args, campaign)
@@ -266,278 +387,26 @@ def submit_command(args: argparse.Namespace, runner: CommandRunner) -> int:
 
     submitted = {row["case_id"]: row for row in campaign.get("prs") or []}
     for case in campaign["cases"]:
-        if case["id"] in submitted:
+        existing = submitted.get(case["id"])
+        if existing and existing.get("number"):
             continue
-        runner.run(
-            ["git", "switch", "--force-create", case["branch"], campaign["base_branch"]],
-            cwd=checkout,
-        )
-        marker = checkout / case["marker"]
-        write_json(
-            marker,
-            {
-                "case_id": case["id"],
-                "run_id": campaign["run_id"],
-                "purpose": "harmless PR fan-out for occasional CI evaluation",
-                "expected_workflows": campaign["expected_workflows"],
-            },
-        )
-        runner.run(["git", "add", case["marker"]], cwd=checkout)
-        runner.run(
-            [
-                "git",
-                "-c",
-                "user.name=AF CI Eval Suite",
-                "-c",
-                "user.email=ci-eval@users.noreply.github.com",
-                "commit",
-                "-m",
-                case["title"],
-            ],
-            cwd=checkout,
-        )
-        head_sha = runner.run(["git", "rev-parse", "HEAD"], cwd=checkout).stdout.strip()
-        runner.run(["git", "push", "-u", "origin", case["branch"]], cwd=checkout)
-        body = (
-            f"Disposable CI evaluation case `{case['id']}` for `{campaign['run_id']}`.\n\n"
-            "No product behavior changes. Keep this PR open until the campaign report is complete."
-        )
-        created = runner.run(
-            [
-                "gh",
-                "pr",
-                "create",
-                "--repo",
-                campaign["target_repository"],
-                "--base",
-                campaign["base_branch"],
-                "--head",
-                case["branch"],
-                "--title",
-                case["title"],
-                "--body",
-                body,
-            ]
-        )
-        pr_url = created.stdout.strip().splitlines()[-1]
-        match = re.search(r"/(\d+)$", pr_url)
-        if not match:
-            raise CampaignError(f"could not parse PR URL from gh output: {pr_url!r}")
-        row = {
-            "case_id": case["id"],
-            "branch": case["branch"],
-            "head_sha": head_sha,
-            "number": int(match.group(1)),
-            "url": pr_url,
-        }
-        campaign.setdefault("prs", []).append(row)
+        head_sha = _ensure_pushed_case(runner, campaign, case, checkout)
+        row = _upsert_pushed_pr_row(campaign, case, head_sha)
         submitted[case["id"]] = row
         write_json(args.manifest, campaign)
+        number, url = _create_or_reuse_pr(runner, campaign, case)
+        row["number"] = number
+        row["url"] = url
+        write_json(args.manifest, campaign)
 
-    if len(campaign["prs"]) != CASE_COUNT:
-        raise CampaignError(f"expected {CASE_COUNT} submitted PRs, got {len(campaign['prs'])}")
+    complete = _fully_submitted_prs(campaign.get("prs") or [])
+    if len(complete) != CASE_COUNT:
+        raise CampaignError(f"expected {CASE_COUNT} submitted PRs, got {len(complete)}")
     campaign["state"] = "submitted"
     campaign["submitted_at"] = datetime.now(UTC).isoformat()
     write_json(args.manifest, campaign)
     print(f"Submitted {CASE_COUNT} PRs to {campaign['target_repository']}")
     return 0
-
-
-def _json_command(runner: CommandRunner, args: Sequence[str]) -> Any:
-    result = runner.run(args)
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise CampaignError(f"command did not return JSON: {shlex.join(args)}") from exc
-
-
-def _timestamp(value: str) -> datetime:
-    return datetime.fromisoformat(value)
-
-
-def collect_campaign(campaign: dict[str, Any], runner: CommandRunner) -> dict[str, Any]:
-    if len(campaign.get("prs") or []) != CASE_COUNT:
-        raise CampaignError("collect requires all ten PRs to have been submitted")
-    if not campaign.get("prepared_at"):
-        raise CampaignError("campaign is missing its prepared_at timestamp")
-    target = campaign["target_repository"]
-    cases: list[dict[str, Any]] = []
-    anomalies: list[str] = []
-    prepared_at = _timestamp(campaign["prepared_at"])
-    all_runs = _json_command(
-        runner,
-        [
-            "gh",
-            "run",
-            "list",
-            "--repo",
-            target,
-            "--limit",
-            "100",
-            "--json",
-            "databaseId,workflowName,status,conclusion,url,createdAt,updatedAt,headBranch,headSha,event",
-        ],
-    )
-    known_workflows = {*campaign["expected_workflows"], "CI Cost Guard"}
-    campaign_runs = [
-        row
-        for row in all_runs
-        if row.get("workflowName") in known_workflows
-        and row.get("createdAt")
-        and _timestamp(row["createdAt"]) >= prepared_at
-    ]
-
-    priced_runs: dict[int, dict[str, Any]] = {}
-    total_cost = 0.0
-    for run in campaign_runs:
-        run_id = run.get("databaseId")
-        priced = {"jobs": [], "unknown_jobs": [], "total_cost": 0.0}
-        if run.get("status") == "completed" and run_id is not None:
-            payload = _json_command(
-                runner,
-                ["gh", "api", f"repos/{target}/actions/runs/{run_id}/jobs?per_page=100"],
-            )
-            priced = price_jobs(payload.get("jobs") or [])
-            total_cost += priced["total_cost"]
-        if run_id is not None:
-            priced_runs[int(run_id)] = priced
-
-    for pr in campaign["prs"]:
-        matching = [
-            row
-            for row in campaign_runs
-            if row.get("event") == "pull_request" and row.get("headBranch") == pr["branch"]
-        ]
-        workflow_rows = []
-        for expected in campaign["expected_workflows"]:
-            selected = [row for row in matching if row.get("workflowName") == expected]
-            if not selected:
-                anomalies.append(f"PR #{pr['number']}: missing workflow {expected}")
-                workflow_rows.append({"workflow": expected, "status": "missing", "cost_usd": 0.0})
-                continue
-            if len(selected) > 1:
-                anomalies.append(f"PR #{pr['number']}: duplicate workflow {expected} runs ({len(selected)})")
-            run = max(selected, key=lambda row: row.get("createdAt") or "")
-            priced = priced_runs.get(
-                int(run["databaseId"]),
-                {"jobs": [], "unknown_jobs": [], "total_cost": 0.0},
-            )
-            if run.get("status") == "completed":
-                if priced["total_cost"] > 1.0:
-                    anomalies.append(
-                        f"PR #{pr['number']}: {expected} estimated at ${priced['total_cost']:.3f}"
-                    )
-                if priced["unknown_jobs"]:
-                    anomalies.append(f"PR #{pr['number']}: {expected} has unpriced runner jobs")
-            workflow_rows.append(
-                {
-                    "workflow": expected,
-                    "run_id": run.get("databaseId"),
-                    "url": run.get("url"),
-                    "status": run.get("status"),
-                    "conclusion": run.get("conclusion"),
-                    "cost_usd": priced["total_cost"],
-                    "jobs": priced["jobs"],
-                    "unknown_jobs": priced["unknown_jobs"],
-                }
-            )
-        cases.append({**pr, "workflows": workflow_rows})
-
-    direct_complete = all(
-        workflow["status"] == "completed"
-        for case in cases
-        for workflow in case["workflows"]
-    )
-    monitored_completed = [
-        row
-        for row in campaign_runs
-        if row.get("workflowName") in campaign["expected_workflows"]
-        and row.get("status") == "completed"
-    ]
-    guard_runs = [row for row in campaign_runs if row.get("workflowName") == "CI Cost Guard"]
-    guard_completed = [row for row in guard_runs if row.get("status") == "completed"]
-    guard_coverage_complete = len(guard_completed) >= len(monitored_completed)
-    if direct_complete and not guard_coverage_complete:
-        anomalies.append(
-            "Cost Guard coverage incomplete: "
-            f"{len(guard_completed)} completed guard runs for {len(monitored_completed)} completed monitored runs"
-        )
-    complete = direct_complete and guard_coverage_complete
-    run_rows = []
-    for run in sorted(campaign_runs, key=lambda row: row.get("createdAt") or ""):
-        priced = priced_runs.get(
-            int(run["databaseId"]),
-            {"jobs": [], "unknown_jobs": [], "total_cost": 0.0},
-        )
-        run_rows.append(
-            {
-                **run,
-                "cost_usd": priced["total_cost"],
-                "jobs": priced["jobs"],
-                "unknown_jobs": priced["unknown_jobs"],
-            }
-        )
-    return {
-        "schema_version": 1,
-        "run_id": campaign["run_id"],
-        "source_repository": campaign["source_repository"],
-        "source_ref": campaign["source_ref"],
-        "target_repository": target,
-        "collected_at": datetime.now(UTC).isoformat(),
-        "complete": complete,
-        "estimated_gross_cost_usd": total_cost,
-        "monitored_runs_completed": len(monitored_completed),
-        "cost_guard_runs_completed": len(guard_completed),
-        "anomalies": anomalies,
-        "cases": cases,
-        "campaign_runs": run_rows,
-    }
-
-
-def render_campaign_report(result: dict[str, Any]) -> str:
-    lines = [
-        "# CI evaluation campaign snapshot",
-        "",
-        f"- Run: `{result['run_id']}`",
-        f"- Source: `{result['source_repository']}@{result['source_ref']}`",
-        f"- Disposable target: `{result['target_repository']}`",
-        f"- Complete: **{str(result['complete']).lower()}**",
-        f"- Estimated gross campaign cost, including baseline and guard runs: **${result['estimated_gross_cost_usd']:.3f}**",
-        f"- Completed monitored runs: **{result.get('monitored_runs_completed', 0)}**",
-        f"- Completed Cost Guard runs: **{result.get('cost_guard_runs_completed', 0)}**",
-        "",
-        "| PR | Workflow | Status | Result | Estimated cost |",
-        "| --- | --- | --- | --- | ---: |",
-    ]
-    for case in result["cases"]:
-        for workflow in case["workflows"]:
-            pr = f"[#{case['number']}]({case['url']})"
-            run_name = workflow["workflow"]
-            if workflow.get("url"):
-                run_name = f"[{run_name}]({workflow['url']})"
-            lines.append(
-                f"| {pr} | {run_name} | {workflow['status']} | "
-                f"{workflow.get('conclusion') or '-'} | ${workflow['cost_usd']:.3f} |"
-            )
-    lines.extend(["", "## Mechanical anomalies", ""])
-    if result["anomalies"]:
-        lines.extend(f"- {item}" for item in result["anomalies"])
-    else:
-        lines.append("- None in this snapshot.")
-    lines.extend(
-        [
-            "",
-            "## Required LLM assessment",
-            "",
-            (
-                "This snapshot is evidence, not the verdict. Use `$af-evalsuite-ci` to inspect "
-                "failed logs, compare all ten PRs, review Cost Guard runs/issues, and write the "
-                "final assessment."
-            ),
-            "",
-        ]
-    )
-    return "\n".join(lines)
 
 
 def collect_command(args: argparse.Namespace, runner: CommandRunner) -> int:

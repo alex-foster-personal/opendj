@@ -10,6 +10,13 @@ MDT_USB_SIMULATION=1; listings here merge simulated rows only under that
 gate, so production never serves or merges simulated volumes.
 
 Never writes to a USB mount. Discovery fails explicitly without macOS diskutil.
+
+SANDBOXED, IT REFUSES (SAND-01, SAND-02). A process inside the macOS App
+Sandbox may not list /Volumes at all, and the failure is silent: the listing
+comes back empty, which reads to a user as "nothing is plugged in" rather
+than "this build cannot see drives". Discovery therefore asks
+:func:`apps.shared.sandbox.is_sandboxed` FIRST and answers 503 carrying the
+fourth refusal sentence, so the panel says which fact it is.
 """
 
 from __future__ import annotations
@@ -32,16 +39,20 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
+from apps.shared.sandbox import STORE_BUILD_REFUSAL_TITLE, is_sandboxed
+from apps.webui.server.routes.usb_classify import (
+    VolumeKind,
+    VolumeRole,
+    classify_mount,
+    classify_role,
+    hide_reason_for,
+)
+from apps.webui.server.routes.usb_gate import UsbExportGate, usb_export_gate
+
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/usb", tags=["usb"])
 
-VolumeKind = Literal["rekordbox", "djay", "music", "unknown"]
-VolumeRole = Literal["usb_stick", "mounted_drive", "disk_image", "other"]
-
-_AUDIO_EXTS = frozenset(
-    {".mp3", ".m4a", ".flac", ".wav", ".aiff", ".aif", ".aac", ".ogg", ".alac"}
-)
 _MIN_SCAN_INTERVAL_S = 5.0
 _VOLUMES_ROOT = Path("/Volumes")
 
@@ -51,12 +62,20 @@ class UsbDiscoveryUnavailable(RuntimeError):
 
     code = "usb_volume_discovery_unavailable"
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, *, ui_title: str | None = None) -> None:
         self.reason = reason
+        #: The sentence a dead control should carry, when one of the four
+        #: refusal states applies. None for a plain host fault, which is not
+        #: a refusal: "diskutil is missing" is a broken machine, not a build
+        #: that may not look.
+        self.ui_title = ui_title
         super().__init__(f"USB volume discovery unavailable: {reason}")
 
     def to_detail(self) -> dict[str, str]:
-        return {"code": self.code, "reason": self.reason}
+        detail = {"code": self.code, "reason": self.reason}
+        if self.ui_title is not None:
+            detail["ui_title"] = self.ui_title
+        return detail
 
 
 @dataclass(frozen=True)
@@ -83,6 +102,7 @@ class UsbVolume:
     simulated: bool = False
     role: VolumeRole = "other"
     protocol: str | None = None
+    removable: bool | None = None
     hide_reason: str | None = None
 
 
@@ -96,132 +116,12 @@ _fakes: dict[str, UsbVolume] = {}
 _FAKES_LOCK = threading.Lock()
 
 
-# ----- pure classify (unit-tested) ----------------------------------------
-
-
-def classify_mount(root: Path) -> VolumeKind:
-    """Classify a mounted volume by shallow folder / audio presence.
-
-    Order: Pioneer/rekordbox export layout, djay, any audio files, else unknown.
-    Never descends deep - one level for DJ folders, shallow walk for audio.
-    """
-    if not root.is_dir():
-        return "unknown"
-    try:
-        names = {p.name for p in root.iterdir()}
-    except OSError:
-        return "unknown"
-    lower = {n.lower() for n in names}
-    if "pioneer" in lower or "rekordbox" in lower:
-        return "rekordbox"
-    if "djay" in lower or "djay media library.djaymediadatabase" in lower:
-        return "djay"
-    if _has_audio_shallow(root, max_entries=80):
-        return "music"
-    return "unknown"
-
-
-def classify_role(
-    *,
-    protocol: str | None,
-    removable: bool | None,
-    internal: bool | None = None,
-) -> VolumeRole:
-    """Map diskutil BusProtocol / RemovableMedia / Internal to a volume role.
-
-    Human `diskutil info` prints Removable Media as Fixed/Removable; the plist
-    exposes RemovableMedia as a bool (False ~= Fixed, True ~= Removable).
-    """
-    proto = (protocol or "").strip().lower()
-    if "disk image" in proto:
-        return "disk_image"
-    if "usb" in proto:
-        if removable is False:
-            return "mounted_drive"
-        return "usb_stick"
-    if internal is True or removable is False:
-        return "mounted_drive"
-    if removable is True:
-        return "usb_stick"
-    return "other"
-
-
-def hide_reason_for(
-    role: VolumeRole,
-    *,
-    protocol: str | None = None,
-    name: str | None = None,
-) -> str | None:
-    """Human reason tag for non-USB / non-music folds (no U+2014 or U+2013 characters)."""
-    if role == "usb_stick":
-        return None
-    if role == "mounted_drive":
-        detail = _short_protocol(protocol) or "mounted drive"
-        return f"not-usb(mounted drive - {detail})"
-    if role == "disk_image":
-        label = _short_name(name) or _short_protocol(protocol) or "disk image"
-        return f"not-usb(disk image - {label})"
-    detail = _short_protocol(protocol) or "other mount"
-    return f"not-usb({detail})"
-
-
-def _short_protocol(protocol: str | None) -> str | None:
-    if not protocol:
-        return None
-    proto = protocol.strip()
-    if not proto:
-        return None
-    lower = proto.lower()
-    if "disk image" in lower:
-        return "disk image"
-    return proto
-
-
-def _short_name(name: str | None) -> str | None:
-    if not name:
-        return None
-    cleaned = name.strip()
-    if not cleaned:
-        return None
-    # Prefer a short alias for known tooling mounts.
-    lower = cleaned.lower()
-    if "copilot" in lower:
-        return "copilot"
-    return cleaned
-
-
-def _has_audio_shallow(root: Path, *, max_entries: int) -> bool:
-    seen = 0
-    try:
-        for dirpath, dirnames, filenames in os.walk(root):
-            # Skip heavy / system trees; never touch Contents of apps.
-            dirnames[:] = [
-                d
-                for d in dirnames
-                if d
-                not in (
-                    "System Volume Information",
-                    ".Spotlight-V100",
-                    ".fseventsd",
-                    ".Trashes",
-                    "$RECYCLE.BIN",
-                )
-                and not d.startswith(".")
-            ]
-            for name in filenames:
-                seen += 1
-                if Path(name).suffix.lower() in _AUDIO_EXTS:
-                    return True
-                if seen >= max_entries:
-                    return False
-            if seen >= max_entries:
-                return False
-            # Cap depth: root + one level of dirs only.
-            if Path(dirpath) != root:
-                dirnames.clear()
-    except OSError:
-        return False
-    return False
+# ----- pure classify ------------------------------------------------------
+#
+# Moved to usb_classify: a total function of its arguments, with no cache, no
+# subprocess and no route, is testable without a mounted drive, and this file
+# was at the 600-line ceiling. Re-exported so `usb_volumes.classify_mount`
+# keeps working for the scanner, usb_volumes_sim and the existing tests.
 
 
 # ----- scan (fail-fast) ---------------------------------------------------
@@ -232,9 +132,39 @@ def _resolve_discovery(
     platform_name: str,
     volumes_root: Path,
     diskutil_command: str | None,
+    sandboxed: bool | None = None,
+    usb_export_gate: UsbExportGate,
 ) -> UsbDiscovery:
+    # SAND-01. Checked before even the platform, because a build that
+    # declared usb.export off (the shipped appstore profile) is not
+    # available regardless of what host it happens to run on -- a developer
+    # testing that profile on Linux must see the same refusal a real store
+    # build would, not "unsupported platform". The ui_title comes from the
+    # gate's own refusal, which is None (a neutral disablement, not blamed on
+    # Apple) unless the store profile itself is the reason (SAND-01 review
+    # round 2, PR #1668).
+    if not usb_export_gate.flag_enabled:
+        raise UsbDiscoveryUnavailable(
+            "usb_export_disabled_in_this_build",
+            ui_title=(
+                usb_export_gate.refusal.ui_title
+                if usb_export_gate.refusal is not None
+                else None
+            ),
+        )
     if platform_name != "darwin":
         raise UsbDiscoveryUnavailable(f"unsupported_platform:{platform_name}")
+    # SAND-01/SAND-02, and it goes BEFORE the volumes_root probe on purpose.
+    # A sandboxed process is not permitted to list /Volumes, so is_dir() is
+    # False and the next branch would answer "volumes_root_unavailable" --
+    # which reads as "this Mac has no /Volumes", a fault of the machine. The
+    # truth is a build that may not look, and those are different sentences
+    # to a user and different next steps to an agent.
+    if is_sandboxed() if sandboxed is None else sandboxed:
+        raise UsbDiscoveryUnavailable(
+            "app_sandbox_forbids_volume_listing",
+            ui_title=STORE_BUILD_REFUSAL_TITLE,
+        )
     if not volumes_root.is_dir():
         raise UsbDiscoveryUnavailable("volumes_root_unavailable")
     if diskutil_command is None:
@@ -245,11 +175,12 @@ def _resolve_discovery(
     )
 
 
-def _system_discovery() -> UsbDiscovery:
+def _system_discovery(*, usb_export_gate: UsbExportGate) -> UsbDiscovery:
     return _resolve_discovery(
         platform_name=sys.platform,
         volumes_root=_VOLUMES_ROOT,
         diskutil_command=shutil.which("diskutil"),
+        usb_export_gate=usb_export_gate,
     )
 
 
@@ -266,13 +197,13 @@ def _someone_watching() -> bool:
 
 def _scan_volumes(
     *,
+    discovery: UsbDiscovery,
     force: bool = False,
-    discovery: UsbDiscovery | None = None,
     include_simulated: bool = False,
 ) -> list[UsbVolume]:
     """Rescan /Volumes when watched and interval elapsed; else return cache."""
     global _last_scan_mono, _cached
-    resolved_discovery = discovery or _system_discovery()
+    resolved_discovery = discovery
     now = time.monotonic()
     if (
         not force
@@ -326,6 +257,7 @@ def _scan_volumes(
                 simulated=False,
                 role=role,
                 protocol=info.protocol,
+                removable=info.removable,
                 hide_reason=hide_reason_for(
                     role, protocol=info.protocol, name=entry.name
                 ),
@@ -459,6 +391,10 @@ class UsbCapabilityDetail(BaseModel):
 
     code: Literal["usb_volume_discovery_unavailable"]
     reason: str
+    #: Present only when the refusal is one a control should SHOW: today the
+    #: App Store build's fourth refusal (SAND-01). Absent for a host fault,
+    #: where the honest UI is an error and not a refusal.
+    ui_title: str | None = None
 
 
 class UsbCapabilityErrorOut(BaseModel):
@@ -470,7 +406,10 @@ class UsbCapabilityErrorOut(BaseModel):
 _CAPABILITY_RESPONSES = {
     503: {
         "model": UsbCapabilityErrorOut,
-        "description": "USB volume discovery is unavailable on this host.",
+        "description": (
+            "USB volume discovery is unavailable: either this host cannot "
+            "provide it, or this build is sandboxed and may not look."
+        ),
     }
 }
 
@@ -483,7 +422,17 @@ def _capability_response(exc: UsbDiscoveryUnavailable) -> JSONResponse:
 
 
 def _to_out(v: UsbVolume) -> UsbVolumeOut:
-    is_music = v.kind in ("rekordbox", "djay", "music") and v.role == "usb_stick"
+    kind_is_music = v.kind in ("rekordbox", "djay", "music")
+    # role == "other" with no protocol/removable at all means diskutil gave us
+    # nothing to classify with (unavailable, timed out on a read that still
+    # returned some bytes, or a plist missing both keys) rather than a real
+    # non-usb bus we deliberately fold away. classify_mount() still proved
+    # music content in that case, so trust it instead of hiding a genuine USB
+    # music volume behind a metadata gap.
+    metadata_unavailable = (
+        v.role == "other" and v.protocol is None and v.removable is None
+    )
+    is_music = kind_is_music and (v.role == "usb_stick" or metadata_unavailable)
     return UsbVolumeOut(
         id=v.id,
         name=v.name,
@@ -511,7 +460,9 @@ def _to_out(v: UsbVolume) -> UsbVolumeOut:
 def get_usb_volumes(request: Request) -> UsbVolumesOut | JSONResponse:
     _touch_client()
     try:
+        discovery = _system_discovery(usb_export_gate=usb_export_gate(request))
         vols = _scan_volumes(
+            discovery=discovery,
             include_simulated=request.app.state.usb_simulation_enabled,
         )
     except UsbDiscoveryUnavailable as exc:
@@ -541,7 +492,7 @@ async def usb_volume_events(request: Request) -> StreamingResponse | JSONRespons
     """SSE: keep the scanner warm while a client is subscribed."""
 
     try:
-        discovery = _system_discovery()
+        discovery = _system_discovery(usb_export_gate=usb_export_gate(request))
         include_simulated = request.app.state.usb_simulation_enabled
         initial_volumes = _scan_volumes(
             discovery=discovery,

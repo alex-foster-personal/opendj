@@ -222,3 +222,5 @@ def test_get_pending_tracks_fails_for_malformed_persisted_sources(
     finally:
         client.close()
         conn.close()
+
+pytestmark = pytest.mark.rb_parity

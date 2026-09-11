@@ -14,24 +14,61 @@ import pytest
 from apps.cloud.config import CloudConfig
 from apps.cloud.lock import FakeS3Client, LockHolder
 from apps.cloud.replicate import Replicator, self_check
+from tests.waits import LIVENESS_CHECK_S, THREAD_HANG_GUARD_S
+
+# ----- signal waits -------------------------------------------------------------
 
 
-def _wait_until(predicate, timeout: float = 2.0, tick: float = 0.01) -> bool:
-    """Block until ``predicate()`` is truthy or ``timeout`` elapses.
+def _wait_for_signal(signal: threading.Event, thread: threading.Thread, what: str) -> None:
+    """Block until the replicator thread sets ``signal``.
 
-    Uses ``threading.Event().wait`` for the inter-poll tick so the test
-    body contains no raw ``time.sleep`` wall-clock waits; the Event is
-    never set, so ``.wait(tick)`` returns purely by timeout and serves as
-    an interruptible sleep. Returns True iff the predicate became truthy
-    before the deadline.
+    The fakes below set the Event the moment the replicator reaches the step,
+    so a slow runner only delays the return. A thread that exits without
+    signalling is a WRONG OUTCOME and fails at once; only a live thread that
+    never signals fails as a HANG, after the hang guard.
     """
-    deadline = time.monotonic() + timeout
-    gate = threading.Event()
-    while time.monotonic() < deadline:
-        if predicate():
-            return True
-        gate.wait(tick)
-    return predicate()
+    started = time.monotonic()
+    while not signal.wait(timeout=LIVENESS_CHECK_S):
+        if not thread.is_alive():
+            raise AssertionError(
+                f"WRONG OUTCOME: the replicator thread exited before {what}"
+            )
+        if time.monotonic() - started > THREAD_HANG_GUARD_S:
+            raise AssertionError(f"HANG: never saw that {what} within {THREAD_HANG_GUARD_S}s")
+
+
+def _join_after_stop(thread: threading.Thread) -> None:
+    """Join the replicator thread; a thread still alive is a HANG, not slowness."""
+    thread.join(timeout=THREAD_HANG_GUARD_S)
+    assert not thread.is_alive(), (
+        f"HANG: the replicator thread was still alive {THREAD_HANG_GUARD_S}s after stop"
+    )
+
+
+class SignallingS3(FakeS3Client):
+    """FakeS3Client that sets ``lock_acquired`` once LOCK.json is created."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lock_acquired = threading.Event()
+
+    def put_object_if_none_match(
+        self, bucket: str, key: str, body: bytes
+    ) -> tuple[bool, str | None]:
+        created, etag = super().put_object_if_none_match(bucket, key, body)
+        if created and key == "LOCK.json":
+            self.lock_acquired.set()
+        return created, etag
+
+    def steal_lock(self) -> None:
+        """Overwrite LOCK.json under the store mutex, as another host's write would.
+
+        Writing ``_store`` without the mutex can land between a heartbeat's etag
+        check and its write, so the heartbeat silently overwrites the theft and
+        the replicator heartbeats forever: a lost update, not a stolen lock.
+        """
+        with self._lock:
+            self._store[("test-state", "LOCK.json")] = (b"{}", '"stolen-etag"')
 
 
 def make_cfg(hostname: str = "host-a") -> CloudConfig:
@@ -114,10 +151,12 @@ def test_replicator_exits_2_when_lock_held_elsewhere(capsys):
 def test_replicator_happy_path_spawns_litestream_and_releases_lock():
     s3 = FakeS3Client()
     spawned: list[list[str]] = []
+    litestream_spawned = threading.Event()
     fake_proc = FakeSubprocess()
 
     def factory(argv: list[str]) -> FakeSubprocess:
         spawned.append(argv)
+        litestream_spawned.set()
         return fake_proc
 
     rep = Replicator(
@@ -133,19 +172,15 @@ def test_replicator_happy_path_spawns_litestream_and_releases_lock():
     def run() -> None:
         result_holder["rc"] = rep.start()
 
-    t = threading.Thread(target=run)
+    t = threading.Thread(target=run, daemon=True)
     t.start()
-    # Wait for litestream to have been spawned (Event-based tick; no sleep).
-    assert _wait_until(lambda: bool(spawned)), (
-        "litestream factory was never called"
-    )
+    _wait_for_signal(litestream_spawned, t, "the litestream factory was called")
     assert spawned[0][0] == "litestream"
     assert spawned[0][1:3] == ["replicate", "-config"]
 
     # Finish the subprocess cleanly.
     fake_proc.finish(0)
-    t.join(timeout=3.0)
-    assert not t.is_alive()
+    _join_after_stop(t)
     assert result_holder["rc"] == 0
     # Lock must have been released (no LOCK.json left on R2).
     assert s3.get_object("test-state", "LOCK.json") is None
@@ -153,7 +188,7 @@ def test_replicator_happy_path_spawns_litestream_and_releases_lock():
 
 @pytest.mark.requirement("CAT-04")
 def test_replicator_exits_3_when_lock_stolen_mid_run():
-    s3 = FakeS3Client()
+    s3 = SignallingS3()
     fake_proc = FakeSubprocess()
 
     def factory(_argv: list[str]) -> FakeSubprocess:
@@ -172,18 +207,12 @@ def test_replicator_exits_3_when_lock_stolen_mid_run():
     def run() -> None:
         rc_holder["rc"] = rep.start()
 
-    t = threading.Thread(target=run)
+    t = threading.Thread(target=run, daemon=True)
     t.start()
-    # Wait until the lock object exists (ack we acquired).
-    assert _wait_until(
-        lambda: s3.get_object("test-state", "LOCK.json") is not None
-    ), "replicator never acquired LOCK.json"
+    _wait_for_signal(s3.lock_acquired, t, "the replicator acquired LOCK.json")
     # Someone steals the lock: overwrite the stored etag so CAS fails.
-    s3._store[("test-state", "LOCK.json")] = (  # type: ignore[attr-defined]
-        b"{}", '"stolen-etag"',
-    )
-    t.join(timeout=3.0)
-    assert not t.is_alive()
+    s3.steal_lock()
+    _join_after_stop(t)
     assert rc_holder["rc"] == 3
     assert fake_proc.terminated
 
@@ -207,7 +236,7 @@ def test_cloud_lock_released_only_after_litestream_exit():
     subprocess, creating a window for a concurrent writer to grab the lock
     while litestream was still flushing WAL frames.
     """
-    s3 = FakeS3Client()
+    s3 = SignallingS3()
 
     release_times: list[float] = []
     proc_exit_time: dict[str, float] = {}
@@ -224,7 +253,7 @@ def test_cloud_lock_released_only_after_litestream_exit():
             with self._mutex:
                 self.terminated = True
                 self._terminate_at = time.monotonic()
-            # NOTE: do NOT set returncode yet — simulate a flushing tail.
+            # NOTE: do NOT set returncode yet -- simulate a flushing tail.
 
         def poll(self) -> int | None:
             with self._mutex:
@@ -255,7 +284,7 @@ def test_cloud_lock_released_only_after_litestream_exit():
         return fake_proc
 
     # Use an interruptible Event.wait as the sleep tick instead of
-    # raw time.sleep — matches the pattern from PR #115 and keeps the
+    # raw time.sleep -- matches the pattern from PR #115 and keeps the
     # test free of wall-clock dependencies in the Replicator's own code
     # path. time.monotonic() still advances naturally via the OS scheduler
     # for the SlowExitProc's terminate->exit delay check.
@@ -286,19 +315,15 @@ def test_cloud_lock_released_only_after_litestream_exit():
     def run() -> None:
         rc_holder["rc"] = rep.start()
 
-    t = threading.Thread(target=run)
+    t = threading.Thread(target=run, daemon=True)
     t.start()
 
-    # Wait until lock is acquired.
-    assert _wait_until(
-        lambda: s3.get_object("test-state", "LOCK.json") is not None
-    ), "replicator never acquired LOCK.json"
+    _wait_for_signal(s3.lock_acquired, t, "the replicator acquired LOCK.json")
 
-    # Ask replicator to stop — this triggers terminate + the delayed exit.
+    # Ask replicator to stop -- this triggers terminate + the delayed exit.
     rep.request_stop()
 
-    t.join(timeout=5.0)
-    assert not t.is_alive()
+    _join_after_stop(t)
 
     assert release_times, "lock.release was never called"
     assert "t" in proc_exit_time, "subprocess never reported exit"

@@ -165,8 +165,8 @@ def require_credentials(cfg: CloudConfig) -> None:
         raise MissingEnvError(
             "Missing R2 credentials: "
             + ", ".join(missing)
-            + ". They live in Doppler (project music-dj-tools); invoke under "
-            "`doppler run -p music-dj-tools -c prod -- ...`."
+            + ". They live in Doppler (project general, config dev_personal); "
+            "invoke under `doppler run -p general -c dev_personal -- ...`."
         )
 
 

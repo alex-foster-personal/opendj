@@ -313,3 +313,5 @@ def test_mytag_openapi_documents_stale_scope_and_merge_confirmation_conflicts(cl
         {"$ref": "#/components/schemas/MyTagScopeConflictDetail"},
         {"$ref": "#/components/schemas/MyTagMergeConflictDetail"},
     ]
+
+pytestmark = pytest.mark.rb_parity

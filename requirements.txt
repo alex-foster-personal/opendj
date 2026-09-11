@@ -51,16 +51,34 @@ Pillow>=10.0
 
 # --- Phase 6 -- analysis pipeline (META-01, META-02, META-04) ---
 # numpy floor matches pyproject's core `numpy>=1.26` (PyO3 waveform runtime,
-# PR #493); the <2 ceiling is madmom compat only.  librosa (ISC) + madmom
-# (MIT) + scipy for the default backend; PyYAML drives
-# ``apps/analysis/config.yaml``.
+# PR #493); the <2 ceiling is madmom compat only.  librosa (ISC) + scipy for
+# the shippable default backend; PyYAML drives ``apps/analysis/config.yaml``.
 numpy>=1.26,<2
 scipy>=1.13
 librosa==0.10.*
+# numba and llvmlite are librosa's JIT and are PINNED to what uv.lock resolves,
+# because this file is the CI shard venv's resolver (ci.yml: `uv pip install -r
+# requirements.txt`) while the e2e job syncs the lock. Unpinned, the shards
+# drifted to numba 0.67.0 / llvmlite 0.49.0 on Tue 8 Sep 2026 while the lock
+# and e2e stayed on 0.65.1 / 0.47.0, two venvs per runner host, and
+# `apps.analysis.run` began dying with SIGSEGV (ip 0) under the e2e daemon at
+# about one crash a minute (kernel log on agentbox, 48 in one hour).
+# tests/scripts/test_requirements_pins_match_lock.py keeps the two in step.
+numba==0.65.1
+llvmlite==0.47.0
 # madmom 0.16.1 still imports ``collections.MutableSequence`` (removed in
 # Python 3.10+).  The maintained git HEAD has 3.12+ fixes.  Install with
 # ``pip install --no-build-isolation -r requirements.txt`` because madmom
 # needs cython+numpy at setup() time but declares no build-requires.
+#
+# NON-SHIPPABLE (NATIVE-08). madmom's own code is BSD-3-Clause, but the
+# pretrained beat/downbeat models it loads are CC BY-NC-SA 4.0
+# (non-commercial, share-alike) -- not MIT, whatever an older comment here
+# said. This line exists only so the dev/bench venv can run the gated
+# `librosa+madmom` backend and `scripts/beatbench/run_madmom_reference_only.py`;
+# `apps/analysis/backends/__init__.py`'s registry refuses to resolve
+# `librosa+madmom` unless `MDT_BENCH_NONSHIPPABLE=1` is set, and no pyproject
+# extra or shipped payload declares madmom at all (NOTICE, docs/operator-setup.md).
 madmom @ git+https://github.com/CPJKU/madmom@main
 # madmom uses pkg_resources which was removed from setuptools>=81.
 setuptools<81
@@ -114,12 +132,22 @@ pytest-cov>=5.0
 # runs serial on purpose (`-n` measured slower on a 4-vCPU runner; see
 # ops/test-latency/README.md) but still needs the plugin resolvable.
 pytest-xdist>=3.6
+# CI shards the fast pytest lane across runners (`--splits N --group i` in
+# .github/workflows/ci.yml). Balanced by the committed `.test_durations`;
+# without the plugin every shard would run the whole suite.
+pytest-split>=0.10
+# Stateful property testing for the CloudSync fleet simulation (plan W18,
+# tests/cloudsync/test_sim_property.py). Same spec as the pyproject ``dev``
+# extra; without it here every CI shard dies collecting that module.
+hypothesis>=6.100,<7
 # Ed25519 for the dmg preflight's updater-key verification (item H). Declared
 # here as well as in the pyproject ``dev`` extra so the environment CI builds
 # matches the one we claim to support, and so the release gate never has to
 # fetch a package: `uv run --with cryptography` needs the network on a cold
 # cache, which blocked the dmg gate on a host where every build tool was
-# present and only PyPI was unreachable.
+# present and only PyPI was unreachable. It is ALSO a core runtime dependency
+# now (RS256 for Google id_token enrollment, ADR 12), declared in
+# [project].dependencies next to pyjwt[crypto].
 cryptography>=42,<47
 # The type checker. Exact pin, matching ops/quality/mypy-requirements.txt and
 # the copy in pyproject.toml's `dev` extra, because the quality ratchet records
@@ -135,6 +163,11 @@ cryptography>=42,<47
 mypy==2.3.1
 coverage[toml]>=7.4
 soundfile>=0.12  # test fixtures generate click/WAV files for analysis tests
+# Profiling the Python the perf harness LAUNCHES (never a running task; macOS
+# forbids attaching an allocator tracer to one). Mirrors the pyproject ``dev``
+# extra, which tests/test_dependency_contract.py requires this file to cover.
+memray>=1.14; sys_platform != "win32"
+pyinstrument>=5
 
 # --- Phase 11 -- web UI daemon (CAT-05) + cloud sync (CAT-04) ---
 # FastAPI 0.115 / Starlette 0.38 minimums need standard ``httpx``. The
@@ -155,3 +188,5 @@ setproctitle>=1.3,<2
 regex==2026.7.19
 httpx>=0.28,<1
 httpx2>=2.7,<3
+# Google id_token verification for POST /api/v1/sync/enroll (ADR 12 B).
+pyjwt[crypto]>=2.9,<3

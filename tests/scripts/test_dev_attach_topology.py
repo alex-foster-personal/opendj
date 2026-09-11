@@ -63,6 +63,20 @@ def test_dev_attach_launches_debug_shell_against_claimed_engine() -> None:
     assert "just dmg" not in recipe
 
 
+def test_engine_loop_uses_the_worktree_python_not_uv() -> None:
+    """If the engine remains below ``uv run`` then macOS can attribute a
+    Media Library grant to uv and prompt during a performance, not boot.
+
+    [if] ``just webui-backend`` starts the daemon through uv [then] broken.
+    """
+    lines = JUSTFILE.read_text(encoding="utf-8").splitlines()
+    start = next(index for index, line in enumerate(lines) if line.startswith("webui-backend:"))
+    recipe = "\n".join(lines[start : start + 12])
+
+    assert '"$PWD/.venv/bin/python" -m apps.webui.server' in recipe
+    assert "uv run --no-sync python -m apps.webui.server" not in recipe
+
+
 def test_ui_only_webkit_truth_requires_no_cargo_build_or_dmg() -> None:
     """If the Safari UI loop invokes Cargo or a DMG then broken."""
     readme = DESKTOP_README.read_text(encoding="utf-8")
@@ -72,7 +86,7 @@ def test_ui_only_webkit_truth_requires_no_cargo_build_or_dmg() -> None:
 
     assert "pnpm build --watch" in webkit_loop
     assert "Safari" in webkit_loop
-    assert webkit_loop.index("pnpm build --watch") < webkit_loop.index("just webui-backend")
+    assert "just webui-webkit-watch" in webkit_loop
     assert "cargo" not in webkit_loop.lower()
     assert "dmg" not in webkit_loop.lower()
 
@@ -87,6 +101,8 @@ def test_readme_documents_three_independent_loops() -> None:
     assert "### WebKit-truthful UI loop" in readme
     assert "### Engine loop" in readme
     assert "just webui-backend" in readme
+    assert "venv/bin/python" in readme
+    assert "rather than uv" in readme
     assert "### Shell loop" in readme
     assert "just dev-attach" in readme
     assert "webview MCP" in readme

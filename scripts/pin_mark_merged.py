@@ -3,8 +3,8 @@
 Usage::
 
     just pin-merged 890                    # mark every reachable daemon, live
-    just pin-merged 890 -- --dry-run       # print what it would do
-    just pin-merged 890 -- --url http://127.0.0.1:8728  # plus an extra target
+    just pin-merged 890 --dry-run          # print what it would do
+    just pin-merged 890 --url http://127.0.0.1:8728  # plus an extra target
 
 A merged PR's pins are not all on one daemon: the maintainer's live pins are spread
 across worktree dev ports, ad-hoc audition servers, and the installed app
@@ -72,7 +72,12 @@ import sys
 import urllib.error
 from dataclasses import dataclass, field
 
-from scripts.feedback_harvest import Target, _discover, _env_ports
+try:
+    from scripts.feedback_harvest import Target, _discover, _env_ports
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.pin_mark_merged") from None
+    raise
 
 # `pin <id> -> <sha>`: ids are 12 hex chars today, shas 7-40. Both bounded so
 # a prose line mentioning the word "pin" cannot be read as a reference.

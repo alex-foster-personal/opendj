@@ -23,7 +23,7 @@
 		type IngestCoverage,
 		type RefreshStatus
 	} from '$lib/rb/api-ingest';
-	import { RbApiError } from '$lib/rb/api-rb';
+	import { RbApiError } from '$lib/rb/api-rb-error';
 	import { jobProgress } from '$lib/rb/job-progress.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 
@@ -41,6 +41,11 @@
 	const badged = new Set<string>();
 
 	const running = $derived(status?.running === true);
+	const buttonTitle = $derived(
+		running
+			? 'Refresh analysis is running - hover for coverage; a second click does nothing until it finishes'
+			: 'Refresh analysis - click to find tracks missing analysis, stems, or vocals and run them; hover for coverage'
+	);
 	const pct = $derived.by(() => {
 		if (status === null || status.step_total === 0) return 0;
 		return Math.min(1, status.step_done / status.step_total);
@@ -87,7 +92,7 @@
 	}
 
 	async function onEnter(): Promise<void> {
-		if (wrapEl !== undefined) {
+		if (wrapEl) {
 			const r = wrapEl.getBoundingClientRect();
 			popStyle = `right:${Math.round(window.innerWidth - r.right)}px;top:${Math.round(r.bottom + 4)}px`;
 		}
@@ -144,6 +149,7 @@
 		class="tb-icon"
 		class:running
 		onclick={onClick}
+		title={buttonTitle}
 		aria-label="refresh analysis"
 		data-testid="refresh-analysis"
 	>

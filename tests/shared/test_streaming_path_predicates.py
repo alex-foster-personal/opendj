@@ -35,7 +35,7 @@ _STREAMING_URIS: tuple[str, ...] = (
 _LOCAL_PATHS: tuple[str, ...] = (
     "/music/Manual Library/foo.mp3",
     "/tmp/some-file.flac",
-    "/Users/dev/Music/track.aiff",
+    "/Users/user/Music/track.aiff",
 )
 
 
@@ -112,8 +112,8 @@ def test_rekordbox_db_reports_pathless_tracks_as_unplayable(empty: str | None) -
     assert rekordbox_db.is_streaming_path(empty) is True
 
 
-@pytest.mark.parametrize("uri", _STREAMING_URIS)
 @pytest.mark.requirement("RECON-01")
+@pytest.mark.parametrize("uri", _STREAMING_URIS)
 def test_reconcile_relocate_union_is_now_a_single_answer(uri: str) -> None:
     """``reconcile._is_local`` / ``relocate._is_local`` union both predicates.
 
@@ -123,3 +123,12 @@ def test_reconcile_relocate_union_is_now_a_single_answer(uri: str) -> None:
     """
     assert rekordbox_db.is_streaming_path(uri) is True
     assert rb_paths.is_streaming_path(uri) is True
+
+
+def test_streaming_row_is_false_when_local_file_exists() -> None:
+    """if a present local file is still called streaming on the wire then broken"""
+    assert platform_paths.is_streaming_row("", file_exists=True) is False
+    assert platform_paths.is_streaming_row(None, file_exists=True) is False
+    assert platform_paths.is_streaming_row("spotify:track:x", file_exists=True) is False
+    assert platform_paths.is_streaming_row("spotify:track:x", file_exists=False) is True
+    assert platform_paths.is_streaming_row("/music/a.mp3", file_exists=False) is False

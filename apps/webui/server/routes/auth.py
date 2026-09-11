@@ -6,7 +6,7 @@ browser takes has an HTTP equivalent an agent can drive:
   POST /api/v1/auth/login     -> {authorization_url, state, redirect_uri}
   GET  /api/v1/auth/callback  -> Google's loopback redirect target; plants
                                  the session cookie and bounces to the SPA
-  GET  /api/v1/auth/me        -> the signed-in user, or 401
+  GET  /api/v1/auth/me        -> signed-in user or signed-out envelope (HTTP 200)
   POST /api/v1/auth/logout    -> drops the session and clears the cookie
 
 Cookie model: the browser holds an opaque token in an httpOnly cookie, the
@@ -17,10 +17,10 @@ and a browser restart because it lives in ``data/state/state.db``.
 from __future__ import annotations
 
 import os
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict
 
 from apps.webui.server.auth import (
@@ -29,6 +29,7 @@ from apps.webui.server.auth import (
     AuthConfigError,
     AuthFlowError,
     GoogleOAuthConfig,
+    PendingLogin,
     PendingLoginStore,
     SessionStore,
     SessionUser,
@@ -36,6 +37,7 @@ from apps.webui.server.auth import (
     callback_url_for_origin,
     exchange_code,
 )
+from apps.webui.server.auth_timing import AuthTimer, last_capture
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -156,6 +158,46 @@ def _resolve_origin(request: Request, requested: str | None) -> str:
     return f"http://127.0.0.1:{port}"
 
 
+def _sanitize_return_to(return_to: str | None) -> str:
+    """Return a same-origin SPA path, or ``/`` when ``return_to`` is unsafe."""
+    if not return_to:
+        return "/"
+    if not return_to.startswith("/") or return_to.startswith("//"):
+        return "/"
+    if "\\" in return_to or "://" in return_to:
+        return "/"
+    if any(ch.isspace() for ch in return_to):
+        return "/"
+    return return_to
+
+
+def _spa_origin_from_redirect_uri(redirect_uri: str) -> str:
+    return redirect_uri.removesuffix("/api/v1/auth/callback")
+
+
+def _loopback_spa_origin(request: Request) -> str:
+    port = getattr(request.app.state, "port", None)
+    if port is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "AUTH_ORIGIN_UNRESOLVED",
+                "message": "cannot determine the browser origin for this callback",
+            },
+        )
+    return f"http://127.0.0.1:{port}"
+
+
+def _redirect_with_auth_error(
+    spa_origin: str, return_to: str, message: str
+) -> RedirectResponse:
+    encoded = quote(message, safe="")
+    return RedirectResponse(
+        url=f"{spa_origin}{return_to}?opendj_auth_error={encoded}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
 # ----- models -------------------------------------------------------------
 
 
@@ -166,6 +208,9 @@ class LoginIn(BaseModel):
     """Loopback origin the browser is on, e.g. http://127.0.0.1:9418.
     Omit when calling from the SPA -- the Origin header covers it."""
 
+    return_to: str | None = None
+    """Same-origin SPA path to return to after consent, e.g. /performance."""
+
 
 class LoginOut(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -175,7 +220,7 @@ class LoginOut(BaseModel):
     redirect_uri: str
 
 
-class MeOut(BaseModel):
+class MeUserOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     google_sub: str
@@ -184,11 +229,26 @@ class MeOut(BaseModel):
     avatar_url: str | None
     created_at: str
 
+
+class MeOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    signed_in: bool
+    user: MeUserOut | None
+
     @classmethod
-    def of(cls, user: SessionUser) -> MeOut:
+    def of(cls, user: SessionUser | None) -> MeOut:
+        if user is None:
+            return cls(signed_in=False, user=None)
         return cls(
-            google_sub=user.google_sub, email=user.email, name=user.name,
-            avatar_url=user.avatar_url, created_at=user.created_at,
+            signed_in=True,
+            user=MeUserOut(
+                google_sub=user.google_sub,
+                email=user.email,
+                name=user.name,
+                avatar_url=user.avatar_url,
+                created_at=user.created_at,
+            ),
         )
 
 
@@ -196,20 +256,29 @@ class MeOut(BaseModel):
 
 
 @router.post("/login", response_model=LoginOut)
-def start_login(body: LoginIn, request: Request) -> LoginOut:
+def start_login(body: LoginIn, request: Request) -> JSONResponse:
     """Begin sign-in: mint CSRF state + PKCE and return the consent URL.
 
     The caller (browser or agent) is responsible for actually visiting
     ``authorization_url``. Nothing is persisted until the callback lands.
     """
     config = _oauth_config()
-    origin = _resolve_origin(request, body.origin)
-    pending = _pending_logins(request).create(callback_url_for_origin(origin))
-    return LoginOut(
-        authorization_url=build_authorization_url(config, pending),
-        state=pending.state,
-        redirect_uri=pending.redirect_uri,
-    )
+    with AuthTimer.span("login"):
+        origin = _resolve_origin(request, body.origin)
+        return_to = _sanitize_return_to(body.return_to)
+        pending = _pending_logins(request).create(
+            callback_url_for_origin(origin), return_to=return_to
+        )
+        payload = LoginOut(
+            authorization_url=build_authorization_url(config, pending),
+            state=pending.state,
+            redirect_uri=pending.redirect_uri,
+        )
+    capture = last_capture()
+    headers: dict[str, str] = {}
+    if capture is not None and capture.get("op") == "login":
+        headers["X-OpenDJ-Auth-Ms"] = str(int(capture["duration_ms"]))
+    return JSONResponse(content=payload.model_dump(), headers=headers)
 
 
 @router.get("/callback", include_in_schema=True)
@@ -221,13 +290,18 @@ def finish_login(
 ) -> RedirectResponse:
     """Google's loopback redirect target. Plants the cookie, returns to the SPA."""
     if error:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "AUTH_DENIED",
-                "message": f"Google refused the sign-in: {error}",
-            },
-        )
+        return_to = "/"
+        spa_origin = _loopback_spa_origin(request)
+        if state:
+            try:
+                pending = _pending_logins(request).consume(state)
+            except AuthFlowError:
+                pending = None
+            if pending is not None:
+                spa_origin = _spa_origin_from_redirect_uri(pending.redirect_uri)
+                return_to = pending.return_to
+        message = f"Google refused the sign-in: {error}"
+        return _redirect_with_auth_error(spa_origin, return_to, message)
     if not state or not code:
         raise HTTPException(
             status_code=400,
@@ -240,34 +314,39 @@ def finish_login(
             },
         )
     config = _oauth_config()
-    try:
-        pending = _pending_logins(request).consume(state)
-        identity = exchange_code(config, pending, code)
-    except AuthFlowError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail={"code": "AUTH_EXCHANGE_FAILED", "message": str(exc)},
-        ) from exc
+    pending: PendingLogin | None = None
+    with AuthTimer.span("callback"):
+        try:
+            pending = _pending_logins(request).consume(state)
+            identity = exchange_code(config, pending, code)
+        except AuthFlowError as exc:
+            if pending is not None:
+                spa_origin = _spa_origin_from_redirect_uri(pending.redirect_uri)
+                return_to = pending.return_to
+            else:
+                spa_origin = _loopback_spa_origin(request)
+                return_to = "/"
+            return _redirect_with_auth_error(spa_origin, return_to, str(exc))
 
-    token = _session_store(request).sign_in(identity)
-    spa_origin = pending.redirect_uri.removesuffix("/api/v1/auth/callback")
-    response = RedirectResponse(
-        url=f"{spa_origin}/", status_code=status.HTTP_303_SEE_OTHER,
-    )
-    _set_session_cookie(response, token)
+        token = _session_store(request).sign_in(identity)
+        spa_origin = _spa_origin_from_redirect_uri(pending.redirect_uri)
+        response = RedirectResponse(
+            url=f"{spa_origin}{pending.return_to}",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+        _set_session_cookie(response, token)
     return response
 
 
 @router.get("/me", response_model=MeOut)
 def whoami(request: Request) -> MeOut:
-    """The signed-in user, or 401. The bauble polls this on mount."""
-    user = signed_in_user(request)
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "AUTH_REQUIRED", "message": "not signed in"},
-        )
-    return MeOut.of(user)
+    """Who is signed in.
+
+    Always HTTP 200. Signed-out is identity, not a fault: the bauble polls
+    this on mount, Chromium logs every 4xx, and the AutoPlay hunt treats
+    4xx as a finding. Destructive routes that need a user still 401.
+    """
+    return MeOut.of(signed_in_user(request))
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

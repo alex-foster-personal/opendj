@@ -172,7 +172,7 @@ export interface ToastEnvironment {
 
 export interface ToastReportInput {
 	id: string;
-	kind: 'info' | 'error';
+	kind: 'info' | 'warn' | 'error';
 	message: string;
 	/** ISO 8601 UTC, and the SAME instant the log row carries. */
 	createdAt: string;

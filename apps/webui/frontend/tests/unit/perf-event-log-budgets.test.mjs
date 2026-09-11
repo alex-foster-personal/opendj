@@ -41,8 +41,10 @@ const FLUSH_DEBOUNCE_MS = 250;
  * this file must be re-read by a human rather than silently follow along. */
 const DECK_LOAD_BUDGET = 16;
 const TRANSPORT_SCHEDULE_BUDGET = 16;
+const DECK_STATE_BUDGET = 8;
 const OTHER_BUDGET = 8;
-const CAPACITY = DECK_LOAD_BUDGET + TRANSPORT_SCHEDULE_BUDGET + OTHER_BUDGET;
+const CAPACITY =
+	DECK_LOAD_BUDGET + TRANSPORT_SCHEDULE_BUDGET + DECK_STATE_BUDGET + OTHER_BUDGET;
 
 function defineGlobal(name, value) {
 	Object.defineProperty(globalThis, name, {
@@ -206,12 +208,63 @@ test('the low-volume kinds share one budget and cannot starve each other out', a
 	);
 });
 
+test('deck-state rows have their own budget and cannot be evicted by the quiet kinds', async () => {
+	const { perfLog } = await freshLog();
+
+	// Legacy empty-deck boot rows plus real unload rows are the ring rows the
+	// resource probe reads deck state from. Before they had their own budget
+	// they shared the 8-row `other` remainder with every quiet kind, so an
+	// audio-context or sync-failure flood evicted them and the probe read
+	// loaded_deck_count None under ordinary use (issue #1403).
+	for (const deck of [1, 2, 3, 4]) {
+		perfLog.recordPerfEvent('deck-state-empty', 'initial deck state is unloaded', deck, 'info');
+	}
+	perfLog.recordPerfEvent('deck-unload', 'deck resources released', 1, 'info');
+	perfLog.recordPerfEvent('deck-unload', 'deck resources released', 2, 'info');
+	for (let i = 0; i < 30; i += 1) {
+		perfLog.recordPerfEvent('sync-failure', `could not phase lock ${i}`, 2);
+	}
+
+	const rows = perfLog.readPerfEvents();
+	assert.equal(
+		countKind(rows, 'deck-state-empty'),
+		4,
+		'the empty-deck boot rows must survive a flood of unrelated quiet rows'
+	);
+	assert.equal(countKind(rows, 'deck-unload'), 2, 'unload rows must survive the same flood');
+	assert.equal(
+		countKind(rows, 'sync-failure'),
+		OTHER_BUDGET,
+		'the flood is capped inside its own budget, not spread into deck-state'
+	);
+});
+
+test('the empty-deck baseline is a non-ring record, not four ring rows', async () => {
+	const { perfLog, store } = await freshLog();
+
+	perfLog.recordDeckStateBaseline();
+
+	assert.equal(
+		perfLog.readPerfEvents().length,
+		0,
+		'recording the constant empty-deck state must not spend ring budget'
+	);
+	const stamp = JSON.parse(store.getItem('mdt.deckState'));
+	assert.equal(stamp.v, 1);
+	assert.deepEqual(stamp.unloaded, [1, 2, 3, 4]);
+	assert.ok(
+		typeof stamp.t === 'string' && stamp.t.length > 0,
+		'the baseline carries the instant the decks were created empty'
+	);
+});
+
 test('the whole ring stays bounded no matter which kind is noisy', async () => {
 	const { perfLog } = await freshLog();
 
 	for (let i = 0; i < 200; i += 1) {
 		perfLog.recordPerfTiming('transport-schedule', { scheduled_offset_ms: i }, 1);
 		perfLog.recordPerfTiming(`deck-load sid=t${i}`, { total: i }, 1);
+		perfLog.recordPerfEvent('deck-unload', 'deck resources released', 2, 'info');
 		perfLog.recordPerfEvent('beat-sync-skip', `skip ${i}`, 2);
 	}
 
@@ -375,4 +428,18 @@ test('flushPerfEventLog persists on demand for a caller that cannot wait', async
 	perfLog.flushPerfEventLog();
 	assert.equal(store.writes, 1);
 	assert.ok(store.getItem(STORAGE_KEY).includes('AUDIO_FILE_MISSING'));
+});
+
+test('resetPerfEventLog empties the ring and persists the empty store', async () => {
+	const { perfLog, store } = await freshLog();
+	mock.timers.enable({ apis: ['setTimeout'] });
+
+	perfLog.recordPerfEvent('deck-load-fail', 'before-reset', 1);
+	perfLog.flushPerfEventLog();
+	assert.ok(store.getItem(STORAGE_KEY).includes('before-reset'));
+
+	perfLog.resetPerfEventLog();
+	assert.equal(perfLog.readPerfEvents().length, 0);
+	const stored = JSON.parse(store.getItem(STORAGE_KEY));
+	assert.equal(stored.length, 0, 'reset must flush an empty ring to localStorage');
 });

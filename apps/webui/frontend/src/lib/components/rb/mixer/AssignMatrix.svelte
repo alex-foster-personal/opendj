@@ -33,7 +33,11 @@
 		<button
 			class="cell"
 			class:lit={assigns[deck] === bus}
-			title={`assign channel ${deck} to crossfader ${bus === 'A' ? 'left (A)' : 'right (B)'} bus`}
+			title={assigns[deck] === bus
+				? `Channel ${deck} is on ${bus === 'A' ? 'left (A)' : 'right (B)'} now. Click to release to THRU.`
+				: assigns[deck] === 'THRU'
+					? `Channel ${deck} is THRU (not on the crossfader) now. Click to assign to ${bus === 'A' ? 'left (A)' : 'right (B)'}.`
+					: `Channel ${deck} is on ${assigns[deck]} now. Click to move it to ${bus === 'A' ? 'left (A)' : 'right (B)'}.`}
 			onclick={() => handleClick(deck)}
 		>
 			{deck}

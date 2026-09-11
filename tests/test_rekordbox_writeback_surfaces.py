@@ -86,6 +86,15 @@ IMPORT_DIRECTION_ONLY: dict[str, str] = {
     "apps/shared/library_integrity.py": "reads to report integrity",
     "apps/shared/state/ingest/rekordbox.py": "ingests rekordbox -> state.db, import direction",
     "apps/shared/rekordbox_writeback.py": "the gate itself",
+    "apps/shared/fd_anchored_walk.py": (
+        "resolves asset paths under SHARE_ROOT via read-only directory-fd "
+        "opens (O_RDONLY|O_DIRECTORY|O_NOFOLLOW) plus fstat/readlink to "
+        "recover a path; never writes, creates, renames or unlinks anything. "
+        "If a future change makes this module write, that write needs its "
+        "own WriteSurface + guard -- this entry stops being true the moment "
+        "an os.open here gains O_WRONLY/O_CREAT/O_TRUNC, or os.rename/"
+        "os.unlink/os.mkdir appears"
+    ),
     "apps/audit/session_history.py": (
         "reads play history. SHARP EDGE, kept on purpose so the next reader "
         "sees it: open_db(REKORDBOX_LIVE_DB) hands back a READ-WRITE handle on "

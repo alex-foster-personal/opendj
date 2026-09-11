@@ -19,6 +19,17 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 //   the fail-fast prefs policy is gone -- broken
 // - if setLastPlaylist persists on an unchanged identity then every pane
 //   load writes localStorage for nothing -- broken
+//
+// Pin 2ac3a0 (playlist deck-membership tints + CURRENT fold):
+// - if a non-selected playlist holding a deck-loaded track isn't tinted then
+//   the pin's "which playlists are already open" cue is missing -- broken
+// - if a playlist open in 2+ pane tabs doesn't get the DARKER tint then the
+//   two states are indistinguishable -- broken
+// - if the selected row's own selection colour doesn't win over both tints
+//   then the active playlist looks like just another open one -- broken
+// - if computeTreeCurrentFold doesn't fire 'above'/'below' exactly when the
+//   selected row scrolls outside the tree viewport then CURRENT never shows,
+//   or shows on top of a row that is already visible -- broken
 
 const STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 
@@ -201,4 +212,202 @@ test('setLastPlaylist persists a change and skips an unchanged identity', async 
 		name: 'Openers',
 		kind: 'playlist'
 	});
+});
+
+// -------------------------------------------------------- spotify_library pref
+
+test('a blob without spotify_library loads empty pin/recent lists', async () => {
+	_fakeWindow(JSON.stringify({ hide_broken_links: true }));
+	const prefs = await _loadPrefs();
+
+	assert.deepEqual(prefs.uiPrefs.spotify_library, { pinned_ids: [], recent_ids: [] });
+});
+
+test('a persisted spotify_library identity round-trips', async () => {
+	_fakeWindow(
+		JSON.stringify({
+			hide_broken_links: false,
+			spotify_library: { pinned_ids: ['pl-pin'], recent_ids: ['pl-recent', 'pl-older'] }
+		})
+	);
+	const prefs = await _loadPrefs();
+
+	assert.deepEqual(prefs.uiPrefs.spotify_library, {
+		pinned_ids: ['pl-pin'],
+		recent_ids: ['pl-recent', 'pl-older']
+	});
+});
+
+test('a malformed spotify_library throws rather than silently resetting', async () => {
+	const bad = ['nope', { pinned_ids: [1] }, { recent_ids: '' }];
+	for (const value of bad) {
+		_fakeWindow(JSON.stringify({ hide_broken_links: false, spotify_library: value }));
+		await assert.rejects(
+			async () => _loadPrefs(),
+			/spotify_library/,
+			`${JSON.stringify(value)} must be rejected loudly`
+		);
+		delete globalThis.window;
+	}
+});
+
+test('rememberSpotifyRecent persists prepend and skips rewrite when already first', async () => {
+	const store = _fakeWindow(JSON.stringify({ hide_broken_links: false }));
+	const prefs = await _loadPrefs();
+
+	prefs.rememberSpotifyRecent('pl-1');
+	assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).spotify_library.recent_ids, ['pl-1']);
+
+	prefs.rememberSpotifyRecent('pl-2');
+	assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).spotify_library.recent_ids, [
+		'pl-2',
+		'pl-1'
+	]);
+
+	store.set(STORAGE_KEY, 'SENTINEL-NOT-REWRITTEN');
+	prefs.rememberSpotifyRecent('pl-2');
+	assert.equal(store.get(STORAGE_KEY), 'SENTINEL-NOT-REWRITTEN');
+});
+
+test('toggleSpotifyPinned add then remove', async () => {
+	const store = _fakeWindow(JSON.stringify({ hide_broken_links: false }));
+	const prefs = await _loadPrefs();
+
+	prefs.toggleSpotifyPinned('pl-pin');
+	assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).spotify_library.pinned_ids, ['pl-pin']);
+
+	prefs.toggleSpotifyPinned('pl-pin');
+	assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).spotify_library.pinned_ids, []);
+});
+
+// ------------------------------------- playlist deck-membership tints (2ac3a0)
+
+function _pane(overrides = {}) {
+	return { playlist_id: null, rows: [], ...overrides };
+}
+
+test('a non-selected playlist holding a loaded-deck track gets the light deck tint', async () => {
+	const contract = await _loadContract();
+	const panes = [_pane({ playlist_id: 'pl-1', rows: [{ stable_id: 'a' }, { stable_id: 'b' }] })];
+	const deckIds = new Set(['b']);
+	const membership = contract.derivePlaylistDeckMembership(panes, deckIds);
+	assert.deepEqual([...membership], ['pl-1']);
+
+	const tint = contract.playlistTintOf({
+		playlist_id: 'pl-1',
+		selected: false,
+		deckLoadedPlaylistIds: membership,
+		multiPanePlaylistIds: new Set()
+	});
+	assert.equal(tint, 'deck');
+});
+
+test('a playlist open in 2+ pane tabs gets the darker multi tint', async () => {
+	const contract = await _loadContract();
+	const panes = [
+		_pane({ playlist_id: 'pl-1' }),
+		_pane({ playlist_id: 'pl-1' }),
+		_pane({ playlist_id: 'pl-2' })
+	];
+	const counts = contract.derivePlaylistPaneOpenCounts(panes);
+	assert.equal(counts.get('pl-1'), 2);
+	assert.equal(counts.get('pl-2'), 1);
+	const multi = contract.multiPanePlaylistIds(counts);
+	assert.deepEqual([...multi], ['pl-1']);
+
+	assert.equal(
+		contract.playlistTintOf({
+			playlist_id: 'pl-1',
+			selected: false,
+			deckLoadedPlaylistIds: new Set(),
+			multiPanePlaylistIds: multi
+		}),
+		'multi'
+	);
+	assert.equal(
+		contract.playlistTintOf({
+			playlist_id: 'pl-2',
+			selected: false,
+			deckLoadedPlaylistIds: new Set(),
+			multiPanePlaylistIds: multi
+		}),
+		'none'
+	);
+});
+
+test('multi tint outranks deck tint when both apply, and the selected row takes neither', async () => {
+	const contract = await _loadContract();
+	const both = { deckLoadedPlaylistIds: new Set(['pl-1']), multiPanePlaylistIds: new Set(['pl-1']) };
+	assert.equal(
+		contract.playlistTintOf({ playlist_id: 'pl-1', selected: false, ...both }),
+		'multi'
+	);
+	// the selected-colour precedence: selection always wins over both tints
+	assert.equal(
+		contract.playlistTintOf({ playlist_id: 'pl-1', selected: true, ...both }),
+		'none'
+	);
+});
+
+test('All Tracks and blank panes never count toward playlist deck membership or open counts', async () => {
+	const contract = await _loadContract();
+	const panes = [
+		_pane({ playlist_id: 'all', rows: [{ stable_id: 'a' }] }),
+		_pane({ playlist_id: null, rows: [{ stable_id: 'a' }] })
+	];
+	assert.equal(contract.derivePlaylistDeckMembership(panes, new Set(['a'])).size, 0);
+	assert.equal(contract.derivePlaylistPaneOpenCounts(panes).size, 0);
+});
+
+test('Missing Tracks never counts toward playlist deck membership or open counts', async () => {
+	const contract = await _loadContract();
+	const panes = [_pane({ playlist_id: 'missing', rows: [{ stable_id: 'a' }] })];
+	assert.equal(contract.derivePlaylistDeckMembership(panes, new Set(['a'])).size, 0);
+	assert.equal(contract.derivePlaylistPaneOpenCounts(panes).size, 0);
+});
+
+// --------------------------------------------------- CURRENT fold (2ac3a0)
+
+test('computeTreeCurrentFold: selected row above the viewport folds "above"', async () => {
+	const contract = await _loadContract();
+	const fold = contract.computeTreeCurrentFold({
+		selectedTop: 0,
+		selectedBottom: 20,
+		scrollTop: 100,
+		viewportHeight: 300
+	});
+	assert.equal(fold, 'above');
+});
+
+test('computeTreeCurrentFold: selected row below the viewport folds "below"', async () => {
+	const contract = await _loadContract();
+	const fold = contract.computeTreeCurrentFold({
+		selectedTop: 500,
+		selectedBottom: 520,
+		scrollTop: 0,
+		viewportHeight: 300
+	});
+	assert.equal(fold, 'below');
+});
+
+test('computeTreeCurrentFold: selected row on screen folds null (no CURRENT control)', async () => {
+	const contract = await _loadContract();
+	const fold = contract.computeTreeCurrentFold({
+		selectedTop: 100,
+		selectedBottom: 120,
+		scrollTop: 0,
+		viewportHeight: 300
+	});
+	assert.equal(fold, null);
+});
+
+test('computeTreeCurrentFold: no selected row (e.g. a smartlist, or nothing selected) folds null', async () => {
+	const contract = await _loadContract();
+	const fold = contract.computeTreeCurrentFold({
+		selectedTop: null,
+		selectedBottom: null,
+		scrollTop: 0,
+		viewportHeight: 300
+	});
+	assert.equal(fold, null);
 });

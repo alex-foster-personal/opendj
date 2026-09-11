@@ -50,11 +50,13 @@ function assertMs(actual, expected) {
 let math;
 let ipc;
 let view;
+let loops;
 
 before(async () => {
 	math = await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts');
 	ipc = await loadTypeScriptModule('src/lib/rb/performance-ipc.svelte.ts');
 	view = await loadTypeScriptModule('src/lib/rb/loop-interval-view.svelte.ts');
+	loops = await loadTypeScriptModule('src/lib/player/transport/loops.ts');
 });
 
 // ------------------------------------------------------------- jump math
@@ -80,6 +82,177 @@ test('a negative beat jump walks the grid backwards', () => {
 	// Last beat (index 8) minus 4 grid beats is index 4 at 2.04s.
 	assertMs(math.beatJumpTargetMs(DRIFTING_GRID, 4060, -4), 2040);
 	assertMs(math.beatJumpTargetMs(DRIFTING_GRID, 2040, -1), 1553);
+});
+
+test('a live beat loop shifts by the same real PQTZ beat count as its jump', () => {
+	assert.deepEqual(
+		loops.shiftLiveBeatLoopRangeMs(
+			DRIFTING_GRID,
+			{ in_ms: 608, out_ms: 2530 },
+			2,
+			4000
+		),
+		{ in_ms: 1553, out_ms: 3540 }
+	);
+	assert.deepEqual(
+		loops.shiftLiveBeatLoopRangeMs(
+			DRIFTING_GRID,
+			{ in_ms: 608, out_ms: 2530 },
+			-1,
+			4000
+		),
+		{ in_ms: 135, out_ms: 2040 }
+	);
+	assert.throws(
+		() => loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 2040, out_ms: 4060 }, 1, 5000),
+		/does not fit/i
+	);
+	assert.throws(
+		() => loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 608, out_ms: 2530 }, 2, 3000),
+		/decoded duration/i,
+		'a grid beyond decoded audio must not produce a loop the engine clips'
+	);
+	assert.throws(
+		() => loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: -1, out_ms: 2530 }, 2, 4000),
+		/finite 0 <= in_ms < out_ms/i
+	);
+	assert.throws(
+		() => loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 372, out_ms: 2530 }, -1, 4000),
+		/empty, reversed, or negative/i,
+		'a preserved negative endpoint offset must not move a shifted loop before zero'
+	);
+	assert.throws(
+		() => loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 608, out_ms: 2531 }, 2, 3540),
+		/exceeds decoded duration/i,
+		'a preserved positive endpoint offset must not move a shifted loop past duration'
+	);
+});
+
+// pin 334a50710ef0 defect B: a manually-set, non-grid-aligned loop must keep
+// its own off-grid endpoints (not snap to the grid) when a beat jump shifts
+// it. Before the fix, shiftLiveBeatLoopRangeMs always returned the grid-exact
+// beats/{beats[nextIn].t*1000, beats[nextOut].t*1000}, discarding this offset.
+test('a beat jump shift preserves manually-set, non-grid-aligned loop endpoints', () => {
+	// in_ms is 7ms after the nearest real beat (608ms); out_ms is 4ms before
+	// the nearest real beat (2530ms) - neither sits exactly on the grid.
+	assert.deepEqual(
+		loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 615, out_ms: 2526 }, 2, 4000),
+		{ in_ms: 1560, out_ms: 3536 },
+		'the +7ms/-4ms manual offsets from the nearest grid beat must carry ' +
+			'forward onto the shifted (+2 beat) endpoints, not collapse to the ' +
+			'grid-exact 1553/3540'
+	);
+	// A loop that happens to already sit exactly on the grid is unaffected -
+	// offset zero shifts to offset zero, matching the existing grid-aligned test.
+	assert.deepEqual(
+		loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 608, out_ms: 2530 }, 2, 4000),
+		{ in_ms: 1553, out_ms: 3540 }
+	);
+});
+
+// sol-review v1 P1 (BLOCKING) + P2 (non-blocking), pin 334a50710ef0: the beat
+// INDEX bounds check alone cannot see a preserved manual offset. A negative
+// in-offset on an early beat can push the shifted nextInMs below zero, and
+// sufficiently different in/out offsets can make the shifted range empty or
+// reversed - both while nextIn/nextOut are perfectly valid beat indices.
+// Policy: refuse the whole shift (RangeError), matching this function's
+// existing contract of refusing a boundary it cannot keep whole rather than
+// silently clamping, reversing, or exiting.
+test('a beat jump shift refuses a preserved offset that goes negative or reverses the range', () => {
+	// in_ms is 140ms BEFORE its nearest real beat (608ms) - the DJ nudged the
+	// loop-in early. Nearest-beat quantization still resolves to beat 608
+	// (140ms is closer to 608 than to the prior beat at 135ms), so the offset
+	// is preserved as -140ms. Shifting back 1 beat relocates that beat to the
+	// very start of the grid (135ms), and 135 - 140 = -5: a negative endpoint.
+	assert.throws(
+		() => loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 468, out_ms: 2530 }, -1, 4000),
+		/empty, reversed, or negative/i,
+		'a preserved offset that pushes nextInMs below zero must be refused, not installed as a negative loop-in'
+	);
+
+	// A synthetic grid with alternating wide (1000ms) and narrow (50ms) gaps,
+	// so an offset large enough to still be "nearest" its source beat becomes
+	// larger than the narrow gap at the shifted destination. in_ms is 450ms
+	// after beat 0 (nearest of [0, 1000]); out_ms is 450ms before beat 1000
+	// (nearest of [0, 1000]). Shifting forward 1 beat lands in at 1000+450=1450
+	// and out at 1050-450=600: out is now BEFORE in.
+	const ALTERNATING_GRID = [
+		{ n: 1, bpm: 120, t: 0 },
+		{ n: 2, bpm: 120, t: 1.0 },
+		{ n: 3, bpm: 120, t: 1.05 },
+		{ n: 4, bpm: 120, t: 2.05 },
+		{ n: 1, bpm: 120, t: 2.1 },
+		{ n: 2, bpm: 120, t: 3.1 }
+	];
+	assert.throws(
+		() => loops.shiftLiveBeatLoopRangeMs(ALTERNATING_GRID, { in_ms: 450, out_ms: 550 }, 1, 6000),
+		/empty, reversed, or negative/i,
+		'a shift landing on a narrower destination gap must be refused rather than returning a reversed range'
+	);
+});
+
+test('resizing the saved engaged beat loop replaces its matching safety snapshot', () => {
+	const before = { in_ms: 135, out_ms: 2040, engaged: true, beat_length: 4 };
+	const after = { in_ms: 135, out_ms: 1080, engaged: true, beat_length: 2 };
+	assert.deepEqual(
+		loops.replaceMatchingSafetyLoopSnapshot(
+			{ in_ms: 135, out_ms: 2040, beat_length: 4, armed: true },
+			before,
+			after
+		),
+		{ in_ms: 135, out_ms: 1080, beat_length: 2, armed: true },
+		'an engaged loop resize must not leave an earlier safety-loop snapshot to restore later'
+	);
+	assert.deepEqual(
+		loops.replaceMatchingSafetyLoopSnapshot(
+			{ in_ms: 2040, out_ms: 4060, beat_length: 4, armed: true },
+			before,
+			after
+		),
+		{ in_ms: 2040, out_ms: 4060, beat_length: 4, armed: true },
+		'a separately saved safety loop remains an explicit operator choice'
+	);
+});
+
+test('natural-end safety re-entry reconstructs a whole beat loop from its grid anchor', () => {
+	const reentry = loops.phaseLockedSafetyLoopAtTrackEnd(
+		DRIFTING_GRID,
+		{ in_ms: 135, out_ms: 2040, beat_length: 4, armed: true },
+		4000
+	);
+	assert.deepEqual(reentry, { in_ms: 135, out_ms: 2040, engaged: true, beat_length: 4 });
+	assert.equal(
+		loops.phaseLockedSafetyLoopAtTrackEnd(
+			DRIFTING_GRID,
+			{ in_ms: 135, out_ms: 2040, beat_length: null, armed: true },
+			4000
+		),
+		null,
+		'a safety loop without a beat count must stop at track end rather than re-entering off-grid'
+	);
+	assert.equal(
+		loops.phaseLockedSafetyLoopAtTrackEnd(
+			[],
+			{ in_ms: 135, out_ms: 2040, beat_length: 4, armed: true },
+			4000
+		),
+		null,
+		'a gridless safety slot must take the normal natural-end stop'
+	);
+});
+
+test('a shifted live loop keeps an exclusive-out beat jump inside the loop', () => {
+	const shifted = { in_ms: 1553, out_ms: 3540 };
+	assert.equal(
+		loops.targetWithinShiftedLiveLoopMs(DRIFTING_GRID, 3540, shifted),
+		3030,
+		'an exclusive loop out is not a seekable position, so use the preceding real beat'
+	);
+	assert.equal(
+		loops.targetWithinShiftedLiveLoopMs(DRIFTING_GRID, 3030, shifted),
+		3030,
+		'an already in-loop target must retain its exact PQTZ position'
+	);
 });
 
 test('a jump past either grid end lands on the first or last real beat', () => {
@@ -305,16 +478,18 @@ test('beat jump reaches the engine only through the typed dispatcher', async () 
 	// The component owns no engine import - it only calls the injected prop.
 	assert.doesNotMatch(jumpSource, /audio-engine/);
 	assert.match(jumpSource, /onJump\(delta\)/);
+	assert.match(jumpSource, /shiftLiveBeatLoopRangeMs\(beats, deck\.loop, delta, deck\.duration_ms\)/);
+	assert.match(jumpSource, /live loop cannot shift/);
 });
 
-test('beat jump leads the compact horizontal loop control group', async () => {
+test('LOOP and JUMP are visible headings in their requested left-to-right columns', async () => {
 	const deckSource = await readFile('src/lib/components/rb/Deck.svelte', 'utf8');
 	const jumpSource = await readFile('src/lib/components/rb/deck/BeatJump.svelte', 'utf8');
-	// The controls remain out of cue-flex, with BeatJump first in the shared
-	// horizontal loop-col so the cue bank keeps its full region.
+	const loopSource = await readFile('src/lib/components/rb/deck/LoopCluster.svelte', 'utf8');
+	// The controls remain out of cue-flex, with LOOP left and JUMP right.
 	assert.match(
 		deckSource,
-		/<div class="loop-col">\s*<BeatJump \{deck\} \{pending\} onJump=\{beatJump\} \/>\s*<LoopCluster\b/s
+		/<div class="loop-col">\s*<LoopCluster\b[\s\S]*?<BeatJump \{deck\} \{pending\} onJump=\{beatJump\} \/>/
 	);
 	const cueRegionStart = deckSource.indexOf('<div class="cue-flex">');
 	const cueRegionEnd = deckSource.indexOf('\n\t\t</div>', cueRegionStart);
@@ -324,6 +499,8 @@ test('beat jump leads the compact horizontal loop control group', async () => {
 		deckSource,
 		/\.loop-col \{[\s\S]*?display: flex;[\s\S]*?flex-direction: row;[\s\S]*?align-items: flex-start;/
 	);
+	assert.match(loopSource, /<span class="column-label">LOOP<\/span>/);
+	assert.match(jumpSource, /<span class="column-label">JUMP<\/span>/);
 	assert.match(jumpSource, /grid-template-columns: repeat\(2, minmax\(18px, 1fr\)\)/);
 	assert.match(jumpSource, /width: 38px;/);
 });
@@ -395,14 +572,265 @@ test('picking an interval engages a loop through the same command path as the re
 
 test('a clipped engaged loop stays choosable so it can be exited from the grid', async () => {
 	const loopSource = await readFile('src/lib/components/rb/deck/LoopCluster.svelte', 'utf8');
-	// An agent-created loop can report a beat_length the grid's own fit math
-	// would refuse (the engine clips the endpoint to duration rather than
-	// rejecting it). _canChoose must short-circuit true for that engaged
-	// length BEFORE the beatLoopFitsWithinDuration fit check, or the choice
-	// renders selected-but-disabled and chooseInterval's disengage branch
-	// (asserted above) becomes unreachable.
+	// _canChoose delegates to canChooseInterval (loop-cluster-actions.ts, a
+	// distinct pure-logic concern split out of the component).
 	assert.match(
 		loopSource,
-		/function _canChoose\(n: number\): boolean \{[^}]*if \(engagedIntervalLength === n\) return true;[^}]*beatLoopFitsWithinDuration/s
+		/function _canChoose\(n: number\): boolean \{\s*return canChooseInterval\(/
 	);
+	const actionsSource = await readFile(
+		'src/lib/components/rb/deck/loop-cluster-actions.ts',
+		'utf8'
+	);
+	// An agent-created loop can report a beat_length the grid's own fit math
+	// would refuse (the engine clips the endpoint to duration rather than
+	// rejecting it). canChooseInterval must short-circuit true for that
+	// engaged length BEFORE the beatLoopFitsWithinDuration fit check, or the
+	// choice renders selected-but-disabled and chooseInterval's disengage
+	// branch (asserted above) becomes unreachable.
+	assert.match(
+		actionsSource,
+		/function canChooseInterval\([\s\S]*?\): boolean \{[\s\S]*?if \(engagedIntervalLength === n\) return true;[\s\S]*?beatLoopFitsWithinDuration/
+	);
+});
+
+// -------------------------------------- PIN f11c66 / 02978b regression math
+
+test('if a live-loop beat jump clears or changes loop length then the pin is broken', () => {
+	// 4-beat loop: beats[1]=608 .. beats[5]=2530.
+	const loop = { in_ms: 608, out_ms: 2530 };
+	const beatIndexOf = (ms) => DRIFTING_GRID.findIndex((beat) => Math.abs(beat.t * 1000 - ms) < 1e-6);
+	const originalBeatLength = beatIndexOf(loop.out_ms) - beatIndexOf(loop.in_ms);
+	assert.equal(originalBeatLength, 4);
+
+	// Mirrors AudioEngineController.beatJump's own sequence: shift the live
+	// loop by the jumped beats first, then land the target inside it.
+	const shifted = loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, loop, 1, 5000);
+	const shiftedBeatLength = beatIndexOf(shifted.out_ms) - beatIndexOf(shifted.in_ms);
+	assert.equal(shiftedBeatLength, originalBeatLength, 'beat jump must never change the loop length');
+
+	const rawTarget = math.beatJumpTargetMs(DRIFTING_GRID, 2040, 1);
+	const targetMs = math.beatJumpTargetWithinDurationMs(DRIFTING_GRID, rawTarget, 5000);
+	const landedMs = loops.targetWithinShiftedLiveLoopMs(DRIFTING_GRID, targetMs, shifted);
+	assert.ok(
+		landedMs >= shifted.in_ms && landedMs < shifted.out_ms,
+		'the jump must land the playhead inside the shifted loop, never exit it'
+	);
+});
+
+test('if a fresh four-beat loop starts on the upcoming beat instead of the preceding beat one then the pin is broken', () => {
+	// 1.0s sits between beat index 2 (1.08 is actually AHEAD; nearest real
+	// beat below 1.0s is index 1 at 0.608) and the next downbeat (n===1) at
+	// 2.04s. A fresh 4-beat loop with no explicit start_ms must anchor on the
+	// PRECEDING downbeat (0.135s, the only earlier n===1 beat), never the
+	// upcoming one (2.04s) and never the plain nearest-beat quantization.
+	const anchorMs = loops.precedingDownbeatMs(DRIFTING_GRID, 1000);
+	assertMs(anchorMs, 135);
+	assert.notEqual(anchorMs, math.quantizeToNearestBeat(DRIFTING_GRID, 1) * 1000);
+
+	const range = loops.exactBeatLoopRangeMs(DRIFTING_GRID, 1000, 4, anchorMs);
+	assertMs(range.in_ms, 135);
+	assertMs(range.out_ms, 2040);
+});
+
+test('precedingDownbeatMs picks the latest bar-1 beat at or before the position, never ahead of it', () => {
+	assertMs(loops.precedingDownbeatMs(DRIFTING_GRID, 2040), 2040); // exactly on a downbeat
+	assertMs(loops.precedingDownbeatMs(DRIFTING_GRID, 2100), 2040); // just past it
+	assertMs(loops.precedingDownbeatMs(DRIFTING_GRID, 4060), 4060); // last downbeat in the grid
+});
+
+test('precedingDownbeatMs refuses a position before every downbeat or a broken grid', () => {
+	assert.throws(() => loops.precedingDownbeatMs(DRIFTING_GRID, 50), /no PQTZ downbeat/i);
+	assert.throws(() => loops.precedingDownbeatMs([], 1000), /at least 2 beats/i);
+	assert.throws(() => loops.precedingDownbeatMs(DRIFTING_GRID, -1), /finite and non-negative/i);
+});
+
+test('resizedLoopRangeMs keeps loop-in fixed for a start anchor', () => {
+	const loop = { in_ms: 608, out_ms: 2530 }; // beats 1..5, 4 beats
+	const range = loops.resizedLoopRangeMs(DRIFTING_GRID, loop, 2, 'start', 5000);
+	assertMs(range.in_ms, 608);
+	assertMs(range.out_ms, 1553); // beats[3]
+});
+
+test('resizedLoopRangeMs keeps loop-out fixed for an end anchor', () => {
+	const loop = { in_ms: 608, out_ms: 2530 }; // beats 1..5, 4 beats
+	const range = loops.resizedLoopRangeMs(DRIFTING_GRID, loop, 2, 'end', 5000);
+	assertMs(range.in_ms, 1553); // beats[3]
+	assertMs(range.out_ms, 2530);
+});
+
+test('resizedLoopRangeMs splits a center anchor evenly on both sides, like a centered transform', () => {
+	// beats 3..5 (1553..2530), 2 beats long. Doubling to 4 beats adds 1 beat
+	// on each side: beats 2..6 (1080..3030).
+	const loop = { in_ms: 1553, out_ms: 2530 };
+	const grown = loops.resizedLoopRangeMs(DRIFTING_GRID, loop, 4, 'center', 5000);
+	assertMs(grown.in_ms, 1080);
+	assertMs(grown.out_ms, 3030);
+
+	// beats 0..8 (135..4060), 8 beats long. Halving to 4 beats removes 2
+	// beats on each side: beats 2..6 (1080..3030).
+	const wide = { in_ms: 135, out_ms: 4060 };
+	const shrunk = loops.resizedLoopRangeMs(DRIFTING_GRID, wide, 4, 'center', 5000);
+	assertMs(shrunk.in_ms, 1080);
+	assertMs(shrunk.out_ms, 3030);
+});
+
+test('resizedLoopRangeMs refuses a center resize that cannot split evenly across both sides', () => {
+	const loop = { in_ms: 608, out_ms: 2040 }; // beats 1..4, 3 beats
+	assert.throws(
+		() => loops.resizedLoopRangeMs(DRIFTING_GRID, loop, 4, 'center', 5000),
+		/not evenly splittable/i
+	);
+});
+
+test('resizedLoopRangeMs throws rather than clipping when a resize does not fit the grid or duration', () => {
+	const loop = { in_ms: 608, out_ms: 2530 }; // beats 1..5
+	// 'end' anchored resize asking for more beats than exist before loop-out.
+	assert.throws(
+		() => loops.resizedLoopRangeMs(DRIFTING_GRID, loop, 8, 'end', 5000),
+		/does not fit/i
+	);
+	// A resize that would fit the grid but overruns a short decoded duration.
+	assert.throws(
+		() => loops.resizedLoopRangeMs(DRIFTING_GRID, loop, 6, 'start', 3000),
+		/exceeds decoded duration/i
+	);
+	// Malformed inputs are refused explicitly.
+	assert.throws(
+		() => loops.resizedLoopRangeMs(DRIFTING_GRID, loop, 0, 'start', 5000),
+		/positive integer/i
+	);
+	assert.throws(
+		() => loops.resizedLoopRangeMs(DRIFTING_GRID, { in_ms: 2530, out_ms: 608 }, 2, 'start', 5000),
+		/finite 0 <= in_ms < out_ms/i
+	);
+});
+
+// -------------------------------------------------- restart-loop wiring
+
+test('engageBeatLoop anchors a fresh four-beat loop on the preceding downbeat, no other length', async () => {
+	const engineSource = await readFile('src/lib/rb/audio-engine.svelte.ts', 'utf8');
+	assert.match(
+		engineSource,
+		/beats === 4 && startMs === undefined \? precedingDownbeatMs\(grid, currentMs\) : startMs/
+	);
+});
+
+test('engageBeatLoop restarts (playhead back to loop-in, loop retained) on an exact re-issue', async () => {
+	const engineSource = await readFile('src/lib/rb/audio-engine.svelte.ts', 'utf8');
+	assert.match(
+		engineSource,
+		/st\.loop\.beat_length === beats &&\s*st\.loop\.in_ms === range\.in_ms &&\s*st\.loop\.out_ms === range\.out_ms/
+	);
+	// The restart branch must not fall through to setLoop's ordinary
+	// leave-the-playhead-running behaviour.
+	assert.match(engineSource, /if \(isRestart\) \{/);
+	assert.match(engineSource, /_setPausedPosition\(deck, range\.in_ms\)/);
+});
+
+test('the LoopCluster restart control is a small no-text glyph button beside the readout', async () => {
+	const loopSource = await readFile('src/lib/components/rb/deck/LoopCluster.svelte', 'utf8');
+	assert.match(loopSource, /data-performance-control="loop-restart"/);
+	assert.match(loopSource, /aria-label="restart loop"/);
+	// No visible text label - glyph only.
+	const buttonMatch = loopSource.match(
+		/<button\s+class="restart-btn"[\s\S]*?<\/button>/
+	);
+	assert.ok(buttonMatch, 'restart button markup is present');
+	assert.doesNotMatch(buttonMatch[0], />[A-Za-z]{2,}</, 'the restart control must carry no text label');
+	// The restart command itself (beats/startMs derivation from the live
+	// loop) moved to restartEngageArgs (loop-cluster-actions.ts); the
+	// component just forwards its result.
+	assert.match(loopSource, /const args = restartEngageArgs\(deck\)/);
+	assert.match(loopSource, /await onEngage\(args\.beats, args\.startMs\)/);
+	const actionsSource = await readFile(
+		'src/lib/components/rb/deck/loop-cluster-actions.ts',
+		'utf8'
+	);
+	assert.match(
+		actionsSource,
+		/return \{ beats: deck\.loop\.beat_length, startMs: deck\.loop\.in_ms \}/
+	);
+});
+
+test('shift/opt click on loop halve or double resize with an end or center anchor, plain click keeps start', async () => {
+	const loopSource = await readFile('src/lib/components/rb/deck/LoopCluster.svelte', 'utf8');
+	// The modifier-key anchor rule and the resize command construction moved
+	// to resizeAnchorOf / reapplyEngageArgs (loop-cluster-actions.ts); the
+	// component still calls through _resizeAnchor and wires the same clicks.
+	assert.match(loopSource, /function _resizeAnchor\(event: MouseEvent\)/);
+	assert.match(loopSource, /return resizeAnchorOf\(event\)/);
+	assert.match(loopSource, /onclick=\{\(event\) => void halve\(event\)\}/);
+	assert.match(loopSource, /onclick=\{\(event\) => void double\(event\)\}/);
+	const actionsSource = await readFile(
+		'src/lib/components/rb/deck/loop-cluster-actions.ts',
+		'utf8'
+	);
+	assert.match(actionsSource, /if \(event\.altKey\) return 'center';/);
+	assert.match(actionsSource, /if \(event\.shiftKey\) return 'end';/);
+	assert.match(
+		actionsSource,
+		/resizedLoopRangeMs\(gridBeats, deck\.loop, beatLength, anchor, deck\.duration_ms\)/
+	);
+});
+
+// ------------------------------------------------------- grid quantize (8)
+
+// No n===1 beat at all - a track whose downbeat detector found nothing.
+const NO_DOWNBEAT_GRID = [
+	{ n: 2, bpm: 128, t: 0.1 },
+	{ n: 3, bpm: 128, t: 0.57 },
+	{ n: 4, bpm: 128, t: 1.04 }
+];
+
+// Exactly one n===1 beat, valid 1,2,3,4 cadence throughout.
+const ONE_DOWNBEAT_GRID = [
+	{ n: 3, bpm: 128, t: 0.1 },
+	{ n: 4, bpm: 128, t: 0.57 },
+	{ n: 1, bpm: 128, t: 1.04 },
+	{ n: 2, bpm: 128, t: 1.51 }
+];
+
+// Four full bars, valid cadence, so downbeats sit at real bar boundaries
+// 0, 1, 2, 3 (by array index AND by musical position - the schema's
+// unbroken n=1,2,3,4 cadence makes the two equivalent, since a bar cannot
+// go missing mid-grid without breaking `validateBeatGrid`).
+const FOUR_BAR_GRID = [
+	{ n: 1, bpm: 128, t: 0.0 },
+	{ n: 2, bpm: 128, t: 0.47 },
+	{ n: 3, bpm: 128, t: 0.94 },
+	{ n: 4, bpm: 128, t: 1.41 },
+	{ n: 1, bpm: 128, t: 1.88 }, // bar 1
+	{ n: 2, bpm: 128, t: 2.35 },
+	{ n: 3, bpm: 128, t: 2.82 },
+	{ n: 4, bpm: 128, t: 3.29 },
+	{ n: 1, bpm: 128, t: 3.76 }, // bar 2
+	{ n: 2, bpm: 128, t: 4.23 },
+	{ n: 3, bpm: 128, t: 4.7 },
+	{ n: 4, bpm: 128, t: 5.17 },
+	{ n: 1, bpm: 128, t: 5.64 } // bar 3
+];
+
+test('quantizeToNearestGridBeat(8) degrades to the nearest plain beat when no downbeat exists', () => {
+	assert.equal(
+		math.quantizeToNearestGridBeat(NO_DOWNBEAT_GRID, 0.6, 8),
+		math.quantizeToNearestBeat(NO_DOWNBEAT_GRID, 0.6),
+		'no downbeat at all must still return a real grid line, not throw'
+	);
+	assert.equal(math.quantizeToNearestGridBeat(NO_DOWNBEAT_GRID, 0.6, 4), 0.57);
+});
+
+test('quantizeToNearestGridBeat(8) degrades to the single downbeat when only one exists', () => {
+	assert.equal(math.quantizeToNearestGridBeat(ONE_DOWNBEAT_GRID, 1.5, 8), 1.04);
+	assert.equal(math.quantizeToNearestGridBeat(ONE_DOWNBEAT_GRID, 1.5, 4), 1.04);
+});
+
+test('quantizeToNearestGridBeat(8) selects every other real bar downbeat (0, 2, ...), never an odd one', () => {
+	// twoBarBeats here are bars 0 (0.0s) and 2 (3.76s); bars 1 (1.88s) and 3
+	// (5.64s) must never be returned for gridBeats:8.
+	assert.equal(math.quantizeToNearestGridBeat(FOUR_BAR_GRID, 0.5, 8), 0.0);
+	assert.equal(math.quantizeToNearestGridBeat(FOUR_BAR_GRID, 2.9, 8), 3.76);
+	assert.equal(math.quantizeToNearestGridBeat(FOUR_BAR_GRID, 5.5, 8), 3.76);
+	// gridBeats:4 has no such restriction - bar 1 and bar 3 are reachable.
+	assert.equal(math.quantizeToNearestGridBeat(FOUR_BAR_GRID, 1.9, 4), 1.88);
 });

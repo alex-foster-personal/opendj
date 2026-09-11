@@ -5,7 +5,8 @@ token endpoint would prove only that the mock answers, so the live flow is
 verified by hand against real Google. What is covered is everything that
 can be checked honestly without the network:
 
-  - if GET /auth/me returns anything but 401 while signed out, broken
+  - if GET /auth/me returns anything but 200 {signed_in: false, user: null}
+    while signed out, broken (401 is a fault, not the signed-out answer)
   - if a session cookie does not survive a fresh SessionStore over the same
     file, persistence across a daemon restart is broken
   - if a replayed or unknown OAuth `state` is accepted, CSRF defence is broken
@@ -26,8 +27,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
+from fastapi import HTTPException
+
 from apps.webui.server import auth as auth_mod
 from apps.webui.server.app import create_app
+from apps.webui.server.routes import auth as auth_routes
 from apps.webui.server.auth import (
     SESSION_COOKIE_NAME,
     AuthConfigError,
@@ -89,15 +93,21 @@ def client(state_db_path: Path) -> Iterator[TestClient]:
 # ----- /auth/me while signed out -----------------------------------------
 
 
-def test_me_is_401_when_signed_out(client: TestClient) -> None:
+def test_me_is_200_signed_out_when_there_is_no_cookie(client: TestClient) -> None:
     response = client.get("/api/v1/auth/me")
-    assert response.status_code == 401
-    assert response.json()["detail"]["code"] == "AUTH_REQUIRED"
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {"signed_in": False, "user": None}
+    assert "detail" not in body
 
 
-def test_me_is_401_for_an_unknown_cookie(client: TestClient) -> None:
+def test_me_is_200_signed_out_for_an_unknown_cookie(client: TestClient) -> None:
     client.cookies.set(SESSION_COOKIE_NAME, "not-a-real-session-token")
-    assert client.get("/api/v1/auth/me").status_code == 401
+    response = client.get("/api/v1/auth/me")
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {"signed_in": False, "user": None}
+    assert "detail" not in body
 
 
 # ----- session cookie round-trip ------------------------------------------
@@ -109,17 +119,18 @@ def test_session_round_trip_over_http(
     token = store.sign_in(_identity())
     client.cookies.set(SESSION_COOKIE_NAME, token)
     body = client.get("/api/v1/auth/me").json()
-    assert body["google_sub"] == "sub-123"
-    assert body["email"] == "sub-123@example.com"
-    assert body["avatar_url"] == "https://lh3.googleusercontent.com/test"
+    assert body["signed_in"] is True
+    assert body["user"]["google_sub"] == "sub-123"
+    assert body["user"]["email"] == "sub-123@example.com"
+    assert body["user"]["avatar_url"] == "https://lh3.googleusercontent.com/test"
 
 
 def test_me_never_leaks_tokens(client: TestClient, store: SessionStore) -> None:
     token = store.sign_in(_identity())
     client.cookies.set(SESSION_COOKIE_NAME, token)
     body = client.get("/api/v1/auth/me").json()
-    assert "refresh_token" not in body
-    assert "access_token" not in body
+    assert "refresh_token" not in body and "refresh_token" not in body["user"]
+    assert "access_token" not in body and "access_token" not in body["user"]
 
 
 def test_session_survives_a_new_store_over_the_same_file(
@@ -346,6 +357,23 @@ def test_blank_credentials_count_as_missing() -> None:
         )
 
 
+def test_oauth_config_missing_env_returns_503_with_runbook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in (*auth_mod.CLIENT_ID_ENV_NAMES, *auth_mod.CLIENT_SECRET_ENV_NAMES):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(HTTPException) as excinfo:
+        auth_routes._oauth_config()
+    assert excinfo.value.status_code == 503
+    detail = excinfo.value.detail
+    assert detail["code"] == "AUTH_NOT_CONFIGURED"
+    message = detail["message"]
+    assert "OPENDJ_GOOGLE_OAUTH_CLIENT_ID" in message
+    assert "OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET" in message
+    assert "doppler run" in message
+    assert "Desktop app" in message
+
+
 def test_login_is_503_when_credentials_are_absent(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -353,7 +381,13 @@ def test_login_is_503_when_credentials_are_absent(
         monkeypatch.delenv(name, raising=False)
     response = client.post("/api/v1/auth/login", json={})
     assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "AUTH_NOT_CONFIGURED"
+    detail = response.json()["detail"]
+    assert detail["code"] == "AUTH_NOT_CONFIGURED"
+    message = detail["message"]
+    assert "OPENDJ_GOOGLE_OAUTH_CLIENT_ID" in message
+    assert "OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET" in message
+    assert "doppler run" in message
+    assert "Desktop app" in message
 
 
 def test_login_returns_a_consent_url_when_configured(
@@ -416,7 +450,7 @@ def test_identity_maps_google_claims() -> None:
             "id_token": _jwt_with_claims(
                 {
                     "sub": "1234567890",
-                    "email": "owner@example.com",
+                    "email": "maintainer",
                     "name": "the maintainer",
                     "picture": "https://lh3.googleusercontent.com/a/pic",
                 }
@@ -424,7 +458,7 @@ def test_identity_maps_google_claims() -> None:
         }
     )
     assert identity.google_sub == "1234567890"
-    assert identity.email == "owner@example.com"
+    assert identity.email == "maintainer"
     assert identity.avatar_url == "https://lh3.googleusercontent.com/a/pic"
     assert identity.refresh_token == "rt"
 
@@ -443,3 +477,5 @@ def test_identity_rejects_claims_with_no_subject() -> None:
                 "id_token": _jwt_with_claims({"email": "a@b.c"}),
             }
         )
+
+pytestmark = pytest.mark.rb_parity

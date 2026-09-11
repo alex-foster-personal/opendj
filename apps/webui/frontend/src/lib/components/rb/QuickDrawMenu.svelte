@@ -3,8 +3,13 @@
 	// Left of the click = always-on tall Unload / Loop tree. At the click =
 	// contextual actions derived from the target (deck-scoped for now).
 	import { onMount } from 'svelte';
-	import { DECK_IDS, getDeckState } from '$lib/rb/audio-engine.svelte';
-	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
+	import { DECK_IDS, getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
+	import {
+		dispatchPerformanceCommand,
+		runPerformanceCommandFromUi
+	} from '$lib/rb/performance-ipc.svelte';
+	import { createLoadBlendController } from '$lib/rb/load-blend-dispatch';
+	import LoadBlendHud from './LoadBlendHud.svelte';
 	import {
 		quickDrawCommand,
 		type QuickDrawActionId
@@ -19,14 +24,22 @@
 	} from '$lib/rb/api-rb';
 	import { getTrack } from '$lib/api';
 	import { pushToast } from '$lib/stores.svelte';
+	import { vocalFixMenuItem } from './vocal-correction-menu';
 
 	type CtxItem = {
 		id: string;
 		label: string;
-		run: () => Promise<void>;
+		/** pressT0Ms is the triggering click's own event.timeStamp, Q1's
+		 * operator-felt press stamp - undefined for actions outside the P0
+		 * press paths (load, stems), which ignore it. */
+		run: (pressT0Ms?: number) => Promise<void>;
 		/** Inert rungs render dimmed and explain themselves on hover. */
 		disabled?: boolean;
 		title?: string;
+		testId?: string;
+		/** Present only on Load to CHn; pointer handlers own the click-drag blend. */
+		loadDeck?: DeckId;
+		stableId?: string;
 	};
 	type Root = 'unload' | 'loop' | 'play';
 	type LoopLeaf = 'loop.start_8' | 'loop.exit';
@@ -114,6 +127,23 @@
 	/** Close-on-leave only after the pointer has entered the menu once. */
 	let leaveArmed = false;
 
+	let blendHud = $state({ visible: false, t: 0, fader: 0, scrubDeltaMs: 0 });
+	/** True after Load pointerdown so the synthetic click cannot double-load. */
+	let loadPressArmed = false;
+	const blend = createLoadBlendController({
+		run: async (cmd) => {
+			await dispatchPerformanceCommand(cmd);
+		},
+		getDeck: (deck) => getDeckState(deck),
+		getChannel: (deck) => mixerState.channels[deck],
+		toast: pushToast,
+		hud: blendHud
+	});
+
+	function _masterDeck(): DeckId | null {
+		return DECK_IDS.find((d) => getDeckState(d).is_master) ?? null;
+	}
+
 	function _deckFromTarget(t: EventTarget | null): DeckId | null {
 		const el = t instanceof Element ? t.closest('[data-deck]') : null;
 		if (el === null) return null;
@@ -130,7 +160,8 @@
 
 	function _contextItems(
 		target: EventTarget | null,
-		knownStableId: string | null = null
+		knownStableId: string | null = null,
+		event: MouseEvent | null = null
 	): CtxItem[] {
 		const stableId = knownStableId ?? _stableIdFromTarget(target);
 		if (stableId !== null) {
@@ -143,6 +174,9 @@
 				...DECK_IDS.map((deck) => ({
 				id: `load-${deck}-${stableId}`,
 				label: `Load to CH${deck}`,
+				testId: `quick-draw-load-ch${deck}`,
+				loadDeck: deck,
+				stableId,
 				run: async () => {
 					if (getDeckState(deck).stable_id !== null) {
 						await runPerformanceCommandFromUi({ type: 'unload', deck });
@@ -159,15 +193,19 @@
 			{
 				id: `unload-${deck}`,
 				label: `Unload CH${deck}`,
-				run: () => _runAction('unload', deck)
+				run: (pressT0Ms) => _runAction('unload', deck, pressT0Ms)
 			}
 		];
 		if (getDeckState(deck).loop !== null) {
 			items.push({
 				id: `exit-loop-${deck}`,
 				label: `Exit Loop CH${deck}`,
-				run: () => _runAction('loop.exit', deck)
+				run: (pressT0Ms) => _runAction('loop.exit', deck, pressT0Ms)
 			});
+		}
+		if (event !== null) {
+			const vocal = vocalFixMenuItem(event, target);
+			if (vocal !== null) items.unshift(vocal);
 		}
 		return items;
 	}
@@ -180,7 +218,7 @@
 		// Room for Unload/Play/Loop + mid tier + CH column.
 		x = Math.min(Math.max(e.clientX, 320), window.innerWidth - 160);
 		y = Math.min(Math.max(e.clientY, 8), window.innerHeight - 200);
-		ctx = _contextItems(t);
+		ctx = _contextItems(t, null, e);
 		root = 'unload';
 		loopLeaf = null;
 		setMenuHighlightStableId(_stableIdFromTarget(t));
@@ -189,6 +227,7 @@
 	}
 
 	function _close(): void {
+		if (blend.isActive()) return;
 		open = false;
 		loopLeaf = null;
 		leaveArmed = false;
@@ -201,24 +240,42 @@
 
 	function onMenuPointerLeave(e: PointerEvent): void {
 		if (!open || !leaveArmed) return;
+		if (blend.isActive()) return;
 		const next = e.relatedTarget;
-		if (menuEl !== undefined && next instanceof Node && menuEl.contains(next)) return;
+		if (next instanceof Node && menuEl?.contains(next)) return;
 		_close();
 	}
 
 	function onKeydown(e: KeyboardEvent): void {
-		if (e.key === 'Escape' && open) _close();
-	}
-
-	async function _runAction(id: QuickDrawActionId, deck: DeckId): Promise<void> {
+		if (e.key !== 'Escape' || !open) return;
+		if (blend.isActive()) blend.abort();
 		_close();
-		await runPerformanceCommandFromUi(quickDrawCommand(id, deck));
 	}
 
-	async function _togglePlay(deck: DeckId): Promise<void> {
+	function onLoadPointerDown(e: PointerEvent, item: CtxItem): void {
+		if (item.loadDeck === undefined || item.stableId === undefined) return;
+		if (e.button !== 0) return;
+		e.preventDefault();
+		e.stopPropagation();
+		loadPressArmed = true;
+		const btn = e.currentTarget;
+		if (btn instanceof HTMLButtonElement) btn.setPointerCapture(e.pointerId);
+		const deck = item.loadDeck;
+		const stableId = item.stableId;
+		blend.down(e.clientX, e.clientY, deck, stableId, _masterDeck(), e.pointerId, () =>
+			item.run()
+		);
+	}
+
+	async function _runAction(id: QuickDrawActionId, deck: DeckId, pressT0Ms?: number): Promise<void> {
+		_close();
+		await runPerformanceCommandFromUi(quickDrawCommand(id, deck), pressT0Ms);
+	}
+
+	async function _togglePlay(deck: DeckId, pressT0Ms?: number): Promise<void> {
 		_close();
 		const playing = getDeckState(deck).playing;
-		await runPerformanceCommandFromUi({ type: 'play', deck, playing: !playing });
+		await runPerformanceCommandFromUi({ type: 'play', deck, playing: !playing }, pressT0Ms);
 	}
 
 	function _setRoot(next: Root): void {
@@ -229,7 +286,8 @@
 	onMount(() => {
 		const onPointerDown = (e: PointerEvent): void => {
 			if (!open) return;
-			if (menuEl !== undefined && e.target instanceof Node && menuEl.contains(e.target)) return;
+			if (blend.isActive()) return;
+			if (e.target instanceof Node && menuEl?.contains(e.target)) return;
 			_close();
 		};
 		window.addEventListener('pointerdown', onPointerDown, true);
@@ -242,6 +300,7 @@
 {#if open}
 	<div
 		class="qd"
+		data-testid="quick-draw-menu"
 		style:left="{x}px"
 		style:top="{y}px"
 		bind:this={menuEl}
@@ -260,7 +319,7 @@
 								type="button"
 								class="qd-item qd-tall"
 								role="menuitem"
-								onclick={() => void _runAction('unload', deck)}
+								onclick={(e) => void _runAction('unload', deck, e.timeStamp)}
 							>
 								CH{deck}
 							</button>
@@ -273,7 +332,7 @@
 								type="button"
 								class="qd-item qd-tall"
 								role="menuitem"
-								onclick={() => void _togglePlay(deck)}
+								onclick={(e) => void _togglePlay(deck, e.timeStamp)}
 							>
 								{getDeckState(deck).playing ? 'Pause' : 'Play'} CH{deck}
 							</button>
@@ -288,7 +347,7 @@
 									type="button"
 									class="qd-item qd-tall"
 									role="menuitem"
-									onclick={() => void _runAction(leaf, deck)}
+									onclick={(e) => void _runAction(leaf, deck, e.timeStamp)}
 								>
 									CH{deck}
 								</button>
@@ -360,12 +419,37 @@
 						class="qd-item"
 						class:qd-inert={item.disabled === true}
 						role="menuitem"
+						data-testid={item.testId}
 						disabled={item.disabled === true}
 						title={item.title ?? null}
-						onclick={() => {
-							if (item.disabled === true) return;
+						onpointerdown={(e) => {
+							if (item.loadDeck === undefined) return;
+							onLoadPointerDown(e, item);
+						}}
+						onpointermove={(e) => {
+							if (item.loadDeck === undefined) return;
+							blend.move(e.clientX, e.clientY, e.pointerId);
+						}}
+						onpointerup={(e) => {
+							if (item.loadDeck === undefined) return;
+							blend.up(e.pointerId);
 							_close();
-							void item.run();
+						}}
+						onlostpointercapture={(e) => {
+							if (item.loadDeck === undefined) return;
+							blend.lostCapture(e.pointerId);
+							_close();
+						}}
+						onclick={(e) => {
+							if (item.disabled === true) return;
+							if (item.loadDeck !== undefined) {
+								if (loadPressArmed) {
+									loadPressArmed = false;
+									return;
+								}
+							}
+							_close();
+							void item.run(e.timeStamp);
 						}}
 					>
 						{item.label}
@@ -374,6 +458,9 @@
 			{/if}
 		</div>
 	</div>
+	{#if blendHud.visible}
+		<LoadBlendHud t={blendHud.t} fader={blendHud.fader} scrubDeltaMs={blendHud.scrubDeltaMs} />
+	{/if}
 {/if}
 
 <style>
@@ -461,6 +548,6 @@
 	}
 	.qd-empty {
 		padding: 8px 10px;
-		color: var(--rb-text-dim, #7a8088);
+		color: var(--rb-text-dim, #838990);
 	}
 </style>

@@ -33,14 +33,18 @@ const urlSuffixImports = {
 	}
 };
 
-/** Bundle one frontend TypeScript module in memory for deterministic unit
- * tests. This avoids Vite's long-lived dependency-optimizer handles. */
-export async function loadTypeScriptModule(relativePath, { viteApiBase } = {}) {
+/**
+ * Bundle one frontend TypeScript module to ESM source text, without
+ * importing it. Exists so a caller that needs the SAME bundle in more than
+ * one place (for example, once per child process spawned) can esbuild it
+ * once and reuse the text, rather than paying a full compile per use.
+ */
+export async function bundleTypeScriptModule(relativePath, { viteApiBase, alias = {} } = {}) {
 	const absolutePath = fileURLToPath(new URL(`../../${relativePath}`, import.meta.url));
 	const result = await build({
 		entryPoints: [absolutePath],
 		absWorkingDir: FRONTEND_ROOT,
-		alias: { $lib: LIB_ROOT },
+		alias: { $lib: LIB_ROOT, ...alias },
 		bundle: true,
 		define: {
 			'$state': 'globalThis.__musicDjToolsTestState',
@@ -57,6 +61,13 @@ export async function loadTypeScriptModule(relativePath, { viteApiBase } = {}) {
 	if (result.outputFiles.length !== 1) {
 		throw new Error(`expected one bundled output, got ${result.outputFiles.length}`);
 	}
+	return result.outputFiles[0].text;
+}
+
+/** Bundle one frontend TypeScript module in memory for deterministic unit
+ * tests. This avoids Vite's long-lived dependency-optimizer handles. */
+export async function loadTypeScriptModule(relativePath, options = {}) {
+	const text = await bundleTypeScriptModule(relativePath, options);
 	// $state is an identity function under test. $state.snapshot must exist as
 	// well or any module whose SETTERS run (rather than just its initializer)
 	// dies on `$state.snapshot is not a function` - prefs._persist is the first
@@ -65,7 +76,7 @@ export async function loadTypeScriptModule(relativePath, { viteApiBase } = {}) {
 	globalThis.__musicDjToolsTestState = (value) => value;
 	globalThis.__musicDjToolsTestState.snapshot = (value) =>
 		value === undefined ? undefined : JSON.parse(JSON.stringify(value));
-	const source = Buffer.from(result.outputFiles[0].text).toString('base64');
+	const source = Buffer.from(text).toString('base64');
 	moduleSequence += 1;
 	return import(`data:text/javascript;base64,${source}#${moduleSequence}`);
 }

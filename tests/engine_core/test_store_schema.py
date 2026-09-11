@@ -839,7 +839,7 @@ def test_migration_succeeds_when_the_lock_clears_within_the_timeout(
 REAL_STATE_DB = Path(
     os.environ.get(
         "ODJ_REAL_STATE_DB",
-        "/Users/dev/code/music-dj-tools-wt-rebuild-agentB-from-Fable-data"
+        "/Users/old/code/music-dj-tools-wt-rebuild-agentB-from-Fable-data"
         "/state/state.db",
     )
 )

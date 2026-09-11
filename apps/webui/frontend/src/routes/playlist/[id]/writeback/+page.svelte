@@ -13,7 +13,7 @@
 		type WritebackTarget,
 		type WritebackVendor
 	} from '$lib/rb/api-writeback';
-	import { RbApiError } from '$lib/rb/api-rb';
+	import { RbApiError } from '$lib/rb/api-rb-error';
 	import {
 		rekordboxWriteback,
 		rekordboxWritebackRefusal

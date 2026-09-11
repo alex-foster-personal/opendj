@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from apps.webui.server.routes import quality
 
 
@@ -73,3 +75,5 @@ def test_burn_down_narrative_is_not_leaked(client, monkeypatch, tmp_path):
     r = client.get("/api/v1/admin/quality-ratchet")
     assert r.status_code == 200
     assert set(r.json()) == {"generated", "metrics"}
+
+pytestmark = pytest.mark.rb_parity

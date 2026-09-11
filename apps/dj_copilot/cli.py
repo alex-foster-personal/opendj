@@ -19,6 +19,7 @@ from apps.shared.play_orders.schema import apply_play_order_migrations
 from apps.shared.state import db as state_db
 
 from .play_it import InsufficientDataError, play_it
+from .pinning import PinUnsatisfiableError
 from .session_context import PlayedTrack, SessionContext, load_session_context
 from .set_goal import SetGoal
 from .suggester import suggest_next
@@ -68,6 +69,9 @@ def _build_parser() -> argparse.ArgumentParser:
     pi.add_argument("--close-on", type=int, default=None)
     pi.add_argument("--name", default="PLAY IT")
     pi.add_argument("--overwrite", action="store_true")
+    pi.add_argument("--peak-pin", action="append", default=[], dest="peak_pins")
+    pi.add_argument("--opener-pin", action="append", default=[], dest="opener_pins")
+    pi.add_argument("--closer-pin", default=None)
 
     sn = sub.add_parser("suggest-next")
     sn.add_argument("--current", required=True)
@@ -92,6 +96,9 @@ def _cmd_play_it(args: argparse.Namespace) -> int:
             ceiling_energy=args.ceiling,
             open_on_key=args.open_on,
             close_on_energy=args.close_on,
+            peak_pins=tuple(args.peak_pins),
+            opener_pins=tuple(args.opener_pins),
+            closer_pin=args.closer_pin,
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -116,18 +123,35 @@ def _cmd_play_it(args: argparse.Namespace) -> int:
         except InsufficientDataError as exc:
             print(f"pre-flight failed: {exc}", file=sys.stderr)
             return 1
+        except PinUnsatisfiableError as exc:
+            print(f"error: {exc.reason}: {exc}", file=sys.stderr)
+            return 2
+        has_roles = any(
+            getattr(step, "pin_role", None) for step in result.per_step_trace
+        )
         print(
             f"PLAY IT stored: play_order_id={po_id}, "
             f"tracks={len(result.order)}, solve_ms={result.solve_ms:.2f}"
         )
-        print(f"{'#':>3}  {'stable_id':<40}  {'hint':<20}")
+        if has_roles:
+            print(f"{'#':>3}  {'stable_id':<40}  {'hint':<20}  {'role':<8}")
+        else:
+            print(f"{'#':>3}  {'stable_id':<40}  {'hint':<20}")
         for i, sid in enumerate(result.order):
             hint = (
                 result.per_step_trace[i].transition_hint
                 if i < len(result.per_step_trace)
                 else ""
             )
-            print(f"{i:>3}  {sid:<40}  {hint:<20}")
+            if has_roles:
+                role = (
+                    result.per_step_trace[i].pin_role or ""
+                    if i < len(result.per_step_trace)
+                    else ""
+                )
+                print(f"{i:>3}  {sid:<40}  {hint:<20}  {role:<8}")
+            else:
+                print(f"{i:>3}  {sid:<40}  {hint:<20}")
         if result.constraints_unmet:
             print(
                 f"\nconstraints_unmet ({len(result.constraints_unmet)}):",

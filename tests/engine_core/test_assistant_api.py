@@ -25,8 +25,6 @@ from __future__ import annotations
 
 import json
 import os
-import threading
-import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
@@ -47,6 +45,7 @@ from apps.engine_core.assistant.api import (
     UPSTREAM_ERROR_CODE,
     router,
 )
+from tests.waits import start_uvicorn_in_thread
 
 API = "/api/v1/assistant"
 
@@ -104,15 +103,7 @@ def _serving(app: FastAPI) -> Iterator[str]:
     running. The kernel picks, we read it back off the bound socket.
     """
     config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning")
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    deadline = time.monotonic() + 15.0
-    while not server.started:
-        if time.monotonic() > deadline:
-            server.should_exit = True
-            raise RuntimeError("stub upstream did not start within 15s")
-        time.sleep(0.02)
+    server, thread = start_uvicorn_in_thread(config, what="the stub upstream")
     port = server.servers[0].sockets[0].getsockname()[1]
     try:
         yield f"http://127.0.0.1:{port}"

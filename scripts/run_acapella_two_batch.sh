@@ -2,8 +2,15 @@
 # Fire batch 1 on whatever is present NOW, then a second batch on stragglers
 # as they land. Both stems kept -> stems/; every vocal flat-copied -> vocals/.
 set -uo pipefail
-BASE="/Users/dev/Music/_incoming/clubsauna-acapella-techno-100"
-REPO="/Users/dev/Music/music-dj-tools"
+# MDT_ACAPELLA_TECHNO_100_BASE names this machine's unpacked acapella-pack
+# base directory (#910: no personal path is hardcoded here). Required, and
+# it must exist -- an unset or missing value fails fast rather than firing a
+# paid Modal batch over zero files.
+: "${MDT_ACAPELLA_TECHNO_100_BASE:?export MDT_ACAPELLA_TECHNO_100_BASE to the unpacked acapella-pack base directory on this machine}"
+BASE="$MDT_ACAPELLA_TECHNO_100_BASE"
+[ -d "$BASE" ] || { echo "FATAL: MDT_ACAPELLA_TECHNO_100_BASE does not exist: $BASE" >&2; exit 1; }
+# This repo's own checkout location, not a machine-specific value (#910).
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # No -e in this script (see fire() below), so the cd is guarded explicitly: it
 # is followed by `exec >>` into a log and a Modal batch costing real money,
 # neither of which should ever run from the caller's directory.
@@ -21,9 +28,10 @@ flat_vocals() {
 fire() { # $1 run-id, remaining args = input files
   local rid="$1"; shift
   echo "[$(date '+%H:%M:%S')] FIRE $rid over $# tracks (max_containers=60)"
-  MDT_ROFORMER_MAX_CONTAINERS=60 uv run --with modal python scripts/modal_roformer_spike.py \
+  MDT_ROFORMER_MAX_CONTAINERS=60 uv run --no-sync --with modal python scripts/modal_roformer_spike.py \
     separate --input "$@" --out-dir "$BASE/stems" --run-id "$rid"
-  echo "[$(date '+%H:%M:%S')] $rid returned rc=$?"
+  # Capture first: the $(date) below would otherwise reset $? to date's 0.
+  rc=$?; echo "[$(date '+%H:%M:%S')] $rid returned rc=$rc"
 }
 
 # stream vocals -> flat dir continuously, across both batches

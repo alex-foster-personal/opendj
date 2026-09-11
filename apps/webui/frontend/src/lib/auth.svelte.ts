@@ -3,7 +3,9 @@
  * Thin client over the daemon's /api/v1/auth/* endpoints. The session lives
  * in an httpOnly cookie the daemon sets, so there is no token to hold here
  * and nothing to persist in localStorage -- `refreshUser` asks the daemon
- * who we are and that is the only source of truth.
+ * who we are and that is the only source of truth. Each browser profile
+ * keeps its own cookie jar, so a second Chrome profile or Safari must sign
+ * in separately even on the same machine.
  *
  * `credentials: 'same-origin'` is explicit rather than relying on the fetch
  * default: in dev the SPA and the API share an origin only because Vite
@@ -11,6 +13,7 @@
  * moves.
  */
 import { API_BASE } from './api';
+import { markLoginNavigate, markLoginSubmit } from './client-telemetry';
 
 export interface AuthUser {
 	google_sub: string;
@@ -55,12 +58,13 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
 	return fallback;
 }
 
-/** Ask the daemon who is signed in. A 401 is the signed-out answer, not a failure. */
+/** Ask the daemon who is signed in. Signed-out is identity, not a failure. */
 export async function refreshUser(): Promise<void> {
 	auth.loading = true;
 	try {
 		const response = await authFetch('/api/v1/auth/me');
 		if (response.status === 401) {
+			// Older daemons and e2e stubs may still answer 401; treat as signed out.
 			auth.user = null;
 			auth.error = null;
 			return;
@@ -70,7 +74,16 @@ export async function refreshUser(): Promise<void> {
 			auth.error = await errorMessage(response, `sign-in check failed (${response.status})`);
 			return;
 		}
-		auth.user = (await response.json()) as AuthUser;
+		const body = (await response.json()) as {
+			signed_in?: boolean;
+			user?: AuthUser | null;
+		};
+		if (body.signed_in === false || body.user == null) {
+			auth.user = null;
+			auth.error = null;
+			return;
+		}
+		auth.user = body.user as AuthUser;
 		auth.error = null;
 	} catch (exc) {
 		auth.user = null;
@@ -89,14 +102,40 @@ export async function refreshUser(): Promise<void> {
  * message is the provisioning runbook.
  */
 export async function startLogin(): Promise<LoginStart> {
+	markLoginSubmit();
 	const response = await authFetch('/api/v1/auth/login', {
 		method: 'POST',
-		body: JSON.stringify({ origin: window.location.origin })
+		body: JSON.stringify({
+			origin: window.location.origin,
+			return_to: window.location.pathname
+		})
 	});
 	if (!response.ok) {
 		throw new Error(await errorMessage(response, `could not start sign-in (${response.status})`));
 	}
-	return (await response.json()) as LoginStart;
+	const payload = (await response.json()) as LoginStart;
+	markLoginNavigate();
+	return payload;
+}
+
+/**
+ * Read and strip an auth error query param left by the OAuth callback redirect.
+ *
+ * Returns the decoded message when present, otherwise null. Does not touch
+ * auth.user; the caller decides how to surface the error (toast, etc.).
+ */
+export function consumeAuthErrorFromLocation(): string | null {
+	const params = new URLSearchParams(window.location.search);
+	const message = params.get('opendj_auth_error');
+	if (!message) return null;
+	params.delete('opendj_auth_error');
+	const query = params.toString();
+	const nextUrl =
+		window.location.pathname +
+		(query ? `?${query}` : '') +
+		(window.location.hash || '');
+	window.history.replaceState(window.history.state, '', nextUrl);
+	return message;
 }
 
 /** Drop the session server-side, then clear it locally. */

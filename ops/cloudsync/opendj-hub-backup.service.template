@@ -1,0 +1,11 @@
+# TEMPLATE, rendered with opendj-hub.service by `just cloudsync-hub-start`.
+# One online, verified backup of the hub DB (apps/sync_hub/hub_backup.py),
+# fired nightly by opendj-hub-backup.timer. Runbook: docs/cloudsync/hub-runbook.md
+[Unit]
+Description=openDJ CloudSync hub backup (online sqlite copy, verified)
+Documentation=file://__REPO_ROOT__/docs/cloudsync/hub-runbook.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=__REPO_ROOT__
+ExecStart=__EXEC_START__

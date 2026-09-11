@@ -39,6 +39,9 @@ Source = Literal[
     "open-dj-tool", "manual", "inferred", "webui",
 ]
 
+# Whether a field's value is real, measured-and-failed, or not yet measured.
+FieldStatus = Literal["ok", "failed", "missing"]
+
 DEFAULT_LIMIT: int = 200
 MAX_LIMIT: int = 1000
 
@@ -49,11 +52,23 @@ def _utcnow_iso() -> str:
 
 @dataclass
 class Provenance:
-    """Provenance envelope per open-dj v0 strawman section 6 / OPEN-01c."""
+    """Provenance envelope per open-dj v0 strawman section 6 / OPEN-01c.
+
+    ``status`` and ``reason`` carry native-analysis v1's failure half: an own
+    lane that ran and could not measure is `failed` with the lane's named
+    reason, and a lane with no record yet is `missing`. ``status`` is required
+    for the reason spelled out on :class:`~apps.webui.server.models.ProvenanceOut`.
+
+    ``source`` widened to `Source | str` when own analysis arrived: an own
+    value's source is its canonical backend name (`own_beatgrid.inapp`), which
+    is an open set the closed Literal cannot enumerate.
+    """
     value: Any
-    source: Source
+    source: Source | str
     confidence: float | None
     modified_at: str
+    status: FieldStatus
+    reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -77,6 +92,11 @@ class Track:
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
     provenance: dict[str, Provenance] = field(default_factory=dict)
+    # Which SOURCE each own lane-owned field came from, "" while every lane is
+    # on rbx. Part of the etag: switching a lane changes bpm, key and the whole
+    # provenance block without necessarily moving any timestamp, so timestamps
+    # alone cannot separate the two representations.
+    selection_tag: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -105,6 +125,7 @@ class Pairing:
     direction: Literal["->", "<->"]
     source: Literal["manual", "learned", "ai"]
     notes: str | None
+    snapshot: dict[str, object] | None = None
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
 
@@ -202,6 +223,7 @@ class StateBackend(Protocol):
     def list_tracks(self, flt: TrackFilter) -> Page: ...
     def get_track(self, stable_id: str) -> Track: ...
     def get_tracks_bulk(self, stable_ids: Sequence[str]) -> dict[str, Track]: ...
+    def get_file_paths_bulk(self, stable_ids: Sequence[str]) -> dict[str, str | None]: ...
     def list_playlists(self) -> list[Playlist]: ...
     def get_playlist(self, playlist_id: str) -> Playlist: ...
     def list_pairings(self, *, from_stable_id: str | None = None,
@@ -310,6 +332,16 @@ class InMemoryBackend:
                 for sid in stable_ids if sid in self._tracks
             }
 
+    def get_file_paths_bulk(self, stable_ids: Sequence[str]) -> dict[str, str | None]:
+        """``file_path`` only, for callers (playlist availability) that never
+        touch the rest of the Track -- skips hydrating every EAV field for
+        rows the caller was going to discard anyway."""
+        with self._mutex:
+            return {
+                sid: self._tracks[sid].file_path
+                for sid in stable_ids if sid in self._tracks
+            }
+
     def list_playlists(self) -> list[Playlist]:
         with self._mutex:
             return list(self._playlists.values())
@@ -369,7 +401,7 @@ class InMemoryBackend:
                 if track is None:
                     raise NotFoundError(f"track not found: {update.stable_id}")
                 current_rows.append(track)
-                current_etag = compute_etag(track.stable_id, track.updated_at)
+                current_etag = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
                 if strip_quotes(current_etag) != strip_quotes(update.expected_etag):
                     conflicts.append({"stable_id": update.stable_id, "current_etag": current_etag})
             if conflicts:
@@ -389,18 +421,21 @@ class InMemoryBackend:
                 if "rating" in update.patch:
                     updated.rating = update.patch["rating"]
                     prov["rating"] = Provenance(value=updated.rating, source=source,
-                                                 confidence=1.0, modified_at=now)
+                                                confidence=1.0, modified_at=now,
+                                                status="ok")
                 if "notes" in update.patch:
                     updated.notes = update.patch["notes"]
                     prov["notes"] = Provenance(value=updated.notes, source=source,
-                                                confidence=1.0, modified_at=now)
+                                               confidence=1.0, modified_at=now,
+                                               status="ok")
                 if "file_path" in update.patch:
                     file_path = update.patch["file_path"]
                     if not isinstance(file_path, str) or not file_path:
                         raise BackendError("file_path must be a non-empty string")
                     updated.file_path = file_path
                     prov["file_path"] = Provenance(value=file_path, source=source,
-                                                    confidence=1.0, modified_at=now)
+                                                   confidence=1.0, modified_at=now,
+                                                   status="ok")
                 tags = list(updated.tags or [])
                 if update.patch.get("tags_add"):
                     for tag in update.patch["tags_add"]:
@@ -411,7 +446,8 @@ class InMemoryBackend:
                 if "tags_add" in update.patch or "tags_remove" in update.patch:
                     updated.tags = tags
                     prov["tags"] = Provenance(value=list(tags), source=source,
-                                               confidence=1.0, modified_at=now)
+                                              confidence=1.0, modified_at=now,
+                                              status="ok")
                 updated.provenance = prov
                 results.append(updated)
             changed = any(
@@ -459,7 +495,7 @@ class InMemoryBackend:
                     {"tags_remove": [old_name]} if new_name is None else {
                         "tags_add": [new_name], "tags_remove": [old_name],
                     },
-                    compute_etag(track.stable_id, track.updated_at),
+                    compute_etag(track.stable_id, track.updated_at, track.selection_tag),
                 )
                 for track in members
             ]
@@ -474,8 +510,27 @@ class InMemoryBackend:
                         and existing.direction == pairing.direction):
                     if pairing.notes and pairing.notes != existing.notes:
                         merged_notes = f"{existing.notes or ''}\n{pairing.notes}".strip()
-                        updated = replace(existing, notes=merged_notes,
-                                          updated_at=_utcnow_iso())
+                        # Write-once, same as the snapshot-only branch below:
+                        # a frozen open-time capture is never replaced, so
+                        # merging notes cannot smuggle a recapture past that
+                        # contract. Only a pairing with no snapshot yet
+                        # accepts an incoming one.
+                        snapshot = (
+                            existing.snapshot if existing.snapshot is not None
+                            else pairing.snapshot
+                        )
+                        updated = replace(
+                            existing, notes=merged_notes, snapshot=snapshot,
+                            updated_at=_utcnow_iso(),
+                        )
+                        self._pairings[existing.pairing_id] = updated
+                        return updated
+                    if pairing.snapshot is not None:
+                        if existing.snapshot is not None:
+                            return existing
+                        updated = replace(
+                            existing, snapshot=pairing.snapshot, updated_at=_utcnow_iso()
+                        )
                         self._pairings[existing.pairing_id] = updated
                         return updated
                     return existing

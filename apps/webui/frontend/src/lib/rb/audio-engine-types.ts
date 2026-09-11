@@ -7,7 +7,7 @@
  */
 
 import type { DeckId } from './deck-slots';
-import type { DeckAudioSnapshot, SyncMode } from './deck-state-types';
+import type { DeckAudioSnapshot, QuantizeGrid, SyncMode } from './deck-state-types';
 import type { CrossfaderAssign, EqBand } from './mixer-types';
 import type { StemControl } from './stem-types';
 
@@ -50,6 +50,9 @@ export interface AudioEngine {
 	clearSafetyLoop(deck: DeckId): void;
 	/** Enable/disable PQTZ snapping. Defaults true per deck. */
 	setQuantize(deck: DeckId, enabled: boolean): void;
+	/** Change the quantize grid (1/4/8 beats). 'phase' is rejected upstream
+	 * in performance-ipc, never reaches here. */
+	setQuantizeGrid(deck: DeckId, beats: Exclude<QuantizeGrid, 'phase'>): void;
 	/** Enable/disable master tempo/phase following. Defaults true per deck. */
 	setBeatSync(deck: DeckId, enabled: boolean): Promise<void>;
 	/** Enable/disable pitch preservation in the Signalsmith processor. */
@@ -75,14 +78,31 @@ export interface AudioEngine {
 	setStemMute(deck: DeckId, stem: StemControl, muted: boolean): void;
 	/** Solo one real stem group. Rejects unless aligned artifacts are ready. */
 	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean): void;
-	/** Explicit seek entry point. cueJump delegates here so quantize is central. */
-	quantizedSeek(deck: DeckId, ms: number): Promise<void>;
+	/** Explicit seek entry point. cueJump delegates here so quantize is central.
+	 * pressT0Ms is Q1's operator-felt press stamp, present on the hot-cue jump
+	 * path and absent on a plain waveform seek. */
+	quantizedSeek(deck: DeckId, ms: number, skipGridQuantize?: boolean, pressT0Ms?: number): Promise<void>;
+	/** DECKUX-09: defer a hot-cue jump to `armAtPositionSec` on the deck's own
+	 * transport clock; returns the absolute AudioContext time it lands at.
+	 * pressT0Ms is Q1's operator-felt press stamp. */
+	armHotCueTrigger(
+		deck: DeckId,
+		targetPositionMs: number,
+		armAtPositionSec: number,
+		pressT0Ms?: number
+	): Promise<number>;
+	/** The engine's AudioContext clock, for projecting an armed trigger's
+	 * remaining wait without exposing the context itself. */
+	contextTimeNowSec(): number;
 	/** Capture real post-Signalsmith analyser data; never synthesised. */
 	captureDeckAudio(deck: DeckId): DeckAudioSnapshot;
 	/** TRIM knob 0..1 (0.5 = unity) -> per-channel input GainNode. */
 	setTrim(deck: DeckId, value: number): void;
 	/** One EQ band knob 0..1 (0.5 = flat) -> Biquad gain in dB. */
 	setEq(deck: DeckId, band: EqBand, value: number): void;
+	/** FILTER knob 0..1 (0.5 = bypass) -> paired lowpass/highpass Biquad
+	 * corner frequencies. See player/constants.ts FILTER_*. */
+	setFilter(deck: DeckId, value: number): void;
 	/** Channel fader 0..1 -> fader GainNode. */
 	setFader(deck: DeckId, value: number): void;
 	/** Crossfader 0..1 (0 = full A, 1 = full B); applies the gain pair to

@@ -57,7 +57,7 @@ else:
 
 import yaml
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..backend import StateBackend
 from ..deps import get_write_state
@@ -88,6 +88,9 @@ _DEPRECATED_STATUS_ALIASES: dict[str, str] = {"working": "built"}
 
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 _WRITE_LOCK = threading.Lock()
+# A bounded batch keeps SHA provenance validation from monopolizing the
+# ledger-wide write lock. Larger historical imports must be sent in batches.
+MAX_COMMITS_APPEND: int = 100
 
 BuildState = Literal["active", "idle", "blocked", "hanging"]
 
@@ -136,6 +139,7 @@ PATCH_RULES: list[str] = [
     "'buildable' {tier, reason} replaces the node's buildable classification "
     "wholesale; tier is one of cloud|hybrid|local",
     "every sha must match ^[0-9a-f]{7,40}$ and resolve via git cat-file -e",
+    f"commits_append accepts at most {MAX_COMMITS_APPEND} commits per PATCH",
     "the API bumps meta.updated but never git-commits; agents own their "
     "commits",
 ]
@@ -209,7 +213,9 @@ class NodePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: Optional[StatusLiteral] = None
     note: Optional[str] = None
-    commits_append: Optional[list[CommitIn]] = None
+    commits_append: Optional[list[CommitIn]] = Field(
+        default=None, max_length=MAX_COMMITS_APPEND,
+    )
     tests_append: Optional[list[str]] = None
     verified: Optional[VerifiedIn] = None
     build: Optional[BuildPatchIn] = None
@@ -586,7 +592,8 @@ def get_progress_schema() -> dict[str, Any]:
             "status": "optional, one of statuses (plus deprecated alias "
             "'working' -> coerced to 'built')",
             "note": "optional string, replaces node.notes",
-            "commits_append": "optional list of {sha, note}",
+            "commits_append": "optional list of up to "
+            f"{MAX_COMMITS_APPEND} {{sha, note}} entries",
             "tests_append": "optional list of strings",
             "verified": "optional {by, method}; date is stamped server-side; "
             "required in the same PATCH when status becomes user-finalized",

@@ -34,6 +34,18 @@ function _captureConsole() {
 	};
 }
 
+// WHY THE TOTAL CONSOLE COUNTS BELOW ARE LEFT UNSCOPED (Thu 10 Sep 2026).
+//
+// They are also, incidentally, the witness that an error toast takes ONE trip
+// to the server rather than two. `pushToast` writes the ring row and then
+// sends its own context-rich `reportClientError`; if the ring row ALSO
+// escalated, `_escalate` would find no escalator wired under a unit test and
+// emit its documented one-per-session "no escalator wired" console.warn, and
+// `capture.calls.warn.length` would be 1 here rather than 0.
+//
+// So do not relax these to a substring filter. A filtered count would pass
+// whether the row escalates or not, which is exactly the double-report the
+// `_hasOwnServerReport` rule in perf-event-log.ts exists to prevent.
 test('an error toast is durably logged at console.error, not merely shown', async () => {
 	const stores = await loadTypeScriptModule('src/lib/stores.svelte.ts');
 	const capture = _captureConsole();

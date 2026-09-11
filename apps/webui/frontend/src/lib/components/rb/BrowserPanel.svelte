@@ -16,6 +16,8 @@
 		decodePreviewStrip,
 		fetchRbMeta,
 		getHealth,
+		pingHealth,
+		timeoutSignal,
 		getReconcileSummary,
 		getTrack,
 		listPlaylistsHydrated,
@@ -27,6 +29,23 @@
 		vocalsOf
 	} from '$lib/rb/api-rb';
 	import { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
+	import {
+		libraryHealthDot as _computeLibraryHealthDot,
+		type LibraryHealthDot
+	} from '$lib/rb/library-health-dots';
+	import {
+		plannedTitle,
+		anyDeckPlaying,
+		createPlayingGate,
+		resolveRowVocals,
+		isAppropriateNext,
+		resolveSearchFilterFallback,
+		selectSearchFilterFallback,
+		enqueueLibraryJobsBatched,
+		libraryJobsStore,
+		LibraryJobsChrome,
+		type NextOnlyRef
+	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
 		PlaylistTrackRowWire,
@@ -39,8 +58,6 @@
 	// Deck state remains engine-owned; real load interactions route through
 	// the same validated dispatcher exposed to browser agents.
 	import { deckStates as decks, DECK_IDS, mixerState } from '$lib/rb/audio-engine.svelte';
-	import { resolveRowVocals } from '$lib/rb/row-vocals';
-	import { anyDeckPlaying, createPlayingGate } from '$lib/rb/playing-gate';
 	import {
 		createFilterDebounce,
 		recordCollectionSearchTiming,
@@ -49,11 +66,8 @@
 	} from '$lib/rb/library-perf';
 	import type { FilterDebounce, FilterSettle } from '$lib/rb/library-perf';
 	import {
-		ANALYSIS_COLORS,
-		jobProgress
-	} from '$lib/rb/job-progress.svelte';
-	import {
 		dispatchPerformanceCommand,
+		registerPerformanceBrowserAdapter,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import {
@@ -63,7 +77,10 @@
 		collectBlankPlaylistDeletes,
 		createPlaylist,
 		deletePlaylist,
+		duplicatePlaylist,
 		getPlaylistTracksEtag,
+		transferPlaylistTracks,
+		isWithinCreateGrace,
 		markPlaylistCreateGrace,
 		PlaylistConflictError,
 		renamePlaylist,
@@ -71,6 +88,7 @@
 	} from '$lib/rb/playlist-write';
 	import {
 		hydrateConfirmPrefsFromDisk,
+		rememberSpotifyRecent,
 		setConfirmPref,
 		setHideBrokenLinks,
 		setLastPlaylist,
@@ -81,30 +99,51 @@
 		PLAYLIST_TREE_WIDTH_MAX,
 		PLAYLIST_TREE_WIDTH_MIN
 	} from '$lib/rb/prefs.svelte';
-	import { isAppropriateNext, type NextOnlyRef } from '$lib/rb/next-only-filter';
 	import { pushToast } from '$lib/stores.svelte';
-	import { subscribeBrowserSearch } from '$lib/rb/browser-search';
+	import {
+		isCurrentBrowserSearch,
+		reportBrowserSearchResult,
+		subscribeBrowserSearch,
+		type BrowserSearchRequest
+	} from '$lib/rb/browser-search';
 	import BuildIdentity from './BuildIdentity.svelte';
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
-	import { createAutoPlayFeedSnapshot, setAutoPlayTrackFeed } from '$lib/rb/auto-play';
-	import { pickDoubleClickDeck, type DeckSlotState } from '$lib/rb/deck-slots';
-	import BulkEditModal from './BulkEditModal.svelte';
-	import FindReplaceModal from './FindReplaceModal.svelte';
-	import MyTagEditorModal from './MyTagEditorModal.svelte';
+	import {
+		createAutoPlayFeedSnapshot,
+		getAutoPlayRankOf,
+		setAutoPlayTrackFeed
+	} from '$lib/rb/auto-play';
+	import {
+		beginPendingLoadPlay,
+		clearPendingLoadPlay,
+		consumePendingLoadPlay,
+		markLoadSpanningPress,
+		pickDoubleClickDeck,
+		type DeckSlotState
+	} from '$lib/rb/deck-slots';
+	import TrackEditModals from './TrackEditModals.svelte';
 	import AddTrackSearch from './browser/AddTrackSearch.svelte';
-	import IconRail from './browser/IconRail.svelte';
+	import PerformanceRecorderRail from './browser/PerformanceRecorderRail.svelte';
 	import PaneTabs from './browser/PaneTabs.svelte';
 	import type { PaneTabInfo } from './browser/PaneTabs.svelte';
 	import {
 		applyDecodedStripAcrossPanes,
 		canMutatePlaylist,
 		createPaneStore,
+		derivePlaylistDeckMembership,
+		derivePlaylistPaneOpenCounts,
 		filterRows,
+		getHealthAtBoot,
+		getHealthFreshWithRetry,
+		installBrowserSortIpc,
 		makeClientRowProvider,
+		multiPanePlaylistIds,
+		reconcileBootSnapshot,
 		reorderPanesInPlace,
 		resolveBootPlaylist,
 		resolveNewTabIndex,
+		shouldRetryBootPane,
 		sortRows,
 		visibleRowsOf
 	} from './browser/pane-contract.svelte';
@@ -114,9 +153,20 @@
 		PlaylistDragPayload,
 		SortKey
 	} from './browser/pane-contract.svelte';
+	import { clearSelection, pruneSelection } from './browser/pane-row-selection';
 	import PlaylistTree from './browser/PlaylistTree.svelte';
+	import {
+		fetchMissingTrackRows,
+		isMissingTracksId,
+		MISSING_TRACKS_ID,
+		missingTracksNode
+	} from './browser/missing-tracks';
+	import LibraryLoadIndicator from './browser/LibraryLoadIndicator.svelte';
+	import LyricSearchResults from './browser/LyricSearchResults.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
+	import { completeLibraryUsable } from '$lib/client-telemetry';
+	import { fillAllTracksPane } from './browser/fill-all-tracks';
 	import { fetchAllPages } from './browser/virtual-window';
 	import { ensureAudioPrefetch } from '$lib/rb/audio-prefetch-cache.svelte';
 	import {
@@ -128,7 +178,6 @@
 	} from './wave/anlz-cache.svelte';
 	import { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
 	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
-
 	// track-list-virtualization: TrackTable now DOM-virtualizes its render,
 	// so panes no longer cap fetches at 500 rows - All Tracks walks every
 	// cursor page (PAGE_SIZE is a per-request page size, not a result cap);
@@ -140,12 +189,11 @@
 	// fetch-cap removal above): a global text query over the whole library
 	// is a separate, ranked result set, not a browsable pane listing.
 	const MAX_SEARCH_ROWS = 200;
-	/** Spike: hide tree playlists when fewer than 30% of tracks are on disk.
-	 * Move to BE/config later. */
+	/** Hide tree playlists when fewer than 30% of tracks are on disk. */
 	const HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO = 0.3;
 
 	function playlistMostlyBroken(p: PlaylistSummaryHydrated): boolean {
-		if (p.track_count === 0) return false;
+		if (p.track_count === 0) return p.available_count === 0;
 		return p.available_count / p.track_count < HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO;
 	}
 
@@ -164,7 +212,21 @@
 	let modalEtags = $state<Record<string, string>>({});
 	let playlists = $state<PlaylistSummaryHydrated[]>([]);
 	let allTracksCount = $state<number | null>(null);
-	let allTracksPlayableCount = $state<number | null>(null);
+	// Bumped every time something OTHER than _init() writes allTracksCount or
+	// playlists respectively, so _init()'s boot Promise.all can tell whether
+	// its own snapshot of EACH field is still the freshest once it resolves.
+	// Two separate counters, not one shared epoch: _refreshLibraryRowsOnce
+	// writes these two fields at different times within the same call (
+	// _refreshPlaylists() first, the health re-read after), so a single
+	// shared epoch bumped by either write made a playlists-only write during
+	// _init()'s boot read discard _init()'s own, still-uncontested health
+	// snapshot - the boot pane then read a stale/null allTracksCount and
+	// _restoreBootPane() treated a non-empty library as empty (PR #1656
+	// review round 11, P2 BLOCKING). See reconcileBootSnapshot's doc comment
+	// for the race this guards.
+	let _healthWriteEpoch = 0;
+	let _playlistsWriteEpoch = 0;
+	let allTracksNonBrokenCount = $state<number | null>(null);
 	let allTracksBrokenCount = $state<number | null>(null);
 	let allTracksReconcileError = $state<string | null>(null);
 	let playlistsLoading = $state(true);
@@ -179,16 +241,44 @@
 	/** Brief unload affordance after a load blocked by an active deck. */
 	let unloadOffer = $state<{ deck: DeckId; until: number } | null>(null);
 	let unloadOfferTimer: ReturnType<typeof setTimeout> | null = null;
-	type LibraryHealthDot = {
-		label: 'Library health' | 'Vocals completion' | 'Stems completion';
-		state: 'loading' | 'complete' | 'incomplete' | 'unavailable' | 'error';
-		detail: string;
-	};
-	let libraryHealth = $state<LibraryHealthDot>({
-		label: 'Library health',
+	// Restored by pin a66ee132a14e. #1339/#1352 replaced the old three-dot
+	// `conn-dots` strip (fe / be / lib) with this coverage row and carried
+	// only the `lib` signal across as `libraryHealth`, so the two liveness
+	// dots vanished with no replacement anywhere in the UI. They are the
+	// only thing that distinguishes "the library really is empty" from "the
+	// engine is not answering", which is exactly the confusion that made
+	// this pin worth filing.
+	let frontendOnline = $state<LibraryHealthDot>({
+		label: 'Frontend',
 		state: 'loading',
-		detail: 'checking library health'
+		detail: 'checking frontend'
 	});
+	let backendOnline = $state<LibraryHealthDot>({
+		label: 'Backend',
+		state: 'loading',
+		detail: 'checking backend'
+	});
+	let libraryHealthError = $state<string | null>(null);
+	/**
+	 * Derived, not assigned. pin a66ee132a14e: this dot used to quote
+	 * `state_db.tracks`, the RAW row count, so it advertised ">5k tracks
+	 * available" on a library where most of those rows are broken links to
+	 * files that are permanently gone. The playable total is
+	 * `allTracksNonBrokenCount`, which the reconcile summary settles a moment
+	 * AFTER init - assigning the dot at init time is precisely how it came to
+	 * quote the wrong number, so the dot is computed from whatever has landed
+	 * instead of frozen at the first thing that did.
+	 */
+	const libraryHealth = $derived<LibraryHealthDot>(
+		_computeLibraryHealthDot(
+			libraryHealthError,
+			allTracksCount,
+			playlists.length,
+			allTracksNonBrokenCount,
+			allTracksBrokenCount,
+			allTracksReconcileError
+		)
+	);
 	let vocalsCompletion = $state<LibraryHealthDot>({
 		label: 'Vocals completion',
 		state: 'loading',
@@ -198,6 +288,11 @@
 		label: 'Stems completion',
 		state: 'loading',
 		detail: 'checking stems coverage'
+	});
+	let lyricsCompletion = $state<LibraryHealthDot>({
+		label: 'Lyrics completion',
+		state: 'loading',
+		detail: 'checking lyrics coverage'
 	});
 	/** Suggest-next hover → temporary table scroll/highlight. */
 	let suggestHoverId = $state<string | null>(null);
@@ -245,6 +340,11 @@
 	const loadedIds = $derived(
 		new Set(DECK_IDS.map((d) => decks[d].stable_id).filter((v): v is string => v !== null))
 	);
+	// Pin 2ac3a0: playlist deck-membership + multi-pane tints for PlaylistTree,
+	// derived from panes' ALREADY HYDRATED rows only - never a fetch of an
+	// unopened playlist just to colour it in.
+	const deckLoadedPlaylistIds = $derived(derivePlaylistDeckMembership(panes, loadedIds));
+	const multiPanePlaylistIds_ = $derived(multiPanePlaylistIds(derivePlaylistPaneOpenCounts(panes)));
 	// Vocals for PreviewStrip blue bars: listing hydrate (row.vocals) is
 	// the base; loaded-deck / client anlz overwrite only when analyzed.
 	// Strips never fan-out /anlz themselves.
@@ -337,9 +437,16 @@
 	const treeNodes = $derived(
 		playlists
 			.slice()
-			// FR-1: with 'Hide broken links' ON, playlists with fewer than
-			// 30% available (on-disk) tracks vanish from the tree.
-			.filter((p) => !uiPrefs.hide_broken_links || !playlistMostlyBroken(p))
+			// With Broken unchecked, playlists below the existing 30% playable
+			// threshold, including zero-track empty entries, vanish from the tree.
+			// A playlist still inside its create grace stays: the '+' flow needs
+			// the brand-new blank reachable so PlaylistTree can focus its rename.
+			.filter(
+				(p) =>
+					!uiPrefs.hide_broken_links ||
+					isWithinCreateGrace(p.playlist_id) ||
+					!playlistMostlyBroken(p)
+			)
 			// Rekordbox custom tree order (djmdPlaylist Seq walk, SCREENSHOT-SPEC
 			// 5b) - NOT alphabetical. Playlists without a rekordbox order (seq
 			// null) sink below the ordered ones, name-sorted among themselves.
@@ -409,21 +516,59 @@
 		return rows.filter((r) => isAppropriateNext(r, ref));
 	}
 
-	function _computeVisibleRows(): BrowserRow[] {
+	interface VisibleSearchResult {
+		rows: BrowserRow[];
+		ignoredFilters: string[];
+	}
+
+	const hideBrokenForActivePane = $derived(
+		uiPrefs.hide_broken_links && !isMissingTracksId(pane.playlist_id)
+	);
+
+	function _searchFilterNames(includeBrokenFilter: boolean): string[] {
+		const names: string[] = [];
+		if (includeBrokenFilter && hideBrokenForActivePane) names.push('Hide broken links');
+		if (uiPrefs.next_only_filter && nextOnlyRef !== null) names.push('next-only');
+		return names;
+	}
+
+	function _computeVisibleSearchResult(): VisibleSearchResult {
+		const autoPlayRankOf = pane.sort_key === 'autoplay' ? getAutoPlayRankOf() : undefined;
 		// Find mode: keep full list (no filter); TrackTable highlights matches.
 		if (searchMode === 'find') {
-			return _applyNextOnly(
-				sortRows(
-					filterRows(pane.rows, '', uiPrefs.hide_broken_links),
-					pane.sort_key,
-					pane.sort_dir
-				)
-			);
+			return {
+				rows: _applyNextOnly(
+					sortRows(
+						filterRows(pane.rows, '', hideBrokenForActivePane),
+						pane.sort_key,
+						pane.sort_dir,
+						autoPlayRankOf
+					)
+				),
+				ignoredFilters: []
+			};
 		}
 		if (wholeCollectionActive) {
-			return _applyNextOnly(sortRows(pane.search_results, pane.sort_key, pane.sort_dir));
+			const unfilteredRows = sortRows(
+				pane.search_results,
+				pane.sort_key,
+				pane.sort_dir,
+				autoPlayRankOf
+			);
+			const fallback = resolveSearchFilterFallback(
+				_applyNextOnly(unfilteredRows),
+				unfilteredRows,
+				_searchFilterNames(false)
+			);
+			return fallback;
 		}
-		return _applyNextOnly(visibleRowsOf(pane, uiPrefs.hide_broken_links));
+		const unfilteredRows = visibleRowsOf(pane, false, autoPlayRankOf);
+		const fallback = resolveSearchFilterFallback(
+			_applyNextOnly(visibleRowsOf(pane, hideBrokenForActivePane, autoPlayRankOf)),
+			unfilteredRows,
+			pane.search.trim() === '' ? [] : _searchFilterNames(true)
+		);
+		return fallback;
 	}
 
 	/** Wall time of the LAST filter+sort pass (PERF-R5 Q9).
@@ -432,21 +577,66 @@
 	 * that produced it. */
 	let _lastVisibleComputeMs = 0;
 
-	const visibleRows = $derived.by(() => {
+	const visibleSearchResult = $derived.by(() => {
 		// This pass is filterRows + sortRows over the WHOLE pane array - up to
 		// ~8k rows on All Tracks, plus an O(n log n) sort when a column sort is
 		// active. Timing it is the only way the filter debounce below can be
 		// shown to be worth having.
 		const startedAt = performance.now();
-		const rows = _computeVisibleRows();
+		const result = _computeVisibleSearchResult();
 		_lastVisibleComputeMs = performance.now() - startedAt;
-		return rows;
+		return result;
 	});
+	const visibleRows = $derived(visibleSearchResult.rows);
+	const ignoredSearchFilters = $derived(visibleSearchResult.ignoredFilters);
+	const filterFallbackNote = $derived.by(() => {
+		if (ignoredSearchFilters.length === 0) return null;
+		const filterLabel = ignoredSearchFilters.join(' and ');
+		const suffix = ignoredSearchFilters.length === 1 ? '' : 's';
+		const trackLabel = visibleRows.length === 1 ? 'track' : 'tracks';
+		return `${visibleRows.length} ${trackLabel} fetched by ignoring the active ${filterLabel} filter${suffix}.`;
+	});
+	const searchFilterFallback = $derived.by(() => {
+		// Find highlights rather than filters. Recovery needs complete, settled
+		// results for the current query, never a capped page or prior FTS response.
+		if (
+			pane.search.trim() === '' ||
+			visibleRows.length !== 0 ||
+			pane.loading ||
+			pane.searching ||
+			searchMode === 'find' ||
+			!uiPrefs.next_only_filter
+		)
+			return null;
+		const complete = wholeCollectionActive
+			? pane.search_result_query === pane.search.trim() &&
+				pane.search_total === pane.search_results.length
+			: !pane.truncated;
+		// Only the compatible filter is bypassed. The user-selected Broken filter stays intact.
+		return selectSearchFilterFallback(
+			pane.search,
+			visibleRows,
+			wholeCollectionActive
+				? sortRows(
+						filterRows(pane.search_results, '', hideBrokenForActivePane),
+						pane.sort_key,
+						pane.sort_dir
+					)
+				: visibleRowsOf(pane, hideBrokenForActivePane),
+			complete
+		);
+	});
+	const renderedRows = $derived(searchFilterFallback ?? visibleRows);
+	const filterBypassNote = $derived(
+		searchFilterFallback === null
+			? null
+			: `Showing ${searchFilterFallback.length} search match${searchFilterFallback.length === 1 ? '' : 'es'} with the compatible filter bypassed.`
+	);
 	// Read contract handed to TrackTable (getters stay reactive through
-	// visibleRows/pane). The virtualization lane replaces THIS provider,
+	// renderedRows/pane). The virtualization lane replaces THIS provider,
 	// not TrackTable's props.
 	const provider = makeClientRowProvider(
-		() => visibleRows,
+		() => renderedRows,
 		() => pane.truncated || (wholeCollectionActive && pane.search_total > MAX_SEARCH_ROWS)
 	);
 	const searchPlaceholder = $derived(
@@ -457,23 +647,28 @@
 				: 'Search within this track list'
 	);
 	const emptyMessage = $derived.by((): string | null => {
+		if (searchFilterFallback !== null) return null;
+		// Overlay (LibraryLoadIndicator) is the only in-flight surface: load
+		// and whole-collection search both paint there (pin 02717d4ea496,
+		// follow-up #1688). Empty-state is settled-only, so a concurrent
+		// search+load cannot stack two status strings on the same pixels.
+		if (pane.loading || pane.searching) return null;
 		if (searchMode === 'find') {
-			if (pane.loading) return 'loading...';
-			else if (pane.error !== null) return `load failed: ${pane.error}`;
+			if (pane.error !== null) return `load failed: ${pane.error}`;
 			else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
+			else if (isMissingTracksId(pane.playlist_id) && visibleRows.length === 0) return 'no missing tracks';
 			else if (visibleRows.length === 0) return 'empty playlist';
 			else return null;
 		}
 		if (wholeCollectionActive) {
-			if (pane.searching) return 'searching whole collection...';
-			else if (visibleRows.length === 0) return 'no tracks match the search';
+			if (visibleRows.length === 0) return 'no tracks match the search';
 			else return null;
-		} else if (pane.loading) return 'loading...';
-		else if (pane.error !== null) return `load failed: ${pane.error}`;
+		} else if (pane.error !== null) return `load failed: ${pane.error}`;
 		else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 		else if (visibleRows.length === 0 && pane.search.trim() !== '') return 'no tracks match the search';
-		else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.hide_broken_links)
-			return 'all tracks in this list are broken links (hidden by Hide broken links)';
+		else if (isMissingTracksId(pane.playlist_id) && visibleRows.length === 0) return 'no missing tracks';
+		else if (visibleRows.length === 0 && pane.rows.length > 0 && hideBrokenForActivePane)
+			return 'all tracks in this list are broken links (hidden by Broken filter)';
 		else if (
 			visibleRows.length === 0 &&
 			pane.rows.length > 0 &&
@@ -487,6 +682,17 @@
 	});
 
 	onMount(() => {
+		const uninstallBrowserSortIpc = installBrowserSortIpc({
+			sort: sortBy,
+			query: () => ({
+				sort_key: pane.sort_key,
+				sort_dir: pane.sort_dir,
+				visible_ids: visibleRows.map((row) => row.stable_id)
+			})
+		});
+		const unregisterPerformanceBrowser = registerPerformanceBrowserAdapter({
+			selectPlaylist: _selectPlaylistFromCommand
+		});
 		const url = new URL(window.location.href);
 		if (url.searchParams.get('source') === 'spotify') {
 			source = 'spotify';
@@ -495,7 +701,7 @@
 		const unsubscribeSearch = subscribeBrowserSearch((request) => {
 			// Programmatic, so it must beat (and cancel) any keystroke burst
 			// still waiting to settle.
-			if (request.revision > 0) _setSearchNow(request.query);
+			if (request.revision > 0) _setSearchNow(request.query, request);
 		});
 		const onKey = (e: KeyboardEvent): void => {
 			if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
@@ -524,19 +730,46 @@
 			() => void _sweepBlankPlaylists(),
 			BLANK_PLAYLIST_GRACE_MS
 		);
+		// Liveness ping restored with pin a66ee132a14e's dots. Kept at the
+		// original 2.5s cadence and 2s timeout: this is the only signal that
+		// goes red while the rest of the pane simply shows stale data, so a
+		// slower poll would make it lie for longer than it is useful.
+		let connAlive = true;
+		const pingConn = async (): Promise<void> => {
+			const [be, fe] = await Promise.all([_pingBackend(), _pingFrontend()]);
+			if (!connAlive) return;
+			backendOnline = be;
+			frontendOnline = fe;
+		};
+		void pingConn();
+		const connTimer = setInterval(() => void pingConn(), CONN_PING_MS);
 
 		// ---- library listing freshness -------------------------------------
 		// FAST PATH: the engine tells us the moment a track changes, from any
 		// writer (this tab, another tab, the CLI, an agent). One targeted
 		// refetch, no idle polling.
-		// Every trigger here goes through `_libraryRefreshGate`, never through
+		// Pane-row refetches go through `_libraryRefreshGate`, never through
 		// `_refreshLibraryRowsOnce` directly: the gate decides WHEN a background
 		// refetch is allowed to run, and its coalescer guarantees it is only
-		// ever one refetch.
+		// ever one refetch. Playlist TREE names refresh immediately on
+		// `playlists` / resync (see the handlers below); that is cheap and is
+		// user-visible undo/redo state.
 		const unsubscribeTracks = subscribeKind('tracks', () => _libraryRefreshGate.request());
+		// Tree names are user-visible undo/redo state (v1). The playing-gated
+		// full library refetch can be in flight, deferred, or throw after its
+		// GET /playlists snapshot, which left the history panel enabled while
+		// the renamed row never appeared (#1888). Refresh names immediately;
+		// the gate still refreshes pane membership and the health-dot total.
+		const unsubscribePlaylists = subscribeKind('playlists', () => {
+			void _refreshPlaylists();
+			_libraryRefreshGate.request();
+		});
 		// A resync means the bus knows it missed events but not which, so the
 		// only sound response is to refetch as if everything changed.
-		const unsubscribeResync = subscribeResync(() => _libraryRefreshGate.request());
+		const unsubscribeResync = subscribeResync(() => {
+			void _refreshPlaylists();
+			_libraryRefreshGate.request();
+		});
 		// DEGRADED PATH: the poll is deliberately kept, not deleted. When the
 		// WS is down (daemon restarting, engine built without the hub) it is
 		// the only thing keeping this pane honest. It is 60s rather than
@@ -550,36 +783,106 @@
 		}, LIBRARY_FALLBACK_POLL_MS);
 
 		return () => {
+			uninstallBrowserSortIpc();
+			unregisterPerformanceBrowser();
+			connAlive = false;
+			clearInterval(connTimer);
 			clearInterval(blankSweepTimer);
 			clearInterval(libraryFallbackTimer);
 			unsubscribeTracks();
+			unsubscribePlaylists();
 			unsubscribeResync();
 			unsubscribeSearch();
 			window.removeEventListener('keydown', onKey);
 		};
 	});
+	/**
+	 * The Library health dot policy now lives in `$lib/rb/library-health-dots`
+	 * (pure, unit tested with no component or network mock), the same split
+	 * as `meter-math.ts`. `libraryHealth` above calls it directly.
+	 */
 
+	/** Liveness poll cadence and per-probe timeout, restored with the dots. */
+	const CONN_PING_MS = 2500;
+	const CONN_PING_TIMEOUT_MS = 2000;
+
+	async function _pingBackend(): Promise<LibraryHealthDot> {
+		try {
+			await pingHealth(CONN_PING_TIMEOUT_MS);
+			return { label: 'Backend', state: 'complete', detail: 'engine online' };
+		} catch (error: unknown) {
+			// The reason is kept rather than flattened to "offline": a timeout
+			// and a 500 want different things from the reader.
+			const why = error instanceof Error ? error.message : String(error);
+			return { label: 'Backend', state: 'error', detail: `engine not answering - ${why}` };
+		}
+	}
+
+	async function _pingFrontend(): Promise<LibraryHealthDot> {
+		const { signal, clear } = timeoutSignal(CONN_PING_TIMEOUT_MS);
+		try {
+			const response = await fetch(`${window.location.origin}/`, {
+				method: 'GET',
+				cache: 'no-store',
+				signal
+			});
+			if (!response.ok) {
+				return {
+					label: 'Frontend',
+					state: 'error',
+					detail: `dev server returned HTTP ${response.status}`
+				};
+			}
+			return { label: 'Frontend', state: 'complete', detail: 'dev server online' };
+		} catch (error: unknown) {
+			const why = error instanceof Error ? error.message : String(error);
+			return { label: 'Frontend', state: 'error', detail: `dev server not answering - ${why}` };
+		} finally {
+			clear();
+		}
+	}
 
 	function _coverageDot(
 		label: LibraryHealthDot['label'],
 		coverage: IngestCoverage,
-		step: 'vocals' | 'stems'
+		step: 'vocals' | 'stems' | 'lyrics'
 	): LibraryHealthDot {
 		const missing = coverage.missing[step];
 		if (typeof missing !== 'number' || !Number.isInteger(missing) || missing < 0) {
-			return { label, state: 'unavailable', detail: `${step} coverage is unavailable` };
+			return { label, state: 'unavailable', detail: `${step} coverage could not be measured` };
 		}
 		if (coverage.on_disk <= 0) {
-			return { label, state: 'unavailable', detail: `no reachable tracks to measure, ${coverage.unreachable} unreachable` };
+			return {
+				label,
+				state: 'unavailable',
+				detail: `no playable tracks to measure, ${coverage.unreachable} broken ${coverage.unreachable === 1 ? 'link' : 'links'}`
+			};
 		}
 		const completed = coverage.on_disk - missing;
 		if (completed < 0) {
 			throw new Error(`${step} coverage missing count exceeds on-disk tracks`);
 		}
+		// Corruption is a DISTINCT, always-surfaced state - never folded into a
+		// quiet 'incomplete'. It is a subset of `missing` (a malformed entry is
+		// not done, whatever else it is), so it is checked after validating
+		// `missing` but before the ordinary complete/incomplete split. lyrics
+		// has no refresh runner (see routes/ingest.py), so a corrupt lyrics
+		// entry has NO repair path except this dot saying so.
+		const corrupt = coverage.corrupt[step];
+		if (typeof corrupt !== 'number' || !Number.isInteger(corrupt) || corrupt < 0) {
+			throw new Error(`${step} coverage corrupt count must be a nonnegative integer`);
+		}
+		if (corrupt > 0) {
+			return {
+				label,
+				state: 'error',
+				detail: `${corrupt} corrupt ${corrupt === 1 ? 'entry' : 'entries'} - ${completed}/${coverage.on_disk} playable complete, ${missing} missing, ${coverage.unreachable} broken ${coverage.unreachable === 1 ? 'link' : 'links'}`
+			};
+		}
 		return {
 			label,
 			state: missing === 0 ? 'complete' : 'incomplete',
-			detail: `${completed}/${coverage.on_disk} complete, ${missing} missing, ${coverage.unreachable} unreachable`
+			detail: `${completed}/${coverage.on_disk} playable complete, ${missing} missing, ${coverage.unreachable} broken ${coverage.unreachable === 1 ? 'link' : 'links'}`
 		};
 	}
 
@@ -588,17 +891,19 @@
 			const coverage = await getIngestCoverage();
 			vocalsCompletion = _coverageDot('Vocals completion', coverage, 'vocals');
 			stemsCompletion = _coverageDot('Stems completion', coverage, 'stems');
+			lyricsCompletion = _coverageDot('Lyrics completion', coverage, 'lyrics');
 		} catch (error: unknown) {
 			const detail = error instanceof Error ? error.message : String(error);
 			vocalsCompletion = { label: 'Vocals completion', state: 'error', detail };
 			stemsCompletion = { label: 'Stems completion', state: 'error', detail };
+			lyricsCompletion = { label: 'Lyrics completion', state: 'error', detail };
 		}
 	}
 
 	async function _loadReconcileSummary(): Promise<void> {
 		try {
 			const summary = await getReconcileSummary();
-			allTracksPlayableCount = summary.total_tracks - summary.total_broken;
+			allTracksNonBrokenCount = summary.total_tracks - summary.total_broken;
 			allTracksBrokenCount = summary.total_broken;
 			allTracksReconcileError = null;
 		} catch (error: unknown) {
@@ -609,18 +914,45 @@
 	async function _init(): Promise<void> {
 		playlistsLoading = true;
 		playlistsError = null;
+		const bootHealthEpoch = _healthWriteEpoch;
+		const bootPlaylistsEpoch = _playlistsWriteEpoch;
 		try {
-			const [healthRes, lists] = await Promise.all([getHealth(), listPlaylistsHydrated()]);
-			allTracksCount = healthRes.health.state_db.tracks;
-			libraryHealth = {
-				label: 'Library health',
-				state: allTracksCount > 0 ? 'complete' : 'unavailable',
-				detail: allTracksCount > 0 ? `${allTracksCount} tracks available` : 'no tracks available'
-			};
-			playlists = lists;
-			await _sweepBlankPlaylists(lists);
+			const [healthRes, lists] = await Promise.all([
+				getHealthAtBoot(getHealth),
+				listPlaylistsHydrated()
+			]);
+			libraryHealthError = null;
+			// A concurrent _refreshLibraryRowsOnce call (a library-change event, or
+			// the bus's first-ever open) can write a fresher allTracksCount and
+			// playlists while this Promise.all is still in flight. Applying this
+			// boot snapshot unconditionally would clobber that fresher data with
+			// older data (PR #1656 review round 9, P2 BLOCKING) - see
+			// reconcileBootSnapshot's doc comment. Each field is reconciled
+			// against its OWN write epoch: _refreshLibraryRowsOnce writes
+			// playlists (via _refreshPlaylists) and allTracksCount (via the
+			// health re-read) at different times within one call, so a
+			// playlists-only write in between must not discard this boot
+			// read's still-uncontested health value, and vice versa (PR #1656
+			// review round 11, P2 BLOCKING).
+			allTracksCount = reconcileBootSnapshot({
+				bootEpoch: bootHealthEpoch,
+				currentEpoch: _healthWriteEpoch,
+				bootValue: healthRes.health.state_db.tracks,
+				currentValue: allTracksCount
+			});
+			playlists = reconcileBootSnapshot({
+				bootEpoch: bootPlaylistsEpoch,
+				currentEpoch: _playlistsWriteEpoch,
+				bootValue: lists,
+				currentValue: playlists
+			});
+			// Playlist navigation is ready even while the initial track pane loads.
+			playlistsLoading = false;
+			if (_playlistsWriteEpoch === bootPlaylistsEpoch) {
+				await _sweepBlankPlaylists(lists);
+			}
 			if (source === 'spotify' && spotifySelectedId !== null) {
-				const selected = lists.find(
+				const selected = playlists.find(
 					(playlist) =>
 						playlist.vendor === 'spotify' && playlist.playlist_id === spotifySelectedId
 				);
@@ -633,11 +965,7 @@
 				await _restoreBootPane();
 			}
 		} catch (exc) {
-			libraryHealth = {
-				label: 'Library health',
-				state: 'error',
-				detail: exc instanceof Error ? exc.message : String(exc)
-			};
+			libraryHealthError = exc instanceof Error ? exc.message : String(exc);
 			playlistsError = String(exc);
 			pushToast(`browser init failed: ${String(exc)}`, 'error');
 			throw exc;
@@ -706,6 +1034,7 @@
 
 	function _selectSpotifyPlaylist(playlist: PlaylistSummaryHydrated, writeQuery: boolean): void {
 		spotifySelectedId = playlist.playlist_id;
+		rememberSpotifyRecent(playlist.playlist_id);
 		if (writeQuery) _writeSpotifyQuery(playlist.playlist_id);
 		const node: PlaylistNode = {
 			playlist_id: playlist.playlist_id,
@@ -792,6 +1121,9 @@
 				children: []
 			};
 		}
+		if (snap.playlist_id === MISSING_TRACKS_ID) {
+			return missingTracksNode(allTracksBrokenCount ?? 0);
+		}
 		const found = treeNodes.find((n) => n.playlist_id === snap.playlist_id);
 		if (found !== undefined) return found;
 		return {
@@ -817,10 +1149,7 @@
 			}
 			_setSearchNow(snap.search);
 			if (snap.selected_id !== null) p.select(snap.selected_id, false);
-			else {
-				p.selected_id = null;
-				p.selected_ids = [];
-			}
+			else clearSelection(p);
 			p.rememberScroll(snap.scroll_top);
 			navEpoch += 1;
 			genreFilterUntil = /^genre:/i.test(snap.search) ? Date.now() + GENRE_WINDOW_MS : 0;
@@ -830,14 +1159,25 @@
 	}
 
 	function selectPlaylist(node: PlaylistNode, opts?: { newTab?: boolean }): void {
-		const forceNew = opts?.newTab === true || panes[activePane].sticky;
-		if (!forceNew) {
-			if (panes[activePane].playlist_id === node.playlist_id) return;
-			_pushNav();
-			void _loadPane(panes[activePane], node);
+		if (opts?.newTab === true) {
+			_openPlaylistInNewTab(node);
 			return;
 		}
-		_openPlaylistInNewTab(node);
+		void runPerformanceCommandFromUi({ type: 'browser_select_playlist', playlist_id: node.playlist_id });
+	}
+
+	async function _selectPlaylistFromCommand(playlistId: string): Promise<void> {
+		const node = _nodeForNav({
+			playlist_id: playlistId,
+			playlist_name: playlistId,
+			search: '',
+			selected_id: null,
+			scroll_top: 0
+		});
+		if (node === null) throw new Error(`browser_select_playlist: unknown playlist ${playlistId}`);
+		if (panes[activePane].playlist_id === node.playlist_id) return;
+		_pushNav();
+		await _loadPane(panes[activePane], node);
 	}
 
 	function _openPlaylistInNewTab(node: PlaylistNode): void {
@@ -912,8 +1252,13 @@
 	}
 
 	async function _refreshPlaylists(): Promise<void> {
-		playlists = await listPlaylistsHydrated();
-		await _sweepBlankPlaylists(playlists);
+		try {
+			playlists = await listPlaylistsHydrated();
+			_playlistsWriteEpoch += 1;
+			await _sweepBlankPlaylists(playlists);
+		} catch (exc) {
+			console.error(`[playlists] refresh failed: ${String(exc)}`);
+		}
 	}
 
 	/**
@@ -937,17 +1282,22 @@
 	 * triggers. See the comment on that binding.
 	 */
 	async function _refreshLibraryRowsOnce(): Promise<void> {
-		await Promise.all([_loadIngestCoverage(), _loadReconcileSummary()]);
+		await Promise.all([_loadIngestCoverage(), _loadReconcileSummary(), _refreshPlaylists()]);
 		try {
-			const healthRes = await getHealth();
+			// `fresh` because this runs OFF a library-change event: a body
+			// shared from before that change would paint a stale count and
+			// leave it there until the next event. The mount-time read in
+			// `_init` above has no such constraint and shares one.
+			const healthRes = await getHealthFreshWithRetry(getHealth);
 			allTracksCount = healthRes.health.state_db.tracks;
+			_healthWriteEpoch += 1;
 		} catch (exc) {
 			console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
 		}
 		for (const p of panes) {
-			// A blank pane has nothing to refresh, and a pane mid-load already
-			// has a newer load token that owns its rows.
-			if (p.playlist_id === null || p.loading) continue;
+			// A blank pane has nothing to refresh. Skip blocking loads
+			// (`loading`) and All Tracks background fills (`load_progress`).
+			if (p.playlist_id === null || p.loading || p.load_progress !== null) continue;
 			// Snapshotted BEFORE the await, then rechecked after it: the user
 			// can switch this pane to another playlist while the fetch is in
 			// flight, and writing the response then would paint pane B with
@@ -959,21 +1309,39 @@
 				const result =
 					requestedPlaylistId === 'all'
 						? await _fetchAllRows()
-						: await _fetchPlaylistRows(requestedPlaylistId);
+						: isMissingTracksId(requestedPlaylistId)
+							? await fetchMissingTrackRows()
+							: await _fetchPlaylistRows(requestedPlaylistId);
 				if (p.playlist_id !== requestedPlaylistId) continue;
 				p.rows = result.rows;
 				p.truncated = result.truncated;
 				p.etag = result.etag;
-				// A selection pointing at a row the change deleted cannot
-				// survive; everything still present stays selected.
-				const present = new Set(result.rows.map((row) => row.stable_id));
-				p.selected_ids = p.selected_ids.filter((id) => present.has(id));
-				if (p.selected_id !== null && !present.has(p.selected_id)) p.selected_id = null;
+				pruneSelection(p, result.rows);
 			} catch (exc) {
 				console.error(
 					`[library-refresh] pane ${requestedPlaylistId} refresh failed: ${String(exc)}`
 				);
 			}
+		}
+		// A boot health read that joined an in-flight coalesced entry can settle
+		// with a snapshot from BEFORE a change this same trigger exists to react
+		// to (request-coalescer.ts's `forceInFlight: false` on the
+		// 'initial-connect' resync deliberately leaves such an entry untouched -
+		// see its docstring). _restoreBootPane() then saw a falsely-empty
+		// library and left panes[0] unclaimed on purpose, and nothing above this
+		// point ever retries it (blank panes are explicitly skipped). The fresh
+		// count just read above may have corrected that, so retry now rather
+		// than stranding the pane blank until a manual reload - see
+		// `shouldRetryBootPane`'s own doc comment for the decision and why it
+		// is a separate, pure, real-module-tested function.
+		if (
+			shouldRetryBootPane({
+				boot_pane_playlist_id: panes[0].playlist_id,
+				source,
+				spotify_selected_id: spotifySelectedId
+			})
+		) {
+			await _restoreBootPane();
 		}
 	}
 
@@ -981,11 +1349,11 @@
 	 * The only entry point for a background library refresh: WHEN it may run,
 	 * and how many times.
 	 *
-	 * Three triggers feed it (`subscribeKind('tracks')`, `subscribeResync` and
-	 * the 60s degraded-path poll) and a single gap-revealing `library.changed`
-	 * frame fires the first two for ONE event. Unguarded that is two concurrent
-	 * full library reads racing to write the same panes; the gate's coalescer
-	 * makes it one run plus one trailing run (`$lib/rb/coalesce`).
+	 * Four triggers feed it (`subscribeKind('tracks')`, `subscribeKind('playlists')`,
+	 * `subscribeResync` and the 60s degraded-path poll) and a single gap-revealing
+	 * `library.changed` frame fires two of them for ONE event. Unguarded that is
+	 * concurrent full library reads racing to write the same panes; the gate's
+	 * coalescer makes it one run plus one trailing run (`$lib/rb/coalesce`).
 	 *
 	 * PERFMODE-04 on top of that: no background refetch AT ALL while a deck is
 	 * playing. A refresh is a full library read per open pane followed by a
@@ -1068,7 +1436,7 @@
 	}
 
 	async function renamePlaylistUi(node: PlaylistNode, name: string): Promise<void> {
-		if (node.kind === 'all_tracks' || node.playlist_id === 'all') return;
+		if (node.kind === 'all_tracks' || node.playlist_id === 'all' || isMissingTracksId(node.playlist_id)) return;
 		const next = name.trim();
 		if (next === '' || next === node.name) return;
 		try {
@@ -1083,7 +1451,7 @@
 	}
 
 	async function deletePlaylistUi(node: PlaylistNode): Promise<void> {
-		if (node.kind === 'all_tracks' || node.playlist_id === 'all') return;
+		if (node.kind === 'all_tracks' || node.playlist_id === 'all' || isMissingTracksId(node.playlist_id)) return;
 		const skip = uiPrefs.confirm.delete_playlist === false;
 		if (!skip) {
 			const every = window.confirm(`Delete playlist "${node.name}"?`);
@@ -1101,6 +1469,18 @@
 		}
 	}
 
+	async function duplicatePlaylistUi(node: PlaylistNode): Promise<void> {
+		if (node.kind === 'all_tracks' || node.playlist_id === 'all') return;
+		try {
+			const { etag } = await getPlaylistTracksEtag(node.playlist_id);
+			const copy = await duplicatePlaylist(node.playlist_id, etag);
+			await _refreshPlaylists();
+			pushToast(`Duplicated as "${copy.name}"`, 'info');
+		} catch (exc) {
+			pushToast(`duplicate failed: ${String(exc)}`, 'error');
+		}
+	}
+
 	async function dropTracksOnPlaylist(playlistId: string, stableIds: string[]): Promise<void> {
 		const remembered = uiPrefs.confirm.playlist_drop_mode;
 		let mode: 'add' | 'move' | null = remembered ?? null;
@@ -1114,26 +1494,36 @@
 		}
 		try {
 			const dest = await getPlaylistTracksEtag(playlistId);
-			const destIds = dest.detail.tracks.map((t) => t.stable_id);
-			const merged = [...destIds];
-			for (const id of stableIds) {
-				if (!merged.includes(id)) merged.push(id);
-			}
-			await replacePlaylistTracks(playlistId, dest.etag, merged);
+			let effectiveMode: 'add' | 'move' = 'add';
+			let body: {
+				stable_ids: string[];
+				mode: 'add' | 'move';
+				source_playlist_id?: string;
+				source_etag?: string;
+			} = { stable_ids: stableIds, mode: 'add' };
 			if (mode === 'move') {
 				const srcId = panes[activePane].playlist_id;
-				if (srcId !== null && srcId !== playlistId && canMutatePlaylist(panes[activePane])) {
+				if (srcId !== null && srcId !== 'all' && srcId !== playlistId) {
 					const src = await getPlaylistTracksEtag(srcId);
-					const next = src.detail.tracks
-						.map((t) => t.stable_id)
-						.filter((id) => !stableIds.includes(id));
-					await replacePlaylistTracks(srcId, src.etag, next);
-					const node = _currentNode(panes[activePane]);
-					if (node !== null) await _loadPane(panes[activePane], node);
+					body = {
+						stable_ids: stableIds,
+						mode: 'move',
+						source_playlist_id: srcId,
+						source_etag: src.etag
+					};
+					effectiveMode = 'move';
 				}
 			}
+			await transferPlaylistTracks(playlistId, dest.etag, body);
+			if (effectiveMode === 'move') {
+				const node = _currentNode(panes[activePane]);
+				if (node !== null) await _loadPane(panes[activePane], node);
+			}
 			await _refreshPlaylists();
-			pushToast(`${mode === 'add' ? 'Added' : 'Moved'} ${stableIds.length} track(s)`, 'info');
+			pushToast(
+				`${effectiveMode === 'add' ? 'Added' : 'Moved'} ${stableIds.length} track(s)`,
+				'info'
+			);
 		} catch (exc) {
 			pushToast(`playlist drop failed: ${String(exc)}`, 'error');
 		}
@@ -1144,7 +1534,7 @@
 		// back-stack, post-mutation refresh), so this is the one place that
 		// needs to remember the selection for the next boot. Folders are not
 		// loadable panes, so only the two real kinds are recorded.
-		if (p === panes[0] && node.kind !== 'folder') {
+		if (p === panes[0] && node.kind !== 'folder' && node.kind !== 'missing_tracks') {
 			setLastPlaylist({
 				playlist_id: node.playlist_id,
 				name: node.name,
@@ -1155,21 +1545,35 @@
 		// completeLoad/failLoad no-op when a newer load superseded this one.
 		const seq = p.beginLoad(node.playlist_id, node.name);
 		try {
+			if (node.kind === 'all_tracks') {
+				await fillAllTracksPane({
+					pane: p,
+					seq,
+					fetchPage: (cursor) => listTracksHydrated({ limit: PAGE_SIZE, cursor }),
+					mapRow: (t, order) => _rowFromListWire(t, order),
+					progressTotal: allTracksNonBrokenCount,
+					onFirstPaint: () => completeLibraryUsable({ source: 'all-tracks' }),
+					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
+					onFillError: (error) => pushToast(`playlist load failed: ${error}`, 'error')
+				});
+				return;
+			}
 			const result =
-				node.kind === 'all_tracks'
-					? await _fetchAllRows()
+				node.kind === 'missing_tracks'
+					? await fetchMissingTrackRows()
 					: await _fetchPlaylistRows(node.playlist_id);
 			p.completeLoad(seq, result.rows, result.truncated, result.etag);
 		} catch (exc) {
-			p.failLoad(seq, String(exc));
-			pushToast(`playlist load failed: ${String(exc)}`, 'error');
+			if (p.failLoad(seq, String(exc))) {
+				pushToast(`playlist load failed: ${String(exc)}`, 'error');
+			}
 		}
 	}
 
 	/** Reconstructs the minimal PlaylistNode _loadPane needs to refresh the
 	 * currently-selected pane after a mutation (add-remove-reorder-tracks). */
 	function _currentNode(p: PaneStore): PlaylistNode | null {
-		if (p.playlist_id === null || p.playlist_id === 'all') return null;
+		if (p.playlist_id === null || p.playlist_id === 'all' || isMissingTracksId(p.playlist_id)) return null;
 		return {
 			playlist_id: p.playlist_id,
 			name: p.title,
@@ -1202,8 +1606,16 @@
 			comments: wire.comments,
 			duration_ms: wire.duration_ms,
 			genre: wire.genre,
+			energy: wire.energy,
+			energy_source: wire.energy_source,
+			energy_reason: wire.energy_reason,
+			key_status: wire.key_status ?? 'ok',
+			key_reason: wire.key_reason ?? null,
+			loudness_status: wire.loudness_status ?? 'ok',
+			loudness_reason: wire.loudness_reason ?? null,
 			file_exists: wire.file_exists,
 			is_streaming: wire.is_streaming,
+			is_remote: wire.is_remote === true,
 			spotify_pending:
 				wire.spotify_pending === true || wire.stable_id.startsWith('spotify-pending:'),
 			quality: wire.quality ?? null,
@@ -1212,6 +1624,8 @@
 			vocals: parseVocals(wire.vocals),
 			stems: parseStemSummary(wire.stems),
 			has_rb_mapping: wire.has_rb_mapping,
+			artwork_available: wire.artwork_available,
+			artwork_status: wire.artwork_status,
 			rb_meta: null,
 			revealed: false,
 			match_context: null
@@ -1243,8 +1657,12 @@
 			// genre/is_streaming are NOT in the listing contract (point 1) -
 			// null here means 'fall back to lazily fetched rb-meta'.
 			genre: null,
+			energy: track.energy,
+			energy_source: track.energy_source,
+			energy_reason: track.energy_reason,
 			file_exists: track.file_exists,
 			is_streaming: null,
+			is_remote: track.is_remote === true,
 			spotify_pending: track.stable_id.startsWith('spotify-pending:'),
 			quality: track.quality ?? null,
 			play_count: typeof track.play_count === 'number' ? track.play_count : 0,
@@ -1252,13 +1670,17 @@
 			vocals: parseVocals(track.vocals),
 			stems: parseStemSummary(track.stems),
 			has_rb_mapping: track.has_rb_mapping,
+			artwork_available: track.artwork_available,
+			artwork_status: track.artwork_status,
 			rb_meta: null,
 			revealed: false,
 			match_context: null
 		};
 	}
 
-	async function _fetchAllRows(): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
+	async function _fetchAllRows(
+		onPage?: (info: { loaded: number; pageCount: number }) => void
+	): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
 		// All Tracks: walk every cursor page with inline preview/file_exists
 		// (contract 1). PAGE_SIZE is per request, while TrackTable's DOM
 		// virtualization keeps the rendered pane bounded. ?available stays
@@ -1269,7 +1691,10 @@
 		// load and the background refresh land here, and both are the same
 		// ~8k-row cost, so this is the one place that needs the clock.
 		const startedAt = performance.now();
-		const items = await fetchAllPages((cursor) => listTracksHydrated({ limit: PAGE_SIZE, cursor }));
+		const items = await fetchAllPages(
+			(cursor) => listTracksHydrated({ limit: PAGE_SIZE, cursor }),
+			onPage !== undefined ? { onPage } : {}
+		);
 		const rows = items.map((t, i) => _rowFromListWire(t, i + 1));
 		recordLibraryLoadTiming('all-tracks', {
 			fetchMs: performance.now() - startedAt,
@@ -1301,8 +1726,8 @@
 	}
 
 	// -------------------------------------------- lazy per-row hydration
-	// Only rb-meta remains lazy (artwork_available + genre/streaming
-	// fallback for All Tracks rows). Strips/file_exists arrive inline; the
+	// rb-meta remains lazy for genre/streaming and analysis fallbacks. Artwork,
+	// strips, and file_exists arrive inline; the
 	// observer also flips row.revealed for the one-time canvas draw.
 
 	function rowVisible(row: BrowserRow): void {
@@ -1389,19 +1814,23 @@
 	function loadRow(
 		row: LoadableRow,
 		deck: DeckId | null,
-		opts: { play?: boolean; reservation?: number } = {}
+		opts: { play?: boolean; reservation?: number; pressT0Ms?: number } = {}
 	): void {
 		void _loadOntoDeck(row, deck, opts);
 	}
 
-	function loadSuggest(sid: string, opts: { play?: boolean } = {}): void {
+	function loadSuggest(sid: string, opts: { play?: boolean; pressT0Ms?: number } = {}): void {
 		const row = { stable_id: sid, file_exists: true, is_streaming: false };
 		if (opts.play) {
 			const picked = pickDoubleDeck(row);
 			if (picked === null) return;
 			// pickDoubleDeck already reserved this deck - see _loadOntoDeck's
 			// reservation gate.
-			loadRow(row, picked.deck, { play: true, reservation: picked.reservation });
+			loadRow(row, picked.deck, {
+				play: true,
+				reservation: picked.reservation,
+				...(opts.pressT0Ms === undefined ? {} : { pressT0Ms: opts.pressT0Ms })
+			});
 			return;
 		}
 		loadRow(row, null);
@@ -1413,10 +1842,37 @@
 	const masterRef = $derived(
 		DECK_IDS.map((d) => decks[d]).find((d) => d.is_master) ?? null
 	);
+	/** Filters change AutoPlay's candidate set. Sort state is intentionally absent. */
+	const autoPlayFilterKey = $derived(
+		[
+			searchMode === 'find' ? '' : pane.search.trim(),
+			searchMode,
+			wholeCollectionActive ? 'collection' : 'playlist',
+			uiPrefs.hide_broken_links ? 'hide-broken' : 'show-broken',
+			uiPrefs.next_only_filter ? 'next-only' : 'all-next',
+			nextOnlyRef?.key ?? '',
+			nextOnlyRef?.bpm ?? ''
+		].join('|')
+	);
 
-	/** Holds the order AutoPlay walks, frozen at the moment it was switched
-	 * on (see createAutoPlayFeedSnapshot in auto-play.ts for the maintainer's rule). */
+	/** Holds the order AutoPlay walks, frozen at activation except for active
+	 * filter changes (see createAutoPlayFeedSnapshot in auto-play.ts). */
 	const autoPlayFeed = createAutoPlayFeedSnapshot();
+	let autoPlaySnapshotActive = $state(false);
+	let autoPlaySnapshotMatchesView = $state(false);
+
+	// The AutoPlay column is hidden while disabled. Clear its active sort through
+	// each pane's own owner before that happens, so the visible and published feed
+	// return to that pane's natural order rather than a stale rank map. Every pane
+	// is checked, not just the active one: switching tabs never mounts the other
+	// three, so a sort left on an inactive pane would otherwise resurface silently
+	// the next time the user tabs back to it.
+	$effect(() => {
+		if (uiPrefs.auto_play_enabled) return;
+		for (const p of panes) {
+			if (p.sort_key === 'autoplay') p.toggleSort('autoplay');
+		}
+	});
 
 	// Feed AutoPlay from the SORTED, filtered view the user is actually looking
 	// at - not pane.rows, which is raw stored membership and ignored the sort
@@ -1434,14 +1890,20 @@
 	$effect(() => {
 		const decision = autoPlayFeed.step(
 			uiPrefs.auto_play_enabled,
-			visibleRows.map((r) => ({
+			pane.playlist_id,
+			renderedRows.map((r) => ({
 				stable_id: r.stable_id,
 				key: r.key,
 				bpm: r.bpm,
-				file_exists: r.file_exists
-			}))
+				file_exists: r.file_exists,
+				title: r.title,
+				artist: r.artist
+			})),
+			autoPlayFilterKey
 		);
-		if (decision.publish !== null) setAutoPlayTrackFeed(decision.publish);
+		autoPlaySnapshotActive = autoPlayFeed.active;
+		autoPlaySnapshotMatchesView = autoPlayFeed.matches(visibleRows);
+		if (decision.publish !== null) setAutoPlayTrackFeed(pane.playlist_id, decision.publish);
 	});
 
 	/** Monotonic load counter - double-click prefers least-recent in the pair. */
@@ -1588,7 +2050,7 @@
 	async function _loadOntoDeck(
 		row: LoadableRow,
 		deck: DeckId | null,
-		opts: { play?: boolean; reservation?: number } = {}
+		opts: { play?: boolean; reservation?: number; pressT0Ms?: number } = {}
 	): Promise<void> {
 		// A picker-chosen `deck` carries a reservation (_reserveDeckSlot) that
 		// must be released on EVERY exit path here - refusal, error, or
@@ -1600,6 +2062,7 @@
 		// reservation on that same deck (e.g. a pending double-click confirm
 		// dialog) out from under it. See _releaseDeckReservation for why a
 		// generation number, not a boolean, is what makes that safe.
+		let loadIntent: ReturnType<typeof beginPendingLoadPlay> | null = null;
 		try {
 			if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
 				pushToast('streaming track - deck load not implemented (see PARITY-TODO)', 'error');
@@ -1627,6 +2090,16 @@
 				return;
 			}
 			try {
+				loadIntent = beginPendingLoadPlay(target, opts.play === true);
+				await dispatchPerformanceCommand(
+					{
+						type: 'load_play_intent',
+						deck: target,
+						generation: loadIntent.generation,
+						desired_play: loadIntent.desiredPlay
+					},
+					opts.pressT0Ms
+				);
 				// Explicit CH load (incl. confirmed double-click): replace if occupied.
 				// refuseIfMaster: true on both - this is a destructive REPLACE, not
 				// a standalone eject, so it must stay refused if `target` raced to
@@ -1645,8 +2118,21 @@
 				});
 				deckLoadTick += 1;
 				deckLoadSeq = { ...deckLoadSeq, [target]: deckLoadTick };
-				if (opts.play === true) {
-					await dispatchPerformanceCommand({ type: 'play', deck: target, playing: true });
+				const pendingPlay = consumePendingLoadPlay(target, loadIntent.generation);
+				if (pendingPlay?.desiredPlay === true) {
+					// Q1: timed from the operator's ORIGINAL keydown, which is
+					// what they felt, not from this dispatch downstream of the
+					// load they were waiting on.
+					// This dispatch only ever fires after `load` above has
+					// resolved, so a stamp reaching it always spans this
+					// deck's load - mark it before it is spent (r3974057968).
+					if (pendingPlay.pressT0Ms !== undefined) {
+						markLoadSpanningPress(pendingPlay.pressT0Ms);
+					}
+					await dispatchPerformanceCommand(
+						{ type: 'play', deck: target, playing: true },
+						pendingPlay.pressT0Ms
+					);
 				}
 			} catch (error: unknown) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -1656,6 +2142,7 @@
 				// Dispatcher already toasted + recorded the deck alert.
 			}
 		} finally {
+			if (loadIntent !== null) clearPendingLoadPlay(loadIntent.deck, loadIntent.generation);
 			if (deck !== null && opts.reservation !== undefined) {
 				_releaseDeckReservation(deck, opts.reservation);
 			}
@@ -1725,16 +2212,20 @@
 	// event is absent for the column-view lane's plain click (ColumnBrowser
 	// has no multi-select concept) - treated as a non-extending single
 	// select, same as a modifier-less TrackTable click.
-	function selectRow(row: Pick<BrowserRow, 'stable_id'>, event?: MouseEvent): void {
+	function selectRow(
+		row: Pick<BrowserRow, 'stable_id'> & { order?: number },
+		event?: MouseEvent
+	): void {
 		_noteLibraryInteraction();
 		const p = panes[activePane];
 		if (p.selected_id !== row.stable_id) _pushNav();
 		const extend = event !== undefined && (event.metaKey || event.ctrlKey);
 		const range = event !== undefined && event.shiftKey;
-		const orderedIds = range
-			? visibleRows.map((r) => r.stable_id)
-			: [];
-		p.select(row.stable_id, extend, range, orderedIds);
+		const orderedIds = range ? renderedRows.map((r) => r.stable_id) : [];
+		const orderedRows = range
+			? renderedRows.map((r) => ({ stable_id: r.stable_id, order: r.order }))
+			: undefined;
+		p.select(row.stable_id, extend, range, orderedIds, row.order, orderedRows);
 		// Warm /anlz so a subsequent deck load shares the in-flight fetch.
 		// Selecting an unmapped row is the only place OUR ffmpeg decode ever
 		// runs (issue #735); the strip-adoption effect below picks up the
@@ -1778,7 +2269,7 @@
 			coalescedMs: settle.coalescedMs,
 			computeMs: _lastVisibleComputeMs,
 			rowsIn: wholeCollectionActive ? p.search_results.length : p.rows.length,
-			rowsOut: visibleRows.length
+			rowsOut: renderedRows.length
 		});
 	}
 
@@ -1803,9 +2294,30 @@
 	/** Programmatic search write (genre chip, clear, restore). Immediate, and
 	 * cancels any pending keystroke settle so a superseded burst cannot land
 	 * on top of what was just clicked. */
-	function _setSearchNow(next: string): void {
+	function _setSearchNow(next: string, request?: BrowserSearchRequest): void {
 		_filterDebounceFor(activePane).cancel();
 		panes[activePane].setSearch(next);
+		if (request === undefined) return;
+		// A whole-collection command answers from server FTS, so its result is
+		// only knowable once that lands; everything else is already rendered.
+		// Genre chip filters stay client-side (filterRows), never FTS.
+		const active = panes[activePane];
+		if (active.whole_collection && !/^genre:/i.test(next.trim())) {
+			void _searchWholeCollection(active, next, request);
+		} else _reportBrowserSearchResult(request);
+	}
+
+	function _reportBrowserSearchResult(request: BrowserSearchRequest): void {
+		// A newer command superseded this one while its FTS was in flight. These
+		// rows are not its answer, and reporting them throws on the stale guard
+		// inside an unawaited promise.
+		if (!isCurrentBrowserSearch(request)) return;
+		const result = _computeVisibleSearchResult();
+		reportBrowserSearchResult(request, {
+			fallback: result.ignoredFilters.length > 0,
+			ignoredFilters: result.ignoredFilters,
+			rowCount: result.rows.length
+		});
 	}
 
 	function _captureSearchReturn(): void {
@@ -1849,10 +2361,7 @@
 			}
 			p.setSearch(snap.search);
 			if (snap.selected_id !== null) p.select(snap.selected_id, false);
-			else {
-				p.selected_id = null;
-				p.selected_ids = [];
-			}
+			else clearSelection(p);
 			p.rememberScroll(snap.scroll_top);
 			navEpoch += 1;
 		} finally {
@@ -1912,7 +2421,9 @@
 		openModal = null;
 		const node = pane.playlist_id === 'all'
 			? { playlist_id: 'all', name: 'All Tracks', track_count: 0, broken_count: 0, kind: 'all_tracks' as const, children: [] }
-			: treeNodes.find((candidate) => candidate.playlist_id === pane.playlist_id);
+			: isMissingTracksId(pane.playlist_id)
+				? missingTracksNode(allTracksBrokenCount ?? 0)
+				: treeNodes.find((candidate) => candidate.playlist_id === pane.playlist_id);
 		if (node !== undefined) void _loadPane(pane, node);
 	}
 
@@ -1926,12 +2437,17 @@
 		if (next) void _searchWholeCollection(active, active.search);
 	}
 
-	async function _searchWholeCollection(active: PaneStore, query: string): Promise<void> {
+	async function _searchWholeCollection(
+		active: PaneStore,
+		query: string,
+		request?: BrowserSearchRequest
+	): Promise<void> {
 		const trimmed = query.trim();
 		if (trimmed === '') {
 			active.search_results = [];
 			active.search_total = 0;
 			active.searching = false;
+			if (request !== undefined) _reportBrowserSearchResult(request);
 			return;
 		}
 		active.searching = true;
@@ -1941,6 +2457,7 @@
 			if (!active.whole_collection || active.search.trim() !== trimmed) return;
 			active.search_results = results.items.map((hit, index) => _rowFromSearchHit(hit, index + 1));
 			active.search_total = results.total;
+			active.search_result_query = trimmed;
 			// One ring row per query that actually published results; a
 			// superseded query returned above and is not a completed search.
 			recordCollectionSearchTiming({
@@ -1955,7 +2472,10 @@
 				pushToast(`search failed: ${String(exc)}`, 'error');
 			}
 		} finally {
-			if (active.search.trim() === trimmed) active.searching = false;
+			if (active.search.trim() === trimmed) {
+				active.searching = false;
+				if (request !== undefined && active === pane) _reportBrowserSearchResult(request);
+			}
 		}
 	}
 
@@ -1974,7 +2494,7 @@
 	async function _mutateActivePane(computeNext: (items: string[]) => string[]): Promise<void> {
 		const p = pane;
 		const id = p.playlist_id;
-		if (id === null || id === 'all') return;
+		if (id === null || id === 'all' || isMissingTracksId(id)) return;
 		if (source !== 'collection' || p.whole_collection) {
 			pushToast('membership editing is disabled outside the complete playlist view', 'error');
 			return;
@@ -2031,7 +2551,7 @@
 	data-testid="browser-panel"
 	style:--playlist-tree-width={`${uiPrefs.playlist_tree_width}px`}
 >
-	<IconRail {source} onspotify={selectSpotifySource} />
+	<PerformanceRecorderRail {source} onspotify={selectSpotifySource} />
 	<div class="tree-panel" data-testid="playlist-tree">
 		{#if source === 'spotify'}
 			<SpotifySourcePanel
@@ -2048,17 +2568,22 @@
 		{:else}
 			<PlaylistTree
 				nodes={treeNodes}
-				allTracksCount={allTracksPlayableCount}
+				playlistsLoading={playlistsLoading}
+				playlistsError={playlistsError}
+				allTracksCount={allTracksNonBrokenCount}
 				allTracksBrokenCount={allTracksBrokenCount}
 				allTracksError={allTracksReconcileError}
 				selectedId={pane.playlist_id}
 				trackSelectedId={pane.selected_id}
+				{deckLoadedPlaylistIds}
+				multiPanePlaylistIds={multiPanePlaylistIds_}
 				onselect={selectPlaylist}
 				onselecttrack={selectRow}
 				onloadtrack={loadRow}
 				oncreateplaylist={() => createPlaylistUi()}
 				onrenameplaylist={(n, name) => void renamePlaylistUi(n, name)}
 				ondeleteplaylist={(n) => void deletePlaylistUi(n)}
+				onduplicateplaylist={(n) => void duplicatePlaylistUi(n)}
 				ondroptracks={(id, ids) => void dropTracksOnPlaylist(id, ids)}
 			/>
 		{/if}
@@ -2093,7 +2618,7 @@
 				<button
 					class="rb-lit-button rb-inert master-dd"
 					disabled
-					title="not implemented - see PARITY-TODO"
+					title={plannedTitle('master-dropdown')}
 				>
 					MASTER <span class="caret">▾</span>
 				</button>
@@ -2124,7 +2649,7 @@
 				<button
 					class="icon-btn rb-inert"
 					disabled
-					title="not implemented - see PARITY-TODO"
+					title={plannedTitle('single-column-layout')}
 					aria-label="single column layout"
 				>
 					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
@@ -2134,7 +2659,7 @@
 				<button
 					class="icon-btn rb-inert"
 					disabled
-					title="not implemented - see PARITY-TODO"
+					title={plannedTitle('split-column-layout')}
 					aria-label="split column layout"
 				>
 					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
@@ -2148,36 +2673,43 @@
 				</button>
 				<label
 					class="hide-broken"
-					title="FR-1: hide tracks whose audio file is missing on disk; also hides playlists with fewer than 30% available tracks from the tree"
+					title="Show tracks whose audio file is missing on disk. Unchecking also hides playlists with fewer than 30% playable tracks, including empty ones."
 				>
 					<input
 						type="checkbox"
-						checked={uiPrefs.hide_broken_links}
-						onchange={(e) => setHideBrokenLinks(e.currentTarget.checked)}
+						aria-label="Show broken links"
+						checked={!uiPrefs.hide_broken_links}
+						onchange={(e) => setHideBrokenLinks(!e.currentTarget.checked)}
 					/>
-					<span>Hide broken links</span>
+					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+						<path
+							d="M6 5 4.5 3.5a2.1 2.1 0 0 0-3 3L3 8m7-1 1.5 1.5a2.1 2.1 0 0 0 3-3L13 4m-8.5 7.5L11.5 4.5M6.5 9.5l3-3"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.4"
+							stroke-linecap="round"
+						/>
+					</svg>
+					<span>Broken</span>
 				</label>
-				<label
-					class="next-only"
-					title="Filter to appropriate next tracks (Camelot compatible + BPM within ±6% of master, or half/double within 15 BPM). Shortcut: Tab"
-				>
+				<!--
+					pin 5e3ed689ad3a: this control used to live in `.search-options`,
+					which only renders while the search box is focused or non-empty, so
+					it vanished the moment you clicked away and the feature looked
+					deleted. It belongs in the header row next to Broken, where it is
+					always reachable. The persisted pref id stays `next_only_filter`:
+					renaming the storage key would silently drop every stored
+					preference (prefs.svelte.ts validates that exact key). Only the
+					user-facing label changes, to the one the maintainer asked for.
+				-->
+				<label class="next-only" title="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM): Camelot key family (including half/double BPM folds) and inside the BPM window. Shortcut: Tab">
 					<input
 						type="checkbox"
+						aria-label="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)"
 						checked={uiPrefs.next_only_filter}
 						onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
 					/>
-					<span>Next-only</span>
-				</label>
-				<label
-					class="whole-collection"
-					title="Search the whole collection with server-side FTS5 instead of only this pane"
-				>
-					<input
-						type="checkbox"
-						checked={pane.whole_collection}
-						onchange={(event) => setWholeCollection(event.currentTarget.checked)}
-					/>
-					<span>Whole collection</span>
+					<span>compatible</span>
 				</label>
 				{#if editablePane}
 					<AddTrackSearch onadd={addTrack} />
@@ -2191,29 +2723,61 @@
 				>
 					← Back
 				</button>
-				<SearchBox
-					value={pane.search}
-					mode={searchMode}
-					focusToken={searchFocusToken}
-					placeholder={searchPlaceholder}
-					oninput={setSearch}
-					onclear={() => void clearSearchAndReturn()}
-					onescapeclear={() => void clearSearchAndReturn()}
-					onfocuschange={(f) => (searchFocused = f)}
-				/>
+				<div class="search-stack">
+					{#if searchFocused || pane.search.trim() !== ''}
+						<div class="search-options" aria-label="Search options">
+							<label
+								class="whole-collection"
+								title="Search all playlists uses server FTS across the collection. Unchecked filters only the current pane."
+							>
+								<input
+									type="checkbox"
+									checked={pane.whole_collection}
+									onchange={(event) => setWholeCollection(event.currentTarget.checked)}
+								/>
+								<span>Search all playlists</span>
+							</label>
+						</div>
+					{/if}
+					<SearchBox
+						value={pane.search}
+						mode={searchMode}
+						focusToken={searchFocusToken}
+						placeholder={searchPlaceholder}
+						oninput={setSearch}
+						onclear={() => void clearSearchAndReturn()}
+						onescapeclear={() => void clearSearchAndReturn()}
+						onfocuschange={(f) => (searchFocused = f)}
+					/>
+				</div>
 				<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('find-replace')}>Find &amp; Replace</button>
 				<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('bulk-edit')}>Bulk Edit</button>
 				<button class="rb-lit-button" onclick={() => void openEditModal('mytag')}>MyTags</button>
 			</div>
 		</div>
+		{#if uiPrefs.auto_play_enabled && autoPlaySnapshotActive && !autoPlaySnapshotMatchesView}
+			<div class="autoplay-snapshot-notice" role="status">
+				AutoPlay is using its activation order. Toggle it off and on to use this order.
+			</div>
+		{/if}
+		{#snippet libraryLoadOverlay()}
+			<LibraryLoadIndicator
+				loading={pane.loading}
+				progress={pane.load_progress}
+				searching={pane.searching}
+			/>
+		{/snippet}
 		<TrackTable
+			bodyOverlay={libraryLoadOverlay}
 			{provider}
 			selectedIds={pane.selected_ids}
+			selectedOrders={pane.selected_orders}
 			{loadedIds}
 			{vocalsById}
 			sortKey={pane.sort_key}
 			sortDir={pane.sort_dir}
 			{emptyMessage}
+			{filterBypassNote}
 			restoreKey={`${activePane}:${navEpoch}`}
 			scrollTop={pane.scroll_top}
 			removable={editablePane}
@@ -2233,73 +2797,100 @@
 			onrowvisible={rowVisible}
 			onremoverow={removeRow}
 			onreorder={reorderRows}
+			onstemsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'stems', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
+			onlyricsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'lyrics', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
 			ongenrefilter={genreFilter}
 			{genreFilterUntil}
 			searchQuery={pane.search}
 			findQuery={findHighlightQuery}
 			{suggestHoverId}
 		/>
-		<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
-		<SuggestNextStrip
-			stableId={decks[1].stable_id}
-			targetLabel={suggestTargetDeck === null ? null : `CH ${suggestTargetDeck}`}
-			playTargetLabel={suggestPlayTargetDeck === null ? null : `CH ${suggestPlayTargetDeck}`}
-			onload={(sid) => loadSuggest(sid)}
-			onplay={(sid) => loadSuggest(sid, { play: true })}
-			onhover={(sid) => (suggestHoverId = sid)}
-			oncandidates={(cands) => (suggestCandidates = cands)}
+		{#if filterFallbackNote !== null}
+			<div class="filter-fallback-note" role="status">{filterFallbackNote}</div>
+		{/if}
+		<LyricSearchResults
+			query={pane.search}
+			active={wholeCollectionActive}
+			primarySettled={!pane.searching}
+			onerror={(message) => pushToast(message, 'error')}
 		/>
-		<RecommendedSection
-			candidates={suggestCandidates}
-			currentPlaylistId={pane.playlist_id}
-			currentPlaylistMemberIds={playlistMemberIds}
-			referenceBpm={masterRef?.bpm ?? null}
-			referenceKey={masterRef?.key ?? null}
-			onload={(sid) => loadSuggest(sid)}
-			onplay={(sid) => loadSuggest(sid, { play: true })}
-			onhover={(sid) => (suggestHoverId = sid)}
-		/>
-	</div>
-	<div class="library-health" aria-label="library processing health">
-		{#each [libraryHealth, vocalsCompletion, stemsCompletion] as dot (dot.label)}
-			<button
-				type="button"
-				class:complete={dot.state === 'complete'}
-				class:incomplete={dot.state === 'incomplete'}
-				class:unavailable={dot.state === 'unavailable'}
-				class:error={dot.state === 'error'}
-				class="health-dot"
-				aria-label={`${dot.label}: ${dot.detail}`}
-			>
-				<span aria-hidden="true"></span>
-				<span class="health-popover" role="tooltip"><strong>{dot.label}</strong><br />{dot.detail}</span>
-			</button>
-		{/each}
+		<div class="suggestion-panels" data-testid="suggestion-panels">
+			<div class="suggestion-panel-content">
+				<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
+				<div class:collapsed-panel={uiPrefs.next_panel_collapsed}>
+					<SuggestNextStrip
+						stableId={decks[1].stable_id}
+						targetLabel={suggestTargetDeck === null ? null : `CH ${suggestTargetDeck}`}
+						playTargetLabel={suggestPlayTargetDeck === null ? null : `CH ${suggestPlayTargetDeck}`}
+						onload={(sid) => loadSuggest(sid)}
+						onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
+						onhover={(sid) => (suggestHoverId = sid)}
+						oncandidates={(cands) => (suggestCandidates = cands)}
+					/>
+				</div>
+				{#if !uiPrefs.recommended_panel_collapsed}
+					<RecommendedSection
+						candidates={suggestCandidates}
+						currentPlaylistId={pane.playlist_id}
+						currentPlaylistMemberIds={playlistMemberIds}
+						referenceBpm={masterRef?.bpm ?? null}
+						referenceKey={masterRef?.key ?? null}
+						stableId={decks[1].stable_id}
+						onload={(sid) => loadSuggest(sid)}
+						onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
+						onhover={(sid) => (suggestHoverId = sid)}
+					/>
+				{/if}
+			</div>
+			<div class="suggestion-panel-rail" aria-label="collapsed suggestion panels">
+				{#if uiPrefs.next_panel_collapsed}
+					<button type="button" class="suggestion-rail-label" aria-label="Expand NEXT panel" onclick={() => void runPerformanceCommandFromUi({ type: 'library_panels', panel: 'next', collapsed: false })}>NEXT</button>
+				{:else}
+					<button type="button" class="suggestion-collapse" aria-label="Collapse NEXT panel" onclick={() => void runPerformanceCommandFromUi({ type: 'library_panels', panel: 'next', collapsed: true })}>›</button>
+				{/if}
+				{#if uiPrefs.recommended_panel_collapsed}
+					<button type="button" class="suggestion-rail-label" aria-label="Expand RECC panel" onclick={() => void runPerformanceCommandFromUi({ type: 'library_panels', panel: 'recommended', collapsed: false })}>RECC</button>
+				{:else}
+					<button type="button" class="suggestion-collapse" aria-label="Collapse RECC panel" onclick={() => void runPerformanceCommandFromUi({ type: 'library_panels', panel: 'recommended', collapsed: true })}>›</button>
+				{/if}
+			</div>
+		</div>
 	</div>
 	<div class="bottom-bar">
 		<button
 			class="icon-btn rb-inert"
 			disabled
-			title="not implemented - see PARITY-TODO"
+			title={plannedTitle('export-eject')}
 			aria-label="export/eject"
 		>
 			<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
 				<path d="M8 3l5 6H3zM3 11h10v2H3z" fill="currentColor" />
 			</svg>
 		</button>
-		<span class="wordmark">rekordbox</span>
-		{#if jobProgress.ribbon()}
-			{@const ribbon = jobProgress.ribbon()!}
-			<span
-				class="job-ribbon"
-				style={`--job:${ANALYSIS_COLORS[ribbon.kind]}; --pct:${Math.max(0.02, ribbon.progress)}`}
-				title={`${ribbon.label} offload`}
-				aria-label={ribbon.label}
-			>
-				<span class="job-ribbon-fill"></span>
-				<span class="job-ribbon-label">{ribbon.label}</span>
-			</span>
-		{/if}
+		<!-- This is our own app, not the vendor whose library format it reads
+		     (pin 571f4281ecea, the maintainer, Wed 2 Sep 2026). -->
+		<span class="wordmark">open dj</span>
+		<LibraryJobsChrome />
+		<div class="library-health" aria-label="library processing health">
+			{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
+				<button
+					type="button"
+					class:complete={dot.state === 'complete'}
+					class:incomplete={dot.state === 'incomplete'}
+					class:unavailable={dot.state === 'unavailable'}
+					class:error={dot.state === 'error'}
+					class="health-dot"
+					aria-label={`${dot.label}: ${dot.detail}`}
+				>
+					<span aria-hidden="true"></span>
+				</button>
+			{/each}
+			<div class="health-popover" role="tooltip">
+				{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
+					<p><strong>{dot.label}</strong><br />{dot.detail}</p>
+				{/each}
+			</div>
+		</div>
 		<!-- The build identity lives at the RIGHT end of this tray on
 		     /performance. It used to be position:fixed bottom-left, sitting on
 		     top of the connectivity dots. The root layout mounts it in the app
@@ -2314,13 +2905,13 @@
 	</div>
 </section>
 
-{#if openModal === 'find-replace'}
-	<FindReplaceModal stableIds={pane.selected_ids} etags={modalEtags} onclose={() => (openModal = null)} onapplied={onEditApplied} />
-{:else if openModal === 'bulk-edit'}
-	<BulkEditModal stableIds={pane.selected_ids} etags={modalEtags} onclose={() => (openModal = null)} onapplied={onEditApplied} />
-{:else if openModal === 'mytag'}
-	<MyTagEditorModal stableIds={pane.selected_ids} etags={modalEtags} onclose={() => (openModal = null)} onapplied={onEditApplied} />
-{/if}
+<TrackEditModals
+	{openModal}
+	stableIds={pane.selected_ids}
+	etags={modalEtags}
+	onclose={() => (openModal = null)}
+	onapplied={onEditApplied}
+/>
 
 <style>
 	.rb-browser {
@@ -2350,12 +2941,28 @@
 	}
 	.playlist-tree-resize:hover,
 	.playlist-tree-resize:active { background: var(--rb-accent); }
+	/* `overflow: hidden` is load-bearing, not tidiness. TrackTable's LIBUX-01
+	 * `.tt-root` min-height is an ABSOLUTE floor, so on a window too short to
+	 * honor it the table stays at its floor height and, with the default
+	 * `overflow: visible`, simply paints outside this panel: measured at the
+	 * repo's standard 1280x800 /performance viewport, `.tt-root` ran to
+	 * y=869 in an 800px window (69px off-screen), `.perf-root` reported
+	 * scrollHeight 895 against clientHeight 800, and the rows painted over
+	 * the browser's 18px bottom bar. Clipping here keeps the panel's own
+	 * chrome intact and confines the shortfall to "fewer rows visible",
+	 * which is the documented degradation (PR #1007 discussion
+	 * r3921443899). Safe for the panel's popovers: `.unload-offer` is
+	 * absolutely positioned INSIDE this box, and TrackTable's
+	 * `.load-confirm` is `position: fixed`, which this rule cannot clip
+	 * because `.list-panel` establishes no containing block for it (no
+	 * transform/filter/contain here, only `position: relative`). */
 	.list-panel {
 		grid-area: list;
 		display: flex;
 		flex-direction: column;
 		min-height: 0;
 		min-width: 0;
+		overflow: hidden;
 		background: var(--rb-panel);
 		position: relative;
 	}
@@ -2379,12 +2986,20 @@
 	.unload-offer:hover {
 		background: rgba(232, 161, 58, 0.18);
 	}
+	/* min-height, not height: the control row below is allowed to wrap onto a
+	   second line when it cannot fit, and this header grows with it. Measured
+	   at 1280x800: `.list-panel` is 944px there, and an editable playlist's
+	   header-right is 808px + the 190px AddTrackSearch = 998px, so something
+	   HAD to give. A fixed height gave `.list-panel`'s `overflow: hidden` the
+	   rightmost controls (Bulk Edit, MyTags) silently; growing instead costs
+	   one row of library, which is this panel's documented degradation.
+	   `library-min-5-rows.test.mjs` reads this number as the header's floor. */
 	.pane-header {
 		flex: none;
 		display: flex;
 		align-items: stretch;
 		justify-content: space-between;
-		height: 24px;
+		min-height: 24px;
 		border-bottom: 1px solid var(--rb-border);
 		background: var(--rb-panel);
 		min-width: 0;
@@ -2392,9 +3007,53 @@
 	.header-right {
 		display: flex;
 		align-items: center;
+		/* Wraps rather than overflowing. At 1280px an editable playlist mounts
+		   the 190px AddTrackSearch alongside these controls, and .list-panel
+		   is overflow: hidden, so a non-wrapping row silently clipped its
+		   rightmost buttons (Bulk Edit, MyTags) out of reach instead of
+		   running past the edge visibly. Bot review, PR #1672.
+		   `flex: 0 1 auto` with `min-width: 0` is load-bearing: at the old
+		   `flex: none` this box sized to max-content, so `flex-wrap` had no
+		   narrower width to wrap INTO and did nothing at all. */
+		flex-wrap: wrap;
+		row-gap: 3px;
 		gap: 4px;
 		padding: 0 6px;
+		flex: 0 1 auto;
+		min-width: 0;
+	}
+	.autoplay-snapshot-notice {
 		flex: none;
+		padding: 3px 8px;
+		border-bottom: 1px solid color-mix(in srgb, var(--rb-orange) 65%, var(--rb-border));
+		background: color-mix(in srgb, var(--rb-orange) 12%, var(--rb-panel));
+		color: var(--rb-orange);
+		font-size: var(--rb-fs-label);
+		line-height: 16px;
+		text-align: center;
+	}
+	.filter-fallback-note {
+		flex: none;
+		padding: 3px 8px;
+		border-top: 1px solid color-mix(in srgb, var(--rb-accent) 55%, var(--rb-border));
+		background: color-mix(in srgb, var(--rb-accent) 10%, var(--rb-panel));
+		color: var(--rb-text-dim);
+		font-size: var(--rb-fs-label);
+		line-height: 16px;
+		text-align: center;
+	}
+	.search-stack {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 3px;
+	}
+	.search-options {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: var(--rb-fs-label);
+		white-space: nowrap;
 	}
 	.master-dd {
 		font-size: var(--rb-fs-label);
@@ -2461,6 +3120,95 @@
 	.icon-btn.active {
 		color: var(--rb-accent);
 	}
+	.suggestion-panels {
+		display: flex;
+		align-items: flex-start;
+		min-height: 0;
+	}
+	.suggestion-panel-content {
+		min-width: 0;
+		flex: 1;
+	}
+	.collapsed-panel {
+		height: 0;
+		overflow: hidden;
+		pointer-events: none;
+		visibility: hidden;
+	}
+	/* Pin 9036adcedf4f: the rail is what decides how much the library gets
+	 * back, because `.suggestion-panels` is a flex ROW and the library's
+	 * `.tt-root` is `flex: 1` in the column above it -- so this box's height
+	 * is `max(content, rail)` and every pixel it releases lands in the
+	 * table automatically. Measured on e82773161 at 1680x1003, collapsing
+	 * both panels moved `.suggestion-panels` 34px -> 52px and the table
+	 * 226px -> 208px: collapsing COST the library 18px.
+	 *
+	 * The cause was `writing-mode: vertical-rl` on the collapsed labels.
+	 * Set down an 18px column, "NEXT" and "RECC" run ~26px each, against
+	 * ~17px for the `›` chevron each one replaces, so the act of collapsing
+	 * grew the chrome. Horizontal labels in a slightly wider rail cost 12px
+	 * apiece in the block direction whichever control is showing, which
+	 * makes the rail's height CONSTANT across the toggle and leaves
+	 * `max(content, rail)` free to fall to the rail's own floor.
+	 *
+	 * `align-items: flex-start` on the container is the other half: a
+	 * stretched rail would report the content's height rather than its own
+	 * and put the floor back. */
+	.suggestion-panel-rail {
+		display: flex;
+		flex: none;
+		flex-direction: column;
+		align-items: stretch;
+		justify-content: flex-start;
+		/* Constant in BOTH directions across the toggle. Height is the pin
+		 * itself; width is the same trap one axis over -- a rail sized to its
+		 * content is 12px holding a chevron and ~27px holding the word
+		 * "RECC", so an auto width would buy the vertical reclaim by taking
+		 * 15px of library WIDTH on every collapse. This fix did exactly that
+		 * before the e2e assertion below caught it. Declared once, wide
+		 * enough for the longest label at the size set below WITH margin:
+		 * "RECC" at 7px needs 20px of content box, and a 26px rail left only
+		 * 19px, so the label was clipped by 1px in every state that showed
+		 * one. That was invisible until `overflow: hidden` below made the
+		 * real content width observable as scrollWidth -- an earlier reading
+		 * of "25 == 25" was taken while the overflow was still painting
+		 * outside the box. 32px leaves 25px of content for a 20px label, so
+		 * the wider metrics of Segoe UI or Roboto have somewhere to go. */
+		width: 32px;
+		border-left: 1px solid var(--rb-border);
+	}
+	.suggestion-collapse,
+	.suggestion-rail-label {
+		display: block;
+		width: 100%;
+		height: 12px;
+		padding: 0 3px;
+		border: 0;
+		background: transparent;
+		color: var(--rb-text-dim);
+		font-family: var(--rb-font);
+		line-height: 12px;
+		text-align: center;
+		/* Defensive floor, not tuning. The 26px above was measured once, on
+		 * macOS Chromium, and the system-UI stack resolves to different
+		 * metrics on Windows (Segoe UI) and Linux (Roboto). The e2e
+		 * assertion fails loudly if a label ever outgrows its box, but in
+		 * PRODUCTION an unclipped overflow would paint the label over the
+		 * panel border beside it, so clip rather than bleed. */
+		overflow: hidden;
+		cursor: pointer;
+	}
+	.suggestion-collapse:hover,
+	.suggestion-rail-label:hover {
+		color: var(--rb-accent);
+	}
+	.suggestion-collapse {
+		font-size: 11px;
+	}
+	.suggestion-rail-label {
+		font-size: 7px;
+		letter-spacing: 0.02em;
+	}
 	.bottom-bar {
 		grid-area: bottom;
 		display: flex;
@@ -2498,11 +3246,11 @@
 		text-overflow: ellipsis;
 	}
 	.library-health {
-		position: absolute;
-		right: 8px;
-		bottom: 22px;
+		position: relative;
 		display: flex;
+		align-items: center;
 		gap: 3px;
+		flex-shrink: 0;
 		z-index: 6;
 	}
 	.health-dot {
@@ -2533,8 +3281,9 @@
 		display: none;
 		position: absolute;
 		right: 0;
-		bottom: 16px;
+		bottom: calc(100% + 4px);
 		min-width: 180px;
+		max-width: 320px;
 		padding: 6px 8px;
 		border: 1px solid var(--rb-border);
 		background: var(--rb-panel-raised);
@@ -2542,11 +3291,17 @@
 		font: inherit;
 		font-size: var(--rb-fs-label);
 		text-align: left;
-		white-space: nowrap;
+		white-space: normal;
 		box-shadow: 0 3px 10px rgb(0 0 0 / 40%);
 	}
-	.health-dot:hover .health-popover,
-	.health-dot:focus-visible .health-popover { display: block; }
+	.health-popover p {
+		margin: 0 0 4px;
+	}
+	.health-popover p:last-child {
+		margin-bottom: 0;
+	}
+	.library-health:hover .health-popover,
+	.library-health:focus-within .health-popover { display: block; }
 	.wordmark {
 		color: var(--rb-text-dim);
 		font-size: var(--rb-fs-label);

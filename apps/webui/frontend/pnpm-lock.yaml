@@ -17,6 +17,9 @@ importers:
       '@tauri-apps/plugin-updater':
         specifier: ^2.10.1
         version: 2.10.1
+      '@wasm-audio-decoders/flac':
+        specifier: 0.2.11
+        version: 0.2.11
       openapi-fetch:
         specifier: 0.17.0
         version: 0.17.0
@@ -29,19 +32,19 @@ importers:
         version: 1.61.1
       '@storybook/addon-docs':
         specifier: 10.5.10
-        version: 10.5.10(@types/react@19.2.18)(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(vite@5.4.21(@types/node@22.20.1))
+        version: 10.5.10(@types/react@19.2.18)(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))
       '@storybook/sveltekit':
         specifier: 10.5.10
-        version: 10.5.10(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)))(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1))
+        version: 10.5.10(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2)))(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))
       '@sveltejs/adapter-static':
         specifier: ^3.0.0
-        version: 3.0.10(@sveltejs/kit@2.70.1(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)))(svelte@5.56.7)(typescript@5.9.3)(vite@5.4.21(@types/node@22.20.1)))
+        version: 3.0.10(@sveltejs/kit@2.70.1(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2)))(svelte@5.56.7)(typescript@5.9.3)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2)))
       '@sveltejs/kit':
         specifier: ^2.8.0
-        version: 2.70.1(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)))(svelte@5.56.7)(typescript@5.9.3)(vite@5.4.21(@types/node@22.20.1))
+        version: 2.70.1(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2)))(svelte@5.56.7)(typescript@5.9.3)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))
       '@sveltejs/vite-plugin-svelte':
         specifier: ^4.0.0
-        version: 4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1))
+        version: 4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))
       '@types/node':
         specifier: ^22.20.1
         version: 22.20.1
@@ -60,12 +63,15 @@ importers:
       svelte-check:
         specifier: ^4.0.0
         version: 4.7.3(picomatch@4.0.5)(svelte@5.56.7)(typescript@5.9.3)
+      terser:
+        specifier: ^5.51.2
+        version: 5.51.2
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
       vite:
         specifier: ^5.4.0
-        version: 5.4.21(@types/node@22.20.1)
+        version: 5.4.21(@types/node@22.20.1)(terser@5.51.2)
 
 packages:
 
@@ -240,6 +246,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@eshaz/web-worker@1.2.2':
+    resolution: {integrity: sha512-WxXiHFmD9u/owrzempiDlBB1ZYqiLnm9s6aPc8AlFQalq2tKmqdmMr9GXOupDgzXtqnBipj8Un0gkIm7Sjf8mw==}
+
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
 
@@ -249,6 +258,9 @@ packages:
   '@jridgewell/resolve-uri@3.1.2':
     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
     engines: {node: '>=6.0.0'}
+
+  '@jridgewell/source-map@0.3.11':
+    resolution: {integrity: sha512-ZMp1V8ZFcPG5dIWnQLr3NSI1MiCU7UETdS/A0G8V/XWHvJv3ZsFqutJn1Y5RPmAPX6F3BiE397OqveU/9NCuIA==}
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
@@ -847,6 +859,12 @@ packages:
   '@vitest/utils@3.2.4':
     resolution: {integrity: sha512-fB2V0JFrQSMsCo9HiSq3Ezpdv4iYaXRG1Sx8edX3MwxfyNn83mKiGzOcH+Fkxt4MHxr3y42fQi1oeAInqgX2QA==}
 
+  '@wasm-audio-decoders/common@9.0.7':
+    resolution: {integrity: sha512-WRaUuWSKV7pkttBygml/a6dIEpatq2nnZGFIoPTc5yPLkxL6Wk4YaslPM98OPQvWacvNZ+Py9xROGDtrFBDzag==}
+
+  '@wasm-audio-decoders/flac@0.2.11':
+    resolution: {integrity: sha512-bbSGuDDxY89CrS7FYc2cBBfvtgk3EY9As8dVe8PFIgX7ECd/wefdi8UbGlvcdQZczRwE500KBt4cqf/+mMVsfw==}
+
   '@webcontainer/env@1.1.1':
     resolution: {integrity: sha512-6aN99yL695Hi9SuIk1oC88l9o0gmxL1nGWWQ/kNy81HigJ0FoaoTXpytCj6ItzgyCEwA9kF1wixsTuv5cjsgng==}
 
@@ -899,6 +917,9 @@ packages:
   brace-expansion@2.1.2:
     resolution: {integrity: sha512-w5JZcKgdhDOgOwm8H+KgbosopHMuGcl6qbulwjtz3SM7I7P3yW1eAjzMPLrIE+NQ9vjgANKHWeMHnrT0OXW1oA==}
 
+  buffer-from@1.1.2:
+    resolution: {integrity: sha512-E+XQCRwSbaaiChtv6k6Dwgc+bx+Bs6vuKJHHl5kox/BaKbhiXzqQOwK4cO22yElGp2OCmjwVhT3HmxgyPGnJfQ==}
+
   bundle-name@4.1.0:
     resolution: {integrity: sha512-tjwM5exMg6BGRI+kNmTntNsvdZS1X8BFYS6tnJ2hdH0kVxM6/eVZ2xy+FqStSWvYmtfFMDLIxurorHwDKfDz5Q==}
     engines: {node: '>=18'}
@@ -922,8 +943,14 @@ packages:
     resolution: {integrity: sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}
     engines: {node: '>=6'}
 
+  codec-parser@2.5.0:
+    resolution: {integrity: sha512-Ru9t80fV8B0ZiixQl8xhMTLru+dzuis/KQld32/x5T/+3LwZb0/YvQdSKytX9JqCnRdiupvAvyYJINKrXieziQ==}
+
   colorette@1.4.0:
     resolution: {integrity: sha512-Y2oEozpomLn7Q3HFP7dpww7AtMJplbM9lGZP6RDfHqmbeRjiwRg4n6VM6j4KLmRke85uWEI7JqF17f3pqdRA0g==}
+
+  commander@2.20.3:
+    resolution: {integrity: sha512-GpVkmM8vF2vQUkj2LvZmD35JxeJOLCwJ9cUkugyk2nuhbv3+mJvpLYYt+0+USMxE+oj+ey/lJEnhZw75x/OMcQ==}
 
   cookie@0.6.0:
     resolution: {integrity: sha512-U71cyTamuh1CRNCfpGY6to28lxvNwPG4Guz/EVjgf3Jmzv0vlDp1atT9eS5dDjMYHucpHbWns6Lwf3BKz6svdw==}
@@ -1228,6 +1255,9 @@ packages:
   signalsmith-stretch@1.3.2:
     resolution: {integrity: sha512-tJqRbwPCoWLSHXwO29UQ75u72IwPsHns3RG+TKzuOAp7OduJiJMzEtz32JEFbPFQcTR7aiKCIVc+/Kzw8bMZUw==}
 
+  simple-yenc@1.0.4:
+    resolution: {integrity: sha512-5gvxpSd79e9a3V4QDYUqnqxeD4HGlhCakVpb6gMnDD7lexJggSBJRBO5h52y/iJrdXRilX9UCuDaIJhSWm5OWw==}
+
   sirv@3.0.2:
     resolution: {integrity: sha512-2wcC/oGxHis/BoHkkPwldgiPSYcpZK3JU28WoMVv55yHJgcZ8rlXvuG9iZggz+sU1d4bRgIGASwyWqjxu3FM0g==}
     engines: {node: '>=18'}
@@ -1235,6 +1265,9 @@ packages:
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
     engines: {node: '>=0.10.0'}
+
+  source-map-support@0.5.21:
+    resolution: {integrity: sha512-uBHU3L3czsIyYXKX88fdrGovxdSCoTGDRZ6SYXtSRxLZUzHg5P/66Ht6uoUlHu9EZod+inXhKo3qQgwXUT/y1w==}
 
   source-map@0.6.1:
     resolution: {integrity: sha512-UjgapumWlbMhkBgzT7Ykc5YXUT46F0iKu8SGXq0bcwP5dz/h0Plj6enJqjz1Zbq2l5WaqYnrVbwWOWMyF3F47g==}
@@ -1284,6 +1317,11 @@ packages:
   tagged-tag@1.0.0:
     resolution: {integrity: sha512-yEFYrVhod+hdNyx7g5Bnkkb0G6si8HJurOoOEgC8B/O0uXLHlaey/65KRv6cuWBNhBgHKAROVpc7QyYqE5gFng==}
     engines: {node: '>=20'}
+
+  terser@5.51.2:
+    resolution: {integrity: sha512-bWnjSNscmuI+GJze6ZupnHP8G/cTcsJF+bXCeQknk2SHQsgbNJnLrqiH9jZ2W4STPVXH2mDKKRX3iwPhc9Cn/Q==}
+    engines: {node: '>=10'}
+    hasBin: true
 
   tiny-invariant@1.3.3:
     resolution: {integrity: sha512-+FbBPE1o9QAYvviau/qC5SE3caw21q3xkvWKBtja5vgqOWIHHJ3ioaq1VPfn/Szqctz2bU/oYeKd9/z5BL+PVg==}
@@ -1518,6 +1556,8 @@ snapshots:
   '@esbuild/win32-x64@0.21.5':
     optional: true
 
+  '@eshaz/web-worker@1.2.2': {}
+
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
@@ -1529,6 +1569,11 @@ snapshots:
       '@jridgewell/trace-mapping': 0.3.31
 
   '@jridgewell/resolve-uri@3.1.2': {}
+
+  '@jridgewell/source-map@0.3.11':
+    dependencies:
+      '@jridgewell/gen-mapping': 0.3.13
+      '@jridgewell/trace-mapping': 0.3.31
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
@@ -1790,10 +1835,10 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@storybook/addon-docs@10.5.10(@types/react@19.2.18)(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(vite@5.4.21(@types/node@22.20.1))':
+  '@storybook/addon-docs@10.5.10(@types/react@19.2.18)(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))':
     dependencies:
       '@mdx-js/react': 3.1.1(@types/react@19.2.18)(react@19.2.8)
-      '@storybook/csf-plugin': 10.5.10(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(vite@5.4.21(@types/node@22.20.1))
+      '@storybook/csf-plugin': 10.5.10(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))
       '@storybook/icons': 2.1.0(react@19.2.8)
       '@storybook/react-dom-shim': 10.5.10(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))
       react: 19.2.8
@@ -1809,25 +1854,25 @@ snapshots:
       - vite
       - webpack
 
-  '@storybook/builder-vite@10.5.10(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(vite@5.4.21(@types/node@22.20.1))':
+  '@storybook/builder-vite@10.5.10(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))':
     dependencies:
-      '@storybook/csf-plugin': 10.5.10(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(vite@5.4.21(@types/node@22.20.1))
+      '@storybook/csf-plugin': 10.5.10(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))
       storybook: 10.5.10(@types/react@19.2.18)(react@19.2.8)
       ts-dedent: 2.3.0
-      vite: 5.4.21(@types/node@22.20.1)
+      vite: 5.4.21(@types/node@22.20.1)(terser@5.51.2)
     transitivePeerDependencies:
       - esbuild
       - rollup
       - webpack
 
-  '@storybook/csf-plugin@10.5.10(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(vite@5.4.21(@types/node@22.20.1))':
+  '@storybook/csf-plugin@10.5.10(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))':
     dependencies:
       storybook: 10.5.10(@types/react@19.2.18)(react@19.2.8)
       unplugin: 2.3.11
     optionalDependencies:
       esbuild: 0.21.5
       rollup: 4.62.2
-      vite: 5.4.21(@types/node@22.20.1)
+      vite: 5.4.21(@types/node@22.20.1)(terser@5.51.2)
 
   '@storybook/global@5.0.0': {}
 
@@ -1843,17 +1888,17 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.18
 
-  '@storybook/svelte-vite@10.5.10(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)))(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1))':
+  '@storybook/svelte-vite@10.5.10(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2)))(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))':
     dependencies:
-      '@storybook/builder-vite': 10.5.10(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(vite@5.4.21(@types/node@22.20.1))
+      '@storybook/builder-vite': 10.5.10(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))
       '@storybook/svelte': 10.5.10(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(svelte@5.56.7)
-      '@sveltejs/vite-plugin-svelte': 4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1))
+      '@sveltejs/vite-plugin-svelte': 4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))
       magic-string: 0.30.21
       storybook: 10.5.10(@types/react@19.2.18)(react@19.2.8)
       svelte: 5.56.7
       svelte2tsx: 0.7.61(svelte@5.56.7)(typescript@5.9.3)
       typescript: 5.9.3
-      vite: 5.4.21(@types/node@22.20.1)
+      vite: 5.4.21(@types/node@22.20.1)(terser@5.51.2)
     transitivePeerDependencies:
       - esbuild
       - rollup
@@ -1866,14 +1911,14 @@ snapshots:
       ts-dedent: 2.3.0
       type-fest: 5.8.0
 
-  '@storybook/sveltekit@10.5.10(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)))(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1))':
+  '@storybook/sveltekit@10.5.10(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2)))(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))':
     dependencies:
-      '@storybook/builder-vite': 10.5.10(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(vite@5.4.21(@types/node@22.20.1))
+      '@storybook/builder-vite': 10.5.10(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))
       '@storybook/svelte': 10.5.10(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(svelte@5.56.7)
-      '@storybook/svelte-vite': 10.5.10(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)))(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1))
+      '@storybook/svelte-vite': 10.5.10(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2)))(esbuild@0.21.5)(rollup@4.62.2)(storybook@10.5.10(@types/react@19.2.18)(react@19.2.8))(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))
       storybook: 10.5.10(@types/react@19.2.18)(react@19.2.8)
       svelte: 5.56.7
-      vite: 5.4.21(@types/node@22.20.1)
+      vite: 5.4.21(@types/node@22.20.1)(terser@5.51.2)
     transitivePeerDependencies:
       - '@sveltejs/vite-plugin-svelte'
       - esbuild
@@ -1884,15 +1929,15 @@ snapshots:
     dependencies:
       acorn: 8.17.0
 
-  '@sveltejs/adapter-static@3.0.10(@sveltejs/kit@2.70.1(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)))(svelte@5.56.7)(typescript@5.9.3)(vite@5.4.21(@types/node@22.20.1)))':
+  '@sveltejs/adapter-static@3.0.10(@sveltejs/kit@2.70.1(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2)))(svelte@5.56.7)(typescript@5.9.3)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2)))':
     dependencies:
-      '@sveltejs/kit': 2.70.1(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)))(svelte@5.56.7)(typescript@5.9.3)(vite@5.4.21(@types/node@22.20.1))
+      '@sveltejs/kit': 2.70.1(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2)))(svelte@5.56.7)(typescript@5.9.3)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))
 
-  '@sveltejs/kit@2.70.1(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)))(svelte@5.56.7)(typescript@5.9.3)(vite@5.4.21(@types/node@22.20.1))':
+  '@sveltejs/kit@2.70.1(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2)))(svelte@5.56.7)(typescript@5.9.3)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))':
     dependencies:
       '@standard-schema/spec': 1.1.0
       '@sveltejs/acorn-typescript': 1.0.11(acorn@8.17.0)
-      '@sveltejs/vite-plugin-svelte': 4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1))
+      '@sveltejs/vite-plugin-svelte': 4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))
       '@types/cookie': 0.6.0
       acorn: 8.17.0
       cookie: 0.6.0
@@ -1904,31 +1949,31 @@ snapshots:
       set-cookie-parser: 3.1.2
       sirv: 3.0.2
       svelte: 5.56.7
-      vite: 5.4.21(@types/node@22.20.1)
+      vite: 5.4.21(@types/node@22.20.1)(terser@5.51.2)
     optionalDependencies:
       typescript: 5.9.3
 
   '@sveltejs/load-config@0.2.0': {}
 
-  '@sveltejs/vite-plugin-svelte-inspector@3.0.1(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)))(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1))':
+  '@sveltejs/vite-plugin-svelte-inspector@3.0.1(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2)))(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))':
     dependencies:
-      '@sveltejs/vite-plugin-svelte': 4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1))
+      '@sveltejs/vite-plugin-svelte': 4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))
       debug: 4.4.3(supports-color@10.2.2)
       svelte: 5.56.7
-      vite: 5.4.21(@types/node@22.20.1)
+      vite: 5.4.21(@types/node@22.20.1)(terser@5.51.2)
     transitivePeerDependencies:
       - supports-color
 
-  '@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1))':
+  '@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))':
     dependencies:
-      '@sveltejs/vite-plugin-svelte-inspector': 3.0.1(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)))(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1))
+      '@sveltejs/vite-plugin-svelte-inspector': 3.0.1(@sveltejs/vite-plugin-svelte@4.0.4(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2)))(supports-color@10.2.2)(svelte@5.56.7)(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))
       debug: 4.4.3(supports-color@10.2.2)
       deepmerge: 4.3.1
       kleur: 4.1.5
       magic-string: 0.30.21
       svelte: 5.56.7
-      vite: 5.4.21(@types/node@22.20.1)
-      vitefu: 1.1.3(vite@5.4.21(@types/node@22.20.1))
+      vite: 5.4.21(@types/node@22.20.1)(terser@5.51.2)
+      vitefu: 1.1.3(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2))
     transitivePeerDependencies:
       - supports-color
 
@@ -2018,6 +2063,16 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 2.0.0
 
+  '@wasm-audio-decoders/common@9.0.7':
+    dependencies:
+      '@eshaz/web-worker': 1.2.2
+      simple-yenc: 1.0.4
+
+  '@wasm-audio-decoders/flac@0.2.11':
+    dependencies:
+      '@wasm-audio-decoders/common': 9.0.7
+      codec-parser: 2.5.0
+
   '@webcontainer/env@1.1.1': {}
 
   acorn@8.17.0: {}
@@ -2052,6 +2107,8 @@ snapshots:
     dependencies:
       balanced-match: 1.0.2
 
+  buffer-from@1.1.2: {}
+
   bundle-name@4.1.0:
     dependencies:
       run-applescript: 7.1.0
@@ -2074,7 +2131,11 @@ snapshots:
 
   clsx@2.1.1: {}
 
+  codec-parser@2.5.0: {}
+
   colorette@1.4.0: {}
+
+  commander@2.20.3: {}
 
   cookie@0.6.0: {}
 
@@ -2397,6 +2458,8 @@ snapshots:
 
   signalsmith-stretch@1.3.2(patch_hash=0c08dbce10be884c30a97ea87c0e6b9d12b5c0ea5632e06b1eda98dacde379cb): {}
 
+  simple-yenc@1.0.4: {}
+
   sirv@3.0.2:
     dependencies:
       '@polka/url': 1.0.0-next.29
@@ -2404,6 +2467,11 @@ snapshots:
       totalist: 3.0.1
 
   source-map-js@1.2.1: {}
+
+  source-map-support@0.5.21:
+    dependencies:
+      buffer-from: 1.1.2
+      source-map: 0.6.1
 
   source-map@0.6.1: {}
 
@@ -2482,6 +2550,13 @@ snapshots:
 
   tagged-tag@1.0.0: {}
 
+  terser@5.51.2:
+    dependencies:
+      '@jridgewell/source-map': 0.3.11
+      acorn: 8.17.0
+      commander: 2.20.3
+      source-map-support: 0.5.21
+
   tiny-invariant@1.3.3: {}
 
   tinyrainbow@2.0.0: {}
@@ -2517,7 +2592,7 @@ snapshots:
     dependencies:
       react: 19.2.8
 
-  vite@5.4.21(@types/node@22.20.1):
+  vite@5.4.21(@types/node@22.20.1)(terser@5.51.2):
     dependencies:
       esbuild: 0.21.5
       postcss: 8.5.20
@@ -2525,10 +2600,11 @@ snapshots:
     optionalDependencies:
       '@types/node': 22.20.1
       fsevents: 2.3.3
+      terser: 5.51.2
 
-  vitefu@1.1.3(vite@5.4.21(@types/node@22.20.1)):
+  vitefu@1.1.3(vite@5.4.21(@types/node@22.20.1)(terser@5.51.2)):
     optionalDependencies:
-      vite: 5.4.21(@types/node@22.20.1)
+      vite: 5.4.21(@types/node@22.20.1)(terser@5.51.2)
 
   webpack-virtual-modules@0.6.2: {}
 

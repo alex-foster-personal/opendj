@@ -1,4 +1,4 @@
-"""Phase 08 table DDL -- ``pairings`` + ``smartlists``.
+"""Phase 08 pairing and smartlist schema migrations.
 
 This module lives outside :mod:`apps.shared.state.schema` on purpose.
 Phase 5 (shared state) and Phase 08 ship in parallel, and touching the
@@ -6,14 +6,17 @@ Phase 5-owned ``MIGRATIONS`` list from here creates merge churn. Instead
 Phase 08 owns its own DDL and calls :func:`ensure_phase08_tables` from
 both the pairings and smartlists repos on construction.
 
-Because we use ``CREATE TABLE IF NOT EXISTS`` the call is idempotent and
-safe to run every time. When Phase 5's migration framework is ready to
-adopt these tables, the DDL here becomes a migration step there and this
-module shrinks to a one-line shim.
+The pairing-capture tables predate their migration ledger in production.
+Their migration therefore adopts compatible existing tables, preserving rows,
+then records the version. A mismatched object fails explicitly instead of
+silently redirecting capture data into an incompatible table or view.
 """
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, datetime
+
+PAIRING_CAPTURE_SCHEMA_VERSION = 1
 
 # Pairing-memory edge graph (CAT-03). Shape matches the open-dj v0
 # strawman §4.7 Pairing entity field-for-field so Phase 15 export is a
@@ -61,6 +64,68 @@ _SMARTLISTS_DDL: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_smartlists_name ON smartlists(name)",
 )
 
+_PAIRING_CAPTURE_V1: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS pairing_sync_snapshots (
+        id                    TEXT PRIMARY KEY,
+        stable_a              TEXT NOT NULL,
+        stable_b              TEXT NOT NULL,
+        master_side           TEXT NOT NULL CHECK (master_side IN ('a', 'b')),
+        sync_mode             TEXT NOT NULL CHECK (sync_mode IN ('bar', 'beat')),
+        a_tempo_ratio         REAL NOT NULL,
+        b_tempo_ratio         REAL NOT NULL,
+        a_position_beat_n     INTEGER,
+        a_position_phase      REAL,
+        a_position_ms         REAL NOT NULL,
+        b_position_beat_n     INTEGER,
+        b_position_phase      REAL,
+        b_position_ms         REAL NOT NULL,
+        captured_at           TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pairing_snapshots_a "
+    "ON pairing_sync_snapshots(stable_a, captured_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_pairing_snapshots_b "
+    "ON pairing_sync_snapshots(stable_b, captured_at DESC)",
+    """
+    CREATE TABLE IF NOT EXISTS pairing_alignments (
+        id                    TEXT PRIMARY KEY,
+        stable_a              TEXT NOT NULL,
+        stable_b              TEXT NOT NULL,
+        anchor_a_kind         TEXT NOT NULL CHECK (anchor_a_kind IN ('hotcue', 'ms')),
+        anchor_b_kind         TEXT NOT NULL CHECK (anchor_b_kind IN ('hotcue', 'ms')),
+        anchor_a_slot         TEXT,
+        anchor_b_slot         TEXT,
+        anchor_a_ms           REAL NOT NULL,
+        anchor_b_ms           REAL NOT NULL,
+        label                 TEXT,
+        created_at            TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pairing_alignments_a "
+    "ON pairing_alignments(stable_a, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_pairing_alignments_b "
+    "ON pairing_alignments(stable_b, created_at DESC)",
+)
+
+_CAPTURE_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
+    "pairing_sync_snapshots": frozenset(
+        {
+            "id", "stable_a", "stable_b", "master_side", "sync_mode",
+            "a_tempo_ratio", "b_tempo_ratio", "a_position_beat_n",
+            "a_position_phase", "a_position_ms", "b_position_beat_n",
+            "b_position_phase", "b_position_ms", "captured_at",
+        }
+    ),
+    "pairing_alignments": frozenset(
+        {
+            "id", "stable_a", "stable_b", "anchor_a_kind", "anchor_b_kind",
+            "anchor_a_slot", "anchor_b_slot", "anchor_a_ms", "anchor_b_ms",
+            "label", "created_at",
+        }
+    ),
+}
+
 
 def ensure_phase08_tables(conn: sqlite3.Connection) -> None:
     """Create the Phase 08 tables if they don't already exist.
@@ -68,16 +133,109 @@ def ensure_phase08_tables(conn: sqlite3.Connection) -> None:
     Idempotent. Wraps everything in a single transaction so partial
     failure rolls back cleanly.
     """
-    conn.execute("BEGIN")
+    in_transaction = conn.in_transaction
+    if not in_transaction:
+        conn.execute("BEGIN")
     try:
         for stmt in _PAIRINGS_DDL:
             conn.execute(stmt)
         for stmt in _SMARTLISTS_DDL:
             conn.execute(stmt)
-        conn.execute("COMMIT")
+        if not in_transaction:
+            conn.execute("COMMIT")
     except Exception:
-        conn.execute("ROLLBACK")
+        if not in_transaction:
+            conn.execute("ROLLBACK")
         raise
 
 
-__all__ = ["ensure_phase08_tables"]
+def _assert_capture_table_shapes(conn: sqlite3.Connection) -> None:
+    for table_name, required_columns in _CAPTURE_REQUIRED_COLUMNS.items():
+        row = conn.execute(
+            "SELECT type FROM sqlite_master WHERE name = ?", (table_name,)
+        ).fetchone()
+        if row is None or row[0] != "table":
+            raise RuntimeError(
+                f"pairing capture schema requires table {table_name!r}, found {row!r}"
+            )
+        actual_columns = {
+            column[1] for column in conn.execute(f"PRAGMA table_info({table_name})")
+        }
+        missing_columns = sorted(required_columns - actual_columns)
+        if missing_columns:
+            raise RuntimeError(
+                f"pairing capture table {table_name!r} missing required columns: "
+                f"{', '.join(missing_columns)}"
+            )
+
+
+def _assert_existing_capture_table_shapes(conn: sqlite3.Connection) -> None:
+    """Fail before index DDL can mask an incompatible live table."""
+    for table_name, required_columns in _CAPTURE_REQUIRED_COLUMNS.items():
+        row = conn.execute(
+            "SELECT type FROM sqlite_master WHERE name = ?", (table_name,)
+        ).fetchone()
+        if row is None:
+            continue
+        if row[0] != "table":
+            raise RuntimeError(
+                f"pairing capture schema requires table {table_name!r}, found {row!r}"
+            )
+        actual_columns = {
+            column[1] for column in conn.execute(f"PRAGMA table_info({table_name})")
+        }
+        missing_columns = sorted(required_columns - actual_columns)
+        if missing_columns:
+            raise RuntimeError(
+                f"pairing capture table {table_name!r} missing required columns: "
+                f"{', '.join(missing_columns)}"
+            )
+
+
+def apply_pairing_capture_migrations(conn: sqlite3.Connection) -> int:
+    """Adopt or create pairing-capture tables and return their schema version.
+
+    The migration is safe against live databases that already have the two
+    archive-era tables: ``CREATE TABLE IF NOT EXISTS`` leaves their rows and
+    shape intact, then the required-column audit proves the repository can use
+    them before a version marker is written.
+    """
+    in_transaction = conn.in_transaction
+    if not in_transaction:
+        conn.execute("BEGIN")
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS pairing_capture_schema_meta ("
+            "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+        )
+        row = conn.execute(
+            "SELECT COALESCE(MAX(version), 0) FROM pairing_capture_schema_meta"
+        ).fetchone()
+        current = int(row[0]) if row is not None else 0
+        if current >= PAIRING_CAPTURE_SCHEMA_VERSION:
+            _assert_capture_table_shapes(conn)
+            if not in_transaction:
+                conn.execute("COMMIT")
+            return current
+        _assert_existing_capture_table_shapes(conn)
+        for statement in _PAIRING_CAPTURE_V1:
+            conn.execute(statement)
+        _assert_capture_table_shapes(conn)
+        conn.execute(
+            "INSERT INTO pairing_capture_schema_meta(version, applied_at) VALUES (?, ?)",
+            (PAIRING_CAPTURE_SCHEMA_VERSION, datetime.now(UTC).isoformat()),
+        )
+        if not in_transaction:
+            conn.execute("COMMIT")
+    except Exception:
+        if not in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+    return PAIRING_CAPTURE_SCHEMA_VERSION
+
+
+__all__ = [
+    "PAIRING_CAPTURE_SCHEMA_VERSION",
+    "apply_pairing_capture_migrations",
+    "ensure_phase08_tables",
+]

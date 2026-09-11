@@ -9,6 +9,40 @@ before(async () => {
 });
 
 describe('next-only-filter', () => {
+	it('reveals one or two search rows only when an active filter hid every match', () => {
+		const { resolveSearchFilterFallback, SEARCH_FILTER_FALLBACK_MAX_ROWS } = mod;
+		const unfiltered = [{ stable_id: 'azara-1' }, { stable_id: 'azara-2' }];
+
+		assert.equal(SEARCH_FILTER_FALLBACK_MAX_ROWS, 2);
+		assert.deepEqual(
+			resolveSearchFilterFallback([], unfiltered, ['next-only']),
+			{ rows: unfiltered, ignoredFilters: ['next-only'] }
+		);
+		assert.deepEqual(
+			resolveSearchFilterFallback([{ stable_id: 'kept' }], unfiltered, ['next-only']),
+			{ rows: [{ stable_id: 'kept' }], ignoredFilters: [] }
+		);
+		assert.deepEqual(
+			resolveSearchFilterFallback([], [...unfiltered, { stable_id: 'azara-3' }], ['next-only']),
+			{ rows: [], ignoredFilters: [] }
+		);
+		assert.deepEqual(
+			resolveSearchFilterFallback([], unfiltered, []),
+			{ rows: [], ignoredFilters: [] }
+		);
+	});
+
+	it('recovers only one or two hidden matches for a non-empty search', () => {
+		const one = ['one'];
+		const two = ['one', 'two'];
+		assert.equal(mod.selectSearchFilterFallback('flare', [], one, true), one);
+		assert.equal(mod.selectSearchFilterFallback('flare', [], two, true), two);
+		assert.equal(mod.selectSearchFilterFallback('flare', [], [], true), null);
+		assert.equal(mod.selectSearchFilterFallback('flare', [], ['one', 'two', 'three'], true), null);
+		assert.equal(mod.selectSearchFilterFallback('  ', [], two, true), null);
+		assert.equal(mod.selectSearchFilterFallback('flare', ['existing'], one, true), null);
+	});
+
 	it('uses 6% BPM window', () => {
 		const { bpmInNextWindow, NEXT_BPM_WINDOW_PCT } = mod;
 		assert.equal(NEXT_BPM_WINDOW_PCT, 6);
@@ -18,6 +52,12 @@ describe('next-only-filter', () => {
 		assert.equal(bpmInNextWindow(null, 100), false);
 		assert.equal(bpmInNextWindow(100, null), false);
 		assert.equal(bpmInNextWindow(0, 100), false);
+	});
+
+	it('never recovers incomplete or stale search results', () => {
+		const rows = ['one'];
+		assert.equal(mod.selectSearchFilterFallback('flare', [], rows, false), null);
+		assert.equal(mod.selectSearchFilterFallback('flare', [], rows, true), rows);
 	});
 
 	it('keeps half/double within 15 BPM as appropriate', () => {

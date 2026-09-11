@@ -17,6 +17,10 @@
  * [if] latency is > 0 throughout [then] verdict ok, no toast
  * [if] armAudioContextWatchdog does not install the liveness poll [then] the
  *   detector is code nobody runs - broken
+ * [if] onSnapshot is provided [then] it fires on every poll (idle included)
+ *   with the current verdict, not only on a toast-worthy transition - the
+ *   output-health bar (pin 93c82bb36eb7) has no other way to reflect "idle"
+ *   or a still-dead poll that is not the alarm/escalation edge
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -27,15 +31,17 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 function harness({ playing = true, state = 'running', latency = 0 } = {}) {
 	const calls = [];
+	const snapshots = [];
 	const ctx = { state, outputLatency: latency, baseLatency: 0.0058, sinkId: '', getOutputTimestamp: () => ({ contextTime: 1, performanceTime: 2 }) };
 	let intervalFn = null;
 	const effects = {
 		pushToast: (m, k) => calls.push(`toast:${k}:${m.slice(0, 20)}`),
 		recordPerfEvent: (kind, _m, sev) => calls.push(`perf:${kind}:${sev}`),
 		setInterval: (fn) => { intervalFn = fn; return 'h'; },
-		clearInterval: () => { intervalFn = null; }
+		clearInterval: () => { intervalFn = null; },
+		onSnapshot: (s) => snapshots.push(s)
 	};
-	return { ctx, effects, calls, poll: () => intervalFn && intervalFn(), isPlaying: () => playing };
+	return { ctx, effects, calls, snapshots, poll: () => intervalFn && intervalFn(), isPlaying: () => playing };
 }
 
 describe('installOutputLiveness', () => {
@@ -110,6 +116,49 @@ describe('installOutputLiveness', () => {
 	});
 });
 
+describe('onSnapshot (pin 93c82bb36eb7: the output-health bar)', () => {
+	let mod;
+	before(async () => {
+		mod = await loadTypeScriptModule('src/lib/rb/audio-output-liveness.ts');
+	});
+
+	it('fires on every poll, not only on a verdict change', () => {
+		const h = harness({ latency: 0.19 });
+		mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
+		h.poll();
+		h.poll();
+		h.poll();
+		assert.equal(h.snapshots.length, 3, 'a poll that produces no toast still owes the bar a reading');
+		assert.deepEqual(h.snapshots.map((s) => s.verdict), ['ok', 'ok', 'ok']);
+	});
+
+	it('fires "idle" when nothing is playing, so the bar can go dark rather than stay stuck on a stale reading', () => {
+		const h = harness({ playing: false });
+		mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
+		h.poll();
+		assert.equal(h.snapshots.length, 1);
+		assert.equal(h.snapshots[0].verdict, 'idle');
+	});
+
+	it('carries the dead verdict on the poll that raises it, and dead-escalated on the fourth', () => {
+		const h = harness();
+		mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
+		h.poll();
+		h.poll();
+		assert.equal(h.snapshots.at(-1).verdict, 'dead');
+		h.poll();
+		h.poll();
+		assert.equal(h.snapshots.at(-1).verdict, 'dead-escalated');
+	});
+
+	it('is optional: omitting it from effects does not throw', () => {
+		const h = harness({ latency: 0.19 });
+		delete h.effects.onSnapshot;
+		mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
+		assert.doesNotThrow(() => h.poll());
+	});
+});
+
 describe('wiring (source guard)', () => {
 	it('armAudioContextWatchdog installs the liveness poll and exposes __mdtAudioOutput', () => {
 		const src = readFileSync(fileURLToPath(new URL('../../src/lib/rb/audio-context-instrumentation.ts', import.meta.url)), 'utf8');
@@ -137,6 +186,18 @@ describe('wiring (source guard)', () => {
 		assert.ok(
 			disarmBody.includes('_outputLiveness?.uninstall()'),
 			'if teardown does not uninstall the liveness poll then every /performance remount leaves another 2.5s interval running forever - broken'
+		);
+		assert.ok(
+			disarmBody.includes('clearAudioOutputHealth()'),
+			'if teardown does not clear the output-health store then the bar under master volume keeps quoting a closed context - broken'
+		);
+	});
+
+	it('armAudioContextWatchdog wires onSnapshot to the output-health store (pin 93c82bb36eb7)', () => {
+		const src = readFileSync(fileURLToPath(new URL('../../src/lib/rb/audio-context-instrumentation.ts', import.meta.url)), 'utf8');
+		assert.ok(
+			src.includes('onSnapshot: (snapshot) => setAudioOutputHealth(snapshot)'),
+			'if installOutputLiveness is not given onSnapshot then the bar under master volume never updates - broken'
 		);
 	});
 });

@@ -9,6 +9,13 @@ before(async () => {
 });
 
 describe('job-progress helpers', () => {
+	it('reports done, missing, queued, and in-progress for one analysis slot', () => {
+		const { analysisStatus } = mod;
+		assert.equal(analysisStatus(true, null), 'done');
+		assert.equal(analysisStatus(false, null), 'missing');
+		assert.equal(analysisStatus(false, 'queued'), 'queued');
+		assert.equal(analysisStatus(true, 'running'), 'in-progress');
+	});
 	it('maps distinct process colors including load', () => {
 		const { ANALYSIS_COLORS } = mod;
 		assert.equal(ANALYSIS_COLORS.vocals, '#5b8cff');

@@ -35,7 +35,7 @@ from tests.fixtures.conftest import resolve_required_fixture
 
 # Live-write MECHANICS against tmp fixtures: runs with the one-way rekordbox
 # import gate ON (root conftest reads the marker). Never a real rb target.
-pytestmark = [pytest.mark.requirement("CAT-06"), pytest.mark.requires_darwin, pytest.mark.rekordbox_writeback]
+pytestmark = [pytest.mark.requirement("CAT-06"), pytest.mark.rekordbox_writeback]
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]

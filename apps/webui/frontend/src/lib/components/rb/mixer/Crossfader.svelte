@@ -64,6 +64,7 @@
 	class="xfader"
 	role="slider"
 	aria-label="crossfader"
+	title="Crossfader - blend channels assigned to A (left) and B (right). Center is equal mix of both buses."
 	aria-orientation="horizontal"
 	aria-valuemin={0}
 	aria-valuemax={1}

@@ -1,9 +1,10 @@
 <script lang="ts">
 	// Build unit: wavestack - ONE deck row (COMPONENT-MAP 1.2, SCREENSHOT-SPEC 2).
 	// Canvas window scrolls under a fixed center playhead; left gutter shows
-	// the deck number + bars-to-next-cue counter. Empty deck = flat dark row.
+	// deck identity, artwork, and a readable track title. Empty deck is named,
+	// so its reserved artwork slot cannot read as a missing image.
 	// rAF repaints ONLY while this deck is playing or being scrubbed.
-	import { vocalsOf } from '$lib/rb/api-rb';
+	import { fetchTrackLyrics, vocalsOf } from '$lib/rb/api-rb';
 	import {
 		performanceCommandStatus,
 		runPerformanceCommandFromUi
@@ -21,32 +22,57 @@
 		unregisterAnlzConsumer
 	} from './anlz-cache.svelte';
 	import { ensureBeatgridFallback, getBeatgridFallbackEntry } from './beatgrid-fallback-cache.svelte';
-	import { shouldUseBeatgridFallback, toSyntheticAnlzData } from '$lib/rb/beatgrid-fallback';
+	import {
+		hasAnlzBeatgrid,
+		shouldUseBeatgridFallback,
+		toSyntheticAnlzData,
+		withFallbackBeatgrid
+	} from '$lib/rb/beatgrid-fallback';
 	import { localDecodeFailureReason } from '$lib/rb/local-waveform-status';
+	import { analysisSourceState } from '$lib/rb/analysis-source.svelte';
+	import { noteWaveformPaintFrame, resetWaveformPaintCadence } from '$lib/rb/audio-health.svelte';
 	import {
 		foldPresentationSample,
 		type PresentationStallState
 	} from '$lib/player/transport/presentation-stall';
 	import { isPresentationClockStalled } from '$lib/rb/presentation-clock-report';
+	import {
+		initPaintScheduleState,
+		initPositionInterpolatorState,
+		paintPositionMs,
+		paintScrollPx,
+		shouldSkipRepaint
+	} from './paint-position';
 	import { barsToNextCueLabel, followerSyncPlayheadTone } from './wave-math';
 	import {
 		drawPlayhead,
 		drawWaveRow,
 		readPalette,
+		resolvePaintPalette,
 		WAVE_WINDOW_S,
 		type PlayheadTone,
 		type WavePalette
 	} from './render';
 	import {
 		createLatestSeekDispatcher,
+		snapWaveTargetMs,
 		waveClickTargetMs,
-		waveDragTargetMs
+		waveDragTargetMs,
+		waveSnapModeFromModifiers
 	} from './wave-scrub';
+	import WaveGutter from './WaveGutter.svelte';
+	import LyricsLane from './LyricsLane.svelte';
+	import { createLyricsFetchState } from './lyrics-fetch.svelte';
 
 	const { deckId }: { deckId: DeckId } = $props();
 
 	const deck = $derived(getDeckState(deckId));
 	const commandPending = $derived(performanceCommandStatus.deck_pending[deckId] > 0);
+	const finished = $derived(
+		deck.stable_id !== null && deck.duration_ms !== null && deck.duration_ms > 0 &&
+		deck.position_ms >= deck.duration_ms && !deck.audible && !deck.playing &&
+		!deck.transport_pending && !commandPending
+	);
 
 	// ---- anlz source: prefer the engine-populated payload; else our own
 	// cached /anlz fetch keyed by the deck's stable_id (deck-load event).
@@ -67,6 +93,8 @@
 		const token = registerAnlzConsumer(sid);
 		return () => unregisterAnlzConsumer(sid, token);
 	});
+	const lyricsState = createLyricsFetchState(() => deck.stable_id, fetchTrackLyrics);
+
 	const anlzData = $derived.by(() => resolveDisplayedAnlz(deck.anlz, deck.stable_id));
 	const anlzErrorCode = $derived.by(() => {
 		if (deck.anlz_error !== null) return deck.anlz_error;
@@ -82,25 +110,51 @@
 	// ---- beatgrid fallback: only reached once /anlz has confirmed no
 	// rekordbox ANLZ exists (anlz-fallback-beatgrid, LANE analysis-router).
 	// ANLZ always preferred - this never races or overrides a real payload.
+	//
+	// vendor is passed as null ON PURPOSE. The gate's other branch - a 200
+	// /anlz payload with an empty grid on an UNMAPPED track - is owned by the
+	// engine's deferred _upgradeDeckBeatgrid, which merges that grid into
+	// deck.anlz so quantize, beat loops and Beat Sync get it too. Probing
+	// /rb-meta again here would only duplicate that fetch, so this row stays
+	// on the ANALYSIS_NOT_FOUND lane and picks the merged grid up via anlzData.
+	const fallbackGate = $derived({
+		anlzErrorCode,
+		anlz: anlzData,
+		vendor: null,
+		effectiveSource: analysisSourceState.features.beatgrid
+	});
 	$effect(() => {
 		const sid = deck.stable_id;
-		if (sid !== null && shouldUseBeatgridFallback(anlzErrorCode)) ensureBeatgridFallback(sid);
+		if (sid !== null && shouldUseBeatgridFallback(fallbackGate)) ensureBeatgridFallback(sid);
 	});
 	const beatgridFallback = $derived.by(() => {
-		if (deck.stable_id === null || !shouldUseBeatgridFallback(anlzErrorCode)) return null;
+		if (deck.stable_id === null || !shouldUseBeatgridFallback(fallbackGate)) return null;
 		const entry = getBeatgridFallbackEntry(deck.stable_id);
 		return entry !== undefined && entry.status === 'ready' ? entry.data : null;
 	});
-	// What the painter/bars-label actually consume: the real ANLZ payload
-	// when present, else a synthesized beatgrid-only payload, else null.
-	const paintAnlz = $derived(
-		anlzData ?? (beatgridFallback !== null ? toSyntheticAnlzData(beatgridFallback) : null)
-	);
+	// What the painter/bars-label actually consume: the real ANLZ payload when
+	// present (its own grid, or the fallback grid merged into it), else a
+	// synthesized beatgrid-only payload, else null.
+	const paintAnlz = $derived.by(() => {
+		if (anlzData === null) {
+			return beatgridFallback !== null ? toSyntheticAnlzData(beatgridFallback) : null;
+		}
+		// hasAnlzBeatgrid is re-asked rather than inferred from the gate: a stale
+		// cache entry can report ANALYSIS_NOT_FOUND while deck.anlz still holds a
+		// real grid, and withFallbackBeatgrid throws on that - which a $derived
+		// must never do. A real ANLZ grid wins here exactly as it does in the gate.
+		if (beatgridFallback === null || hasAnlzBeatgrid(anlzData)) return anlzData;
+		return withFallbackBeatgrid(anlzData, beatgridFallback);
+	});
 
 	// Bars until next cue; null (hidden) without a beatgrid or upcoming cue.
 	const barsLabel = $derived(
 		paintAnlz !== null ? barsToNextCueLabel(paintAnlz, deck.position_ms) : null
 	);
+
+	// Scrub-target snapping (pin a705aebfbeae) reads this deck's own beatgrid,
+	// not the master's - each waveform snaps to its own track's downbeats.
+	const scrubBeats = $derived(paintAnlz?.beatgrid.beats ?? null);
 
 	const masterDeck = $derived(DECK_IDS.find((d) => getDeckState(d).is_master) ?? null);
 	const masterState = $derived(masterDeck === null ? null : getDeckState(masterDeck));
@@ -112,7 +166,12 @@
 	});
 
 	const syncPlayheadTone = $derived.by((): PlayheadTone => {
-		if (deck.is_master && deck.stable_id !== null) return 'master';
+		if (!deck.audible) return 'stopped';
+		if (deck.is_master && deck.stable_id !== null) {
+			// MASTER remains yellow; green is reserved for the explicit Beat
+			// Sync-enabled state, even on the MASTER itself.
+			return deck.beat_sync_enabled ? 'masterSynced' : 'master';
+		}
 		const followerBeats = paintAnlz?.beatgrid.beats;
 		if (followerBeats === undefined || masterBeats === null || masterState === null) {
 			return 'now';
@@ -160,6 +219,7 @@
 	let scrubWidthPx = 0;
 	let scrubMoved = false;
 	let scrubDispatchError: unknown = null;
+	const _paintScheduleState = initPaintScheduleState();
 	const DRAG_THRESHOLD_PX = 3;
 	const seekDispatcher = createLatestSeekDispatcher(async (positionMs) => {
 		await runPerformanceCommandFromUi({ type: 'seek', deck: deckId, position_ms: positionMs });
@@ -175,13 +235,18 @@
 		});
 	}
 
+	// Pin 53ba89ca8ddc (waveform jitter): see `./paint-position.ts` for the
+	// measurement + rationale (tested there, a `.svelte` file cannot be).
+	// `stallState` below folds raw `deck.position_ms`, never this value.
+	const _paintPositionState = initPositionInterpolatorState();
+
 	function _paintPositionMs(): number {
-		return scrubPreviewMs !== null ? scrubPreviewMs : deck.position_ms;
+		return paintPositionMs(_paintPositionState, scrubPreviewMs, deck, clockUntrusted, performance.now());
 	}
 
 	$effect(() => {
 		const el = canvasEl;
-		if (el === undefined) return;
+		if (!el) return;
 		palette = readPalette(el); // throws if not under .perf-root
 		const observer = new ResizeObserver((entries) => {
 			const rect = entries[0].contentRect;
@@ -192,9 +257,23 @@
 		return () => observer.disconnect();
 	});
 
-	function draw(): void {
+	function draw(force = false): void {
 		const el = canvasEl;
-		if (el === undefined || palette === null || cssW === 0 || cssH === 0) return;
+		if (!el || palette === null || cssW === 0 || cssH === 0) return;
+		const paintPositionMs = _paintPositionMs();
+		const scrollPx = paintScrollPx(paintPositionMs, deck.duration_ms, cssW, WAVE_WINDOW_S, deck.pitch);
+		const visualInputs = [
+			deck.stable_id,
+			deck.duration_ms,
+			paintAnlz,
+			deck.pitch,
+			deck.loop,
+			syncPlayheadTone,
+			cssW,
+			cssH,
+			palette
+		] as const;
+		if (shouldSkipRepaint(_paintScheduleState, force, visualInputs, scrollPx)) return;
 		const dpr = window.devicePixelRatio;
 		if (el.width !== cssW * dpr || el.height !== cssH * dpr) {
 			el.width = cssW * dpr;
@@ -203,21 +282,18 @@
 		const ctx = el.getContext('2d');
 		if (ctx === null) throw new Error(`wavestack deck ${deckId}: 2d context unavailable`);
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-		// CH3/4: lighter fill than --rb-bg (#0d0f12) so secondary rows read
-		// clearly under the opaque canvas (CSS alone cannot show through).
-		const rowBg = deckId === 3 || deckId === 4 ? '#1a1f28' : palette.bg;
-		const paintPalette = rowBg === palette.bg ? palette : { ...palette, bg: rowBg };
+		const paintPalette = resolvePaintPalette(deckId, palette);
 		if (deck.stable_id === null || deck.duration_ms === null) {
-			// Empty deck: flat dark row + always-on now line - never an invented waveform.
+			// Empty deck: flat dark row + state-derived center line - never an invented waveform.
 			ctx.fillStyle = paintPalette.bg;
 			ctx.fillRect(0, 0, cssW, cssH);
-			drawPlayhead(ctx, cssW, cssH, 'now');
+			drawPlayhead(ctx, cssW, cssH, syncPlayheadTone);
 			return;
 		}
 		drawWaveRow(ctx, {
 			widthCss: cssW,
 			heightCss: cssH,
-			positionMs: _paintPositionMs(),
+			positionMs: paintPositionMs,
 			durationMs: deck.duration_ms,
 			anlz: paintAnlz,
 			palette: paintPalette,
@@ -240,15 +316,18 @@
 	// Either the device clock stalled (presentation.ts is coasting on the sample
 	// clock) or the painted number itself stopped moving for any other reason.
 	const clockUntrusted = $derived(playheadFrozen || isPresentationClockStalled(deckId));
+	// A synced-but-not-master follower riding the master's motion, so it must
+	// keep painting while `deck.playing` is false. Read by both effects below.
+	const masterMoving = $derived(deck.beat_sync_enabled && !deck.is_master && (masterState?.playing ?? false));
 
 	// rAF while playing/scrubbing, drift pulse, or master is moving under a synced follower.
 	$effect(() => {
-		const masterMoving =
-			deck.beat_sync_enabled && !deck.is_master && (masterState?.playing ?? false);
 		const pulse = syncPlayheadTone === 'drift';
-		if (!(deck.playing || seeking || pulse || masterMoving)) return;
-		let raf = requestAnimationFrame(function loop() {
+		const hovered = deckHoverUi.deckId === deckId;
+		if (!(deck.playing || seeking || (hovered && (pulse || masterMoving)))) return;
+		let raf = requestAnimationFrame(function waveRowFrame(timestamp) {
 			draw();
+			if (cssW > 0 && cssH > 0 && !document.hidden) noteWaveformPaintFrame(deckId, timestamp);
 			stallState = foldPresentationSample(stallState, {
 				playing: deck.playing,
 				position_ms: deck.position_ms,
@@ -257,17 +336,17 @@
 			const stall = stallState;
 			if (stall !== undefined && stall.verdict === 'presentation-stalled') playheadFrozen = true;
 			else if (stall !== undefined && stall.frozenSinceMs === null) playheadFrozen = false;
-			raf = requestAnimationFrame(loop);
+			raf = requestAnimationFrame(waveRowFrame);
 		});
-		return () => cancelAnimationFrame(raf);
+		const onVisibilityChange = () => { if (document.hidden) resetWaveformPaintCadence(deckId); };
+		document.addEventListener('visibilitychange', onVisibilityChange);
+		return () => { cancelAnimationFrame(raf); document.removeEventListener('visibilitychange', onVisibilityChange); resetWaveformPaintCadence(deckId); };
 	});
 
 	// Static repaint on load/seek/resize/anlz-arrival while stopped. The
 	// early return keeps position_ms untracked during playback so this
 	// effect stays quiet while the rAF loop owns the canvas.
 	$effect(() => {
-		const masterMoving =
-			deck.beat_sync_enabled && !deck.is_master && (masterState?.playing ?? false);
 		if (deck.playing || seeking || syncPlayheadTone === 'drift' || masterMoving) return;
 		void deck.stable_id;
 		void deck.position_ms;
@@ -284,15 +363,15 @@
 		void masterState?.position_ms;
 		void cssW;
 		void cssH;
-		draw();
+		draw(true);
 	});
 
 	// ---- click-drag seek: the engine position at pointerdown is frozen as
 	// the gesture origin. Dragging grabs the waveform under the fixed playhead;
 	// click-without-drag still seeks to the time visibly beneath the pointer.
-	function _dragTarget(clientX: number): number {
+	function _dragTarget(clientX: number, modifiers: { shiftKey: boolean; metaKey: boolean }): number {
 		// Match drawWaveRow: wall-clock window scaled by pitch into track time.
-		return waveDragTargetMs({
+		const raw = waveDragTargetMs({
 			originPositionMs: scrubOriginPositionMs,
 			originClientX: scrubOriginClientX,
 			clientX,
@@ -300,16 +379,18 @@
 			durationMs: scrubDurationMs,
 			windowSeconds: WAVE_WINDOW_S * deck.pitch
 		});
+		return snapWaveTargetMs(raw, scrubBeats, waveSnapModeFromModifiers(modifiers));
 	}
 
-	function _clickTarget(clientX: number): number {
-		return waveClickTargetMs({
+	function _clickTarget(clientX: number, modifiers: { shiftKey: boolean; metaKey: boolean }): number {
+		const raw = waveClickTargetMs({
 			centerPositionMs: scrubOriginPositionMs,
 			pointerX: clientX - scrubLeftPx,
 			widthPx: scrubWidthPx,
 			durationMs: scrubDurationMs,
 			windowSeconds: WAVE_WINDOW_S * deck.pitch
 		});
+		return snapWaveTargetMs(raw, scrubBeats, waveSnapModeFromModifiers(modifiers));
 	}
 
 	function _clearGesture(): void {
@@ -344,13 +425,7 @@
 		scrubDispatchError = null;
 		seeking = true;
 		// SPIKE-PERF: jump the painted window under the pointer immediately.
-		scrubPreviewMs = waveClickTargetMs({
-			centerPositionMs: scrubOriginPositionMs,
-			pointerX: event.clientX - scrubLeftPx,
-			widthPx: scrubWidthPx,
-			durationMs: scrubDurationMs,
-			windowSeconds: WAVE_WINDOW_S * deck.pitch
-		});
+		scrubPreviewMs = _clickTarget(event.clientX, event);
 	}
 
 	async function onPointerMove(event: PointerEvent): Promise<void> {
@@ -358,14 +433,16 @@
 		const deltaPx = event.clientX - scrubOriginClientX;
 		if (!scrubMoved && Math.abs(deltaPx) < DRAG_THRESHOLD_PX) return;
 		scrubMoved = true;
-		_queueSeek(_dragTarget(event.clientX));
+		_queueSeek(_dragTarget(event.clientX, event));
 	}
 
 	async function onPointerUp(event: PointerEvent): Promise<void> {
 		if (!seeking || event.pointerId !== scrubPointerId) return;
 		const canvas = event.currentTarget as HTMLCanvasElement;
 		try {
-			const targetMs = scrubMoved ? _dragTarget(event.clientX) : _clickTarget(event.clientX);
+			const targetMs = scrubMoved
+				? _dragTarget(event.clientX, event)
+				: _clickTarget(event.clientX, event);
 			scrubPreviewMs = targetMs;
 			await seekDispatcher.request(targetMs);
 			if (scrubDispatchError !== null) throw scrubDispatchError;
@@ -391,7 +468,7 @@
 	class="rb-waverow"
 	class:secondary={deckId === 3 || deckId === 4}
 	class:deck-focus={deckHoverUi.deckId === deckId}
-	data-deck={deckId}
+	data-deck={deckId} data-wave-surface="row"
 	use:wheelAdjust={{
 		step: WHEEL_STEP.fader,
 		get: () => mixerState.channels[deckId].fader,
@@ -402,11 +479,17 @@
 		if (deckHoverUi.deckId === deckId) setHoveredDeck(null);
 	}}
 >
-	<div class="gutter">
-		<span class="deck-num">{deckId}</span>
-		{#if barsLabel !== null}<span class="bars">{barsLabel}</span>{/if}
-	</div>
+	<WaveGutter {deck} {deckId} {barsLabel} />
 	<div class="canvas-wrap" title={vocalsTitle ?? undefined}>
+		{#if finished}
+			<button
+				class="finished-eject"
+				title={`Eject ${deck.title ?? 'track'} from deck ${deckId}`}
+				onclick={() => runPerformanceCommandFromUi({ type: 'unload', deck: deckId })}
+			>
+				⏏ {deck.title ?? 'Track'} - deck {deckId}
+			</button>
+		{/if}
 		{#if clockUntrusted}
 			<span
 				class="clock-stalled"
@@ -425,12 +508,14 @@ estimated from the render clock and may run ahead of what you hear."
 			aria-valuenow={Math.round(deck.position_ms)}
 			aria-disabled={deck.stable_id === null || (commandPending && !seeking)}
 			tabindex="-1"
+			data-hotkey-pointer-only
 			onpointerdown={onPointerDown}
 			onpointermove={onPointerMove}
 			onpointerup={onPointerUp}
 			onpointercancel={onPointerCancel}
 			onlostpointercapture={onLostPointerCapture}
 		></canvas>
+		<LyricsLane lyrics={lyricsState.lyrics} loadError={lyricsState.loadError} positionMs={_paintPositionMs()} pitch={deck.pitch} />
 		{#if deck.stable_id !== null && anlzErrorCode !== null && beatgridFallback === null}
 			<span class="anlz-state" title={anlzErrorCode}>
 				{anlzErrorCode === 'ANALYSIS_NOT_FOUND' ? 'NO ANALYSIS' : `ANLZ ERROR ${anlzErrorCode}`}
@@ -465,7 +550,6 @@ estimated from the render clock and may run ahead of what you hear."
 		letter-spacing: 0.06em;
 		pointer-events: auto;
 	}
-
 	.rb-waverow {
 		display: flex;
 		height: var(--rb-waverow-h);
@@ -476,37 +560,17 @@ estimated from the render clock and may run ahead of what you hear."
 			background 50ms ease-out,
 			box-shadow 50ms ease-out;
 	}
-	/* Match mixer CH3/4: gutter/chrome use the same lighter fill as the canvas. */
+	/* Match mixer CH3/4 intent: 3/4 recede as the lighter fill. Solid, not
+	   mixer's translucent panel-raised mix, because the canvas is opaque. */
 	.rb-waverow.secondary {
-		background: #1a1f28;
+		background: var(--rb-waverow-secondary);
 	}
 	.rb-waverow.deck-focus {
 		background: color-mix(in srgb, rgba(255, 255, 255, 0.08) 50%, var(--rb-bg));
 		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
 	}
 	.rb-waverow.secondary.deck-focus {
-		background: color-mix(in srgb, rgba(255, 255, 255, 0.12) 100%, #1a1f28);
-	}
-	.gutter {
-		width: 56px;
-		flex: none;
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
-		gap: 1px;
-		padding: 0 4px 0 6px;
-		border-right: 1px solid var(--rb-border);
-	}
-	.deck-num {
-		color: var(--rb-text);
-		font-size: var(--rb-fs-deck-title);
-		font-weight: 600;
-		line-height: 1.1;
-	}
-	.bars {
-		color: var(--rb-text-dim);
-		font-size: var(--rb-fs-label);
-		white-space: nowrap;
+		background: color-mix(in srgb, rgba(255, 255, 255, 0.12) 100%, var(--rb-waverow-secondary));
 	}
 	.canvas-wrap {
 		position: relative;

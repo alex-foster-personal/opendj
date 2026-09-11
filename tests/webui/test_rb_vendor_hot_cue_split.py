@@ -36,7 +36,7 @@ from apps.engine_core.store import schema as store_schema
 from apps.shared import rb_frames
 from apps.webui.server import rb_vendor
 
-pytestmark = pytest.mark.requirement("CAT-05")
+pytestmark = [pytest.mark.requirement("CAT-05"), pytest.mark.rb_parity]
 
 VENDOR_ID = "126790091"
 SIDECAR_TABLES = ("rb_hot_cue_reversal", "rb_hot_cue_slot_revision")

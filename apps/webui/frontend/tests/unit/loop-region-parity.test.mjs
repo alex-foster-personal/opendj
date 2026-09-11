@@ -70,7 +70,8 @@ function recordingCtx() {
 		moveTo() {},
 		lineTo() {},
 		closePath() {},
-		stroke() {}
+		stroke() {},
+		strokeRect() {}
 	};
 	return { ctx, calls };
 }
@@ -140,7 +141,7 @@ function paintRow(loop) {
 	return loopFills(calls);
 }
 
-function paintStrip(loop, { waveform = WAVEFORM, durationMs = DURATION_MS } = {}) {
+function paintStripCalls(loop, { waveform = WAVEFORM, durationMs = DURATION_MS, loopCues = [] } = {}) {
 	const { ctx, calls } = recordingCtx();
 	strip.drawStripWaveform(ctx, {
 		widthPx: STRIP_W,
@@ -148,9 +149,14 @@ function paintStrip(loop, { waveform = WAVEFORM, durationMs = DURATION_MS } = {}
 		durationMs,
 		waveform,
 		vocals: null,
-		loop
+		loop,
+		loopCues
 	});
-	return loopFills(calls);
+	return calls;
+}
+
+function paintStrip(loop, options) {
+	return loopFills(paintStripCalls(loop, options));
 }
 
 test('an engaged loop paints on BOTH the wavestack row and the deck strip', () => {
@@ -170,6 +176,68 @@ test('an engaged loop paints on BOTH the wavestack row and the deck strip', () =
 	// Both surfaces span their full height, so the loop reads as one feature.
 	assert.ok(rowFills.every((c) => c.y === 0 && c.h === ROW_H));
 	assert.ok(stripFills.every((c) => c.y === 0 && c.h === STRIP_H));
+});
+
+test('a stored loop hot cue does not hide the engaged-loop band on either waveform', () => {
+	const loopCue = { in_ms: 70_000, out_ms: 80_000, beat_loop_size: 8 };
+	const activeLoop = engagedLoop(loopCue.in_ms, loopCue.out_ms);
+
+	const row = recordingCtx();
+	render.drawWaveRow(row.ctx, {
+		widthCss: ROW_W,
+		heightCss: ROW_H,
+		positionMs: ROW_POSITION_MS,
+		durationMs: DURATION_MS,
+		anlz: {
+			...anlz(),
+			beatgrid: {
+				beat_count: 9,
+				beats: Array.from({ length: 9 }, (_, i) => ({ n: (i % 4) + 1, bpm: 48, t: 70 + i * 1.25 }))
+			},
+			cues: [{ ...loopCue, kind: 'hot_cue', slot: 'B', is_loop: true }]
+		},
+		palette: PALETTE,
+		pitch: 1,
+		loop: activeLoop
+	});
+	const stripCalls = paintStripCalls(activeLoop, { waveform: null, loopCues: [loopCue] });
+	const activeFill = `rgba(${render.LOOP_ORANGE_RGB}, ${render.LOOP_FILL_ALPHA})`;
+
+	assert.ok(
+		row.calls.some((call) => call.fillStyle === activeFill),
+		'a loop-cue marker must not replace the main waveform active-loop band'
+	);
+	assert.ok(
+		row.calls.some((call) => call.fillStyle === PALETTE.cueLoop),
+		'a loop hot cue must span the main waveform marker strip'
+	);
+	const rowCue = row.calls.find((call) => call.fillStyle === PALETTE.cueLoop);
+	assert.deepEqual(
+		{ x: rowCue.x, w: rowCue.w },
+		{ x: 70, w: 100 },
+		'the 8-beat cue must end at its real beatgrid out_ms on the main waveform'
+	);
+	assert.ok(
+		stripCalls.some((call) => call.fillStyle === activeFill),
+		'a loop-cue marker must not replace the preview waveform active-loop band'
+	);
+	assert.ok(
+		stripCalls.some((call) => call.fillStyle === strip.LOOP_CUE_COLOR),
+		'a loop hot cue must span the preview waveform marker strip'
+	);
+	const stripCue = stripCalls.find((call) => call.fillStyle === strip.LOOP_CUE_COLOR);
+	assert.ok(Math.abs(stripCue.x - (loopCue.in_ms / DURATION_MS) * STRIP_W) < 0.001);
+	assert.ok(Math.abs(stripCue.w - ((loopCue.out_ms - loopCue.in_ms) / DURATION_MS) * STRIP_W) < 0.001);
+
+	const disengagedCalls = paintStripCalls({ ...activeLoop, engaged: false }, { waveform: null, loopCues: [loopCue] });
+	assert.ok(
+		!disengagedCalls.some((call) => call.fillStyle === activeFill),
+		'the preview active-loop band must disappear when the loop is disengaged'
+	);
+	assert.ok(
+		disengagedCalls.some((call) => call.fillStyle === strip.LOOP_CUE_COLOR),
+		'the stored loop-cue marker must remain when the active loop is disengaged'
+	);
 });
 
 test('the strip loop band lands at the loop own in_ms and out_ms', () => {

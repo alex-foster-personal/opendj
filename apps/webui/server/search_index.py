@@ -27,6 +27,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+from apps.webui.soft_deletes import has_soft_deletes
+
 _SCHEMA_VERSION = 2
 _EAV_FIELDS: tuple[str, ...] = ("genre", "comments", "notes", "tags")
 _SOURCE_READ_ATTEMPTS = 3
@@ -134,10 +136,14 @@ def _read_source(
     state = sqlite3.connect(f"file:{state_db_path}?mode=ro", uri=True)
     state.row_factory = sqlite3.Row
     try:
-        tracks = state.execute(
-            "SELECT stable_id, title, artists_json FROM tracks "
-            "WHERE deleted_at IS NULL"
-        ).fetchall()
+        if has_soft_deletes(state, "tracks"):
+            tracks_sql = (
+                "SELECT stable_id, title, artists_json FROM tracks "
+                "WHERE deleted_at IS NULL"
+            )
+        else:
+            tracks_sql = "SELECT stable_id, title, artists_json FROM tracks"
+        tracks = state.execute(tracks_sql).fetchall()
         eav: dict[str, dict[str, str]] = {}
         placeholders = ",".join("?" * len(_EAV_FIELDS))
         for row in state.execute(

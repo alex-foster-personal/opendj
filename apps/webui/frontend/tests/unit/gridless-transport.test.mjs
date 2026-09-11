@@ -11,7 +11,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  *
  * quantize_enabled and beat_sync_enabled both default to true (rekordbox
  * parity for an analysed library). Before this suite existed those defaults
- * reached _requireBeatGrid from inside play(), pause(), pressCue(),
+ * reached requireBeatGrid from inside play(), pause(), pressCue(),
  * quantizedSeek() and setLoop(), so the first track a new user imported -
  * unanalysed, no PQTZ grid - could not be started, and once started could not
  * be STOPPED: pause() threw "pause cue: deck N requires a valid real PQTZ beat
@@ -25,7 +25,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  * requirement.
  *
  * Regression lines:
- * - if play, pause, pressCue, quantizedSeek or setLoop names _requireBeatGrid
+ * - if play, pause, pressCue, quantizedSeek or setLoop names requireBeatGrid
  *   again then an unanalysed deck cannot start, or cannot stop
  * - if effectiveQuantize / effectiveBeatSync stop folding in the grid check
  *   then a lit flag reaches grid math that throws
@@ -33,7 +33,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  *   control silently does nothing
  * - if setQuantize / setBeatSync stop announcing the inert state then the
  *   IPC and CLI paths engage a no-op in silence
- * - if engageBeatLoop or _synchronizeFollowers drops _requireBeatGrid then a
+ * - if engageBeatLoop or _synchronizeFollowers drops requireBeatGrid then a
  *   genuinely grid-dependent operation runs on no grid
  * - if a gridded deck stops snapping then rekordbox parity regressed
  */
@@ -66,7 +66,7 @@ function _deck(overrides = {}) {
 }
 
 function _withGrid(beats = REAL_PQTZ_BEATS) {
-	return { beatgrid: { beats } };
+	return { beatgrid: { source: 'rekordbox', beats, status: 'ok' } };
 }
 
 before(async () => {
@@ -131,7 +131,7 @@ const TRANSPORT_ANCHORS = [
 	'	async play(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 	'	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 	'	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {',
-	'	async quantizedSeek(deck: DeckId, ms: number): Promise<void> {',
+	'	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number): Promise<void> {',
 	'	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void> {'
 ];
 
@@ -139,8 +139,8 @@ test('no transport method can refuse a deck for want of a beat grid', () => {
 	for (const anchor of TRANSPORT_ANCHORS) {
 		const body = engineBlockAfter(anchor);
 		assert.ok(
-			!body.includes('_requireBeatGrid'),
-			`if ${anchor.trim()} names _requireBeatGrid then a gridless deck is refused there - ` +
+			!body.includes('requireBeatGrid'),
+			`if ${anchor.trim()} names requireBeatGrid then a gridless deck is refused there - ` +
 				'the exact landmine identified in the lane A handover (4a.1)'
 		);
 	}
@@ -150,7 +150,7 @@ test('every transport quantize site reads the grid through the never-throwing he
 	for (const anchor of [
 		'	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 		'	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {',
-		'	async quantizedSeek(deck: DeckId, ms: number): Promise<void> {',
+		'	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number): Promise<void> {',
 		'	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void> {'
 	]) {
 		const body = engineBlockAfter(anchor);
@@ -169,19 +169,19 @@ test('_quantizeGrid returns null instead of throwing, which is what un-refuses p
 		'if _quantizeGrid throws then pause is refusable again and a playing deck cannot be stopped'
 	);
 	assert.ok(
-		body.includes('hasRealBeatGrid('),
-		'if _quantizeGrid stops asking hasRealBeatGrid then its null case has drifted from ' +
+		body.includes('effectiveQuantize('),
+		'if _quantizeGrid stops asking effectiveQuantize then its null case has drifted from ' +
 			'what the UI calls inert'
 	);
 });
 
 test('saving a hot cue asks for a USABLE grid, not merely a non-empty one', () => {
-	const deckSrc = readFileSync(`${SRC}/lib/components/rb/Deck.svelte`, 'utf8');
+	const deckSrc = readFileSync(`${SRC}/lib/rb/deck-hot-cue-actions.ts`, 'utf8');
 	const at = deckSrc.indexOf('async function saveHotCueAt(');
 	assert.notEqual(at, -1, 'if saveHotCueAt moved then this guard is pointed at nothing');
 	const body = deckSrc.slice(at, at + 900);
 	assert.ok(
-		body.includes('hasRealBeatGrid('),
+		body.includes('effectiveQuantize('),
 		'if the hot-cue snap only checks beats.length then a one-beat or malformed grid ' +
 			'clears the check and throws inside quantizeToNearestBeat, refusing the save'
 	);
@@ -215,8 +215,8 @@ test('beat loops and sync engagement still require a real grid', () => {
 	]) {
 		const body = engineBlockAfter(anchor);
 		assert.ok(
-			body.includes('_requireBeatGrid('),
-			`if ${anchor.split('(')[0].trim()} drops _requireBeatGrid then a grid-dependent ` +
+			body.includes('requireBeatGrid('),
+			`if ${anchor.split('(')[0].trim()} drops requireBeatGrid then a grid-dependent ` +
 				'operation runs against no grid and produces nonsense instead of an error'
 		);
 	}
@@ -262,7 +262,7 @@ test('turning quantize or beat sync ON without a grid says so out loud', () => {
 				'flip a flag that does nothing, with no feedback at all'
 		);
 		assert.ok(
-			body.includes('GRID_FEATURE_TIP'),
+			body.includes('gridFeatureInertTip('),
 			`if ${anchor.trim()} words the reason itself then the toast and the tooltip can drift`
 		);
 	}
@@ -304,7 +304,7 @@ test('the gridless tip is one shared constant, and is NOT the PARITY-TODO wordin
 test('the Q button goes inert with the shared tip when the loaded track has no grid', () => {
 	assert.match(
 		JOG_DIAL_SRC,
-		/import \{[^}]*GRID_FEATURE_TIP[^}]*\} from '\$lib\/player\/grid-features'/s,
+		/import \{[^}]*gridFeatureInertTip[^}]*\} from '\$lib\/player\/grid-features'/s,
 		'if JogDial spells the tip itself then the wording can drift from DeckHeader'
 	);
 	assert.match(
@@ -325,7 +325,7 @@ test('the Q button goes inert with the shared tip when the loaded track has no g
 	);
 	assert.match(
 		JOG_DIAL_SRC,
-		/qTitle[\s\S]{0,200}GRID_FEATURE_TIP/,
+		/qTitle[\s\S]{0,200}gridInertTip/,
 		'if qTitle stops resolving to the shared tip when gridless then the button is dead and silent'
 	);
 });
@@ -333,7 +333,7 @@ test('the Q button goes inert with the shared tip when the loaded track has no g
 test('the BEAT SYNC button goes inert with the same shared tip', () => {
 	assert.match(
 		DECK_HEADER_SRC,
-		/import \{[^}]*GRID_FEATURE_TIP[^}]*\} from '\$lib\/player\/grid-features'/s,
+		/import \{[^}]*gridFeatureInertTip[^}]*\} from '\$lib\/player\/grid-features'/s,
 		'if DeckHeader spells the tip itself then the wording can drift from JogDial'
 	);
 	assert.match(
@@ -349,7 +349,7 @@ test('the BEAT SYNC button goes inert with the same shared tip', () => {
 	);
 	assert.match(
 		DECK_HEADER_SRC,
-		/beatSyncTitle[\s\S]{0,300}GRID_FEATURE_TIP/,
+		/beatSyncTitle[\s\S]{0,300}gridInertTip/,
 		'if beatSyncTitle stops resolving to the shared tip when gridless then the hover lies'
 	);
 });

@@ -16,21 +16,32 @@ Each test states its acceptance criterion in the form "if <scenario> then
 
 from __future__ import annotations
 
+import inspect
 import math
+from pathlib import Path
 
 import pytest
 
-from scripts.beatbench.scorer import (
+from apps.analysis_bench import rounds
+from apps.analysis_bench.scorers import beatgrid_lane
+from apps.analysis_bench.scorers.beatgrid import (
     BEAT_TOLERANCE_S,
+    FIXED_TEMPO_F_REGRESSION_TOL,
     SCORER_VERSION,
+    WEIGHTS_NOT_RELEASED,
+    FixedTempoFRegression,
+    apply_fixed_tempo_f_guard,
     classify_tempo_relation,
+    evaluate_fixed_tempo_f_shift,
     grid_is_dynamic,
+    partition_counts,
     percentile,
     score_bpm,
     score_downbeats,
     score_positions,
     window_slice,
 )
+from scripts.beatbench import report as beatgrid_report
 
 # ----- Synthetic grid builders -------------------------------------------
 
@@ -280,3 +291,226 @@ def test_scorer_version_is_pinned() -> None:
     """If the version is not a concrete string then rounds cannot be compared."""
     assert isinstance(SCORER_VERSION, str) and SCORER_VERSION
     assert math.isclose(BEAT_TOLERANCE_S, 0.070)
+
+
+# ----- Fixture triples and eval-time partition (#2046) --------------------
+
+
+def _fixture_triples(times: list[float], bpms: float | list[float]) -> list[list]:
+    """Compact ``[n, t, bpm]`` ref_beats as fixtures carry them."""
+    bpm_list = bpms if isinstance(bpms, list) else [bpms] * len(times)
+    return [[(i % 4) + 1, round(t, 3), round(b, 2)] for i, (t, b) in enumerate(zip(times, bpm_list, strict=False))]
+
+
+def _minimal_fixture(
+    *,
+    is_dynamic: bool,
+    ref_beats: list[list],
+    stable_id: str = "t1",
+) -> dict:
+    return {
+        "stable_id": stable_id,
+        "is_dynamic": is_dynamic,
+        "ref_beats": ref_beats,
+        "rb_bpm": ref_beats[0][2],
+        "score_start_s": 0.0,
+        "score_end_s": 9999.0,
+        "window_start_s": 0.0,
+    }
+
+
+def test_grid_is_dynamic_accepts_fixture_triples() -> None:
+    """If fixture triples are rejected then eval-time scoring on real fixtures raises."""
+    constant = _fixture_triples(click_grid(128.0, 40), 128.0)
+    two_tempi = _fixture_triples(click_grid(128.0, 40), [128.0] * 20 + [130.0] * 20)
+    assert grid_is_dynamic(constant) is False
+    assert grid_is_dynamic(two_tempi) is True
+
+
+def test_partition_counts_ignore_lying_stored_flag() -> None:
+    """If the stored is_dynamic flag drives the split then the re-count is wrong."""
+    constant = _fixture_triples(click_grid(128.0, 60), 128.0)
+    two_tempi = _fixture_triples(click_grid(128.0, 60), [128.0] * 30 + [130.0] * 30)
+    fixtures = [
+        _minimal_fixture(is_dynamic=True, ref_beats=constant, stable_id="lies-fixed"),
+        _minimal_fixture(is_dynamic=False, ref_beats=two_tempi, stable_id="lies-dynamic"),
+    ]
+    n_fixed, n_dynamic = partition_counts([f["ref_beats"] for f in fixtures])
+    assert (n_fixed, n_dynamic) == (1, 1)
+    assert 138 not in (n_fixed, n_dynamic)
+
+
+def test_fixed_and_dynamic_averages_are_not_blended() -> None:
+    """If dynamic rows fold into the fixed average then the lane figure is misleading."""
+    fixed_times = click_grid(120.0, 60)
+    ramp_times = ramp_grid(120.0, 140.0, 60)
+    ramp_bpms = [60.0 / (ramp_times[i + 1] - ramp_times[i]) for i in range(len(ramp_times) - 1)]
+    ramp_bpms.append(140.0)
+    fixed_fixture = _minimal_fixture(
+        is_dynamic=False,
+        ref_beats=_fixture_triples(fixed_times, 120.0),
+        stable_id="fixed-track",
+    )
+    dynamic_fixture = _minimal_fixture(
+        is_dynamic=True,
+        ref_beats=_fixture_triples(ramp_times, ramp_bpms),
+        stable_id="dynamic-track",
+    )
+    perfect = {"beats": fixed_times, "downbeats": None, "native_bpm": 120.0}
+    rows = [
+        beatgrid_report.score_track(fixed_fixture, perfect),
+        beatgrid_report.score_track(dynamic_fixture, perfect),
+    ]
+    rows = [r for r in rows if r is not None]
+    fixed_cell = beatgrid_report.aggregate([r for r in rows if not r["is_dynamic"]])
+    dynamic_cell = beatgrid_report.aggregate([r for r in rows if r["is_dynamic"]])
+    assert fixed_cell["n"] == 1
+    assert dynamic_cell["n"] == 1
+    assert fixed_cell["f_measure_mean"] == pytest.approx(1.0)
+    assert dynamic_cell["f_measure_mean"] < 0.9
+    blended = (fixed_cell["f_measure_mean"] + dynamic_cell["f_measure_mean"]) / 2
+    assert fixed_cell["f_measure_mean"] != pytest.approx(blended)
+    assert dynamic_cell["f_measure_mean"] != pytest.approx(blended)
+
+
+def test_rendered_table_shows_weights_not_released() -> None:
+    """If masked-diffusion Beat This! is omitted or shows as n=0 then the table hides absence."""
+    cells = [("librosa", {"n": 1, "bpm_exact_0_01_pct": 0.0, "bpm_within_0_1_pct": 0.0,
+                          "bpm_within_1_0_pct": 0.0, "octave_half_pct": 0.0, "octave_double_pct": 0.0,
+                          "f_measure_mean": 0.5, "f_measure_shifted_mean": 0.5,
+                          "cmlt_mean": None, "amlt_mean": None, "n_continuity_scored": 0,
+                          "raw_p50_ms": None, "raw_p95_ms": None,
+                          "shifted_p50_ms": None, "shifted_p95_ms": None,
+                          "downbeat_agreement_mean": None}, {"emits_downbeats": False})]
+    md = "\n".join(beatgrid_report.render_table("fixed grids", cells))
+    assert "Masked Diffusion Beat This!" in md
+    assert WEIGHTS_NOT_RELEASED in md
+    assert "| Masked Diffusion Beat This! | 0 |" not in md
+
+    lane_md = beatgrid_lane.render_table({
+        "arms": {
+            "librosa": {
+                "role": "negative_control",
+                "fixed": cells[0][1],
+                "dynamic": {"n": 0},
+                "emits_downbeats": False,
+            },
+        },
+    })
+    assert "Masked Diffusion Beat This!" in lane_md
+    assert WEIGHTS_NOT_RELEASED in lane_md
+
+
+# ----- Fixed-tempo F regression guard (NATIVE-01, issue #2053) -----------
+
+
+def _thin_as_raised_threshold(times: list[float], stride: int = 8) -> list[float]:
+    """Stand-in for raising the `minimal` keep-threshold: drop every stride-th beat."""
+    return [t for i, t in enumerate(times) if i % stride != 0]
+
+
+def _report(*, candidate_f: float, promotion_figure: float | None) -> dict:
+    payload = {
+        "lane": "beatgrid",
+        "scorer_version": SCORER_VERSION,
+        "bundle": {"lane": "beatgrid", "version": "v1", "bundle_id": "abc123"},
+        "table": "| candidate | n |\n|---|---|\n| beat_this | 1 |",
+        "arms": {
+            "beat_this": {"role": "candidate", "fixed": {"f_measure_mean": candidate_f}},
+            "truth_offset": {"role": "positive_control"},
+            "constant_128": {"role": "negative_control"},
+        },
+    }
+    if promotion_figure is not None:
+        payload["promotion_figure"] = promotion_figure
+    return payload
+
+
+@pytest.mark.requirement("NATIVE-01")
+def test_evaluate_shift_greater_than_tol_is_regression() -> None:
+    """[if] a minimal post-processor threshold change moves fixed-tempo F by more than 0.01 [then] the round records it as a regression and the promotion figure is not updated, [else stop]."""
+    shift = evaluate_fixed_tempo_f_shift(1.0, 0.989)
+    assert shift.is_regression is True
+    assert shift.delta == pytest.approx(0.011)
+
+
+@pytest.mark.requirement("NATIVE-01")
+def test_evaluate_shift_of_exactly_0_01_is_not_a_regression() -> None:
+    """[if] the change moves F by 0.01 or less [then] the round proceeds as today, [else stop]."""
+    shift = evaluate_fixed_tempo_f_shift(1.0, 0.99)
+    assert shift.is_regression is False
+    assert evaluate_fixed_tempo_f_shift(1.0, 1.0).is_regression is False
+
+
+@pytest.mark.requirement("NATIVE-01")
+def test_a_threshold_change_that_moves_fixed_f_by_more_than_0_01_is_a_regression(
+    tmp_path: Path,
+) -> None:
+    """[if] a minimal post-processor threshold change moves fixed-tempo F by more than 0.01 [then] the round records it as a regression and the promotion figure is not updated, [else stop]."""
+    ref = click_grid(128.0, 64)
+    baseline_f = score_positions(ref, ref).f_measure
+    mutated_f = score_positions(ref, _thin_as_raised_threshold(ref)).f_measure
+    assert abs(mutated_f - baseline_f) > FIXED_TEMPO_F_REGRESSION_TOL
+    report = _report(candidate_f=mutated_f, promotion_figure=baseline_f)
+    log = tmp_path / "log.md"
+    log.write_text("## Experiment log\n", encoding="utf-8")
+    before = log.read_text(encoding="utf-8")
+    with pytest.raises(rounds.RoundError) as excinfo:
+        rounds.append_round(log, "beatgrid", report, floor=2, host="test")
+    assert "regression" in str(excinfo.value).lower()
+    assert "promotion" in str(excinfo.value).lower()
+    assert report["promotion"]["regression"] is True
+    assert report["promotion"]["updated"] is False
+    assert report["promotion"]["fixed_tempo_f"] == pytest.approx(baseline_f)
+    assert report["promotion"]["delta"] > FIXED_TEMPO_F_REGRESSION_TOL
+    assert log.read_text(encoding="utf-8") == before
+
+
+@pytest.mark.requirement("NATIVE-01")
+def test_a_threshold_change_that_moves_fixed_f_by_at_most_0_01_proceeds(
+    tmp_path: Path,
+) -> None:
+    """[if] the change moves F by 0.01 or less [then] the round proceeds as today, [else stop]."""
+    log = tmp_path / "log.md"
+    log.write_text("## Experiment log\n", encoding="utf-8")
+
+    report_identical = _report(candidate_f=1.0, promotion_figure=1.0)
+    number = rounds.append_round(log, "beatgrid", report_identical, floor=2, host="test")
+    assert number == 2
+    assert "### beatgrid bench round 2" in log.read_text(encoding="utf-8")
+    assert report_identical["promotion"]["regression"] is False
+    assert report_identical["promotion"]["updated"] is True
+    assert report_identical["promotion"]["fixed_tempo_f"] == pytest.approx(1.0)
+
+    log.write_text("## Experiment log\n", encoding="utf-8")
+    report_boundary = _report(candidate_f=0.99, promotion_figure=1.0)
+    rounds.append_round(log, "beatgrid", report_boundary, floor=2, host="test")
+    assert report_boundary["promotion"]["regression"] is False
+    assert report_boundary["promotion"]["updated"] is True
+    assert report_boundary["promotion"]["fixed_tempo_f"] == pytest.approx(0.99)
+
+
+@pytest.mark.requirement("NATIVE-01")
+def test_without_a_promotion_figure_the_round_proceeds_as_today(tmp_path: Path) -> None:
+    """[if] the change moves F by 0.01 or less [then] the round proceeds as today, [else stop]."""
+    report = _report(candidate_f=0.5, promotion_figure=None)
+    log = tmp_path / "log.md"
+    log.write_text("## Experiment log\n", encoding="utf-8")
+    rounds.append_round(log, "beatgrid", report, floor=2, host="test")
+    assert "promotion" not in report
+
+
+@pytest.mark.requirement("NATIVE-01")
+def test_removing_the_fixed_tempo_f_guard_goes_red(tmp_path: Path) -> None:
+    """[if] the guard is removed [then] its test goes red (mutation control), [else stop]."""
+    ref = click_grid(128.0, 64)
+    baseline_f = score_positions(ref, ref).f_measure
+    mutated_f = score_positions(ref, _thin_as_raised_threshold(ref)).f_measure
+    report = _report(candidate_f=mutated_f, promotion_figure=baseline_f)
+    with pytest.raises(FixedTempoFRegression):
+        apply_fixed_tempo_f_guard(report)
+    source = inspect.getsource(evaluate_fixed_tempo_f_shift)
+    assert "FIXED_TEMPO_F_REGRESSION_TOL" in source
+    assert "is_regression" in source
+    posted = inspect.getsource(rounds.append_round)
+    assert "apply_fixed_tempo_f_guard" in posted

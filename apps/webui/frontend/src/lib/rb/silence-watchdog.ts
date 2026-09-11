@@ -3,7 +3,7 @@
  * master bus" are two different claims, and nothing compared them.
  *
  * On Wed 2 Sep 2026 audio stopped at 12:58 CEST and the decks went on
- * reporting themselves as playing for ~24 minutes. `peekDeckMeter()` reads a
+ * reporting themselves as playing for ~24 minutes. `peekDeckMeterReading()` reads a
  * real per-deck AnalyserNode RMS, but it feeds a cosmetic VFader pulse and
  * nothing else. The sibling ledger item `deck-fully-silent-while-playing`
  * recorded the same symptom from the other direction (gain reaching zero) in
@@ -34,6 +34,7 @@ export type SilenceVerdict = 'ok' | 'silent-while-playing';
 
 export interface SilenceSample {
 	playing: boolean;
+	audible?: boolean;
 	masterRms: number;
 	tMs: number;
 }
@@ -58,7 +59,8 @@ export function foldSilenceSample(
 	state: Readonly<SilenceState> = EMPTY,
 	sample: SilenceSample
 ): SilenceState {
-	const { playing, masterRms, tMs } = sample;
+	const { playing, masterRms, tMs, audible } = sample;
+	const claimedLive = playing || audible === true;
 	// A broken meter must not read as silence: it would raise a dropout alarm
 	// through perfectly good audio, which is worse than having no watchdog.
 	if (!Number.isFinite(masterRms) || masterRms < 0) {
@@ -73,7 +75,7 @@ export function foldSilenceSample(
 				'arithmetic would go negative and the window would never elapse'
 		);
 	}
-	const silent = playing && masterRms < SILENCE_RMS_FLOOR;
+	const silent = claimedLive && masterRms < SILENCE_RMS_FLOOR;
 	if (!silent) {
 		return { silentSinceMs: null, reported: false, lastTMs: tMs, verdict: 'ok' };
 	}

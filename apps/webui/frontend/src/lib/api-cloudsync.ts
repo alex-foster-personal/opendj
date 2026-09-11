@@ -18,11 +18,18 @@
 
 import type { Client } from 'openapi-fetch';
 
-import { api, unwrap } from './api/client';
+import { ApiError, api, unwrap } from './api/client';
 
 // ----------------------------------------------------------- types
 
-export const ASSET_KINDS = ['audio', 'stem_bundle', 'anlz_cache', 'vocal_cache'] as const;
+export const ASSET_KINDS = [
+	'audio',
+	'stem_bundle',
+	'anlz_cache',
+	'vocal_cache',
+	'lyrics_cache',
+	'karaoke_words'
+] as const;
 export type AssetKind = (typeof ASSET_KINDS)[number];
 
 export const SYNC_MODES = ['pinned', 'cached', 'stream', 'excluded'] as const;
@@ -84,6 +91,46 @@ export interface CloudSyncOverview {
 	machines: MachineOverview[];
 }
 
+/**
+ * Three verdicts, not two. `inconclusive` is a sync that COMPLETED while its
+ * post-sync digest compare excluded rows on one side, so agreement was never
+ * verified. Rendering it as `ok` would be a failed measurement shown as a
+ * clean result; rendering it as `error` would claim a failure that did not
+ * happen. See apps/sync_hub/status.py ResultStatus.
+ */
+export type CloudSyncResultStatus = 'ok' | 'error' | 'inconclusive';
+
+export interface CloudSyncRecentResult {
+	finished_at: string;
+	status: CloudSyncResultStatus;
+	message: string;
+	pushed: number;
+	pulled: number;
+}
+
+/** Which source decided a CloudSync config field; an env override wins over the file. */
+export type CloudSyncConfigSource = 'env' | 'file' | 'default';
+
+export interface CloudSyncStatus {
+	/** configured AND running: true only while a scheduler heartbeat is fresh. */
+	enabled: boolean;
+	/** The effective config is on and names a hub (intent, not evidence). */
+	configured: boolean;
+	/** A scheduler heartbeat is fresh (evidence a loop is alive). */
+	running: boolean;
+	heartbeat_at: string | null;
+	enabled_source: CloudSyncConfigSource;
+	endpoint_source: CloudSyncConfigSource;
+	reason: string | null;
+	signed_in_as: string | null;
+	last_push_at: string | null;
+	last_pull_at: string | null;
+	last_result: { status: CloudSyncResultStatus; message: string } | null;
+	rows_pending: number | null;
+	endpoint: string | null;
+	recent_results: CloudSyncRecentResult[];
+}
+
 // ----------------------------------------------------------- local path table
 
 type CloudSyncPaths = {
@@ -113,6 +160,9 @@ type CloudSyncPaths = {
 	'/api/v1/cloudsync/overview': {
 		get: { responses: { 200: { content: { 'application/json': CloudSyncOverview } } } };
 	};
+	'/api/v1/cloudsync/status': {
+		get: { responses: { 200: { content: { 'application/json': CloudSyncStatus } } } };
+	};
 };
 
 const cloudSyncApi = api as unknown as Client<CloudSyncPaths>;
@@ -135,6 +185,24 @@ export async function putPolicy(body: SyncPolicyPutBody): Promise<SyncPolicy> {
 	return unwrap(cloudSyncApi.PUT('/api/v1/cloudsync/policies', { body }));
 }
 
+/** One gate verdict from a 409 POLICY_VIOLATION body (`detail.outcome.violations`). */
+interface PolicyViolation {
+	subject: string;
+	message: string;
+	blocking: boolean;
+}
+
+/** A toast-ready message for a failed policy write. A 409 POLICY_VIOLATION
+ * names each blocking violation (`subject: message`), so the user sees WHY the
+ * gate refused; any other failure keeps the API's own message. */
+export function policyErrorMessage(exc: unknown): string {
+	if (!(exc instanceof ApiError)) return exc instanceof Error ? exc.message : String(exc);
+	const body = exc.body as { detail?: { outcome?: { violations?: PolicyViolation[] } } } | null;
+	const blocking = (body?.detail?.outcome?.violations ?? []).filter((v) => v.blocking);
+	if (exc.code !== 'POLICY_VIOLATION' || blocking.length === 0) return exc.message;
+	return blocking.map((v) => `${v.subject}: ${v.message}`).join('; ');
+}
+
 export async function listPlaylistPins(machineId?: string): Promise<PlaylistPin[]> {
 	return unwrap(
 		cloudSyncApi.GET('/api/v1/cloudsync/playlist-pins', {
@@ -149,4 +217,8 @@ export async function putPlaylistPin(body: PlaylistPinPutBody): Promise<Playlist
 
 export async function getOverview(): Promise<CloudSyncOverview> {
 	return unwrap(cloudSyncApi.GET('/api/v1/cloudsync/overview', {}));
+}
+
+export async function getStatus(): Promise<CloudSyncStatus> {
+	return unwrap(cloudSyncApi.GET('/api/v1/cloudsync/status', {}));
 }

@@ -197,7 +197,8 @@ test('BrowserPanel routes its bus-driven refresh through that gate', () => {
 
 	assert.match(
 		source,
-		/import \{ anyDeckPlaying, createPlayingGate \} from '\$lib\/rb\/playing-gate'/
+		/anyDeckPlaying,\s*createPlayingGate,[\s\S]*?from '\.\/browser\/browser-panel-support'/,
+		'the playing gate is imported through browser-panel-support so audio-engine.svelte.ts stays under the file-size cap'
 	);
 	assert.match(source, /run: _refreshLibraryRowsOnce/);
 	assert.match(source, /isPlaying: anyDeckPlaying/);
@@ -211,15 +212,24 @@ test('BrowserPanel routes its bus-driven refresh through that gate', () => {
 	// Every background trigger goes through request(), never straight to the
 	// refresh: a direct call is the mid-set stall this gate exists to stop.
 	assert.match(source, /subscribeKind\('tracks', \(\) => _libraryRefreshGate\.request\(\)\)/);
-	assert.match(source, /subscribeResync\(\(\) => _libraryRefreshGate\.request\(\)\)/);
+	assert.match(
+		source,
+		/subscribeKind\('playlists', \(\) => \{\s*void _refreshPlaylists\(\);\s*_libraryRefreshGate\.request\(\);\s*\}\)/,
+		'a playlist rename from the write API or undo stack must update tree names even if the full library refetch is in flight, deferred, or throws'
+	);
+	assert.match(
+		source,
+		/subscribeResync\(\(\) => \{\s*void _refreshPlaylists\(\);\s*_libraryRefreshGate\.request\(\);\s*\}\)/,
+		'a missed playlist invalidation on reconnect must refresh tree names, not only pane rows'
+	);
 	const requestCallSites = source
 		.split('\n')
 		.filter((line) => line.includes('_libraryRefreshGate.request()'))
 		.filter((line) => !/^\s*(\/\/|\*)/.test(line));
 	assert.equal(
 		requestCallSites.length,
-		3,
-		'the two bus subscriptions plus the 60s degraded-path poll, and nothing else'
+		4,
+		'the three bus subscriptions (tracks, playlists, resync) plus the 60s degraded-path poll, and nothing else'
 	);
 });
 

@@ -8,8 +8,11 @@
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
 	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
 	import UserBauble from '$lib/components/UserBauble.svelte';
+	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import SetupOverlay from '$lib/components/setup/SetupOverlay.svelte';
 	import AccountOverlay from '$lib/components/account/AccountOverlay.svelte';
+	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
+	import { preflightGate } from '$lib/preflight/preflight.svelte';
 	import { resolveFirstRun } from '$lib/setup/first-run';
 	import { openSetupOverlay } from '$lib/setup/overlay.svelte';
 	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
@@ -21,6 +24,7 @@
 	import { capabilities, progressRefusal } from '$lib/api/capabilities.svelte';
 	import { entitlements } from '$lib/api/entitlements.svelte';
 	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
+	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
 
 	let { children } = $props();
 
@@ -101,6 +105,13 @@
 	<title>Open DJ</title>
 </svelte:head>
 
+{#if !preflightGate.cleared}
+	<!-- PREFLIGHT-01 (#771): the boot gate. Nothing else renders until a real
+	     `pass` arrives from GET /api/v1/preflight -- no skip/continue-anyway,
+	     see PreflightScreen.svelte for the polling policy. -->
+	<PreflightScreen mode="boot" />
+{:else}
+
 {#if health.bindWarning}
 	<BannerWarning message={health.bindWarning} />
 {/if}
@@ -120,6 +131,7 @@
 			<a href="/dedup">Dedup Review</a>
 			<a href="/performance">Performance</a>
 			<a href="/play-analytics">Play analytics</a>
+			<a href="/library-wheel">Library wheel</a>
 			<a href="/sets">Sessions / REC</a>
 			<a href="/cloudsync">CloudSync</a>
 			<!-- Ledger route: legacy-daemon only, so the link says so rather than
@@ -156,6 +168,7 @@
 			{:else}
 				<span>Connecting to configured worktree daemon...</span>
 			{/if}
+			<CloudSyncStatusChip />
 			<UserBauble />
 		</div>
 		<div class="content">
@@ -173,6 +186,8 @@
 </div>
 {/if}
 
+{/if}
+
 <SettingsOverlay />
 <!-- The first-run wizard, over whatever route is on screen. Mounted at the
      root for the same reason SettingsOverlay is: /performance bypasses the app
@@ -185,6 +200,7 @@
 <AccountOverlay />
 
 <ToastStack items={toasts} />
+<BrandLaunch />
 
 <style>
 	/* One extra row for the tray. Declared here rather than in app.css so the

@@ -15,6 +15,7 @@ export const SETTINGS_SYNONYMS: Readonly<Record<string, readonly string[]>> = {
 	autoplay: ['auto_play_enabled', 'next'],
 	phase: ['beat_sync_max', 'bar'],
 	next: ['next_only_filter', 'camelot'],
+	compatible: ['next_only_filter', 'camelot'],
 	camelot: ['next_only_filter', 'key'],
 	confirm: ['confirm.delete_playlist', 'confirm.dblclick_load_play'],
 	prompt: ['confirm'],

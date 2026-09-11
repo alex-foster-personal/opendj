@@ -24,11 +24,11 @@ security reports. Public disclosure before a fix puts every operator at risk.
 
 Preferred channels, in order:
 
-1. Email the maintainer at
-   `15217094+owner@example.com` with the subject
-   line `[security] music-dj-tools: <short summary>`.
+1. Open a private report through this repository's **Security** tab ->
+   **Report a vulnerability** (GitHub private vulnerability reporting). It is
+   visible only to the maintainers, and it is the fastest route.
 2. If you need an encrypted channel or a live credential handoff, say so in
-   that first email. We route sensitive material through Doppler-gated
+   that first report. We route sensitive material through Doppler-gated
    contact details rather than plaintext email.
 
 Please include, at minimum:

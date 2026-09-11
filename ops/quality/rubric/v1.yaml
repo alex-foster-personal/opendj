@@ -1,0 +1,180 @@
+version: 1
+surfaces:
+  spec:
+    root: open-dj
+  python_cli:
+    root: apps/open_dj
+  vendor_adapter:
+    root: apps/adapters
+  svelte_ui:
+    root: apps/webui/frontend
+dimensions:
+  - id: xref.integrity
+    surfaces: [spec, python_cli, vendor_adapter, svelte_ui]
+    probe: xref_integrity
+    evidence:
+      role_model_repo: https://github.com/simonw/datasette
+      artefact: "Docs live with the code; a page is wrong if its links do not resolve in the tree it documents."
+      full_marks: "Every relative link in the surface resolves inside the surface root, or is an absolute URL."
+    anchors:
+      5: "Zero escaping relative links, zero dangling relative links."
+      4: "At most one dangling in-surface link; no escapes."
+      3: "Two to three link defects, all in-surface dangling."
+      2: "Four or more defects, or any link that escapes the surface root."
+      1: "Ten or more defects, or the surface has no readable docs and still contains broken hrefs."
+      0: "Probe could not scan (no files) or more than twenty defects."
+    deductions:
+      - finding: relative_link_escapes_surface
+        points: 2
+      - finding: relative_link_dangling
+        points: 1
+
+  - id: citation.resolves
+    surfaces: [spec, python_cli, vendor_adapter, svelte_ui]
+    probe: citation_resolves
+    evidence:
+      role_model_repo: https://github.com/astral-sh/ruff
+      artefact: "Every rule has a why, a bad example, a good example, and a fix note: claims are checkable."
+      full_marks: "Every GitHub citation names a real repository or is clearly marked as illustrative."
+    anchors:
+      5: "No placeholder citations; optional live GitHub checks all resolve."
+      4: "At most one live GitHub 404 when gh is available."
+      3: "One placeholder citation or two live 404s."
+      2: "Two placeholder citations or three live 404s."
+      1: "Three or more placeholder citations."
+      0: "Probe could not scan markdown sources."
+    deductions:
+      - finding: citation_placeholder
+        points: 2
+      - finding: citation_github_missing
+        points: 2
+
+  - id: docs.tree_agreement
+    surfaces: [spec, python_cli, vendor_adapter, svelte_ui]
+    probe: docs_tree_agreement
+    evidence:
+      role_model_repo: https://github.com/open-telemetry/opentelemetry-specification
+      artefact: "The written contract is the source of truth; docs must agree with the tree they describe."
+      full_marks: "README claims match files present; in-surface doc links resolve."
+    anchors:
+      5: "No dangling in-surface doc targets; no claim/tree disagreements."
+      4: "At most one dangling in-surface doc target."
+      3: "Two dangling targets or one explicit claim/tree disagreement."
+      2: "Three or more dangling targets or two claim/tree disagreements."
+      1: "Five or more dangling targets."
+      0: "Probe could not scan."
+    deductions:
+      - finding: relative_link_dangling
+        points: 1
+      - finding: docs_claim_disagrees_with_tree
+        points: 2
+
+  - id: version.drift
+    surfaces: [spec, python_cli, vendor_adapter, svelte_ui]
+    probe: version_drift
+    evidence:
+      role_model_repo: https://github.com/python-attrs/attrs
+      artefact: "Nothing is removed without a version, a warning, and a documented migration."
+      full_marks: "README, CHANGELOG, and schema/package versions agree."
+    anchors:
+      5: "All version tokens agree across README, CHANGELOG, and schema when present."
+      4: "One minor token mismatch."
+      3: "Two mismatch classes."
+      2: "Three mismatch classes."
+      1: "Four or more mismatch classes."
+      0: "Probe could not parse any version source."
+    deductions:
+      - finding: version_readme_changelog_mismatch
+        points: 2
+      - finding: version_schema_readme_mismatch
+        points: 2
+
+  - id: schema.id_policy
+    surfaces: [spec]
+    probe: schema_id_policy
+    evidence:
+      role_model_repo: https://github.com/opencontainers/image-spec
+      artefact: "Stable $id policy in a small spec repo without a foundation behind it."
+      full_marks: "Every published $id host resolves or README states a naming-authority policy."
+    anchors:
+      5: "All $id hosts resolve or naming-authority disclaimer is present."
+      4: "One unresolved $id with disclaimer present."
+      3: "One unresolved $id without disclaimer."
+      2: "Two unresolved $id hosts without disclaimer."
+      1: "Three or more unresolved $id hosts without disclaimer."
+      0: "Probe could not scan JSON schemas."
+    deductions:
+      - finding: schema_id_host_unresolved
+        points: 3
+
+  - id: source_of_truth.unique
+    surfaces: [spec]
+    probe: source_of_truth_unique
+    evidence:
+      role_model_repo: https://github.com/json-schema-org/JSON-Schema-Test-Suite
+      artefact: "One machine-readable corpus, versioned per draft, tests/draft*/ naming."
+      full_marks: "Exactly one conformance corpus root is present and cited."
+    anchors:
+      5: "Single corpus root present and cited consistently."
+      4: "One corpus present; one stale citation to a second root."
+      3: "Two competing corpus roots present or cited."
+      2: "Three competing corpus roots."
+      1: "Four or more competing corpus roots."
+      0: "Probe could not scan."
+    deductions:
+      - finding: competing_corpora
+        points: 3
+
+  - id: typed.public_surface
+    surfaces: [python_cli]
+    probe: typed_public_surface
+    evidence:
+      role_model_repo: https://github.com/encode/httpx
+      artefact: "Small fully-typed public surface with a strict py.typed contract."
+      full_marks: "py.typed marker present in the package root."
+    anchors:
+      5: "py.typed exists."
+      4: "N/A for this binary probe."
+      3: "N/A for this binary probe."
+      2: "py.typed missing."
+      1: "py.typed missing."
+      0: "Surface root missing."
+    deductions:
+      - finding: missing_py_typed
+        points: 3
+
+  - id: format.doc_beside_parser
+    surfaces: [vendor_adapter]
+    probe: format_doc_beside_parser
+    evidence:
+      role_model_repo: https://github.com/Holzhaus/rekordcrate
+      artefact: "Binary layout documented next to the parser."
+      full_marks: "Each vendor package has at least one Markdown format doc."
+    anchors:
+      5: "Every vendor package has a format doc."
+      4: "One vendor package lacks a format doc."
+      3: "Two vendor packages lack format docs."
+      2: "All three vendor packages lack format docs."
+      1: "Surface root missing."
+      0: "No vendor packages found."
+    deductions:
+      - finding: missing_format_doc
+        points: 1
+
+  - id: types.generated_contract
+    surfaces: [svelte_ui]
+    probe: types_generated_contract
+    evidence:
+      role_model_repo: https://github.com/encode/httpx
+      artefact: "Typed public surface with a strict contract between wire format and client."
+      full_marks: "Generated api-types.ts and parent openapi.json both exist."
+    anchors:
+      5: "Generated types and OpenAPI contract both present."
+      4: "N/A for this binary probe."
+      3: "N/A for this binary probe."
+      2: "Generated types or OpenAPI contract missing."
+      1: "Both missing."
+      0: "Surface root missing."
+    deductions:
+      - finding: generated_types_missing
+        points: 3

@@ -193,6 +193,13 @@ reference for the level of detail expected.
 These are load-bearing conventions enforced by reviewers and sub-agents.
 Violations are the single most common reason a PR gets sent back.
 
+For a pytest `@pytest.mark.requirement("<ID>")` TEST disposition, put one
+single-line intent in the marked module's docstring, or in the marked test
+function's docstring: `[if] X [then] Y, [else stop]`. For example,
+`"""[if] a missing profile is loaded [then] the CLI names the error, [else stop]."""`.
+Legacy modules in `tests/requirement_intent_allowlist.txt` are temporary and
+the list may only shrink.
+
 - **No U+2014 characters and no U+2013 characters** in any prose we author (code
   comments, docs, commit messages, issue text). Use a period, a comma, a
   colon, or parentheses. The audit trail in `.planning/milestones/`
