@@ -42,6 +42,7 @@
 	import { beginTrackDrag, endTrackDrag, TRACK_STABLE_MIME } from '$lib/rb/track-drag.svelte';
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
 	import AutoPlayExplainer from './AutoPlayExplainer.svelte';
+	import AutoPlayRankCell from './AutoPlayRankCell.svelte';
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
 	import { columnExplainer } from './column-explainer-placement';
 	import PreviewStrip from './PreviewStrip.svelte';
@@ -79,7 +80,6 @@
 	const OVERSCAN = 10;
 
 	// ----- AUTOPLAY-COL -----------------------------------------------------
-	const AUTOPLAY_ARROW = '\u2193'; // down; flip to \u2191 without re-plumbing
 	const AUTOPLAY_COL_COUNT = 18;
 	let colWidths = $state<Record<ColId, number>>({ ...COL_DEFAULTS });
 	const manuallyResizedColumns = new Set<ColId>();
@@ -1379,16 +1379,18 @@
 							<td class="c-autoplay">
 								{#if _autoPlayRank(row.stable_id) !== null}
 									{@const rank = _autoPlayRank(row.stable_id)!}
-									<span
-										class="ap-rank"
-										class:ap-rank-hot={hoveredApId === row.stable_id}
-										tabindex="0"
-										title={`AutoPlay queue position ${rank}: hand off after ${rank - 1} more, from the current AutoPlay view`}
-										onpointerenter={() => (hoveredApId = row.stable_id)}
-										onpointerleave={() => { if (hoveredApId === row.stable_id) hoveredApId = null; }}
-										onfocus={() => (hoveredApId = row.stable_id)}
-										onblur={() => { if (hoveredApId === row.stable_id) hoveredApId = null; }}
-									>{rank}{AUTOPLAY_ARROW}</span>
+									<AutoPlayRankCell
+										stableId={row.stable_id}
+										{rank}
+										isHot={hoveredApId === row.stable_id}
+										onHover={(id) => {
+											if (id === null) {
+												if (hoveredApId === row.stable_id) hoveredApId = null;
+											} else {
+												hoveredApId = id;
+											}
+										}}
+									/>
 								{/if}
 							</td>
 						{/if}
@@ -1675,18 +1677,6 @@
 		text-align: center;
 		font-variant-numeric: tabular-nums;
 		padding: 0 2px;
-	}
-	.ap-rank {
-		display: inline-block;
-		font-style: italic;
-		font-size: 10px;
-		color: var(--rb-text-dim);
-		cursor: default;
-		outline: none;
-	}
-	.ap-rank-hot,
-	.ap-rank:focus {
-		color: var(--rb-accent);
 	}
 	.autoplay-sort {
 		display: inline-flex;

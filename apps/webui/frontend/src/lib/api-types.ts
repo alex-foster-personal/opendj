@@ -6036,6 +6036,8 @@ export interface components {
              * @default 9
              */
             ceiling_energy: number;
+            /** Closer Pin */
+            closer_pin?: string | null;
             /**
              * Duration Min
              * @default 60
@@ -6046,8 +6048,12 @@ export interface components {
              * @default 3
              */
             floor_energy: number;
+            /** Opener Pins */
+            opener_pins?: string[];
             /** Peak At Min */
             peak_at_min?: number | null;
+            /** Peak Pins */
+            peak_pins?: string[];
         };
         /** PlayItSolveOut */
         PlayItSolveOut: {
@@ -6084,6 +6090,8 @@ export interface components {
             energy: number | null;
             /** Key Camelot */
             key_camelot: string | null;
+            /** Pin Role */
+            pin_role?: ("opener" | "peak" | "closer") | null;
             /** Position */
             position: number;
             /** Stable Id */
