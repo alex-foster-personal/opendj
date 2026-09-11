@@ -30,6 +30,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from apps.analysis.canonical import key_lane_stale_but_unpromoted
 from .own_lane_store import (
     SOURCE_OWN,
     canonical_lane_result,
@@ -142,10 +143,24 @@ def apply_own_key_segments(
             _set_dynamic_key_hint(payload, present=False)
             return payload
         result = canonical_lane_result(conn, stable_id, OWN_KEY_LANE)
+        stale_unpromoted = (
+            result is None
+            and conn is not None
+            and key_lane_stale_but_unpromoted(conn, stable_id)
+        )
     finally:
         if conn is not None:
             conn.close()
-    wire_block = _segments_block(result, stable_id, state_db_path=state_db_path)
+    if stale_unpromoted:
+        from apps.analysis_key.lane_payload import REASON_STALE_DEPENDENCY
+
+        wire_block = {
+            "status": "missing",
+            "reason": REASON_STALE_DEPENDENCY,
+            "segments": [],
+        }
+    else:
+        wire_block = _segments_block(result, stable_id, state_db_path=state_db_path)
     payload["key_segments"] = wire_block
     dynamic = (
         wire_block.get("status") == "ok"

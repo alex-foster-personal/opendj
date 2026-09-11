@@ -119,6 +119,29 @@ def _key_row_is_stale(
     )
 
 
+def key_lane_stale_but_unpromoted(
+    conn: sqlite3.Connection, stable_id: str,
+) -> bool:
+    """True when ok own key rows exist but canonical is empty due to stale beatgrid."""
+    if canonical_pointer(conn, stable_id, "key") is not None:
+        return False
+    rows = conn.execute(
+        "SELECT record_json FROM analysis WHERE stable_id = ?",
+        (stable_id,),
+    ).fetchall()
+    for (record_json,) in rows:
+        record = AnalysisRecord.from_json(record_json)
+        parsed = parse_own_backend(record.backend)
+        if parsed is None or parsed.lane != "key" or parsed.producer == "cand":
+            continue
+        key_lane = record.lanes.get("key")
+        if key_lane is None or key_lane.status != "ok":
+            continue
+        if _key_row_is_stale(conn, stable_id, record_json):
+            return True
+    return False
+
+
 def _eligible_rows(
     conn: sqlite3.Connection, stable_id: str, lane: str,
 ) -> list[tuple[str, str, str]]:
