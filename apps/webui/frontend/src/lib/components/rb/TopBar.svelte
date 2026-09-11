@@ -57,7 +57,13 @@
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 	import MasterLevelMeter from './mixer/MasterLevelMeter.svelte';
-	import { APP_MODES } from '$lib/rb/app-mode';
+	import { buildFlags } from '$lib/api/store-build.svelte';
+	import {
+		APP_MODES,
+		SHOW_UNBUILDABLE_APP_MODES_FLAG_ID,
+		chooserAppModes,
+		showUnbuildableAppModes
+	} from '$lib/rb/app-mode';
 
 	interface MasterCapableEngine extends AudioEngine {
 		setMaster(value: number): void;
@@ -81,6 +87,14 @@
 	if (liveAppMode === undefined) {
 		throw new Error('APP_MODES is missing the live /performance route');
 	}
+
+	const showUnbuildableModes = $derived(
+		showUnbuildableAppModes(
+			buildFlags.loaded,
+			buildFlags.flag(SHOW_UNBUILDABLE_APP_MODES_FLAG_ID)
+		)
+	);
+	const chooserModes = $derived(chooserAppModes(showUnbuildableModes));
 
 	const autoPlayTitle: string = $derived.by(() => {
 		const d = describeAutoPlayMode(uiPrefs);
@@ -121,6 +135,7 @@
 
 	function _placeModeMenu(): void {
 		if (!modePickerEl?.open) return;
+		void buildFlags.load();
 		const rect = modePickerEl.getBoundingClientRect();
 		modeMenuStyle = `left:${Math.round(rect.left)}px;top:${Math.round(rect.bottom + 5)}px`;
 	}
@@ -271,7 +286,7 @@
 		</summary>
 		<div class="mode-menu" style={modeMenuStyle} aria-label="App modes">
 			<p class="mode-menu-heading">Choose app mode</p>
-			{#each APP_MODES as mode (mode.id)}
+			{#each chooserModes as mode (mode.id)}
 				{#if mode.available}
 					<a class="mode-card" href={mode.href} aria-current={mode.id === 'performance' ? 'page' : undefined}>
 						<span class={`mode-thumbnail ${mode.thumbnail}`} aria-hidden="true"></span>

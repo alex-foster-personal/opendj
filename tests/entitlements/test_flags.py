@@ -207,3 +207,11 @@ def test_flag_resolution_performs_no_network_call(
     store = load_flags(tmp_path, defs=TEST_DEFS)
     assert store.enabled("example.on_by_default") is False
     assert store.snapshot()[0].flag_id == "example.off_by_default"
+
+
+def test_unbuildable_app_modes_are_not_advertised_by_default(tmp_path: Path) -> None:
+    store = load_flags(tmp_path)
+    flag = next(f for f in FLAGS if f.flag_id == "app_mode.show_unbuildable")
+    assert flag.default is False
+    assert flag.sandbox_gated is False
+    assert store.enabled("app_mode.show_unbuildable") is False
