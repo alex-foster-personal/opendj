@@ -36,16 +36,12 @@ SCORED_THIS_ROUND: Final[tuple[str, ...]] = (
     "phrase",
     "cues_db",
     "cues_anlz",
+    "vocal",
 )
 DELEGATED_THIS_ROUND: Final[tuple[str, ...]] = ("beatgrid", "downbeat")
 
-# Follow-up issue bodies start `Part k of 5 of #1520`. This PR is part 1.
-REMAINING_REASON: Final[dict[str, str]] = {
-    "vocal": (
-        "Part 5 of 5 of #1520: vocal (ANLZ PVDI). "
-        "Tracks with no PVDI fourcc are ungradable."
-    ),
-}
+# Every lane is scored or delegated this round; none remain to describe here.
+REMAINING_REASON: Final[dict[str, str]] = {}
 
 DENOMINATOR_NAME: Final[dict[str, str]] = {
     "bpm": "tracks with rekordbox BPM (djmdContent.BPM x100) in this fixture",
@@ -70,5 +66,7 @@ DENOMINATOR_NAME: Final[dict[str, str]] = {
     "cues_anlz": (
         "tracks with readable rekordbox ANLZ cues (PCOB/PCO2) in this fixture"
     ),
-    "vocal": "tracks with rekordbox PVDI in this fixture",
+    "vocal": (
+        "tracks with rekordbox PVDI among present audio in this fixture"
+    ),
 }

@@ -15,6 +15,7 @@ from apps.parity.key import score_key
 from apps.parity.lanes import DELEGATED_THIS_ROUND, LANE_IDS, SCORED_THIS_ROUND
 from apps.parity.phrase import score_phrase
 from apps.parity.remaining import classify_remaining
+from apps.parity.vocal import score_vocal
 from apps.parity.waveform import score_waveform
 
 
@@ -88,6 +89,8 @@ def score_payload(payload: dict[str, Any]) -> ParityReport:
             figures.append(score_cues_db(rows, measured_at=measured_at))
         elif lane == "cues_anlz":
             figures.append(score_cues_anlz(rows, measured_at=measured_at))
+        elif lane == "vocal":
+            figures.append(score_vocal(rows, measured_at=measured_at))
         else:
             figures.append(classify_remaining(lane, rows, measured_at=measured_at))
     return ParityReport(
@@ -192,6 +195,17 @@ def render_report(report: ParityReport, *, round_n: int | None = None) -> str:
                 f"20 ms grain, not a threshold. "
                 f"exact {figure.exact_n}/{figure.scored_n} scored."
             )
+        if figure.lane == "vocal":
+            if figure.iou_mean is not None:
+                notes = (
+                    f"mean IoU {figure.iou_mean:.3f} of {figure.scored_n} scored; "
+                    f"exact (IoU=1) {figure.exact_n}; reporting, not a threshold."
+                )
+            elif figure.status == "scored":
+                notes = (
+                    f"mean IoU - of {figure.scored_n} scored; "
+                    f"exact (IoU=1) {figure.exact_n or 0}; reporting, not a threshold."
+                )
         lines.append(
             f"| {figure.lane} | {figure.status} | {figure.denominator_n} | "
             f"{figure.denominator_name} | {figure.scored_n} | {exact} | "

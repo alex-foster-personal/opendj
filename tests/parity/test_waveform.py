@@ -188,7 +188,10 @@ def test_missing_triband_truth_leaves_phrase_not_scored() -> None:
     triband = report.figure("waveform_triband")
     phrase = report.figure("phrase")
     assert triband.ungradable["missing_rb_triband"] == 1
-    assert phrase.status == "not_scored_this_round"
+    assert phrase.status == "scored"
+    assert "wave-missing-triband" in phrase.ungradable_ids
+    assert "wave-missing-triband" not in phrase.agree_ids
+    assert "wave-missing-triband" not in phrase.disagree_ids
 
 
 def test_truth_without_own_stays_in_denominator_as_no_own() -> None:

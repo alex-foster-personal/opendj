@@ -33,12 +33,14 @@ from scripts.build_engine_payload import (
     LockedRequirement,
     PayloadBuildError,
     RuntimeLoadSite,
+    assert_installed_is_locked,
     assert_spa_is_fresh,
     assert_verify_report,
     classify_runtime_load_sites,
     find_runtime_load_sites,
     git_identity,
     install_waveform_native,
+    installed_distributions,
     link_violations,
     parse_locked_export,
     parse_otool,
@@ -298,6 +300,12 @@ idna==3.18
     #   requests
 anyio==4.13.0
     # via starlette
+cryptography==46.0.7
+    # via music-dj-tools
+cffi==2.0.0 ; platform_python_implementation != 'PyPy'
+    # via cryptography
+pycparser==3.0 ; implementation_name != 'PyPy'
+    # via cffi
 """
 
 
@@ -319,6 +327,9 @@ def test_excluding_a_dependency_drops_what_only_it_needed() -> None:
         "starlette",
         "idna",
         "anyio",
+        "cryptography",
+        "cffi",
+        "pycparser",
     }
 
 
@@ -341,6 +352,61 @@ def test_a_stale_exclusion_is_an_error_not_a_no_op() -> None:
 def test_every_exclusion_states_why_it_is_safe() -> None:
     for name, reason in EXCLUDED_DEPENDENCIES.items():
         assert len(reason) > 80, f"{name} has no real justification recorded"
+
+
+
+def _pylib_with(tmp_path: Path, *dist_infos: str) -> Path:
+    pylib = tmp_path / "pylib"
+    for name in dist_infos:
+        (pylib / f"{name}.dist-info").mkdir(parents=True)
+    return pylib
+
+
+@pytest.mark.requirement("INSTALL-12")
+def test_installed_distributions_normalizes_names_like_the_lock(tmp_path: Path) -> None:
+    pylib = _pylib_with(tmp_path, "annotated_doc-0.0.4", "cffi-2.0.0")
+    assert installed_distributions(pylib) == {"annotated-doc": "0.0.4", "cffi": "2.0.0"}
+
+
+@pytest.mark.requirement("INSTALL-12")
+def test_an_exact_locked_install_passes_even_with_marker_skipped_packages(
+    tmp_path: Path,
+) -> None:
+    """standard-aifc is locked behind a 3.13 marker; its absence is not a stray."""
+    pylib = _pylib_with(tmp_path, "fastapi-0.136.3", "idna-3.18")
+    locked = [
+        entry
+        for entry in parse_locked_export(LOCK_SAMPLE)
+        if entry.name in {"fastapi", "idna", "standard-aifc"}
+    ]
+    assert_installed_is_locked(pylib, locked)
+
+
+@pytest.mark.requirement("INSTALL-12")
+def test_a_package_uv_resolved_past_the_lock_is_a_stray(tmp_path: Path) -> None:
+    """The Fri 11 Sep 2026 finding: without --no-deps uv installed cffi 2.1.1
+    from cryptography's wheel metadata while the lock pins 2.0.0."""
+    pylib = _pylib_with(tmp_path, "cryptography-46.0.7", "cffi-2.1.1")
+    kept, _ = prune_excluded(parse_locked_export(LOCK_SAMPLE), "music-dj-tools")
+    with pytest.raises(PayloadBuildError) as excinfo:
+        assert_installed_is_locked(pylib, kept)
+    assert "cffi==2.1.1" in str(excinfo.value)
+
+
+@pytest.mark.requirement("INSTALL-12")
+def test_a_package_the_lock_never_names_is_a_stray(tmp_path: Path) -> None:
+    pylib = _pylib_with(tmp_path, "fastapi-0.136.3", "leftpad-1.0.0")
+    with pytest.raises(PayloadBuildError) as excinfo:
+        assert_installed_is_locked(pylib, parse_locked_export(LOCK_SAMPLE))
+    assert "leftpad==1.0.0" in str(excinfo.value)
+
+
+@pytest.mark.requirement("INSTALL-12")
+def test_a_locked_package_at_an_unlocked_version_is_a_stray(tmp_path: Path) -> None:
+    pylib = _pylib_with(tmp_path, "fastapi-0.137.0")
+    with pytest.raises(PayloadBuildError) as excinfo:
+        assert_installed_is_locked(pylib, parse_locked_export(LOCK_SAMPLE))
+    assert "fastapi==0.137.0" in str(excinfo.value)
 
 
 # ----- identity -----------------------------------------------------------
@@ -460,6 +526,7 @@ def _verify_report(**overrides: object) -> dict[str, object]:
             "native_available": True,
             "native_import_error": None,
         },
+        "crypto": {"has_crypto": True, "rust_bindings_error": None},
     }
     report.update(overrides)
     return report
@@ -480,6 +547,20 @@ def test_a_payload_on_the_numpy_fallback_stops_the_build() -> None:
                     "selected": "python-numpy",
                     "native_available": False,
                     "native_import_error": "ModuleNotFoundError: ...",
+                }
+            )
+        )
+
+
+def test_a_payload_whose_crypto_bindings_do_not_load_stops_the_build() -> None:
+    """Fri 11 Sep 2026: cffi pruned, cryptography's _rust import failed, pyjwt
+    swallowed it, and the route-table boot still passed with RS256 dead."""
+    with pytest.raises(PayloadBuildError, match="has_crypto=False"):
+        assert_verify_report(
+            _verify_report(
+                crypto={
+                    "has_crypto": False,
+                    "rust_bindings_error": "ModuleNotFoundError: No module named '_cffi_backend'",
                 }
             )
         )

@@ -20,6 +20,7 @@ from apps.parity.lanes import (
 )
 
 _UNGRADABLE_REASON: dict[str, str] = {
+    "waveform_detail": "unreadable_ext",
     "vocal": "missing_pvdi",
 }
 
@@ -27,6 +28,8 @@ _UNGRADABLE_REASON: dict[str, str] = {
 def _ungradable_pred(lane: str) -> Callable[[dict[str, Any]], bool]:
     if lane == "vocal":
         return lambda row: not row.get("rb_pvdi")
+    if lane == "waveform_detail":
+        return lambda row: not row.get("rb_ext_readable", True)
     return lambda _row: False
 
 
