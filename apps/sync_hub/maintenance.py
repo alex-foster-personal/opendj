@@ -13,6 +13,13 @@
                                                 [--name N]
     uv run python -m apps.sync_hub fleet        --data-dir DIR [--json]
     uv run python -m apps.sync_hub policy <verb> --data-dir DIR ...  (see maintenance_policy)
+    uv run python -m apps.sync_hub config show|set --data-dir DIR
+                                                [--enabled|--disabled]
+                                                [--hub URL] [--name N]
+
+``config`` (see :mod:`apps.sync_hub.config_cli`) is the CLI twin of
+``GET/PUT /api/v1/cloudsync/config``: the persisted per-machine config the
+background scheduler (:mod:`apps.sync_hub.scheduler`) reads.
 
 Eight operations, plus ``policy`` (per-machine sync policy, its own module
 :mod:`apps.sync_hub.maintenance_policy`, dry-run by default, exit 0/1/3/4):
@@ -65,6 +72,7 @@ from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
 from apps.sync_hub import (
     client,
+    config_cli,
     engine,
     enrollment_credentials,
     generation,
@@ -318,6 +326,7 @@ def _parser() -> argparse.ArgumentParser:
         help="print the same readout as JSON (agent parity with the UI)",
     )
     maintenance_policy.add_policy_parser(subcommands, common)
+    config_cli.add_config_parser(subcommands, common)
     return parser
 
 
@@ -442,6 +451,7 @@ PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
     "grant": _print_grant,
     "enroll": _print_enroll,
     "fleet": _print_fleet,
+    "config": config_cli.run_config,
 }
 
 

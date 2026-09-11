@@ -87,6 +87,7 @@ export default defineConfig({
 		'**/kpi-login-capture.spec.ts', // playwright.kpi-capture.config.ts (S13 login KPI capture; operator-only)
 		'**/meter-artifact.spec.ts', // playwright.meter-artifact.config.ts (built artifact)
 		'**/preflight-gate.spec.ts', // playwright.preflight-gate.config.ts (two real backends)
+		'**/cloudsync-ui.spec.ts', // playwright.cloudsync-ui.config.ts (real hub + spoke engines)
 		'**/savepoint-smoke.spec.ts', // playwright.savepoint.config.ts (real library)
 		'**/webkit-deckload.spec.ts', // playwright.webkit-deckload.config.ts (built artifact)
 		'**/deckload-smoke.spec.ts', // playwright.webkit-deckload.config.ts (built artifact, chromium+webkit, #770)

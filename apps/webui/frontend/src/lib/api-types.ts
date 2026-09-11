@@ -776,6 +776,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cloudsync/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Config */
+        get: operations["get_config_api_v1_cloudsync_config_get"];
+        /** Put Config */
+        put: operations["put_config_api_v1_cloudsync_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cloudsync/data-classes": {
         parameters: {
             query?: never;
@@ -4788,12 +4806,77 @@ export interface components {
             /** Stored */
             stored: boolean;
         };
-        /** CloudSyncStatusOut */
-        CloudSyncStatusOut: {
+        /**
+         * CloudSyncConfig
+         * @description The persisted file, validated. Also the HTTP PUT body.
+         */
+        CloudSyncConfig: {
             /** Enabled */
             enabled: boolean;
+            /** Hub Url */
+            hub_url: string | null;
+            /** Machine Name */
+            machine_name: string | null;
+        };
+        /** CloudSyncConfigOut */
+        CloudSyncConfigOut: {
+            effective: components["schemas"]["CloudSyncEffectiveConfigOut"];
+            file: components["schemas"]["CloudSyncConfig"] | null;
+            /** Path */
+            path: string;
+        };
+        /** CloudSyncEffectiveConfigOut */
+        CloudSyncEffectiveConfigOut: {
+            /** Configured */
+            configured: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Enabled Source
+             * @enum {string}
+             */
+            enabled_source: "env" | "file" | "default";
+            /** Hub Url */
+            hub_url: string | null;
+            /**
+             * Hub Url Source
+             * @enum {string}
+             */
+            hub_url_source: "env" | "file" | "default";
+            /** Machine Name */
+            machine_name: string | null;
+        };
+        /** CloudSyncStatusOut */
+        CloudSyncStatusOut: {
+            /**
+             * Configured
+             * @description the effective config is on and names a hub
+             */
+            configured: boolean;
+            /**
+             * Enabled
+             * @description configured AND running: a scheduler heartbeat is fresh
+             */
+            enabled: boolean;
+            /**
+             * Enabled Source
+             * @description which source decided 'enabled': env override, config file, or default
+             * @enum {string}
+             */
+            enabled_source: "env" | "file" | "default";
             /** Endpoint */
             endpoint: string | null;
+            /**
+             * Endpoint Source
+             * @description which source decided the hub URL: env override, config file, or default
+             * @enum {string}
+             */
+            endpoint_source: "env" | "file" | "default";
+            /**
+             * Heartbeat At
+             * @description UTC time of the last scheduler beat, fresh or stale
+             */
+            heartbeat_at: string | null;
             /** Last Pull At */
             last_pull_at: string | null;
             /** Last Push At */
@@ -4805,6 +4888,11 @@ export interface components {
             recent_results: components["schemas"]["RecentResultOut"][];
             /** Rows Pending */
             rows_pending: number | null;
+            /**
+             * Running
+             * @description a scheduler heartbeat is fresh
+             */
+            running: boolean;
             /** Signed In As */
             signed_in_as: string | null;
         };
@@ -10883,6 +10971,91 @@ export interface operations {
             };
         };
     };
+    get_config_api_v1_cloudsync_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudSyncConfigOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description a CloudSync state file in the data dir is malformed or unreadable */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_config_api_v1_cloudsync_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloudSyncConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudSyncConfigOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description a CloudSync state file in the data dir is malformed or unreadable */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_data_classes_api_v1_cloudsync_data_classes_get: {
         parameters: {
             query?: never;
@@ -11022,6 +11195,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MachineOut"][];
                 };
+            };
+            /** @description CLOUDSYNC_IDENTITY_ERROR or CLOUDSYNC_CONFIG_INVALID (cloudsync-config.json is malformed, so the configured name is unknown) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -11377,6 +11557,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CloudSyncStatusOut"];
                 };
+            };
+            /** @description a CloudSync state file in the data dir is malformed or unreadable */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

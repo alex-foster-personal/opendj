@@ -28,7 +28,6 @@ a stored default; the field stays so an explicit URL always wins.
 from __future__ import annotations
 
 import logging
-import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -40,6 +39,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from apps.shared.state.machine_identity import MachineIdentityError, is_hub_from_env
 from apps.sync_hub import client as sync_client
 from apps.sync_hub import enrollment_credentials, maintenance, maintenance_enroll
+from apps.sync_hub.single_flight import sync_lock_for
 from apps.webui.server.local_operator import local_operator_refusal
 
 from .cloudsync_status import data_dir_for_request
@@ -59,9 +59,10 @@ DECLARED_SYNC_REFUSALS: tuple[type[Exception], ...] = (
     sync_client.SyncProtocolError,
 )
 
-#: One sync at a time per process. ``run_sync`` is not re-entrant against one
-#: state DB, and a double-clicked button must not start two.
-_SYNC_RUN_LOCK = threading.Lock()
+#: One sync at a time per data dir, shared with the scheduler's rounds
+#: (:mod:`apps.sync_hub.single_flight`). ``run_sync`` is not re-entrant
+#: against one state DB, and neither a double-clicked button nor a Sync now
+#: during a scheduler round may start a second one.
 
 
 # ----- models --------------------------------------------------------------
@@ -242,18 +243,20 @@ def require_local_operator(request: Request) -> None:
 
 
 @contextmanager
-def _one_sync_at_a_time() -> Iterator[None]:
-    if not _SYNC_RUN_LOCK.acquire(blocking=False):
+def _one_sync_at_a_time(data_dir: Path) -> Iterator[None]:
+    lock = sync_lock_for(data_dir)
+    if not lock.acquire(blocking=False):
         raise _refuse(
             409,
             "CLOUDSYNC_SYNC_IN_PROGRESS",
-            "a CloudSync sync is already running in this process; "
-            "read GET /api/v1/cloudsync/status for its outcome.",
+            "a CloudSync sync (a Sync now or a scheduler round) is already "
+            "running against this data dir; read GET /api/v1/cloudsync/status "
+            "for its outcome.",
         )
     try:
         yield
     finally:
-        _SYNC_RUN_LOCK.release()
+        lock.release()
 
 
 def _require_hub() -> None:
@@ -301,7 +304,8 @@ def _sync_out(result: sync_client.SyncResult) -> SyncRunOut:
 def run_sync_round(body: SyncRunIn, request: Request) -> SyncRunOut:
     """One spoke round trip against ``hub_url``, journaled for ``/status``."""
     data_dir: Path = data_dir_for_request(request)
-    with _one_sync_at_a_time():
+    with _one_sync_at_a_time(data_dir):
+
         try:
             result = maintenance.sync(data_dir, body.hub_url, name=body.name)
         except sync_client.SyncTransportError as exc:

@@ -2609,11 +2609,156 @@
         "title": "ClientPerformanceSampleOut",
         "type": "object"
       },
-      "CloudSyncStatusOut": {
+      "CloudSyncConfig": {
+        "additionalProperties": false,
+        "description": "The persisted file, validated. Also the HTTP PUT body.",
         "properties": {
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
+          },
+          "hub_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Url"
+          },
+          "machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Name"
+          }
+        },
+        "required": [
+          "enabled",
+          "hub_url",
+          "machine_name"
+        ],
+        "title": "CloudSyncConfig",
+        "type": "object"
+      },
+      "CloudSyncConfigOut": {
+        "properties": {
+          "effective": {
+            "$ref": "#/components/schemas/CloudSyncEffectiveConfigOut"
+          },
+          "file": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloudSyncConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "file",
+          "effective"
+        ],
+        "title": "CloudSyncConfigOut",
+        "type": "object"
+      },
+      "CloudSyncEffectiveConfigOut": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "enabled_source": {
+            "enum": [
+              "env",
+              "file",
+              "default"
+            ],
+            "title": "Enabled Source",
+            "type": "string"
+          },
+          "hub_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Url"
+          },
+          "hub_url_source": {
+            "enum": [
+              "env",
+              "file",
+              "default"
+            ],
+            "title": "Hub Url Source",
+            "type": "string"
+          },
+          "machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Name"
+          }
+        },
+        "required": [
+          "enabled",
+          "hub_url",
+          "machine_name",
+          "configured",
+          "enabled_source",
+          "hub_url_source"
+        ],
+        "title": "CloudSyncEffectiveConfigOut",
+        "type": "object"
+      },
+      "CloudSyncStatusOut": {
+        "properties": {
+          "configured": {
+            "description": "the effective config is on and names a hub",
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "enabled": {
+            "description": "configured AND running: a scheduler heartbeat is fresh",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "enabled_source": {
+            "description": "which source decided 'enabled': env override, config file, or default",
+            "enum": [
+              "env",
+              "file",
+              "default"
+            ],
+            "title": "Enabled Source",
+            "type": "string"
           },
           "endpoint": {
             "anyOf": [
@@ -2625,6 +2770,28 @@
               }
             ],
             "title": "Endpoint"
+          },
+          "endpoint_source": {
+            "description": "which source decided the hub URL: env override, config file, or default",
+            "enum": [
+              "env",
+              "file",
+              "default"
+            ],
+            "title": "Endpoint Source",
+            "type": "string"
+          },
+          "heartbeat_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "UTC time of the last scheduler beat, fresh or stale",
+            "title": "Heartbeat At"
           },
           "last_pull_at": {
             "anyOf": [
@@ -2687,6 +2854,11 @@
             ],
             "title": "Rows Pending"
           },
+          "running": {
+            "description": "a scheduler heartbeat is fresh",
+            "title": "Running",
+            "type": "boolean"
+          },
           "signed_in_as": {
             "anyOf": [
               {
@@ -2701,6 +2873,11 @@
         },
         "required": [
           "enabled",
+          "configured",
+          "running",
+          "heartbeat_at",
+          "enabled_source",
+          "endpoint_source",
           "reason",
           "signed_in_as",
           "last_push_at",
@@ -17055,6 +17232,92 @@
         ]
       }
     },
+    "/api/v1/cloudsync/config": {
+      "get": {
+        "operationId": "get_config_api_v1_cloudsync_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudSyncConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "500": {
+            "description": "a CloudSync state file in the data dir is malformed or unreadable"
+          }
+        },
+        "summary": "Get Config",
+        "tags": [
+          "cloudsync"
+        ]
+      },
+      "put": {
+        "operationId": "put_config_api_v1_cloudsync_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudSyncConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudSyncConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "a CloudSync state file in the data dir is malformed or unreadable"
+          }
+        },
+        "summary": "Put Config",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
     "/api/v1/cloudsync/data-classes": {
       "get": {
         "description": "Every class of data and how it syncs (``policy classes`` twin).",
@@ -17216,6 +17479,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "500": {
+            "description": "CLOUDSYNC_IDENTITY_ERROR or CLOUDSYNC_CONFIG_INVALID (cloudsync-config.json is malformed, so the configured name is unknown)"
           }
         },
         "summary": "List Machines",
@@ -17653,6 +17919,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "500": {
+            "description": "a CloudSync state file in the data dir is malformed or unreadable"
           }
         },
         "summary": "Get Status",

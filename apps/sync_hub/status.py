@@ -1,21 +1,35 @@
 """CloudSync's small, truthful status surface and bounded result journal.
 
-The status endpoint and CLI read this module. Configuration is deliberately
-explicit: a scheduled sync is enabled only when ``MDT_CLOUDSYNC_SCHEDULER=1``
-and ``MDT_CLOUDSYNC_HUB_URL`` names its hub. No configuration means off, not a
-plausible healthy response.
+The status endpoint and CLI read this module. Three separate facts, never
+collapsed into one:
+
+* ``configured`` -- the effective config (``apps.sync_hub.config``: the
+  ``cloudsync-config.json`` file, with ``MDT_CLOUDSYNC_SCHEDULER`` /
+  ``MDT_CLOUDSYNC_HUB_URL`` as env overrides that win) says sync is on and
+  names a hub. That is INTENT.
+* ``running`` -- a scheduler heartbeat (``apps.sync_hub.heartbeat``) is
+  fresh. That is EVIDENCE.
+* ``enabled`` -- both. Configuration alone never reads as enabled: that was
+  a latent false-green while no loop existed on main.
+
+No configuration means off, not a plausible healthy response.
 """
+
 from __future__ import annotations
 
 import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-SCHEDULER_ENV: str = "MDT_CLOUDSYNC_SCHEDULER"
-ENDPOINT_ENV: str = "MDT_CLOUDSYNC_HUB_URL"
+from apps.sync_hub import config as sync_config
+from apps.sync_hub import heartbeat as sync_heartbeat
+
+SCHEDULER_ENV: str = sync_config.SCHEDULER_ENV
+ENDPOINT_ENV: str = sync_config.ENDPOINT_ENV
 SIGNED_IN_AS_ENV: str = "MDT_CLOUDSYNC_SIGNED_IN_AS"
 STATUS_FILENAME: str = "cloudsync-status.json"
 MAX_RECENT_RESULTS: int = 5
@@ -85,6 +99,11 @@ class CloudSyncStatus:
     """The common wire object for HTTP, UI, and the operator CLI."""
 
     enabled: bool
+    configured: bool
+    running: bool
+    heartbeat_at: str | None
+    enabled_source: sync_config.ConfigSource
+    endpoint_source: sync_config.ConfigSource
     reason: str | None
     signed_in_as: str | None
     last_push_at: str | None
@@ -97,6 +116,11 @@ class CloudSyncStatus:
     def to_wire(self) -> dict[str, Any]:
         return {
             "enabled": self.enabled,
+            "configured": self.configured,
+            "running": self.running,
+            "heartbeat_at": self.heartbeat_at,
+            "enabled_source": self.enabled_source,
+            "endpoint_source": self.endpoint_source,
             "reason": self.reason,
             "signed_in_as": self.signed_in_as,
             "last_push_at": self.last_push_at,
@@ -112,16 +136,35 @@ def status_path(data_dir: Path) -> Path:
     return Path(data_dir) / STATUS_FILENAME
 
 
-def _configured(env: Mapping[str, str]) -> tuple[bool, str | None, str | None]:
-    scheduler = env.get(SCHEDULER_ENV, "")
-    endpoint = env.get(ENDPOINT_ENV, "").strip() or None
-    if scheduler not in ("", "0", "1"):
-        return False, f"{SCHEDULER_ENV} must be 0 or 1.", endpoint
-    if scheduler != "1":
-        return False, "CloudSync is not configured.", endpoint
-    if endpoint is None:
-        return False, f"{SCHEDULER_ENV}=1 but {ENDPOINT_ENV} is unset.", None
-    return True, None, endpoint
+#: The effective config a malformed override or file resolves to for STATUS
+#: purposes only: off, with the error as the reason. The scheduler never uses
+#: this; it refuses to run on the same error.
+_UNREADABLE_CONFIG = sync_config.EffectiveConfig(
+    enabled=False,
+    hub_url=None,
+    machine_name=None,
+    enabled_source="default",
+    hub_url_source="default",
+)
+
+
+def _effective_config(
+    data_dir: Path, env: Mapping[str, str]
+) -> tuple[sync_config.EffectiveConfig, str | None]:
+    """The effective config plus the reason it is not configured, if it is not.
+
+    A malformed file or override is SHOWN as the reason, not raised: the
+    status surface is where an operator goes to find out what is wrong.
+    """
+    try:
+        effective = sync_config.resolve_config(data_dir, env=env)
+    except sync_config.CloudSyncConfigError as exc:
+        return _UNREADABLE_CONFIG, f"CloudSync config is invalid: {exc}"
+    if not effective.enabled:
+        return effective, "CloudSync is not configured."
+    if effective.hub_url is None:
+        return effective, "CloudSync is enabled but no hub_url is set."
+    return effective, None
 
 
 def read_results(data_dir: Path) -> tuple[SyncResult, ...]:
@@ -162,28 +205,57 @@ def write_result(data_dir: Path, result: SyncResult) -> tuple[SyncResult, ...]:
     return results
 
 
-def read_status(data_dir: Path, *, env: Mapping[str, str] | None = None) -> CloudSyncStatus:
-    """Return this machine's actual configured status and recorded outcomes."""
+def _read_heartbeat(data_dir: Path) -> sync_heartbeat.Heartbeat | None:
+    try:
+        return sync_heartbeat.read(data_dir)
+    except sync_heartbeat.CloudSyncHeartbeatError as exc:
+        raise CloudSyncStatusError(str(exc)) from exc
+
+
+def _loop_evidence(
+    data_dir: Path, now: datetime | None
+) -> tuple[sync_heartbeat.Heartbeat | None, bool]:
+    """The last heartbeat on file and whether it is fresh enough to prove a live loop."""
+    beat = _read_heartbeat(data_dir)
+    running = beat is not None and beat.is_fresh(datetime.now(UTC) if now is None else now)
+    return beat, running
+
+
+def _last_result_wire(latest: SyncResult | None) -> dict[str, str] | None:
+    return None if latest is None else {"status": latest.status, "message": latest.message}
+
+
+def read_status(
+    data_dir: Path,
+    *,
+    env: Mapping[str, str] | None = None,
+    now: datetime | None = None,
+) -> CloudSyncStatus:
+    """Return this machine's configured intent, loop evidence and recorded outcomes."""
     source = os.environ if env is None else env
-    enabled, reason, endpoint = _configured(source)
+    effective, reason = _effective_config(Path(data_dir), source)
+    beat, running = _loop_evidence(Path(data_dir), now)
+    if reason is None and not running:
+        reason = "CloudSync is configured but its scheduler is not running (no fresh heartbeat)."
     results = read_results(Path(data_dir))
     latest = results[0] if results else None
     return CloudSyncStatus(
-        enabled=enabled,
+        enabled=effective.configured and running,
+        configured=effective.configured,
+        running=running,
+        heartbeat_at=None if beat is None else beat.beat_at,
+        enabled_source=effective.enabled_source,
+        endpoint_source=effective.hub_url_source,
         reason=reason,
         signed_in_as=source.get(SIGNED_IN_AS_ENV, "").strip() or None,
         last_push_at=None if latest is None else latest.finished_at,
         last_pull_at=None if latest is None else latest.finished_at,
-        last_result=(
-            None
-            if latest is None
-            else {"status": latest.status, "message": latest.message}
-        ),
+        last_result=_last_result_wire(latest),
         # A successful attempt's pushed/pulled counts describe movement in
         # opposite directions, not a backlog. Until the sync engine publishes
         # its watermark-derived count, claiming arithmetic here would lie.
         rows_pending=None,
-        endpoint=endpoint,
+        endpoint=effective.hub_url,
         recent_results=results,
     )
 

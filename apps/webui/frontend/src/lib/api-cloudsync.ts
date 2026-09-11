@@ -108,8 +108,19 @@ export interface CloudSyncRecentResult {
 	pulled: number;
 }
 
+/** Which source decided a CloudSync config field; an env override wins over the file. */
+export type CloudSyncConfigSource = 'env' | 'file' | 'default';
+
 export interface CloudSyncStatus {
+	/** configured AND running: true only while a scheduler heartbeat is fresh. */
 	enabled: boolean;
+	/** The effective config is on and names a hub (intent, not evidence). */
+	configured: boolean;
+	/** A scheduler heartbeat is fresh (evidence a loop is alive). */
+	running: boolean;
+	heartbeat_at: string | null;
+	enabled_source: CloudSyncConfigSource;
+	endpoint_source: CloudSyncConfigSource;
 	reason: string | null;
 	signed_in_as: string | null;
 	last_push_at: string | null;

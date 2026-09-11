@@ -15,12 +15,15 @@ Regression one-liners:
   - [if] a non-loopback, share or Tailscale Serve caller gets in [then] broken, [else stop]
   - [if] a loopback peer with a rebound Host or an X-Forwarded-For gets in [then] broken
   - [if] a held run lock or a digest mismatch is not a declared 409 [then] broken
+  - [if] Sync now runs while a scheduler round holds the data dir [then] broken, [else stop]
+  - [if] a refused PUT /cloudsync/config writes the config file [then] broken, [else stop]
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -32,9 +35,11 @@ from fastapi.testclient import TestClient
 from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import client, enrollment_credentials, maintenance
+from apps.sync_hub import config as sync_config
+from apps.sync_hub.scheduler import CloudSyncScheduler
+from apps.sync_hub.single_flight import sync_lock_for
 from apps.webui.server.app import create_app
 from apps.webui.server.local_operator import is_loopback_ip
-from apps.webui.server.routes.cloudsync_ops import _SYNC_RUN_LOCK
 from apps.webui.server.share_gate import AUTH_TOKEN, ShareConfig
 from apps.webui.server.sqlite_backend import SqliteBackend
 from tests.cloudsync.conftest import (
@@ -179,17 +184,89 @@ def test_post_sync_maps_a_declared_refusal_to_409_and_journals_it(
 
 def test_post_sync_refuses_a_second_run_in_the_same_process(enroll_spoke_dir: Path) -> None:
     """if a sync starts while the run lock is held, or that refusal is journaled, then broken"""
+    lock = sync_lock_for(enroll_spoke_dir)
     with ops_client(enroll_spoke_dir) as http:
-        assert _SYNC_RUN_LOCK.acquire(blocking=False), "control: nothing else holds the lock"
+        assert lock.acquire(blocking=False), "control: nothing else holds the lock"
         try:
             response = http.post("/api/v1/cloudsync/sync", json={"hub_url": "http://127.0.0.1:9"})
         finally:
-            _SYNC_RUN_LOCK.release()
+            lock.release()
         status = http.get("/api/v1/cloudsync/status").json()
 
     assert response.status_code == 409, response.text
     assert response.json()["detail"]["code"] == "CLOUDSYNC_SYNC_IN_PROGRESS"
     assert status["recent_results"] == [], "refused before syncing, so nothing is journaled"
+
+
+def test_sync_now_is_refused_while_a_scheduler_round_is_in_flight(
+    enroll_live_hub: str, enroll_spoke_dir: Path
+) -> None:
+    """if Sync now can run alongside a scheduler round on one state.db then broken"""
+    round_entered, release_round = threading.Event(), threading.Event()
+
+    def gated_sync(data_dir: Path, hub_url: str, name: str | None) -> client.SyncResult:
+        round_entered.set()
+        assert release_round.wait(timeout=30.0), "test never released the round"
+        return maintenance.sync(data_dir, hub_url, name=name)
+
+    scheduler = CloudSyncScheduler(enroll_spoke_dir, sync_fn=gated_sync, env={})
+    outcome: dict[str, str] = {}
+    worker = threading.Thread(
+        target=lambda: outcome.update(round=scheduler.run_round(enroll_live_hub, "spoke-a"))
+    )
+    worker.start()
+    try:
+        assert round_entered.wait(timeout=30.0), "control: the scheduler round started"
+        with ops_client(enroll_spoke_dir) as http:
+            during = http.post("/api/v1/cloudsync/sync", json={"hub_url": enroll_live_hub})
+    finally:
+        release_round.set()
+        worker.join(timeout=30.0)
+    with ops_client(enroll_spoke_dir) as http:
+        after = http.post("/api/v1/cloudsync/sync", json={"hub_url": enroll_live_hub})
+
+    assert during.status_code == 409, during.text
+    assert during.json()["detail"]["code"] == "CLOUDSYNC_SYNC_IN_PROGRESS"
+    assert outcome == {"round": "ok"}, "control: the held round itself completed"
+    assert after.status_code == 200, f"control: the lock is released after the round: {after.text}"
+
+
+def test_a_scheduler_round_is_busy_while_the_sync_lock_is_held(enroll_spoke_dir: Path) -> None:
+    """if a scheduler round ignores the lock Sync now holds then broken"""
+    calls: list[str] = []
+
+    def recording_sync(data_dir: Path, hub_url: str, name: str | None) -> client.SyncResult:
+        calls.append(hub_url)
+        return maintenance.sync(data_dir, hub_url, name=name)
+
+    scheduler = CloudSyncScheduler(enroll_spoke_dir, sync_fn=recording_sync, env={})
+    lock = sync_lock_for(enroll_spoke_dir)
+    assert lock.acquire(blocking=False), "control: nothing else holds the lock"
+    try:
+        held = scheduler.run_round(f"http://127.0.0.1:{free_port()}", None)
+    finally:
+        lock.release()
+    released = scheduler.run_round(f"http://127.0.0.1:{free_port()}", None)
+
+    assert held == "busy"
+    assert released == "error", "control: with the lock free the round runs (a dead hub errors)"
+    assert len(calls) == 1, "only the unlocked round reached the sync"
+
+
+def test_a_refused_config_put_writes_nothing(enroll_spoke_dir: Path) -> None:
+    """if a tailnet peer's PUT /cloudsync/config reaches the file then broken"""
+    body = {"enabled": True, "hub_url": "http://attacker.example:8686", "machine_name": None}
+    with ops_client(enroll_spoke_dir, client_addr=("100.64.0.7", 50123)) as http:
+        refused = http.put("/api/v1/cloudsync/config", json=body)
+    stored_after_refusal = sync_config.read_config(enroll_spoke_dir)
+    with ops_client(enroll_spoke_dir) as http:
+        allowed = http.put("/api/v1/cloudsync/config", json=body)
+
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["detail"]["code"] == "CLOUDSYNC_OPS_LOCAL_ONLY"
+    assert stored_after_refusal is None
+    assert allowed.status_code == 200, f"control: the loopback operator can write: {allowed.text}"
+    assert sync_config.read_config(enroll_spoke_dir) == sync_config.CloudSyncConfig(**body)
 
 
 # ----- GET /fleet ----------------------------------------------------------
@@ -330,6 +407,13 @@ OPS_CALLS: list[tuple[str, str, dict[str, Any] | None]] = [
     ("POST", "/api/v1/cloudsync/sync", {"hub_url": "http://127.0.0.1:9"}),
     ("GET", "/api/v1/cloudsync/fleet", None),
     ("POST", "/api/v1/cloudsync/enrollment-grants", {"owner_email": ENROLL_OWNER_EMAIL}),
+    # PUT repoints this machine's scheduler at a hub; GET discloses the hub URL.
+    (
+        "PUT",
+        "/api/v1/cloudsync/config",
+        {"enabled": True, "hub_url": "http://attacker.example:8686", "machine_name": None},
+    ),
+    ("GET", "/api/v1/cloudsync/config", None),
 ]
 
 
