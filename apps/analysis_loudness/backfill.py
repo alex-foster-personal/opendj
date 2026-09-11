@@ -5,19 +5,12 @@ This module maps :func:`apps.analysis_loudness.adapter.analyze_file` onto the
 ``loudness`` lane's payload shape (``apps.analysis.lane_payloads``) under
 :data:`PRODUCER_BACKEND`, the canonical own-producer name for this lane.
 
-Per nav1-loudness.md's own split clause ("land the adapter, the gate and its
-measurements now with no registration claim at all, and open the registration
-as its own follow-up PR against the merged contract"), this module makes no
-registration claim: there is no dispatcher, in this PR or any other lane's,
-that resolves ``own_<lane>.<producer>`` names to a producer callable, and
-``apps.analysis.run --backend`` resolves exclusively through
-``apps.analysis.backends.get_backend``, whose ``AnalyzerBackend`` protocol
-returns a full ``AnalysisRecord`` (bpm, key, energy, ...) that a single-lane
-producer cannot supply. Wiring ``own_loudness.backfill`` into a real command
-path is fleet-wide infrastructure (a wave-1 dispatcher, per
-``apps/analysis_beatgrid/cli.py``'s own docstring deferring ``AnalysisRecord``
-construction the same way), not a per-lane change, and is out of scope here.
+This module remains the lane producer. The ``AnalyzerBackend`` wrapper that
+builds a v2 ``AnalysisRecord`` and registers under ``own_loudness.backfill``
+lives in :mod:`apps.analysis.backends.own_loudness`, selected through
+``apps.analysis.run --backend own_loudness.backfill``.
 """
+
 from __future__ import annotations
 
 import math
@@ -31,16 +24,24 @@ from .adapter import analyze_file
 #: scheme in apps.analysis.lanes (own_<lane>.<producer>).
 PRODUCER_BACKEND: str = own_backend("loudness", "backfill")
 
+#: Semver stamped on both ``AnalysisRecord.backend_version`` and
+#: ``AnalysisRecord.producer_version``. The own-record validator requires
+#: those two to agree; canonical selection ranks them as semver.
+PRODUCER_VERSION: str = "1.0.0"
+
 #: The four loudness payload measurements, checked for finiteness below.
 _MEASUREMENT_FIELDS = ("integrated_lufs", "true_peak_dbtp", "loudness_range_lu", "rms_db")
 
 
-def produce_lane_result(path: Path) -> LaneResult:
+def produce_lane_result(path: Path, *, binary: str | None = None) -> LaneResult:
     """Measure ``path`` and return its ``loudness`` lane result.
 
     Raises whatever :func:`analyze_file` raises (``LoudnessError``, e.g. a
     missing ffmpeg): a producer that could not measure has nothing to report
     as ``status: ok``, so it fails loudly rather than emitting one.
+
+    ``binary`` is the already-resolved ffmpeg executable the backend wrapper
+    shares across fingerprint decode, R128 and RMS. Direct callers omit it.
 
     A fully silent file decodes fine but yields ``-inf`` true peak and RMS
     from ffmpeg's own R128 scanner; that is a measurement the lane's payload
@@ -48,7 +49,7 @@ def produce_lane_result(path: Path) -> LaneResult:
     requires every value finite), so it is reported as ``status: failed``
     rather than an ``ok`` payload no consumer could validate.
     """
-    measured = analyze_file(path)
+    measured = analyze_file(path, binary=binary)
     payload = {
         "integrated_lufs": measured.integrated_lufs,
         "true_peak_dbtp": measured.true_peak_dbtp,
@@ -60,4 +61,4 @@ def produce_lane_result(path: Path) -> LaneResult:
     return LaneResult(status="ok", payload=payload)
 
 
-__all__ = ["PRODUCER_BACKEND", "produce_lane_result"]
+__all__ = ["PRODUCER_BACKEND", "PRODUCER_VERSION", "produce_lane_result"]

@@ -15,6 +15,7 @@ only test seam is a wrapper that GATES the real sync, to force a slow round.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import itertools
 import sqlite3
 import threading
@@ -99,9 +100,17 @@ def _insert_track(data_dir: Path, stable_id: str, title: str) -> None:
             conn, "tracks", (stable_id,), _ORIGIN, now=sync_stamp.canonical_now()
         ).updated_at
         conn.execute(
-            "INSERT INTO tracks(stable_id, stable_id_tier, title, created_at, "
-            "updated_at, origin_device_id) VALUES (?, 'inferred', ?, ?, ?, ?)",
-            (stable_id, title, stamped, stamped, _ORIGIN),
+            "INSERT INTO tracks(stable_id, stable_id_tier, title, content_hash, "
+            "created_at, updated_at, origin_device_id) "
+            "VALUES (?, 'inferred', ?, ?, ?, ?, ?)",
+            (
+                stable_id,
+                title,
+                hashlib.sha256(stable_id.encode("utf-8")).hexdigest(),
+                stamped,
+                stamped,
+                _ORIGIN,
+            ),
         )
         conn.commit()
     finally:

@@ -303,6 +303,18 @@ test('null artwork availability identifies an unavailable reader without request
 	await page.route('**/api/v1/feedback/general', (route) => route.fulfill({ status: 404, json: {} }));
 	await page.route('**/api/v1/telemetry/heartbeat', (route) => route.fulfill({ status: 204, json: {} }));
 	await page.route(/\/api\/v1\/jobs(?:\?.*)?$/, (route) => route.fulfill({ json: [] }));
+	// LibraryJobsChrome on /performance hydrates GET /api/v1/library-jobs for
+	// stems and lyrics on attach (library-jobs-store.svelte.ts). Declared as a
+	// KNOWN request, same contract as analysis/source above.
+	await page.route('**/api/v1/library-jobs**', (route) =>
+		route.fulfill({
+			json: {
+				lane: 'stems',
+				items: [],
+				counts: {}
+			}
+		})
+	);
 	// The machine-pressure poller (machine-pressure.ts): a deck-load row stamps
 	// the conditions it was measured under, so the page polls this while
 	// visible. Answered `available: false` because this gate cares only that

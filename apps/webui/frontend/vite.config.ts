@@ -74,7 +74,8 @@ export default defineConfig(({ command, mode }) => {
 								target: devConfig.apiProxyTarget,
 								changeOrigin: true,
 								ws: true
-							}
+							},
+							'/sets/shared': devConfig.apiProxyTarget
 						}
 					}
 				})

@@ -452,6 +452,20 @@ _ALLOWED_HARD_DELETES: frozenset[tuple[str, str]] = frozenset({
     # two (non-synced) changelog tables.
     ("apps/shared/state/normalize_locations.py", "dynamic:LOCATIONS_TABLE"),
     ("apps/shared/state/normalize_locations.py", "dynamic:changelog"),
+    # CLOUDSYNC-07 identity collapse: same vacuum path as
+    # engine_apply._drop_superseded. Two independently ingested libraries
+    # minted different tracks PKs for the same audio. Children REFERENCES
+    # tracks(stable_id) with ON DELETE CASCADE, so they have to be remapped
+    # onto the survivor and the loser hard-deleted -- a tombstone at the
+    # losing PK would keep a second tracks row for the same recording.
+    # Changelog prune is the same dangling-entry fix _drop_superseded does.
+    # Location and membership DELETEs are the UNIQUE-collision branch of
+    # that remap (the survivor already holds that location or that playlist
+    # already contains the survivor).
+    ("apps/sync_hub/engine_identity.py", "dynamic:changelog"),
+    ("apps/sync_hub/engine_identity.py", "dynamic:_ident(table)"),
+    ("apps/sync_hub/engine_identity.py", "track_locations"),
+    ("apps/sync_hub/engine_identity.py", "playlist_memberships"),
 })
 
 

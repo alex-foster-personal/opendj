@@ -15,6 +15,7 @@ own submodules resolves one of them partially initialized).
 """
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -62,12 +63,20 @@ def _seed_track(run: SimRun, entry: Mapping[str, Any]) -> None:
             conn.execute(
                 """
                 INSERT INTO tracks(
-                    stable_id, stable_id_tier, title, created_at, updated_at,
-                    origin_device_id
+                    stable_id, stable_id_tier, title, content_hash, created_at,
+                    updated_at, origin_device_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (stable_id, stable_id_tier, title, updated_at, updated_at, _SEED_ORIGIN),
+                (
+                    stable_id,
+                    stable_id_tier,
+                    title,
+                    hashlib.sha256(stable_id.encode("utf-8")).hexdigest(),
+                    updated_at,
+                    updated_at,
+                    _SEED_ORIGIN,
+                ),
             )
         finally:
             conn.close()

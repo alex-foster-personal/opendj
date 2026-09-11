@@ -29,17 +29,29 @@ test('the chip derives its state from the shared heartbeat-gated rule', () => {
 
 test('the chip carries an explanatory hover title derived from status', () => {
 	/** if the chip loses its hover title or its relative-time readout then broken */
-	assert.match(CHIP, /const title = \$derived\.by\(/);
+	assert.match(CHIP, /const title = \$derived\(chipTitle\(status, loadError\)\)/);
 	assert.match(CHIP, /title=\{title\}/);
-	assert.match(CHIP, /Click to open recent results\./);
-	assert.match(CHIP, /status\?\.last_push_at/);
+	assert.match(VIEW, /Click to open CloudSync\./);
+	assert.doesNotMatch(VIEW, /Click to open recent results\./);
+	assert.match(VIEW, /last_push_at/);
 });
 
-test('clicking the chip opens the five-result detail instead of a dead badge', () => {
-	/** if the chip becomes a dead badge with no result detail then broken */
-	assert.match(CHIP, /onclick=\{\(\) => \(detailsOpen = !detailsOpen\)\}/);
-	assert.match(CHIP, /status\.recent_results/);
-	assert.match(CHIP, /No sync attempts have completed yet\./);
+test('the chip is a link to /cloudsync instead of an in-place popover', () => {
+	/** if the chip becomes a dead badge or keeps an in-place popover then broken */
+	assert.match(CHIP, /href=\{CHIP_HREF\}/);
+	assert.match(VIEW, /export const CHIP_HREF = '\/cloudsync'/);
+	assert.doesNotMatch(CHIP, /detailsOpen/);
+	assert.doesNotMatch(CHIP, /recent_results/);
+	assert.doesNotMatch(CHIP, /No sync attempts have completed yet\./);
+});
+
+test('the chip uses compact single-line layout CSS for small screens', () => {
+	/** if the chip can wrap into a two-line circle on narrow viewports then broken */
+	assert.match(CHIP, /@media \(max-width: 1024px\)/);
+	assert.match(CHIP, /white-space: nowrap/);
+	assert.match(CHIP, /max-height: 24px/);
+	assert.match(CHIP, /\.chip-label-short/);
+	assert.match(CHIP, /<svg/);
 });
 
 test('the chip re-reads status on a poll under the heartbeat stale window', () => {

@@ -17,7 +17,7 @@ and a browser restart because it lives in ``data/state/state.db``.
 from __future__ import annotations
 
 import os
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -29,6 +29,7 @@ from apps.webui.server.auth import (
     AuthConfigError,
     AuthFlowError,
     GoogleOAuthConfig,
+    PendingLogin,
     PendingLoginStore,
     SessionStore,
     SessionUser,
@@ -157,6 +158,46 @@ def _resolve_origin(request: Request, requested: str | None) -> str:
     return f"http://127.0.0.1:{port}"
 
 
+def _sanitize_return_to(return_to: str | None) -> str:
+    """Return a same-origin SPA path, or ``/`` when ``return_to`` is unsafe."""
+    if not return_to:
+        return "/"
+    if not return_to.startswith("/") or return_to.startswith("//"):
+        return "/"
+    if "\\" in return_to or "://" in return_to:
+        return "/"
+    if any(ch.isspace() for ch in return_to):
+        return "/"
+    return return_to
+
+
+def _spa_origin_from_redirect_uri(redirect_uri: str) -> str:
+    return redirect_uri.removesuffix("/api/v1/auth/callback")
+
+
+def _loopback_spa_origin(request: Request) -> str:
+    port = getattr(request.app.state, "port", None)
+    if port is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "AUTH_ORIGIN_UNRESOLVED",
+                "message": "cannot determine the browser origin for this callback",
+            },
+        )
+    return f"http://127.0.0.1:{port}"
+
+
+def _redirect_with_auth_error(
+    spa_origin: str, return_to: str, message: str
+) -> RedirectResponse:
+    encoded = quote(message, safe="")
+    return RedirectResponse(
+        url=f"{spa_origin}{return_to}?opendj_auth_error={encoded}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
 # ----- models -------------------------------------------------------------
 
 
@@ -166,6 +207,9 @@ class LoginIn(BaseModel):
     origin: str | None = None
     """Loopback origin the browser is on, e.g. http://127.0.0.1:9418.
     Omit when calling from the SPA -- the Origin header covers it."""
+
+    return_to: str | None = None
+    """Same-origin SPA path to return to after consent, e.g. /performance."""
 
 
 class LoginOut(BaseModel):
@@ -221,7 +265,10 @@ def start_login(body: LoginIn, request: Request) -> JSONResponse:
     config = _oauth_config()
     with AuthTimer.span("login"):
         origin = _resolve_origin(request, body.origin)
-        pending = _pending_logins(request).create(callback_url_for_origin(origin))
+        return_to = _sanitize_return_to(body.return_to)
+        pending = _pending_logins(request).create(
+            callback_url_for_origin(origin), return_to=return_to
+        )
         payload = LoginOut(
             authorization_url=build_authorization_url(config, pending),
             state=pending.state,
@@ -243,13 +290,18 @@ def finish_login(
 ) -> RedirectResponse:
     """Google's loopback redirect target. Plants the cookie, returns to the SPA."""
     if error:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "AUTH_DENIED",
-                "message": f"Google refused the sign-in: {error}",
-            },
-        )
+        return_to = "/"
+        spa_origin = _loopback_spa_origin(request)
+        if state:
+            try:
+                pending = _pending_logins(request).consume(state)
+            except AuthFlowError:
+                pending = None
+            if pending is not None:
+                spa_origin = _spa_origin_from_redirect_uri(pending.redirect_uri)
+                return_to = pending.return_to
+        message = f"Google refused the sign-in: {error}"
+        return _redirect_with_auth_error(spa_origin, return_to, message)
     if not state or not code:
         raise HTTPException(
             status_code=400,
@@ -262,20 +314,25 @@ def finish_login(
             },
         )
     config = _oauth_config()
+    pending: PendingLogin | None = None
     with AuthTimer.span("callback"):
         try:
             pending = _pending_logins(request).consume(state)
             identity = exchange_code(config, pending, code)
         except AuthFlowError as exc:
-            raise HTTPException(
-                status_code=400,
-                detail={"code": "AUTH_EXCHANGE_FAILED", "message": str(exc)},
-            ) from exc
+            if pending is not None:
+                spa_origin = _spa_origin_from_redirect_uri(pending.redirect_uri)
+                return_to = pending.return_to
+            else:
+                spa_origin = _loopback_spa_origin(request)
+                return_to = "/"
+            return _redirect_with_auth_error(spa_origin, return_to, str(exc))
 
         token = _session_store(request).sign_in(identity)
-        spa_origin = pending.redirect_uri.removesuffix("/api/v1/auth/callback")
+        spa_origin = _spa_origin_from_redirect_uri(pending.redirect_uri)
         response = RedirectResponse(
-            url=f"{spa_origin}/", status_code=status.HTTP_303_SEE_OTHER,
+            url=f"{spa_origin}{pending.return_to}",
+            status_code=status.HTTP_303_SEE_OTHER,
         )
         _set_session_cookie(response, token)
     return response

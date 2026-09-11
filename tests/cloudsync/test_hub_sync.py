@@ -30,6 +30,7 @@ would test a spoke whose edits are invisible to its own push.
 """
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -172,12 +173,20 @@ def _insert_track(
     conn.execute(
         """
         INSERT INTO tracks(
-            stable_id, stable_id_tier, title, created_at, updated_at,
-            origin_device_id, deleted_at
+            stable_id, stable_id_tier, title, content_hash, created_at,
+            updated_at, origin_device_id, deleted_at
         )
-        VALUES (?, 'inferred', ?, ?, ?, ?, ?)
+        VALUES (?, 'inferred', ?, ?, ?, ?, ?, ?)
         """,
-        (stable_id, title, _T0, stamped, origin, deleted_at),
+        (
+            stable_id,
+            title,
+            hashlib.sha256(stable_id.encode("utf-8")).hexdigest(),
+            _T0,
+            stamped,
+            origin,
+            deleted_at,
+        ),
     )
 
 

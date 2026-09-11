@@ -10,26 +10,29 @@ Narrow surface:
 
 Tests swap the underlying spotipy via ``spotipy_client`` ctor arg.
 """
+
 from __future__ import annotations
 
 import json
 import os
 import re
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Protocol
+from typing import Any, Protocol
 
 from apps.shared.paths import DATA_DIR
 
 __all__ = [
-    "SpotifyTrack",
-    "SpotifyPlaylist",
-    "SpotifyClient",
-    "MissingCredentialsError",
-    "SpotifyClientProtocol",
     "CACHE_DIR",
     "TOKEN_CACHE_PATH",
+    "MissingCredentialsError",
+    "SpotifyClient",
+    "SpotifyClientProtocol",
+    "SpotifyPlaylist",
+    "SpotifyTrack",
+    "parse_playlist_payload",
 ]
 
 _CACHE_TTL_SECONDS: int = 24 * 60 * 60
@@ -48,6 +51,7 @@ def _validate_playlist_id(playlist_id: str) -> str:
             "expected alphanumeric + dash, length 1..64"
         )
     return playlist_id
+
 
 TOKEN_CACHE_PATH: Path = Path("~/.music-dj-tools/spotify-token.json").expanduser()
 CACHE_DIR: Path = DATA_DIR / "spotify" / "cache"
@@ -105,8 +109,9 @@ class MissingCredentialsError(RuntimeError):
 class SpotifyClientProtocol(Protocol):
     """Minimal shape we depend on from ``spotipy.Spotify``."""
 
-    def playlist(self, playlist_id: str, fields: str | None = None) -> dict:
-        ...  # pragma: no cover -- protocol
+    def playlist(
+        self, playlist_id: str, fields: str | None = None
+    ) -> dict: ...  # pragma: no cover -- protocol
 
     def playlist_items(
         self,
@@ -114,13 +119,13 @@ class SpotifyClientProtocol(Protocol):
         limit: int = 100,
         offset: int = 0,
         additional_types: tuple[str, ...] = ("track",),
-    ) -> dict:
-        ...  # pragma: no cover -- protocol
+    ) -> dict: ...  # pragma: no cover -- protocol
 
 
 # ---------------------------------------------------------------------------
 # Cache helpers
 # ---------------------------------------------------------------------------
+
 
 def _cache_path(playlist_id: str, cache_dir: Path) -> Path:
     # Defense in depth: refuse to build a cache path for an unvalidated id.
@@ -149,6 +154,7 @@ def _read_cache(path: Path) -> dict:
 # Payload -> typed
 # ---------------------------------------------------------------------------
 
+
 def _parse_track_item(item: dict) -> SpotifyTrack | None:
     """Convert one ``playlist_items.items[i]`` payload entry.
 
@@ -164,9 +170,7 @@ def _parse_track_item(item: dict) -> SpotifyTrack | None:
     ex = track.get("external_ids") or {}
     isrc = ex.get("isrc") if isinstance(ex, dict) else None
     title = track.get("name") or ""
-    artists = tuple(
-        a.get("name", "") for a in (track.get("artists") or []) if isinstance(a, dict)
-    )
+    artists = tuple(a.get("name", "") for a in (track.get("artists") or []) if isinstance(a, dict))
     album_obj = track.get("album") or {}
     album = album_obj.get("name", "") if isinstance(album_obj, dict) else ""
     duration_ms = int(track.get("duration_ms") or 0)
@@ -198,9 +202,15 @@ def _parse_playlist_payload(payload: dict) -> SpotifyPlaylist:
     )
 
 
+def parse_playlist_payload(payload: dict) -> SpotifyPlaylist:
+    """Parse a captured or fetched Spotify playlist through the wire contract."""
+    return _parse_playlist_payload(payload)
+
+
 # ---------------------------------------------------------------------------
 # Client
 # ---------------------------------------------------------------------------
+
 
 class SpotifyClient:
     """Thin wrapper around ``spotipy.Spotify`` for Phase 9."""
@@ -222,7 +232,7 @@ class SpotifyClient:
         *,
         cache_dir: Path = CACHE_DIR,
         cache_ttl: int = _CACHE_TTL_SECONDS,
-    ) -> "SpotifyClient":
+    ) -> SpotifyClient:
         """Build a real client using ``SPOTIFY_CLIENT_ID`` from the env."""
         client_id = os.environ.get("SPOTIFY_CLIENT_ID")
         if not client_id:
@@ -230,7 +240,7 @@ class SpotifyClient:
                 "SPOTIFY_CLIENT_ID not set. Wrap the command with "
                 "`doppler run -- ...` or export the env var manually."
             )
-        import spotipy  # noqa: WPS433 -- lazy import
+        import spotipy
         from spotipy.oauth2 import SpotifyPKCE
 
         TOKEN_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -263,10 +273,7 @@ class SpotifyClient:
         meta = self._call(
             lambda: self._sp.playlist(
                 playlist_id,
-                fields=(
-                    "id,name,snapshot_id,owner(id,display_name),"
-                    "description,tracks(total)"
-                ),
+                fields=("id,name,snapshot_id,owner(id,display_name),description,tracks(total)"),
             ),
         )
         items: list[dict] = []

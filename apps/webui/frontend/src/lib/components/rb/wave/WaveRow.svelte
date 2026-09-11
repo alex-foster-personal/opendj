@@ -61,7 +61,7 @@
 		waveSnapModeFromModifiers
 	} from './wave-scrub';
 	import WaveGutter from './WaveGutter.svelte';
-	import LyricsLane from './LyricsLane.svelte';
+	import LyricLanes from './LyricLanes.svelte';
 	import { createLyricsFetchState } from './lyrics-fetch.svelte';
 
 	const { deckId }: { deckId: DeckId } = $props();
@@ -515,7 +515,7 @@ estimated from the render clock and may run ahead of what you hear."
 			onpointercancel={onPointerCancel}
 			onlostpointercapture={onLostPointerCapture}
 		></canvas>
-		<LyricsLane lyrics={lyricsState.lyrics} loadError={lyricsState.loadError} positionMs={_paintPositionMs()} pitch={deck.pitch} />
+		<LyricLanes stableId={deck.stable_id} lyrics={lyricsState.lyrics} loadError={lyricsState.loadError} positionMs={_paintPositionMs()} pitch={deck.pitch} />
 		{#if deck.stable_id !== null && anlzErrorCode !== null && beatgridFallback === null}
 			<span class="anlz-state" title={anlzErrorCode}>
 				{anlzErrorCode === 'ANALYSIS_NOT_FOUND' ? 'NO ANALYSIS' : `ANLZ ERROR ${anlzErrorCode}`}
