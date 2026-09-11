@@ -34,8 +34,6 @@ def _ungradable_pred(lane: str) -> Callable[[dict[str, Any]], bool]:
         return lambda row: not row.get("rb_cue_db")
     if lane in {"cues_anlz", "waveform_detail"}:
         return lambda row: not row.get("rb_ext_readable", True)
-    if lane == "vocal":
-        return lambda row: not row.get("rb_pvdi")
     return lambda _row: False
 
 

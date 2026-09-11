@@ -27,7 +27,7 @@ LANE_IDS: Final[tuple[str, ...]] = (
     "vocal",
 )
 
-SCORED_THIS_ROUND: Final[tuple[str, ...]] = ("bpm", "key")
+SCORED_THIS_ROUND: Final[tuple[str, ...]] = ("bpm", "key", "vocal")
 DELEGATED_THIS_ROUND: Final[tuple[str, ...]] = ("beatgrid", "downbeat")
 
 # Follow-up issue bodies start `Part k of 5 of #1520`. This PR is part 1.
@@ -85,5 +85,7 @@ DENOMINATOR_NAME: Final[dict[str, str]] = {
     "cues_anlz": (
         "tracks with readable rekordbox ANLZ cues (PCOB/PCO2) in this fixture"
     ),
-    "vocal": "tracks with rekordbox PVDI in this fixture",
+    "vocal": (
+        "tracks with rekordbox PVDI among present audio in this fixture"
+    ),
 }

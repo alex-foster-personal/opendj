@@ -13,6 +13,7 @@ from apps.parity.figure import LaneFigure, ParityThresholdNotCalibrated
 from apps.parity.key import score_key
 from apps.parity.lanes import DELEGATED_THIS_ROUND, LANE_IDS, SCORED_THIS_ROUND
 from apps.parity.remaining import classify_remaining
+from apps.parity.vocal import score_vocal
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,8 @@ def score_payload(payload: dict[str, Any]) -> ParityReport:
             figures.append(score_bpm(rows, measured_at=measured_at))
         elif lane == "key":
             figures.append(score_key(rows, measured_at=measured_at))
+        elif lane == "vocal":
+            figures.append(score_vocal(rows, measured_at=measured_at))
         else:
             figures.append(classify_remaining(lane, rows, measured_at=measured_at))
     return ParityReport(
@@ -83,10 +86,10 @@ def score_payload(payload: dict[str, Any]) -> ParityReport:
     )
 
 
-def render_report(report: ParityReport) -> str:
+def render_report(report: ParityReport, *, parity_round: int = 1) -> str:
     """Markdown a later session can resume from. Never says 'at parity'."""
     lines = [
-        "# PARITY-01 round 0",
+        f"# PARITY-01 round {parity_round}",
         "",
         f"Measured {report.measured_at}. Scorer {report.scorer_version}.",
         "No lane is described as matching a calibrated threshold; "
@@ -112,6 +115,16 @@ def render_report(report: ParityReport) -> str:
                 f"MIREX mean {figure.mirex_mean:.3f} of {figure.scored_n} scored; "
                 f"related {related}; failed_own {figure.failed_own_n}. "
                 "Reuses analysis_bench key weighted_score."
+            )
+        if figure.lane == "vocal" and figure.iou_mean is not None:
+            notes = (
+                f"mean IoU {figure.iou_mean:.3f} of {figure.scored_n} scored; "
+                f"exact (IoU=1) {figure.exact_n}; reporting, not a threshold."
+            )
+        elif figure.lane == "vocal" and figure.status == "scored":
+            notes = (
+                f"mean IoU - of {figure.scored_n} scored; "
+                f"exact (IoU=1) {figure.exact_n or 0}; reporting, not a threshold."
             )
         lines.append(
             f"| {figure.lane} | {figure.status} | {figure.denominator_n} | "

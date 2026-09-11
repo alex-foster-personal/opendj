@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "measured_at": "Fri 11 Sep 2026",
-  "parity_round": 0,
+  "parity_round": 1,
   "population": {
     "present": 10,
     "tracks_rows": 9986,
@@ -19,10 +19,20 @@
       "rb_pssi": false,
       "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false,
-      "rb_vocal_regions": null,
-      "own_vocal_regions": null,
-      "duration_s": null
+      "rb_pvdi": true,
+      "rb_vocal_regions": [
+        {
+          "start_s": 10.0,
+          "end_s": 90.0
+        }
+      ],
+      "own_vocal_regions": [
+        {
+          "start_s": 10.5,
+          "end_s": 89.5
+        }
+      ],
+      "duration_s": 100.0
     },
     {
       "stable_id": "exact-key-c",
@@ -35,10 +45,10 @@
       "rb_pssi": false,
       "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false,
-      "rb_vocal_regions": null,
-      "own_vocal_regions": null,
-      "duration_s": null
+      "rb_pvdi": true,
+      "rb_vocal_regions": [],
+      "own_vocal_regions": [],
+      "duration_s": 100.0
     },
     {
       "stable_id": "bpm-within-0.1",
@@ -51,10 +61,20 @@
       "rb_pssi": false,
       "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false,
-      "rb_vocal_regions": null,
-      "own_vocal_regions": null,
-      "duration_s": null
+      "rb_pvdi": true,
+      "rb_vocal_regions": [
+        {
+          "start_s": 0.0,
+          "end_s": 30.0
+        }
+      ],
+      "own_vocal_regions": [
+        {
+          "start_s": 70.0,
+          "end_s": 100.0
+        }
+      ],
+      "duration_s": 100.0
     },
     {
       "stable_id": "bpm-octave-half",
@@ -67,10 +87,15 @@
       "rb_pssi": false,
       "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false,
-      "rb_vocal_regions": null,
-      "own_vocal_regions": null,
-      "duration_s": null
+      "rb_pvdi": true,
+      "rb_vocal_regions": [],
+      "own_vocal_regions": [
+        {
+          "start_s": 20.0,
+          "end_s": 80.0
+        }
+      ],
+      "duration_s": 100.0
     },
     {
       "stable_id": "key-relative",
@@ -83,9 +108,19 @@
       "rb_pssi": false,
       "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false,
-      "rb_vocal_regions": null,
-      "own_vocal_regions": null,
+      "rb_pvdi": true,
+      "rb_vocal_regions": [
+        {
+          "start_s": 5.0,
+          "end_s": 40.0
+        }
+      ],
+      "own_vocal_regions": [
+        {
+          "start_s": 6.0,
+          "end_s": 38.0
+        }
+      ],
       "duration_s": null
     },
     {
@@ -131,8 +166,13 @@
       "rb_pssi": false,
       "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false,
-      "rb_vocal_regions": null,
+      "rb_pvdi": true,
+      "rb_vocal_regions": [
+        {
+          "start_s": 5.0,
+          "end_s": 50.0
+        }
+      ],
       "own_vocal_regions": null,
       "duration_s": null
     },
@@ -147,10 +187,20 @@
       "rb_pssi": false,
       "rb_cue_db": false,
       "rb_ext_readable": true,
-      "rb_pvdi": false,
-      "rb_vocal_regions": null,
-      "own_vocal_regions": null,
-      "duration_s": null
+      "rb_pvdi": true,
+      "rb_vocal_regions": [
+        {
+          "start_s": 15.0,
+          "end_s": 60.0
+        }
+      ],
+      "own_vocal_regions": [
+        {
+          "start_s": 15.0,
+          "end_s": 58.0
+        }
+      ],
+      "duration_s": 100.0
     },
     {
       "stable_id": "ungradable-key-all",
