@@ -1,12 +1,9 @@
-"""Real acceptance coverage for the own_loudness.backfill producer.
+"""Real acceptance coverage for the own_loudness.backfill lane producer.
 
-nav1-contract's LaneResult contract merged to main (specs/native-analysis-v1-
-lanes/nav1-loudness.md), so this replaces the strict xfail handoff test: a
-strict xfail is green while the thing it names does not exist, which is
-exactly the check that cannot fail. This test calls the producer directly
-(there is no dispatcher to resolve its own-producer name through yet, per
-nav1-loudness.md's split clause) and verifies the LaneResult it returns,
-against both a real fixture and a silent one.
+The AnalyzerBackend wrapper is registered in apps.analysis.backends; these
+tests still call produce_lane_result directly so the LaneResult contract is
+checked independently of record construction, against both a real fixture
+and a silent one.
 """
 
 from __future__ import annotations
@@ -30,10 +27,17 @@ def _sine(path: Path) -> Path:
     _require_ffmpeg()
     subprocess.run(
         [
-            "ffmpeg", "-hide_banner", "-nostats", "-y",
-            "-f", "lavfi",
-            "-i", "aevalsrc=0.1*sin(2*PI*1000*t):d=5:s=44100",
-            "-c:a", "pcm_s16le", str(path),
+            "ffmpeg",
+            "-hide_banner",
+            "-nostats",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "aevalsrc=0.1*sin(2*PI*1000*t):d=5:s=44100",
+            "-c:a",
+            "pcm_s16le",
+            str(path),
         ],
         check=True,
         capture_output=True,
@@ -45,11 +49,19 @@ def _silence(path: Path) -> Path:
     _require_ffmpeg()
     subprocess.run(
         [
-            "ffmpeg", "-hide_banner", "-nostats", "-y",
-            "-f", "lavfi",
-            "-i", "anullsrc=r=44100:cl=stereo",
-            "-t", "5",
-            "-c:a", "pcm_s16le", str(path),
+            "ffmpeg",
+            "-hide_banner",
+            "-nostats",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=44100:cl=stereo",
+            "-t",
+            "5",
+            "-c:a",
+            "pcm_s16le",
+            str(path),
         ],
         check=True,
         capture_output=True,

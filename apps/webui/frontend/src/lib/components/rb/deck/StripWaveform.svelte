@@ -288,7 +288,7 @@
 		padding: 0 1px;
 		font-size: 8px;
 		line-height: 9px;
-		color: #fff;
+		color: var(--rb-bg);
 		background: var(--rb-green);
 		border-radius: 1px;
 	}
