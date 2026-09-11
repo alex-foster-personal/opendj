@@ -364,6 +364,7 @@ def test_tracks_evaluates_rule_and_hydrates_rows(client, state_db_path):
         "preview_max",
         "file_exists",
         "is_streaming",
+        "is_remote",
         "play_count",
         "vocals",
         "stems",

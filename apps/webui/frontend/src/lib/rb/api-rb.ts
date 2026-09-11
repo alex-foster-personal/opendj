@@ -364,6 +364,8 @@ export interface PlaylistTrackRowWire {
 	preview_max: number | null;
 	file_exists: boolean;
 	is_streaming: boolean;
+	/** LIBUX-07: our own audio in non-local storage. Optional for older payloads. */
+	is_remote?: boolean;
 	/** Unmatched Spotify placeholder row (light green). Optional for older payloads. */
 	spotify_pending?: boolean;
 	quality: TrackQuality;
@@ -513,6 +515,8 @@ export type TrackListItemWire = Track & {
 	preview_b64: string | null;
 	preview_max: number | null;
 	file_exists: boolean;
+	/** LIBUX-07: our own audio in non-local storage. Optional for older payloads. */
+	is_remote?: boolean;
 	quality: TrackQuality;
 	play_count: number;
 	vocals: Vocals;

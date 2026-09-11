@@ -128,6 +128,7 @@ def list_tracks(
                 preview_b64=row["preview_b64"],
                 preview_max=row["preview_max"],
                 file_exists=row["file_exists"],
+                is_remote=bool(row.get("is_remote")),
                 quality=row["quality"],
                 vocals=row["vocals"],
                 stems=row["stems"],

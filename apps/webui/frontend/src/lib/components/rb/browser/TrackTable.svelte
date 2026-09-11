@@ -1299,6 +1299,7 @@
 						class:rb-row-find={findQuery !== '' && rowMatchesFind(row, findQuery)}
 						class:broken={!row.file_exists &&
 							!(row.is_streaming ?? row.rb_meta?.is_streaming) &&
+							row.is_remote !== true &&
 							row.spotify_pending !== true &&
 							!row.stable_id.startsWith('spotify-pending:')}
 						class:rb-row-job={jobProgress.activeFor(row.stable_id) !== null}
@@ -1352,6 +1353,28 @@
 										<path
 											d="M4.5 12a3 3 0 0 1-.4-5.97A4 4 0 0 1 12 6.5 2.75 2.75 0 0 1 11.5 12z"
 											fill="currentColor"
+										/>
+									</svg>
+								</span>
+							{:else if row.is_remote}
+								<span
+									class="remote"
+									title="remote audio - our file is in non-local storage, not on this machine"
+								>
+									<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+										<path
+											d="M4.5 9a3 3 0 0 1-.4-5.97A4 4 0 0 1 12 3.5 2.75 2.75 0 0 1 11.5 9"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="1.25"
+										/>
+										<path
+											d="M8 7.25v6M5.75 11.25 8 13.25 10.25 11.25"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="1.25"
+											stroke-linecap="round"
+											stroke-linejoin="round"
 										/>
 									</svg>
 								</span>
@@ -2256,6 +2279,10 @@
 	.missing {
 		color: var(--rb-red);
 		font-weight: 600;
+	}
+	.remote {
+		display: inline-flex;
+		color: var(--rb-text-dim);
 	}
 
 	/* FR-1: missing-file rows gray out (dim text + dim artwork) but stay
