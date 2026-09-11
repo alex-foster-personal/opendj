@@ -9,11 +9,6 @@
       "signature": "http-404:GET:/api/v1/tracks/<hash>/auto-cues",
       "issue": "#1871",
       "reason": "AutoPlay hunt: GET /api/v1/tracks/{id}/auto-cues returns 404"
-    },
-    {
-      "signature": "console.error:Failed to load resource: the server responded with a status of 401 (Unauthorized)",
-      "issue": "#1876",
-      "reason": "AutoPlay hunt: console.error 401 Unauthorized while mixing"
     }
   ]
 }
