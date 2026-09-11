@@ -50,7 +50,12 @@
 	import AnalysisDotsPopover from './AnalysisDotsPopover.svelte';
 	import StemTags from './StemTags.svelte';
 	import VocalAnalyzeButton from './VocalAnalyzeButton.svelte';
-	import { computeVirtualWindow } from './virtual-window';
+	import {
+		computeVirtualWindow,
+		TRACK_TABLE_THEAD_PX,
+		masterFoldVisibility,
+		scrollTopForRowIndex
+	} from './virtual-window';
 	import { createRowVisibilityObserver } from './observe-row';
 	import {
 		ANALYSIS_COLORS,
@@ -76,8 +81,6 @@
 	// ----- AUTOPLAY-COL -----------------------------------------------------
 	const AUTOPLAY_ARROW = '\u2193'; // down; flip to \u2191 without re-plumbing
 	const AUTOPLAY_COL_COUNT = 18;
-	const AUTOPLAY_THEAD_H = 20;
-
 	let colWidths = $state<Record<ColId, number>>({ ...COL_DEFAULTS });
 	const manuallyResizedColumns = new Set<ColId>();
 	let resizeCol: ColId | null = null;
@@ -612,7 +615,7 @@
 			rankOf: autoPlayOrder.rankOf,
 			rowIndexOf,
 			rowHeight,
-			scrollTop: liveScrollTop - AUTOPLAY_THEAD_H,
+			scrollTop: liveScrollTop - TRACK_TABLE_THEAD_PX,
 			viewportHeight,
 			pad: rowHeight * 2
 		});
@@ -691,7 +694,8 @@
 			viewportHeight,
 			rowHeight,
 			rowCount: rows.length,
-			overscan: OVERSCAN
+			overscan: OVERSCAN,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX
 		})
 	);
 	const visibleRows = $derived(rows.slice(windowInfo.startIndex, windowInfo.endIndex));
@@ -707,7 +711,12 @@
 		if (idx < 0) return;
 		const el = wrapEl;
 		if (el === null) return;
-		const top = Math.max(0, idx * rh - Math.floor(vh / 3));
+		const top = scrollTopForRowIndex({
+			rowIndex: idx,
+			rowHeight: rh,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX,
+			offsetFromTopPx: Math.floor(vh / 3)
+		});
 		el.scrollTop = top;
 		liveScrollTop = top;
 		onscrollcursor(top);
@@ -717,14 +726,15 @@
 	const masterIndex = $derived(
 		masterStableId === null ? -1 : rows.findIndex((r) => r.stable_id === masterStableId)
 	);
-	const masterFold = $derived.by((): 'above' | 'below' | null => {
-		if (masterIndex < 0 || viewportHeight <= 0) return null;
-		const top = masterIndex * rowHeight;
-		const bottom = top + rowHeight;
-		if (bottom <= liveScrollTop + 2) return 'above';
-		if (top >= liveScrollTop + viewportHeight - 2) return 'below';
-		return null;
-	});
+	const masterFold = $derived.by((): 'above' | 'below' | null =>
+		masterFoldVisibility({
+			rowIndex: masterIndex,
+			rowHeight,
+			scrollTop: liveScrollTop,
+			viewportHeight,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX
+		})
+	);
 
 	/** Suggest-next hover: jump to row while hovered, restore scroll on leave. */
 	let _suggestSavedScroll: number | null = null;
@@ -746,14 +756,24 @@
 		if (_suggestSavedScroll === null) _suggestSavedScroll = el.scrollTop;
 		const rh = untrack(() => rowHeight);
 		const vh = untrack(() => viewportHeight);
-		const target = Math.max(0, idx * rh - Math.floor(vh / 3));
+		const target = scrollTopForRowIndex({
+			rowIndex: idx,
+			rowHeight: rh,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX,
+			offsetFromTopPx: Math.floor(vh / 3)
+		});
 		el.scrollTop = target;
 		liveScrollTop = target;
 	});
 
 	function jumpToMaster(): void {
 		if (wrapEl === null || masterIndex < 0) return;
-		const target = Math.max(0, masterIndex * rowHeight - viewportHeight * 0.35);
+		const target = scrollTopForRowIndex({
+			rowIndex: masterIndex,
+			rowHeight,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX,
+			offsetFromTopPx: viewportHeight * 0.35
+		});
 		wrapEl.scrollTop = target;
 		liveScrollTop = target;
 		onscrollcursor(target);
