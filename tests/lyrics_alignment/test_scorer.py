@@ -74,6 +74,18 @@ def test_mismatched_word_rows_fail_loudly() -> None:
         lyric_align_score([0.0], [0.0, 1.0])
 
 
+def test_lyric_align_score_rejects_non_finite_and_negative_onsets() -> None:
+    with pytest.raises(ValueError, match="finite track second"):
+        lyric_align_score([1.0], [float("inf")])
+    with pytest.raises(ValueError, match="finite track second"):
+        lyric_align_score([1.0], [float("-inf")])
+    with pytest.raises(ValueError, match="finite track second"):
+        lyric_align_score([-0.1], [0.0])
+    with pytest.raises(ValueError, match="finite track second"):
+        lyric_align_score([0.0], [-0.1])
+    lyric_align_score([0.0], [0.0])
+
+
 def test_ship_tier_fixture_meets_all_ratified_thresholds() -> None:
     """If the committed Ship fixture regresses then the quality gate fails."""
     fixture = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
