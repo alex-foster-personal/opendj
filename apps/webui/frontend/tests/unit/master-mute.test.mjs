@@ -236,7 +236,7 @@ test('the mute gain is the final node before the destination on both output path
 		'if the mute gain does not feed _ctx.destination then muting silences nothing'
 	);
 	assert.ok(
-		body.includes('_masterGain.connect(_masterMuteGain)'),
+		body.includes('wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones)'),
 		'if the master bus does not feed the mute gain then the mute is out of the chain'
 	);
 
