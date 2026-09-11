@@ -36,6 +36,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
@@ -398,5 +399,131 @@ describe('a configured factor reaches both wheel seams', () => {
 
 		store.clear();
 		installFakeWindow();
+	});
+});
+
+//-----------------------------------------------------------------------------
+// an upgrade must not brick an install that already retuned from devtools
+//-----------------------------------------------------------------------------
+
+describe('a factor stored before the floor existed', () => {
+	it('is raised to the floor and written back, not treated as corruption', async () => {
+		// A fresh window, because an earlier test replaced the global one and
+		// this `store` handle would otherwise point at a detached map.
+		store = installFakeWindow();
+		// 0.02 was writable through window.__mdtWheelSensitivity before
+		// WHEEL_SENSITIVITY_MIN existed (PR #599 shipped the bridge first), so
+		// this is the exact blob an upgraded install can be holding.
+		store.set(STORAGE_KEY, JSON.stringify({ mouse: 1, trackpad: 0.02 }));
+
+		const migrated = await loadTypeScriptModule(WHEEL_MODULE);
+		assert.equal(
+			migrated.wheelSensitivity().trackpad,
+			migrated.WHEEL_SENSITIVITY_MIN,
+			'a pre-floor factor was not raised to the floor'
+		);
+		assert.equal(migrated.wheelSensitivity().mouse, 1, 'the migration moved the other input kind');
+		assert.deepEqual(
+			persistedBlob(),
+			{ mouse: 1, trackpad: migrated.WHEEL_SENSITIVITY_MIN },
+			'the raise was not written back, so the stored value and the slider minimum can disagree'
+		);
+
+		const reloaded = await loadTypeScriptModule(WHEEL_MODULE);
+		assert.equal(
+			reloaded.wheelSensitivity().trackpad,
+			reloaded.WHEEL_SENSITIVITY_MIN,
+			'the migration did not survive a second load'
+		);
+		store.clear();
+	});
+
+	it('still throws on a value that was never legal in any version', async () => {
+		for (const bad of [{ mouse: 0 }, { mouse: -1 }, { mouse: 99 }, { mouse: 'wide' }]) {
+			store = installFakeWindow();
+			store.set(STORAGE_KEY, JSON.stringify(bad));
+			await assert.rejects(
+				loadTypeScriptModule(WHEEL_MODULE),
+				`a stored blob of ${JSON.stringify(bad)} was accepted instead of refused`
+			);
+		}
+	});
+});
+
+//-----------------------------------------------------------------------------
+// a write the panel did not make must still reach the panel
+//-----------------------------------------------------------------------------
+
+describe('the factors announce every change, whoever made it', () => {
+	it('tells a subscriber about a bridge write and a reset, and stops on unsubscribe', async () => {
+		store = installFakeWindow();
+		// A fresh instance, because the bridge on `window` was installed by
+		// whichever copy of this module loaded last (the harness explains the
+		// multi-instance shape at the top of this file). Loading one here makes
+		// the bridge and the subscription provably the same store.
+		const live = await loadTypeScriptModule(WHEEL_MODULE);
+		const seen = [];
+		const unsubscribe = live.subscribeWheelSensitivity((next) => seen.push(next));
+
+		window.__mdtWheelSensitivity.set('trackpad', 0.2);
+		assert.deepEqual(
+			seen.at(-1),
+			{ mouse: 1, trackpad: 0.2 },
+			'a write through the agent bridge told no subscriber, so the panel keeps the old factor'
+		);
+
+		window.__mdtWheelSensitivity.reset();
+		assert.deepEqual(
+			seen.at(-1),
+			{ ...live.WHEEL_SENSITIVITY },
+			'a reset told no subscriber'
+		);
+
+		const before = seen.length;
+		unsubscribe();
+		live.setWheelSensitivity('mouse', 2);
+		assert.equal(seen.length, before, 'an unsubscribed listener was still called');
+
+		live.resetWheelSensitivity();
+	});
+
+	it('informs every listener, each with its own copy', () => {
+		store.clear();
+		const first = [];
+		const second = [];
+		const stopFirst = wheel.subscribeWheelSensitivity((next) => first.push(next));
+		const stopSecond = wheel.subscribeWheelSensitivity((next) => second.push(next));
+
+		wheel.setWheelSensitivity('mouse', 0.5);
+		assert.equal(first.length, 1);
+		assert.equal(second.length, 1);
+		assert.notEqual(first[0], second[0], 'two listeners were handed one shared object');
+
+		first[0].mouse = 999;
+		assert.equal(
+			wheel.wheelSensitivity().mouse,
+			0.5,
+			'a listener mutating what it was handed reached the live factors'
+		);
+
+		stopFirst();
+		stopSecond();
+		wheel.resetWheelSensitivity();
+		store.clear();
+	});
+
+	it('is what the settings panel renders from, not a private cache', () => {
+		const source = readFileSync(
+			new URL(
+				'../../src/lib/components/settings/SettingsOverlay.svelte',
+				import.meta.url
+			),
+			'utf8'
+		);
+		assert.match(
+			source,
+			/subscribeWheelSensitivity\(/,
+			'the settings panel never subscribes, so a bridge write while it is open goes unseen'
+		);
 	});
 });

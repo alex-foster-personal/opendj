@@ -38,6 +38,7 @@
 		settingsOverlay
 	} from '$lib/settings/overlay.svelte';
 	import { filterSettings, visibleGroups } from '$lib/settings/search';
+	import { subscribeWheelSensitivity } from '$lib/rb/wheel-adjust';
 	import {
 		setAutoSyncDestination,
 		uiPrefs,
@@ -64,9 +65,8 @@
 	/** Local mirror of the number-kind rows (today: the two wheel-sensitivity
 	 * factors). Their store lives in `lib/rb/wheel-adjust.ts`, which is a plain
 	 * .ts file and therefore carries no runes - Svelte cannot track a plain
-	 * module variable, so without this mirror the readout would go stale after
-	 * a Reset or an agent-bridge write while the panel is open. Seeded on open,
-	 * updated on every change that goes through the same allowlisted mutator. */
+	 * module variable. Seeded on open, and refreshed by the subscription below
+	 * on EVERY change, including writes this component did not make. */
 	let numberDraft = $state<Record<string, number>>({});
 
 	const hideTodo = $derived(uiPrefs.hide_todo_settings);
@@ -92,6 +92,18 @@
 		pendingProposal = null;
 		numberDraft = _seedNumbers();
 		void tick().then(() => searchEl?.focus());
+	});
+
+	/** Re-read the number rows whenever the factors change, whoever changed
+	 * them. The store is in a plain .ts module, so Svelte cannot track it: this
+	 * subscription is what keeps the slider and its readout from showing the
+	 * previous factor after `window.__mdtWheelSensitivity.set()` or `.reset()`
+	 * while the panel is open (review thread r3984202679). The effect returns
+	 * the unsubscribe, so closing the component leaves no listener behind. */
+	$effect(() => {
+		return subscribeWheelSensitivity(() => {
+			numberDraft = _seedNumbers();
+		});
 	});
 
 	$effect(() => {
@@ -238,11 +250,11 @@
 		return value.toFixed(2);
 	}
 
-	/** One writer for both the drag and the Reset button, so the persisted
-	 * factor and the on-screen readout cannot diverge. */
+	/** One writer for both the drag and the Reset button. The subscription
+	 * above refreshes the readout, so this is the only path that writes the
+	 * factor and the two cannot diverge. */
 	function writeNumber(def: SettingDef, value: number): void {
 		applySettingChange(def.id, String(value));
-		numberDraft = { ...numberDraft, [def.id]: value };
 	}
 
 	function onNumberInput(def: SettingDef, e: Event): void {
