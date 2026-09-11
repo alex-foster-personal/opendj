@@ -43,6 +43,11 @@ Requirements (mini-PRD):
       attempt is booked, on the next tick, against the queue the WORKER read
     [if] starting the drain raises [then] no attempt is recorded, so the next
       tick over the same queue retries instead of reporting "unchanged"
+  ✔︎ ✅ wait_for_outcome(): a caller blocks on the tick recording an outcome,
+    never on a wall-clock poll, so a slow runner cannot fake a failure.
+    [if] a tick records an outcome [then] the waiter wakes with that value
+    [if] no tick records within the timeout [then] it returns None, which a
+      caller reports as a hang, distinct from a wrong outcome
 """
 from __future__ import annotations
 
@@ -244,6 +249,7 @@ class AutoAnalyzeWatcher:
         #: purpose: see :class:`Attempt`.
         self._booked: object | None = None
         self._stop = threading.Event()
+        self._outcome_recorded = threading.Condition()
         self._thread: threading.Thread | None = None
 
     @property
@@ -253,8 +259,28 @@ class AutoAnalyzeWatcher:
     def tick(self) -> str:
         """One reconcile step. Returns a member of :data:`TICK_OUTCOMES`."""
         outcome = self._decide()
-        self._state.last_outcome = outcome
+        self._record(outcome)
         return outcome
+
+    def _record(self, outcome: str) -> None:
+        """Set ``last_outcome`` and wake every :meth:`wait_for_outcome` caller."""
+        with self._outcome_recorded:
+            self._state.last_outcome = outcome
+            self._outcome_recorded.notify_all()
+
+    def wait_for_outcome(self, timeout: float) -> str | None:
+        """Block until a tick has recorded ``last_outcome``, then return it.
+
+        Returns None when no tick recorded one within ``timeout``: the thread
+        is hung or never started, a different failure from a tick that
+        recorded the wrong outcome. ``timeout`` is a hang guard, not a
+        budget - the wait returns the moment a tick records.
+        """
+        with self._outcome_recorded:
+            self._outcome_recorded.wait_for(
+                lambda: self._state.last_outcome is not None, timeout
+            )
+            return self._state.last_outcome
 
     def _account_for(self, attempt: Attempt | None) -> None:
         """Settle the last drain's attempt against ``last_signature``.
