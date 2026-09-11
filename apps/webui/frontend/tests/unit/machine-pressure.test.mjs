@@ -290,6 +290,41 @@ test('toggling visibility while still queued does not fire the poll twice', asyn
 	assert.equal(fetched.length, 1, 'exactly one poll, not two');
 });
 
+test('kernel missing leaves kernelMemoryPressureLevel null with no label', () => {
+	const snapshot = pressure.pressureSnapshotFrom(
+		{ available: true, load_avg_1m: 1.0, cache_age_ms: 0 },
+		0
+	);
+	assert.equal(snapshot.kernelMemoryPressureLevel, null);
+	const labels = pressure.pressureLabels(snapshot, 0);
+	assert.equal(labels.kernel_memory_pressure_level, undefined);
+});
+
+test('kernel level zero is treated as unreadable', () => {
+	const snapshot = pressure.pressureSnapshotFrom(
+		{ available: true, load_avg_1m: 1.0, kernel_memory_pressure_level: 0, cache_age_ms: 0 },
+		0
+	);
+	assert.equal(snapshot.kernelMemoryPressureLevel, null);
+	assert.equal(pressure.pressureLabels(snapshot, 0).kernel_memory_pressure_level, undefined);
+});
+
+test('churn score present becomes a label', () => {
+	const snapshot = pressure.pressureSnapshotFrom(
+		{ available: true, churn_score: 500, cache_age_ms: 0 },
+		0
+	);
+	assert.equal(snapshot.churnScore, 500);
+	assert.equal(pressure.pressureLabels(snapshot, 0).churn_score, '500');
+});
+
+test('the poll interval remains ten seconds', async () => {
+	const stop = pressure.startMachinePressurePolling(immediateBootScheduler());
+	await settle();
+	assert.equal(intervals[0].delayMs, 10_000);
+	stop();
+});
+
 test('pressureIsElevated is false on a null snapshot', () => {
 	assert.equal(pressure.pressureIsElevated(null), false);
 });
@@ -300,9 +335,13 @@ test('kernel level 1 is not elevated', () => {
 		memFreeMb: null,
 		swapUsedMb: null,
 		kernelLevel: 1,
+		kernelMemoryPressureLevel: null,
 		churnScore: null,
 		swapRate: null,
 		decompRate: null,
+		band: null,
+		sampleIntervalMs: null,
+		compressedMb: null,
 		requestedAtMs: 1,
 		serverCacheAgeMs: 0
 	};
@@ -315,9 +354,13 @@ test('kernel level 2 is elevated', () => {
 		memFreeMb: null,
 		swapUsedMb: null,
 		kernelLevel: 2,
+		kernelMemoryPressureLevel: 2,
 		churnScore: null,
 		swapRate: null,
 		decompRate: null,
+		band: null,
+		sampleIntervalMs: null,
+		compressedMb: null,
 		requestedAtMs: 1,
 		serverCacheAgeMs: 0
 	};
@@ -330,9 +373,13 @@ test('churn 499 is not elevated without kernel', () => {
 		memFreeMb: null,
 		swapUsedMb: null,
 		kernelLevel: null,
+		kernelMemoryPressureLevel: null,
 		churnScore: 499,
 		swapRate: null,
 		decompRate: null,
+		band: null,
+		sampleIntervalMs: null,
+		compressedMb: null,
 		requestedAtMs: 1,
 		serverCacheAgeMs: 0
 	};
@@ -345,9 +392,13 @@ test('churn 500 is elevated without kernel', () => {
 		memFreeMb: null,
 		swapUsedMb: null,
 		kernelLevel: null,
+		kernelMemoryPressureLevel: null,
 		churnScore: 500,
 		swapRate: null,
 		decompRate: null,
+		band: null,
+		sampleIntervalMs: null,
+		compressedMb: null,
 		requestedAtMs: 1,
 		serverCacheAgeMs: 0
 	};
@@ -410,15 +461,21 @@ test('kernel_level 0 is a real reading, not elevated', async () => {
 
 test('subscribeMachinePressure fires only on accepted stores', () => {
 	const seen = [];
-	const stop = pressure.subscribeMachinePressure((snapshot) => seen.push(snapshot.requestedAtMs));
+	const unsubscribe = pressure.subscribeMachinePressure((snapshot) =>
+		seen.push(snapshot.requestedAtMs)
+	);
 	const newer = {
 		loadAvg1m: 1,
 		memFreeMb: null,
 		swapUsedMb: null,
 		kernelLevel: null,
+		kernelMemoryPressureLevel: null,
 		churnScore: null,
 		swapRate: null,
 		decompRate: null,
+		band: null,
+		sampleIntervalMs: null,
+		compressedMb: null,
 		requestedAtMs: 200,
 		serverCacheAgeMs: 0
 	};
@@ -426,7 +483,7 @@ test('subscribeMachinePressure fires only on accepted stores', () => {
 	assert.equal(pressure.storeMachinePressure(newer), true);
 	assert.equal(pressure.storeMachinePressure(older), false);
 	assert.deepEqual(seen, [200]);
-	stop();
+	unsubscribe();
 });
 
 test('a page that goes hidden while the first poll is still queued does not poll when released', async () => {

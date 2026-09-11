@@ -17,6 +17,8 @@ from typing import Any
 from .probe_native_metrics import DarwinProcessMetrics
 from .probe_types import ProcessRow, run_text
 
+_OPENDJ_NAME_RE = re.compile(r"opendj-[a-z0-9.-]+")
+
 WEBKIT_ASSOCIATION_WINDOW_SECONDS = 45.0
 WEBKIT_CLUSTER_WINDOW_SECONDS = 3.0
 
@@ -61,6 +63,17 @@ BUILD_IDENTITY_FIELDS = frozenset(
         "product_name",
     }
 )
+
+
+def opendj_process_name(command: str) -> str:
+    """Return the opendj-* setproctitle token, or ``unnamed`` when absent."""
+
+    if "/MacOS/opendj-desktop" in command:
+        return "opendj-desktop"
+    match = _OPENDJ_NAME_RE.search(command)
+    if match is not None:
+        return match.group(0)
+    return "unnamed"
 
 
 def process_table() -> list[ProcessRow]:

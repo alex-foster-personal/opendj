@@ -18,7 +18,11 @@ from typing import cast
 import pytest
 
 from scripts.diagnostics.probe_native_metrics import DarwinProcessMetrics
-from scripts.diagnostics.probe_process_family import ProcessRow, associate_process_family
+from scripts.diagnostics.probe_process_family import (
+    ProcessRow,
+    associate_process_family,
+    opendj_process_name,
+)
 
 SHELL_CMD = "/Applications/Open DJ.app/Contents/MacOS/opendj-desktop"
 WEBCONTENT_CMD = (
@@ -206,6 +210,44 @@ def test_two_webcontents_inside_the_cluster_window_are_kept_not_refused() -> Non
     assert association["webkit_cluster_found"] is True
     assert association["webkit_cluster_ambiguous"] is False
     assert {row.pid for row, _role in family} == {100, 300, 301}
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_opendj_process_name_uses_the_setproctitle_token() -> None:
+    assert (
+        opendj_process_name("opendj-engine --name opendj-engine --port 8585 [/usr/bin/python3]")
+        == "opendj-engine"
+    )
+    assert opendj_process_name("opendj-worker --name opendj-worker [...]") == "opendj-worker"
+    assert (
+        opendj_process_name("opendj-backend --name opendj-backend --port 8787 [...]")
+        == "opendj-backend"
+    )
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_opendj_desktop_shell_is_named_from_the_executable() -> None:
+    assert opendj_process_name(SHELL_CMD) == "opendj-desktop"
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_webkit_helper_is_unnamed() -> None:
+    assert opendj_process_name(WEBCONTENT_CMD) == "unnamed"
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_associate_still_includes_unnamed_webkit_members() -> None:
+    shell = _shell(100)
+    webcontent = _webcontent(300)
+    gpu = _gpu(301)
+    native = _native({100: 0.0, 300: 3.0, 301: 4.0})
+
+    family, _association = associate_process_family([shell, webcontent, gpu], shell, native)
+
+    pids = {row.pid for row, _role in family}
+    assert {300, 301} <= pids
+    commands = {row.command for row, _role in family if row.pid in {300, 301}}
+    assert all(opendj_process_name(command) == "unnamed" for command in commands)
 
 
 def test_no_webcontent_in_window_reports_no_cluster_not_an_error() -> None:
