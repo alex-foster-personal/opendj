@@ -98,7 +98,8 @@ def test_fixture_excerpts_are_real_dispatcher_log_lines():
     """The committed excerpts must stay verbatim copies, not paraphrases."""
     failed = (EXCERPTS / "failed-only.log").read_text().splitlines()
     assert any(
-        line == (
+        line
+        == (
             "---tick-end 2026-09-10T16:31:22Z model=opus effort=high "
             "reason=unclassified-error exit=1---"
         )
@@ -108,17 +109,16 @@ def test_fixture_excerpts_are_real_dispatcher_log_lines():
     assert all("exit_code=0" not in line for line in failed)
 
     ok_lines = (EXCERPTS / "one-ok.log").read_text().splitlines()
-    assert (
-        "---tick-end 2026-09-10T15:24:50Z model=opus effort=high reason=ok exit=0---"
-        in ok_lines
-    )
+    assert "---tick-end 2026-09-10T15:24:50Z model=opus effort=high reason=ok exit=0---" in ok_lines
 
     fallback = (EXCERPTS / "fallback-ok.log").read_text().splitlines()
-    assert any(line.startswith("attempt_end=2026-09-11T15:07:01Z") and "exit_code=0" in line for line in fallback)
+    assert any(
+        line.startswith("attempt_end=2026-09-11T15:07:01Z") and "exit_code=0" in line
+        for line in fallback
+    )
     assert (
         "---tick-end 2026-09-11T15:07:01Z model=opus effort=high "
-        "reason=session-limit exit=1---"
-        in fallback
+        "reason=session-limit exit=1---" in fallback
     )
 
 
@@ -128,10 +128,7 @@ def test_only_failed_ticks_in_the_window_fail(tmp_path):
     tickgate-dispatcher.ts is fresh, which is how the live probe stayed PASS
     all afternoon on Thu 10 Sep 2026 while every tick ended unclassified-error.
     """
-    assert (
-        _verdict(tmp_path, "failed-only.log", NOW_FAILED_WINDOW, tickgate_fresh=True)
-        == "FAIL"
-    )
+    assert _verdict(tmp_path, "failed-only.log", NOW_FAILED_WINDOW, tickgate_fresh=True) == "FAIL"
 
 
 def test_one_ok_tick_in_the_window_passes(tmp_path):
@@ -158,6 +155,5 @@ def test_fallback_attempt_exit_code_0_passes_even_if_tick_end_is_not_ok(tmp_path
     success; the fallback attempt_end with exit_code=0 is.
     """
     assert (
-        _verdict(tmp_path, "fallback-ok.log", NOW_FALLBACK_WINDOW, tickgate_fresh=False)
-        == "PASS"
+        _verdict(tmp_path, "fallback-ok.log", NOW_FALLBACK_WINDOW, tickgate_fresh=False) == "PASS"
     )
