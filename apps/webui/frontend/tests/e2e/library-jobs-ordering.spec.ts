@@ -14,15 +14,15 @@ import { expect, type Page, test } from '@playwright/test';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const API = process.env.LIBRARY_JOBS_E2E_API_BASE;
-const DATA_DIR = process.env.LIBRARY_JOBS_E2E_DATA_DIR;
+function requireEnv(name: string, value: string | undefined): string {
+	if (value === undefined || value === '') {
+		throw new Error(`${name} must be set by playwright.library-jobs.config.ts`);
+	}
+	return value;
+}
 
-if (API === undefined || API === '') {
-	throw new Error('LIBRARY_JOBS_E2E_API_BASE must be set by playwright.library-jobs.config.ts');
-}
-if (DATA_DIR === undefined || DATA_DIR === '') {
-	throw new Error('LIBRARY_JOBS_E2E_DATA_DIR must be set by playwright.library-jobs.config.ts');
-}
+const API = requireEnv('LIBRARY_JOBS_E2E_API_BASE', process.env.LIBRARY_JOBS_E2E_API_BASE);
+const DATA_DIR = requireEnv('LIBRARY_JOBS_E2E_DATA_DIR', process.env.LIBRARY_JOBS_E2E_DATA_DIR);
 
 interface LibraryJobItem {
 	stable_id: string;
