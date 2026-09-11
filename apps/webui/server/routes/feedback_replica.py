@@ -243,36 +243,64 @@ def _import(root: Path, imports: list[PinVersion], live: list[dict[str, Any]]) -
     _save(root / _COMMENTS_FILE, "comments", kept)
 
 
+@dataclass(frozen=True)
+class _ReconcilePlan:
+    """Which side of each pin moves: local wins export, stored wins import."""
+
+    exports: list[tuple[str, PinVersion]]
+    imports: list[PinVersion]
+    unchanged: int
+
+
+def _winning_side(
+    mine: PinVersion | None, theirs: PinVersion | None
+) -> Literal["export", "import", "unchanged"]:
+    """The one LWW rule (ADR-0013) for one pin id held by either side.
+
+    A side that does not hold the pin never wins by absence being read as
+    deletion: absence only means the other side's version is copied over.
+    """
+    if theirs is None:
+        return "export"
+    if mine is None:
+        return "import"
+    if _same(mine, theirs):
+        return "unchanged"
+    return "export" if mine.lww_key() > theirs.lww_key() else "import"
+
+
+def _plan_reconcile(
+    local: dict[str, PinVersion], stored: dict[str, PinVersion]
+) -> _ReconcilePlan:
+    exports: list[tuple[str, PinVersion]] = []
+    imports: list[PinVersion] = []
+    unchanged = 0
+    for pin_id in sorted(local.keys() | stored.keys()):
+        mine, theirs = local.get(pin_id), stored.get(pin_id)
+        side = _winning_side(mine, theirs)
+        if side == "export" and mine is not None:
+            exports.append((pin_id, mine))
+        elif side == "import" and theirs is not None:
+            imports.append(theirs)
+        elif side == "unchanged":
+            unchanged += 1
+    return _ReconcilePlan(exports=exports, imports=imports, unchanged=unchanged)
+
+
 def reconcile(conn: sqlite3.Connection, root: Path) -> ReconcileResult:
     """Bring ``comments.json`` and ``feedback_pins`` to the same set of pins.
 
     Idempotent: a second call with nothing edited in between moves nothing.
     """
     machine_id = sync_stamp.ensure_local_machine(conn)
-    exported = imported = unchanged = 0
     with _COMMENTS_LOCK:
-        local = local_versions(root, machine_id)
-        stored = stored_versions(conn)
-        exports: list[tuple[str, PinVersion]] = []
-        imports: list[PinVersion] = []
-        for pin_id in sorted(local.keys() | stored.keys()):
-            mine, theirs = local.get(pin_id), stored.get(pin_id)
-            if theirs is None and mine is not None:
-                exports.append((pin_id, mine))
-            elif mine is None and theirs is not None:
-                imports.append(theirs)
-            elif mine is not None and theirs is not None and _same(mine, theirs):
-                unchanged += 1
-            elif mine is not None and theirs is not None and mine.lww_key() > theirs.lww_key():
-                exports.append((pin_id, mine))
-            elif mine is not None and theirs is not None:
-                imports.append(theirs)
+        plan = _plan_reconcile(local_versions(root, machine_id), stored_versions(conn))
         with sync_stamp.stamped_transaction(conn):
-            for pin_id, mine in exports:
+            for pin_id, mine in plan.exports:
                 _export(conn, pin_id, mine, machine_id)
-        if imports:
-            _import(root, imports, _load(root / _COMMENTS_FILE, "comments"))
-        exported, imported = len(exports), len(imports)
+        if plan.imports:
+            _import(root, plan.imports, _load(root / _COMMENTS_FILE, "comments"))
+    exported, imported, unchanged = len(plan.exports), len(plan.imports), plan.unchanged
     if exported or imported:
         log.info(
             "feedback pins reconciled: %d exported for push, %d imported, %d unchanged",

@@ -23,6 +23,7 @@ up with no bookkeeping of its own.
 from __future__ import annotations
 
 import threading
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -238,6 +239,41 @@ def _pin_out(status: PinSyncStatus) -> PinSyncOut:
     )
 
 
+def _store_counts(statuses: list[PinSyncStatus]) -> FeedbackStoreSyncOut:
+    states = Counter(status.state for status in statuses)
+    archived = sum(status.archived for status in statuses)
+    return FeedbackStoreSyncOut(
+        live=len(statuses) - archived,
+        archived=archived,
+        synced=states["synced"],
+        pending_push=states["pending_push"],
+        unreconciled=states["unreconciled"],
+        attachments_missing=sum(status.attachment_bytes == "missing" for status in statuses),
+    )
+
+
+def _link_out(link: sync_status.CloudSyncStatus) -> CloudSyncLinkOut:
+    latest = link.recent_results[0] if link.recent_results else None
+    return CloudSyncLinkOut(
+        enabled=link.enabled,
+        reason=link.reason,
+        endpoint=link.endpoint,
+        last_result=None if latest is None else latest.status,
+        last_message=None if latest is None else latest.message,
+        last_finished_at=None if latest is None else latest.finished_at,
+    )
+
+
+def _only_pin(statuses: list[PinSyncStatus], pin_id: str) -> list[PinSyncStatus]:
+    """The one pin asked for, or a 404: an unknown id is never an empty list."""
+    selected = [status for status in statuses if status.pin_id == pin_id]
+    if not selected:
+        raise FeedbackSyncError(
+            404, "COMMENT_NOT_FOUND", f"no pin {pin_id!r} on this machine or in its sync table"
+        )
+    return selected
+
+
 def feedback_sync_status(store: FeedbackStore, pin_id: str | None = None) -> FeedbackSyncStatusOut:
     conn = state_db.open_rw(store.state_db_path)
     try:
@@ -245,30 +281,10 @@ def feedback_sync_status(store: FeedbackStore, pin_id: str | None = None) -> Fee
     finally:
         conn.close()
     if pin_id is not None:
-        statuses = [status for status in statuses if status.pin_id == pin_id]
-        if not statuses:
-            raise FeedbackSyncError(
-                404, "COMMENT_NOT_FOUND", f"no pin {pin_id!r} on this machine or in its sync table"
-            )
-    link = sync_status.read_status(store.data_dir)
-    latest = link.recent_results[0] if link.recent_results else None
+        statuses = _only_pin(statuses, pin_id)
     return FeedbackSyncStatusOut(
-        store=FeedbackStoreSyncOut(
-            live=sum(1 for s in statuses if not s.archived),
-            archived=sum(1 for s in statuses if s.archived),
-            synced=sum(1 for s in statuses if s.state == "synced"),
-            pending_push=sum(1 for s in statuses if s.state == "pending_push"),
-            unreconciled=sum(1 for s in statuses if s.state == "unreconciled"),
-            attachments_missing=sum(1 for s in statuses if s.attachment_bytes == "missing"),
-        ),
-        cloudsync=CloudSyncLinkOut(
-            enabled=link.enabled,
-            reason=link.reason,
-            endpoint=link.endpoint,
-            last_result=None if latest is None else latest.status,
-            last_message=None if latest is None else latest.message,
-            last_finished_at=None if latest is None else latest.finished_at,
-        ),
+        store=_store_counts(statuses),
+        cloudsync=_link_out(sync_status.read_status(store.data_dir)),
         pins=[_pin_out(status) for status in statuses],
     )
 
