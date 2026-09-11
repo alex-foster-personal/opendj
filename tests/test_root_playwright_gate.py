@@ -10,7 +10,6 @@ from pathlib import Path
 
 import yaml
 
-
 REPO = Path(__file__).resolve().parents[1]
 ROOT_CONFIG = REPO / "apps/webui/frontend/playwright.config.ts"
 SMOKE_SPEC = REPO / "apps/webui/frontend/tests/e2e/smoke.spec.ts"
@@ -66,6 +65,14 @@ def test_fixture_reset_is_bounded_to_the_repository_fixtures_directory() -> None
     # And the path never reaches a shell as a bare word.
     assert "rm -rf" not in source
     assert "shellArgument" in source
+
+
+def test_stem_decode_bench_spec_is_ignored_by_the_root_suite() -> None:
+    """if the bench spec is reachable from pnpm test:e2e then the root suite
+    loads playwright.stem-decode-bench.config.ts, which throws without a
+    production build (CI e2e gate on PR #2028)."""
+    source = ROOT_CONFIG.read_text()
+    assert "'**/stem-decode-bench.spec.ts'" in source
 
 
 def test_smoke_console_exemption_stays_specific_to_the_update_failure() -> None:
