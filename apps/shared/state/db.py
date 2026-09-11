@@ -70,9 +70,11 @@ def open_rw(
     gap on an owned table
     (:class:`apps.database.generate_agents_md.MissingColumnDocsError`)
     still fails the open. Leftover tables that are not in
-    :data:`apps.shared.state.schema.TABLES` (plus ``schema_meta``) are
-    omitted from the sidecar rather than aborting the open -- they are
-    one-shot conversion leftovers, not a forgotten schema column. An
+    :data:`apps.shared.state.schema.ALL_KNOWN_TABLES` are omitted from
+    the sidecar rather than aborting the open -- they are one-shot
+    conversion leftovers, not a forgotten schema column. Foreign-authority
+    tables (pairings, play_orders, launcher_meta, FTS) stay in the sidecar
+    when they are live. An
     unwritable directory is a spec-mandated skip, not a caught failure.
     ``MissingColumnDocsError`` is intentionally not caught here.
     """
@@ -91,7 +93,7 @@ def open_rw(
             regenerate_agents_md_if_writable(
                 conn,
                 target.parent,
-                owned_tables=frozenset(_schema.TABLES) | {"schema_meta"},
+                owned_tables=_schema.ALL_KNOWN_TABLES,
             )
     except Exception:
         conn.close()

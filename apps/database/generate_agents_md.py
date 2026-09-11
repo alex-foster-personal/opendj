@@ -29,6 +29,7 @@ because that pair is a package cycle the quality gate counts
 from __future__ import annotations
 
 import argparse
+import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -151,9 +152,10 @@ def introspect(
 
     When ``owned_tables`` is set, live tables outside that set are omitted
     rather than becoming a coverage failure. ``open_rw`` passes
-    ``schema.TABLES | {schema_meta}`` so a leftover one-shot table
+    ``schema.ALL_KNOWN_TABLES`` so a leftover one-shot table
     (``lyric_verdict_legacy``, ``lyric_word_legacy``) cannot abort opening
-    the app. The CLI leaves this unset, so extras still fail there.
+    the app, while foreign-authority tables stay in the sidecar. The CLI
+    leaves this unset, so extras still fail there.
     """
     virtual_tables = _virtual_table_names(conn)
     names = [
@@ -295,7 +297,13 @@ def write_agents_md(
     tables = introspect(conn, owned_tables=owned_tables)
     text = render(tables)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(text, encoding="utf-8")
+    tmp_path = out_path.with_name(f".{out_path.name}.{os.getpid()}.tmp")
+    try:
+        tmp_path.write_text(text, encoding="utf-8")
+        os.replace(tmp_path, out_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
     return text
 
 
@@ -332,7 +340,7 @@ def main(argv: list[str] | None = None) -> None:
     # Open sqlite here, not via apps.shared.state.db.open_ro: open_rw now
     # imports this package, so importing db from here would close a
     # database <-> shared package cycle. This CLI only introspects.
-    uri = f"file:{db_path}?mode=ro"
+    uri = db_path.resolve().as_uri() + "?mode=ro"
     conn = sqlite3.connect(uri, uri=True, isolation_level=None)
     try:
         conn.execute("PRAGMA query_only = ON")

@@ -48,9 +48,10 @@ def regenerate_agents_md_if_writable(
     stale ``column_docs.py`` acceptable.
 
     ``owned_tables`` is forwarded to :func:`write_agents_md`. ``open_rw``
-    passes ``schema.TABLES | {schema_meta}`` so leftover tables that are
-    not on the current ladder cannot abort the open. The CLI and tests
-    that omit it keep the strict every-live-table guard.
+    passes ``schema.ALL_KNOWN_TABLES`` so leftover tables that are not on
+    the current ladder cannot abort the open, while foreign-authority
+    tables stay in the sidecar. The CLI and tests that omit it keep the
+    strict every-live-table guard.
     """
     if not os.access(state_dir, os.W_OK):
         return False

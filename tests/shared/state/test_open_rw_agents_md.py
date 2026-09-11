@@ -26,7 +26,7 @@ def test_open_rw_writes_agents_md_with_real_table_heading(tmp_path: Path) -> Non
     assert agents_md.is_file()
     text = agents_md.read_text(encoding="utf-8")
     assert _AGENTS_HEADER in text
-    assert "## `tracks`" in text or "## `schema_meta`" in text
+    assert "## `tracks`" in text
 
 
 def test_open_rw_without_schema_does_not_write_agents_md(tmp_path: Path) -> None:
@@ -144,6 +144,24 @@ def test_open_rw_omits_legacy_leftover_tables_and_still_opens(tmp_path: Path) ->
     assert "## `tracks`" in text
     assert "lyric_verdict_legacy" not in text
     assert "lyric_word_legacy" not in text
+
+
+def test_open_rw_keeps_foreign_authority_tables_in_agents_md(tmp_path: Path) -> None:
+    """if launcher_meta exists then open_rw documents it instead of dropping it - broken"""
+    db_path = tmp_path / "state.db"
+    conn = open_rw(db_path)
+    conn.execute(
+        "CREATE TABLE launcher_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+    )
+    conn.close()
+
+    reopened = open_rw(db_path)
+    reopened.close()
+
+    text = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert "## `tracks`" in text
+    assert "## `launcher_meta`" in text
+    assert "## `schema_meta`" in text
 
 
 def test_open_dry_run_does_not_create_agents_md(tmp_path: Path) -> None:
