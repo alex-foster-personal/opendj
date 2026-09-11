@@ -281,6 +281,16 @@ def test_fail_findings_are_filed_shape() -> None:
     assert findings[0].fingerprint == "local-api-cors"
 
 
+def test_discover_path_routes_keeps_filenames_not_stable_id_verbs() -> None:
+    """stable_id identifier routes are not path/filename routes; audio still is."""
+    routes = mod.discover_path_routes(Path("apps/webui/openapi.json"))
+    templates = {item[1] for item in routes}
+    assert "/api/v1/tracks/{stable_id}/audio" in templates
+    assert "/api/v1/bench/ratings/{filename}" in templates
+    assert "/api/v1/setup/detect/folder" in templates
+    assert "/api/v1/tracks/{stable_id}/hot-cues" not in templates
+
+
 def test_just_recipe_is_the_one_command() -> None:
     """The probes are runnable with one command: just redteam-local-api."""
     text = Path("justfile").read_text(encoding="utf-8")

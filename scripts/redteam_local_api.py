@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -71,7 +72,6 @@ PATHISH_NAMES = frozenset(
         "folder_path",
         "batch_dir",
         "attachment_id",
-        "stable_id",
     }
 )
 TRAVERSAL_PAYLOADS = (
@@ -308,6 +308,8 @@ def probe_path_traversal(
     leaks: list[str] = []
     lines: list[str] = []
     for method, template, param in discovered:
+        if not _method_is_safe(method, template, param):
+            continue
         for payload in TRAVERSAL_PAYLOADS:
             path, body = _apply_payload(method, template, param, payload)
             status, err, preview = http_body(target.host, target.port, method, path, body)
@@ -490,11 +492,22 @@ def _path_control(target: ProbeTarget) -> tuple[bool, str]:
     return False, control
 
 
+def _method_is_safe(method: str, template: str, param: str) -> bool:
+    """Do not fire mutating verbs at path-in-URL routes (hot-cue PUT/DELETE)."""
+    verb = method.upper()
+    pathish_in_url = "{" + param + "}" in template
+    if pathish_in_url:
+        return verb in {"GET", "HEAD", "OPTIONS"}
+    return verb in {"GET", "HEAD", "OPTIONS", "POST"}
+
+
 def _apply_payload(
     method: str, template: str, param: str, payload: str
 ) -> tuple[str, str | None]:
     if "{" + param + "}" in template:
-        return template.replace("{" + param + "}", payload), None
+        path = template.replace("{" + param + "}", payload)
+        path = re.sub(r"\{[^}]+\}", "x", path)
+        return path, None
     if method in {"POST", "PUT", "PATCH"}:
         return template, json.dumps({param: payload})
     joiner = "&" if "?" in template else "?"
