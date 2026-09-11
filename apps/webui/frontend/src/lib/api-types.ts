@@ -2436,7 +2436,11 @@ export interface paths {
         /** List Smartlists */
         get: operations["list_smartlists_api_v1_smartlists_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create Smartlist
+         * @description Persist a new smartlist and return the created summary plus ETag.
+         */
+        post: operations["create_smartlist_api_v1_smartlists_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7044,6 +7048,26 @@ export interface components {
             etag: string;
             /** Message */
             message: string;
+        };
+        /**
+         * SmartlistCreateIn
+         * @description Create payload matching ``python -m apps.smartlists.cli.create``.
+         */
+        SmartlistCreateIn: {
+            /**
+             * Name
+             * @description Display name (non-empty)
+             */
+            name: string;
+            /**
+             * Order By
+             * @description Sort key; defaults to 'added_date desc' like the CLI
+             */
+            order_by?: string | null;
+            /** Rule */
+            rule: {
+                [key: string]: unknown;
+            };
         };
         /**
          * SmartlistPreconditionRequiredBody
@@ -12835,6 +12859,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SmartlistSummary"][];
+                };
+            };
+        };
+    };
+    create_smartlist_api_v1_smartlists_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SmartlistCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    /** @description Strong validator for the complete persisted smartlist row */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SmartlistSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

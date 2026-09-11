@@ -197,6 +197,131 @@ def test_get_smartlist_404(client):
     assert r.json()["detail"]["code"] == "SMARTLIST_NOT_FOUND"
 
 
+# ----------------------------------------------------------- create (SMART-04)
+
+
+@pytest.mark.requirement("SMART-04")
+def test_create_smartlist_returns_201_etag_and_listable_row(client):
+    """[if] POST /smartlists does not persist a named rule [then] web create is still CLI-only, [else stop]."""
+    r = client.post(
+        "/api/v1/smartlists",
+        json={
+            "name": "Late night",
+            "rule": {"field": "rating", "op": ">=", "value": 0},
+        },
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["name"] == "Late night"
+    assert body["rule"] == {"field": "rating", "op": ">=", "value": 0}
+    assert body["order_by"] == "added_date desc"
+    assert body["referenced_fields"] == ["rating"]
+    assert r.headers["etag"]
+    listed = client.get("/api/v1/smartlists")
+    assert listed.status_code == 200
+    assert [row["id"] for row in listed.json()] == [body["id"]]
+    detail = client.get(f"/api/v1/smartlists/{body['id']}")
+    assert detail.status_code == 200
+    assert detail.headers["etag"] == r.headers["etag"]
+    assert detail.json()["name"] == "Late night"
+
+
+@pytest.mark.requirement("SMART-04")
+def test_create_smartlist_honors_cli_order_by_default_and_override(client):
+    """[if] POST drops the CLI order_by default [then] create diverges from python -m apps.smartlists.cli.create, [else stop]."""
+    defaulted = client.post(
+        "/api/v1/smartlists",
+        json={"name": "Default order", "rule": _BPM_RULE},
+    )
+    assert defaulted.status_code == 201, defaulted.text
+    assert defaulted.json()["order_by"] == "added_date desc"
+
+    overridden = client.post(
+        "/api/v1/smartlists",
+        json={
+            "name": "BPM order",
+            "rule": _BPM_RULE,
+            "order_by": "bpm desc",
+        },
+    )
+    assert overridden.status_code == 201, overridden.text
+    assert overridden.json()["order_by"] == "bpm desc"
+
+
+@pytest.mark.requirement("SMART-04")
+def test_create_smartlist_rejects_invalid_rule_and_duplicate_name(client):
+    """[if] invalid rules or duplicate names insert a row [then] CLI validation is skipped, [else stop]."""
+    bad = client.post(
+        "/api/v1/smartlists",
+        json={
+            "name": "Broken",
+            "rule": {"field": "mystery", "op": "=", "value": "x"},
+        },
+    )
+    assert bad.status_code == 422
+    assert bad.json()["detail"]["code"] == "SMARTLIST_RULE_INVALID"
+
+    first = client.post(
+        "/api/v1/smartlists",
+        json={
+            "name": "Late night",
+            "rule": {"field": "rating", "op": ">=", "value": 0},
+        },
+    )
+    assert first.status_code == 201, first.text
+    dup = client.post(
+        "/api/v1/smartlists",
+        json={
+            "name": "Late night",
+            "rule": {"field": "energy", "op": ">=", "value": 7},
+        },
+    )
+    assert dup.status_code == 409
+    assert dup.json()["detail"]["code"] == "SMARTLIST_NAME_CONFLICT"
+    listed = client.get("/api/v1/smartlists")
+    assert [row["name"] for row in listed.json()] == ["Late night"]
+
+
+@pytest.mark.requirement("SMART-04")
+def test_create_smartlist_creates_table_on_pre_phase08_db(tmp_path):
+    """[if] the first POST cannot create the lazy smartlists table [then] a fresh library cannot author from the web UI, [else stop]."""
+    path = tmp_path / "state.db"
+    conn = state_db.open_rw(path, apply_schema=True)
+    conn.close()
+    with _make_client(path) as c:
+        r = c.post(
+            "/api/v1/smartlists",
+            json={
+                "name": "First",
+                "rule": {"field": "rating", "op": ">=", "value": 0},
+            },
+        )
+        assert r.status_code == 201, r.text
+        listed = c.get("/api/v1/smartlists")
+    assert listed.status_code == 200
+    assert listed.json()[0]["name"] == "First"
+
+
+@pytest.mark.requirement("SMART-04")
+def test_create_smartlist_peer_cloud_lock_503_does_not_insert(state_db_path):
+    """[if] a peer lock still inserts [then] create bypasses the write lock PUT already honors, [else stop]."""
+    with _make_client(
+        state_db_path,
+        lock_status_fn=lambda: {"holder": "other-host"},
+    ) as locked_client:
+        r = locked_client.post(
+            "/api/v1/smartlists",
+            json={
+                "name": "Locked out",
+                "rule": {"field": "rating", "op": ">=", "value": 0},
+            },
+        )
+    assert r.status_code == 503
+    assert r.json()["detail"]["error"] == "locked_by_peer"
+    with _make_client(state_db_path) as read_client:
+        assert read_client.get("/api/v1/smartlists").json() == []
+
+
 def test_update_smartlist_returns_persisted_readback(client, state_db_path):
     sid = _create_smartlist(state_db_path, "120s", _BPM_RULE)
     replacement = {"field": "genre", "op": "in", "value": ["drum, bass"]}
@@ -303,6 +428,9 @@ def test_update_smartlist_peer_cloud_lock_503_leaves_row_unchanged(
 
 def test_smartlists_openapi_documents_cas_headers_and_responses(client):
     schema = client.get("/openapi.json").json()
+    create_operation = schema["paths"]["/api/v1/smartlists"]["post"]
+    assert create_operation["responses"]["201"]
+    assert "ETag" in create_operation["responses"]["201"]["headers"]
     detail = schema["paths"]["/api/v1/smartlists/{smartlist_id}"]
     get_operation = detail["get"]
     put_operation = detail["put"]

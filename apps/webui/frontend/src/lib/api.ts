@@ -324,9 +324,7 @@ export class SmartlistConflictError extends Error {
 
 export type SmartlistTrackOut = components['schemas']['TrackRowOut'];
 
-/** Backend contract: `apps/webui/server` route landing on `af--gating-wave`
- * (GET /api/v1/smartlists + /{id}/tracks). No single-smartlist GET is
- * documented yet, so the edit route filters the list client-side. */
+/** List every stored smartlist. Create lives on POST /api/v1/smartlists. */
 export async function listSmartlists(): Promise<SmartlistOut[]> {
 	try {
 		return await unwrap(api.GET('/api/v1/smartlists'));
@@ -334,6 +332,31 @@ export async function listSmartlists(): Promise<SmartlistOut[]> {
 		if (error instanceof ApiError) throw new Error(`GET smartlists failed: ${error.status}`);
 		throw error;
 	}
+}
+
+/** Create a smartlist through the same HTTP path the editor then saves with.
+ * The returned object is server-persisted readback, never an optimistic copy. */
+export async function createSmartlist(
+	body: { name: string; rule: RuleAst; order_by?: string }
+): Promise<{ smartlist: SmartlistOut; etag: string }> {
+	let call: { data?: SmartlistOut; response: Response };
+	try {
+		call = await api.POST('/api/v1/smartlists', {
+			body: {
+				name: body.name,
+				rule: { ...body.rule },
+				order_by: body.order_by ?? null
+			}
+		});
+	} catch (error) {
+		if (error instanceof ApiError) {
+			throw new SmartlistApiError(error.status, `POST smartlist failed: ${error.status}`);
+		}
+		throw error;
+	}
+	const { data, response } = requireBody(call);
+	const etag = requiredSmartlistEtag(response);
+	return { smartlist: data, etag };
 }
 
 function requiredSmartlistEtag(response: Response): string {

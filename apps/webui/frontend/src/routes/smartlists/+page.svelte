@@ -1,10 +1,39 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { listSmartlists, type SmartlistOut } from '$lib/api';
+	import { createSmartlist, listSmartlists, type SmartlistOut } from '$lib/api';
 	import { pushToast } from '$lib/stores.svelte';
+
+	const STARTER_RULE = { field: 'rating', op: '>=', value: 0 } as const;
 
 	let smartlists = $state<SmartlistOut[]>([]);
 	let loading = $state(true);
+	let newName = $state('');
+	let creating = $state(false);
+	let createError = $state<string | null>(null);
+
+	async function create(): Promise<void> {
+		const name = newName.trim();
+		if (name.length === 0) {
+			createError = 'Name a smartlist before creating it.';
+			return;
+		}
+		creating = true;
+		createError = null;
+		try {
+			const created = await createSmartlist({
+				name,
+				rule: { ...STARTER_RULE }
+			});
+			pushToast(`Created ${created.smartlist.name}.`);
+			await goto(`/smartlists/${created.smartlist.id}`);
+		} catch (exc) {
+			createError = `${exc}`;
+			pushToast(`Failed to create smartlist: ${exc}`, 'error');
+		} finally {
+			creating = false;
+		}
+	}
 
 	onMount(async () => {
 		try {
@@ -19,9 +48,27 @@
 
 <h2>Smartlists</h2>
 <p style="color: var(--muted);">
-	Rule editing only; saving is not wired up yet. Author new smartlists via
-	<code>python -m apps.smartlists.cli.create</code>.
+	Name a new smartlist to open the rule editor. Saving is wired through the editor.
 </p>
+
+<form
+	class="create-row"
+	onsubmit={(event) => {
+		event.preventDefault();
+		void create();
+	}}
+>
+	<label>
+		Name
+		<input bind:value={newName} placeholder="New smartlist" disabled={creating} />
+	</label>
+	<button class="primary" type="submit" disabled={creating || newName.trim().length === 0}>
+		{creating ? 'Creating...' : 'Create smartlist'}
+	</button>
+	{#if createError}
+		<p class="create-error" role="alert">{createError}</p>
+	{/if}
+</form>
 
 {#if loading}
 	<p>Loading...</p>
@@ -53,3 +100,23 @@
 		</tbody>
 	</table>
 {/if}
+
+<style>
+	.create-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		align-items: end;
+		margin: 0.5rem 0 1rem 0;
+	}
+	.create-row label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+	.create-error {
+		color: var(--danger);
+		flex-basis: 100%;
+		margin: 0;
+	}
+</style>

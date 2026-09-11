@@ -9855,6 +9855,40 @@
         "title": "SmartlistConflictBody",
         "type": "object"
       },
+      "SmartlistCreateIn": {
+        "description": "Create payload matching ``python -m apps.smartlists.cli.create``.",
+        "properties": {
+          "name": {
+            "description": "Display name (non-empty)",
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "order_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sort key; defaults to 'added_date desc' like the CLI",
+            "title": "Order By"
+          },
+          "rule": {
+            "additionalProperties": true,
+            "title": "Rule",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "rule"
+        ],
+        "title": "SmartlistCreateIn",
+        "type": "object"
+      },
       "SmartlistPreconditionRequiredBody": {
         "description": "Structured response when an update omits its CAS precondition.",
         "properties": {
@@ -19739,6 +19773,54 @@
           }
         },
         "summary": "List Smartlists",
+        "tags": [
+          "smartlists"
+        ]
+      },
+      "post": {
+        "description": "Persist a new smartlist and return the created summary plus ETag.",
+        "operationId": "create_smartlist_api_v1_smartlists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmartlistCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartlistSummary"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the complete persisted smartlist row",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Smartlist",
         "tags": [
           "smartlists"
         ]
