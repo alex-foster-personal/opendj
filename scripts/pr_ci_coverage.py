@@ -113,6 +113,7 @@ CONCLUSION_FAILURE = "failure"
 EXECUTED_CONCLUSIONS = frozenset({"success", "timed_out", "neutral"})
 STATUS_CONTEXT = "PR head CI coverage"
 Inspection = tuple[int, str, bool, bool, bool]
+OpenPr = tuple[int, str, str | None]
 
 
 # ----- GitHub reads ----------------------------------------------------------------
@@ -132,9 +133,9 @@ def _pages(path: str) -> Iterable[list[object]]:
         page += 1
 
 
-def _open_prs() -> list[tuple[int, str, str | None]]:
+def _open_prs() -> list[OpenPr]:
     """Read every open PR with the minimum fields needed for a head check."""
-    result: list[tuple[int, str, str | None]] = []
+    result: list[OpenPr] = []
     for payload in _pages(f"repos/{REPO}/pulls?state=open"):
         for item in payload:
             if not isinstance(item, dict):
@@ -365,7 +366,7 @@ def _requires_ci(files: list[str]) -> bool:
     return any(not _is_docs_path(path) for path in files)
 
 
-def _inspect_pr(pr: tuple[int, str] | tuple[int, str, str | None]) -> Inspection:
+def _inspect_pr(pr: tuple[int, str] | OpenPr) -> Inspection:
     """Return one PR's number, head, docs-only state, coverage, and unbuildable flag."""
     number, head_sha, mergeable_state = (*pr, None)[:3]
     unbuildable = mergeable_state == "dirty"
@@ -430,7 +431,7 @@ def _log_inspection(scope: str, inspection: Inspection, *, publish_status: bool)
 
 
 def _inspect_all(
-    prs: list[tuple[int, str]],
+    prs: list[tuple[int, str] | OpenPr],
 ) -> tuple[list[Inspection | None], BaseException | None]:
     """Inspect every PR concurrently, keeping the verdicts that DID complete.
 
@@ -460,9 +461,7 @@ def _inspect_all(
     return inspections, failure
 
 
-def _log_failed_inspection(
-    scope: str, pr: tuple[int, str] | tuple[int, str, str | None],
-) -> None:
+def _log_failed_inspection(scope: str, pr: tuple[int, str] | OpenPr) -> None:
     """Name a PR whose own inspection raised, rather than leaving it out of the log.
 
     Its verdict is unknown, so it is reported as one - `inspection-error` is not a
@@ -479,7 +478,7 @@ def _log_failed_inspection(
 
 
 def _tally_open_inspections(
-    open_prs: list[tuple[int, str, str | None]],
+    open_prs: list[OpenPr],
     inspections: list[Inspection | None],
     *,
     publish_status: bool,
