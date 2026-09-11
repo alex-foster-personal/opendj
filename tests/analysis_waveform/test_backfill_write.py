@@ -142,6 +142,7 @@ def test_record_from_decode_error_is_failed_with_empty_payload() -> None:
     record = record_from_decode_error("sid", "ffmpeg exited 1", FINGERPRINT_HEX)
     lane = record.lanes["waveform"]
     assert lane.status == "failed"
+    assert lane.reason is not None
     assert "not_decoded" in lane.reason
     assert lane.payload == {}
     validate_record_contract(record)
@@ -208,6 +209,7 @@ def test_a_garbage_file_writes_failed_not_decoded(tmp_path: Path, state_db: Path
     record = OwnWaveformBackfillBackend.analyze(source, "sid-garbage")
     lane = record.lanes["waveform"]
     assert lane.status == "failed"
+    assert lane.reason is not None
     assert "not_decoded" in lane.reason
     assert lane.payload == {}
     validate_record_contract(record)

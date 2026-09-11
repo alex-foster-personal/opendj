@@ -1,7 +1,10 @@
 """`/anlz` serves the OWN waveform record when that lane's source is own.
 
-[if] a track has decodable audio and waveform is on own [then] /anlz serves kind: tri bands from the own record, [else stop].
-[if] decode fails [then] the block is status: failed with not_decoded and its reason, never a synthesized shape, [else stop].
+Acceptance lines:
+  [if] a track has decodable audio and waveform is on own [then] /anlz serves
+       kind: tri bands from the own record, [else stop].
+  [if] decode fails [then] the block is status: failed with not_decoded and its
+       reason, never a synthesized shape, [else stop].
 
 PSSI phrase preservation when switching waveform to own is covered in
 ``tests/webui/test_anlz_pssi_on_own_switch.py``.
