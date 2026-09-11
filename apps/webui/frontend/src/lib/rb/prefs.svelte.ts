@@ -19,6 +19,11 @@ import {
 	type DeckLayoutMode
 } from './deck-layout-prefs';
 import { makeJogRadialWaveformSetters } from './jog-radial-prefs';
+import {
+	LIBRARY_FILTER_PREF_DEFAULTS,
+	makeLibraryFilterSetters,
+	validateLibraryFilterPrefFields
+} from './library-filter-prefs';
 import { makeLevelCalibrationSetters } from './level-calibration-prefs';
 import { LYRICS_PREF_DEFAULTS, makeLyricsPrefSetters, validateLyricsPrefFields, type LyricsLoadStrategy } from './lyrics-prefs';
 import { createDiskPrefsSync, makePrefsHydrator } from './prefs-hydrate';
@@ -160,9 +165,6 @@ const DEFAULTS: RbUiPrefs = {
 	hide_broken_links: false,
 	library_density: 'compact',
 	beat_sync_max: true,
-	next_only_filter: false,
-	remixes_filter: false,
-	vocals_filter: false,
 	next_panel_collapsed: false,
 	recommended_panel_collapsed: false,
 	auto_play_enabled: true,
@@ -184,7 +186,8 @@ const DEFAULTS: RbUiPrefs = {
 	deck_layout_animate: true,
 	deck_layout_duration_ms: 200,
 	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false },
-	...LYRICS_PREF_DEFAULTS
+	...LYRICS_PREF_DEFAULTS,
+	...LIBRARY_FILTER_PREF_DEFAULTS
 };
 
 // ----------------------------------------------------------- _helpers
@@ -238,20 +241,6 @@ function _load(): RbUiPrefs {
 			`${STORAGE_KEY}: malformed prefs blob (beat_sync_max is not a boolean) - ` +
 				'clear the localStorage key to recover'
 		);
-	}
-	if (parsed.next_only_filter !== undefined && typeof parsed.next_only_filter !== 'boolean') {
-		throw new Error(
-			`${STORAGE_KEY}: malformed prefs blob (next_only_filter is not a boolean) - ` +
-				'clear the localStorage key to recover'
-		);
-	}
-	for (const key of ['remixes_filter', 'vocals_filter'] as const) {
-		if (parsed[key] !== undefined && typeof parsed[key] !== 'boolean') {
-			throw new Error(
-				`${STORAGE_KEY}: malformed prefs blob (${key} is not a boolean) - ` +
-					'clear the key or fix the value'
-			);
-		}
 	}
 	if (parsed.next_panel_collapsed !== undefined && typeof parsed.next_panel_collapsed !== 'boolean') {
 		throw new Error(
@@ -378,9 +367,6 @@ function _load(): RbUiPrefs {
 		hide_broken_links: parsed.hide_broken_links,
 		library_density: density ?? DEFAULTS.library_density,
 		beat_sync_max: parsed.beat_sync_max ?? DEFAULTS.beat_sync_max,
-		next_only_filter: parsed.next_only_filter ?? DEFAULTS.next_only_filter,
-		remixes_filter: parsed.remixes_filter ?? DEFAULTS.remixes_filter,
-		vocals_filter: parsed.vocals_filter ?? DEFAULTS.vocals_filter,
 		next_panel_collapsed: parsed.next_panel_collapsed ?? DEFAULTS.next_panel_collapsed,
 		recommended_panel_collapsed:
 			parsed.recommended_panel_collapsed ?? DEFAULTS.recommended_panel_collapsed,
@@ -407,7 +393,9 @@ function _load(): RbUiPrefs {
 		deck_layout_duration_ms: deckLayoutDurationMs ?? DEFAULTS.deck_layout_duration_ms,
 		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration),
 		...LYRICS_PREF_DEFAULTS,
-		...validateLyricsPrefFields(parsed, STORAGE_KEY)
+		...validateLyricsPrefFields(parsed, STORAGE_KEY),
+		...LIBRARY_FILTER_PREF_DEFAULTS,
+		...validateLibraryFilterPrefFields(parsed, STORAGE_KEY)
 	};
 }
 
@@ -491,11 +479,6 @@ export function setAutoPlayMaximizeReach(next: boolean): void {
 	_persist();
 }
 
-export function setNextOnlyFilter(next: boolean): void {
-	uiPrefs.next_only_filter = next;
-	_persist();
-}
-
 /** Collapse one suggestion panel while retaining the other panel's state. */
 export function setLibraryPanelCollapsed(panel: LibraryPanel, collapsed: boolean): void {
 	if (panel === 'next') uiPrefs.next_panel_collapsed = collapsed;
@@ -503,19 +486,14 @@ export function setLibraryPanelCollapsed(panel: LibraryPanel, collapsed: boolean
 	_persist();
 }
 
-export function toggleNextOnlyFilter(): void {
-	setNextOnlyFilter(!uiPrefs.next_only_filter);
-}
-
-export function setRemixesFilter(next: boolean): void {
-	uiPrefs.remixes_filter = next;
-	_persist();
-}
-
-export function setVocalsFilter(next: boolean): void {
-	uiPrefs.vocals_filter = next;
-	_persist();
-}
+/** The Next / Remixes / Vocals library filter setters, built against this
+ * module's own uiPrefs/_persist (library-filter-prefs.ts). */
+export const {
+	setNextOnlyFilter,
+	toggleNextOnlyFilter,
+	setRemixesFilter,
+	setVocalsFilter
+} = makeLibraryFilterSetters(uiPrefs, _persist);
 
 export function setTheme(next: UiTheme): void {
 	uiPrefs.theme = next;
