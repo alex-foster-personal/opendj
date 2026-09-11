@@ -537,6 +537,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bench/perf-kpi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Perf Kpi Ledger
+         * @description The perf ledger as cards: same kpis + snapshots shape as /bench/kpi.
+         *
+         *     One snapshot per (date, round), in date order, so the sparkline runs from
+         *     the first perf measurement to the latest. Cards with the most real readings
+         *     come first: the ones that have actually travelled lead the panel.
+         */
+        get: operations["get_perf_kpi_ledger_api_v1_bench_perf_kpi_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bench/ratings": {
         parameters: {
             query?: never;
@@ -3165,7 +3189,7 @@ export interface paths {
         };
         /**
          * Get Stem Manifest
-         * @description Return a stored v1 manifest only after all four files prove alignment.
+         * @description Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.
          */
         get: operations["get_stem_manifest_api_v1_tracks__stable_id__stems_get"];
         put?: never;
@@ -7308,6 +7332,28 @@ export interface components {
             where: string;
         };
         /**
+         * StemUnavailableOut
+         * @description HTTP 200 empty-state: no stored bundle for this stable_id.
+         */
+        StemUnavailableOut: {
+            /**
+             * Code
+             * @default STEM_BUNDLE_NOT_FOUND
+             * @constant
+             */
+            code: "STEM_BUNDLE_NOT_FOUND";
+            /** Message */
+            message: string;
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * Status
+             * @default unavailable
+             * @constant
+             */
+            status: "unavailable";
+        };
+        /**
          * StemsPlanOut
          * @description What separating this library at this tier would take.
          */
@@ -9429,6 +9475,28 @@ export interface operations {
         };
     };
     get_kpi_ledger_api_v1_bench_kpi_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_perf_kpi_ledger_api_v1_bench_perf_kpi_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -14218,7 +14286,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StemManifestOut"];
+                    "application/json": components["schemas"]["StemManifestOut"] | components["schemas"]["StemUnavailableOut"];
                 };
             };
             /** @description Validation Error */

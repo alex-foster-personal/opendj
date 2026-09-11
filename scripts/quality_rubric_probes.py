@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
+import os
 import re
 import shutil
 import socket
@@ -25,11 +27,108 @@ _CORPUS_CITE_RE = re.compile(
 _NAMING_AUTHORITY_RE = re.compile(r"naming authority|not a fetchable location", re.IGNORECASE)
 _SERATO_FUTURE_RE = re.compile(r"adds Serato", re.IGNORECASE)
 
+_SKIP_DIR_NAMES = frozenset(
+    {
+        "node_modules",
+        ".git",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".mypy_cache",
+        ".pytest_cache",
+        "build",
+        "dist",
+        ".svelte-kit",
+        ".vite",
+        "storybook-static",
+        "test-results",
+        "playwright-report",
+        ".tmp",
+        "target",
+        "htmlcov",
+    }
+)
 
-def _iter_markdown_files(surface_root: Path) -> list[Path]:
+
+def _surface_file_matches(
+    path: Path, *, suffix: str | None, name_match: str | None
+) -> bool:
+    if suffix is not None and path.suffix != suffix:
+        return False
+    if name_match is not None and not fnmatch.fnmatch(path.name, name_match):
+        return False
+    return True
+
+
+def _git_ls_surface_files(surface_root: Path, repo_root: Path) -> list[Path] | None:
+    try:
+        surface_rel = surface_root.resolve().relative_to(repo_root.resolve()).as_posix()
+    except ValueError:
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "--",
+                surface_rel,
+            ],
+            capture_output=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return None
+    if result.returncode != 0:
+        return None
+    files: list[Path] = []
+    for raw in result.stdout.split(b"\0"):
+        if not raw:
+            continue
+        path = repo_root / os.fsdecode(raw)
+        if path.is_file():
+            files.append(path)
+    return files
+
+
+def _walk_surface_files(surface_root: Path) -> list[Path]:
+    files: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(surface_root):
+        dirnames[:] = [name for name in dirnames if name not in _SKIP_DIR_NAMES]
+        root = Path(dirpath)
+        for name in filenames:
+            files.append(root / name)
+    return files
+
+
+def _iter_surface_files(
+    surface_root: Path,
+    repo_root: Path,
+    *,
+    suffix: str | None = None,
+    name_match: str | None = None,
+) -> list[Path]:
     if not surface_root.is_dir():
         return []
-    return sorted(surface_root.rglob("*.md"))
+    listed = _git_ls_surface_files(surface_root, repo_root)
+    if listed is None:
+        listed = _walk_surface_files(surface_root)
+    matched = [
+        path
+        for path in listed
+        if path.is_file()
+        and _surface_file_matches(path, suffix=suffix, name_match=name_match)
+    ]
+    return sorted(matched)
+
+
+def _iter_markdown_files(surface_root: Path, repo_root: Path) -> list[Path]:
+    return _iter_surface_files(surface_root, repo_root, suffix=".md")
 
 
 def _repo_relative(path: Path, repo_root: Path) -> str:
@@ -60,9 +159,10 @@ def _collect_relative_links(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     escapes: list[dict[str, Any]] = []
     dangling: list[dict[str, Any]] = []
-    if not _iter_markdown_files(surface_root):
+    md_files = _iter_markdown_files(surface_root, repo_root)
+    if not md_files:
         return escapes, dangling
-    for md_path in _iter_markdown_files(surface_root):
+    for md_path in md_files:
         text = md_path.read_text(encoding="utf-8", errors="replace")
         for href in _extract_hrefs(text):
             if _should_skip_href(href):
@@ -97,9 +197,9 @@ def _collect_relative_links(
     return escapes, dangling
 
 
-def _surface_markdown_text(surface_root: Path) -> str:
+def _surface_markdown_text(surface_root: Path, repo_root: Path) -> str:
     parts: list[str] = []
-    for md_path in _iter_markdown_files(surface_root):
+    for md_path in _iter_markdown_files(surface_root, repo_root):
         parts.append(md_path.read_text(encoding="utf-8", errors="replace"))
     return "\n".join(parts)
 
@@ -116,7 +216,7 @@ def xref_integrity(surface_root: Path, repo_root: Path) -> list[dict[str, Any]]:
                 "detail": "surface root is not a directory",
             }
         ]
-    md_files = _iter_markdown_files(surface_root)
+    md_files = _iter_markdown_files(surface_root, repo_root)
     if not md_files:
         return [
             {
@@ -146,7 +246,7 @@ def citation_resolves(surface_root: Path, repo_root: Path) -> list[dict[str, Any
     findings: list[dict[str, Any]] = []
     gh_available = shutil.which("gh") is not None
     seen: set[tuple[str, str]] = set()
-    for md_path in _iter_markdown_files(surface_root):
+    for md_path in _iter_markdown_files(surface_root, repo_root):
         text = md_path.read_text(encoding="utf-8", errors="replace")
         rel_path = _repo_relative(md_path, repo_root)
         for owner, repo in _GITHUB_REPO_RE.findall(text):
@@ -236,7 +336,9 @@ def version_drift(surface_root: Path, repo_root: Path) -> list[dict[str, Any]]:
                         "detail": f"README advertises {readme_version} not reflected in CHANGELOG",
                     }
                 )
-    schema_files = sorted(surface_root.rglob("open-dj.schema.json"))
+    schema_files = _iter_surface_files(
+        surface_root, repo_root, name_match="open-dj.schema.json"
+    )
     if readme_version and schema_files:
         for schema_path in schema_files:
             schema_text = schema_path.read_text(encoding="utf-8", errors="replace")
@@ -270,9 +372,11 @@ _SEED_UNRESOLVED_ID_HOSTS = frozenset({"open-dj.org"})
 def schema_id_policy(surface_root: Path, repo_root: Path) -> list[dict[str, Any]]:
     if not surface_root.is_dir():
         return []
-    disclaimer_present = bool(_NAMING_AUTHORITY_RE.search(_surface_markdown_text(surface_root)))
+    disclaimer_present = bool(
+        _NAMING_AUTHORITY_RE.search(_surface_markdown_text(surface_root, repo_root))
+    )
     findings: list[dict[str, Any]] = []
-    for json_path in sorted(surface_root.rglob("*.json")):
+    for json_path in _iter_surface_files(surface_root, repo_root, suffix=".json"):
         try:
             data = json.loads(json_path.read_text(encoding="utf-8", errors="replace"))
         except json.JSONDecodeError:
@@ -319,9 +423,11 @@ def source_of_truth_unique(surface_root: Path, repo_root: Path) -> list[dict[str
     for corpus_dir in surface_root.glob("conformance/corpus-*"):
         if corpus_dir.is_dir():
             roots.add(_normalize_corpus_root(_repo_relative(corpus_dir, repo_root)))
-    for case_file in surface_root.rglob("case-*.open-dj.json"):
+    for case_file in _iter_surface_files(
+        surface_root, repo_root, name_match="case-*.open-dj.json"
+    ):
         roots.add(_normalize_corpus_root(_repo_relative(case_file.parent, repo_root)))
-    for md_path in _iter_markdown_files(surface_root):
+    for md_path in _iter_markdown_files(surface_root, repo_root):
         text = md_path.read_text(encoding="utf-8", errors="replace")
         for match in _CORPUS_CITE_RE.findall(text):
             roots.add(_normalize_corpus_root(match))
@@ -351,7 +457,7 @@ def typed_public_surface(surface_root: Path, repo_root: Path) -> list[dict[str, 
     py_typed = surface_root / "py.typed"
     if py_typed.is_file():
         return []
-    for candidate in surface_root.rglob("py.typed"):
+    for candidate in _iter_surface_files(surface_root, repo_root, name_match="py.typed"):
         if candidate.is_file():
             return []
     return [
