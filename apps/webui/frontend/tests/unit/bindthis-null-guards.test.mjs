@@ -126,7 +126,14 @@ test('QuickDrawMenu.svelte: onMenuPointerLeave does not throw once menuEl has un
 	const source = readSource('QuickDrawMenu.svelte');
 	const fn = extractFunction(source, 'QuickDrawMenu.svelte', 'onMenuPointerLeave');
 	let closed = 0;
-	const freeVars = { open: true, leaveArmed: true, menuEl: null, _close: () => closed++ };
+	// extract harness must bind blend like open/_close; live const is in QuickDrawMenu.svelte
+	const freeVars = {
+		open: true,
+		leaveArmed: true,
+		menuEl: null,
+		blend: { isActive: () => false },
+		_close: () => closed++
+	};
 	assert.doesNotThrow(() => runNamed(fn, 'onMenuPointerLeave', freeVars, { relatedTarget: new Node() }));
 	assert.equal(closed, 1, 'an unmounted menu must still close on an outside pointer leave');
 });
@@ -135,7 +142,13 @@ test('QuickDrawMenu.svelte: onMount outside-pointerdown handler does not throw o
 	const source = readSource('QuickDrawMenu.svelte');
 	const fn = extractConstArrow(source, 'QuickDrawMenu.svelte', 'onPointerDown');
 	let closed = 0;
-	const freeVars = { open: true, menuEl: null, _close: () => closed++ };
+	// extract harness must bind blend like open/_close; live const is in QuickDrawMenu.svelte
+	const freeVars = {
+		open: true,
+		menuEl: null,
+		blend: { isActive: () => false },
+		_close: () => closed++
+	};
 	assert.doesNotThrow(() => runNamed(fn, 'onPointerDown', freeVars, { target: new Node() }));
 	assert.equal(closed, 1, 'an unmounted menu must still close on an outside pointerdown');
 });
