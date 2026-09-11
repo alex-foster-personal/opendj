@@ -125,18 +125,20 @@ def hub() -> Iterator[_RecordingHub]:
 
 
 @pytest.fixture
-def separator_seam() -> Iterator[None]:
-    """Point the worker at the double. The app never sets this.
+def separator_seam(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Point the worker at the double, and keep argv on the Modal worker
+    that actually reads MDT_STEMS_SEPARATOR.
 
-    Set in THIS process's environment because the runner spawns workers with
-    no explicit ``env=``, so the child inherits it -- which is also how the
-    worker learns everything else it needs.
+    After #1883, resolve_stems_executor falls back to local when the relay
+    is unconfigured (CI). The local worker ignores this env var and runs
+    htdemucs, so the job never goes terminal inside RUN_TIMEOUT_S.
     """
-    os.environ["MDT_STEMS_SEPARATOR"] = SEPARATOR
-    try:
-        yield
-    finally:
-        os.environ.pop("MDT_STEMS_SEPARATOR", None)
+    monkeypatch.setattr(
+        "apps.stems.routing.resolve_stems_executor",
+        lambda **_: "modal",
+    )
+    monkeypatch.setenv("MDT_STEMS_SEPARATOR", SEPARATOR)
+    yield
 
 
 def _drive(store: JobStore, job_id: str) -> dict[str, Any]:
