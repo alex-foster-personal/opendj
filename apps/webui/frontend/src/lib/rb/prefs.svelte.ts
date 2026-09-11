@@ -46,9 +46,6 @@ export type LibraryPanel = 'next' | 'recommended';
 /** App + /performance chrome theme. Default dark. */
 export type UiTheme = 'dark' | 'light';
 
-/** When word timings are fetched into RAM for library surfaces. */
-export type LyricsLoadStrategy = 'in-view' | 'hover' | 'off';
-
 /** Preferred vendor writeback targets (preference only; CLI writeback today). */
 export type AutoSyncDestination = 'rekordbox' | 'djay' | 'open_dj';
 
@@ -90,24 +87,6 @@ export interface RbUiPrefs {
 	 * onward options (slack / maximize reachable chain). Off = greedy earliest.
 	 */
 	auto_play_maximize_reach: boolean;
-	/** MASTER lyric-overlay switch (top-left LYR icon): gates the waveform
-	 * lanes, deck lyric lines and scrub-hover words everywhere at once. The
-	 * per-surface prefs below survive underneath and return when this comes
-	 * back on. The library column and admin pages are data surfaces, not
-	 * overlays - they keep their own switches. */
-	lyrics_global: boolean;
-	/** Lyrics column in the library table (hover tip carries the text). */
-	lyrics_library_col: boolean;
-	/** Lyric words above the vocal bars while hover-scrubbing a strip. */
-	lyrics_hover_scrub: boolean;
-	/** How word payloads reach RAM: 'in-view' loads rows as they reveal,
-	 * 'hover' waits for a 500ms-debounced hover (default: cheapest),
-	 * 'off' never loads in the library (deck/stage still load). */
-	lyrics_load_strategy: LyricsLoadStrategy;
-	/** Word lanes over the main deck waveforms. Default ON per spec. */
-	lyrics_waveform_overlay: boolean;
-	/** One-line lyric readout in the deck panel when space allows. */
-	lyrics_deck_line: boolean;
 	/** Light/dark chrome. Default dark. Applied to documentElement. */
 	theme: UiTheme;
 	/** Hide grayed PARITY-TODO rows in the settings overlay. */
@@ -189,12 +168,6 @@ const DEFAULTS: RbUiPrefs = {
 	auto_play_enabled: true,
 	auto_play_enforce_order: false,
 	auto_play_maximize_reach: true,
-	lyrics_global: true,
-	lyrics_library_col: true,
-	lyrics_hover_scrub: true,
-	lyrics_load_strategy: 'hover',
-	lyrics_waveform_overlay: true,
-	lyrics_deck_line: true,
 	theme: 'dark',
 	hide_todo_settings: false,
 	auto_sync: { rekordbox: false, djay: false, open_dj: false },
@@ -272,30 +245,13 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
-	for (const key of [
-		'remixes_filter',
-		'vocals_filter',
-		'lyrics_global',
-		'lyrics_library_col',
-		'lyrics_hover_scrub',
-		'lyrics_waveform_overlay',
-		'lyrics_deck_line'
-	] as const) {
+	for (const key of ['remixes_filter', 'vocals_filter'] as const) {
 		if (parsed[key] !== undefined && typeof parsed[key] !== 'boolean') {
 			throw new Error(
 				`${STORAGE_KEY}: malformed prefs blob (${key} is not a boolean) - ` +
 					'clear the key or fix the value'
 			);
 		}
-	}
-	if (
-		parsed.lyrics_load_strategy !== undefined &&
-		!['in-view', 'hover', 'off'].includes(parsed.lyrics_load_strategy as string)
-	) {
-		throw new Error(
-			`${STORAGE_KEY}: malformed prefs blob (lyrics_load_strategy must be ` +
-				"'in-view' | 'hover' | 'off') - clear the key or fix the value"
-		);
 	}
 	if (parsed.next_panel_collapsed !== undefined && typeof parsed.next_panel_collapsed !== 'boolean') {
 		throw new Error(
@@ -433,12 +389,6 @@ function _load(): RbUiPrefs {
 			parsed.auto_play_enforce_order ?? DEFAULTS.auto_play_enforce_order,
 		auto_play_maximize_reach:
 			parsed.auto_play_maximize_reach ?? DEFAULTS.auto_play_maximize_reach,
-		lyrics_global: parsed.lyrics_global ?? DEFAULTS.lyrics_global,
-		lyrics_library_col: parsed.lyrics_library_col ?? DEFAULTS.lyrics_library_col,
-		lyrics_hover_scrub: parsed.lyrics_hover_scrub ?? DEFAULTS.lyrics_hover_scrub,
-		lyrics_load_strategy: parsed.lyrics_load_strategy ?? DEFAULTS.lyrics_load_strategy,
-		lyrics_waveform_overlay: parsed.lyrics_waveform_overlay ?? DEFAULTS.lyrics_waveform_overlay,
-		lyrics_deck_line: parsed.lyrics_deck_line ?? DEFAULTS.lyrics_deck_line,
 		theme: theme ?? DEFAULTS.theme,
 		hide_todo_settings: parsed.hide_todo_settings ?? DEFAULTS.hide_todo_settings,
 		auto_sync: autoSync,
@@ -564,40 +514,6 @@ export function setRemixesFilter(next: boolean): void {
 
 export function setVocalsFilter(next: boolean): void {
 	uiPrefs.vocals_filter = next;
-	_persist();
-}
-
-export function setLyricsGlobal(next: boolean): void {
-	uiPrefs.lyrics_global = next;
-	_persist();
-}
-
-export function toggleLyricsGlobal(): void {
-	setLyricsGlobal(!uiPrefs.lyrics_global);
-}
-
-export function setLyricsLibraryCol(next: boolean): void {
-	uiPrefs.lyrics_library_col = next;
-	_persist();
-}
-
-export function setLyricsHoverScrub(next: boolean): void {
-	uiPrefs.lyrics_hover_scrub = next;
-	_persist();
-}
-
-export function setLyricsLoadStrategy(next: LyricsLoadStrategy): void {
-	uiPrefs.lyrics_load_strategy = next;
-	_persist();
-}
-
-export function setLyricsWaveformOverlay(next: boolean): void {
-	uiPrefs.lyrics_waveform_overlay = next;
-	_persist();
-}
-
-export function setLyricsDeckLine(next: boolean): void {
-	uiPrefs.lyrics_deck_line = next;
 	_persist();
 }
 

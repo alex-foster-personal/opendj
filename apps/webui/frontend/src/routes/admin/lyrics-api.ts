@@ -204,7 +204,11 @@ function _parseVerdict(raw: unknown, ctx: string): LyricVerdict {
 	return {
 		stable_id: _asString(obj.stable_id, `${ctx}.stable_id`),
 		verdict: _asVerdictValue(obj.verdict, `${ctx}.verdict`),
-		effective: _asVerdictValue(obj.effective, `${ctx}.effective`),
+		effective_verdict: _asVerdictValue(
+			obj.effective_verdict ?? obj.effective,
+			`${ctx}.effective_verdict`
+		),
+		effective: _asVerdictValue(obj.effective ?? obj.effective_verdict, `${ctx}.effective`),
 		coverage_pct: _asNumberOrNull(obj.coverage_pct, `${ctx}.coverage_pct`),
 		source: _asStringOrNull(obj.source, `${ctx}.source`),
 		language_iso3: _asStringOrNull(obj.language_iso3, `${ctx}.language_iso3`),
@@ -217,10 +221,11 @@ function _parseVerdict(raw: unknown, ctx: string): LyricVerdict {
 				? null
 				: _asVerdictValue(obj.override, `${ctx}.override`),
 		override_note: _asStringOrNull(obj.override_note, `${ctx}.override_note`),
-		pipeline_version: _asStringOrNull(obj.pipeline_version, `${ctx}.pipeline_version`),
-		words_content_hash: _asStringOrNull(obj.words_content_hash, `${ctx}.words_content_hash`),
+		pipeline_version: _asString(obj.pipeline_version, `${ctx}.pipeline_version`),
 		computed_at: _asString(obj.computed_at, `${ctx}.computed_at`),
-		updated_at: _asString(obj.updated_at, `${ctx}.updated_at`)
+		updated_at: _asString(obj.updated_at, `${ctx}.updated_at`),
+		title: _asStringOrNull(obj.title, `${ctx}.title`),
+		artist: _asStringOrNull(obj.artist, `${ctx}.artist`)
 	};
 }
 

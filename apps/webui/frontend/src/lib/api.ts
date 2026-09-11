@@ -510,7 +510,7 @@ export type LyricTrack = components['schemas']['KaraokeTrackOut'];
 export type LyricSummary = components['schemas']['KaraokeSummaryOut'];
 export type LyricsConfig = components['schemas']['LyricsConfigOut'];
 export type LyricJob = components['schemas']['LyricJobOut'];
-export type LyricPurgeResult = components['schemas']['PurgeOut'];
+export type LyricPurgeResult = components['schemas']['LyricsPurgeOut'];
 
 export type LyricVerdictValue = 'vocal' | 'sparse' | 'no-lyrics' | 'unknown';
 export type LyricWitness = NonNullable<LyricWord['witness']>;
