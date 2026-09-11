@@ -68,7 +68,6 @@
 	import { trackDragRefusal } from '$lib/rb/track-drag-refusal';
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
 	import ContextMenu, { type ContextMenuItem } from '../ContextMenu.svelte';
-	import { stemsAndLyricsMenuItems } from './track-table-menu';
 	import SpinnerIcon from './SpinnerIcon.svelte';
 
 	type DeckId = (typeof DECK_IDS)[number];
@@ -112,8 +111,9 @@
 			{ id: 'mytag', label: 'My Tag editor' }, { id: 'relocate', label: 'Relocate' },
 			{ id: 'finder', label: 'Show in Finder' }, { id: 'copy-path', label: 'Copy path' },
 			{ id: 'analyze', label: 'Analyze' },
-			...stemsAndLyricsMenuItems(row, selectedIds, { onstemsdonext, onlyricsdonext }),
+			{ id: 'stems-generate', label: 'Stems: do next', run: onstemsdonext ? () => onstemsdonext(selected) : undefined },
 			{ id: 'stems-open', label: 'Stems - open' },
+			{ id: 'lyrics', label: 'Lyrics: do next', run: onlyricsdonext ? () => onlyricsdonext(selected) : undefined },
 			{ id: 'offline', label: 'Mark offline' }, { id: 'cloud-only', label: 'Cloud-only' },
 			{ id: 'remove-playlist', label: 'Remove from playlist', run: removable ? () => onremoverow?.(row) : undefined },
 			{ id: 'remove-library', label: 'Remove from library' }
