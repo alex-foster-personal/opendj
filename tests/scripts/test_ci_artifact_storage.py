@@ -28,7 +28,6 @@ DELIVERABLE_UPLOADS = {
     ("macos-native-companion.yml", "Upload macOS production wheel"),
     ("release-check.yml", "Upload built dists"),
     ("ci.yml", "Upload production frontend artifact"),
-    ("e2e.yml", "Upload production frontend artifact for e2e jobs"),
 }
 
 

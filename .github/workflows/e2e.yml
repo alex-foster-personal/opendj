@@ -79,7 +79,6 @@ concurrency:
 
 permissions:
   contents: read
-  actions: read
 
 env:
   # apps.shared.library_mode refuses to import on non-darwin platforms without
@@ -105,31 +104,6 @@ env:
   PYTHONFAULTHANDLER: "1"
 
 jobs:
-  frontend-build:
-    name: production frontend build (from CI artifact)
-    # Consumes the single ci.yml build for this commit. Never runs pnpm build
-    # locally (issue #1513).
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          clean: false
-
-      - name: Acquire production frontend artifact from CI
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: scripts/ci_frontend_build_acquire_from_ci.sh "${{ github.sha }}"
-
-      - name: Upload production frontend artifact for e2e jobs
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: production-frontend-${{ github.sha }}
-          path: apps/webui/frontend/build/
-          if-no-files-found: error
-          retention-days: 1
-
   # ---------------------------------------------------------------------------
   # TIER 1, BLOCKING on every PR and every push to main.
   #
@@ -141,7 +115,6 @@ jobs:
   # ---------------------------------------------------------------------------
   gate:
     name: e2e gate (webkit artifact + hermetic chromium)
-    needs: frontend-build
     # Runner is a repo-variable switch (see ci.yml's `test` job for the full
     # rationale). vars.CI_RUNS_ON_E2E absent -> hosted ubuntu-latest; set to
     # '["self-hosted","linux","e2e"]' it targets agentbox specifically, the
@@ -511,16 +484,13 @@ jobs:
           # check plus the mutation must be one critical section. See the script.
           scripts/ci_host_lock.sh pulse-sink scripts/ci_pulse_sink.sh setup
 
-      - name: Download production frontend artifact
-        uses: actions/download-artifact@fa0a085b2f99e52bd8b2596a43d8888892b913a8 # v4
-        with:
-          name: production-frontend-${{ github.sha }}
-          path: apps/webui/frontend/build
-
-      - name: Assert production frontend artifact matches this commit
+      - name: Acquire production frontend artifact from CI
         # The webkit gate refuses to load without a production build and says
-        # so at config time. This stamp refuses a stale or locally rebuilt tree.
-        run: scripts/ci_frontend_build_assert.sh "${{ github.sha }}"
+        # so at config time. Poll CI for the stamped artifact; never rebuild
+        # locally (issue #1513).
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci_frontend_build_acquire_from_ci.sh "${{ github.sha }}"
 
       # -- TIER 1a: the WebKit artifact gate ----------------------------------
       - name: WebKit artifact gate (production build, named subset)
@@ -762,9 +732,7 @@ jobs:
     # `!cancelled()` rather than `success()`: a failing gate is exactly when the
     # nightly full suite is most worth having, and quarantined is not the same
     # as unwatched.
-    needs:
-      - gate
-      - frontend-build
+    needs: gate
     if: >-
       !cancelled()
       && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
@@ -990,14 +958,10 @@ jobs:
           # check plus the mutation must be one critical section. See the script.
           scripts/ci_host_lock.sh pulse-sink scripts/ci_pulse_sink.sh setup
 
-      - name: Download production frontend artifact
-        uses: actions/download-artifact@fa0a085b2f99e52bd8b2596a43d8888892b913a8 # v4
-        with:
-          name: production-frontend-${{ github.sha }}
-          path: apps/webui/frontend/build
-
-      - name: Assert production frontend artifact matches this commit
-        run: scripts/ci_frontend_build_assert.sh "${{ github.sha }}"
+      - name: Acquire production frontend artifact from CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci_frontend_build_acquire_from_ci.sh "${{ github.sha }}"
 
       - name: Extended - FULL webkit artifact suite (no grep)
         working-directory: apps/webui/frontend

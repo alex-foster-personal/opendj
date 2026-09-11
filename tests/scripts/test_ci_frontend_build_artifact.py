@@ -88,22 +88,22 @@ def test_ci_builds_once_and_consumers_download() -> None:
     assert any("ci_frontend_build_assert.sh" in (s.get("run") or "") for s in consumer)
 
 
-def test_e2e_builds_never_and_downloads_shared_artifact() -> None:
+def test_e2e_builds_never_and_acquires_from_ci() -> None:
     """if e2e gate or extended rebuilds then the workflow still pays twice"""
     assert _run_builds("e2e.yml") == []
     for job_id in ("gate", "extended"):
         steps = _steps("e2e.yml", job_id)
-        assert any("download-artifact" in (s.get("uses") or "") for s in steps), job_id
-        assert any("ci_frontend_build_assert.sh" in (s.get("run") or "") for s in steps), job_id
+        assert any(
+            "ci_frontend_build_acquire_from_ci.sh" in (s.get("run") or "") for s in steps
+        ), job_id
 
 
 def test_artifact_names_are_keyed_on_sha() -> None:
     """if the artifact name omits the sha then a stale download can pass"""
-    for workflow, job_id in (("ci.yml", "frontend-build"), ("e2e.yml", "frontend-build")):
-        uploads = [
-            s
-            for s in _steps(workflow, job_id)
-            if "upload-artifact" in (s.get("uses") or "")
-        ]
-        assert uploads, f"{workflow}:{job_id}"
-        assert uploads[0]["with"]["name"] == "production-frontend-${{ github.sha }}"
+    uploads = [
+        s
+        for s in _steps("ci.yml", "frontend-build")
+        if "upload-artifact" in (s.get("uses") or "")
+    ]
+    assert uploads
+    assert uploads[0]["with"]["name"] == "production-frontend-${{ github.sha }}"
