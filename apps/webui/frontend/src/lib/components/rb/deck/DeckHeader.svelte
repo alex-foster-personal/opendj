@@ -11,6 +11,7 @@
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 	import {
 		DECK_IDS,
+		deckEffectiveBpm,
 		deckStates,
 		keySyncPreview,
 		pitchRanges,
@@ -22,6 +23,7 @@
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import ControlExplainer from './ControlExplainer.svelte';
+	import TempoEditModal from './TempoEditModal.svelte';
 	import RatingStars from '../browser/RatingStars.svelte';
 
 	let {
@@ -51,6 +53,7 @@
 	} = $props();
 
 	let artworkFailed: boolean = $state(false);
+	let tempoEditAt: { x: number; y: number } | null = $state(null);
 	const artworkCap = $derived(
 		deck.stable_id === null ? 'unknown' : optionalResources(deck.stable_id).artwork
 	);
@@ -204,6 +207,13 @@
 		}
 	}
 
+	function onTempoReadoutDblClick(event: MouseEvent): void {
+		if (deck.stable_id === null || deckEffectiveBpm(deckId) === null) return;
+		event.preventDefault();
+		event.stopPropagation();
+		tempoEditAt = { x: event.clientX, y: event.clientY };
+	}
+
 	// ----------------------------------------------------------- _helpers
 
 	function _fmtClock(ms: number): string {
@@ -320,7 +330,13 @@
 						</span>
 					</span>
 				{/if}
-				<span class="bpm">{bpmText}</span>
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<span
+					class="bpm"
+					data-testid={`tempo-readout-deck-${deckId}`}
+					aria-label={`tempo readout deck ${deckId}`}
+					ondblclick={onTempoReadoutDblClick}
+				>{bpmText}</span>
 				{#if tempoChanged}
 					<span class="readout-tempo-line">
 						{tempoPctText}% <span class="from"> (from {deck.bpm?.toFixed(0) ?? '--'}bpm)</span>
@@ -437,6 +453,15 @@
 		</div>
 	</div>
 </div>
+
+{#if tempoEditAt !== null}
+	<TempoEditModal
+		deckId={deckId}
+		x={tempoEditAt.x}
+		y={tempoEditAt.y}
+		onclose={() => (tempoEditAt = null)}
+	/>
+{/if}
 
 <style>
 	.deck-header {
