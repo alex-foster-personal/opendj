@@ -1,4 +1,7 @@
-"""CLI pin flags for play-it (SET-04)."""
+"""CLI pin flags for play-it (SET-04).
+
+[if] play-it is invoked with pin flags [then] they parse into the goal and unsatisfiable pins exit 2, [else stop].
+"""
 from __future__ import annotations
 
 import json
