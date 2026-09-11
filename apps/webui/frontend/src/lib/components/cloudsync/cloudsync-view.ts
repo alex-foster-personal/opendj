@@ -188,6 +188,49 @@ export function relativeTime(value: string | null, nowMs: number = Date.now()): 
 	return `${Math.floor(minutes / 60)}h ago`;
 }
 
+export const CHIP_HREF = '/cloudsync';
+
+export function chipFullLabel(status: CloudSyncStatus | null): string {
+	const state = chipState(status);
+	if (state === 'ok') return `sync: ok ${relativeTime(status?.last_push_at ?? null)}`;
+	if (state === 'error') return 'sync: error';
+	if (state === 'inconclusive')
+		return `sync: inconclusive ${relativeTime(status?.last_push_at ?? null)}`;
+	return `sync: ${state}`;
+}
+
+export function chipShortLabel(status: CloudSyncStatus | null): string {
+	const state = chipState(status);
+	if (state === 'off') return 'off';
+	if (state === 'syncing') return 'sync';
+	if (state === 'ok') return 'ok';
+	if (state === 'error') return 'err';
+	return 'inc';
+}
+
+export function chipTitle(status: CloudSyncStatus | null, loadError: string | null): string {
+	if (status === null) {
+		return loadError === null
+			? 'CloudSync status - still loading from the daemon. Click after it loads to see details.'
+			: `CloudSync status unavailable: ${loadError}. Click to retry details.`;
+	}
+	const state = chipState(status);
+	const next = 'Click to open CloudSync.';
+	if (state === 'off') {
+		return `CloudSync is off${status.reason ? ` (${status.reason})` : ''}. ${next}`;
+	}
+	if (state === 'error') {
+		return `CloudSync error: ${status.last_result?.message ?? 'last sync failed'}. ${next}`;
+	}
+	if (state === 'inconclusive') {
+		return `CloudSync last run was inconclusive - agreement was not verified. ${next}`;
+	}
+	if (state === 'ok') {
+		return `CloudSync last succeeded ${relativeTime(status.last_push_at)}. ${next}`;
+	}
+	return `CloudSync is syncing${status.rows_pending !== null ? ` (${status.rows_pending} rows pending)` : ''}. ${next}`;
+}
+
 // ----------------------------------------------------------- sync now
 
 export type SyncNowDecision = { kind: 'post'; body: SyncRunBody } | { kind: 'refuse'; reason: string };
