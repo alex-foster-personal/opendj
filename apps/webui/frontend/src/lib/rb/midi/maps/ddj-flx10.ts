@@ -60,6 +60,13 @@
 import type { ControlHint, DeviceMap, LedRule, MidiBinding } from '$lib/rb/midi/midi-types';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
+import {
+	pioneerDeckBindings,
+	pioneerNote,
+	pioneerPadChannel,
+	pioneerCc,
+	pioneerDeckChannel
+} from './pioneer-deck-bindings';
 
 // -------------------------------------------------------------- constants
 
@@ -97,86 +104,46 @@ export function flx10PadColorVelocity(colorTableIndex: number | null): number {
 
 // ---------------------------------------------------------------- _helpers
 
-/** Deck n non-pad controls live on channel n ([PDF] p.1 channel table). */
-function _deckCh(deck: DeckId): number {
-	return deck;
-}
-
-/** Unshifted performance pads: deck 1/2/3/4 -> channel 8/10/12/14
- * ([PDF] p.1 channel table). */
-function _padCh(deck: DeckId): number {
-	return 6 + 2 * deck;
-}
-
-function _note(ch: number, id: number): MidiBinding['source'] {
-	return { ch, kind: 'note', id };
-}
-
-function _cc(ch: number, id: number): MidiBinding['source'] {
-	return { ch, kind: 'cc', id };
-}
-
-// ---------------------------------------------------- per-deck deck section
-
 function _deckBindings(deck: DeckId): MidiBinding[] {
-	const ch = _deckCh(deck);
-	return [
-		// [PDF] p.2 D1 PLAY/PAUSE: 9n note 11 (0x0B).
-		{ source: _note(ch, 0x0b), action: { type: 'deck_play_toggle', deck } },
-		// [PDF] p.2 D2 CUE: 9n note 12 (0x0C).
-		{ source: _note(ch, 0x0c), action: { type: 'deck_cue', deck } },
-		// [PDF] p.2 D25 SHIFT: 9n note 63 (0x3F).
-		{ source: _note(ch, 0x3f), action: { type: 'shift_modifier' } },
-		// [PDF] p.2 D4 TEMPO: CC 0 MSB / CC 32 (0x20) LSB, "-" side = Min,
-		// "+" side = Max. Glue convention is 0 -> -range, 1 -> +range, so
-		// the wire orientation matches directly (no invert).
-		{ source: _cc(ch, 0x00), action: { type: 'deck_pitch', deck, lsbOffset: 32 } },
-		// [PDF] p.2 D16 "4 BEAT / EXIT": 9n note 20 (0x14). Engages a
-		// 4-beat auto loop (software semantics: ours; wire number: [PDF]).
-		{ source: _note(ch, 0x14), action: { type: 'deck_beat_loop', deck, beats: 4 } },
-		// [PDF] p.2 D16 +SHIFT: 9n note 80 (0x50) - hardware-encoded
-		// shift twin of 4 BEAT/EXIT. Software semantics (ours): loop exit.
-		{ source: _note(ch, 0x50), action: { type: 'deck_loop_exit', deck } }
-		// NOT BOUND (P0 contract has no loop_in/out/halve/double actions):
-		//   [PDF] p.2 D14 LOOP IN.1/2X: note 16 (0x10), +SHIFT note 76 (0x4C)
-		//   [PDF] p.2 D15 LOOP OUT.2X: note 17 (0x11), +SHIFT note 77 (0x4D)
-	];
+	// [PDF] p.2 D16 +SHIFT: 9n note 80 (0x50) - hardware-encoded shift twin
+	// of 4 BEAT/EXIT. Software semantics (ours): loop exit.
+	return pioneerDeckBindings(deck, 0x50);
 }
 
 // -------------------------------------------------- per-deck mixer section
 
 function _mixerBindings(deck: DeckId): MidiBinding[] {
-	const ch = _deckCh(deck);
+	const ch = pioneerDeckChannel(deck);
 	return [
 		// [PDF] p.2 M3 TRIM: CC 4 (0x04) MSB (LSB 36 unbound - header note).
-		{ source: _cc(ch, 0x04), action: { type: 'mixer_channel', deck, target: 'trim' } },
+		{ source: pioneerCc(ch, 0x04), action: { type: 'mixer_channel', deck, target: 'trim' } },
 		// [PDF] p.2 M4 EQ HI: CC 7 (0x07) MSB (LSB 39 unbound).
-		{ source: _cc(ch, 0x07), action: { type: 'mixer_channel', deck, target: 'eq', band: 'high' } },
+		{ source: pioneerCc(ch, 0x07), action: { type: 'mixer_channel', deck, target: 'eq', band: 'high' } },
 		// [PDF] p.2 M5 EQ MID: CC 11 (0x0B) MSB (LSB 43 unbound).
-		{ source: _cc(ch, 0x0b), action: { type: 'mixer_channel', deck, target: 'eq', band: 'mid' } },
+		{ source: pioneerCc(ch, 0x0b), action: { type: 'mixer_channel', deck, target: 'eq', band: 'mid' } },
 		// [PDF] p.2 M6 EQ LOW: CC 15 (0x0F) MSB (LSB 47 unbound).
-		{ source: _cc(ch, 0x0f), action: { type: 'mixer_channel', deck, target: 'eq', band: 'low' } },
+		{ source: pioneerCc(ch, 0x0f), action: { type: 'mixer_channel', deck, target: 'eq', band: 'low' } },
 		// [PDF] p.2 M2 CH FADER: CC 19 (0x13) MSB (LSB 51 unbound), Min at
 		// bottom / Max at top - matches setFader 0..1, no invert.
-		{ source: _cc(ch, 0x13), action: { type: 'mixer_channel', deck, target: 'fader' } }
+		{ source: pioneerCc(ch, 0x13), action: { type: 'mixer_channel', deck, target: 'fader' } }
 	];
 }
 
 // -------------------------------------------------------- per-deck pad bank
 
 function _padBindings(deck: DeckId): MidiBinding[] {
-	const ch = _padCh(deck);
+	const ch = pioneerPadChannel(deck);
 	const bindings: MidiBinding[] = [];
 	for (let pad = 0; pad < 8; pad++) {
 		// [PDF] p.4-7 P1..P8, HOT CUE mode PAGE1: pad k -> note k-1 (0..7).
 		bindings.push({
-			source: _note(ch, pad),
+			source: pioneerNote(ch, pad),
 			action: { type: 'deck_hot_cue', deck, slot: HOT_CUE_SLOTS[pad] }
 		});
 		// [PDF] p.4-7 P1..P8, BEAT LOOP mode PAGE1: pad k -> note 95+k
 		// (96..103 / 0x60..0x67). Beats per pad: our table (see const).
 		bindings.push({
-			source: _note(ch, 0x60 + pad),
+			source: pioneerNote(ch, 0x60 + pad),
 			action: { type: 'deck_beat_loop', deck, beats: FLX10_BEAT_LOOP_PAD_BEATS[pad] }
 		});
 	}
@@ -191,22 +158,22 @@ function _browserAndGlobalBindings(): MidiBinding[] {
 	return [
 		// [PDF] p.1 B1 BROWSE rotate: CC 64 (0x40), relative ticks
 		// (CW 0x01..0x1E, CCW 0x7F..0x62 - spike 2a).
-		{ source: _cc(ch, 0x40), action: { type: 'browse_encoder' }, relative: true },
+		{ source: pioneerCc(ch, 0x40), action: { type: 'browse_encoder' }, relative: true },
 		// [PDF] p.1 B1 BROWSE rotate +SHIFT: CC 100 (0x64), same tick
 		// encoding. Software choice (ours): same selection movement.
-		{ source: _cc(ch, 0x64), action: { type: 'browse_encoder' }, relative: true },
+		{ source: pioneerCc(ch, 0x64), action: { type: 'browse_encoder' }, relative: true },
 		// [PDF] p.1 B1 BROWSE press = LOAD, per selected deck:
 		// deck1 note 70 (0x46), deck2 71 (0x47), deck3 72 (0x48),
 		// deck4 73 (0x49).
-		{ source: _note(ch, 0x46), action: { type: 'browse_load', deck: 1 } },
-		{ source: _note(ch, 0x47), action: { type: 'browse_load', deck: 2 } },
-		{ source: _note(ch, 0x48), action: { type: 'browse_load', deck: 3 } },
-		{ source: _note(ch, 0x49), action: { type: 'browse_load', deck: 4 } },
+		{ source: pioneerNote(ch, 0x46), action: { type: 'browse_load', deck: 1 } },
+		{ source: pioneerNote(ch, 0x47), action: { type: 'browse_load', deck: 2 } },
+		{ source: pioneerNote(ch, 0x48), action: { type: 'browse_load', deck: 3 } },
+		{ source: pioneerNote(ch, 0x49), action: { type: 'browse_load', deck: 4 } },
 		// [PDF] p.2 M1 CROSSFADER: CC 31 (0x1F) MSB (LSB 63 unbound),
 		// Min at left / Max at right - engine x=0 is full A (left), no invert.
-		{ source: _cc(ch, 0x1f), action: { type: 'mixer_global', target: 'crossfader' } },
+		{ source: pioneerCc(ch, 0x1f), action: { type: 'mixer_global', target: 'crossfader' } },
 		// [PDF] p.2 M8 MASTER LEVEL: CC 8 (0x08) MSB (LSB 40 unbound).
-		{ source: _cc(ch, 0x08), action: { type: 'mixer_global', target: 'master' } }
+		{ source: pioneerCc(ch, 0x08), action: { type: 'mixer_global', target: 'master' } }
 	];
 }
 
@@ -218,20 +185,20 @@ function _browserAndGlobalBindings(): MidiBinding[] {
  * they pressed. Wire numbers are the SAME ones cited in _deckBindings' NOT
  * BOUND comment; the shift twins are hardware-encoded (own note, same ch). */
 function _deckHints(deck: DeckId): ControlHint[] {
-	const ch = _deckCh(deck);
+	const ch = pioneerDeckChannel(deck);
 	return [
 		// [PDF] p.2 D14 LOOP IN.1/2X: note 16 (0x10), +SHIFT note 76 (0x4C).
-		{ source: _note(ch, 0x10), label: `LOOP IN (deck ${deck})` },
-		{ source: _note(ch, 0x4c), label: `LOOP IN + SHIFT (deck ${deck})` },
+		{ source: pioneerNote(ch, 0x10), label: `LOOP IN (deck ${deck})` },
+		{ source: pioneerNote(ch, 0x4c), label: `LOOP IN + SHIFT (deck ${deck})` },
 		// [PDF] p.2 D15 LOOP OUT.2X: note 17 (0x11), +SHIFT note 77 (0x4D).
-		{ source: _note(ch, 0x11), label: `LOOP OUT (deck ${deck})` },
-		{ source: _note(ch, 0x4d), label: `LOOP OUT + SHIFT (deck ${deck})` }
+		{ source: pioneerNote(ch, 0x11), label: `LOOP OUT (deck ${deck})` },
+		{ source: pioneerNote(ch, 0x4d), label: `LOOP OUT + SHIFT (deck ${deck})` }
 	];
 }
 
 function _ledRules(deck: DeckId): LedRule[] {
-	const ch = _deckCh(deck);
-	const padCh = _padCh(deck);
+	const ch = pioneerDeckChannel(deck);
+	const padCh = pioneerPadChannel(deck);
 	const rules: LedRule[] = [
 		// [PDF] p.2 D1 PLAY/PAUSE MIDI-OUT: 9n note 11 (0x0B), OFF=0x00
 		// ON=0x7F. Lit while the deck plays (spike: play-button feedback).

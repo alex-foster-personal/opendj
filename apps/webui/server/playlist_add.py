@@ -84,6 +84,30 @@ def _load_live_members(
     ]
 
 
+def _insert_index(members: list[MembershipRow], position: int | None) -> int:
+    insert_index = len(members) if position is None else position
+    if insert_index < 0 or insert_index > len(members):
+        raise BackendError(
+            f"position out of range: {insert_index} (playlist has "
+            f"{len(members)} live members)",
+        )
+    return insert_index
+
+
+def _membership_insert_rows(
+    stable_ids: list[str],
+    left_key: str | None,
+    right_key: str | None,
+) -> list[tuple[str, str, str]]:
+    insert_rows: list[tuple[str, str, str]] = []
+    prev = left_key
+    for sid in stable_ids:
+        order_key = between(prev, right_key)
+        insert_rows.append((uuid.uuid4().hex, sid, order_key))
+        prev = order_key
+    return insert_rows
+
+
 def add_memberships(
     store: PlaylistStore,  # type: ignore[name-defined]
     playlist_id: str,
@@ -113,24 +137,12 @@ def add_memberships(
         if sid in live_ids:
             raise AlreadyExistsError(sid, playlist_id)
 
-    insert_index = len(members) if position is None else position
-    if insert_index < 0 or insert_index > len(members):
-        raise BackendError(
-            f"position out of range: {insert_index} (playlist has "
-            f"{len(members)} live members)",
-        )
-
+    insert_index = _insert_index(members, position)
     left_key = members[insert_index - 1].order_key if insert_index > 0 else None
     right_key = (
         members[insert_index].order_key if insert_index < len(members) else None
     )
-
-    insert_rows: list[tuple[str, str, str]] = []
-    prev = left_key
-    for sid in stable_ids:
-        order_key = between(prev, right_key)
-        insert_rows.append((uuid.uuid4().hex, sid, order_key))
-        prev = order_key
+    insert_rows = _membership_insert_rows(stable_ids, left_key, right_key)
 
     before_snap = store._snapshot(before_row) if record_edit else None
 

@@ -24,11 +24,3 @@ export async function removeFromLibrary(stableId: string): Promise<TrackLifecycl
 		})
 	);
 }
-
-export async function undeleteTrack(stableId: string): Promise<TrackLifecycleOut> {
-	return await unwrap(
-		api.POST('/api/v1/tracks/{stable_id}:undelete', {
-			params: { path: { stable_id: stableId } }
-		})
-	);
-}

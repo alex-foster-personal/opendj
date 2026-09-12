@@ -60,6 +60,42 @@ def _find_member_index(members: list[MembershipRow], item_id: str) -> int:
     )
 
 
+def _slice_end_by_length(
+    members: list[MembershipRow], start_idx: int, range_length: int,
+) -> int:
+    if start_idx + range_length > len(members):
+        raise BackendError(
+            f"slice exceeds playlist: start index {start_idx} + "
+            f"length {range_length} > {len(members)} live members",
+        )
+    return start_idx + range_length - 1
+
+
+def _slice_end_by_end_id(
+    members: list[MembershipRow], start_idx: int, range_end: str,
+) -> int:
+    end_idx = _find_member_index(members, range_end)
+    if end_idx < start_idx:
+        raise BackendError(
+            f"range_end {range_end} precedes range_start at index {start_idx}",
+        )
+    return end_idx
+
+
+def _slice_end_by_length_and_end(
+    members: list[MembershipRow],
+    start_idx: int,
+    range_length: int,
+    range_start: str,
+    range_end: str,
+) -> int:
+    end_idx = _slice_end_by_length(members, start_idx, range_length)
+    actual = members[end_idx].item_id
+    if actual != range_end:
+        raise SliceNotContiguousError(range_start, range_end, actual)
+    return end_idx
+
+
 def _resolve_slice(
     members: list[MembershipRow],
     playlist_id: str,
@@ -80,31 +116,14 @@ def _resolve_slice(
         ) from exc
 
     if range_length is not None and range_end is None:
-        k = range_length
-        if start_idx + k > len(members):
-            raise BackendError(
-                f"slice exceeds playlist: start index {start_idx} + "
-                f"length {k} > {len(members)} live members",
-            )
-        end_idx = start_idx + k - 1
+        end_idx = _slice_end_by_length(members, start_idx, range_length)
     elif range_length is None and range_end is not None:
-        end_idx = _find_member_index(members, range_end)
-        if end_idx < start_idx:
-            raise BackendError(
-                f"range_end {range_end} precedes range_start {range_start}",
-            )
+        end_idx = _slice_end_by_end_id(members, start_idx, range_end)
     else:
         assert range_length is not None and range_end is not None
-        k = range_length
-        if start_idx + k > len(members):
-            raise BackendError(
-                f"slice exceeds playlist: start index {start_idx} + "
-                f"length {k} > {len(members)} live members",
-            )
-        end_idx = start_idx + k - 1
-        actual = members[end_idx].item_id
-        if actual != range_end:
-            raise SliceNotContiguousError(range_start, range_end, actual)
+        end_idx = _slice_end_by_length_and_end(
+            members, start_idx, range_length, range_start, range_end,
+        )
 
     slice_members = members[start_idx : end_idx + 1]
     return start_idx, end_idx, slice_members
@@ -145,6 +164,126 @@ def _insert_slice(
     return remaining[: idx + 1] + slice_members + remaining[idx + 1 :]
 
 
+def _validate_move_anchors(
+    before_item_id: str | None, after_item_id: str | None,
+) -> None:
+    if before_item_id is not None and after_item_id is not None:
+        raise BackendError("exactly one of before_item_id or after_item_id is required")
+    if before_item_id is None and after_item_id is None:
+        raise BackendError("before_item_id or after_item_id is required")
+
+
+def _order_keys_after_neighbor(
+    members: list[MembershipRow],
+    start_idx: int,
+    neighbor_idx: int,
+    slice_members: list[MembershipRow],
+    slice_ids: set[str],
+    after_item_id: str,
+) -> tuple[list[tuple[str, str]], bool, bool]:
+    prev = _neighbor_before(members, start_idx, slice_ids)
+    if prev is not None and prev.item_id == after_item_id:
+        return [], False, True
+    left = members[neighbor_idx].order_key
+    nxt = _neighbor_after(members, neighbor_idx, slice_ids)
+    right = nxt.order_key if nxt is not None else None
+    return _allocate_or_renumber(
+        members, slice_members, left, right, before_item_id=None, after_item_id=after_item_id,
+    )
+
+
+def _order_keys_before_neighbor(
+    members: list[MembershipRow],
+    end_idx: int,
+    neighbor_idx: int,
+    slice_members: list[MembershipRow],
+    slice_ids: set[str],
+    before_item_id: str,
+) -> tuple[list[tuple[str, str]], bool, bool]:
+    nxt = _neighbor_after(members, end_idx, slice_ids)
+    if nxt is not None and nxt.item_id == before_item_id:
+        return [], False, True
+    prev = _neighbor_before(members, neighbor_idx, slice_ids)
+    left = prev.order_key if prev is not None else None
+    right = members[neighbor_idx].order_key
+    return _allocate_or_renumber(
+        members, slice_members, left, right, before_item_id=before_item_id, after_item_id=None,
+    )
+
+
+def _allocate_or_renumber(
+    members: list[MembershipRow],
+    slice_members: list[MembershipRow],
+    left: str | None,
+    right: str | None,
+    *,
+    before_item_id: str | None,
+    after_item_id: str | None,
+) -> tuple[list[tuple[str, str]], bool, bool]:
+    k = len(slice_members)
+    try:
+        new_keys = allocate_keys(left, right, k)
+        updates = list(zip([m.item_id for m in slice_members], new_keys, strict=True))
+        return updates, False, False
+    except PrecisionExhausted:
+        new_order = _insert_slice(
+            members,
+            slice_members,
+            before_item_id=before_item_id,
+            after_item_id=after_item_id,
+        )
+        updates = [
+            (m.item_id, from_index(i)) for i, m in enumerate(new_order)
+        ]
+        return updates, True, False
+
+
+def _load_move_context(
+    store: PlaylistStore,
+    playlist_id: str,
+    expected_etag: str,
+    range_start: str,
+    range_length: int | None,
+    range_end: str | None,
+    before_item_id: str | None,
+    after_item_id: str | None,
+) -> tuple[PlaylistRow, list[MembershipRow], int, int, list[MembershipRow], set[str], int]:
+    conn = store._conn
+    try:
+        before_row = store._load(playlist_id)
+    except NotFoundError:
+        if _is_smartlist(conn, playlist_id):
+            raise SmartlistImmutableError(
+                "cannot reorder tracks in a smartlist",
+            ) from None
+        raise
+
+    store._check_etag(before_row, expected_etag)
+    members = _load_live_members(conn, playlist_id)
+    _validate_move_anchors(before_item_id, after_item_id)
+
+    start_idx, end_idx, slice_members = _resolve_slice(
+        members, playlist_id, range_start, range_length, range_end,
+    )
+    slice_ids = {m.item_id for m in slice_members}
+
+    neighbor_id = before_item_id if before_item_id is not None else after_item_id
+    assert neighbor_id is not None
+    try:
+        neighbor_idx = _find_member_index(members, neighbor_id)
+    except NotFoundError as exc:
+        raise NotFoundError(
+            f"playlist {playlist_id} has no membership {neighbor_id}",
+        ) from exc
+
+    if neighbor_id in slice_ids:
+        raise TargetInsideSliceError(neighbor_id)
+
+    return (
+        before_row, members, start_idx, end_idx, slice_members, slice_ids, neighbor_idx,
+    )
+
+
 def move_memberships(
     store: PlaylistStore,
     playlist_id: str,
@@ -159,74 +298,37 @@ def move_memberships(
 ) -> MoveResult:
     """Relocate a contiguous membership slice without rewriting neighbors."""
     writer = store._writer
-    conn = store._conn
-
-    try:
-        before_row = store._load(playlist_id)
-    except NotFoundError:
-        if _is_smartlist(conn, playlist_id):
-            raise SmartlistImmutableError(
-                "cannot reorder tracks in a smartlist",
-            ) from None
-        raise
-
-    store._check_etag(before_row, expected_etag)
-    members = _load_live_members(conn, playlist_id)
-
-    if before_item_id is not None and after_item_id is not None:
-        raise BackendError("exactly one of before_item_id or after_item_id is required")
-    if before_item_id is None and after_item_id is None:
-        raise BackendError("before_item_id or after_item_id is required")
-
-    start_idx, end_idx, slice_members = _resolve_slice(
-        members, playlist_id, range_start, range_length, range_end,
+    (
+        before_row,
+        members,
+        start_idx,
+        end_idx,
+        slice_members,
+        slice_ids,
+        neighbor_idx,
+    ) = _load_move_context(
+        store,
+        playlist_id,
+        expected_etag,
+        range_start,
+        range_length,
+        range_end,
+        before_item_id,
+        after_item_id,
     )
-    slice_ids = {m.item_id for m in slice_members}
-    k = len(slice_members)
 
-    neighbor_id = before_item_id if before_item_id is not None else after_item_id
-    assert neighbor_id is not None
-    try:
-        neighbor_idx = _find_member_index(members, neighbor_id)
-    except NotFoundError as exc:
-        raise NotFoundError(
-            f"playlist {playlist_id} has no membership {neighbor_id}",
-        ) from exc
-
-    if neighbor_id in slice_ids:
-        raise TargetInsideSliceError(neighbor_id)
-
-    skip = slice_ids
     if after_item_id is not None:
-        prev = _neighbor_before(members, start_idx, skip)
-        if prev is not None and prev.item_id == after_item_id:
-            return MoveResult(before_row, renumbered=False, no_op=True)
-        left = members[neighbor_idx].order_key
-        nxt = _neighbor_after(members, neighbor_idx, skip)
-        right = nxt.order_key if nxt is not None else None
-    else:
-        nxt = _neighbor_after(members, end_idx, skip)
-        if nxt is not None and nxt.item_id == before_item_id:
-            return MoveResult(before_row, renumbered=False, no_op=True)
-        prev = _neighbor_before(members, neighbor_idx, skip)
-        left = prev.order_key if prev is not None else None
-        right = members[neighbor_idx].order_key
-
-    renumbered = False
-    try:
-        new_keys = allocate_keys(left, right, k)
-        updates = list(zip([m.item_id for m in slice_members], new_keys))
-    except PrecisionExhausted:
-        new_order = _insert_slice(
-            members,
-            slice_members,
-            before_item_id=before_item_id,
-            after_item_id=after_item_id,
+        updates, renumbered, no_op = _order_keys_after_neighbor(
+            members, start_idx, neighbor_idx, slice_members, slice_ids, after_item_id,
         )
-        updates = [
-            (m.item_id, from_index(i)) for i, m in enumerate(new_order)
-        ]
-        renumbered = True
+    else:
+        assert before_item_id is not None
+        updates, renumbered, no_op = _order_keys_before_neighbor(
+            members, end_idx, neighbor_idx, slice_members, slice_ids, before_item_id,
+        )
+
+    if no_op:
+        return MoveResult(before_row, renumbered=False, no_op=True)
 
     before_snap = (
         _snapshot_with_members(store, before_row) if record_edit else None

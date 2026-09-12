@@ -27,9 +27,12 @@ import type {
 	SignalsmithStretchSchedule
 } from 'signalsmith-stretch';
 import { recordWorkletAck } from '$lib/rb/worklet-ack-stats';
-
-export const STRETCH_CREATE_TIMEOUT_MS = 15_000;
-export const STRETCH_COMMAND_TIMEOUT_MS = 5_000;
+import {
+	STRETCH_COMMAND_TIMEOUT_MS,
+	STRETCH_CREATE_TIMEOUT_MS,
+	StretchProcessorError,
+	withStretchCommandTimeout
+} from './stretch-errors';
 
 /**
  * LATENCY round 2, STEP 2: the STFT block length to configure every processor
@@ -111,20 +114,6 @@ export const STRETCH_RESET_CHANGE: Readonly<Required<StretchScheduleChange>> = O
 });
 
 export type StrictStretchSchedule = SignalsmithStretchSchedule & { outputTime: number };
-
-export class StretchCommandTimeoutError extends Error {
-	constructor(operation: string, timeoutMs: number) {
-		super(`Signalsmith ${operation} timed out after ${timeoutMs}ms`);
-		this.name = 'StretchCommandTimeoutError';
-	}
-}
-
-export class StretchProcessorError extends Error {
-	constructor(message: string, options?: ErrorOptions) {
-		super(message, options);
-		this.name = 'StretchProcessorError';
-	}
-}
 
 /** Command gate shared by every worklet call. A failed or timed-out command
  * poisons the processor, and the poison check runs before the next callback
@@ -285,30 +274,6 @@ export function validateStretchScheduleBounds(
 		throw new RangeError(
 			`loopEnd ${change.loopEnd}s exceeds loaded audio ${loadedDurationSec}s`
 		);
-	}
-}
-
-export async function withStretchCommandTimeout<T>(
-	command: Promise<T>,
-	operation: string,
-	timeoutMs = STRETCH_COMMAND_TIMEOUT_MS
-): Promise<T> {
-	if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-		throw new RangeError(`timeoutMs must be a finite positive number, got ${timeoutMs}`);
-	}
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	try {
-		return await Promise.race([
-			command,
-			new Promise<never>((_resolve, reject) => {
-				timer = setTimeout(
-					() => reject(new StretchCommandTimeoutError(operation, timeoutMs)),
-					timeoutMs
-				);
-			})
-		]);
-	} finally {
-		if (timer !== undefined) clearTimeout(timer);
 	}
 }
 

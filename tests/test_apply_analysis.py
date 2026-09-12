@@ -823,7 +823,7 @@ def _pin_reversal_root(
     reversal = tmp_path / "reversal"
     orig = analysis_writeback.LiveWriteSession
 
-    def _session(*args: object, **kwargs: object) -> object:
+    def _session(*args: Any, **kwargs: Any) -> Any:
         if kwargs.get("reversal_root") is None:
             kwargs["reversal_root"] = reversal
         return orig(*args, **kwargs)
@@ -1273,7 +1273,7 @@ class TestPqtzWritebackLive:
         )
         state_conn.commit()
         state_conn.close()
-        changes = (
+        changes: tuple[dict[str, object], ...] = (
             {"at_s": 10.0, "bpm_before": 128.0, "bpm_after": 130.0, "confidence": 1.0},
             {"at_s": 20.0, "bpm_before": 130.0, "bpm_after": 132.0, "confidence": 1.0},
         )

@@ -3,7 +3,7 @@
  * Main-thread only: setInterval + pagehide/visibilitychange, never audio worklet.
  */
 
-import type { DeckId } from '$lib/rb/deck-slots';
+import type { DeckId } from '$lib/rb/deck-id';
 import {
 	formatReplaceStateUrl,
 	parseLv2Ids,

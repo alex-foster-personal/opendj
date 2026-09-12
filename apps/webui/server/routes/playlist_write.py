@@ -76,7 +76,7 @@ class PlaylistCreateIn(BaseModel):
 
 
 class PlaylistRenameIn(BaseModel):
-    name: Optional[str] = Field(
+    name: str | None = Field(
         None, min_length=1,
         description="New display name; omit for a no-op that returns the "
                     "current row + etag",
@@ -84,7 +84,7 @@ class PlaylistRenameIn(BaseModel):
 
 
 class PlaylistDuplicateIn(BaseModel):
-    name: Optional[str] = Field(
+    name: str | None = Field(
         None, min_length=1,
         description="Name for the copy; defaults to '<source name> (copy)'",
     )
@@ -206,8 +206,8 @@ def _move_out(
 def create_playlist(
     body: PlaylistCreateIn,
     response: Response,
-    _backend: StateBackend = Depends(get_write_state),
-    store: PlaylistStore = Depends(get_playlist_store),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008
+    store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
 ) -> PlaylistWriteOut:
     row = store.create_playlist(body.name)
     publish("library.changed", {"kind": "playlists", "ids": [row.playlist_id]})
@@ -219,9 +219,9 @@ def rename_playlist(
     playlist_id: str,
     body: PlaylistRenameIn,
     response: Response,
-    if_match: Optional[str] = Header(None, alias="If-Match"),
-    _backend: StateBackend = Depends(get_write_state),
-    store: PlaylistStore = Depends(get_playlist_store),
+    if_match: str | None = Header(None, alias="If-Match"),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008
+    store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
 ):
     if not if_match:
         return precondition_required(
@@ -239,9 +239,9 @@ def rename_playlist(
 @router.delete("/{playlist_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_playlist(
     playlist_id: str,
-    if_match: Optional[str] = Header(None, alias="If-Match"),
-    _backend: StateBackend = Depends(get_write_state),
-    store: PlaylistStore = Depends(get_playlist_store),
+    if_match: str | None = Header(None, alias="If-Match"),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008
+    store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
 ):
     if not if_match:
         return precondition_required(
@@ -257,10 +257,10 @@ def delete_playlist(
 def duplicate_playlist(
     playlist_id: str,
     response: Response,
-    body: Optional[PlaylistDuplicateIn] = None,
-    if_match: Optional[str] = Header(None, alias="If-Match"),
-    _backend: StateBackend = Depends(get_write_state),
-    store: PlaylistStore = Depends(get_playlist_store),
+    body: PlaylistDuplicateIn | None = None,
+    if_match: str | None = Header(None, alias="If-Match"),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008
+    store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
 ) -> PlaylistWriteOut:
     row = store.duplicate_playlist(
         playlist_id,
@@ -280,8 +280,8 @@ def add_playlist_items(
     playlist_id: str,
     body: MembershipAddIn,
     response: Response,
-    _backend: StateBackend = Depends(get_write_state),
-    store: PlaylistStore = Depends(get_playlist_store),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008
+    store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
 ) -> PlaylistWriteOut:
     row = store.add_memberships(
         playlist_id, body.stable_ids, position=body.position,
@@ -299,8 +299,8 @@ def delete_playlist_item(
     playlist_id: str,
     item_id: str,
     response: Response,
-    _backend: StateBackend = Depends(get_write_state),
-    store: PlaylistStore = Depends(get_playlist_store),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008
+    store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
 ) -> PlaylistWriteOut:
     row = store.remove_membership(playlist_id, item_id)
     publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
@@ -343,9 +343,9 @@ def replace_playlist_tracks(
     playlist_id: str,
     body: MembershipReplaceIn,
     response: Response,
-    if_match: Optional[str] = Header(None, alias="If-Match"),
-    _backend: StateBackend = Depends(get_write_state),
-    store: PlaylistStore = Depends(get_playlist_store),
+    if_match: str | None = Header(None, alias="If-Match"),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008
+    store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
 ):
     if not if_match:
         return precondition_required(
@@ -363,9 +363,9 @@ def transfer_playlist_tracks(
     playlist_id: str,
     body: MembershipTransferIn,
     response: Response,
-    if_match: Optional[str] = Header(None, alias="If-Match"),
-    _backend: StateBackend = Depends(get_write_state),
-    store: PlaylistStore = Depends(get_playlist_store),
+    if_match: str | None = Header(None, alias="If-Match"),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008
+    store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
 ) -> MembershipTransferOut:
     if not if_match:
         return precondition_required(

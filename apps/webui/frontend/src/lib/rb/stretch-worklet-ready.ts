@@ -4,24 +4,13 @@
  */
 
 import stretchWorkletModuleUrl from '../../../node_modules/signalsmith-stretch/SignalsmithStretch.mjs?url';
+import {
+	STRETCH_CREATE_TIMEOUT_MS,
+	StretchProcessorError,
+	withStretchCommandTimeout
+} from './stretch-errors';
 
 type CreateSignalsmithStretch = typeof import('signalsmith-stretch').default;
-
-type StretchAdapterDeps = {
-	readonly STRETCH_CREATE_TIMEOUT_MS: number;
-	readonly StretchCommandTimeoutError: typeof import('$lib/rb/stretch-adapter').StretchCommandTimeoutError;
-	readonly StretchProcessorError: typeof import('$lib/rb/stretch-adapter').StretchProcessorError;
-	readonly withStretchCommandTimeout: typeof import('$lib/rb/stretch-adapter').withStretchCommandTimeout;
-};
-
-let stretchAdapterDeps: Promise<StretchAdapterDeps> | null = null;
-
-function loadStretchAdapterDeps(): Promise<StretchAdapterDeps> {
-	if (stretchAdapterDeps === null) {
-		stretchAdapterDeps = import('./stretch-adapter');
-	}
-	return stretchAdapterDeps;
-}
 
 let stretchFactory: Promise<CreateSignalsmithStretch> | null = null;
 let stretchImportAttempt = 0;
@@ -35,9 +24,7 @@ function _forgetStretchAttempt(attempt: Promise<CreateSignalsmithStretch>): void
 	}
 }
 
-function _loadStretchFactory(
-	StretchProcessorError: StretchAdapterDeps['StretchProcessorError']
-): Promise<CreateSignalsmithStretch> {
+function _loadStretchFactory(): Promise<CreateSignalsmithStretch> {
 	if (stretchFactory === null) {
 		const importSpecifier =
 			stretchImportAttempt === 0
@@ -63,19 +50,14 @@ function _loadStretchFactory(
 	return stretchFactory;
 }
 
-async function _awaitAddModule(
-	context: AudioContext,
-	moduleUrl: string,
-	deps: StretchAdapterDeps
-): Promise<void> {
+async function _awaitAddModule(context: AudioContext, moduleUrl: string): Promise<void> {
 	let pending = addModuleMemos.get(context);
 	if (pending === undefined) {
 		pending = (async () => {
 			try {
 				await withStretchAddModuleTimeout(
 					context.audioWorklet!.addModule(moduleUrl),
-					deps.STRETCH_CREATE_TIMEOUT_MS,
-					deps.StretchProcessorError
+					STRETCH_CREATE_TIMEOUT_MS
 				);
 			} catch (error) {
 				addModuleMemos.delete(context);
@@ -89,8 +71,7 @@ async function _awaitAddModule(
 
 async function withStretchAddModuleTimeout(
 	addModule: Promise<void>,
-	timeoutMs: number,
-	StretchProcessorError: StretchAdapterDeps['StretchProcessorError']
+	timeoutMs: number
 ): Promise<void> {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
@@ -119,44 +100,38 @@ async function withStretchAddModuleTimeout(
 	}
 }
 
-export async function ensureStretchContextRunnable(
-	context: AudioContext,
-	StretchProcessorError?: StretchAdapterDeps['StretchProcessorError']
-): Promise<void> {
-	const ErrorClass = StretchProcessorError ?? (await loadStretchAdapterDeps()).StretchProcessorError;
+export async function ensureStretchContextRunnable(context: AudioContext): Promise<void> {
 	if (context.state === 'suspended' || (context.state as string) === 'interrupted') {
 		await context.resume();
 	}
 	if (context.state !== 'running') {
-		throw new ErrorClass(
+		throw new StretchProcessorError(
 			`AudioContext is ${context.state}; Signalsmith worklet ready handshake cannot run`
 		);
 	}
 }
 
 export async function addStretchWorkletModule(context: AudioContext, moduleUrl: string): Promise<void> {
-	const deps = await loadStretchAdapterDeps();
-	await _awaitAddModule(context, moduleUrl, deps);
+	await _awaitAddModule(context, moduleUrl);
 }
 
 async function _ensureStretchWorkletReadyImpl(
 	context: AudioContext
 ): Promise<CreateSignalsmithStretch> {
-	const deps = await loadStretchAdapterDeps();
 	if (context.audioWorklet === undefined) {
-		throw new deps.StretchProcessorError('AudioWorklet is unavailable; Signalsmith cannot start');
+		throw new StretchProcessorError('AudioWorklet is unavailable; Signalsmith cannot start');
 	}
-	const stretchFactoryAttempt = _loadStretchFactory(deps.StretchProcessorError);
-	const factory = await deps.withStretchCommandTimeout(
+	const stretchFactoryAttempt = _loadStretchFactory();
+	const factory = await withStretchCommandTimeout(
 		stretchFactoryAttempt,
 		'stretch factory import',
-		deps.STRETCH_CREATE_TIMEOUT_MS
+		STRETCH_CREATE_TIMEOUT_MS
 	).catch((error) => {
 		_forgetStretchAttempt(stretchFactoryAttempt);
 		throw error;
 	});
-	await ensureStretchContextRunnable(context, deps.StretchProcessorError);
-	await _awaitAddModule(context, factory.moduleUrl, deps);
+	await ensureStretchContextRunnable(context);
+	await _awaitAddModule(context, factory.moduleUrl);
 	return factory;
 }
 
@@ -179,5 +154,4 @@ export function resetStretchWorkletReadyForTests(): void {
 	stretchImportAttempt = 0;
 	addModuleMemos = new WeakMap();
 	stretchReadyByContext = new WeakMap();
-	stretchAdapterDeps = null;
 }

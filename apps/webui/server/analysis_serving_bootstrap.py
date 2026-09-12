@@ -10,10 +10,13 @@ from __future__ import annotations
 
 from apps.analysis.serving_lanes import SERVING_LANES, register_serving_lane
 
-_LANDED_LANES: tuple[str, ...] = ("beatgrid", "key", "waveform")
+_LANDED_LANES: tuple[str, ...] = ("beatgrid", "waveform")
 
 
 def ensure_analysis_serving_lanes() -> None:
+    import apps.analysis_key.serving_lane  # noqa: F401 - PARITY-02 key producer ownership
+
+    register_serving_lane("key")
     for lane in _LANDED_LANES:
         if lane not in SERVING_LANES:
             register_serving_lane(lane)

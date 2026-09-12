@@ -5,9 +5,11 @@ import { readFrontendSource as readSource } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let adapter;
+let stretchErrors;
 
 before(async () => {
 	adapter = await loadTypeScriptModule('src/lib/rb/stretch-adapter.ts');
+	stretchErrors = await loadTypeScriptModule('src/lib/rb/stretch-errors.ts');
 });
 
 test('stretch node keeps one disconnected input and a fixed stereo output', () => {
@@ -77,7 +79,7 @@ test('invalid schedule values fail before reaching the processor', () => {
 
 test('processor command timeout rejects explicitly', async () => {
 	await assert.rejects(
-		adapter.withStretchCommandTimeout(new Promise(() => {}), 'schedule', 5),
+		stretchErrors.withStretchCommandTimeout(new Promise(() => {}), 'schedule', 5),
 		(error) => {
 			assert.equal(error.name, 'StretchCommandTimeoutError');
 			assert.match(error.message, /schedule timed out after 5ms/);
