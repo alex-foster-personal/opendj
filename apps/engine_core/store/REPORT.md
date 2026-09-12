@@ -11,7 +11,7 @@ Scope: every `CREATE TABLE` / `CREATE INDEX` / `CREATE VIRTUAL TABLE` reachable 
 | `track_fields` | `apps/shared/state/schema.py` | `apply_migrations` (v3 rebuild) | CHECK drift, O-7 |
 | `track_field_history` | `apps/shared/state/schema.py` | `apply_migrations` (v2 rebuild) | |
 | `playlists` | `apps/shared/state/schema.py` | `apply_migrations` (v1) | no index, O-10 |
-| `playlist_memberships` | `apps/shared/state/schema.py` | `apply_migrations` (v1) | no index, O-10 |
+| `playlist_memberships` | `apps/shared/state/schema.py` | `apply_migrations` (v1) | idx_playlist_memberships_item_id (legacy v13); reverse-lookup by stable_id still a scan, O-10 |
 | `adapters` | `apps/shared/state/schema.py` | `apply_migrations` (v1) | no index, O-10 |
 | `events` | `apps/shared/state/schema.py` | `apply_migrations` (v1) | name collides, O-2 |
 | `track_locations` | `apps/shared/state/schema.py` | `apply_migrations` (v4/v5) | data backfill, O-14 |
@@ -74,7 +74,7 @@ Scope: every `CREATE TABLE` / `CREATE INDEX` / `CREATE VIRTUAL TABLE` reachable 
 
 **O-9. `idx_smartlists_name` is redundant** -- `smartlists.name` is already `NOT NULL UNIQUE`, so SQLite already has an autoindex. Reproduced verbatim; deletion candidate.
 
-**O-10. Tables with no index:** `adapters`, `file_hashes`, `play_orders_schema_meta`, `playlist_memberships`, `playlists`, `sets`, `settings`, `spotify_playlist_meta`, `track_fields`, `tracks_fts`. Most are covered by their PK. Two look like real gaps: `playlist_memberships` is queried by `stable_id` but has PK `(playlist_id, position)`, so "which playlists is this track in" is a full scan; and `spotify_playlist_meta` is reached from `playlists` by `vendor_pl_id` with no index on it.
+**O-10. Tables with no index:** `adapters`, `file_hashes`, `play_orders_schema_meta`, `playlists`, `sets`, `settings`, `spotify_playlist_meta`, `track_fields`, `tracks_fts`. Most are covered by their PK. Two look like real gaps: `playlist_memberships` is queried by `stable_id` but has PK `(playlist_id, position)`, so "which playlists is this track in" is a full scan (the legacy v13 `idx_playlist_memberships_item_id` indexes `item_id`, not `stable_id`); and `spotify_playlist_meta` is reached from `playlists` by `vendor_pl_id` with no index on it.
 
 **O-11. Inconsistent partial-index policy on the same concept.** Shared-state uses `... WHERE stable_id IS NOT NULL` (`idx_events_stable_id`); `apps/analysis/store.py` indexes the same nullable concept with no predicate (`idx_analysis_events_stable`).
 
