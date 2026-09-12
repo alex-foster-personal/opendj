@@ -254,6 +254,26 @@ TABLE_DOCS: dict[str, str] = {
         "from schema_meta so the two migration frameworks never contend "
         "on the same counter (apps/shared/play_orders/schema.py)."
     ),
+    "playlist_sets": (
+        "SET-05 performance object for a playlist: a named set with its own "
+        "play count and entry snapshot, distinct from PLAY-01 play_orders "
+        "orderings and SET-01 recorded sessions "
+        "(apps/shared/playlist_sets/schema.py)."
+    ),
+    "playlist_set_entries": (
+        "One row per track position within a playlist_sets snapshot at "
+        "create time; independent of later playlist_memberships edits "
+        "(apps/shared/playlist_sets/schema.py)."
+    ),
+    "playlist_set_runs": (
+        "Practice or performance run history for a playlist set; only "
+        "kind='performance' increments play_count "
+        "(apps/shared/playlist_sets/schema.py)."
+    ),
+    "playlist_sets_schema_meta": (
+        "Private migration-version counter for playlist_sets, kept separate "
+        "from schema_meta (apps/shared/playlist_sets/schema.py)."
+    ),
     "tracks_fts": (
         "FTS5 full-text index over a subset of tracks' searchable columns, "
         "maintained by the launcher quick-open palette "

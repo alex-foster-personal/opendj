@@ -11414,6 +11414,196 @@
         "title": "PlaylistRewriteOut",
         "type": "object"
       },
+      "PlaylistSetCreateIn": {
+        "properties": {
+          "from_play_order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Play Order"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "PlaylistSetCreateIn",
+        "type": "object"
+      },
+      "PlaylistSetEntryOut": {
+        "properties": {
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "position"
+        ],
+        "title": "PlaylistSetEntryOut",
+        "type": "object"
+      },
+      "PlaylistSetListOut": {
+        "properties": {
+          "sets": {
+            "items": {
+              "$ref": "#/components/schemas/PlaylistSetOut"
+            },
+            "title": "Sets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sets"
+        ],
+        "title": "PlaylistSetListOut",
+        "type": "object"
+      },
+      "PlaylistSetOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/PlaylistSetEntryOut"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "play_count": {
+            "title": "Play Count",
+            "type": "integer"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "runs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PlaylistSetRunOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runs"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "playlist_id",
+          "name",
+          "play_count",
+          "entries",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PlaylistSetOut",
+        "type": "object"
+      },
+      "PlaylistSetRunIn": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "practice",
+              "performance"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "PlaylistSetRunIn",
+        "type": "object"
+      },
+      "PlaylistSetRunOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "practice",
+              "performance"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "created_at"
+        ],
+        "title": "PlaylistSetRunOut",
+        "type": "object"
+      },
+      "PlaylistSetRunResultOut": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "practice",
+              "performance"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "play_count": {
+            "title": "Play Count",
+            "type": "integer"
+          },
+          "set_id": {
+            "title": "Set Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "set_id",
+          "kind",
+          "play_count"
+        ],
+        "title": "PlaylistSetRunResultOut",
+        "type": "object"
+      },
       "PlaylistSummary": {
         "properties": {
           "available_count": {
@@ -25730,6 +25920,210 @@
         "summary": "Move Playlist Items",
         "tags": [
           "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/sets": {
+      "get": {
+        "operationId": "list_playlist_sets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistSetListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sets",
+        "tags": [
+          "playlist-sets"
+        ]
+      },
+      "post": {
+        "operationId": "create_playlist_set",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistSetCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistSetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Set",
+        "tags": [
+          "playlist-sets"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/sets/{set_id}": {
+      "get": {
+        "operationId": "get_playlist_set",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistSetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Set",
+        "tags": [
+          "playlist-sets"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/sets/{set_id}/runs": {
+      "post": {
+        "operationId": "create_playlist_set_run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistSetRunIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistSetRunResultOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Run",
+        "tags": [
+          "playlist-sets"
         ]
       }
     },

@@ -70,6 +70,7 @@ from apps.launcher.scripts import bootstrap_db as launcher_bootstrap
 from apps.shared import fingerprints
 from apps.shared.pairings import schema_sql as pairings_sql
 from apps.shared.play_orders import schema as play_orders_schema
+from apps.shared.playlist_sets import schema as playlist_sets_schema
 from apps.shared.state import schema as state_schema
 from apps.shared.state import sync_stamp
 from apps.spotify import state_aux as spotify_aux
@@ -253,6 +254,10 @@ def _apply_play_orders(conn: sqlite3.Connection, _path: Path) -> None:
     play_orders_schema.apply_play_order_migrations(conn)
 
 
+def _apply_playlist_sets(conn: sqlite3.Connection, _path: Path) -> None:
+    playlist_sets_schema.apply_playlist_set_migrations(conn)
+
+
 def _apply_launcher(conn: sqlite3.Connection, path: Path) -> None:
     """The launcher's additive fts5 + frecency DDL, applied by path.
 
@@ -307,6 +312,7 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
         _apply_pairing_capture,
     ),
     Authority("apps/shared/play_orders/schema.py", _apply_play_orders),
+    Authority("apps/shared/playlist_sets/schema.py", _apply_playlist_sets),
     Authority(
         "apps/spotify/state_aux.py",
         lambda conn, _path: spotify_aux.ensure_aux_tables(conn),

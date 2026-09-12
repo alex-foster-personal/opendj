@@ -94,6 +94,7 @@ from .routes import performance_headphones as performance_headphones_routes
 from .routes import performance_telemetry as performance_telemetry_routes
 from .routes import play_it as play_it_routes
 from .routes import playlist_history as playlist_history_routes
+from .routes import playlist_sets as playlist_sets_routes
 from .routes import playlist_write as playlist_write_routes
 from .routes import playlist_writeback as playlist_writeback_routes
 from .routes import playlists as playlists_routes
@@ -422,6 +423,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         mytag_routes.router,
         playlists_routes.router,
         playlist_write_routes.router,
+        playlist_sets_routes.router,
         playlist_history_routes.router,
         play_it_routes.router,
         playlist_writeback_routes.router,

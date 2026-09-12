@@ -260,6 +260,51 @@ SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
             "pending_tracks.added_at)."
         ),
     },
+    "playlist_sets": {
+        "id": "Surrogate primary key for one SET-05 performance set.",
+        "playlist_id": (
+            "Parent playlist this set belongs to. NOT FK-enforced; keyed by "
+            "opaque playlist_id like play_orders."
+        ),
+        "name": (
+            "Human-readable set name, UNIQUE per playlist. Shown in the "
+            "library browser tab strip with play_count."
+        ),
+        "play_count": (
+            "Denormalized performance count. Only incremented by "
+            "kind='performance' runs; practice runs do not touch it."
+        ),
+        "source_play_order_id": (
+            "Optional provenance: play_orders.id copied at create time when "
+            "from_play_order was supplied. Not FK-enforced."
+        ),
+        "created_at": "RFC 3339 UTC timestamp when the set was created.",
+        "updated_at": (
+            "RFC 3339 UTC timestamp of the last set mutation or run record."
+        ),
+    },
+    "playlist_set_entries": {
+        "id": "Surrogate primary key for one entry row.",
+        "set_id": "FK -> playlist_sets(id), ON DELETE CASCADE.",
+        "stable_id": "Track stable_id at snapshot time.",
+        "position": "0-based position within this set's snapshot.",
+    },
+    "playlist_set_runs": {
+        "id": "Surrogate primary key for one run record.",
+        "set_id": "FK -> playlist_sets(id), ON DELETE CASCADE.",
+        "kind": (
+            "Run kind: 'practice' or 'performance'. Only 'performance' "
+            "increments playlist_sets.play_count."
+        ),
+        "created_at": "RFC 3339 UTC timestamp when the run was recorded.",
+    },
+    "playlist_sets_schema_meta": {
+        "version": (
+            "Applied playlist_sets schema version. Primary key, one row per "
+            "completed migration step."
+        ),
+        "applied_at": "RFC 3339 UTC timestamp when this version was applied.",
+    },
     "spotify_playlist_links": {
         "vendor_pl_id": (
             "Primary key. Spotify's own playlist id, so a re-import can find "
