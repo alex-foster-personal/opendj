@@ -30,7 +30,7 @@ export const SILENT_WHILE_PLAYING_MS = 2_000;
  */
 export const SILENCE_RMS_FLOOR = 0.001;
 
-export type SilenceVerdict = 'ok' | 'silent-while-playing';
+export type SilenceVerdict = 'ok' | 'silent-while-playing' | 'output-stalled-while-rendering';
 
 export interface SilenceSample {
 	playing: boolean;

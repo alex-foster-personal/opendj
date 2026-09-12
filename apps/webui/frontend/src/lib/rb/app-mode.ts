@@ -10,6 +10,10 @@
  *
  * v1 (issue #2040) does not advertise unbuilt modes on the chooser unless
  * app_mode.show_unbuildable is on; the rows stay in APP_MODES fail-closed.
+ *
+ * v1 (issue #2041) adds per-mode feature-flag maps: performance keeps
+ * usb.export and local_stems.executor in-scope; unbuilt modes are empty.
+ * Maps cannot set APP_MODES.available.
  */
 
 export type AppModeId = 'performance' | 'library-management' | 'music-player';
@@ -53,7 +57,29 @@ export const APP_MODES: readonly AppMode[] = [
 	}
 ];
 
+export const APP_MODE_FEATURE_FLAG_IDS: Readonly<Record<AppModeId, readonly string[]>> = {
+	performance: ['usb.export', 'local_stems.executor'],
+	'library-management': [],
+	'music-player': []
+};
+
+export const LOCAL_STEMS_EXECUTOR_FLAG_ID = 'local_stems.executor';
+
 export const SHOW_UNBUILDABLE_APP_MODES_FLAG_ID = 'app_mode.show_unbuildable';
+
+export function modeFeatureEnabled(modeId: AppModeId, flagId: string): boolean {
+	const known = new Set<string>();
+	for (const ids of Object.values(APP_MODE_FEATURE_FLAG_IDS)) {
+		for (const id of ids) known.add(id);
+	}
+	if (!known.has(flagId)) {
+		throw new Error(
+			`undeclared feature flag ${flagId}: ` +
+				'add a FlagDef to apps/feature_flags/store.FLAGS before reading it.'
+		);
+	}
+	return APP_MODE_FEATURE_FLAG_IDS[modeId].includes(flagId);
+}
 
 export function showUnbuildableAppModes(
 	flagsLoaded: boolean,

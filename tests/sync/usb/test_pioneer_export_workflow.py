@@ -142,7 +142,23 @@ def test_plan_is_deterministic_and_serializable(
     assert workflow.ExportPlan.from_dict(first.to_dict()) == first
     assert first.plan_id == workflow.compute_plan_id(first.to_dict())
     assert first.scope == "onelibrary_overlay_only"
+    assert workflow.OUTPUT_RELATIVE_PATH.as_posix() == (
+        "PIONEER/rekordbox/exportLibrary.db"
+    )
     assert not (disposable_target / "PIONEER").exists()
+
+
+def test_overlay_output_path_rejected_by_stick_value_verifier(tmp_path: Path) -> None:
+    """Fake applied overlay tree is not a rekordbox export."""
+    from apps.sync.usb.pioneer.value_verify import verify_stick_values
+
+    target = tmp_path / "stick"
+    output = target / workflow.OUTPUT_RELATIVE_PATH
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"overlay-only")
+    report = verify_stick_values(target)
+    assert report.is_rekordbox_export is False
+    assert report.tracks_on_stick == 0
 
 
 def test_real_inspector_refuses_non_macos_without_writing(

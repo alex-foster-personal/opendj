@@ -35,7 +35,10 @@ A beat entry carries its local BPM and the deck plays against it, so deriving
 it from one inter-beat interval would publish the beat tracker's own frame
 quantization as tempo wobble. `detect_tempo_changes` already fits
 piecewise-constant sections; each beat takes the mean tempo of the section it
-falls in, which is the same curve `tempo_changes` describes.
+falls in, which is the same curve `tempo_changes` describes. That local bpm
+**is** the served tempo map on `/anlz`. Multi-anchor maps are trusted dynamic
+grids (`static_grid_untrusted` is false on the record, omitted on `/anlz`).
+One-anchor maps are the v1 static grid.
 
 **The octave multiple is applied to every tempo this module publishes.** The
 octave policy multiplies the least-squares fit to reach the published BPM, and
@@ -274,7 +277,7 @@ def build_beatgrid_lane(
             }
             for marker in changes.markers
         ],
-        "static_grid_untrusted": changes.static_grid_untrusted,
+        "static_grid_untrusted": False,
     }
     _stamp_activations(result, payload)
     return BeatgridLane(

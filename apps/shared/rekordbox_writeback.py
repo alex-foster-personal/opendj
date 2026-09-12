@@ -59,6 +59,7 @@ blocked half.  ``tests/test_rekordbox_writeback_gate.py`` iterates it, so:
                                               INJECTED db handle (no path)
   module.sync.apply_ratings                   live master.db ratings
   module.sync.apply_analysis                  live master.db bpm/key/loudness
+                                              and fixed-tempo ANLZ PQTZ
                                               (write-back and CSV bpm/energy)
   module.sync.apply_cues                      live master.db djmdCue
   module.sync.safety.live_write_session       live master.db (backstop rail)
@@ -281,8 +282,8 @@ WRITE_SURFACES: tuple[WriteSurface, ...] = (
         kind="module",
         entrypoint="apps.sync.apply_analysis._live_rb_db_path(live=True)",
         target=(
-            "live master.db bpm / key / loudness (sidecar) write-back and "
-            "CSV bpm/energy analysis sync"
+            "live master.db bpm / key / loudness (sidecar) write-back, "
+            "fixed-tempo ANLZ PQTZ .DAT, and CSV bpm/energy analysis sync"
         ),
         guard_site="apps/sync/apply_analysis.py",
     ),
