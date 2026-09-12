@@ -11,6 +11,8 @@ Single-line intent:
   - if a run exactly at the collect floor fails then broken
   - if a misspelled required marker is accepted then broken
   - if the plugin changes the exit code when no option is given then broken
+
+[if] a pytest tier run measured nothing [then] pytest_tier_floor fails, not exit 0, [else stop].
 """
 
 from __future__ import annotations

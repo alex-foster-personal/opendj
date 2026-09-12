@@ -2804,6 +2804,159 @@
         "title": "CloudSyncEffectiveConfigOut",
         "type": "object"
       },
+      "CloudSyncLinkOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "last_finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Finished At"
+          },
+          "last_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Message"
+          },
+          "last_result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Result"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "enabled",
+          "reason",
+          "endpoint",
+          "last_result",
+          "last_message",
+          "last_finished_at"
+        ],
+        "title": "CloudSyncLinkOut",
+        "type": "object"
+      },
+      "CloudSyncSchedulerOut": {
+        "description": "The engine's CloudSync scheduler: is its thread alive, and what last failed.\n\n``not_armed``: this app never builds one (tests, non-daemon boots).\n``off``: armed, switch not on. ``misconfigured``: switched on but it could\nnot start (``reason`` says why); the engine booted regardless.\n``dead``: it was started and its thread is gone without ``stop()``.",
+        "properties": {
+          "alive": {
+            "title": "Alive",
+            "type": "boolean"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_error_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error At"
+          },
+          "last_ok_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Ok At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "state": {
+            "enum": [
+              "not_armed",
+              "off",
+              "misconfigured",
+              "running",
+              "stopped",
+              "dead"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "ticks": {
+            "title": "Ticks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "alive",
+          "reason",
+          "ticks",
+          "last_ok_at",
+          "last_error",
+          "last_error_at"
+        ],
+        "title": "CloudSyncSchedulerOut",
+        "type": "object"
+      },
       "CloudSyncStatusOut": {
         "properties": {
           "configured": {
@@ -4588,6 +4741,119 @@
           "note"
         ],
         "title": "FeatureEntitlementOut",
+        "type": "object"
+      },
+      "FeedbackStoreSyncOut": {
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "integer"
+          },
+          "attachments_missing": {
+            "title": "Attachments Missing",
+            "type": "integer"
+          },
+          "harvested": {
+            "title": "Harvested",
+            "type": "integer"
+          },
+          "live": {
+            "title": "Live",
+            "type": "integer"
+          },
+          "pending_push": {
+            "title": "Pending Push",
+            "type": "integer"
+          },
+          "synced": {
+            "title": "Synced",
+            "type": "integer"
+          },
+          "unreconciled": {
+            "title": "Unreconciled",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "live",
+          "archived",
+          "synced",
+          "pending_push",
+          "unreconciled",
+          "harvested",
+          "attachments_missing"
+        ],
+        "title": "FeedbackStoreSyncOut",
+        "type": "object"
+      },
+      "FeedbackSyncOut": {
+        "properties": {
+          "exported": {
+            "title": "Exported",
+            "type": "integer"
+          },
+          "imported": {
+            "title": "Imported",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "pulled": {
+            "title": "Pulled",
+            "type": "integer"
+          },
+          "pushed": {
+            "title": "Pushed",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "inconclusive"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "exported",
+          "imported",
+          "pushed",
+          "pulled",
+          "message"
+        ],
+        "title": "FeedbackSyncOut",
+        "type": "object"
+      },
+      "FeedbackSyncStatusOut": {
+        "properties": {
+          "cloudsync": {
+            "$ref": "#/components/schemas/CloudSyncLinkOut"
+          },
+          "pins": {
+            "items": {
+              "$ref": "#/components/schemas/PinSyncOut"
+            },
+            "title": "Pins",
+            "type": "array"
+          },
+          "scheduler": {
+            "$ref": "#/components/schemas/CloudSyncSchedulerOut"
+          },
+          "store": {
+            "$ref": "#/components/schemas/FeedbackStoreSyncOut"
+          }
+        },
+        "required": [
+          "store",
+          "cloudsync",
+          "scheduler",
+          "pins"
+        ],
+        "title": "FeedbackSyncStatusOut",
         "type": "object"
       },
       "FileProbeOut": {
@@ -9422,6 +9688,63 @@
         "title": "PinKeyIn",
         "type": "object"
       },
+      "PinSyncOut": {
+        "description": "Where one pin stands. ``attachment_bytes: missing`` is FBSYNC-05's gap:\nthe screenshot's metadata synced here but its bytes did not.",
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "attachment_bytes": {
+            "enum": [
+              "none",
+              "present",
+              "missing"
+            ],
+            "title": "Attachment Bytes",
+            "type": "string"
+          },
+          "origin_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Device Id"
+          },
+          "pin_id": {
+            "title": "Pin Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "synced",
+              "pending_push",
+              "unreconciled",
+              "harvested"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pin_id",
+          "state",
+          "archived",
+          "updated_at",
+          "origin_device_id",
+          "attachment_bytes"
+        ],
+        "title": "PinSyncOut",
+        "type": "object"
+      },
       "PlanEntryOut": {
         "additionalProperties": false,
         "properties": {
@@ -13115,6 +13438,35 @@
         "title": "StatusResponse",
         "type": "object"
       },
+      "StemHydrateIn": {
+        "properties": {
+          "data_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Dir"
+          },
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "manifest_path": {
+            "title": "Manifest Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "manifest_path"
+        ],
+        "title": "StemHydrateIn",
+        "type": "object"
+      },
       "StemManifestOut": {
         "description": "Frontend manifest projected from a stricter durable artifact manifest.",
         "properties": {
@@ -13184,6 +13536,28 @@
           "media_type"
         ],
         "title": "StemPartOut",
+        "type": "object"
+      },
+      "StemPushMissingIn": {
+        "properties": {
+          "data_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Dir"
+          },
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "title": "StemPushMissingIn",
         "type": "object"
       },
       "StemTierOut": {
@@ -14115,6 +14489,85 @@
         "title": "SyncSnapshotOut",
         "type": "object"
       },
+      "TempoPrefOut": {
+        "description": "PREF-01: a track's user-set preferred tempo plus its playable range.\n\nAny of the three may be null (unset). Never fabricated on read - a track\nwith no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,\nnot this shape with all-null members (see sqlite_backend._row_to_track).",
+        "properties": {
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "regular": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regular"
+          }
+        },
+        "title": "TempoPrefOut",
+        "type": "object"
+      },
+      "TempoPrefPatch": {
+        "properties": {
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "regular": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regular"
+          }
+        },
+        "title": "TempoPrefPatch",
+        "type": "object"
+      },
       "TierEstimateOut": {
         "description": "Cost of one track at one tier. ``measured`` false means we do not know.",
         "properties": {
@@ -14307,85 +14760,6 @@
           "is_default"
         ],
         "title": "TierOut",
-        "type": "object"
-      },
-      "TempoPrefOut": {
-        "description": "PREF-01: a track's user-set preferred tempo plus its playable range.\n\nAny of the three may be null (unset). Never fabricated on read - a track\nwith no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,\nnot this shape with all-null members (see sqlite_backend._row_to_track).",
-        "properties": {
-          "max": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max"
-          },
-          "min": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Min"
-          },
-          "regular": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Regular"
-          }
-        },
-        "title": "TempoPrefOut",
-        "type": "object"
-      },
-      "TempoPrefPatch": {
-        "properties": {
-          "max": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max"
-          },
-          "min": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Min"
-          },
-          "regular": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Regular"
-          }
-        },
-        "title": "TempoPrefPatch",
         "type": "object"
       },
       "TodoCreateIn": {
@@ -21048,6 +21422,76 @@
         ]
       }
     },
+    "/api/v1/feedback/sync": {
+      "post": {
+        "operationId": "post_feedback_sync_api_v1_feedback_sync_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackSyncOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Feedback Sync",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/sync/status": {
+      "get": {
+        "operationId": "get_feedback_sync_status_api_v1_feedback_sync_status_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "pin_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pin Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackSyncStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Feedback Sync Status",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
     "/api/v1/feedback/todos": {
       "get": {
         "operationId": "list_todos_api_v1_feedback_todos_get",
@@ -25489,6 +25933,51 @@
         ]
       }
     },
+    "/api/v1/stems/push-missing": {
+      "post": {
+        "operationId": "push_missing_stems_api_v1_stems_push_missing_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemPushMissingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Push Missing Stems Api V1 Stems Push Missing Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Push Missing Stems",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
     "/api/v1/stems/tiers": {
       "get": {
         "operationId": "list_tiers_api_v1_stems_tiers_get",
@@ -25511,6 +26000,62 @@
         "summary": "List Tiers",
         "tags": [
           "stem-tiers"
+        ]
+      }
+    },
+    "/api/v1/stems/{stable_id}/hydrate": {
+      "post": {
+        "operationId": "hydrate_stem_api_v1_stems__stable_id__hydrate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemHydrateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Hydrate Stem Api V1 Stems  Stable Id  Hydrate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Hydrate Stem",
+        "tags": [
+          "stems"
         ]
       }
     },

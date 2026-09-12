@@ -47,6 +47,7 @@ import pytest
 from apps.analysis_beatgrid.bar_phase import BAR_BEATS, assign_bar_phase
 from apps.analysis_beatgrid.bpm import estimate_bpm
 from apps.analysis_beatgrid.tempo_change import MIN_SEGMENT_BARS, detect_tempo_changes
+from apps.analysis_beatgrid.tempo_map import fit_tempo_map
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 RUNNER = os.path.join(REPO_ROOT, "apps", "analysis_beatgrid", "beat_this_runner.py")
@@ -203,6 +204,7 @@ def analyzed(tmp_path_factory) -> dict:
     steady = str(workdir / "steady.wav")
     stepped = str(workdir / "stepped.wav")
     ramped = str(workdir / "ramped.wav")
+    ramped_4pct = str(workdir / "ramped_4pct.wav")
 
     truth = _render_clicks(steady, _steady_beat_times(CLICK_BPM, TRACK_S), TRACK_S)
     # The step arm keeps the original ffmpeg mutation: an abrupt change is a
@@ -211,15 +213,21 @@ def analyzed(tmp_path_factory) -> dict:
     _inject_tempo_step(steady, stepped, RAMP_AT_S, RAMP_FACTOR)
     ramp_truth = _ramped_beat_times(CLICK_BPM, TRACK_S, RAMP_AT_S, RAMP_OVER_S, RAMP_FACTOR)
     _render_clicks(ramped, ramp_truth, TRACK_S)
+    ramp_4pct_truth = _ramped_beat_times(
+        CLICK_BPM, TRACK_S, ramp_at_s=90.0, ramp_over_s=30.0, factor=1.04
+    )
+    _render_clicks(ramped_4pct, ramp_4pct_truth, TRACK_S)
 
-    payload = _run_model([steady, stepped, ramped], str(workdir / "beats.json"))
+    payload = _run_model([steady, stepped, ramped, ramped_4pct], str(workdir / "beats.json"))
     return {
         "payload": payload,
         "steady": steady,
         "stepped": stepped,
         "ramped": ramped,
+        "ramped_4pct": ramped_4pct,
         "truth": truth,
         "ramp_truth": ramp_truth,
+        "ramp_4pct_truth": ramp_4pct_truth,
     }
 
 
@@ -393,6 +401,32 @@ def test_the_ramp_fixture_really_ramps_rather_than_stepping(analyzed):
     assert last / first == pytest.approx(RAMP_FACTOR, rel=0.01), (
         f"tempo went {first:.2f} -> {last:.2f} BPM, expected a factor of {RAMP_FACTOR}"
     )
+
+
+def test_a_four_percent_ramp_emits_tempo_map_anchors_bracketing_the_ramp(analyzed):
+    """[if] a real 4 percent ramp between 1:30 and 2:00 [then] the map brackets it."""
+    result = analyzed["payload"]["results"][analyzed["ramped_4pct"]]
+    assert result["error"] is None
+    ref = {"npz": result["activations_npz"], "fps": result.get("fps", 50)}
+    tempo_map = fit_tempo_map(ref, result["beats"])
+    anchors = tempo_map.anchors
+    assert len(anchors) >= 2
+    assert any(a.at_s <= 90.0 for a in anchors)
+    tolerance_s = MIN_SEGMENT_BARS * 4 * (60.0 / CLICK_BPM)
+    later = [a for a in anchors if 90.0 - tolerance_s <= a.at_s <= 120.0 + tolerance_s]
+    assert later, (
+        f"no anchor near ramp window; anchors at {[round(a.at_s, 1) for a in anchors]}"
+    )
+    assert later[-1].bpm > anchors[0].bpm
+
+
+def test_the_untouched_click_track_yields_one_tempo_map_anchor(analyzed):
+    """[if] the click track is fixed tempo [then] the v2 fitter returns one anchor."""
+    result = analyzed["payload"]["results"][analyzed["steady"]]
+    assert result["error"] is None
+    ref = {"npz": result["activations_npz"], "fps": result.get("fps", 50)}
+    tempo_map = fit_tempo_map(ref, result["beats"])
+    assert len(tempo_map.anchors) == 1
 
 
 def test_the_untouched_track_yields_zero_markers(analyzed):

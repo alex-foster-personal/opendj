@@ -23,6 +23,7 @@ from apps.lyrics.crosscheck import WITNESS_LOCAL_WINDOW_S
 
 SHIPPING = ("fetch", "index")
 EVAL = ("stats", "score", "crosscheck", "witness-eval")
+PIPELINE = ("batch", "jobs", "register-stems", "stems")
 
 EVAL_ARGV = {
     "stats": ["stats"],
@@ -52,6 +53,37 @@ def test_dataset_dir_is_per_eval_subcommand_not_parser_wide() -> None:
     for command in SHIPPING:
         with pytest.raises(SystemExit):
             build_parser().parse_args([command, "--dataset-dir", "/tmp/gt"])
+    for argv in (
+        ["batch", "run", "--tracks", "t.json", "--corpus", "c"],
+        ["jobs", "work"],
+        ["register-stems", "--corpus", "crate"],
+        ["stems", "push", "--missing"],
+    ):
+        with pytest.raises(SystemExit):
+            build_parser().parse_args([*argv, "--dataset-dir", "/tmp/gt"])
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["batch", "run", "--help"],
+        ["batch", "resume", "--help"],
+        ["jobs", "work", "--help"],
+        ["register-stems", "--help"],
+        ["stems", "push", "--help"],
+        ["stems", "hydrate", "sid1", "--help"],
+    ],
+)
+def test_pipeline_subcommands_parse(argv: list[str]) -> None:
+    import subprocess
+    import sys
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "apps.lyrics", *argv],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0
 
 
 def test_song_key_joins_across_unicode_forms() -> None:

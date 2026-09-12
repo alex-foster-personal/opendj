@@ -61,6 +61,7 @@ def _comments(tmp_path: Path) -> list[dict]:
 
 @pytest.mark.requirement("FB-13")
 def test_post_reply_on_open_pin(client: TestClient, tmp_path: Path) -> None:
+    """[if] a follow-up posts on an open pin [then] text/position stay, [else stop]."""
     pin = _create(client)
     r = client.post(
         f"/api/v1/feedback/comments/{pin['id']}/replies",
@@ -86,6 +87,7 @@ def test_post_reply_on_open_pin(client: TestClient, tmp_path: Path) -> None:
 
 @pytest.mark.requirement("FB-13")
 def test_legacy_agent_note_seeded_before_operator_reply(client: TestClient) -> None:
+    """[if] a legacy pin has agent_note, no replies [then] it seeds replies[0], [else stop]."""
     pin = _create(client)
     client.patch(
         f"/api/v1/feedback/comments/{pin['id']}",
@@ -108,6 +110,7 @@ def test_legacy_agent_note_seeded_before_operator_reply(client: TestClient) -> N
 
 @pytest.mark.requirement("FB-13")
 def test_patch_agent_note_appends_reply_without_duplicating(client: TestClient) -> None:
+    """[if] PATCH sets agent_note [then] a reply appends unless it duplicates last, [else stop]."""
     pin = _create(client)
     r1 = client.patch(
         f"/api/v1/feedback/comments/{pin['id']}",
@@ -136,6 +139,7 @@ def test_patch_agent_note_appends_reply_without_duplicating(client: TestClient) 
 
 @pytest.mark.requirement("FB-13")
 def test_reply_unknown_id_is_404(client: TestClient, tmp_path: Path) -> None:
+    """[if] the reply id is unknown [then] 404 COMMENT_NOT_FOUND, store unchanged, [else stop]."""
     _create(client)
     before = (tmp_path / "feedback" / "comments.json").read_text()
     r = client.post(
@@ -148,6 +152,7 @@ def test_reply_unknown_id_is_404(client: TestClient, tmp_path: Path) -> None:
 
 @pytest.mark.requirement("FB-13")
 def test_reply_rejects_blank_text(client: TestClient, tmp_path: Path) -> None:
+    """[if] the reply body is blank [then] 422 and the store is unchanged, [else stop]."""
     pin = _create(client)
     before = (tmp_path / "feedback" / "comments.json").read_text()
     r = client.post(
@@ -160,6 +165,7 @@ def test_reply_rejects_blank_text(client: TestClient, tmp_path: Path) -> None:
 
 @pytest.mark.requirement("FB-13")
 def test_rejected_reply_leaves_store_readable(http_client: TestClient, tmp_path: Path) -> None:
+    """[if] a reply is rejected [then] the store is unchanged, GET lists both pins, [else stop]."""
     bystander = _create(http_client)
     victim = _create(http_client)
     before = (tmp_path / "feedback" / "comments.json").read_text()
@@ -181,6 +187,7 @@ def test_rejected_reply_leaves_store_readable(http_client: TestClient, tmp_path:
 
 @pytest.mark.requirement("FB-13")
 def test_follow_on_does_not_add_reply_to_parent(client: TestClient) -> None:
+    """[if] follow-on is posted on a fixed pin [then] the parent replies stay empty, [else stop]."""
     pin = _create(client)
     client.patch(
         f"/api/v1/feedback/comments/{pin['id']}",
@@ -196,6 +203,7 @@ def test_follow_on_does_not_add_reply_to_parent(client: TestClient) -> None:
 
 @pytest.mark.requirement("FB-13")
 def test_reply_never_409s_on_open_pin(client: TestClient) -> None:
+    """[if] a reply is posted on an open pin [then] the status is 200 not 409, [else stop]."""
     pin = _create(client)
     r = client.post(
         f"/api/v1/feedback/comments/{pin['id']}/replies",
@@ -206,6 +214,7 @@ def test_reply_never_409s_on_open_pin(client: TestClient) -> None:
 
 @pytest.mark.requirement("FB-13")
 def test_archive_preserves_replies(client: TestClient, tmp_path: Path) -> None:
+    """[if] a pin with replies is archived [then] the archive still has them, [else stop]."""
     pin = _create(client)
     client.post(
         f"/api/v1/feedback/comments/{pin['id']}/replies",
@@ -226,6 +235,7 @@ def test_archive_preserves_replies(client: TestClient, tmp_path: Path) -> None:
 def test_list_comments_without_replies_field_still_returns_200(
     client: TestClient, tmp_path: Path
 ) -> None:
+    """[if] a comment lacks replies [then] GET still returns 200 with replies [], [else stop]."""
     pin = _create(client)
     path = tmp_path / "feedback" / "comments.json"
     raw = json.loads(path.read_text())

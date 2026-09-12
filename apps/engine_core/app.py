@@ -253,6 +253,10 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
         # in the optional analysis extra, so the installed app must decline to
         # arm a loop whose every drain would raise BackendNotAvailable.
         auto_analyze=analysis_autostart.arm_from_environ(os.environ),
+        # FBSYNC-01: the desktop engine is where pins must sync with no manual
+        # step, so it arms the CloudSync scheduler. Armed is not running: it
+        # still waits for MDT_CLOUDSYNC_SCHEDULER=1 and MDT_CLOUDSYNC_HUB_URL.
+        cloudsync_scheduler=True,
     )
 
 

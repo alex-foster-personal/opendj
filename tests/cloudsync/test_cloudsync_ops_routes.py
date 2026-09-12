@@ -256,7 +256,7 @@ def test_a_scheduler_round_is_busy_while_the_sync_lock_is_held(enroll_spoke_dir:
 def test_a_refused_config_put_writes_nothing(enroll_spoke_dir: Path) -> None:
     """if a tailnet peer's PUT /cloudsync/config reaches the file then broken"""
     body = {"enabled": True, "hub_url": "http://attacker.example:8686", "machine_name": None}
-    with ops_client(enroll_spoke_dir, client_addr=("100.64.0.7", 50123)) as http:
+    with ops_client(enroll_spoke_dir, client_addr=("203.0.113.7", 50123)) as http:
         refused = http.put("/api/v1/cloudsync/config", json=body)
     stored_after_refusal = sync_config.read_config(enroll_spoke_dir)
     with ops_client(enroll_spoke_dir) as http:
@@ -423,8 +423,8 @@ REBIND_HOST: str = "rebind.attacker.example:8686"
 LOOPBACK_REFUSALS: dict[str, dict[str, str]] = {
     "share host": {"host": SHARE_HOST, "authorization": f"Bearer {SHARE_TOKEN}"},
     "tailscale serve user": {"tailscale-user-login": "x@example.com"},
-    "tailscale serve tagged (xff only)": {"x-forwarded-for": "100.64.0.7"},
-    "rfc 7239 forwarded": {"forwarded": "for=100.64.0.7"},
+    "tailscale serve tagged (xff only)": {"x-forwarded-for": "203.0.113.7"},
+    "rfc 7239 forwarded": {"forwarded": "for=203.0.113.7"},
     "dns rebinding": {
         "host": REBIND_HOST,
         "origin": f"http://{REBIND_HOST}",
@@ -460,9 +460,9 @@ def test_operator_routes_refuse_callers_that_are_not_the_local_operator(
     share = ShareConfig(host=SHARE_HOST, auth=AUTH_TOKEN, token=SHARE_TOKEN, read_only=False)
     refused: dict[str, Any] = {}
     allowed: dict[str, Any] = {}
-    with ops_client(enroll_hub_dir, client_addr=("100.64.0.7", 50123)) as http:
+    with ops_client(enroll_hub_dir, client_addr=("203.0.113.7", 50123)) as http:
         refused["tailnet peer"] = http.request(method, path, json=payload)
-    with ops_client(enroll_hub_dir, client_addr=("::ffff:100.64.0.7", 50123)) as http:
+    with ops_client(enroll_hub_dir, client_addr=("::ffff:203.0.113.7", 50123)) as http:
         refused["ipv4-mapped tailnet peer"] = http.request(method, path, json=payload)
     with ops_client(enroll_hub_dir, client_addr=("::ffff:127.0.0.1", 50123)) as http:
         allowed["ipv4-mapped loopback peer"] = http.request(method, path, json=payload)
@@ -491,8 +491,8 @@ def test_operator_routes_refuse_callers_that_are_not_the_local_operator(
         ("::1", True),
         ("::ffff:127.0.0.1", True),
         ("localhost", False),
-        ("100.64.0.7", False),
-        ("::ffff:100.64.0.7", False),
+        ("203.0.113.7", False),
+        ("::ffff:203.0.113.7", False),
         ("testclient", False),
         (None, False),
     ],
