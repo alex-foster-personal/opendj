@@ -51,6 +51,10 @@ PIPELINE_EXEMPT: tuple[str, ...] = (
 # AGT-01 (issue #2123): luna primer plus persona checker. Markdown lives under
 # ops/agentic-testing/; the importable checker lives under ops/agentic_testing/.
 # Neither path changes stems or lyrics throughput or latency.
+#
+# PERF-UI-01 (issue #2303): short-viewport /performance layout (compact
+# waverow, library panel auto-collapse, history list hide). Viewport CSS/DOM
+# only; no stems or lyrics throughput or latency change.
 MEASUREMENT_ONLY_PREFIXES: tuple[str, ...] = (
     "scripts/perf/",
     "tests/perf/",

@@ -57,6 +57,7 @@
 		type BrowserSearchRequest,
 		isLibraryPanelsCollapsed,
 		noteVisibleLibraryRowCount,
+		setLibraryPanelsCollapsed,
 		toggleLibraryPanels,
 		createAutoPlayFeedSnapshot,
 		getAutoPlayRankOf,
@@ -792,6 +793,19 @@
 			else openSearchMode('filter');
 		};
 		window.addEventListener('keydown', onKey);
+		// PERF-UI-01: first crossing into a short viewport collapses
+		// Next/Recommended so thead + one track row fit in the leftover
+		// library row. Edge-triggered so a manual chevron re-expand is
+		// not fought closed on every resize tick.
+		const shortViewportMq = window.matchMedia('(max-height: 799px)');
+		let wasShortViewport = false;
+		const applyShortViewport = (): void => {
+			const matches = shortViewportMq.matches;
+			if (matches && !wasShortViewport) setLibraryPanelsCollapsed(true);
+			wasShortViewport = matches;
+		};
+		applyShortViewport();
+		shortViewportMq.addEventListener('change', applyShortViewport);
 		void _init();
 		void hydrateConfirmPrefsFromDisk();
 		const blankSweepTimer = setInterval(
@@ -864,6 +878,7 @@
 			unsubscribeResync();
 			unsubscribeSearch();
 			window.removeEventListener('keydown', onKey);
+			shortViewportMq.removeEventListener('change', applyShortViewport);
 		};
 	});
 	/**
@@ -3532,6 +3547,19 @@
 	}
 	.icon-btn.active {
 		color: var(--rb-accent);
+	}
+	/* PERF-UI-01: at 1280x720 leftover is ~107px after the compact
+	 * wavestack. A wrapping pane-header (~45px) would steal the one
+	 * visible track row. Keep the 24px floor; overflow clips inert
+	 * header-right buttons rather than wrapping. */
+	@media (max-height: 799px) {
+		.pane-header {
+			max-height: 24px;
+			overflow: hidden;
+		}
+		.header-right {
+			flex-wrap: nowrap;
+		}
 	}
 	.library-panels-collapse-bar {
 		flex: none;
