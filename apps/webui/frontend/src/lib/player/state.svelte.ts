@@ -107,6 +107,7 @@ export function _defaultHeadphones(): HeadphoneState {
 		mix: 0.5,
 		level: 0.5,
 		selected_output_device_id: null,
+		output_mode: 'practice',
 		outputs: [],
 		supported: false,
 		active: false,
