@@ -46,13 +46,12 @@ for the named overlap with the in-flight queue lane.
 """
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from apps.analysis_key import canon
+from apps.analysis_key.beatgrid_digest import beatgrid_record_digest
 from apps.analysis_key.flags import TonalCenterFlag
 from apps.analysis_key.profiles import KeyEstimate
 
@@ -76,31 +75,6 @@ DEPENDS_ON_FIELDS: tuple[str, ...] = (
     "decode_fingerprint",
     "record_digest",
 )
-
-#: The beatgrid lane payload fields the content digest is taken over, IN THIS
-#: ORDER (spec section 5). Only these fields: a beatgrid record carries other
-#: top-level columns (analyzed_at, ...) that move for reasons a key lane does
-#: not depend on.
-_BEATGRID_DIGEST_FIELDS: tuple[str, ...] = (
-    "beats", "bpm", "octave_reason", "tempo_changes", "static_grid_untrusted",
-)
-
-
-def beatgrid_record_digest(beatgrid_payload: Mapping[str, Any]) -> str:
-    """``sha256:<hex>`` over the canonical JSON of a beatgrid lane payload.
-
-    Content identity for the beatgrid record itself, independent of a
-    producer ever bumping its version number (spec section 5): two beatgrid
-    payloads that agree on every digested field produce the same digest
-    regardless of key ordering or float formatting in the source dict, since
-    ``json.dumps(..., sort_keys=True)`` normalizes both.
-    """
-    canonical = {
-        field_name: beatgrid_payload[field_name] for field_name in _BEATGRID_DIGEST_FIELDS
-    }
-    blob = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
-    return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
-
 
 def depends_on_identity(
     *,
