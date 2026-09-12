@@ -61,17 +61,25 @@ export interface BeatgridFallbackGate {
  * dressed up as if own had produced it, re-enabling quantize and Beat Sync
  * against a measurement own already rejected or has not reached (Codex P1
  * BLOCKING, PR #1587). */
+export function hasNoVendorAnlzPayload(anlz: AnlzData): boolean {
+	return anlz.local_waveform !== undefined;
+}
+
 export function shouldUseBeatgridFallback(gate: BeatgridFallbackGate): boolean {
+	if (gate.anlzErrorCode === 'ANALYSIS_NOT_FOUND') return gate.effectiveSource === 'own';
+	if (gate.anlzErrorCode !== null) return false; // another lane's failure
+	if (gate.anlz === null) return false; // /anlz has not answered yet
+	if (hasAnlzBeatgrid(gate.anlz)) return false; // real grid always wins
+	if (gate.anlz.beatgrid.source === 'own') {
+		const status = gate.anlz.beatgrid.status;
+		if (status === 'missing' || status === 'failed') return false;
+	}
+	if (hasNoVendorAnlzPayload(gate.anlz)) return true;
 	// PARITY-02: an empty grid from a rekordbox-selected lane means "no grid
 	// FROM REKORDBOX", not "no grid at all, so show whatever we have" - a DJ
 	// who explicitly selected rekordbox must not be quietly handed an
 	// own-analysis grid while the toggle and IPC still report rekordbox.
 	if (gate.effectiveSource !== 'own') return false;
-	if (gate.anlzErrorCode === 'ANALYSIS_NOT_FOUND') return true;
-	if (gate.anlzErrorCode !== null) return false; // another lane's failure
-	if (gate.anlz === null) return false; // /anlz has not answered yet
-	if (hasAnlzBeatgrid(gate.anlz)) return false; // real grid always wins
-	if (gate.anlz.beatgrid.source === 'own') return false; // own's own terminal answer
 	return gate.vendor === 'local';
 }
 

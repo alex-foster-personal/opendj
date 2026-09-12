@@ -87,7 +87,12 @@ import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import { detachProcessorForDisposal, disposeAudioResources } from '$lib/rb/audio-resource-disposal';
-import { beginDeckLoad, recordDeckLoad, reportDeckLoadFailure } from '$lib/rb/deck-load-context';
+import {
+	beginDeckLoad,
+	formatDeckLoadFailureMessage,
+	recordDeckLoad,
+	reportDeckLoadFailure
+} from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import {
 	noteMasterSilence,
@@ -3047,8 +3052,9 @@ class RbAudioEngine implements AudioEngine {
 			}
 			if (token !== rt.loadToken) throw exc;
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
-			const msg =
+			const raw =
 				exc instanceof RbApiError ? `${exc.code}: ${exc.message}` : String(exc);
+			const msg = formatDeckLoadFailureMessage(track?.title, stable_id, raw);
 			deckLoadErrors[deck] = msg;
 			reportDeckLoadFailure(deck, msg, exc, stages);
 			throw exc;

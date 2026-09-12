@@ -278,6 +278,15 @@ export function deckLoadFailureContext(
  * already be stamped when this is called, or every report is missing the one
  * number that says when the load died.
  */
+export function formatDeckLoadFailureMessage(
+	trackTitle: string | null | undefined,
+	stableId: string,
+	message: string
+): string {
+	const title = trackTitle?.trim();
+	return title ? `${title}: ${message}` : `${stableId}: ${message}`;
+}
+
 export function reportDeckLoadFailure(
 	deck: 1 | 2 | 3 | 4,
 	message: string,

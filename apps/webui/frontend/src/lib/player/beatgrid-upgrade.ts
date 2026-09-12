@@ -20,6 +20,7 @@ import { analysisSourceState } from '$lib/rb/analysis-source-state.svelte';
 import { fetchBeatgridFallback } from '$lib/rb/beatgrid-fallback-api';
 import {
 	hasAnlzBeatgrid,
+	hasNoVendorAnlzPayload,
 	shouldUseBeatgridFallback,
 	withFallbackBeatgrid
 } from '$lib/rb/beatgrid-fallback';
@@ -184,7 +185,12 @@ export async function upgradeDeckBeatgrid(
 		// Re-read live, not gate.effectiveSource: a switch back to rekordbox
 		// while this fetch was in flight must not land an own-derived grid
 		// after the fact (discussion_r3972682719 P1 BLOCKING).
-		if (analysisSourceState.features.beatgrid !== 'own') return await settle(false);
+		const liveAnlz = st.anlz;
+		const noVendorAnlz =
+			liveAnlz !== null && !hasAnlzBeatgrid(liveAnlz) && hasNoVendorAnlzPayload(liveAnlz);
+		if (analysisSourceState.features.beatgrid !== 'own' && !noVendorAnlz) {
+			return await settle(false);
+		}
 		// Re-read across the awaits: refreshHotCues can have replaced st.anlz,
 		// and withFallbackBeatgrid throws rather than demote a real grid.
 		const current = st.anlz;
@@ -202,7 +208,12 @@ export async function upgradeDeckBeatgrid(
 		// `refreshed.beatgrid_source`, since /anlz's grid IS source-dependent
 		// even though a vendor mapping landing is not.
 		await settle(true, () => {
-			if (analysisSourceState.features.beatgrid !== 'own') return;
+			const latestAnlz = st.anlz;
+			const allowNoVendorPublish =
+				latestAnlz !== null &&
+				!hasAnlzBeatgrid(latestAnlz) &&
+				hasNoVendorAnlzPayload(latestAnlz);
+			if (analysisSourceState.features.beatgrid !== 'own' && !allowNoVendorPublish) return;
 			publishGrid(fallbackAnlz)();
 		});
 	} catch (error) {

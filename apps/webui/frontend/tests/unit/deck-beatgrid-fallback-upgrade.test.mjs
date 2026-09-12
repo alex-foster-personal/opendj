@@ -335,6 +335,21 @@ test('PARITY-02: a switch back to rekordbox mid-fetch is honored, not overwritte
 
 // ----- behaviour: the grid actually lands on the deck ------------------------
 
+test('a mapped no-AnalysisDataPath deck with local_waveform lands the fallback grid while rbx is selected', async () => {
+	upgrade.analysisSourceState.features.beatgrid = 'rekordbox';
+	const paths = stubDaemon({ vendor: 'rekordbox' });
+	const st = {
+		anlz: { ...emptyAnlz(), local_waveform: { status: 'decoded' } },
+		anlz_error: null
+	};
+
+	await upgrade.upgradeDeckBeatgrid(1, SID, st, () => false);
+
+	assert.deepEqual(st.anlz.beatgrid.beats, REAL_BEATS);
+	assert.equal(st.anlz.beatgrid.beat_count, REAL_BEATS.length);
+	assert.deepEqual(paths.map((p) => p.split('/').pop()), ['rb-meta', 'beatgrid-fallback']);
+});
+
 test('an unmapped analyzed track ends up with a real grid on st.anlz', async () => {
 	const paths = stubDaemon({ vendor: 'local' });
 	const st = { anlz: emptyAnlz(), anlz_error: null };
