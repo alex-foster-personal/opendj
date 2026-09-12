@@ -1,4 +1,5 @@
 // requirement: ADMIN-01
+// Non-markdown touch keeps pull_request CI armed when HEAD would otherwise be docs-only.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
