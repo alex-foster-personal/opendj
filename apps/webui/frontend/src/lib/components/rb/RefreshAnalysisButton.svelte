@@ -12,6 +12,7 @@
 	 * updates without a reload.
 	 */
 	import { onDestroy } from 'svelte';
+	import { triggerFloatingAction } from '$lib/ui/clamp-to-viewport';
 	import {
 		getAnalysisQueue,
 		getIngestConfig,
@@ -34,9 +35,6 @@
 	let hovered = $state(false);
 	let fetchError = $state<string | null>(null);
 	let wrapEl: HTMLSpanElement | undefined = $state();
-	// .rb-topbar is overflow:hidden, so the popover is position:fixed and
-	// placed from the button's rect (same pattern as the AutoPlay menu).
-	let popStyle = $state('');
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 	const badged = new Set<string>();
 
@@ -92,10 +90,6 @@
 	}
 
 	async function onEnter(): Promise<void> {
-		if (wrapEl) {
-			const r = wrapEl.getBoundingClientRect();
-			popStyle = `right:${Math.round(window.innerWidth - r.right)}px;top:${Math.round(r.bottom + 4)}px`;
-		}
 		hovered = true;
 		_syncTimer();
 		void _poll();
@@ -160,7 +154,11 @@
 	</button>
 
 	{#if hovered}
-		<div class="pop" style={popStyle} data-testid="refresh-analysis-pop">
+		<div
+			class="pop"
+			data-testid="refresh-analysis-pop"
+			use:triggerFloatingAction={{ getTrigger: () => wrapEl ?? null, preferred: 'below', gap: 4 }}
+		>
 			<div class="pop-title">Refresh analysis</div>
 			{#if fetchError !== null}
 				<div class="pop-err">{fetchError}</div>

@@ -11,6 +11,7 @@
 	// popover's heading and, on slow/no-hover, is unaffected either way.
 	import { onDestroy } from 'svelte';
 	import type { Snippet } from 'svelte';
+	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 
 	const INTERACTIVE_HIDE_DELAY_MS = 150;
 
@@ -62,12 +63,16 @@
 		const r = wrapEl.getBoundingClientRect();
 		const preferAbove =
 			placement === 'above' || (placement === 'auto' && r.top > 170);
-		const x = Math.round(r.left + r.width / 2);
-		if (preferAbove) {
-			popStyle = `left:${x}px;bottom:${Math.round(window.innerHeight - r.top + 6)}px`;
-		} else {
-			popStyle = `left:${x}px;top:${Math.round(r.bottom + 6)}px`;
-		}
+		const size = { width: 240, height: 120 };
+		const proposedX = r.left + r.width / 2 - size.width / 2;
+		const proposedY = preferAbove ? r.top - size.height - 6 : r.bottom + 6;
+		const box = clampToViewport(
+			proposedX,
+			proposedY,
+			size,
+			{ width: window.innerWidth, height: window.innerHeight }
+		);
+		popStyle = `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px`;
 	}
 
 	function _openNow(): void {
@@ -188,7 +193,6 @@
 		z-index: 80;
 		width: max-content;
 		max-width: 240px;
-		transform: translateX(-50%);
 		padding: 7px 9px 8px;
 		background: #0a0c0f;
 		border: 1px solid var(--rb-border);

@@ -4,6 +4,7 @@
 	 * whatever element is on top of the tip stack, flipping below the target
 	 * when there is no room above and clamping to the viewport.
 	 */
+	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 	import { tipState } from './tooltip.svelte';
 
 	let el = $state<HTMLDivElement | null>(null);
@@ -17,11 +18,16 @@
 		if (!active || !el) return;
 		const anchor = active.node.getBoundingClientRect();
 		const self = el.getBoundingClientRect();
-		let left = anchor.left + anchor.width / 2 - self.width / 2;
-		let top = anchor.top - self.height - 8;
-		if (top < 4) top = anchor.bottom + 8;
-		x = Math.max(4, Math.min(left, window.innerWidth - self.width - 4));
-		y = top;
+		let proposedTop = anchor.top - self.height - 8;
+		if (proposedTop < 8) proposedTop = anchor.bottom + 8;
+		const box = clampToViewport(
+			anchor.left + anchor.width / 2 - self.width / 2,
+			proposedTop,
+			{ width: self.width, height: self.height },
+			{ width: window.innerWidth, height: window.innerHeight }
+		);
+		x = box.x;
+		y = box.y;
 	});
 </script>
 

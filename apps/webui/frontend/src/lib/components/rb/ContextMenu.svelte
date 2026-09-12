@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 
 	export interface ContextMenuItem {
 		id: string;
@@ -22,10 +23,12 @@
 		await tick();
 		if (menu === null) return;
 		const rect = menu.getBoundingClientRect();
-		position = {
-			x: Math.max(8, Math.min(x, window.innerWidth - rect.width - 8)),
-			y: Math.max(8, Math.min(y, window.innerHeight - rect.height - 8))
-		};
+		position = clampToViewport(
+			x,
+			y,
+			{ width: rect.width, height: rect.height },
+			{ width: window.innerWidth, height: window.innerHeight }
+		);
 		menu.focus();
 	}
 

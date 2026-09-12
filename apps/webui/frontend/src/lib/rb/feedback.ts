@@ -63,6 +63,8 @@
  *       text exactly [then ⛔️] broken
  */
 
+import { clampToViewport } from "$lib/ui/clamp-to-viewport";
+
 export interface PanelPos {
   x: number;
   y: number;
@@ -75,18 +77,19 @@ export const PIN_DRAFT_KEY = "odj-feedback-pin-draft";
 
 /** Keep at least this many px of the panel header reachable on both axes. */
 // ----- panel position ----------------------------------------------------
-/** Keep the whole panel on-viewport: clamp to [0, viewport - panel] per axis. */
+/** Keep the whole panel on-viewport with the shared 8 px margin. */
 export function clampPanelPos(
   pos: PanelPos,
   panel: { w: number; h: number },
   viewport: { w: number; h: number },
 ): PanelPos {
-  const maxX = Math.max(0, viewport.w - panel.w);
-  const maxY = Math.max(0, viewport.h - panel.h);
-  return {
-    x: Math.min(Math.max(pos.x, 0), maxX),
-    y: Math.min(Math.max(pos.y, 0), maxY),
-  };
+  const box = clampToViewport(
+    pos.x,
+    pos.y,
+    { width: panel.w, height: panel.h },
+    { width: viewport.w, height: viewport.h },
+  );
+  return { x: box.x, y: box.y };
 }
 
 export function parsePanelPos(raw: string | null): PanelPos | null {

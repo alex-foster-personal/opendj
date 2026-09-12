@@ -21,7 +21,8 @@
 	// DOM-virtualizes the render: only the scrolled window (+overscan) is
 	// ever mounted, so a multi-thousand-row pane stays cheap regardless of
 	// provider.total.
-	import { untrack, type Snippet } from 'svelte';
+	import { tick, untrack, type Snippet } from 'svelte';
+	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 	import { artworkUrl, artworkStatusLabel, type Vocals } from '$lib/rb/api-rb';
 	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
 	import {
@@ -112,7 +113,25 @@
 		x: number;
 		y: number;
 	} | null>(null);
+	let loadConfirmEl = $state<HTMLDivElement | null>(null);
+	let loadConfirmStyle = $state('');
 	let loadConfirmEveryTime = $state(false);
+
+	$effect(() => {
+		if (loadConfirm === null) return;
+		void (async () => {
+			await tick();
+			if (loadConfirmEl === null || loadConfirm === null) return;
+			const rect = loadConfirmEl.getBoundingClientRect();
+			const box = clampToViewport(
+				loadConfirm.x,
+				loadConfirm.y,
+				{ width: rect.width, height: rect.height },
+				{ width: window.innerWidth, height: window.innerHeight }
+			);
+			loadConfirmStyle = `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px`;
+		})();
+	});
 	let trackContextMenu = $state<TrackContextMenu | null>(null);
 	let playlistsMenu = $state<{ x: number; y: number; stableId: string } | null>(null);
 
@@ -1756,7 +1775,8 @@
 {#if loadConfirm !== null}
 	<div
 		class="load-confirm"
-		style={`left:${loadConfirm.x}px;top:${loadConfirm.y}px`}
+		bind:this={loadConfirmEl}
+		style={loadConfirmStyle}
 		role="dialog"
 		aria-label={`Load and play CH${loadConfirm.deck}?`}
 	>
@@ -2732,7 +2752,6 @@
 	.load-confirm {
 		position: fixed;
 		z-index: 80;
-		transform: translate(-50%, -100%);
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;

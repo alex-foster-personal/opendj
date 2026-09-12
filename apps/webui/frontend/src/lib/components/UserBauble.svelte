@@ -13,7 +13,8 @@
   Clicking opens a small menu with the account email and Sign out.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
+	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 	import {
 		auth,
 		consumeAuthErrorFromLocation,
@@ -31,6 +32,8 @@
 	let { size = 32 }: { size?: number } = $props();
 
 	let menuOpen = $state(false);
+	let menuEl = $state<HTMLDivElement | null>(null);
+	let menuStyle = $state('');
 	let busy = $state(false);
 	/** Set when the avatar URL 404s or Google returns no picture. */
 	let avatarBroken = $state(false);
@@ -60,6 +63,27 @@
 	// A fresh sign-in means a fresh picture URL; let it try to load again.
 	$effect(() => {
 		if (auth.user?.avatar_url) avatarBroken = false;
+	});
+
+	async function placeMenu(): Promise<void> {
+		if (!menuOpen || menuEl === null) return;
+		const trigger = document.querySelector('.bauble-root .bauble');
+		if (!(trigger instanceof HTMLElement)) return;
+		await tick();
+		const triggerRect = trigger.getBoundingClientRect();
+		const menuRect = menuEl.getBoundingClientRect();
+		const box = clampToViewport(
+			triggerRect.right - menuRect.width,
+			triggerRect.bottom + 6,
+			{ width: menuRect.width, height: menuRect.height },
+			{ width: window.innerWidth, height: window.innerHeight }
+		);
+		menuStyle = `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px`;
+	}
+
+	$effect(() => {
+		if (!menuOpen) return;
+		void placeMenu();
 	});
 
 	async function onBaubleClick(): Promise<void> {
@@ -146,7 +170,7 @@
 	</button>
 
 	{#if menuOpen && auth.user}
-		<div class="menu" role="menu">
+		<div class="menu" bind:this={menuEl} style={menuStyle} role="menu">
 			<div class="menu-account">
 				{#if auth.user.name}
 					<span class="menu-name">{auth.user.name}</span>
@@ -225,9 +249,7 @@
 		color: var(--accent);
 	}
 	.menu {
-		position: absolute;
-		top: calc(100% + 6px);
-		right: 0;
+		position: fixed;
 		min-width: 200px;
 		padding: 0.4rem;
 		border: 1px solid var(--border);
