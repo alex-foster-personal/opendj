@@ -10,6 +10,7 @@ sync, are inserted directly.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from dataclasses import replace
@@ -44,10 +45,19 @@ def add_remote_machine(conn: sqlite3.Connection, machine_id: str, *, is_hub: int
 def seed_crate(conn: sqlite3.Connection) -> None:
     """Two tracks in one live playlist. No locations: callers add those per machine."""
     for stable_id in TRACKS:
+        content_hash = hashlib.sha256(stable_id.encode("utf-8")).hexdigest()
         conn.execute(
             "INSERT INTO tracks (stable_id, stable_id_tier, title, artists_json, "
-            "duration_ms, created_at, updated_at) VALUES (?, 'inferred', ?, ?, 300000, ?, ?)",
-            (stable_id, stable_id, json.dumps(["Test Artist"]), STAMP, STAMP),
+            "content_hash, duration_ms, created_at, updated_at) "
+            "VALUES (?, 'inferred', ?, ?, ?, 300000, ?, ?)",
+            (
+                stable_id,
+                stable_id,
+                json.dumps(["Test Artist"]),
+                content_hash,
+                STAMP,
+                STAMP,
+            ),
         )
     conn.execute(
         "INSERT INTO playlists (playlist_id, name, vendor, vendor_pl_id, created_at, "

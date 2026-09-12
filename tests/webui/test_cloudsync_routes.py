@@ -21,6 +21,7 @@ Regression one-liners:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from collections.abc import Iterator, Mapping
@@ -48,12 +49,13 @@ def _iso(dt: datetime) -> str:
 
 def _insert_track(conn: sqlite3.Connection, stable_id: str, title: str) -> None:
     now = _iso(_BASE)
+    content_hash = hashlib.sha256(stable_id.encode("utf-8")).hexdigest()
     conn.execute(
         "INSERT INTO tracks (stable_id, stable_id_tier, title, artists_json, "
         "album, isrc, duration_ms, file_path, content_hash, created_at, "
         "updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (stable_id, "inferred", title, json.dumps(["Test Artist"]), None,
-         None, 300000, None, None, now, now),
+         None, 300000, None, content_hash, now, now),
     )
 
 
