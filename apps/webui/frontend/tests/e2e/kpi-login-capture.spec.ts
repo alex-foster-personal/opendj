@@ -242,8 +242,10 @@ async function waitForSignInReady(page: Page, budget: Budget) {
 		signedInButton.waitFor({ state: 'visible', timeout: budget.waitMs() })
 	]);
 	if (await signedInButton.isVisible()) {
-		await signedInButton.click();
-		await page.getByRole('menuitem', { name: 'Sign out' }).click();
+		await signedInButton.click({ timeout: budget.waitMs() });
+		await page
+			.getByRole('menuitem', { name: 'Sign out' })
+			.click({ timeout: budget.waitMs() });
 		await signInButton.waitFor({ state: 'visible', timeout: budget.waitMs() });
 	}
 	await page.waitForFunction(
@@ -453,7 +455,11 @@ async function driveSignInClick(page: Page, budget: Budget): Promise<string | nu
 				{ timeout: waitMs }
 			)
 			.catch(() => null);
-		await signInButton.click();
+		// Bounded by the capture budget, not Playwright's default action
+		// timeout: a covered or permanently disabled control would otherwise
+		// wait until the test deadline, where the teardown happens INSTEAD of
+		// the catch block that writes a withheld result.
+		await signInButton.click({ timeout: budget.waitMs() });
 		const request = await loginRequest;
 		if (request === null) {
 			// No POST at all: the click hit the bauble in its signed-in state
@@ -592,11 +598,16 @@ test('capture S13 login submit-to-library-usable span', async ({ page }) => {
 			return;
 		}
 		if (!marks.hasSubmit || !marks.hasNavigate) {
+			// NOT restored-session. We only reach here after driveSignInClick
+			// observed POST /api/v1/auth/login, which proves startLogin ran and
+			// therefore that markLoginSubmit was called. Saying the session was
+			// restored without driving Sign in would assert the opposite of
+			// something this run has already established.
+			const missing = !marks.hasSubmit ? 'submit' : 'navigate';
 			writeResult({
 				ok: false,
 				span: null,
-				reason:
-					'restored-session: submit or navigate mark missing after login (session was restored without driving Sign in)'
+				reason: `missing-telemetry: the login was submitted but the ${missing} mark is absent afterwards (client telemetry lifecycle broken, not a restored session)`
 			});
 			return;
 		}
