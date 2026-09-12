@@ -1,0 +1,193 @@
+"""Observe DEVOPS-04 dmg-smoke cadence from Linux (row 7, issue #2352).
+
+Does not build, mount, or launch a dmg. Linux can prove the fail-fast
+instrument is intact and whether ledger issue #1492 carries a headed Mac
+row-7 comment. Headed attach stays UNOBSERVED / needs:mac until that comment
+exists. This observer never writes a ``row=7 sha=`` marker: that marker is
+owned by ``ops/dmg-smoke/run.sh`` on the Air.
+
+Exit codes: 0 instrument ok (mac may be UNOBSERVED), 1 instrument broken,
+2 UNKNOWN (ledger unreadable). A failed read is never rendered as
+UNOBSERVED.
+
+    python -m scripts.dmg_smoke_cadence_observe
+    python -m scripts.dmg_smoke_cadence_observe --root /path --ledger-issue 1492
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_REPO = "maintainer/music-dj-tools"
+DEFAULT_LEDGER_ISSUE = 1492
+
+EXIT_OK = 0
+EXIT_FINDINGS = 1
+EXIT_UNKNOWN = 2
+
+HEADING = "## Periodic check row 7 (desktop dmg smoke)"
+ZERO_COUNT = '[ "$TRACKS" -gt 0 ] && [ "$PLAYLISTS" -gt 0 ]'
+REQUIRED_FILES = (
+    Path("ops/dmg-smoke/run.sh"),
+    Path("ops/dmg-smoke/com.af.dmg-smoke.plist.template"),
+    Path("scripts/install_dmg_smoke_launchd.sh"),
+    Path("tests/scripts/test_dmg_smoke_run.py"),
+)
+REQUIRED_SUBSTRINGS = (
+    ZERO_COUNT,
+    "library-attached",
+    "/api/v1/preflight",
+    "/api/v1/health",
+)
+SHIP_DMG_LINE = re.compile(r"(?:^|[\s;/])ship_dmg\.sh(?:\s|$)")
+RESULT_RE = re.compile(r"^- result: (\S+)", re.M)
+COUNTS_RE = re.compile(r"- tracks: (\d+) playlists: (\d+)")
+HOST_RE = re.compile(r"^- host: (\S+)", re.M)
+SUMMARY_PREFIX = "[dmg-smoke-cadence]"
+
+
+@dataclass(frozen=True)
+class HeadedRun:
+    created_at: str
+    result: str
+    tracks: int
+    playlists: int
+    host: str
+
+
+def instrument_findings(root: Path) -> list[str]:
+    findings: list[str] = []
+    for rel in REQUIRED_FILES:
+        path = root / rel
+        if not path.is_file():
+            findings.append(f"missing {rel.as_posix()}")
+    run_sh = root / "ops" / "dmg-smoke" / "run.sh"
+    if not run_sh.is_file():
+        return findings
+    text = run_sh.read_text(encoding="utf-8")
+    findings.extend(
+        f"run.sh missing fail-fast {needle!r}"
+        for needle in REQUIRED_SUBSTRINGS
+        if needle not in text
+    )
+    for line in text.splitlines():
+        code = line.split("#", 1)[0]
+        if SHIP_DMG_LINE.search(code):
+            findings.append("run.sh invokes ship_dmg.sh")
+            break
+    return findings
+
+
+def flatten_comments(raw: object) -> list[dict]:
+    if not isinstance(raw, list):
+        raise TypeError("comments payload is not a list")
+    if not raw:
+        return []
+    if isinstance(raw[0], list):
+        out: list[dict] = []
+        for page in raw:
+            if not isinstance(page, list):
+                raise TypeError("slurped comments page is not a list")
+            out.extend(page)
+        return out
+    return raw
+
+
+def parse_headed_run(comment: dict) -> HeadedRun | None:
+    body = str(comment.get("body") or "")
+    if HEADING not in body:
+        return None
+    result_m = RESULT_RE.search(body)
+    counts_m = COUNTS_RE.search(body)
+    if result_m is None or counts_m is None:
+        return None
+    host_m = HOST_RE.search(body)
+    return HeadedRun(
+        created_at=str(comment.get("created_at") or ""),
+        result=result_m.group(1),
+        tracks=int(counts_m.group(1)),
+        playlists=int(counts_m.group(2)),
+        host=host_m.group(1) if host_m else "unknown",
+    )
+
+
+def latest_headed(comments: Sequence[dict]) -> HeadedRun | None:
+    found = [run for run in (parse_headed_run(c) for c in comments) if run is not None]
+    if not found:
+        return None
+    return found[-1]
+
+
+def fetch_comments(repo: str, issue: int) -> list[dict]:
+    proc = subprocess.run(
+        [
+            "gh",
+            "api",
+            "--paginate",
+            "--slurp",
+            f"repos/{repo}/issues/{issue}/comments",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or f"gh exit {proc.returncode}")
+    try:
+        raw = json.loads(proc.stdout or "[]")
+        comments = flatten_comments(raw)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise RuntimeError(f"unreadable comments payload: {exc}") from exc
+    return comments
+
+
+def summary_line(*, findings: Sequence[str], headed: HeadedRun | None) -> str:
+    if findings:
+        return f"{SUMMARY_PREFIX} instrument=FAIL " + "; ".join(findings)
+    if headed is None:
+        return (
+            f"{SUMMARY_PREFIX} instrument=ok mac=UNOBSERVED needs:mac "
+            "headed_comments=0"
+        )
+    return (
+        f"{SUMMARY_PREFIX} instrument=ok mac=OBSERVED result={headed.result} "
+        f"tracks={headed.tracks} playlists={headed.playlists} "
+        f"at={headed.created_at} host={headed.host}"
+    )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, default=REPO_ROOT)
+    parser.add_argument("--repo", default=DEFAULT_REPO)
+    parser.add_argument("--ledger-issue", type=int, default=DEFAULT_LEDGER_ISSUE)
+    args = parser.parse_args(argv)
+
+    findings = instrument_findings(args.root)
+    if findings:
+        print(summary_line(findings=findings, headed=None))
+        return EXIT_FINDINGS
+
+    try:
+        comments = fetch_comments(args.repo, args.ledger_issue)
+    except RuntimeError as exc:
+        print(f"{SUMMARY_PREFIX} UNKNOWN - NOT MEASURED ({exc})", file=sys.stderr)
+        print(f"{SUMMARY_PREFIX} UNKNOWN - NOT MEASURED")
+        return EXIT_UNKNOWN
+
+    headed = latest_headed(comments)
+    print(summary_line(findings=(), headed=headed))
+    return EXIT_OK
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
