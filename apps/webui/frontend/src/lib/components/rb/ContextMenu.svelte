@@ -5,6 +5,7 @@
 		id: string;
 		label: string;
 		run?: (() => void | Promise<void>) | undefined;
+		title?: string;
 	}
 
 	let { items, x, y, onclose }: {
@@ -56,7 +57,7 @@
 
 <div bind:this={menu} class="context-menu" data-testid="context-menu" role="menu" tabindex="-1" style={`left:${position.x}px;top:${position.y}px`}>
 	{#each items as item (item.id)}
-		<button type="button" role="menuitem" disabled={item.run === undefined} title={item.run === undefined ? 'not implemented - see PARITY-TODO' : item.label} onclick={() => void activate(item)}>{item.label}</button>
+		<button type="button" role="menuitem" disabled={item.run === undefined} title={item.title ?? (item.run === undefined ? 'not implemented - see PARITY-TODO' : item.label)} onclick={() => void activate(item)}>{item.label}</button>
 	{/each}
 </div>
 

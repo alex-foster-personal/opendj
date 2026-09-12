@@ -70,6 +70,7 @@
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
 	import ContextMenu, { type ContextMenuItem } from '../ContextMenu.svelte';
 	import SpinnerIcon from './SpinnerIcon.svelte';
+	import { trackEditMenuItems, type TrackEditModalKind } from './track-edit-menu';
 
 	type DeckId = (typeof DECK_IDS)[number];
 
@@ -102,39 +103,6 @@
 	} | null>(null);
 	let loadConfirmEveryTime = $state(false);
 	let contextMenu = $state<{ x: number; y: number; row: BrowserRow } | null>(null);
-
-	function trackMenuItems(row: BrowserRow): ContextMenuItem[] {
-		const selected = selectedOrderSet.has(row.order) ? selectedIds : [row.stable_id];
-		return [
-			...DECKS.map((deck) => ({ id: `load-${deck}`, label: `Load to deck ${deck}`, run: () => onloadrow(row, deck) })),
-			{ id: 'add-playlist', label: 'Add to playlist...' }, { id: 'edit', label: 'Edit' },
-			{ id: 'bulk-edit', label: `Bulk edit (${selected.length})` }, { id: 'find-replace', label: 'Find/replace' },
-			{ id: 'mytag', label: 'My Tag editor' }, { id: 'relocate', label: 'Relocate' },
-			{ id: 'finder', label: 'Show in Finder' }, { id: 'copy-path', label: 'Copy path' },
-			{ id: 'analyze', label: 'Analyze' },
-			{ id: 'stems-generate', label: 'Stems: do next', run: onstemsdonext ? () => onstemsdonext(selected) : undefined },
-			{ id: 'stems-open', label: 'Stems - open' },
-			{ id: 'lyrics', label: 'Lyrics: do next', run: onlyricsdonext ? () => onlyricsdonext(selected) : undefined },
-			{ id: 'offline', label: 'Mark offline' }, { id: 'cloud-only', label: 'Cloud-only' },
-			{ id: 'remove-playlist', label: 'Remove from playlist', run: removable ? () => onremoverow?.(row) : undefined },
-			{ id: 'remove-library', label: 'Remove from library' }
-		];
-	}
-
-	function openTrackMenu(event: MouseEvent, row: BrowserRow): void {
-		event.preventDefault();
-		event.stopPropagation();
-		if (!selectedOrderSet.has(row.order)) onselectrow(row);
-		contextMenu = { x: event.clientX, y: event.clientY, row };
-	}
-
-	function onTrackKeydown(event: KeyboardEvent, row: BrowserRow): void {
-		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
-		event.preventDefault();
-		if (!selectedOrderSet.has(row.order)) onselectrow(row);
-		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-		contextMenu = { x: rect.left + 8, y: rect.top + 8, row };
-	}
 
 	function onColResizeStart(event: PointerEvent, col: ColId): void {
 		event.preventDefault();
@@ -299,7 +267,8 @@
 		 * it can measure. */
 		bodyOverlay = undefined as Snippet | undefined,
 		onstemsdonext = undefined as ((stableIds: string[]) => void) | undefined,
-		onlyricsdonext = undefined as ((stableIds: string[]) => void) | undefined
+		onlyricsdonext = undefined as ((stableIds: string[]) => void) | undefined,
+		onopeneditmodal = undefined
 	}: {
 		/** Read contract: { rows, total, truncated, fetchWindow } - see
 		 * pane-contract.svelte.ts. */
@@ -372,6 +341,7 @@
 		onrefused?: (reason: string) => void;
 		onstemsdonext?: (stableIds: string[]) => void;
 		onlyricsdonext?: (stableIds: string[]) => void;
+		onopeneditmodal?: (kind: TrackEditModalKind) => void;
 		/** Genre chip / post-filter gestures. */
 		ongenrefilter?: (mode: 'strict' | 'loose' | 'clear' | 'undo', tag?: string) => void;
 		/** Epoch ms until which library dbl/triple remap to clear/undo. */
@@ -605,6 +575,39 @@
 	const rowHeight = $derived(
 		uiPrefs.library_density === 'cosy' ? ROW_HEIGHT_COSY : ROW_HEIGHT_COMPACT
 	);
+
+	function trackMenuItems(row: BrowserRow): ContextMenuItem[] {
+		const selected = selectedOrderSet.has(row.order) ? selectedIds : [row.stable_id];
+		return [
+			...DECKS.map((deck) => ({ id: `load-${deck}`, label: `Load to deck ${deck}`, run: () => onloadrow(row, deck) })),
+			{ id: 'add-playlist', label: 'Add to playlist...' }, { id: 'edit', label: 'Edit' },
+			...trackEditMenuItems(selected.length, onopeneditmodal),
+			{ id: 'relocate', label: 'Relocate' },
+			{ id: 'finder', label: 'Show in Finder' }, { id: 'copy-path', label: 'Copy path' },
+			{ id: 'analyze', label: 'Analyze' },
+			{ id: 'stems-generate', label: 'Stems: do next', run: onstemsdonext ? () => onstemsdonext(selected) : undefined },
+			{ id: 'stems-open', label: 'Stems - open' },
+			{ id: 'lyrics', label: 'Lyrics: do next', run: onlyricsdonext ? () => onlyricsdonext(selected) : undefined },
+			{ id: 'offline', label: 'Mark offline' }, { id: 'cloud-only', label: 'Cloud-only' },
+			{ id: 'remove-playlist', label: 'Remove from playlist', run: removable ? () => onremoverow?.(row) : undefined },
+			{ id: 'remove-library', label: 'Remove from library' }
+		];
+	}
+
+	function openTrackMenu(event: MouseEvent, row: BrowserRow): void {
+		event.preventDefault();
+		event.stopPropagation();
+		if (!selectedOrderSet.has(row.order)) onselectrow(row);
+		contextMenu = { x: event.clientX, y: event.clientY, row };
+	}
+
+	function onTrackKeydown(event: KeyboardEvent, row: BrowserRow): void {
+		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+		event.preventDefault();
+		if (!selectedOrderSet.has(row.order)) onselectrow(row);
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		contextMenu = { x: rect.left + 8, y: rect.top + 8, row };
+	}
 
 	// ----- AUTOPLAY-COL helpers ---------------------------------------------
 	let hoveredApId = $state<string | null>(null);
