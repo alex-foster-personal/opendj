@@ -1,9 +1,23 @@
 #!/usr/bin/env node
 /** Headed Chromium sign-in wait loop for scripts.perf.s13_signin (issue #2113). */
 
-import { chromium } from "@playwright/test";
 import { unlinkSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+
+// ESM bare imports resolve from this file's directory (scripts/perf), not from the
+// frontend tree the launcher uses as cwd, so resolve @playwright/test through CommonJS.
+async function loadChromium() {
+  const resolver = createRequire(path.join(process.cwd(), "package.json"));
+  const entry = resolver.resolve("@playwright/test");
+  const mod = await import(pathToFileURL(entry).href);
+  const { chromium } = mod.default ?? mod;
+  if (!chromium) throw new Error("@playwright/test has no chromium export");
+  return chromium;
+}
+const chromium = await loadChromium();
 
 const { values } = parseArgs({
   options: {
@@ -37,7 +51,9 @@ async function waitForSignedIn(page, deadlineMs) {
     if (page.isClosed()) {
       return false;
     }
-    const signedIn = await page.evaluate(async () => {
+    let signedIn = false;
+    try {
+      signedIn = await page.evaluate(async () => {
       const response = await fetch("/api/v1/auth/me", {
         credentials: "same-origin",
         headers: { Accept: "application/json" },
@@ -47,7 +63,15 @@ async function waitForSignedIn(page, deadlineMs) {
       }
       const payload = await response.json();
       return payload?.signed_in === true;
-    });
+      });
+    } catch (error) {
+      // The Google redirect destroys the execution context mid-poll; that is the
+      // sign-in in progress, not a failure. Only a closed page ends the wait.
+      if (page.isClosed()) {
+        return false;
+      }
+      console.error(`auth poll retry: ${error.message.split("\n")[0]}`);
+    }
     if (signedIn) {
       return true;
     }
@@ -59,7 +83,14 @@ async function waitForSignedIn(page, deadlineMs) {
 let browser;
 let finished = false;
 try {
-  browser = await chromium.launch({ headless });
+  // Google refuses sign-in in a browser that advertises automation ("This browser or
+  // app may not be secure"). Use the installed Chrome channel and drop the flag.
+  browser = await chromium.launch({
+    headless,
+    channel: "chrome",
+    ignoreDefaultArgs: ["--enable-automation"],
+    args: ["--disable-blink-features=AutomationControlled"],
+  });
   browser.on("disconnected", () => {
     if (finished) {
       return;

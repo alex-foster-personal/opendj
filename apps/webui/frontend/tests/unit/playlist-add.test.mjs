@@ -90,3 +90,16 @@ test('409 already_exists throws add-to-playlist error not PlaylistConflictError'
 	assert.match(String(caught), /add to playlist pl-1 failed \(409\):/);
 	assert.equal(fetchCount, 1);
 });
+
+test('addPlaylistItems accepts 200 with duplicate stable_ids in items', async () => {
+	globalThis.fetch = async () => {
+		return jsonResponse(playlistRow({ items: ['t-a', 't-a'] }), {
+			headers: { etag: '"rev-dup"' }
+		});
+	};
+
+	const result = await playlistWrite.addPlaylistItems('pl-1', ['t-a']);
+
+	assert.deepEqual(result.items, ['t-a', 't-a']);
+	assert.equal(result.etag, '"rev-dup"');
+});
