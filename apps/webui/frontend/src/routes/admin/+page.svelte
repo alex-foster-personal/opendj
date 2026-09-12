@@ -14,10 +14,11 @@
 	 * daemon that cannot serve either file renders a banner, not an empty
 	 * grid.
 	 *
-	 * TABS. Three operator surfaces share one ARIA tablist: "KPI ledger" is this
-	 * page's default content, "Diagnostics" is an in-page panel at
-	 * ?tab=diagnostics, and "Setup" leaves for /setup through the shared entry
-	 * point so the three doors into the wizard behave identically.
+	 * TABS. Four controls share one ARIA tablist: "KPI ledger" is this page's
+	 * default content, "Diagnostics" is an in-page panel at ?tab=diagnostics,
+	 * "Playground" is an in-page panel at ?tab=playground, and "Setup" leaves
+	 * for /setup through the shared entry point so the doors into the wizard
+	 * behave identically.
 	 */
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -33,6 +34,7 @@
 	import RunNotes from './RunNotes.svelte';
 	import TipLayer from './TipLayer.svelte';
 	import DiagnosticsPanel from './DiagnosticsPanel.svelte';
+	import PlaygroundPanel from './PlaygroundPanel.svelte';
 	import { adminTabFromUrl, type AdminTab } from './admin-tab';
 	import {
 		fetchKpiLedger,
@@ -120,6 +122,17 @@
 		onclick={() => selectTab('diagnostics')}
 	>
 		Diagnostics
+	</button>
+	<button
+		type="button"
+		class="admin-tab"
+		class:on={tab === 'playground'}
+		role="tab"
+		aria-selected={tab === 'playground'}
+		title="Hit /api/v1/* and run read-only SQL against state.db."
+		onclick={() => selectTab('playground')}
+	>
+		Playground
 	</button>
 	<button
 		type="button"
@@ -267,6 +280,8 @@
 <TipLayer />
 {:else if tab === 'diagnostics'}
 <DiagnosticsPanel />
+{:else if tab === 'playground'}
+<PlaygroundPanel />
 {/if}
 
 <style>
