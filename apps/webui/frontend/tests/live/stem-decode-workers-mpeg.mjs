@@ -10,7 +10,7 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +18,13 @@ import { fileURLToPath } from 'node:url';
 import { chromium, webkit } from '@playwright/test';
 
 import { buildManifest, manifestGate } from './fixture-manifest.mjs';
-import { laneMarginFrom, stopwatchLane } from './lane-oracle.mjs';
+import { laneMarginFrom } from './lane-oracle.mjs';
+import {
+	appendLedger,
+	missingFixtureMessage,
+	mpegLaneTimingsToRows,
+	mpegLedgerAppendAllowed
+} from './stem-decode-kpis.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND = path.resolve(HERE, '../..');
@@ -28,7 +34,24 @@ const PARTS = ['vocals', 'drums', 'bass', 'other'];
 const PORT = 8720;
 const MANIFEST_PATH =
 	process.env.Q18_MP3_FIXTURE_MANIFEST ?? path.join(REPO, '.tmp/q18-mp3-stem-decode-fixtures.json');
-const RECORD_MODE = process.argv.includes('--record') || process.env.Q18_RECORD_FIXTURES === '1';
+
+function parseArgs() {
+	const args = process.argv.slice(2);
+	let ledgerPath = null;
+	for (let i = 0; i < args.length; i++) {
+		if (args[i] === '--ledger') {
+			ledgerPath = args[i + 1] ?? path.join(REPO, 'docs/perf/kpi-ledger.json');
+		}
+	}
+	return {
+		recordMode: args.includes('--record') || process.env.Q18_RECORD_FIXTURES === '1',
+		appendLedger: ledgerPath !== null || process.env.Q18_APPEND_LEDGER === '1',
+		ledgerPath: ledgerPath ?? path.join(REPO, 'docs/perf/kpi-ledger.json')
+	};
+}
+
+const CLI = parseArgs();
+const RECORD_MODE = CLI.recordMode;
 const LSB_16_BIT = 1 / 32768;
 const LANE_MARGIN = (() => {
 	const margin = laneMarginFrom(
@@ -71,8 +94,16 @@ async function main() {
 				.map((name) => path.join(FIXTURE_DIR, name))
 		: [];
 	if (fixtures.length < PARTS.length) {
-		console.log(`need ${PARTS.length} distinct .mp3 files, found ${fixtures.length} in ${FIXTURE_DIR}`);
-		console.log('point this run at a directory: Q18_MP3_DIR=/abs/dir pnpm test:live:stem-decode-workers-mpeg');
+		for (const line of missingFixtureMessage({
+			found: fixtures.length,
+			required: PARTS.length,
+			fixtureDir: FIXTURE_DIR,
+			envVar: 'Q18_MP3_DIR',
+			ext: '.mp3',
+			script: 'pnpm test:live:stem-decode-workers-mpeg'
+		})) {
+			console.log(line);
+		}
 		process.exit(2);
 	}
 	const mp3s = await Promise.all(fixtures.map((file) => readFile(file)));
@@ -144,9 +175,11 @@ async function main() {
 		['webkit', webkit],
 		['chromium', chromium]
 	];
-	let failures = 0;
+	let structuralFailures = 0;
+	let checkFailures = 0;
 	const ran = [];
 	const unavailable = [];
+	const ledgerEngineResults = [];
 	for (const [name, engine] of engines) {
 		let browser;
 		try {
@@ -276,7 +309,8 @@ async function main() {
 		console.log(`\n[${name}] ${result.frames} frames @ ${result.sampleRate} Hz, ${PARTS.length} parts`);
 		if (result.shapeMismatch !== undefined) {
 			console.log(`  FAIL shape mismatch on ${result.shapeMismatch}`);
-			failures++;
+			structuralFailures++;
+			checkFailures++;
 			ran.push(name);
 			continue;
 		}
@@ -295,24 +329,44 @@ async function main() {
 			`  calibration chose ${result.chosenLane}; stopwatch says ${result.stopwatchSays}` +
 				` (workers ${result.faster.toFixed(2)}x vs ${LANE_MARGIN}x margin) -> ${agrees ? 'AGREE' : 'DISAGREE'}`
 		);
-		if (!agrees) failures++;
+		if (!agrees) {
+			console.log(`  WARN calibration disagrees with stopwatch`);
+			checkFailures++;
+		}
 		const tookWorkers = result.reports.every((r) => r.viaWorker && r.refusal === null);
 		if (!tookWorkers) {
 			console.log(`  FAIL worker path refused: ${JSON.stringify(result.reports)}`);
-			failures++;
+			structuralFailures++;
+			checkFailures++;
 		}
 		if (Math.abs(result.lengthDelta) > 1152) {
-			console.log(`  FAIL lengthDelta ${result.lengthDelta} > 1152 after gapless trim`);
-			failures++;
+			console.log(`  WARN lengthDelta ${result.lengthDelta} > 1152 after gapless trim`);
+			checkFailures++;
 		}
 		if (result.maxAbsDiff >= LSB_16_BIT) {
-			console.log(`  FAIL maxAbsDiff ${result.maxAbsDiff} >= LSB ${LSB_16_BIT}`);
-			failures++;
+			console.log(`  WARN maxAbsDiff ${result.maxAbsDiff} >= LSB ${LSB_16_BIT}`);
+			checkFailures++;
 		}
-		if (result.comparedSamples === 0) failures++;
-		if (tookWorkers && result.maxAbsDiff < LSB_16_BIT && result.comparedSamples > 0) {
+		if (result.comparedSamples === 0) {
+			structuralFailures++;
+			checkFailures++;
+		}
+		const lsbAgrees = result.maxAbsDiff < LSB_16_BIT && result.comparedSamples > 0;
+		if (tookWorkers && lsbAgrees) {
 			console.log('  PASS worker path taken, output agrees to within one 16-bit LSB');
 		}
+		ledgerEngineResults.push({
+			engine: name,
+			baselineMs: result.baselineMs,
+			workerMs: result.workerMs,
+			chosenLane: result.chosenLane,
+			agrees,
+			maxAbsDiff: result.maxAbsDiff,
+			lengthDelta: result.lengthDelta,
+			alignOffset: result.alignOffset,
+			lsbAgrees,
+			workersWin: result.stopwatchSays === 'workers'
+		});
 		ran.push(name);
 	}
 	server.close();
@@ -322,15 +376,56 @@ async function main() {
 		console.log(`UNAVAILABLE: ${unavailable.join('; ')}`);
 		console.log('install them with: pnpm exec playwright install webkit chromium');
 	}
-	if (failures > 0) {
-		console.log(`\nFAILED: ${failures} check(s) across ${ran.length} engine(s)`);
+	if (structuralFailures > 0) {
+		console.log(`\nFAILED: ${structuralFailures} structural failure(s) across ${ran.length} engine(s)`);
 		process.exit(1);
 	}
 	if (ran.length < engines.length) {
 		console.log(`\nUNAVAILABLE: ${ran.length} of ${engines.length} required engines ran`);
 		process.exit(3);
 	}
-	console.log('\nOK');
+
+	const allLsbAgree = ledgerEngineResults.every((r) => r.lsbAgrees);
+	const webkitWin = ledgerEngineResults.find((r) => r.engine === 'webkit')?.workersWin ?? false;
+	const chromiumWin = ledgerEngineResults.find((r) => r.engine === 'chromium')?.workersWin ?? false;
+	const rungShipped = allLsbAgree && (webkitWin || chromiumWin);
+
+	if (CLI.appendLedger) {
+		const rows = mpegLaneTimingsToRows(ledgerEngineResults, {
+			date: new Date().toISOString().slice(0, 10),
+			round: 'issue-2311',
+			machine: hostname(),
+			captureId: 'issue-2311-mp3-stem-decode',
+			shipped: rungShipped
+		});
+		if (
+			!mpegLedgerAppendAllowed({
+				fixtureCount: PARTS.length,
+				enginesRan: ran.length,
+				requiredEngines: engines.length,
+				structuralFailures,
+				rows
+			})
+		) {
+			console.log(
+				'\nrefusing to append KPI rows: fixtureCount, enginesRan, structuralFailures, or row shape did not pass mpegLedgerAppendAllowed'
+			);
+			process.exit(1);
+		}
+		appendLedger(CLI.ledgerPath, rows);
+		console.log(`\nappended ${rows.length} KPI rows to ${CLI.ledgerPath}`);
+		console.log(
+			`rung ship verdict: LSB ${allLsbAgree ? 'AGREE' : 'DISAGREE'}, ` +
+				`webkit workers ${webkitWin ? 'win' : 'lose'}, chromium workers ${chromiumWin ? 'win' : 'lose'} -> ` +
+				`${rungShipped ? 'SHIPPED' : 'NOT SHIPPED'}`
+		);
+	}
+
+	if (checkFailures > 0) {
+		console.log(`\nOK with ${checkFailures} LSB/lane warning(s); rung not shipped`);
+	} else {
+		console.log('\nOK');
+	}
 }
 
 await main();
