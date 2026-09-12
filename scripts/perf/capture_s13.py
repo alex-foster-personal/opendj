@@ -73,6 +73,12 @@ def _http_json(method: str, url: str, body: dict[str, Any] | None = None) -> tup
         return exc.code, payload
     except URLError as exc:
         raise ConnectionError(str(exc.reason)) from exc
+    except OSError as exc:
+        # A socket timeout is an OSError, not a URLError, so it used to escape
+        # and crash the capture with a traceback instead of writing the
+        # withheld row the S13 contract promises. Measured on a host at load
+        # average 118: `TimeoutError: timed out` out of _probe_engine.
+        raise ConnectionError(f"{type(exc).__name__}: {exc}") from exc
 
 
 def _probe_engine(engine: str, frontend: str) -> str | None:

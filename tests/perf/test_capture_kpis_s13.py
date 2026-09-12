@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -286,3 +287,48 @@ def test_unreachable_engine_prints_withheld_stderr(
     assert "login_submit_to_library_usable_s" in captured.err
     assert "WITHHELD" in captured.err
     assert str(ledger) in captured.err
+
+
+def test_engine_socket_timeout_withholds_instead_of_crashing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A slow engine must withhold, never raise.
+
+    Measured Sat 12 Sep 2026 on a host at load average 118: the probe's
+    `urlopen(timeout=10)` raised `TimeoutError`, which is an OSError and not a
+    URLError, so it escaped `_http_json` and the capture died with a traceback
+    instead of writing the withheld row S13 promises.
+    """
+    ledger = tmp_path / "kpi-ledger.json"
+    ledger.write_text(
+        json.dumps({"schema_version": 1, "entries": []}, indent=1) + "\n",
+        encoding="utf-8",
+    )
+
+    def _raise_timeout(*_args: object, **_kwargs: object) -> None:
+        raise TimeoutError("timed out")
+
+    with mock.patch.object(capture_s13, "urlopen", _raise_timeout):
+        code = capture_s13.capture_s13(
+            engine="http://127.0.0.1:9",
+            frontend="http://127.0.0.1:9",
+            ledger_path=ledger,
+        )
+
+    assert code == 1
+    rows = json.loads(ledger.read_text(encoding="utf-8"))["entries"]
+    scored = [r for r in rows if r["kpi"] == "login_submit_to_library_usable_s"]
+    assert len(scored) == 1
+    assert scored[0]["value"] is None
+    assert scored[0]["status"] == "withheld"
+    assert "TimeoutError" in scored[0]["note"]
+    assert "engine unreachable" in capsys.readouterr().err
+
+
+def test_http_json_turns_a_socket_timeout_into_connection_error() -> None:
+    """The negative control for the guard above: without the OSError arm this
+    call raises TimeoutError, which no caller catches."""
+    with mock.patch.object(capture_s13, "urlopen", side_effect=TimeoutError("timed out")):
+        with pytest.raises(ConnectionError) as excinfo:
+            capture_s13._http_json("GET", "http://127.0.0.1:9/api/v1/health")
+    assert "TimeoutError" in str(excinfo.value)
