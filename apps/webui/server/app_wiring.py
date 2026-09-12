@@ -61,6 +61,7 @@ from .routes import auth as auth_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes
+from .routes import error_feed as error_feed_routes
 from .routes import client_events as client_events_routes
 from .routes import cloudsync as cloudsync_routes
 from .routes import cloudsync_config as cloudsync_config_routes
@@ -292,6 +293,11 @@ def _bind_feature_state(
         if client_error_log_dir is not None
         else client_errors_routes.DEFAULT_LOG_DIR
     )
+    app.state.performance_log_dir = (
+        client_error_log_dir
+        if client_error_log_dir is not None
+        else client_errors_routes.DEFAULT_LOG_DIR
+    )
     app.state.client_event_log_dir = (
         client_event_log_dir
         if client_event_log_dir is not None
@@ -405,6 +411,7 @@ def _mount_api_routers(app: FastAPI) -> None:
     prefixed = (
         tracks_routes.router,
         client_errors_routes.router,
+        error_feed_routes.router,
         client_events_routes.router,
         performance_telemetry_routes.router,
         performance_headphones_routes.router,

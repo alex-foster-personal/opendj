@@ -20,6 +20,7 @@
  */
 
 import { RbApiError, type StemSummary, type Vocals } from './api-rb';
+import type { TrackQuality } from './library-types';
 
 import { ApiError, api, unwrap } from '../api/client';
 
@@ -43,6 +44,8 @@ export interface SmartlistSummary {
 	last_evaluated_at: string | null;
 	created_at: string;
 	modified_at: string;
+	/** Live membership size when requested; null when omitted or evaluation failed. */
+	count: number | null;
 }
 
 /** One hydrated row -- field-for-field the playlist-detail TrackRowOut
@@ -54,6 +57,9 @@ export interface SmartlistTrackRow {
 	key: string | null;
 	bpm: number | null;
 	rating: number | null;
+	energy: number | null;
+	energy_source: 'mik' | null;
+	energy_reason: string;
 	duration_ms: number | null;
 	genre: string | null;
 	comments: string | null;
@@ -63,8 +69,14 @@ export interface SmartlistTrackRow {
 	file_exists: boolean;
 	is_streaming: boolean;
 	is_remote?: boolean;
+	spotify_pending: boolean;
+	quality: TrackQuality;
+	play_count: number;
 	vocals: Vocals;
 	stems: StemSummary;
+	has_rb_mapping: boolean;
+	artwork_available: boolean | null;
+	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 }
 
 /** GET /smartlists/{id}/tracks -- live evaluation result. */
@@ -94,9 +106,17 @@ function _throwSmartlistError(error: unknown): never {
 
 // ----------------------------------------------------------- fetchers
 
-export async function listSmartlists(): Promise<SmartlistSummary[]> {
+export async function listSmartlists(
+	options: { includeCounts?: boolean } = {}
+): Promise<SmartlistSummary[]> {
 	try {
-		const data = await unwrap(api.GET('/api/v1/smartlists', {}));
+		const data = await unwrap(
+			api.GET('/api/v1/smartlists', {
+				params: {
+					query: options.includeCounts === true ? { include_counts: true } : {}
+				}
+			})
+		);
 		return data as unknown as SmartlistSummary[];
 	} catch (error) {
 		_throwSmartlistError(error);

@@ -33,12 +33,14 @@ is precisely the defect .claude/rules/verification.md exists to forbid.
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import subprocess
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections import deque
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -76,6 +78,16 @@ def opendj_process_name(command: str) -> str:
 
 def valid_kernel_pressure_level(level: object) -> int | None:
     return level if isinstance(level, int) and level in (1, 2, 4) else None
+
+
+def sample_wall_p95_ms(walls: Sequence[float]) -> float | None:
+    """Nearest-rank p95 of recorded sample walls. Empty is absent, never 0."""
+
+    if not walls:
+        return None
+    ordered = sorted(walls)
+    rank = max(0, math.ceil(0.95 * len(ordered)) - 1)
+    return round(ordered[rank], 3)
 
 
 def pressure_band_for_level(level: int) -> str:
@@ -364,6 +376,7 @@ class MachinePressureCache:
         self._sample: PressureSample | None = None
         self._prior_vm_stat: dict[str, int] | None = None
         self._prior_vm_stat_at: float | None = None
+        self._wall_ms: deque[float] = deque(maxlen=20)
 
     def read(
         self,
@@ -385,6 +398,9 @@ class MachinePressureCache:
                     vm_stat_reader=vm_stat_reader,
                 )
                 self._sample = cached
+                wall = cached.values.get("sample_wall_ms")
+                if isinstance(wall, (int, float)):
+                    self._wall_ms.append(float(wall))
                 if vm_snapshot is not None:
                     self._prior_vm_stat = vm_snapshot
                     self._prior_vm_stat_at = instant
@@ -395,7 +411,11 @@ class MachinePressureCache:
                 "reason": cached.unavailable_reason,
                 "cache_age_ms": age_ms,
             }
-        return {"available": True, "cache_age_ms": age_ms, **cached.values}
+        body: dict[str, Any] = {"available": True, "cache_age_ms": age_ms, **cached.values}
+        p95 = sample_wall_p95_ms(self._wall_ms)
+        if p95 is not None:
+            body["sample_wall_p95_ms"] = p95
+        return body
 
 
 _CACHE = MachinePressureCache()

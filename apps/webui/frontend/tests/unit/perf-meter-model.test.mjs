@@ -146,6 +146,65 @@ test('breakdownLines keeps unnamed process members in the list', () => {
 	assert.match(unnamed.value, /42/);
 });
 
+test('breakdownLines keeps two unnamed members as separate rows', () => {
+	const lines = model.breakdownLines({
+		hz: 60,
+		hzQualityOk: true,
+		hzTickHz: 60,
+		prefetchCount: 0,
+		prefetchMB: 0,
+		anlzCount: 0,
+		anlzMB: 0,
+		pcmMB: 100,
+		jsHeapMB: 200,
+		ringCount: 0,
+		swapMB: null,
+		kernelLevel: null,
+		churnScore: null,
+		compressorRate: null,
+		processes: {
+			kernelLevel: null,
+			churnScore: null,
+			compressorRate: null,
+			members: [
+				{ label: 'unnamed', mb: 10 },
+				{ label: 'unnamed', mb: 20 }
+			]
+		}
+	});
+	const unnamed = lines.filter((line) => line.label === 'unnamed');
+	assert.equal(unnamed.length, 2);
+	assert.notEqual(unnamed[0].key, unnamed[1].key);
+});
+
+test('breakdownLines shows unavailable rather than 0 when member mb is missing', () => {
+	const lines = model.breakdownLines({
+		hz: 60,
+		hzQualityOk: true,
+		hzTickHz: 60,
+		prefetchCount: 0,
+		prefetchMB: 0,
+		anlzCount: 0,
+		anlzMB: 0,
+		pcmMB: 100,
+		jsHeapMB: 200,
+		ringCount: 0,
+		swapMB: null,
+		kernelLevel: null,
+		churnScore: null,
+		compressorRate: null,
+		processes: {
+			kernelLevel: null,
+			churnScore: null,
+			compressorRate: null,
+			members: [{ label: 'unnamed', mb: null }]
+		}
+	});
+	const unnamed = lines.find((line) => line.label === 'unnamed');
+	assert.ok(unnamed);
+	assert.equal(unnamed.value, 'unavailable');
+});
+
 test('sparkPoints does not turn null into 0', () => {
 	const geometry = model.sparkPoints([null, 5, null, 10]);
 	assert.equal(geometry.segments.length, 1, 'null gaps must split segments');

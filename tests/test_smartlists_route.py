@@ -19,9 +19,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -35,10 +35,10 @@ from apps.webui.server.sqlite_backend import SqliteBackend
 
 
 def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).isoformat()
+    return dt.astimezone(UTC).isoformat()
 
 
-_BASE = datetime(2026, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
+_BASE = datetime(2026, 7, 1, 12, 0, 0, tzinfo=UTC)
 
 # (stable_id, title, bpm, genre, rating)
 _SEED_TRACKS: list[tuple[str, str, float, str, int]] = [
@@ -163,6 +163,7 @@ def test_list_smartlists_returns_created_rows(client, state_db_path):
     assert "AND" in row["rule_summary"]
     assert row["order_by"] == "added_date desc"
     assert row["referenced_fields"] == ["bpm"]
+    assert row["count"] is None
 
 
 def test_list_smartlists_empty_table(client):
@@ -284,7 +285,7 @@ def test_create_smartlist_rejects_invalid_rule_and_duplicate_name(client):
 
 @pytest.mark.requirement("SMART-04")
 def test_create_smartlist_creates_table_on_pre_phase08_db(tmp_path):
-    """[if] the first POST cannot create the lazy table [then] a fresh library cannot author, [else stop]."""
+    """[if] first POST cannot create lazy table [then] fresh library cannot author, [else stop]."""
     path = tmp_path / "state.db"
     conn = state_db.open_rw(path, apply_schema=True)
     conn.close()

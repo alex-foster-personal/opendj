@@ -34,7 +34,8 @@ function summaryPayload() {
 		rule_schema_version: 1,
 		last_evaluated_at: null,
 		created_at: '2026-08-01T00:00:00Z',
-		modified_at: '2026-08-01T00:00:01Z'
+		modified_at: '2026-08-01T00:00:01Z',
+		count: null
 	};
 }
 
@@ -69,6 +70,22 @@ test('listSmartlists hits the collection route', async () => {
 	assert.equal(seen.url, `${API_BASE}/api/v1/smartlists`);
 	assert.equal(seen.method, 'GET');
 	assert.equal(rows[0].id, 'sl / one');
+});
+
+test('listSmartlists requests live counts only when asked', async () => {
+	const urls = [];
+	globalThis.fetch = async (request) => {
+		urls.push(request.url);
+		return jsonResponse([summaryPayload()]);
+	};
+
+	await smartlists.listSmartlists({ includeCounts: true });
+	await smartlists.listSmartlists();
+
+	assert.deepEqual(urls, [
+		`${API_BASE}/api/v1/smartlists?include_counts=true`,
+		`${API_BASE}/api/v1/smartlists`
+	]);
 });
 
 test('getSmartlist encodes the id', async () => {

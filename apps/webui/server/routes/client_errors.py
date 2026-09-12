@@ -78,6 +78,10 @@ class ClientErrorRecord(BaseModel):
     received_at: str
     kind: str
     message: str
+    stack: str | None = None
+    url: str | None = None
+    name: str | None = None
+    context: dict[str, ContextValue] | None = None
 
 
 def _daily_logs(log_dir: Path) -> list[Path]:

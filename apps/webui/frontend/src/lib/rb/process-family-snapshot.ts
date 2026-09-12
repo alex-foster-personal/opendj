@@ -16,10 +16,12 @@ interface ProcessesResponse {
 	by_role_mb?: unknown;
 	churn_score?: unknown;
 	compressor_rate?: unknown;
+	compressed_mb?: unknown;
+	members?: unknown;
 }
 
-function _intOrNull(value: unknown): number | null {
-	return typeof value === 'number' && Number.isInteger(value) ? value : null;
+function _kernelLevelOrNull(value: unknown): number | null {
+	return value === 1 || value === 2 || value === 4 ? value : null;
 }
 
 function _finiteOrNull(value: unknown): number | null {
@@ -38,14 +40,37 @@ function _membersFromRoles(byRole: unknown): ProcessFamilyMember[] {
 	return members;
 }
 
+function _mbFromMember(member: Record<string, unknown>): number | null {
+	const rss = _finiteOrNull(member.rss_mb);
+	if (rss !== null) return Math.round(rss);
+	const footprint = _finiteOrNull(member.physical_footprint_mb);
+	if (footprint !== null) return Math.round(footprint);
+	return null;
+}
+
+function _membersFromLive(rawMembers: unknown): ProcessFamilyMember[] | null {
+	if (!Array.isArray(rawMembers)) return null;
+	const members: ProcessFamilyMember[] = [];
+	for (const raw of rawMembers) {
+		if (typeof raw !== 'object' || raw === null) continue;
+		const record = raw as Record<string, unknown>;
+		const name = record.name;
+		const label = typeof name === 'string' && name.length > 0 ? name : 'unnamed';
+		members.push({ label, mb: _mbFromMember(record) });
+	}
+	return members;
+}
+
 /** Turn one engine response into a snapshot, or null when unavailable. */
 export function processFamilyFrom(body: ProcessesResponse): ProcessFamilySnapshot | null {
 	if (body.available !== true) return null;
+	const live = _membersFromLive(body.members);
 	return {
-		kernelLevel: _intOrNull(body.kernel_memory_pressure_level),
+		kernelLevel: _kernelLevelOrNull(body.kernel_memory_pressure_level),
 		churnScore: _finiteOrNull(body.churn_score),
-		compressorRate: _finiteOrNull(body.compressor_rate),
-		members: _membersFromRoles(body.by_role_mb)
+		compressorRate:
+			_finiteOrNull(body.compressor_rate) ?? _finiteOrNull(body.compressed_mb),
+		members: live !== null ? live : _membersFromRoles(body.by_role_mb)
 	};
 }
 

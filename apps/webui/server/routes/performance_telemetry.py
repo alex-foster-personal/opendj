@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ..client_logs import DEFAULT_LOG_DIR, append_json_record, daily_log_path
@@ -102,7 +102,20 @@ def capture_client_performance(
     stored = append_json_record(path, record)
     if not stored:
         log.warning("performance sample %s not stored: daily cap reached at %s", event_id, path)
+    request.app.state.last_client_performance_sample = {
+        "event_id": event_id,
+        **payload.model_dump(),
+    }
     return ClientPerformanceSampleOut(event_id=event_id, stored=stored)
+
+
+@router.get("/client-samples")
+def latest_client_performance_sample(request: Request) -> dict[str, object]:
+    """Return the last accepted sample for this process, or 404 when none."""
+    sample = getattr(request.app.state, "last_client_performance_sample", None)
+    if sample is None:
+        raise HTTPException(status_code=404, detail="no client performance sample yet")
+    return sample
 
 
 def _read_last_json_line(path: Path) -> dict[str, object] | None:
@@ -210,7 +223,14 @@ def _pressure_overlay_fields(pressure: dict[str, object]) -> dict[str, object]:
     kernel = valid_kernel_pressure_level(pressure.get("kernel_memory_pressure_level"))
     if kernel is not None:
         overlay["kernel_memory_pressure_level"] = kernel
-    for key in ("churn_score", "band", "sample_interval_ms"):
+    for key in (
+        "churn_score",
+        "band",
+        "sample_interval_ms",
+        "compressed_mb",
+        "sample_wall_ms",
+        "sample_wall_p95_ms",
+    ):
         value = pressure.get(key)
         if value is not None:
             overlay[key] = value
