@@ -180,7 +180,11 @@ import {
 	type SeekSyncPlan
 } from '$lib/rb/sync-seek-blend';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
-import { StretchDeckProcessor, type StretchScheduleChange } from '$lib/rb/stretch-adapter';
+import {
+	StretchDeckProcessor,
+	ensureStretchWorkletReady,
+	type StretchScheduleChange
+} from '$lib/rb/stretch-adapter';
 import {
 	AlignedStemDeckProcessor,
 	decodeStemBuffers,
@@ -793,6 +797,12 @@ function _ensureGraph(): AudioContext {
 			}
 		})
 	);
+	void ensureStretchWorkletReady(_ctx).catch((error: unknown) => {
+		recordPerfEvent(
+			'stretch-worklet-preload-failed',
+			`Signalsmith worklet did not become ready during graph build: ${String(error)}`
+		);
+	});
 	armXrunSentinel(_ctx);
 	armDeckMeters(_ctx, meterSources);
 	return _ctx;
