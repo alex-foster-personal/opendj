@@ -256,7 +256,9 @@
 		{/each}
 
 		{#each deck.hot_cues as hc (hc.slot)}
-			<span class="cue-letter" style={`left:${_pctOf(hc.in_ms)}%`}>{hc.slot}</span>
+			{#if !(hc.is_loop && hc.out_ms !== null)}
+				<span class="cue-letter" style={`left:${_pctOf(hc.in_ms)}%`}>{hc.slot}</span>
+			{/if}
 		{/each}
 
 		{#if loopCue !== null}
