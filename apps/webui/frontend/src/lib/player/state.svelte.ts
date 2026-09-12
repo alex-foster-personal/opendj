@@ -155,7 +155,7 @@ export const pitchRanges: Record<DeckId, PitchRange> = $state({
 const MIXER_STATE_SINGLETON_KEY = '__mdtMixerStateSingleton';
 
 function _createMixerState(): MixerState {
-	const mixer = $state({
+	return $state({
 		channels: {
 			1: _defaultChannel(1),
 			2: _defaultChannel(2),
@@ -166,7 +166,6 @@ function _createMixerState(): MixerState {
 		master: 1,
 		headphones: _defaultHeadphones()
 	});
-	return mixer;
 }
 
 function _sharedMixerState(): MixerState {
