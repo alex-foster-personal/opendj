@@ -5759,6 +5759,10 @@
             ],
             "title": "Error"
           },
+          "head_delay_ms": {
+            "title": "Head Delay Ms",
+            "type": "number"
+          },
           "level": {
             "title": "Level",
             "type": "number"
@@ -5797,6 +5801,7 @@
         "required": [
           "mix",
           "level",
+          "head_delay_ms",
           "selected_output_device_id",
           "output_mode",
           "outputs",
@@ -23851,6 +23856,49 @@
           }
         },
         "summary": "Post Channel Cue",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/head-delay": {
+      "post": {
+        "operationId": "post_head_delay_ms_api_v1_performance_headphones_head_delay_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Head Delay Ms",
         "tags": [
           "performance-headphones"
         ]

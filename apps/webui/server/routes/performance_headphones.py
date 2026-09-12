@@ -18,6 +18,7 @@ HEADPHONE_IPC_ROUTES: dict[str, tuple[str, str]] = {
     "headphone_level": ("POST", "/api/v1/performance/headphones/level"),
     "channel_cue": ("POST", "/api/v1/performance/headphones/channel-cue"),
     "output_mode": ("POST", "/api/v1/performance/headphones/output-mode"),
+    "head_delay_ms": ("POST", "/api/v1/performance/headphones/head-delay"),
     "headphone_outputs_refresh": ("POST", "/api/v1/performance/headphones/outputs/refresh"),
     "headphone_output_select": ("POST", "/api/v1/performance/headphones/outputs/select"),
 }
@@ -33,6 +34,7 @@ class HeadphoneOutputDeviceOut(BaseModel):
 class HeadphoneStateOut(BaseModel):
     mix: float
     level: float
+    head_delay_ms: float
     selected_output_device_id: str | None
     output_mode: str
     outputs: list[HeadphoneOutputDeviceOut]
@@ -110,12 +112,29 @@ def _validate_boolean(name: str, value: object) -> bool:
 
 
 def _validate_output_mode(mode: object) -> str:
-    if mode != "practice" and mode != "two_outputs":
+    if mode not in ("practice", "two_outputs", "split_cable"):
         raise HTTPException(
             status_code=400,
-            detail=f"output_mode must be practice or two_outputs; got {mode}",
+            detail=(
+                f"headphone output_mode must be practice, two_outputs, or split_cable; "
+                f"got {mode}"
+            ),
         )
     return mode
+
+
+def _validate_head_delay_ms(value: object) -> float:
+    if not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise HTTPException(
+            status_code=400,
+            detail=f"head delay must be a finite number within 0..500, got {value}",
+        )
+    if value < 0 or value > 500:
+        raise HTTPException(
+            status_code=400,
+            detail=f"head delay must be a finite number within 0..500, got {value}",
+        )
+    return float(value)
 
 
 def _validate_device_id(device_id: object) -> str:
@@ -182,6 +201,15 @@ async def post_output_mode(request: Request, body: dict[str, Any]) -> HeadphoneS
     _require_page(request)
     mode = _validate_output_mode(body.get("mode"))
     return await _submit_headphone_command(request, {"type": "output_mode", "mode": mode})
+
+
+@router.post("/head-delay", response_model=HeadphoneStateOut)
+async def post_head_delay_ms(request: Request, body: dict[str, Any]) -> HeadphoneStateOut:
+    _require_page(request)
+    value = _validate_head_delay_ms(body.get("value"))
+    return await _submit_headphone_command(
+        request, {"type": "head_delay_ms", "value": value}
+    )
 
 
 @router.post("/outputs/refresh", response_model=HeadphoneStateOut)

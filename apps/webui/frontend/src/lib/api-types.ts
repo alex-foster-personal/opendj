@@ -2401,6 +2401,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/performance/headphones/head-delay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Head Delay Ms */
+        post: operations["post_head_delay_ms_api_v1_performance_headphones_head_delay_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/performance/headphones/level": {
         parameters: {
             query?: never;
@@ -6651,6 +6668,8 @@ export interface components {
             active: boolean;
             /** Error */
             error: string | null;
+            /** Head Delay Ms */
+            head_delay_ms: number;
             /** Level */
             level: number;
             /** Mix */
@@ -15741,6 +15760,41 @@ export interface operations {
         };
     };
     post_channel_cue_api_v1_performance_headphones_channel_cue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadphoneStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_head_delay_ms_api_v1_performance_headphones_head_delay_post: {
         parameters: {
             query?: never;
             header?: never;
