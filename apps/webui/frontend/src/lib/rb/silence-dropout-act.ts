@@ -4,6 +4,7 @@
  */
 
 import { deckStates } from '$lib/rb/audio-engine.svelte';
+import { withPauseOrigin } from '$lib/rb/unexpected-pause-report';
 import { cancelAutoPlayNext } from '$lib/rb/auto-play-next.svelte';
 import {
 	noteAutoPlaySilenceDropout
@@ -14,7 +15,9 @@ import type { SilenceDropoutPlan } from '$lib/rb/silence-dropout';
 
 async function _stopDeck(deck: DeckId): Promise<void> {
 	try {
-		await dispatchPerformanceCommand({ type: 'play', deck, playing: false });
+		await withPauseOrigin('dropout', () =>
+			dispatchPerformanceCommand({ type: 'play', deck, playing: false })
+		);
 	} catch {
 		const st = deckStates[deck];
 		st.playing = false;

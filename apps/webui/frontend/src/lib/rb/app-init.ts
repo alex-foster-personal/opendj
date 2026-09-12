@@ -26,6 +26,8 @@ import {
 	setSilenceDropoutContextReader,
 	setSilenceDropoutHandler
 } from '$lib/rb/master-silence-report';
+import { readAutoPlayHandoffInFlight } from '$lib/rb/auto-play.svelte';
+import { setUnexpectedPauseAutoPlayReader } from '$lib/rb/unexpected-pause-report';
 import { handleSilenceDropoutPlan } from '$lib/rb/silence-dropout-act';
 import type { SilenceDropoutDeckSnap } from '$lib/rb/silence-dropout';
 import type { DeckId } from '$lib/rb/deck-slots';
@@ -96,6 +98,10 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	});
 	_xrunsAtPrevious = readXrunSessionCounter().xruns;
 	setSilenceDropoutHandler(handleSilenceDropoutPlan);
+	setUnexpectedPauseAutoPlayReader(() => ({
+		armed: uiPrefs.auto_play_enabled,
+		handoff_in_flight: readAutoPlayHandoffInFlight()
+	}));
 	setSilenceDropoutContextReader(() => {
 		const xruns = readXrunSessionCounter().xruns;
 		const ctx = {
@@ -111,6 +117,7 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 
 	return () => {
 		setSilenceDropoutHandler(null);
+		setUnexpectedPauseAutoPlayReader(null);
 		setSilenceDropoutContextReader(null);
 		stopBackgroundDemandShed();
 		stopMachinePressurePolling();

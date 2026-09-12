@@ -88,7 +88,8 @@ describe('describeAutoPlayStall', () => {
 			'candidates-failed-to-load',
 			'handoff-attempts-exhausted',
 			'handoff-incomplete',
-			'master-handover-refused'
+			'master-handover-refused',
+			'no-deck-playing'
 		];
 		const headlines = new Set();
 		const resumes = new Set();
@@ -164,6 +165,16 @@ describe('describeAutoPlayStall', () => {
 			detail: 'play refused'
 		});
 		assert.match(stall.headline, /the next track is on a deck/);
+	});
+
+	it('names the silent idle branch and tells the operator to press play', () => {
+		const stall = mod.describeAutoPlayStall({
+			reason: 'no-deck-playing',
+			source_stable_id: 'src-1',
+			blocked: []
+		});
+		assert.match(stall.headline, /no deck has been playing for 5 seconds/);
+		assert.match(stall.resume, /Press play on a loaded deck/);
 	});
 
 	it('names the master-handover branch as a stop, and says how to resume it', () => {
@@ -299,5 +310,6 @@ describe('autoPlayStallReason / autoPlayExhaustionToast', () => {
 			/not an exhaustion toast/,
 			'a handoff failure has no exhaustion toast; silently returning one would be a mis-report'
 		);
+		assert.throws(() => mod.autoPlayExhaustionToast('no-deck-playing'), /not an exhaustion toast/);
 	});
 });

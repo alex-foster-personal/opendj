@@ -87,6 +87,19 @@ export function noteAutoPlayExhaustion(input: {
  * the rest of its playout, so nothing else will ever start: same terminal
  * class as exhaustion, same durable state.
  */
+export function noteAutoPlaySilentIdle(input: {
+	source_stable_id: string;
+	blocked: readonly AutoPlayTrackRow[];
+}): void {
+	raiseAutoPlayStall(
+		describeAutoPlayStall({
+			reason: 'no-deck-playing',
+			source_stable_id: input.source_stable_id,
+			blocked: input.blocked
+		})
+	);
+}
+
 export function noteAutoPlayHandoffStall(
 	reason: 'handoff-attempts-exhausted' | 'handoff-incomplete' | 'master-handover-refused',
 	sourceStableId: string,
@@ -146,6 +159,10 @@ export function retireAutoPlayStallIfAudible(sourceStableId: string, audible: bo
 	// nothing after it, so the banner has to stay up.
 	if (stall.reason === 'master-handover-refused') {
 		if (sourceStableId === stall.source_stable_id) clearAutoPlayStall();
+		return;
+	}
+	if (stall.reason === 'no-deck-playing') {
+		clearAutoPlayStall();
 		return;
 	}
 	if (sourceStableId === stall.source_stable_id) return;

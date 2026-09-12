@@ -46,7 +46,13 @@ import {
 	type AutoPlayMasterPromotion
 } from '$lib/rb/auto-play';
 import { clearChartedAutoPlayOrder, refreshChartedAutoPlayOrder } from '$lib/rb/auto-play-chart-order';
-import { applyAutoPlayIdleDisarmAction, planAutoPlayIdleDisarm, resetAutoPlayIdleClock } from '$lib/rb/autoplay-idle';
+import {
+	applyAutoPlayIdleDisarmAction,
+	planAutoPlayIdleDisarm,
+	readAutoPlayIdleSinceMs,
+	resetAutoPlayIdleClock,
+	shouldRaiseAutoPlaySilentStall
+} from '$lib/rb/autoplay-idle';
 import {
 	isSilenceRecovering,
 	noteAutoPlayFollowerPlayDispatched,
@@ -68,6 +74,7 @@ import {
 	clearAutoPlayStall,
 	noteAutoPlayExhaustion,
 	noteAutoPlayHandoffStall,
+	noteAutoPlaySilentIdle,
 	readAutoPlayStall,
 	retireAutoPlayStallIfAudible
 } from '$lib/rb/autoplay-stall.svelte';
@@ -114,9 +121,14 @@ let _pendingMaster: { deck: DeckId; stable_id: string } | null = null;
 let _promoting = false;
 /** Idle disarm with an active PLAY-08 stall keeps the banner after the pref drops. */
 let _disarmRetainStall = false;
+/** Last pickSourceDeck id, used when every deck has stopped (issue #2153). */
+let _lastSourceStableId: string | null = null;
 
 export { autoPlayOrder } from '$lib/rb/autoplay-queue.svelte';
 
+export function readAutoPlayHandoffInFlight(): boolean {
+	return _inFlight;
+}
 function _clearChartedOrder(): void {
 	clearChartedAutoPlayOrder(_chartKeyRef);
 }
@@ -286,8 +298,28 @@ async function _tick(): Promise<void> {
 		return;
 	}
 
+	const sourceStableId =
+		_lastSourceStableId ?? snaps.find((d) => d.stable_id !== null)?.stable_id ?? null;
+	if (
+		shouldRaiseAutoPlaySilentStall({
+			enabled: uiPrefs.auto_play_enabled,
+			any_playing: snaps.some((d) => d.playing),
+			pending_master: _pendingMaster !== null,
+			silence_recovering: isSilenceRecovering(),
+			stall_active: readAutoPlayStall() !== null,
+			idle_since_ms: readAutoPlayIdleSinceMs(),
+			now_ms: Date.now(),
+			source_stable_id: sourceStableId
+		})
+	) {
+		noteAutoPlaySilentIdle({ source_stable_id: sourceStableId!, blocked: [] });
+	}
+
 	const resolved = resolveAutoPlaySourceForTick(snaps, pickSourceDeck);
 	const source = resolved.source;
+	if (source !== null && source.stable_id !== null) {
+		_lastSourceStableId = source.stable_id;
+	}
 	if (source === null || source.stable_id === null) {
 		// Row 1, but NOT while a promotion is still settling: between the old
 		// master being demoted and the new one being flagged there is a poll or

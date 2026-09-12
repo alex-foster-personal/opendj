@@ -126,6 +126,9 @@ function fakeEffects() {
 			sleep: async (ms) => {
 				nowMs += ms;
 				await Promise.resolve();
+			},
+			noteUnexpectedPause: (state) => {
+				perf.push({ kind: 'audio-unexpected-pause', state });
 			}
 		}
 	};
@@ -151,6 +154,24 @@ async function driveDrop(state, { playing = true, resumeSucceeds = false } = {})
 //-----------------------------------------------------------------------------
 // (i) the operator is told
 //-----------------------------------------------------------------------------
+
+test('every non-running context state records an unexpected pause while a deck is playing', async () => {
+	for (const state of NON_RUNNING_STATES) {
+		const run = await driveDrop(state);
+		const rows = run.perf.filter((row) => row.kind === 'audio-unexpected-pause');
+		assert.ok(
+			rows.length >= 1,
+			`if entering '${state}' while playing records no audio-unexpected-pause row then broken`
+		);
+		assert.equal(rows[0].state, state);
+	}
+});
+
+test('CONTROL: non-running context with nothing playing does not record unexpected pause', async () => {
+	const run = await driveDrop('suspended', { playing: false });
+	const rows = run.perf.filter((row) => row.kind === 'audio-unexpected-pause');
+	assert.equal(rows.length, 0);
+});
 
 test('every non-running context state raises an error toast while a deck is playing', async () => {
 	for (const state of NON_RUNNING_STATES) {
