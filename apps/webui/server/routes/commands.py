@@ -67,9 +67,29 @@ def _broker(request: Request) -> _OrderBroker:
     return broker
 
 
-def _page_is_open(request: Request) -> bool:
+def page_is_open(request: Request) -> bool:
+    """True only while PUT /state/ui-mirror has a document on record."""
     mirror = getattr(request.app.state, "ui_mirror", None)
     return mirror is not None
+
+
+def _page_is_open(request: Request) -> bool:
+    return page_is_open(request)
+
+
+async def submit_single_command(request: Request, command: dict[str, Any]) -> dict[str, Any]:
+    """Hold ``{kind: "single", payload: command}`` until the open page completes it.
+
+    Caller must have already checked page_is_open. Returns the page's
+    ``{steps, mirror_delta}`` document. Does not change POST /commands (still 409).
+    """
+    order = {"kind": "single", "payload": command}
+    broker = _broker(request)
+    order_id, result = broker.submit(order)
+    try:
+        return await result
+    finally:
+        broker.discard(order_id)
 
 
 def _order(body: dict[str, Any]) -> dict[str, Any]:
