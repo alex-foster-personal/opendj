@@ -9,6 +9,8 @@ from the SERVING process and able to say no (.claude/rules/verification.md).
 
 The rendered units are checked against the same argv, so a unit that starts
 something other than what this file booted fails here.
+
+[if] hub deploy launches a hub [then] the probes is_hub matches hub_serve_argv, [else stop].
 """
 
 from __future__ import annotations
