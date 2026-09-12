@@ -727,7 +727,7 @@ jobs:
             apps/webui/frontend/playwright-report/**
             apps/webui/frontend/tests/e2e/fixtures/root-playwright-data/logs/**
           if-no-files-found: ignore
-          retention-days: 3
+          retention-days: 2
 
   # ---------------------------------------------------------------------------
   # TIER 2, NIGHTLY. Not a PR gate, but a real red when it breaks.
@@ -1146,4 +1146,4 @@ jobs:
             apps/webui/frontend/test-results/**
             apps/webui/frontend/playwright-report/**
           if-no-files-found: ignore
-          retention-days: 3
+          retention-days: 2

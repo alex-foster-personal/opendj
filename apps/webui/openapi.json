@@ -2804,6 +2804,159 @@
         "title": "CloudSyncEffectiveConfigOut",
         "type": "object"
       },
+      "CloudSyncLinkOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "last_finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Finished At"
+          },
+          "last_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Message"
+          },
+          "last_result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Result"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "enabled",
+          "reason",
+          "endpoint",
+          "last_result",
+          "last_message",
+          "last_finished_at"
+        ],
+        "title": "CloudSyncLinkOut",
+        "type": "object"
+      },
+      "CloudSyncSchedulerOut": {
+        "description": "The engine's CloudSync scheduler: is its thread alive, and what last failed.\n\n``not_armed``: this app never builds one (tests, non-daemon boots).\n``off``: armed, switch not on. ``misconfigured``: switched on but it could\nnot start (``reason`` says why); the engine booted regardless.\n``dead``: it was started and its thread is gone without ``stop()``.",
+        "properties": {
+          "alive": {
+            "title": "Alive",
+            "type": "boolean"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_error_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error At"
+          },
+          "last_ok_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Ok At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "state": {
+            "enum": [
+              "not_armed",
+              "off",
+              "misconfigured",
+              "running",
+              "stopped",
+              "dead"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "ticks": {
+            "title": "Ticks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "alive",
+          "reason",
+          "ticks",
+          "last_ok_at",
+          "last_error",
+          "last_error_at"
+        ],
+        "title": "CloudSyncSchedulerOut",
+        "type": "object"
+      },
       "CloudSyncStatusOut": {
         "properties": {
           "configured": {
@@ -3636,6 +3789,11 @@
             "description": "share of the track the vocal stem carries energy",
             "title": "Coverage Pct"
           },
+          "effective": {
+            "description": "same as effective_verdict; kept for clients that read .effective",
+            "title": "Effective",
+            "type": "string"
+          },
           "effective_verdict": {
             "description": "what to act on: the human override if set, else verdict",
             "title": "Effective Verdict",
@@ -3762,6 +3920,7 @@
           "stable_id",
           "verdict",
           "effective_verdict",
+          "effective",
           "has_words",
           "pipeline_version",
           "computed_at",
@@ -4211,6 +4370,10 @@
             "title": "Engine Version",
             "type": "string"
           },
+          "google_oauth_configured": {
+            "title": "Google Oauth Configured",
+            "type": "boolean"
+          },
           "state_db": {
             "$ref": "#/components/schemas/HealthStateDb"
           },
@@ -4243,6 +4406,7 @@
           "waveform_materialization",
           "bind_host",
           "version",
+          "google_oauth_configured",
           "contract_rev",
           "engine_version",
           "boot_id"
@@ -4577,6 +4741,119 @@
           "note"
         ],
         "title": "FeatureEntitlementOut",
+        "type": "object"
+      },
+      "FeedbackStoreSyncOut": {
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "integer"
+          },
+          "attachments_missing": {
+            "title": "Attachments Missing",
+            "type": "integer"
+          },
+          "harvested": {
+            "title": "Harvested",
+            "type": "integer"
+          },
+          "live": {
+            "title": "Live",
+            "type": "integer"
+          },
+          "pending_push": {
+            "title": "Pending Push",
+            "type": "integer"
+          },
+          "synced": {
+            "title": "Synced",
+            "type": "integer"
+          },
+          "unreconciled": {
+            "title": "Unreconciled",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "live",
+          "archived",
+          "synced",
+          "pending_push",
+          "unreconciled",
+          "harvested",
+          "attachments_missing"
+        ],
+        "title": "FeedbackStoreSyncOut",
+        "type": "object"
+      },
+      "FeedbackSyncOut": {
+        "properties": {
+          "exported": {
+            "title": "Exported",
+            "type": "integer"
+          },
+          "imported": {
+            "title": "Imported",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "pulled": {
+            "title": "Pulled",
+            "type": "integer"
+          },
+          "pushed": {
+            "title": "Pushed",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "inconclusive"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "exported",
+          "imported",
+          "pushed",
+          "pulled",
+          "message"
+        ],
+        "title": "FeedbackSyncOut",
+        "type": "object"
+      },
+      "FeedbackSyncStatusOut": {
+        "properties": {
+          "cloudsync": {
+            "$ref": "#/components/schemas/CloudSyncLinkOut"
+          },
+          "pins": {
+            "items": {
+              "$ref": "#/components/schemas/PinSyncOut"
+            },
+            "title": "Pins",
+            "type": "array"
+          },
+          "scheduler": {
+            "$ref": "#/components/schemas/CloudSyncSchedulerOut"
+          },
+          "store": {
+            "$ref": "#/components/schemas/FeedbackStoreSyncOut"
+          }
+        },
+        "required": [
+          "store",
+          "cloudsync",
+          "scheduler",
+          "pins"
+        ],
+        "title": "FeedbackSyncStatusOut",
         "type": "object"
       },
       "FileProbeOut": {
@@ -7605,6 +7882,96 @@
         "title": "LyricsPurgeOut",
         "type": "object"
       },
+      "LyricsRowSummaryOut": {
+        "description": "Per-row karaoke verdict summary for library listings.",
+        "properties": {
+          "effective": {
+            "title": "Effective",
+            "type": "string"
+          },
+          "has_words": {
+            "title": "Has Words",
+            "type": "boolean"
+          },
+          "language_iso3": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language Iso3"
+          },
+          "n_lines": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Lines"
+          },
+          "n_words": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Words"
+          },
+          "override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override"
+          },
+          "pct_witness_red": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct Witness Red"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "effective",
+          "has_words"
+        ],
+        "title": "LyricsRowSummaryOut",
+        "type": "object"
+      },
       "LyricsUnavailableOut": {
         "description": "The explicit cache-miss response for one track's lyrics timeline.",
         "properties": {
@@ -8059,6 +8426,52 @@
           "dest"
         ],
         "title": "MembershipTransferOut",
+        "type": "object"
+      },
+      "MetadataShareRequest": {
+        "description": "Explicit acknowledgement that the resulting web view excludes audio.",
+        "properties": {
+          "confirm_metadata_only": {
+            "const": true,
+            "title": "Confirm Metadata Only",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirm_metadata_only"
+        ],
+        "title": "MetadataShareRequest",
+        "type": "object"
+      },
+      "MetadataShareResponse": {
+        "description": "A browser URL for the non-audio set history presentation.",
+        "properties": {
+          "content": {
+            "const": "metadata_only",
+            "title": "Content",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "share_state": {
+            "const": "shared_cloud",
+            "title": "Share State",
+            "type": "string"
+          },
+          "share_url": {
+            "title": "Share Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "share_state",
+          "share_url",
+          "content"
+        ],
+        "title": "MetadataShareResponse",
         "type": "object"
       },
       "MixerChannelMarkOut": {
@@ -9273,6 +9686,63 @@
           "playlist_id"
         ],
         "title": "PinKeyIn",
+        "type": "object"
+      },
+      "PinSyncOut": {
+        "description": "Where one pin stands. ``attachment_bytes: missing`` is FBSYNC-05's gap:\nthe screenshot's metadata synced here but its bytes did not.",
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "attachment_bytes": {
+            "enum": [
+              "none",
+              "present",
+              "missing"
+            ],
+            "title": "Attachment Bytes",
+            "type": "string"
+          },
+          "origin_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Device Id"
+          },
+          "pin_id": {
+            "title": "Pin Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "synced",
+              "pending_push",
+              "unreconciled",
+              "harvested"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pin_id",
+          "state",
+          "archived",
+          "updated_at",
+          "origin_device_id",
+          "attachment_bytes"
+        ],
+        "title": "PinSyncOut",
         "type": "object"
       },
       "PlanEntryOut": {
@@ -12067,6 +12537,16 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
           "is_remote": {
             "default": false,
             "title": "Is Remote",
@@ -12126,6 +12606,16 @@
             ],
             "title": "Loudness Status",
             "type": "string"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "match_context": {
             "title": "Match Context",
@@ -12948,6 +13438,35 @@
         "title": "StatusResponse",
         "type": "object"
       },
+      "StemHydrateIn": {
+        "properties": {
+          "data_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Dir"
+          },
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "manifest_path": {
+            "title": "Manifest Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "manifest_path"
+        ],
+        "title": "StemHydrateIn",
+        "type": "object"
+      },
       "StemManifestOut": {
         "description": "Frontend manifest projected from a stricter durable artifact manifest.",
         "properties": {
@@ -13017,6 +13536,28 @@
           "media_type"
         ],
         "title": "StemPartOut",
+        "type": "object"
+      },
+      "StemPushMissingIn": {
+        "properties": {
+          "data_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Dir"
+          },
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "title": "StemPushMissingIn",
         "type": "object"
       },
       "StemTierOut": {
@@ -13948,6 +14489,85 @@
         "title": "SyncSnapshotOut",
         "type": "object"
       },
+      "TempoPrefOut": {
+        "description": "PREF-01: a track's user-set preferred tempo plus its playable range.\n\nAny of the three may be null (unset). Never fabricated on read - a track\nwith no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,\nnot this shape with all-null members (see sqlite_backend._row_to_track).",
+        "properties": {
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "regular": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regular"
+          }
+        },
+        "title": "TempoPrefOut",
+        "type": "object"
+      },
+      "TempoPrefPatch": {
+        "properties": {
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "regular": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regular"
+          }
+        },
+        "title": "TempoPrefPatch",
+        "type": "object"
+      },
       "TierEstimateOut": {
         "description": "Cost of one track at one tier. ``measured`` false means we do not know.",
         "properties": {
@@ -14456,6 +15076,16 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
           "is_remote": {
             "default": false,
             "title": "Is Remote",
@@ -14482,6 +15112,16 @@
               }
             ],
             "title": "Last Played At"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "lyrics_available": {
             "title": "Lyrics Available",
@@ -14567,6 +15207,16 @@
             },
             "title": "Tags",
             "type": "array"
+          },
+          "tempo_pref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoPrefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "title": {
             "anyOf": [
@@ -14797,6 +15447,16 @@
             "title": "Tags",
             "type": "array"
           },
+          "tempo_pref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoPrefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "title": {
             "anyOf": [
               {
@@ -14877,6 +15537,16 @@
               }
             ],
             "title": "Tags Remove"
+          },
+          "tempo_pref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoPrefPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "TrackPatch",
@@ -15000,6 +15670,16 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
           "is_remote": {
             "default": false,
             "title": "Is Remote",
@@ -15059,6 +15739,16 @@
             ],
             "title": "Loudness Status",
             "type": "string"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "play_count": {
             "default": 0,
@@ -17181,6 +17871,100 @@
           }
         },
         "summary": "Api Audio",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}/share": {
+      "get": {
+        "description": "Get an existing metadata-only share link for a finalized published set.",
+        "operationId": "api_get_metadata_share_api_sets__session_id__share_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataShareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Metadata Share",
+        "tags": [
+          "sets"
+        ]
+      },
+      "post": {
+        "description": "Publish timeline metadata after explicit acknowledgement, never MP3 audio.",
+        "operationId": "api_publish_metadata_share_api_sets__session_id__share_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataShareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataShareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Publish Metadata Share",
         "tags": [
           "sets"
         ]
@@ -20633,6 +21417,76 @@
           }
         },
         "summary": "Create Performance Mark",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/sync": {
+      "post": {
+        "operationId": "post_feedback_sync_api_v1_feedback_sync_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackSyncOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Feedback Sync",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/sync/status": {
+      "get": {
+        "operationId": "get_feedback_sync_status_api_v1_feedback_sync_status_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "pin_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pin Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackSyncStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Feedback Sync Status",
         "tags": [
           "feedback"
         ]
@@ -25079,6 +25933,51 @@
         ]
       }
     },
+    "/api/v1/stems/push-missing": {
+      "post": {
+        "operationId": "push_missing_stems_api_v1_stems_push_missing_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemPushMissingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Push Missing Stems Api V1 Stems Push Missing Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Push Missing Stems",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
     "/api/v1/stems/tiers": {
       "get": {
         "operationId": "list_tiers_api_v1_stems_tiers_get",
@@ -25101,6 +26000,62 @@
         "summary": "List Tiers",
         "tags": [
           "stem-tiers"
+        ]
+      }
+    },
+    "/api/v1/stems/{stable_id}/hydrate": {
+      "post": {
+        "operationId": "hydrate_stem_api_v1_stems__stable_id__hydrate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemHydrateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Hydrate Stem Api V1 Stems  Stable Id  Hydrate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Hydrate Stem",
+        "tags": [
+          "stems"
         ]
       }
     },

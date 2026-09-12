@@ -15,6 +15,8 @@ Regression one-liners:
   - if OBSERVE refuses a call main accepted, or hello misreports the verdict, then broken
   - if enroll returns the credential twice or the hub stores it unhashed then broken
   - if the spoke's credential file is not 0600, or sync does not send it, then broken
+
+[if] a credential is minted [then] ENFORCE refuses bad ones, OBSERVE refuses none, [else stop].
 """
 
 from __future__ import annotations

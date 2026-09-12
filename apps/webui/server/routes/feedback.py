@@ -42,7 +42,9 @@ it; all comments move; a non-empty general note moves and resets.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import tempfile
 import threading
 import uuid
 from datetime import UTC, datetime
@@ -296,9 +298,55 @@ def _load(path: Path, root_key: str) -> list[dict[str, Any]]:
     return items
 
 
-def _save(path: Path, root_key: str, items: list[dict[str, Any]]) -> None:
+def write_atomic(path: Path, text: str) -> None:
+    """Replace ``path`` with ``text`` so a reader sees the old file or the new one.
+
+    Temp file in the same directory, fsync, then ``os.replace`` (atomic on one
+    filesystem), then fsync the directory so the rename itself is durable. A
+    plain ``write_text`` truncates first, so a crash or a full disk mid-write
+    leaves a torn ``comments.json`` that every later read refuses (PR #1978
+    review). The temp name starts with a dot, so no ``archive-*.json`` glob
+    can mistake a leftover for an archive.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({root_key: items}, indent=2) + "\n", encoding="utf-8")
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    temp = Path(temp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, path)
+    except BaseException:
+        temp.unlink(missing_ok=True)
+        raise
+    if os.name == "posix":
+        dir_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+
+
+def _save(path: Path, root_key: str, items: list[dict[str, Any]]) -> None:
+    write_atomic(path, json.dumps({root_key: items}, indent=2) + "\n")
+
+
+def keep_unknown_fields(raw: dict[str, Any], known: dict[str, Any]) -> dict[str, Any]:
+    """``known`` (a model dump) laid over ``raw``, so fields this build lacks survive.
+
+    A newer build may add a pin field this one's ``CommentOut`` does not know.
+    Validating and dumping drops it; overlaying the dump on the raw doc keeps
+    it, at every nesting level, while still filling this build's defaults.
+    """
+    merged = dict(raw)
+    for key, value in known.items():
+        prior = raw.get(key)
+        if isinstance(value, dict) and isinstance(prior, dict):
+            merged[key] = keep_unknown_fields(prior, value)
+        else:
+            merged[key] = value
+    return merged
 
 
 def _load_general(path: Path) -> dict[str, Any]:
@@ -477,8 +525,7 @@ def get_general(request: Request) -> GeneralNoteOut:
 def put_general(body: GeneralNotePutIn, request: Request) -> GeneralNoteOut:
     path = _dir(request) / _GENERAL_FILE
     note = GeneralNoteOut(text=body.text, updated_at=_now(), build=_build_stamp(request))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(note.model_dump(), indent=2) + "\n", encoding="utf-8")
+    write_atomic(path, json.dumps(note.model_dump(), indent=2) + "\n")
     return note
 
 
@@ -537,8 +584,8 @@ def archive_feedback(request: Request) -> ArchiveOut:
                     "message": f"{archive_path} already exists; retry in 1s",
                 },
             )
-        archive_path.parent.mkdir(parents=True, exist_ok=True)
-        archive_path.write_text(
+        write_atomic(
+            archive_path,
             json.dumps(
                 {
                     "archived_at": _now(),
@@ -550,19 +597,18 @@ def archive_feedback(request: Request) -> ArchiveOut:
                 indent=2,
             )
             + "\n",
-            encoding="utf-8",
         )
 
         _save(todos_path, "todos", kept_todos)
         _save(comments_path, "comments", [])
         if general_archived:
-            general_path.write_text(
+            write_atomic(
+                general_path,
                 json.dumps(
                     {"text": "", "updated_at": _now(), "build": general.get("build")},
                     indent=2,
                 )
                 + "\n",
-                encoding="utf-8",
             )
 
     return ArchiveOut(

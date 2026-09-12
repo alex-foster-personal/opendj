@@ -208,4 +208,71 @@ def test_patch_track_notes(client, seed_backend):
     assert r.json()["notes"] == "my first mix track"
 
 
+@pytest.mark.requirement("PREF-01")
+def test_get_track_tempo_pref_unset_is_explicit_null(client):
+    """A track nobody has edited yet reports null, never a fabricated range."""
+    r = client.get("/api/v1/tracks/track-003")
+    assert r.status_code == 200
+    assert r.json()["tempo_pref"] is None
+
+
+@pytest.mark.requirement("PREF-01")
+def test_patch_track_tempo_pref_round_trips(client, seed_backend):
+    etag = current_etag(seed_backend, "track-003")
+    r = client.patch(
+        "/api/v1/tracks/track-003",
+        json={"tempo_pref": {"regular": 140.0, "min": 138.0, "max": 142.0}},
+        headers={"If-Match": etag},
+    )
+    assert r.status_code == 200
+    assert r.json()["tempo_pref"] == {"regular": 140.0, "min": 138.0, "max": 142.0}
+    # Independent GET confirms real persistence, not just an echoed body.
+    reread = client.get("/api/v1/tracks/track-003")
+    assert reread.json()["tempo_pref"] == {"regular": 140.0, "min": 138.0, "max": 142.0}
+
+
+@pytest.mark.requirement("PREF-01")
+def test_patch_track_tempo_pref_min_gte_max_422(client, seed_backend):
+    etag = current_etag(seed_backend, "track-003")
+    r = client.patch(
+        "/api/v1/tracks/track-003",
+        json={"tempo_pref": {"regular": 140.0, "min": 145.0, "max": 145.0}},
+        headers={"If-Match": etag},
+    )
+    assert r.status_code == 422
+    # Nothing persisted from the rejected patch.
+    assert client.get("/api/v1/tracks/track-003").json()["tempo_pref"] is None
+
+
+@pytest.mark.requirement("PREF-01")
+def test_patch_track_tempo_pref_clamps_regular_into_new_range(client, seed_backend):
+    """Trap case: a regular value now outside a newly-set range is clamped
+    into it rather than left out of bounds."""
+    etag = current_etag(seed_backend, "track-004")
+    r = client.patch(
+        "/api/v1/tracks/track-004",
+        json={"tempo_pref": {"regular": 200.0, "min": 138.0, "max": 142.0}},
+        headers={"If-Match": etag},
+    )
+    assert r.status_code == 200
+    assert r.json()["tempo_pref"] == {"regular": 142.0, "min": 138.0, "max": 142.0}
+
+
+@pytest.mark.requirement("PREF-01")
+def test_patch_track_tempo_pref_clear_to_null(client, seed_backend):
+    etag = current_etag(seed_backend, "track-005")
+    set_r = client.patch(
+        "/api/v1/tracks/track-005",
+        json={"tempo_pref": {"regular": 95.0, "min": None, "max": None}},
+        headers={"If-Match": etag},
+    )
+    assert set_r.json()["tempo_pref"] == {"regular": 95.0, "min": None, "max": None}
+    clear_r = client.patch(
+        "/api/v1/tracks/track-005", json={"tempo_pref": None},
+        headers={"If-Match": set_r.headers["ETag"]},
+    )
+    assert clear_r.status_code == 200
+    assert clear_r.json()["tempo_pref"] is None
+
+
 pytestmark = pytest.mark.rb_parity

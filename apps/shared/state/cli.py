@@ -238,6 +238,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="process at most N files (debug / smoke-test aid)",
     )
+    fol.add_argument(
+        "--allow-mass-missing",
+        action="store_true",
+        help="override LIBM-41: allow a scan that drops more than 50% of a "
+        "previously populated root (including to zero)",
+    )
     return parser
 
 

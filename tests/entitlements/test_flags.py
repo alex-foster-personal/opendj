@@ -27,6 +27,8 @@ from pathlib import Path
 import pytest
 
 from apps.feature_flags import (
+    APP_MODE_FEATURE_FLAGS,
+    APP_MODE_IDS,
     FLAGS,
     FLAGS_FILE_ENV,
     FLAGS_FILENAME,
@@ -207,3 +209,82 @@ def test_flag_resolution_performs_no_network_call(
     store = load_flags(tmp_path, defs=TEST_DEFS)
     assert store.enabled("example.on_by_default") is False
     assert store.snapshot()[0].flag_id == "example.off_by_default"
+
+
+def test_unbuildable_app_modes_are_not_advertised_by_default(tmp_path: Path) -> None:
+    store = load_flags(tmp_path)
+    flag = next(f for f in FLAGS if f.flag_id == "app_mode.show_unbuildable")
+    assert flag.default is False
+    assert flag.sandbox_gated is False
+    assert store.enabled("app_mode.show_unbuildable") is False
+
+
+# ----- PERFMODE-07: per-mode feature-flag table (issue #2041) ------------
+@pytest.mark.requirement("PERFMODE-07")
+def test_mode_feature_flag_table_shape() -> None:
+    assert set(APP_MODE_FEATURE_FLAGS) == set(APP_MODE_IDS) == {
+        "performance",
+        "library-management",
+        "music-player",
+    }
+    assert APP_MODE_FEATURE_FLAGS["performance"] == {
+        "usb.export",
+        "local_stems.executor",
+    }
+    assert APP_MODE_FEATURE_FLAGS["library-management"] == frozenset()
+    assert APP_MODE_FEATURE_FLAGS["music-player"] == frozenset()
+    show_unbuildable = "app_mode.show_unbuildable"
+    for mode_id in APP_MODE_IDS:
+        assert show_unbuildable not in APP_MODE_FEATURE_FLAGS[mode_id]
+
+
+@pytest.mark.requirement("PERFMODE-07")
+def test_every_mapped_flag_id_is_declared() -> None:
+    declared = {flag.flag_id for flag in FLAGS}
+    for mode_id in APP_MODE_IDS:
+        assert APP_MODE_FEATURE_FLAGS[mode_id] <= declared
+
+
+@pytest.mark.requirement("PERFMODE-07")
+def test_performance_mode_keeps_current_flag_answers(tmp_path: Path) -> None:
+    store = load_flags(tmp_path)
+    assert store.enabled_for_mode("performance", "usb.export") is store.enabled(
+        "usb.export"
+    )
+    assert store.enabled_for_mode("performance", "local_stems.executor") is store.enabled(
+        "local_stems.executor"
+    )
+
+
+@pytest.mark.requirement("PERFMODE-07")
+def test_unbuilt_modes_read_flags_off(tmp_path: Path) -> None:
+    store = load_flags(tmp_path)
+    for mode_id in ("library-management", "music-player"):
+        for flag_id in ("usb.export", "local_stems.executor"):
+            assert store.enabled(flag_id) is True
+            assert store.enabled_for_mode(mode_id, flag_id) is False
+
+
+@pytest.mark.requirement("PERFMODE-07")
+def test_enabled_for_mode_refuses_undeclared_flag(tmp_path: Path) -> None:
+    store = load_flags(tmp_path)
+    with pytest.raises(KeyError) as excinfo:
+        store.enabled_for_mode("performance", "example.never_declared")
+    message = str(excinfo.value)
+    assert "example.never_declared" in message
+    assert "FlagDef" in message
+
+
+@pytest.mark.requirement("PERFMODE-07")
+def test_enabled_for_mode_refuses_undeclared_mode(tmp_path: Path) -> None:
+    store = load_flags(tmp_path)
+    with pytest.raises(KeyError) as excinfo:
+        store.enabled_for_mode("not-a-mode", "usb.export")
+    assert "not-a-mode" in str(excinfo.value)
+
+
+@pytest.mark.requirement("PERFMODE-07")
+def test_show_unbuildable_stays_process_level_not_mode_scoped(tmp_path: Path) -> None:
+    store = load_flags(tmp_path)
+    assert store.enabled_for_mode("performance", "app_mode.show_unbuildable") is False
+    assert store.enabled("app_mode.show_unbuildable") is False

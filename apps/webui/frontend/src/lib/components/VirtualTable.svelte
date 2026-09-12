@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Track } from '$lib/api';
 	import TrackRow from './TrackRow.svelte';
+	import TempoPrefPopover from './TempoPrefPopover.svelte';
 	import { goto } from '$app/navigation';
 
 	let {
@@ -9,6 +10,7 @@
 	}: { tracks: Track[]; onload_more?: () => void } = $props();
 
 	let selected = $state<number>(-1);
+	let tempoPrefEdit = $state<{ stableId: string; x: number; y: number } | null>(null);
 
 	function click(i: number): void {
 		selected = i;
@@ -50,11 +52,25 @@
 		</thead>
 		<tbody>
 			{#each tracks as track, i}
-				<TrackRow {track} selected={i === selected} onclick={() => click(i)} />
+				<TrackRow
+					{track}
+					selected={i === selected}
+					onclick={() => click(i)}
+					ontemporefedit={(stableId, x, y) => (tempoPrefEdit = { stableId, x, y })}
+				/>
 			{/each}
 		</tbody>
 	</table>
 </div>
+
+{#if tempoPrefEdit !== null}
+	<TempoPrefPopover
+		stableId={tempoPrefEdit.stableId}
+		x={tempoPrefEdit.x}
+		y={tempoPrefEdit.y}
+		onclose={() => (tempoPrefEdit = null)}
+	/>
+{/if}
 
 <style>
 	.table-wrap {

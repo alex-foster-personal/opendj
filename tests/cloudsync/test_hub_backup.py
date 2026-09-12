@@ -4,6 +4,8 @@ Every refusal here is paired with a subject the same instrument accepts, so
 a verify that said no to everything would fail the round trip, and one that
 said yes to everything would fail the corrupted-file control
 (.claude/rules/verification.md).
+
+[if] hub backup/restore run on real data [then] round trip works, bad files refuse, [else stop].
 """
 
 from __future__ import annotations

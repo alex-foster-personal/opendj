@@ -1,4 +1,7 @@
-"""Acceptance tests for the v10 state.db migration runbook (issue #2080)."""
+"""Acceptance tests for the v10 state.db migration runbook (issue #2080).
+
+[if] the v10 lyrics migration runs [then] dry-run writes nothing, live runs once, [else stop].
+"""
 from __future__ import annotations
 
 import hashlib

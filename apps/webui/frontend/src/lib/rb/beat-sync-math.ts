@@ -18,8 +18,8 @@
  *     [if] BSM is on and a BEAT-mode follower nearest-beat locks [then ⛔️]
  *
  * No DOM, Web Audio objects, nominal track BPM, or synthetic grid fallback.
- * Tempo ratios use beat INTERVALS (60/dt), never the PQTZ bpm field alone -
- * that field can disagree with .t (Proper Education: field 124.72 vs dt→125).
+ * Tempo ratios use local interval BPM at the play-position window (60/dt),
+ * never the track-mean of all intervals or the PQTZ bpm field alone.
  */
 import type { AnlzBeat, AnlzCue } from '$lib/rb/anlz-types';
 import type { LoopState } from '$lib/rb/deck-state-types';
@@ -851,9 +851,10 @@ export function planPhaseCompensatedReanchor(
  * Plan one scheduled follower seek and playback-rate change.
  *
  * The caller projects the master through its transport and loop map to the
- * requested future context time. Both decks then use local PQTZ BPM at their
- * anchor, and the follower receives the master's fractional beat phase. Bar
- * mode additionally requires equal PQTZ beat numbers and raw cadence.
+ * requested future context time. Both decks then use local interval BPM at
+ * the play-position window, never track-mean BPM, and the follower receives
+ * the master's fractional beat phase. Bar mode additionally requires equal
+ * PQTZ beat numbers and raw cadence.
  */
 export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerSyncPlan {
 	validateBeatGrid(request.masterGrid);

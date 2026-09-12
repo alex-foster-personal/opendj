@@ -16,7 +16,6 @@
       "own_key_camelot": null,
       "own_key_openkey": null,
       "rb_pssi": true,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
       "rb_phrases": [
@@ -46,7 +45,8 @@
           "kind": 4,
           "mood": 2
         }
-      ]
+      ],
+      "rb_cue_db": false
     },
     {
       "stable_id": "phrase-shift-0.4",
@@ -57,7 +57,6 @@
       "own_key_camelot": null,
       "own_key_openkey": null,
       "rb_pssi": true,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
       "rb_phrases": [
@@ -87,7 +86,8 @@
           "kind": 4,
           "mood": 2
         }
-      ]
+      ],
+      "rb_cue_db": false
     },
     {
       "stable_id": "phrase-shift-2.0",
@@ -98,7 +98,6 @@
       "own_key_camelot": null,
       "own_key_openkey": null,
       "rb_pssi": true,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
       "rb_phrases": [
@@ -128,7 +127,8 @@
           "kind": 4,
           "mood": 2
         }
-      ]
+      ],
+      "rb_cue_db": false
     },
     {
       "stable_id": "phrase-kind-miss",
@@ -139,7 +139,6 @@
       "own_key_camelot": null,
       "own_key_openkey": null,
       "rb_pssi": true,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
       "rb_phrases": [
@@ -169,7 +168,8 @@
           "kind": 88,
           "mood": 2
         }
-      ]
+      ],
+      "rb_cue_db": false
     },
     {
       "stable_id": "phrase-no-own",
@@ -180,7 +180,6 @@
       "own_key_camelot": null,
       "own_key_openkey": null,
       "rb_pssi": true,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
       "rb_phrases": [
@@ -196,7 +195,8 @@
           "kind": 4,
           "mood": 2
         }
-      ]
+      ],
+      "rb_cue_db": false
     },
     {
       "stable_id": "phrase-missing-pssi",
@@ -207,7 +207,6 @@
       "own_key_camelot": null,
       "own_key_openkey": null,
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
       "own_phrases": [
@@ -223,7 +222,8 @@
           "kind": 4,
           "mood": 2
         }
-      ]
+      ],
+      "rb_cue_db": false
     }
   ]
 }

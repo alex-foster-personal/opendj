@@ -124,6 +124,7 @@ def test_deterministic_match_cannot_skip_duration_gate() -> None:
 
 @pytest.mark.requirement("META-05")
 def test_captured_spotify_to_soundcloud_transfer_reports_every_bucket() -> None:
+    """[if] a transfer splits by match, escalation, ungrade [then] buckets separate, [else stop]."""
     source = parse_playlist_payload(SPOTIFY_CAPTURE)
     target_candidates = {
         source.tracks[0].spotify_uri: parse_tracks_payload(SOUNDCLOUD_STUDIO_WITH_ISRC),

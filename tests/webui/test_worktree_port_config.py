@@ -475,7 +475,9 @@ def test_claim_keeps_the_configured_pair_when_its_own_server_already_holds_it(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A vite config reload with no prior registry entry must not evict its own pair.
+    """[if] no registry entry, own server holds the pair [then] it is kept, [else stop].
+
+    A vite config reload with no prior registry entry must not evict its own pair.
 
     ``configured`` (the pair in ``.env``, or an explicit ``requested`` value) only
     got the ``_backend_listener_matches_pair`` exemption when it also happened to
@@ -515,7 +517,9 @@ def test_claim_moves_off_the_configured_pair_when_a_foreign_process_holds_it(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The listener exemption must never cover a genuinely foreign process.
+    """[if] no registry entry, a foreign process holds it [then] a new pair is used, [else stop].
+
+    The listener exemption must never cover a genuinely foreign process.
 
     Same starting state as the sibling test above (no registry entry for this
     worktree), but the process on the configured frontend port is NOT this
