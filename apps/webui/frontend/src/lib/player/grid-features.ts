@@ -67,7 +67,10 @@ function _beatgridSource(anlz: Pick<AnlzData, 'beatgrid'> | null | undefined): u
  *
  * Identifies the selected source ONLY from `anlz.beatgrid.source`, never from
  * the presence or absence of any other field. Any value other than the two
- * named literals is its own explicit untrusted branch.
+ * named literals is its own explicit untrusted branch. An own `status: ok` grid
+ * with several tempo anchors is trusted when `static_grid_untrusted` is not
+ * `true` (omitted on the multi-anchor `/anlz` wire, `false` on the record).
+ * Do not treat `tempo_changes.length > 0` as no grid.
  */
 export function hasTrustedBeatGrid(anlz: Pick<AnlzData, 'beatgrid'> | null | undefined): boolean {
 	if (anlz === null || anlz === undefined) return false;
