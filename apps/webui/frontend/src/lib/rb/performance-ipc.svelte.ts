@@ -51,6 +51,7 @@ import {
 	type AnalysisSourceFeature
 } from '$lib/rb/analysis-source.svelte';
 import { createPairing } from '$lib/api';
+import { hasTrustedBeatGrid } from '$lib/player/grid-features';
 import { planHotCueTrigger, quantizeToNearestDownbeat } from '$lib/rb/beat-sync-math';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
@@ -1688,7 +1689,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 				`hot cue ${command.slot}: deck has no live rekordbox mapping - cues need a rekordbox mapping`
 			);
 		}
-		const savedPositionMs = uiPrefs.beat_sync_max
+		// Untrusted own grids (static_grid_untrusted: true) must not BeatSyncMax-snap.
+		const beatSyncMaxSnap =
+			uiPrefs.beat_sync_max && hasTrustedBeatGrid(getDeckState(command.deck).anlz);
+		const savedPositionMs = beatSyncMaxSnap
 			? Math.round(
 				quantizeToNearestDownbeat(
 					getDeckState(command.deck).anlz?.beatgrid.beats ?? [],
@@ -1729,7 +1733,16 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			command.slot
 		);
 		if (cue === null) throw new Error(`hot cue ${command.slot}: nothing to trigger`);
-		const plan = planHotCueTrigger(uiPrefs.beat_sync_max, playing, loopEngaged, positionSec, beats);
+		const deckAnlz = getDeckState(command.deck).anlz;
+		const trustAnlz =
+			deckAnlz ?? { beatgrid: { source: 'rekordbox', beats, status: 'ok' } };
+		const plan = planHotCueTrigger(
+			uiPrefs.beat_sync_max && hasTrustedBeatGrid(trustAnlz),
+			playing,
+			loopEngaged,
+			positionSec,
+			beats
+		);
 		if (plan.kind === 'immediate') {
 			hotCueArmed[command.deck] = null;
 			await _hotCueDriver.jump(command.deck, cue.in_ms, pressT0Ms);
