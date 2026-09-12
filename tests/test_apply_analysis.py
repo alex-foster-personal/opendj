@@ -427,6 +427,7 @@ def _write_rb_db(path: Path) -> sqlite3.Connection:
         """
         CREATE TABLE djmdContent (
             ID TEXT PRIMARY KEY, BPM INTEGER, KeyID TEXT,
+            AnalysisDataPath TEXT,
             rb_local_deleted INTEGER DEFAULT 0
         );
         CREATE TABLE djmdKey (ID TEXT PRIMARY KEY, ScaleName TEXT);
@@ -722,6 +723,95 @@ class TestWritebackDryRun:
 
 
 # ---------------------------------------------------- write-back live (#2049)
+
+
+def _seed_own_grid(
+    state_path: Path,
+    stable_id: str,
+    beats: list[dict[str, float | int]],
+    *,
+    tempo_changes: tuple[dict[str, object], ...] = (),
+    bpm: float = 128.0,
+) -> None:
+    from datetime import UTC, datetime
+
+    from apps.analysis.lanes import LaneResult
+    from apps.analysis.record import AnalysisRecord
+
+    payload = {
+        "beats": beats,
+        "bpm": bpm,
+        "bpm_confidence": 1.0,
+        "octave_reason": "test",
+        "first_downbeat_s": float(beats[0]["t"]) if beats else 0.0,
+        "static_grid_untrusted": False,
+        "tempo_changes": list(tempo_changes),
+    }
+    record = AnalysisRecord(
+        stable_id=stable_id,
+        backend="own_beatgrid.backfill",
+        backend_version="1.0.0",
+        analyzed_at=datetime.now(UTC),
+        duration_s=float(beats[-1]["t"]) + 1.0 if beats else 60.0,
+        sample_rate=44100,
+        bpm=bpm,
+        bpm_confidence=1.0,
+        key_camelot="8A",
+        key_openkey="",
+        key_confidence=1.0,
+        energy=5,
+        producer="backfill",
+        producer_version="1.0.0",
+        uses_model=True,
+        model_sha256="sha256:" + "ab" * 32,
+        decode_fingerprint="sha256:" + "cd" * 32,
+        lanes={"beatgrid": LaneResult(status="ok", payload=payload)},
+    )
+    conn = sqlite3.connect(str(state_path))
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS analysis (
+            stable_id TEXT, backend TEXT, backend_version TEXT,
+            analyzed_at TEXT, duration_s REAL, sample_rate INTEGER,
+            bpm REAL, bpm_confidence REAL, key_camelot TEXT, key_openkey TEXT,
+            key_confidence REAL, energy INTEGER, energy_source TEXT,
+            record_json TEXT,
+            PRIMARY KEY (stable_id, backend, backend_version)
+        );
+        CREATE TABLE IF NOT EXISTS analysis_canonical (
+            stable_id TEXT, lane TEXT, backend TEXT, backend_version TEXT,
+            updated_at TEXT, PRIMARY KEY (stable_id, lane)
+        );
+        """
+    )
+    now = datetime.now(UTC).isoformat()
+    record_json = record.to_json()
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO analysis (
+            stable_id, backend, backend_version, analyzed_at, duration_s,
+            sample_rate, bpm, bpm_confidence, key_camelot, key_openkey,
+            key_confidence, energy, energy_source, record_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            stable_id, record.backend, record.backend_version, now,
+            record.duration_s, record.sample_rate, record.bpm,
+            record.bpm_confidence, record.key_camelot, record.key_openkey,
+            record.key_confidence, record.energy, record.energy_source,
+            record_json,
+        ),
+    )
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO analysis_canonical
+        (stable_id, lane, backend, backend_version, updated_at)
+        VALUES (?, 'beatgrid', ?, ?, ?)
+        """,
+        (stable_id, record.backend, record.backend_version, now),
+    )
+    conn.commit()
+    conn.close()
 
 
 def _stamp_writeback(
@@ -1045,6 +1135,320 @@ class TestWritebackLive:
             "--fields", "key",
         ]) == 0
 
+        conn = sqlite3.connect(str(rb_path))
+        assert conn.execute(
+            "SELECT BPM FROM djmdContent WHERE ID = 'rb-1'"
+        ).fetchone()[0] == 12800
+        conn.close()
+
+
+class TestPqtzWritebackLive:
+    def _beats(self, count: int = 8, bpm: float = 128.0) -> list[dict[str, float | int]]:
+        return [
+            {
+                "n": (i % 4) + 1,
+                "bpm": bpm,
+                "t": round(i * 0.46875, 3),
+            }
+            for i in range(count)
+        ]
+
+    def test_promoted_one_anchor_write_readback(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from pyrekordbox.anlz import AnlzFile
+
+        from apps.sync.analysis_writeback_pqtz import (
+            build_minimal_dat,
+            served_beats_from_own,
+            served_beats_from_pqtz_tag,
+        )
+
+        state_path = tmp_path / "state.db"
+        rb_path = tmp_path / "rb.db"
+        dat_path = tmp_path / "track.DAT"
+        seed = self._beats(4, 120.0)
+        build_minimal_dat(dat_path, seed)
+        state_conn = _write_state_db(state_path)
+        selection.set_default(state_conn, "beatgrid", "own")
+        state_conn.execute(
+            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
+        )
+        state_conn.commit()
+        state_conn.close()
+        _seed_own_grid(state_path, "t1", self._beats())
+        rb_conn = _write_rb_db(rb_path)
+        rb_conn.execute(
+            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) "
+            "VALUES ('rb-1', 12800, 'k1', ?)",
+            (str(dat_path),),
+        )
+        rb_conn.commit()
+        rb_conn.close()
+        _stamp_writeback(state_path, rb_path, ("beatgrid",), ("pqtz",))
+        monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
+        monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
+        monkeypatch.setattr(
+            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+        )
+        monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
+        assert main([
+            "--live", "--i-understand-the-risks",
+            "--state-db", str(state_path),
+            "--lanes", "beatgrid", "--fields", "pqtz",
+        ]) == 0
+        own_beats = self._beats()
+        pqtz = AnlzFile.parse_file(dat_path).get_tag("PQTZ")
+        assert served_beats_from_pqtz_tag(pqtz) == served_beats_from_own(own_beats)
+
+    def test_multi_anchor_refuses_write(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+    ) -> None:
+        from apps.sync.analysis_writeback_pqtz import build_minimal_dat
+
+        state_path = tmp_path / "state.db"
+        rb_path = tmp_path / "rb.db"
+        dat_path = tmp_path / "track.DAT"
+        build_minimal_dat(dat_path, self._beats(4))
+        dat_hash = _sha256(dat_path)
+        state_conn = _write_state_db(state_path)
+        selection.set_default(state_conn, "beatgrid", "own")
+        state_conn.execute(
+            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
+        )
+        state_conn.commit()
+        state_conn.close()
+        changes = (
+            {"at_s": 10.0, "bpm_before": 128.0, "bpm_after": 130.0, "confidence": 1.0},
+            {"at_s": 20.0, "bpm_before": 130.0, "bpm_after": 132.0, "confidence": 1.0},
+        )
+        _seed_own_grid(
+            state_path, "t1", self._beats(bpm=128.0), tempo_changes=changes,
+        )
+        rb_conn = _write_rb_db(rb_path)
+        rb_conn.execute(
+            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) "
+            "VALUES ('rb-1', 12800, 'k1', ?)",
+            (str(dat_path),),
+        )
+        rb_conn.commit()
+        rb_conn.close()
+        assert main([
+            "--state-db", str(state_path),
+            "--rb-db", str(rb_path),
+            "--lanes", "beatgrid", "--fields", "pqtz",
+        ]) == 0
+        out = capsys.readouterr().out
+        assert "dynamic" in out
+        _stamp_writeback(state_path, rb_path, ("beatgrid",), ("pqtz",))
+        monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
+        monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
+        monkeypatch.setattr(
+            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+        )
+        monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
+        assert main([
+            "--live", "--i-understand-the-risks",
+            "--state-db", str(state_path),
+            "--lanes", "beatgrid", "--fields", "pqtz",
+        ]) == 0
+        assert _sha256(dat_path) == dat_hash
+
+    def test_bpm_x100_boundary_separate_from_pqtz(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from apps.sync.analysis_writeback_pqtz import build_minimal_dat
+
+        state_path = tmp_path / "state.db"
+        rb_path = tmp_path / "rb.db"
+        dat_path = tmp_path / "track.DAT"
+        build_minimal_dat(dat_path, self._beats(4, 120.0))
+        dat_hash = _sha256(dat_path)
+        state_conn = _write_state_db(state_path)
+        selection.set_default(state_conn, "beatgrid", "own")
+        state_conn.execute(
+            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
+        )
+        state_conn.execute(
+            "INSERT INTO analysis_projection "
+            "(stable_id, field, value, status) VALUES ('t1', 'bpm', 129.0, 'ok')"
+        )
+        state_conn.commit()
+        state_conn.close()
+        _seed_own_grid(state_path, "t1", self._beats(bpm=129.0), bpm=129.0)
+        rb_conn = _write_rb_db(rb_path)
+        rb_conn.execute(
+            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) "
+            "VALUES ('rb-1', 12800, 'k1', ?)",
+            (str(dat_path),),
+        )
+        rb_conn.commit()
+        rb_conn.close()
+        _stamp_writeback(state_path, rb_path, ("beatgrid",), ("bpm", "pqtz"))
+        monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
+        monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
+        monkeypatch.setattr(
+            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+        )
+        monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
+        assert main([
+            "--live", "--i-understand-the-risks",
+            "--state-db", str(state_path),
+            "--lanes", "beatgrid", "--fields", "bpm,pqtz",
+        ]) == 0
+        conn = sqlite3.connect(str(rb_path))
+        assert conn.execute(
+            "SELECT BPM FROM djmdContent WHERE ID = 'rb-1'"
+        ).fetchone()[0] == 12900
+        conn.close()
+        _stamp_writeback(state_path, rb_path, ("beatgrid",), ("pqtz",))
+        assert main([
+            "--live", "--i-understand-the-risks",
+            "--state-db", str(state_path),
+            "--lanes", "beatgrid", "--fields", "pqtz",
+        ]) == 0
+        conn = sqlite3.connect(str(rb_path))
+        assert conn.execute(
+            "SELECT BPM FROM djmdContent WHERE ID = 'rb-1'"
+        ).fetchone()[0] == 12900
+        conn.close()
+        dat_hash_after_pqtz = _sha256(dat_path)
+        _stamp_writeback(state_path, rb_path, ("beatgrid",), ("bpm",))
+        assert main([
+            "--live", "--i-understand-the-risks",
+            "--state-db", str(state_path),
+            "--lanes", "beatgrid", "--fields", "bpm",
+        ]) == 0
+        assert _sha256(dat_path) == dat_hash_after_pqtz
+
+    def test_running_refuses_dat_unchanged(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+    ) -> None:
+        from apps.sync.analysis_writeback_pqtz import build_minimal_dat
+
+        state_path = tmp_path / "state.db"
+        rb_path = tmp_path / "rb.db"
+        dat_path = tmp_path / "track.DAT"
+        build_minimal_dat(dat_path, self._beats(4))
+        dat_hash = _sha256(dat_path)
+        state_conn = _write_state_db(state_path)
+        selection.set_default(state_conn, "beatgrid", "own")
+        state_conn.execute(
+            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
+        )
+        state_conn.commit()
+        state_conn.close()
+        _seed_own_grid(state_path, "t1", self._beats())
+        rb_conn = _write_rb_db(rb_path)
+        rb_conn.execute(
+            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) "
+            "VALUES ('rb-1', 12800, 'k1', ?)",
+            (str(dat_path),),
+        )
+        rb_conn.commit()
+        rb_conn.close()
+        _stamp_writeback(state_path, rb_path, ("beatgrid",), ("pqtz",))
+        monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
+        monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
+        monkeypatch.setattr(
+            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+        )
+        monkeypatch.setattr(
+            "apps.sync.safety._is_running",
+            lambda name: name == "Rekordbox",
+        )
+        assert main([
+            "--live", "--i-understand-the-risks",
+            "--state-db", str(state_path),
+            "--lanes", "beatgrid", "--fields", "pqtz",
+        ]) == 3
+        assert "Rekordbox is running" in capsys.readouterr().err
+        assert _sha256(dat_path) == dat_hash
+
+    def test_verify_mismatch_restores_dat(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from apps.sync.analysis_writeback_pqtz import build_minimal_dat
+
+        state_path = tmp_path / "state.db"
+        rb_path = tmp_path / "rb.db"
+        dat_path = tmp_path / "track.DAT"
+        build_minimal_dat(dat_path, self._beats(4, 120.0))
+        seed_hash = _sha256(dat_path)
+        state_conn = _write_state_db(state_path)
+        selection.set_default(state_conn, "beatgrid", "own")
+        state_conn.execute(
+            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
+        )
+        state_conn.commit()
+        state_conn.close()
+        _seed_own_grid(state_path, "t1", self._beats())
+        rb_conn = _write_rb_db(rb_path)
+        rb_conn.execute(
+            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) "
+            "VALUES ('rb-1', 12800, 'k1', ?)",
+            (str(dat_path),),
+        )
+        rb_conn.commit()
+        rb_conn.close()
+        _stamp_writeback(state_path, rb_path, ("beatgrid",), ("pqtz",))
+        monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
+        monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
+        monkeypatch.setattr(
+            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+        )
+        monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
+        monkeypatch.setattr(
+            "apps.sync.analysis_writeback_pqtz.verify_pqtz", lambda *_a: False,
+        )
+        assert main([
+            "--live", "--i-understand-the-risks",
+            "--state-db", str(state_path),
+            "--lanes", "beatgrid", "--fields", "pqtz",
+        ]) == 3
+        assert _sha256(dat_path) == seed_hash
+
+    def test_undo_restores_original_pqtz(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from apps.sync.analysis_writeback_pqtz import build_minimal_dat
+
+        state_path = tmp_path / "state.db"
+        rb_path = tmp_path / "rb.db"
+        dat_path = tmp_path / "track.DAT"
+        build_minimal_dat(dat_path, self._beats(4, 120.0))
+        seed_hash = _sha256(dat_path)
+        state_conn = _write_state_db(state_path)
+        selection.set_default(state_conn, "beatgrid", "own")
+        state_conn.execute(
+            "INSERT INTO track_vendor_ids VALUES ('t1', 'rekordbox', 'rb-1', NULL)"
+        )
+        state_conn.commit()
+        state_conn.close()
+        _seed_own_grid(state_path, "t1", self._beats())
+        rb_conn = _write_rb_db(rb_path)
+        rb_conn.execute(
+            "INSERT INTO djmdContent(ID, BPM, KeyID, AnalysisDataPath) "
+            "VALUES ('rb-1', 12800, 'k1', ?)",
+            (str(dat_path),),
+        )
+        rb_conn.commit()
+        rb_conn.close()
+        _stamp_writeback(state_path, rb_path, ("beatgrid",), ("pqtz",))
+        monkeypatch.setattr(paths, "REKORDBOX_PLAIN_DB", rb_path)
+        monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_path)
+        monkeypatch.setattr(
+            "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
+        )
+        monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
+        assert main([
+            "--live", "--i-understand-the-risks",
+            "--state-db", str(state_path),
+            "--lanes", "beatgrid", "--fields", "pqtz",
+        ]) == 0
+        preimage_path = next(tmp_path.parent.rglob("analysis_preimages.json"))
+        assert main(["--undo", str(preimage_path)]) == 0
+        assert _sha256(dat_path) == seed_hash
         conn = sqlite3.connect(str(rb_path))
         assert conn.execute(
             "SELECT BPM FROM djmdContent WHERE ID = 'rb-1'"

@@ -24,7 +24,7 @@ from apps.sync.safety import SafetyAbort
 # See ``_write_rb_field`` and ``live_run`` below: unsupported RB fields
 # now fail the run with a non-zero exit instead of being dropped.
 _SUPPORTED_RB_WRITE_FIELDS = frozenset({
-    "bpm", "energy", "key", "loudness_lufs", "loudness_dbtp",
+    "bpm", "energy", "key", "loudness_lufs", "loudness_dbtp", "pqtz",
 })
 
 
@@ -158,6 +158,7 @@ def _run_writeback_live(
     try:
         return live_writeback(
             plan=plan,
+            state_db=state_db,
             rb_db_path=rb_db_path,
             rb_conn=conn,
             fields=fields,
@@ -198,6 +199,19 @@ def _write_rb_field(db, content_id: str, field: str, value) -> bool:
         )
     import sqlite3
 
+    if isinstance(db, sqlite3.Connection) and field == "pqtz":
+        from apps.sync.analysis_writeback_pqtz import (
+            resolve_analysis_dat_path,
+            write_pqtz,
+        )
+
+        dat_path = resolve_analysis_dat_path(db, content_id)
+        if dat_path is None:
+            return False
+        ok = write_pqtz(dat_path, value)
+        if ok:
+            db.commit()
+        return ok
     if isinstance(db, sqlite3.Connection) and field in (
         "key", "loudness_lufs", "loudness_dbtp", "bpm",
     ):
@@ -208,6 +222,8 @@ def _write_rb_field(db, content_id: str, field: str, value) -> bool:
         if ok:
             db.commit()
         return ok
+    if field == "pqtz":
+        return False
     try:
         content = db.get_content(ID=str(content_id)).one()
     except Exception:
@@ -236,12 +252,24 @@ def _verify_rb_field(db, content_id: str, field: str, value) -> bool:
     """
     import sqlite3
 
+    if isinstance(db, sqlite3.Connection) and field == "pqtz":
+        from apps.sync.analysis_writeback_pqtz import (
+            resolve_analysis_dat_path,
+            verify_pqtz,
+        )
+
+        dat_path = resolve_analysis_dat_path(db, content_id)
+        if dat_path is None:
+            return False
+        return verify_pqtz(dat_path, value)
     if isinstance(db, sqlite3.Connection) and field in (
         "key", "loudness_lufs", "loudness_dbtp", "bpm",
     ):
         from apps.sync.analysis_writeback import verify_scalar
 
         return verify_scalar(db, content_id, field, value)
+    if field == "pqtz":
+        return False
     try:
         content = db.get_content(ID=str(content_id)).one()
     except Exception:
@@ -259,7 +287,7 @@ def _verify_rb_field(db, content_id: str, field: str, value) -> bool:
 
 
 _LIVE_DEFAULT_FIELDS = "bpm,manual_bpm,key_camelot,energy,tags"
-_WRITEBACK_DEFAULT_FIELDS = "bpm,key,loudness_lufs,loudness_dbtp"
+_WRITEBACK_DEFAULT_FIELDS = "bpm,key,loudness_lufs,loudness_dbtp,pqtz"
 
 
 def main(argv: list[str] | None = None) -> int:

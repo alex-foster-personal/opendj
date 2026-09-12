@@ -17,6 +17,7 @@ from apps.shared.state.db import open_ro
 
 WRITEBACK_FIELDS: dict[str, str] = {
     "bpm": "beatgrid",
+    "pqtz": "beatgrid",
     "key": "key",
     "loudness_lufs": "loudness",
     "loudness_dbtp": "loudness",
@@ -27,7 +28,7 @@ DENOMINATOR_LABEL = (
     "tracks resolvable in rekordbox that carry an own value for a promoted lane"
 )
 
-Bucket = Literal["writable", "no-own-value", "unmatched"]
+Bucket = Literal["writable", "no-own-value", "unmatched", "dynamic"]
 
 
 class UnpromotedLaneError(RuntimeError):
@@ -120,14 +121,48 @@ def _load_resolvable(
     return out
 
 
+def _load_pqtz_own_values(
+    state_conn: sqlite3.Connection,
+    only_tracks: set[str] | None,
+) -> dict[tuple[str, str], object]:
+    from apps.sync.analysis_writeback_pqtz import (
+        is_fixed_tempo_payload,
+        load_own_beatgrid,
+        pqtz_own_digest,
+    )
+
+    rows = state_conn.execute(
+        """
+        SELECT stable_id, vendor_id
+        FROM track_vendor_ids
+        WHERE vendor = 'rekordbox' AND deleted_at IS NULL
+        """
+    ).fetchall()
+    out: dict[tuple[str, str], object] = {}
+    for stable_id, vendor_id in rows:
+        sid = str(stable_id)
+        if only_tracks is not None:
+            vid = str(vendor_id) if vendor_id is not None else ""
+            if sid not in only_tracks and vid not in only_tracks:
+                continue
+        payload = load_own_beatgrid(state_conn, sid)
+        if payload is None:
+            continue
+        out[(sid, "pqtz")] = pqtz_own_digest(payload["beats"])
+        if not is_fixed_tempo_payload(payload):
+            out[(sid, "pqtz_dynamic")] = True
+    return out
+
+
 def _load_own_values(
     state_conn: sqlite3.Connection,
     fields: tuple[str, ...],
     only_tracks: set[str] | None,
 ) -> dict[tuple[str, str], object]:
-    if not fields:
+    scalar_fields = tuple(f for f in fields if f != "pqtz")
+    if not scalar_fields:
         return {}
-    placeholders = ",".join("?" for _ in fields)
+    placeholders = ",".join("?" for _ in scalar_fields)
     rows = state_conn.execute(
         f"""
         SELECT ap.stable_id, ap.field, ap.value, tv.vendor_id
@@ -140,7 +175,7 @@ def _load_own_values(
           AND ap.status = 'ok'
           AND ap.value IS NOT NULL
         """,
-        fields,
+        scalar_fields,
     ).fetchall()
     out: dict[tuple[str, str], object] = {}
     for stable_id, field, value, vendor_id in rows:
@@ -252,6 +287,9 @@ def _field_values(
     if field in ("loudness_lufs", "loudness_dbtp"):
         own_s = str(own) if own is not None else "-"
         return "-", own_s, "n/a" if own is not None else "-"
+    if field == "pqtz":
+        own_s = str(own) if own is not None else "-"
+        return "-", own_s, "-"
     return "-", str(own) if own is not None else "-", "-"
 
 
@@ -270,6 +308,8 @@ def plan_writeback(
 
     resolvable = _load_resolvable(state_conn, rb_conn, only_tracks)
     own_values = _load_own_values(state_conn, active_fields, only_tracks)
+    if "pqtz" in active_fields:
+        own_values.update(_load_pqtz_own_values(state_conn, only_tracks))
 
     stable_ids = set(resolvable) | {sid for sid, _ in own_values}
     rows: list[WritebackRow] = []
@@ -289,11 +329,16 @@ def plan_writeback(
             elif is_resolvable and not has_own:
                 bucket = "no-own-value"
             elif has_own and is_resolvable:
-                bucket = "writable"
+                if field == "pqtz" and own_values.get((stable_id, "pqtz_dynamic")):
+                    bucket = "dynamic"
+                else:
+                    bucket = "writable"
             else:
                 continue
 
             rbx_s, own_s, delta = _field_values(rb_conn, content_id, field, own)
+            if bucket == "dynamic" and field == "pqtz":
+                delta = "multi-anchor"
             rows.append(
                 WritebackRow(
                     stable_id=stable_id,
@@ -324,7 +369,7 @@ def plan_writeback(
 
 
 def render_plan(plan: WritebackPlan) -> None:
-    counts = {"writable": 0, "no-own-value": 0, "unmatched": 0}
+    counts = {"writable": 0, "no-own-value": 0, "unmatched": 0, "dynamic": 0}
     for row in plan.rows:
         counts[row.bucket] += 1
 
@@ -333,6 +378,7 @@ def render_plan(plan: WritebackPlan) -> None:
     print(f"writable: {counts['writable']}")
     print(f"no-own-value: {counts['no-own-value']}")
     print(f"unmatched: {counts['unmatched']}")
+    print(f"dynamic: {counts['dynamic']}")
     print()
     print(
         "stable_id  field          rbx     own     delta   lane      "

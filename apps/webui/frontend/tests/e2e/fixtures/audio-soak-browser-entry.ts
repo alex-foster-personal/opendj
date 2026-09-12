@@ -411,6 +411,7 @@ function install(): void {
 				recordPerfEvent: (kind, message, severity) => progress.perf.push({ kind, message, severity }),
 				setInterval: (fn, ms) => setInterval(fn, ms),
 				clearInterval: (h) => clearInterval(h as ReturnType<typeof setInterval>),
+				now: () => performance.now(),
 				onSnapshot: (snapshot) => {
 					outputLivenessVerdict = snapshot.verdict;
 				}
@@ -665,7 +666,9 @@ function install(): void {
 			// device report 0 for the debounce's full window, so this stays a
 			// live, non-triggering reading for the whole run.
 			const outputLatencyDead =
-				outputLivenessVerdict === 'dead' || outputLivenessVerdict === 'dead-escalated';
+				outputLivenessVerdict === 'dead' ||
+				outputLivenessVerdict === 'dead-escalated' ||
+				outputLivenessVerdict === 'stalled';
 			deviceLivenessState = foldDeviceLivenessSample(deviceLivenessState, {
 				playing,
 				masterRms,

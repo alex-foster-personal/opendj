@@ -21,6 +21,11 @@
  *   with the current verdict, not only on a toast-worthy transition - the
  *   output-health bar (pin 93c82bb36eb7) has no other way to reflect "idle"
  *   or a still-dead poll that is not the alarm/escalation edge
+ * [if] a running context with a playing deck reports the same getOutputTimestamp.contextTime
+ *   for more than 2 s [then] verdict stalled, one error toast, one error perf row,
+ *   one recoverOutput call
+ * [if] outputLatency is > 0 but the timestamp is frozen [then] stalled, never ok
+ * [if] the timestamp advances [then] verdict ok and recoverOutput is not called
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -29,19 +34,45 @@ import { before, describe, it } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
-function harness({ playing = true, state = 'running', latency = 0 } = {}) {
+function harness({ playing = true, state = 'running', latency = 0, frozenTimestamp = false } = {}) {
 	const calls = [];
 	const snapshots = [];
-	const ctx = { state, outputLatency: latency, baseLatency: 0.0058, sinkId: '', getOutputTimestamp: () => ({ contextTime: 1, performanceTime: 2 }) };
+	let nowMs = 0;
+	let contextTime = 0.1;
+	const ctx = {
+		state,
+		outputLatency: latency,
+		baseLatency: 0.0058,
+		sinkId: '',
+		getOutputTimestamp: () => ({ contextTime, performanceTime: nowMs })
+	};
 	let intervalFn = null;
 	const effects = {
 		pushToast: (m, k) => calls.push(`toast:${k}:${m.slice(0, 20)}`),
 		recordPerfEvent: (kind, _m, sev) => calls.push(`perf:${kind}:${sev}`),
-		setInterval: (fn) => { intervalFn = fn; return 'h'; },
-		clearInterval: () => { intervalFn = null; },
-		onSnapshot: (s) => snapshots.push(s)
+		setInterval: (fn) => {
+			intervalFn = fn;
+			return 'h';
+		},
+		clearInterval: () => {
+			intervalFn = null;
+		},
+		onSnapshot: (s) => snapshots.push(s),
+		now: () => nowMs,
+		recoverOutput: () => calls.push('recover')
 	};
-	return { ctx, effects, calls, snapshots, poll: () => intervalFn && intervalFn(), isPlaying: () => playing };
+	return {
+		ctx,
+		effects,
+		calls,
+		snapshots,
+		poll: () => intervalFn && intervalFn(),
+		isPlaying: () => playing,
+		advance(ms) {
+			nowMs += ms;
+			if (!frozenTimestamp) contextTime += ms / 1000;
+		}
+	};
 }
 
 describe('installOutputLiveness', () => {
@@ -55,14 +86,11 @@ describe('installOutputLiveness', () => {
 		const live = mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
 		h.poll();
 		assert.deepEqual(h.calls, [], 'one zero poll is grace, not an alarm');
+		h.advance(mod.LIVENESS_POLL_MS);
 		h.poll();
 		assert.equal(live.verdict(), 'dead');
 		assert.deepEqual(h.calls, ['perf:audio-output-dead:error', 'toast:error:NO AUDIO OUTPUT: the'],
 			'if a dead output is not an error state then silence stays silent - broken');
-		// The re-bind request crosses a module boundary the TS loader instantiates
-		// separately per test, so it is pinned at source level: the dead verdict
-		// must call noteOutputStall, which audio-output-rebind.test.mjs proves cycles
-		// the context.
 		const src = readFileSync(fileURLToPath(new URL('../../src/lib/rb/audio-output-liveness.ts', import.meta.url)), 'utf8');
 		const deadBranch = src.slice(src.indexOf("verdict = 'dead';"), src.indexOf("} else if (deadPolls === LIVENESS_ESCALATE_POLLS)"));
 		assert.ok(deadBranch.includes('noteOutputStall(0)'), 'if the dead verdict does not request a re-bind then nothing tries to recover - broken');
@@ -71,7 +99,10 @@ describe('installOutputLiveness', () => {
 	it('four zero polls = sticky reload escalation, once', () => {
 		const h = harness();
 		const live = mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
-		for (let i = 0; i < 5; i++) h.poll();
+		for (let i = 0; i < 5; i++) {
+			h.advance(mod.LIVENESS_POLL_MS);
+			h.poll();
+		}
 		assert.equal(live.verdict(), 'dead-escalated');
 		assert.equal(h.calls.filter((c) => c.startsWith('perf:audio-output-dead-persistent')).length, 1);
 		assert.equal(h.calls.filter((c) => c.startsWith('toast:error')).length, 2, 'exactly one alarm and one escalation, not a toast per poll');
@@ -80,9 +111,15 @@ describe('installOutputLiveness', () => {
 	it('latency returning flips to ok with one restored toast', () => {
 		const h = harness();
 		const live = mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
-		h.poll(); h.poll();
+		h.advance(mod.LIVENESS_POLL_MS);
+		h.poll();
+		h.advance(mod.LIVENESS_POLL_MS);
+		h.poll();
 		h.ctx.outputLatency = 0.19;
-		h.poll(); h.poll();
+		h.advance(100);
+		h.poll();
+		h.advance(100);
+		h.poll();
 		assert.equal(live.verdict(), 'ok');
 		assert.equal(h.calls.filter((c) => c === 'toast:info:Audio output restore').length, 1);
 	});
@@ -90,25 +127,60 @@ describe('installOutputLiveness', () => {
 	it('nothing playing, or a non-running context, never alarms', () => {
 		const idle = harness({ playing: false });
 		mod.installOutputLiveness(idle.ctx, idle.effects, idle.isPlaying);
-		for (let i = 0; i < 6; i++) idle.poll();
+		for (let i = 0; i < 6; i++) {
+			idle.advance(mod.LIVENESS_POLL_MS);
+			idle.poll();
+		}
 		assert.deepEqual(idle.calls, []);
 		const suspended = harness({ state: 'suspended' });
 		mod.installOutputLiveness(suspended.ctx, suspended.effects, suspended.isPlaying);
-		for (let i = 0; i < 6; i++) suspended.poll();
+		for (let i = 0; i < 6; i++) {
+			suspended.advance(mod.LIVENESS_POLL_MS);
+			suspended.poll();
+		}
 		assert.deepEqual(suspended.calls, []);
 	});
 
 	it('healthy latency throughout = ok and silent', () => {
 		const h = harness({ latency: 0.19 });
 		const live = mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
-		for (let i = 0; i < 6; i++) h.poll();
+		for (let i = 0; i < 6; i++) {
+			h.advance(100);
+			h.poll();
+		}
 		assert.equal(live.verdict(), 'ok');
+		assert.deepEqual(h.calls, []);
+	});
+
+	it('frozen timestamp with latency > 0 for > 2 s => stalled + recover once', () => {
+		const h = harness({ latency: 0.19, frozenTimestamp: true });
+		const live = mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
+		h.poll();
+		h.advance(mod.OUTPUT_STALL_MS + 1);
+		h.poll();
+		assert.equal(live.verdict(), 'stalled');
+		assert.equal(h.calls.filter((c) => c === 'perf:audio-output-stalled:error').length, 1);
+		assert.equal(h.calls.filter((c) => c.startsWith('toast:error:NO AUDIO OUTPUT:')).length, 1);
+		assert.equal(h.calls.filter((c) => c === 'recover').length, 1);
+		h.advance(100);
+		h.poll();
+		assert.equal(h.calls.filter((c) => c === 'recover').length, 1, 'still stalled must not re-recover');
+	});
+
+	it('advancing timestamp stays ok and never calls recoverOutput', () => {
+		const h = harness({ latency: 0.19 });
+		mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
+		for (let i = 0; i < 4; i++) {
+			h.advance(800);
+			h.poll();
+		}
 		assert.deepEqual(h.calls, []);
 	});
 
 	it('snapshot carries the fields an agent needs', () => {
 		const h = harness({ latency: 0.192 });
 		const live = mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
+		h.advance(100);
 		h.poll();
 		const s = live.snapshot();
 		assert.deepEqual(Object.keys(s).sort(), ['base_latency_ms', 'output_context_time_s', 'output_latency_ms', 'sink_id', 'state', 'verdict']);
@@ -125,8 +197,11 @@ describe('onSnapshot (pin 93c82bb36eb7: the output-health bar)', () => {
 	it('fires on every poll, not only on a verdict change', () => {
 		const h = harness({ latency: 0.19 });
 		mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
+		h.advance(100);
 		h.poll();
+		h.advance(100);
 		h.poll();
+		h.advance(100);
 		h.poll();
 		assert.equal(h.snapshots.length, 3, 'a poll that produces no toast still owes the bar a reading');
 		assert.deepEqual(h.snapshots.map((s) => s.verdict), ['ok', 'ok', 'ok']);
@@ -143,10 +218,14 @@ describe('onSnapshot (pin 93c82bb36eb7: the output-health bar)', () => {
 	it('carries the dead verdict on the poll that raises it, and dead-escalated on the fourth', () => {
 		const h = harness();
 		mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
+		h.advance(mod.LIVENESS_POLL_MS);
 		h.poll();
+		h.advance(mod.LIVENESS_POLL_MS);
 		h.poll();
 		assert.equal(h.snapshots.at(-1).verdict, 'dead');
+		h.advance(mod.LIVENESS_POLL_MS);
 		h.poll();
+		h.advance(mod.LIVENESS_POLL_MS);
 		h.poll();
 		assert.equal(h.snapshots.at(-1).verdict, 'dead-escalated');
 	});
@@ -168,12 +247,6 @@ describe('wiring (source guard)', () => {
 
 	it('disarmContextInstrumentation uninstalls the liveness poll', () => {
 		const src = readFileSync(fileURLToPath(new URL('../../src/lib/rb/audio-context-instrumentation.ts', import.meta.url)), 'utf8');
-		// `armAudioContextWatchdog` also calls `_outputLiveness?.uninstall()` (it
-		// clears the previous handle before arming a fresh one), so a loose
-		// `disarmContextInstrumentation[\s\S]*?...` regex still matches there even
-		// if the teardown's own call is deleted. Delimit the body by brace-counting
-		// from the function's opening `{` so this can only match inside
-		// `disarmContextInstrumentation` itself.
 		const disarmStart = src.indexOf('export function disarmContextInstrumentation(');
 		assert.ok(disarmStart !== -1, 'disarmContextInstrumentation not found in source');
 		const braceOpen = src.indexOf('{', disarmStart);

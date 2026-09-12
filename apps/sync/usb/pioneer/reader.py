@@ -20,6 +20,8 @@ Design notes
   and the SQLCipher key for OneLibrary is not publicly documented (it
   differs from the desktop ``master.db`` key and must be recovered via
   reverse engineering). Tracked under CAT-06 follow-up.
+* Per-track key/grid/loudness presence for write-back verify lives in
+  :func:`apps.sync.usb.pioneer.value_verify.verify_stick_values`.
 
 Requirement: CAT-06.
 """
@@ -345,6 +347,23 @@ def read_anlz_dir(anlz_dir: Path) -> dict[str, Any]:
         "tag_types": list(f.tag_types),
         "beat_grid": beats,
         "cue_points": cues,
+    }
+
+
+def grid_summary_from_anlz(anlz_dir: Path) -> dict[str, Any] | None:
+    """Return ``{beat_count, first_bpm, first_time_ms}`` or ``None`` if no PQTZ."""
+    try:
+        parsed = read_anlz_dir(anlz_dir)
+    except (FileNotFoundError, OSError):
+        return None
+    beats = parsed.get("beat_grid") or []
+    if not beats:
+        return None
+    first = beats[0]
+    return {
+        "beat_count": len(beats),
+        "first_bpm": float(first["bpm"]),
+        "first_time_ms": int(first["time_ms"]),
     }
 
 

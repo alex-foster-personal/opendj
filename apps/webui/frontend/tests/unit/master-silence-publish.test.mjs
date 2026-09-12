@@ -92,4 +92,10 @@ describe('the master meter publishes only what it measured', () => {
 		assert.match(elseBranch, /_lastMasterRms = masterRms;/);
 		assert.match(elseBranch, /_lastMasterRmsAtMs = Date\.now\(\);/);
 	});
+
+	it('overlays output-stalled-while-rendering when rms is high and output is stalled', () => {
+		assert.match(source, /RENDERING_RMS_FLOOR = 0\.05/);
+		assert.match(source, /audioOutputHealth\.snapshot\?\.verdict === 'stalled'/);
+		assert.match(source, /output-stalled-while-rendering/);
+	});
 });
