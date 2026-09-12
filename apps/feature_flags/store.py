@@ -134,6 +134,46 @@ FLAGS: tuple[FlagDef, ...] = (
     ),
 )
 
+APP_MODE_IDS: tuple[str, ...] = (
+    "performance",
+    "library-management",
+    "music-player",
+)
+
+#: Per-mode in-scope flag ids (PERFMODE-07 / issue #2041).
+#: Performance keeps the current surface flags. Unbuilt modes are empty
+#: until those contracts exist. Membership is not availability: APP_MODES
+#: rows stay available:false regardless of this table.
+APP_MODE_FEATURE_FLAGS: dict[str, frozenset[str]] = {
+    "performance": frozenset({"usb.export", "local_stems.executor"}),
+    "library-management": frozenset(),
+    "music-player": frozenset(),
+}
+
+
+def _check_mode_feature_flags(
+    *,
+    defs: tuple[FlagDef, ...] = FLAGS,
+    table: dict[str, frozenset[str]] = APP_MODE_FEATURE_FLAGS,
+) -> None:
+    declared = {definition.flag_id for definition in defs}
+    if set(table) != set(APP_MODE_IDS):
+        raise KeyError(
+            f"APP_MODE_FEATURE_FLAGS keys {sorted(table)} must equal "
+            f"APP_MODE_IDS {list(APP_MODE_IDS)}"
+        )
+    for mode_id, flag_ids in table.items():
+        unknown = sorted(flag_ids - declared)
+        if unknown:
+            raise KeyError(
+                f"undeclared feature flag {unknown[0]!r}: add a FlagDef to "
+                "apps.feature_flags.store.FLAGS before reading it. Declared: "
+                f"{sorted(declared)}"
+            )
+
+
+_check_mode_feature_flags()
+
 
 @dataclass(frozen=True)
 class FlagRefusal:
@@ -267,6 +307,24 @@ class FlagStore:
             )
         return self._overrides.get(flag_id, definition.default)
 
+    def enabled_for_mode(self, mode_id: str, flag_id: str) -> bool:
+        """Is this flag in-scope for the mode and on for this process?
+
+        ``KeyError`` for an undeclared flag (via ``enabled``) or mode id.
+        A declared flag missing from the mode's set returns ``False``.
+        """
+        process_on = self.enabled(flag_id)
+        try:
+            in_scope = APP_MODE_FEATURE_FLAGS[mode_id]
+        except KeyError:
+            raise KeyError(
+                f"undeclared app mode {mode_id!r}: must be one of "
+                f"{list(APP_MODE_IDS)}"
+            ) from None
+        if flag_id not in in_scope:
+            return False
+        return process_on
+
     def state(self, flag_id: str) -> FlagState:
         """The resolved state of one declared flag. ``KeyError`` if undeclared."""
         definition = self._defs.get(flag_id)
@@ -370,6 +428,8 @@ def store_profile_is_source(store: FlagStore) -> bool:
 
 
 __all__ = [
+    "APP_MODE_FEATURE_FLAGS",
+    "APP_MODE_IDS",
     "FLAGS",
     "FLAGS_FILENAME",
     "FLAGS_FILE_ENV",

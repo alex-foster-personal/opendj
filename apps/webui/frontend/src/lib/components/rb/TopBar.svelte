@@ -60,8 +60,10 @@
 	import { buildFlags } from '$lib/api/store-build.svelte';
 	import {
 		APP_MODES,
+		LOCAL_STEMS_EXECUTOR_FLAG_ID,
 		SHOW_UNBUILDABLE_APP_MODES_FLAG_ID,
 		chooserAppModes,
+		modeFeatureEnabled,
 		showUnbuildableAppModes
 	} from '$lib/rb/app-mode';
 
@@ -95,6 +97,9 @@
 		)
 	);
 	const chooserModes = $derived(chooserAppModes(showUnbuildableModes));
+	const stemsProgressLive = $derived(
+		modeFeatureEnabled(liveAppMode.id, LOCAL_STEMS_EXECUTOR_FLAG_ID)
+	);
 
 	const autoPlayTitle: string = $derived.by(() => {
 		const d = describeAutoPlayMode(uiPrefs);
@@ -275,7 +280,9 @@
 	<!-- Stems separation, aggregate and live off jobs.updated. Renders nothing
 	     while no stems job is active, so it costs no space the rest of the
 	     time; clicking it opens the JOBS drawer for the per-job detail. -->
-	<StemsProgress />
+	{#if stemsProgressLive}
+		<StemsProgress />
+	{/if}
 
 	<details class="mode-picker" bind:this={modePickerEl} ontoggle={_placeModeMenu}>
 		<summary class="mode-dd" aria-label="Choose app mode" title="App mode picker - Gig is the current mode">

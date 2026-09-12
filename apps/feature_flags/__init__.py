@@ -21,6 +21,8 @@ ever exists.
 from __future__ import annotations
 
 from apps.feature_flags.store import (
+    APP_MODE_FEATURE_FLAGS,
+    APP_MODE_IDS,
     FLAGS,
     FLAGS_FILE_ENV,
     FLAGS_FILENAME,
@@ -36,6 +38,8 @@ from apps.feature_flags.store import (
 )
 
 __all__ = [
+    "APP_MODE_FEATURE_FLAGS",
+    "APP_MODE_IDS",
     "FLAGS",
     "FLAGS_FILENAME",
     "FLAGS_FILE_ENV",
