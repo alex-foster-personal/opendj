@@ -23,28 +23,44 @@
 	// provider.total.
 	import { untrack, type Snippet } from 'svelte';
 	import { artworkUrl, artworkStatusLabel, type Vocals } from '$lib/rb/api-rb';
-	import { analysisIssuesFor } from '$lib/rb/analysis-issues';
-	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
-	import { columnHeaderTitle, type LibraryColTipId } from '$lib/rb/column-tips';
-	import { bpmHeatColor, bpmHeatLabel, classifyBpmHeat, genreHoverColor } from './track-table-colors';
-	import { masterFoldCenterPx } from '$lib/rb/master-fold-anchor';
 	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
-	import { highlightSpans, rowMatchesFind } from '$lib/rb/find-highlight';
+	import {
+		analysisIssuesFor,
+		camelotKeyColor,
+		camelotKeyHoverLabel,
+		columnHeaderTitle,
+		type LibraryColTipId,
+		masterFoldCenterPx,
+		highlightSpans,
+		rowMatchesFind,
+		buildCurveSegments,
+		segmentPath,
+		describeAutoPlayMode,
+		installTrackDragGhost,
+		removeTrackDragGhost,
+		trackDragRefusal,
+		bpmHeatColor,
+		bpmHeatLabel,
+		classifyBpmHeat,
+		genreHoverColor,
+		columnExplainer,
+		trackEditMenuItems,
+		type TrackEditModalKind,
+		addToPlaylistMenuItem,
+		removeFromLibraryMenuItem,
+		showInPlaylistsMenuItem
+	} from './track-table-support';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
 	import { autoPlayOrder } from '$lib/rb/auto-play.svelte';
 	import { autoPlayQueue } from '$lib/rb/autoplay-queue.svelte';
-	import { buildCurveSegments, segmentPath } from '$lib/rb/autoplay-curve';
-	import { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
 	import { deckHoverUi } from '$lib/rb/deck-hover.svelte';
 	import { setConfirmPref, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { quickDrawUi } from '$lib/rb/quick-draw-ui.svelte';
-	import { installTrackDragGhost, removeTrackDragGhost } from '$lib/rb/drag-ghost';
 	import { beginTrackDrag, endTrackDrag, TRACK_STABLE_MIME } from '$lib/rb/track-drag.svelte';
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
 	import AutoPlayExplainer from './AutoPlayExplainer.svelte';
 	import AutoPlayRankCell from './AutoPlayRankCell.svelte';
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
-	import { columnExplainer } from './column-explainer-placement';
 	import LyricColumn from './LyricColumn.svelte';
 	import PreviewStrip from './PreviewStrip.svelte';
 	import QualityBadge from '../QualityBadge.svelte';
@@ -66,14 +82,9 @@
 		type AnalysisIssues
 	} from '$lib/rb/job-progress.svelte';
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
-	import { trackDragRefusal } from '$lib/rb/track-drag-refusal';
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
 	import ContextMenu, { type ContextMenuItem } from '../ContextMenu.svelte';
 	import SpinnerIcon from './SpinnerIcon.svelte';
-	import { trackEditMenuItems, type TrackEditModalKind } from './track-edit-menu';
-	import { addToPlaylistMenuItem } from './add-to-playlist-menu';
-	import { removeFromLibraryMenuItem } from './track-library-menu';
-	import { showInPlaylistsMenuItem } from './track-playlists-menu';
 	import TrackPlaylistsPopover from './TrackPlaylistsPopover.svelte';
 
 	type DeckId = (typeof DECK_IDS)[number];

@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from apps.engine_core.store.schema import normalize_object_sql
-from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
 from apps.shared.state.migrations_v13 import _V13
 

@@ -22,10 +22,10 @@ Regression one-liners:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone, UTC
+from collections.abc import Iterator
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from fastapi import FastAPI
