@@ -14,9 +14,10 @@
  *
  * P0 scope covered by MidiAction (spike section 5, "P0 plug-and-play
  * wins"): transport play/cue, hot cues, auto/beat loops, mixer continuous
- * controls (trim/EQ/fader/crossfader/master), pitch faders, browse+load,
- * shift-layer modifier. Scratch, jog bitmap, stems, sampler, FX and DVS are
- * explicitly NOT modelled here.
+ * controls (trim/EQ/fader/crossfader/master), channel cue/PFL, headphone
+ * mix/level, master cue (VirtualDJ-style force-master overlay), pitch faders,
+ * browse+load, shift-layer modifier. Scratch, jog bitmap, stems, sampler,
+ * FX and DVS are explicitly NOT modelled here.
  *
  * Requirements (mini-PRD):
  *   ✔︎ Discriminated MidiAction union covering exactly the P0 scope.
@@ -134,6 +135,28 @@ export interface ShiftModifierAction {
 	type: 'shift_modifier';
 }
 
+/** Channel CUE / PFL. Press toggles; Pioneer and Mixtour send press/release
+ * on one note, so there is no distinct "off" message. */
+export interface ChannelCueAction {
+	type: 'channel_cue';
+	deck: DeckId;
+}
+
+export interface HeadphoneMixAction {
+	type: 'headphone_mix';
+}
+
+export interface HeadphoneLevelAction {
+	type: 'headphone_level';
+}
+
+/** Force the monitor mix to full master (VirtualDJ-style). `mode` is
+ * chosen by the device map. */
+export interface MasterCueAction {
+	type: 'master_cue';
+	mode: 'hold' | 'latch';
+}
+
 /** Every action the P0 runtime can emit. Adding a case = widening P0
  * scope; do that in a contract change, not ad hoc in a device map. */
 export type MidiAction =
@@ -144,6 +167,10 @@ export type MidiAction =
 	| DeckLoopExitAction
 	| MixerChannelAction
 	| MixerGlobalAction
+	| ChannelCueAction
+	| HeadphoneMixAction
+	| HeadphoneLevelAction
+	| MasterCueAction
 	| DeckPitchAction
 	| BrowseEncoderAction
 	| BrowseLoadAction
@@ -191,7 +218,8 @@ export type LedTrigger =
 	/** Lit when the hot-cue slot is populated. On RGB pads velocityOn may
 	 * be overridden per-cue by the palette resolver (FLX10: Note-On
 	 * velocity 1-127 selects the colour palette entry - spike 2a). */
-	| { kind: 'hot_cue_present'; deck: DeckId; slot: HotCueSlot };
+	| { kind: 'hot_cue_present'; deck: DeckId; slot: HotCueSlot }
+	| { kind: 'channel_cue_enabled'; deck: DeckId };
 
 /** One LED output rule: when trigger is true send velocityOn, else
  * velocityOff, as a Note On to (ch, note) on the device's MIDI output. */
