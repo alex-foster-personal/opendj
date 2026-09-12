@@ -25,8 +25,9 @@ ETag / error semantics copied from the tracks PATCH:
 ``PUT .../tracks`` is the full-replace membership primitive for import/restore.
 ``POST .../items:add`` is the O(1) append/insert primitive (LIBM-20): one or
 more tracks are inserted without rewriting existing membership rows.
-``DELETE .../items/{item_id}`` is the O(1) remove primitive (LIBM-21): one
-membership row is tombstoned without rewriting neighbors.
+``POST .../items:remove`` and ``DELETE .../items/{item_id}`` are the O(1)
+remove primitives (LIBM-21): membership rows are tombstoned without rewriting
+neighbors.
 ``POST .../items:move`` is the O(k) slice reorder primitive (LIBM-22): a
 contiguous block moves by updating order_keys only.
 
@@ -110,6 +111,10 @@ class MembershipTransferIn(BaseModel):
     mode: Literal["add", "move"]
     source_playlist_id: str | None = None
     source_etag: str | None = None
+
+
+class MembershipRemoveIn(BaseModel):
+    item_ids: list[str] = Field(min_length=1)
 
 
 class MembershipMoveIn(BaseModel):
@@ -286,6 +291,23 @@ def add_playlist_items(
     row = store.add_memberships(
         playlist_id, body.stable_ids, position=body.position,
     )
+    publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
+    return _out(row, response)
+
+
+@router.post(
+    "/{playlist_id}/items:remove",
+    response_model=PlaylistWriteOut,
+    operation_id="remove_playlist_items",
+)
+def remove_playlist_items(
+    playlist_id: str,
+    body: MembershipRemoveIn,
+    response: Response,
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008
+    store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
+) -> PlaylistWriteOut:
+    row = store.remove_memberships(playlist_id, body.item_ids)
     publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
     return _out(row, response)
 

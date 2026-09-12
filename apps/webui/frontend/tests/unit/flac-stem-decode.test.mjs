@@ -1257,6 +1257,21 @@ const MPEG_FIXTURE = path.join(
 
 let mpegBytes;
 
+test('MPEG bytes are not-flac when the mpeg rung is not shipped (default ship gate)', async () => {
+	mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
+	decode.stemDecodeSession.resetLane();
+	const ctx = fakeContext(22050);
+	const { factory, state } = fakeDecoderFactory({ sampleRate: 22050 });
+	const allMpeg = () => Object.fromEntries(PARTS.map((part) => [part, mpegBytes.buffer.slice(0)]));
+	const result = await decode.decodeStemParts(ctx, allMpeg(), PARTS, {
+		makeDecoder: factory,
+		decodeFallback: countingFallback().fn
+	});
+	assert.equal(state.made, 0, 'ship gate off: MPEG must not take a decoder');
+	assert.ok(result.reports.every((r) => r.refusal === 'not-flac'));
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length, 'mpeg'), null);
+});
+
 test('MPEG bytes take the worker path when the mpeg lane is forced', withMpegRung(async () => {
 	mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
 	const ctx = fakeContext(22050);

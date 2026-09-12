@@ -11,7 +11,10 @@ import {
 	independenceHolds,
 	kpiId,
 	laneTimingsToRows,
-	missingFixtureMessage
+	missingFixtureMessage,
+	mpegKpiId,
+	mpegLaneTimingsToRows,
+	mpegLedgerAppendAllowed
 } from '../live/stem-decode-kpis.mjs';
 
 test('aliasTwoPartBundle maps vocals and drums-as-instrumental', () => {
@@ -148,4 +151,110 @@ test('appendLedger refuses empty rows', () => {
 test('missingFixtureMessage names Q18_FLAC_DIR', () => {
 	const lines = missingFixtureMessage({ found: 0, required: 4, fixtureDir: '/tmp/missing' });
 	assert.ok(lines.some((line) => line.includes('Q18_FLAC_DIR')));
+});
+
+test('mpegKpiId names the four declared mp3 KPI cards', () => {
+	assert.equal(mpegKpiId({ engine: 'webkit', lane: 'main-thread' }), 'stem_decode_4way_mp3_ms_webkit_main');
+	assert.equal(mpegKpiId({ engine: 'webkit', lane: 'workers' }), 'stem_decode_4way_mp3_ms_webkit_workers');
+	assert.equal(mpegKpiId({ engine: 'chromium', lane: 'main-thread' }), 'stem_decode_4way_mp3_ms_chromium_main');
+	assert.equal(
+		mpegKpiId({ engine: 'chromium', lane: 'workers' }),
+		'stem_decode_4way_mp3_ms_chromium_workers'
+	);
+	assert.throws(() => mpegKpiId({ engine: 'firefox', lane: 'workers' }), /unknown engine/);
+	assert.throws(() => mpegKpiId({ engine: 'webkit', lane: 'bad' }), /unknown lane/);
+});
+
+test('mpegLaneTimingsToRows emits four rows with shared capture metadata', () => {
+	const rows = mpegLaneTimingsToRows(
+		[
+			{
+				engine: 'webkit',
+				baselineMs: 900,
+				workerMs: 500,
+				chosenLane: 'workers',
+				agrees: true,
+				maxAbsDiff: 0,
+				lengthDelta: 0,
+				alignOffset: 0,
+				lsbAgrees: true
+			},
+			{
+				engine: 'chromium',
+				baselineMs: 260,
+				workerMs: 400,
+				chosenLane: 'main-thread',
+				agrees: true,
+				maxAbsDiff: 1e-6,
+				lengthDelta: 0,
+				alignOffset: 0,
+				lsbAgrees: true
+			}
+		],
+		{ date: '2026-09-12', machine: 'test-host', shipped: false }
+	);
+	assert.equal(rows.length, 4);
+	for (const row of rows) {
+		assert.equal(row.round, 'issue-2311');
+		assert.equal(row.unit, 'ms');
+		assert.equal(row.capture_id, 'issue-2311-mp3-stem-decode');
+		assert.equal(typeof row.value, 'number');
+		assert.ok(row.note.includes('maxAbsDiff='));
+		assert.ok(row.source.includes('PERF-STEMDEC-03'));
+	}
+	assert.ok(rows.some((r) => r.kpi === 'stem_decode_4way_mp3_ms_chromium_workers'));
+});
+
+test('mpegLedgerAppendAllowed rejects incomplete or withheld rows', () => {
+	const goodRows = mpegLaneTimingsToRows(
+		[
+			{
+				engine: 'webkit',
+				baselineMs: 900,
+				workerMs: 500,
+				chosenLane: 'workers',
+				agrees: true,
+				maxAbsDiff: 0,
+				lengthDelta: 0,
+				alignOffset: 0
+			},
+			{
+				engine: 'chromium',
+				baselineMs: 260,
+				workerMs: 400,
+				chosenLane: 'main-thread',
+				agrees: true,
+				maxAbsDiff: 0,
+				lengthDelta: 0,
+				alignOffset: 0
+			}
+		],
+		{ date: '2026-09-12', machine: 'test-host' }
+	);
+	const base = { fixtureCount: 4, enginesRan: 2, requiredEngines: 2, structuralFailures: 0, rows: goodRows };
+	assert.equal(mpegLedgerAppendAllowed(base), true);
+	assert.equal(mpegLedgerAppendAllowed({ ...base, fixtureCount: 3 }), false);
+	assert.equal(mpegLedgerAppendAllowed({ ...base, enginesRan: 1 }), false);
+	assert.equal(mpegLedgerAppendAllowed({ ...base, structuralFailures: 1 }), false);
+	assert.equal(mpegLedgerAppendAllowed({ ...base, rows: [] }), false);
+	assert.equal(
+		mpegLedgerAppendAllowed({
+			...base,
+			rows: [{ ...goodRows[0], value: null, status: 'withheld', measured: false }]
+		}),
+		false
+	);
+});
+
+test('missingFixtureMessage names Q18_MP3_DIR for mp3 runs', () => {
+	const lines = missingFixtureMessage({
+		found: 0,
+		required: 4,
+		fixtureDir: '/tmp/missing',
+		envVar: 'Q18_MP3_DIR',
+		ext: '.mp3',
+		script: 'pnpm test:live:stem-decode-workers-mpeg'
+	});
+	assert.ok(lines.some((line) => line.includes('Q18_MP3_DIR')));
+	assert.ok(lines.some((line) => line.includes('.mp3')));
 });
