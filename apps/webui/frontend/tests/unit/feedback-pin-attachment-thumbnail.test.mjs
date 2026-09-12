@@ -100,9 +100,14 @@ test('FeedbackPinMarkers without attachment omits fb-pin-thumb', () => {
 test('FeedbackPinCard source wires lightbox open, Esc capture, and outside-click guard', () => {
 	const text = readFileSync(CARD_PATH, 'utf8');
 	assert.match(text, /lightboxOpen/);
+	// FBSYNC-05 (commit 2b6e5b745) and the lightbox/button feature (commit
+	// f91ed1ab1) were merged together in 2e2d4c729 ("fix(sweep): round 1
+	// (composer-2.5) for #1978", Fri 11 Sep 2026 20:59), which interposed an
+	// unsynced-attachment branch ahead of the real thumbnail: the button now
+	// lives under `{:else if pin.attachment}`, not the top `{#if pin.attachment}`.
 	assert.match(
 		text,
-		/\{#if pin\.attachment\}[\s\S]{0,400}?<button[\s\S]{0,400}?fb-attachment-img/,
+		/\{(?:#if|:else if) pin\.attachment\}[\s\S]{0,400}?<button[\s\S]{0,400}?fb-attachment-img/,
 		'attachment thumbnail must be a button that opens the lightbox'
 	);
 	assert.match(text, /class="fb-lightbox"/);

@@ -15,7 +15,7 @@ import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from apps.shared import library_mode, platform_paths
 from apps.webui import crate_sync as cs
@@ -36,7 +36,7 @@ class CratePaths:
 
 
 def resolve_crate_paths(
-    args: argparse.Namespace, argv: Optional[Sequence[str]]
+    args: argparse.Namespace, argv: Sequence[str] | None
 ) -> CratePaths:
     data_dir = Path(args.data_dir) if args.data_dir else platform_paths.DATA_DIR
     crate_root = (
@@ -300,7 +300,7 @@ def dispatch_crate_command(args: argparse.Namespace, paths: CratePaths) -> int:
     return _cmd_push(args, paths)
 
 
-def run_crate_sync(argv: Optional[Sequence[str]] = None) -> int:
+def run_crate_sync(argv: Sequence[str] | None = None) -> int:
     args = cs.build_parser().parse_args(argv)
     library_mode.apply_library_env()
     platform_paths.refresh_share_root()

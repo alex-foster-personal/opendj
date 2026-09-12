@@ -686,6 +686,20 @@ jobs:
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5324 8699 -- \
             pnpm exec playwright test --config tests/e2e/playwright.autoplay-stall-gate.config.ts --output test-results/autoplay-stall-gate
 
+      # -- Headphone device probe gate, performance Playwright config ---------
+      # CUEOUT-06 / issue #2090: the probe clicks "+ OUT" by its accessible
+      # name (aria-label="ADD OUTPUT"). Without a CI step referencing
+      # playwright.performance.config.ts the mismatch timed out every run and
+      # stayed invisible. Own ports 5273/8686; host lock because eight e2e jobs
+      # share a host.
+      - name: Headphone device probe gate - performance config
+        working-directory: apps/webui/frontend
+        if: ${{ !cancelled() }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" performance-headphone-gate \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5273 8686 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.performance.config.ts tests/e2e/performance-headphone-device-probe.spec.ts --output test-results/performance-headphone-gate
+
       - name: Root Playwright suite (real engine + Vite)
         working-directory: apps/webui/frontend
         # `test:e2e` fixes a pair reserved for this suite, builds its own

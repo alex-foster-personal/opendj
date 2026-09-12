@@ -12,10 +12,12 @@ from ``writer`` itself -- see that module's docstring for why.
 from __future__ import annotations
 
 import sqlite3
+import uuid
 from contextlib import AbstractContextManager
 from typing import Any, Protocol
 
 from .events import EventBus, FakeEventBus
+from .order_key import from_index
 from .sync_stamp import Stamp
 from .types import Event
 from .writer_common import (
@@ -147,12 +149,14 @@ class _PlaylistWriterMixin:
                 )
                 conn.execute(
                     "INSERT INTO playlist_memberships(playlist_id, stable_id, "
-                    "position, updated_at, origin_device_id) "
-                    "VALUES (?, ?, ?, ?, ?)",
+                    "position, item_id, order_key, updated_at, origin_device_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
                         playlist_id,
                         sid,
                         position,
+                        uuid.uuid4().hex,
+                        from_index(position),
                         member_stamp.updated_at,
                         member_stamp.origin_device_id,
                     ),
@@ -170,6 +174,56 @@ class _PlaylistWriterMixin:
                     "playlist_id": playlist_id,
                     "count": len(stable_ids),
                 },
+                ts=now,
+            )
+            self.bus.publish(ev)
+
+    def insert_playlist_memberships(
+        self: _WriterHost,
+        playlist_id: str,
+        rows: list[tuple[str, str, str]],
+    ) -> None:
+        """O(1) insert of new membership rows (item_id, stable_id, order_key)."""
+        transaction = (
+            self._tx() if self._conn.in_transaction
+            else immediate_transaction(self._conn)
+        )
+        with transaction as conn:
+            now = next_playlist_revision(conn, playlist_id, self._now_iso())
+            for item_id, stable_id, order_key in rows:
+                max_pos = conn.execute(
+                    "SELECT COALESCE(MAX(position), -1) FROM playlist_memberships "
+                    "WHERE playlist_id = ?",
+                    (playlist_id,),
+                ).fetchone()[0]
+                slot = int(max_pos) + 1
+                member_stamp = self._stamp(
+                    MEMBERSHIPS_TABLE, (playlist_id, slot), now,
+                )
+                conn.execute(
+                    "INSERT INTO playlist_memberships(playlist_id, stable_id, "
+                    "position, item_id, order_key, updated_at, origin_device_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        playlist_id,
+                        stable_id,
+                        slot,
+                        item_id,
+                        order_key,
+                        member_stamp.updated_at,
+                        member_stamp.origin_device_id,
+                    ),
+                )
+            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
+            conn.execute(
+                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
+                "WHERE playlist_id = ?",
+                (stamp.updated_at, stamp.origin_device_id, playlist_id),
+            )
+            ev = self._append_event(
+                kind="playlist.memberships.add",
+                stable_id=None,
+                payload={"playlist_id": playlist_id, "count": len(rows)},
                 ts=now,
             )
             self.bus.publish(ev)

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
+import { readFrontendSource as readSource } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let adapter;
@@ -270,4 +271,22 @@ test('dispose still releases the port when the worklet dispose command times out
 		fake.portClosed(),
 		'if a stalled worklet dispose command still leaves the port open then a hung Signalsmith RPC leaks a MessagePort and the real AudioWorklet forever - broken'
 	);
+});
+
+test('create awaits ensureStretchWorkletReady before the handshake factory call', () => {
+	const adapter = readSource('src/lib/rb/stretch-adapter.ts');
+	const createAt = adapter.indexOf('static async create(');
+	assert.ok(createAt !== -1);
+	const createBody = adapter.slice(createAt, adapter.indexOf('\n\tconnect(', createAt));
+	assert.ok(
+		createBody.includes('ensureStretchWorkletReady'),
+		'create must wait on module readiness before starting the handshake timer'
+	);
+	const readyAt = createBody.indexOf('ensureStretchWorkletReady');
+	const handshakeAt = createBody.indexOf("'worklet ready handshake'");
+	assert.ok(readyAt !== -1 && handshakeAt !== -1 && readyAt < handshakeAt);
+	assert.ok(createBody.includes("'worklet ready handshake'"));
+	assert.ok(!createBody.includes('processor creation timed out'));
+	assert.ok(!readSource('src/lib/rb/stretch-worklet-ready.ts').includes('processor creation timed out'));
+	assert.ok(createBody.includes("recordWorkletAck('processor creation'"));
 });

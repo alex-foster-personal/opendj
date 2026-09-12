@@ -1,0 +1,48 @@
+"""Fractional order_key tests (LIBM-20)."""
+from __future__ import annotations
+
+import pytest
+
+from apps.shared.state.order_key import between, from_index
+
+pytestmark = pytest.mark.requirement("LIBM-20")
+
+
+def test_from_index_matches_printf() -> None:
+    assert from_index(0) == "00000000"
+    assert from_index(1) == "00000001"
+    assert from_index(9) == "00000009"
+    assert from_index(10) == "00000010"
+    assert from_index(99) == "00000099"
+
+
+def test_from_index_sorts() -> None:
+    assert from_index(0) < from_index(1) < from_index(10)
+
+
+def test_between_adjacent_indices() -> None:
+    mid = between("00000000", "00000001")
+    assert "00000000" < mid < "00000001"
+
+
+def test_between_append_after_last() -> None:
+    key = between("00000009", None)
+    assert key > "00000009"
+
+
+def test_between_insert_before_first() -> None:
+    key = between(None, "00000000")
+    assert key < "00000000"
+
+
+def test_fifty_inserts_at_same_point_stay_unique_and_sorted() -> None:
+    prev = "00000000"
+    right = "00000001"
+    keys: list[str] = []
+    for _ in range(50):
+        k = between(prev, right)
+        keys.append(k)
+        prev = k
+    assert len(set(keys)) == 50
+    assert all(keys[i] < keys[i + 1] for i in range(len(keys) - 1))
+    assert all(k < right for k in keys)

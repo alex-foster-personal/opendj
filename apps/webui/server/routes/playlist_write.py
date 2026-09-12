@@ -22,9 +22,9 @@ ETag / error semantics copied from the tracks PATCH:
   * Unknown playlist / stable_id -> 404 ``not_found`` / 422 ``invalid_patch``.
   * Every 2xx (except 204) returns ``PlaylistWriteOut`` + an ``ETag`` header.
 
-``PUT .../tracks`` is the single membership primitive: the request body is the
-complete desired ordering, so add / remove / reorder / move / copy are one
-idempotent full-replace call (replaying the same list returns the same etag).
+``PUT .../tracks`` is the full-replace membership primitive for import/restore.
+``POST .../items:add`` is the O(1) append/insert primitive (LIBM-20): one or
+more tracks are inserted without rewriting existing membership rows.
 
 Every successful non-noop write also appends a ``playlist.edit`` event with
 before/after snapshots. Downstream undo/redo lives at
@@ -90,6 +90,14 @@ class MembershipReplaceIn(BaseModel):
     stable_ids: list[str] = Field(
         description="Complete desired membership in position order. "
                     "Duplicates allowed; unknown ids -> 422."
+    )
+
+
+class MembershipAddIn(BaseModel):
+    stable_ids: list[str] = Field(min_length=1)
+    position: int | None = Field(
+        None, ge=0,
+        description="0-based insert index; omit to append after the last member.",
     )
 
 
@@ -232,6 +240,25 @@ def duplicate_playlist(
         expected_etag=if_match,
     )
     publish("library.changed", {"kind": "playlists", "ids": [row.playlist_id]})
+    return _out(row, response)
+
+
+@router.post(
+    "/{playlist_id}/items:add",
+    response_model=PlaylistWriteOut,
+    operation_id="add_playlist_items",
+)
+def add_playlist_items(
+    playlist_id: str,
+    body: MembershipAddIn,
+    response: Response,
+    _backend: StateBackend = Depends(get_write_state),
+    store: PlaylistStore = Depends(get_playlist_store),
+) -> PlaylistWriteOut:
+    row = store.add_memberships(
+        playlist_id, body.stable_ids, position=body.position,
+    )
+    publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
     return _out(row, response)
 
 

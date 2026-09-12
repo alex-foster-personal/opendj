@@ -29,6 +29,19 @@ DELIVERABLE_UPLOADS = {
     ("release-check.yml", "Upload built dists"),
     ("ci.yml", "Upload production frontend artifact"),
 }
+#: Deliverables that commit 220fa886b made continue-on-error because the Actions
+#: artifact quota is exhausted (issue #2176). Each entry is asserted BOTH ways: the
+#: step must still be non-fatal (so this list cannot outlive the tolerance) and no
+#: deliverable outside it may be non-fatal. Remove an entry in the same PR that
+#: drops the step's continue-on-error. ci.yml's production frontend is delivered by
+#: the actions/cache entry saved right after the upload (fail-on-cache-miss restore).
+QUOTA_TOLERATED_DELIVERABLES = {
+    ("macos-packaging.yml", "Upload the payload manifest"),
+    ("macos-native-companion.yml", "Upload macOS production wheel"),
+    ("release-check.yml", "Upload built dists"),
+    ("ci.yml", "Upload production frontend artifact"),
+}
+assert QUOTA_TOLERATED_DELIVERABLES <= DELIVERABLE_UPLOADS, "tolerance names a non-deliverable"
 
 
 def _upload_steps(workflow: str) -> list[tuple[str, dict]]:
@@ -60,6 +73,12 @@ def test_every_byproduct_upload_is_non_fatal() -> None:
     fatal = []
     for workflow in _all_workflows():
         for job, step in _upload_steps(workflow):
+            if (workflow, step.get("name")) in QUOTA_TOLERATED_DELIVERABLES:
+                assert step.get("continue-on-error") is True, (
+                    f"{workflow}: {step.get('name')} is fatal again; drop it from "
+                    "QUOTA_TOLERATED_DELIVERABLES (#2176)"
+                )
+                continue
             if (workflow, step.get("name")) in DELIVERABLE_UPLOADS:
                 assert step.get("continue-on-error") is not True, (
                     f"{workflow}: a deliverable must fail loud"

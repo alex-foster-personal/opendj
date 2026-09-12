@@ -102,6 +102,7 @@ import {
 	armDeckMeters,
 	armXrunSentinel,
 	disarmContextInstrumentation,
+	resumeAudioContextOrReportDead,
 	stampContextDeviceFloors
 } from '$lib/rb/audio-context-instrumentation';
 import {
@@ -180,7 +181,11 @@ import {
 	type SeekSyncPlan
 } from '$lib/rb/sync-seek-blend';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
-import { StretchDeckProcessor, type StretchScheduleChange } from '$lib/rb/stretch-adapter';
+import {
+	StretchDeckProcessor,
+	ensureStretchWorkletReady,
+	type StretchScheduleChange
+} from '$lib/rb/stretch-adapter';
 import {
 	AlignedStemDeckProcessor,
 	decodeStemBuffers,
@@ -235,7 +240,8 @@ import {
 	selectHeadphoneOutput as selectMonitorOutput,
 	setHeadDelayMs as setMonitorHeadDelay,
 	setHeadphoneOutputMode as setMonitorOutputMode,
-	wirePracticeBlendIntoMasterPath
+	wirePracticeBlendIntoMasterPath,
+	wireSplitCableIntoMasterPath
 } from '$lib/player/headphones';
 import {
 	_assertKeyShift,
@@ -770,7 +776,10 @@ function _ensureGraph(): AudioContext {
 		_externalMerger.connect((_externalRouteAnalyser = _ctx.createAnalyser()));
 	}
 	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
-	if (routing === null) wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones);
+	if (routing === null) {
+		wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones);
+		wireSplitCableIntoMasterPath(_masterGain, _masterMuteGain, headphones);
+	}
 	// Post-EQ, pre-fader tap points, one per deck, PLUS one master tap sourced
 	// from `_masterGain` itself (post master gain, so the master volume
 	// control genuinely moves it - pin 5a5c3b8033d8's still-open half).
@@ -793,6 +802,12 @@ function _ensureGraph(): AudioContext {
 			}
 		})
 	);
+	void ensureStretchWorkletReady(_ctx).catch((error: unknown) => {
+		recordPerfEvent(
+			'stretch-worklet-preload-failed',
+			`Signalsmith worklet did not become ready during graph build: ${String(error)}`
+		);
+	});
 	armXrunSentinel(_ctx);
 	armDeckMeters(_ctx, meterSources);
 	return _ctx;
@@ -1837,10 +1852,11 @@ function _publishPresentedTransport(
 	}
 	if (naturalEndNeedsRevisionedStop(st.playing, observation, rt.durationSec, rt.scheduleIntentCount)) {
 		if (_ctx === null) throw new Error('natural-end cleanup requires an AudioContext');
+		const ctx = _ctx;
 		void withPauseOrigin('natural-end', () =>
 			_scheduleDeck(
 				deck,
-				safeTransportScheduleTime(_ctx.currentTime, _transportLeadSec(deck)),
+				safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck)),
 				rt.durationSec,
 				false
 			)
@@ -1935,8 +1951,7 @@ function _tempoBounds(deck: DeckId): { min: number; max: number } {
 
 async function _resumeContext(): Promise<AudioContext> {
 	const ctx = _ensureGraph();
-	// `interrupted` too, not only `suspended`: AUDIOLIVE-06 (P1 3973882771).
-	if (ctx.state === 'suspended' || (ctx.state as string) === 'interrupted') await ctx.resume();
+	if (ctx.state === 'suspended' || (ctx.state as string) === 'interrupted') await resumeAudioContextOrReportDead(ctx);
 	if (ctx.state !== 'running') {
 		throw new Error(`AudioContext did not enter running state; current state is ${ctx.state}`);
 	}

@@ -10,6 +10,7 @@ from scripts.perf.capture_kpi_ledger import (
     withheld_row,
 )
 
+
 class PressStages(TypedDict, total=False):
     press_to_schedule_ms: float
     scheduled_offset_ms: float

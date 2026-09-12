@@ -15,6 +15,11 @@ import {
 	installAudioContextWatchdog,
 	noteRecoveryOpportunity
 } from '$lib/rb/audio-context-watchdog';
+import {
+	AUDIO_OUTPUT_DEAD_TOAST,
+	AudioContextIoTimeoutError,
+	withAudioContextIoTimeout
+} from '$lib/rb/audio-context-io-timeout';
 import { installOutputRebind, type OutputRebindHandle } from '$lib/rb/audio-output-rebind';
 import { installOutputLiveness, type AudioOutputSnapshot } from '$lib/rb/audio-output-liveness';
 import {
@@ -72,6 +77,35 @@ let _stampedRunningContext: AudioContext | null = null;
  * Per-schedule rows are unaffected: they already read both floors live at emit
  * time and carry their own copies. This is the one-time row only.
  */
+function reportAudioOutputDead(operation: string, timeoutMs: number): void {
+	recordPerfEvent(
+		'audio-output-dead',
+		`AudioContext ${operation} timed out after ${timeoutMs}ms (watchdog)`,
+		null,
+		'error'
+	);
+	pushToast(AUDIO_OUTPUT_DEAD_TOAST, 'error');
+}
+
+/**
+ * Resume a suspended or interrupted context with a bounded IO wait.
+ *
+ * On timeout: one `audio-output-dead` row, one error toast, then rethrow so play
+ * rejects instead of hanging the page.
+ */
+export async function resumeAudioContextOrReportDead(
+	ctx: { resume(): Promise<void> }
+): Promise<void> {
+	try {
+		await withAudioContextIoTimeout('resume', ctx.resume());
+	} catch (error: unknown) {
+		if (error instanceof AudioContextIoTimeoutError) {
+			reportAudioOutputDead(error.operation, error.timeoutMs);
+		}
+		throw error;
+	}
+}
+
 export function stampContextDeviceFloors(ctx: AudioContext): void {
 	const running = ctx.state === 'running';
 	if (running && _stampedRunningContext === ctx) return;
@@ -270,6 +304,7 @@ export function armAudioContextWatchdog(
 		ctx,
 		{
 			pushToast,
+			recordPerfEvent: (kind, message, severity) => recordPerfEvent(kind, message, null, severity),
 			recordPerfTiming: (kind, stages) => recordPerfTiming(kind, stages),
 			sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
 			noteUnexpectedPause: (state) => {

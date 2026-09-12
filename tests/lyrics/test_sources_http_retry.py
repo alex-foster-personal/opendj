@@ -14,6 +14,7 @@ import urllib.error
 import urllib.request
 
 import pytest
+
 from apps.lyrics.sources import base
 
 
@@ -38,7 +39,7 @@ def _patch(monkeypatch: pytest.MonkeyPatch, outcomes: list) -> list[float]:
     sleeps: list[float] = []
     monkeypatch.setattr(base.time, "sleep", sleeps.append)
 
-    def fake_urlopen(_req, timeout=None):  # noqa: ARG001 - matches urlopen(req, timeout=)
+    def fake_urlopen(_req, timeout=None):
         outcome = outcomes.pop(0)
         if isinstance(outcome, Exception):
             raise outcome

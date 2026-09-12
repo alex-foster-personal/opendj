@@ -31,6 +31,8 @@ from apps.engine_core.lock import (
     EngineLock,
     EngineLockError,
     _swap_reason,
+    inspect_lock,
+    read_holder,
 )
 
 
@@ -224,6 +226,53 @@ def test_progress_ledger_in_the_data_dir_blocks_boot(tmp_path: Path) -> None:
 def test_relative_data_dir_is_refused() -> None:
     with pytest.raises(EngineBootError):
         build_config("data", "127.0.0.1", 8585)
+
+
+@pytest.mark.requirement("INSTALL-14")
+def test_lock_json_records_parent_pid_when_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock_path = tmp_path / ".engine.lock"
+    monkeypatch.setenv("OPENDJ_PARENT_PID", "4242")
+    with EngineLock(lock_path, host="127.0.0.1", port=9001, boot_id="boot-a"):
+        recorded = json.loads(lock_path.read_text(encoding="utf-8"))
+    assert recorded["parent_pid"] == 4242
+    assert recorded["host"] == "127.0.0.1"
+    assert recorded["port"] == 9001
+
+
+@pytest.mark.requirement("INSTALL-14")
+def test_read_holder_does_not_take_the_exclusive_lock(tmp_path: Path) -> None:
+    lock_path = tmp_path / ".engine.lock"
+    with EngineLock(lock_path, host="127.0.0.1", port=8585, boot_id="boot-a"):
+        peeked = read_holder(lock_path)
+        assert peeked is not None
+        assert peeked.pid == os.getpid()
+        assert peeked.port == 8585
+        nested = read_holder(lock_path)
+        assert nested is not None
+        assert nested.pid == peeked.pid
+
+
+@pytest.mark.requirement("INSTALL-14")
+def test_inspect_lock_reports_free_after_release(tmp_path: Path) -> None:
+    lock_path = tmp_path / ".engine.lock"
+    assert inspect_lock(lock_path) == "free"
+    lock = EngineLock(lock_path, boot_id="boot-a")
+    lock.acquire()
+    assert inspect_lock(lock_path) != "free"
+    lock.release()
+    assert inspect_lock(lock_path) == "free"
+
+
+@pytest.mark.requirement("INSTALL-14")
+def test_inspect_lock_reports_the_holder_while_held(tmp_path: Path) -> None:
+    lock_path = tmp_path / ".engine.lock"
+    with EngineLock(lock_path, host="127.0.0.1", port=7777, boot_id="boot-a"):
+        inspected = inspect_lock(lock_path)
+        assert inspected != "free"
+        assert inspected.pid == os.getpid()
+        assert inspected.port == 7777
 
 
 def test_env_contract_sets_data_dir_and_defaults_the_backend(

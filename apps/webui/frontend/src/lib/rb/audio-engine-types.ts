@@ -116,7 +116,7 @@ export interface AudioEngine {
 	setHeadphoneMix(value: number): void;
 	setHeadphoneLevel(value: number): void;
 	setHeadDelayMs(value: number): void;
-	/** Practice vs two-output routing. Unknown modes throw. */
+	/** Practice, split-cable, or two-output routing. Unknown modes throw. */
 	setHeadphoneOutputMode(mode: HeadphoneOutputMode): void;
 	/** Enumerate browser audio-output devices for explicit sink selection. */
 	refreshHeadphoneOutputs(): Promise<void>;

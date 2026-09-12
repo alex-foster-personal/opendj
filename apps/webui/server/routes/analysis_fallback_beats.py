@@ -4,9 +4,9 @@ from __future__ import annotations
 from apps.analysis.record import AnalysisRecord
 
 from .analysis import (
+    _MIN_BEAT_INTERVAL_S,
     BEATS_PER_BAR,
     FallbackBeatOut,
-    _MIN_BEAT_INTERVAL_S,
     _invalid_record,
 )
 

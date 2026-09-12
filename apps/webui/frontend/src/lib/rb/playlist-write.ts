@@ -141,6 +141,40 @@ export async function replacePlaylistTracks(
 	return { items: out.items, etag: fresh };
 }
 
+/** POST /playlists/{id}/items:add - O(1) append/insert without rewriting
+ * existing membership rows (LIBM-20). No If-Match required. */
+export async function addPlaylistItems(
+	playlistId: string,
+	stableIds: string[],
+	position?: number
+): Promise<PlaylistWriteResult> {
+	let data: unknown;
+	let response: Response;
+	const body: { stable_ids: string[]; position?: number } = { stable_ids: stableIds };
+	if (position !== undefined) {
+		body.position = position;
+	}
+	try {
+		({ data, response } = await api.POST('/api/v1/playlists/{playlist_id}/items:add', {
+			params: { path: { playlist_id: playlistId } },
+			body
+		}));
+	} catch (error) {
+		if (error instanceof ApiError) {
+			throw new Error(
+				`add to playlist ${playlistId} failed (${error.status}): ${_messageOf(error)}`
+			);
+		}
+		throw error;
+	}
+	const fresh = response.headers.get('etag');
+	if (!fresh) {
+		throw new Error(`playlist ${playlistId}: POST items:add response carries no ETag header`);
+	}
+	const out = data as PlaylistRowWire;
+	return { items: out.items, etag: fresh };
+}
+
 /** POST /playlists/{id}/tracks/transfer - atomic cross-playlist add (copy)
  * or move. Throws PlaylistConflictError on a stale If-Match (409). */
 export async function transferPlaylistTracks(

@@ -35,6 +35,11 @@ test('track, playlist, and folder context menus are pointer and keyboard reachab
 	await track.click({ button: 'right' });
 	await expect(page.locator(MENU)).toContainText('Load to deck 1');
 	await expect(page.locator('.qd')).toHaveCount(0);
+	await expect(page.getByRole('menuitem', { name: 'Show in playlists' })).toBeEnabled();
+	await expect(page.getByRole('menuitem', { name: 'Show in playlists' })).not.toHaveAttribute(
+		'title',
+		'not implemented - see PARITY-TODO'
+	);
 	await expect(page.getByRole('menuitem', { name: 'Mark offline' })).toHaveAttribute('title', 'not implemented - see PARITY-TODO');
 	await page.mouse.click(1, 1);
 	await expect(page.locator(MENU)).toHaveCount(0);
@@ -63,4 +68,18 @@ test('track, playlist, and folder context menus are pointer and keyboard reachab
 	if (await folderDuplicate.count()) {
 		await expect(folderDuplicate).toBeDisabled();
 	}
+});
+
+test('Add to playlist opens the picker and Escape closes it', async ({ page }) => {
+	await page.goto('/performance');
+	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });
+
+	const track = page.locator('[data-testid="track-row"]').first();
+	await track.click({ button: 'right' });
+	const addItem = page.getByRole('menuitem', { name: 'Add to playlist...' });
+	await expect(addItem).toBeEnabled();
+	await addItem.click();
+	await expect(page.locator('[data-testid="add-to-playlist-picker"]')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(page.locator('[data-testid="add-to-playlist-picker"]')).toHaveCount(0);
 });

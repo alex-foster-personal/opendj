@@ -12,9 +12,12 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[1]
 ROOT_CONFIG = REPO / "apps/webui/frontend/playwright.config.ts"
+PERFORMANCE_CONFIG = REPO / "apps/webui/frontend/tests/e2e/playwright.performance.config.ts"
 SMOKE_SPEC = REPO / "apps/webui/frontend/tests/e2e/smoke.spec.ts"
 E2E_WORKFLOW = REPO / ".github/workflows/e2e.yml"
+WORKFLOWS_DIR = REPO / ".github/workflows"
 PACKAGE = REPO / "apps/webui/frontend/package.json"
+PERFORMANCE_CONFIG_MARKER = "playwright.performance.config.ts"
 
 
 def test_root_playwright_config_starts_the_engine_before_vite() -> None:
@@ -41,6 +44,33 @@ def test_e2e_workflow_executes_the_root_playwright_command() -> None:
     ]
 
     assert any("pnpm test:e2e" in command for command in commands)
+
+
+def test_performance_playwright_config_is_referenced_by_ci() -> None:
+    """if the performance suite is not invoked by any workflow then its failures are invisible"""
+    workflow_texts = [path.read_text(encoding="utf-8") for path in WORKFLOWS_DIR.glob("*.yml")]
+    assert any(
+        PERFORMANCE_CONFIG_MARKER in text or "test:e2e:performance" in text
+        for text in workflow_texts
+    ), (
+        f"{PERFORMANCE_CONFIG_MARKER} must appear in a workflow step or "
+        "package script wired into CI (issue #2090 / CUEOUT-06)"
+    )
+
+
+def test_e2e_workflow_runs_the_headphone_device_probe_under_performance_config() -> None:
+    """if the headphone probe is not exercised in CI then aria-label regressions time out unseen"""
+    workflow = yaml.safe_load(E2E_WORKFLOW.read_text())
+    commands = [
+        step.get("run", "")
+        for job in workflow["jobs"].values()
+        for step in job.get("steps") or []
+    ]
+    assert any(
+        PERFORMANCE_CONFIG_MARKER in command
+        and "performance-headphone-device-probe.spec.ts" in command
+        for command in commands
+    )
 
 
 def test_root_playwright_command_claims_its_isolated_port_pair() -> None:

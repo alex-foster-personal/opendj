@@ -330,8 +330,12 @@ test('the device-floor row is re-stamped once the context is actually running', 
 			'state transition, and a context resumed outside _resumeContext never gets ' +
 			'its authoritative row'
 	);
+	// #2155 (Sat 12 Sep 2026, commit 1db624ef7) added a third `recreateGraph`
+	// argument to armAudioContextWatchdog's signature for output-stall
+	// recovery; the anchor below is re-pointed at the new signature rather
+	// than deleted, per this file's own regression-line contract.
 	const arming = engineBlockAfter(
-		'export function armAudioContextWatchdog(\n\tctx: AudioContext,\n\tisAnyDeckPlaying: () => boolean\n): void {'
+		'export function armAudioContextWatchdog(\n\tctx: AudioContext,\n\tisAnyDeckPlaying: () => boolean,\n\trecreateGraph: (() => Promise<void>) | null = null\n): void {'
 	);
 	assert.ok(
 		arming.includes("ctx.state === 'running'") && arming.includes('stampContextDeviceFloors(ctx)'),

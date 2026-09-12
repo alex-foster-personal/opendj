@@ -102,6 +102,16 @@
 		PLAYLIST_TREE_WIDTH_MIN
 	} from '$lib/rb/prefs.svelte';
 	import { pushToast } from '$lib/stores.svelte';
+	import AddToPlaylistPicker from './browser/AddToPlaylistPicker.svelte';
+	import {
+		removeFromLibraryConfirmMessage,
+		removeFromLibraryToastMessage
+	} from '$lib/components/rb/browser/track-library-menu';
+	import {
+		addToPlaylistToastMessage,
+		appendTracksToPlaylist
+	} from '$lib/rb/add-to-playlist';
+	import { removeFromLibrary } from '$lib/rb/track-library';
 	import {
 		isCurrentBrowserSearch,
 		reportBrowserSearchResult,
@@ -1528,28 +1538,25 @@
 			if (remember) setConfirmPref('playlist_drop_mode', mode);
 		}
 		try {
-			const dest = await getPlaylistTracksEtag(playlistId);
 			let effectiveMode: 'add' | 'move' = 'add';
-			let body: {
-				stable_ids: string[];
-				mode: 'add' | 'move';
-				source_playlist_id?: string;
-				source_etag?: string;
-			} = { stable_ids: stableIds, mode: 'add' };
 			if (mode === 'move') {
 				const srcId = panes[activePane].playlist_id;
 				if (srcId !== null && srcId !== 'all' && srcId !== playlistId) {
+					const dest = await getPlaylistTracksEtag(playlistId);
 					const src = await getPlaylistTracksEtag(srcId);
-					body = {
+					await transferPlaylistTracks(playlistId, dest.etag, {
 						stable_ids: stableIds,
 						mode: 'move',
 						source_playlist_id: srcId,
 						source_etag: src.etag
-					};
+					});
 					effectiveMode = 'move';
+				} else {
+					await appendTracksToPlaylist(playlistId, stableIds);
 				}
+			} else {
+				await appendTracksToPlaylist(playlistId, stableIds);
 			}
-			await transferPlaylistTracks(playlistId, dest.etag, body);
 			if (effectiveMode === 'move') {
 				const node = _currentNode(panes[activePane]);
 				if (node !== null) await _loadPane(panes[activePane], node);
@@ -2577,6 +2584,42 @@
 		void _mutateActivePane((items) => items.filter((_, i) => i !== row.order - 1));
 	}
 
+	let addToPlaylistIds = $state<string[] | null>(null);
+
+	function openAddToPlaylistPicker(ids: string[]): void {
+		addToPlaylistIds = ids;
+	}
+
+	async function addTracksToPlaylist(node: PlaylistNode): Promise<void> {
+		const ids = addToPlaylistIds;
+		if (ids === null || ids.length === 0) return;
+		addToPlaylistIds = null;
+		try {
+			await appendTracksToPlaylist(node.playlist_id, ids);
+			await _refreshPlaylists();
+			pushToast(addToPlaylistToastMessage(ids.length, node.name), 'info');
+		} catch (exc) {
+			pushToast(`add to playlist failed: ${String(exc)}`, 'error');
+		}
+	}
+
+	async function removeFromLibraryUi(stableIds: string[]): Promise<void> {
+		const ids = [...new Set(stableIds)];
+		if (ids.length === 0) return;
+		if (!window.confirm(removeFromLibraryConfirmMessage(ids.length))) return;
+		let okCount = 0;
+		for (const stableId of ids) {
+			try {
+				await removeFromLibrary(stableId);
+				okCount += 1;
+			} catch (exc) {
+				pushToast(`remove from library failed: ${String(exc)}`, 'error');
+				return;
+			}
+		}
+		pushToast(removeFromLibraryToastMessage(okCount), 'info');
+	}
+
 	function reorderRows(fromOrder: number, toOrder: number): void {
 		void _mutateActivePane((items) => {
 			const next = items.slice();
@@ -2864,6 +2907,8 @@
 			onstemsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'stems', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
 			onlyricsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'lyrics', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
 			onopeneditmodal={(kind) => void openEditModal(kind)}
+			onremovefromlibrary={(ids) => void removeFromLibraryUi(ids)}
+			onaddtoplaylist={(ids) => openAddToPlaylistPicker(ids)}
 			ongenrefilter={genreFilter}
 			{genreFilterUntil}
 			searchQuery={pane.search}
@@ -2981,6 +3026,13 @@
 	etags={modalEtags}
 	onclose={() => (openModal = null)}
 	onapplied={onEditApplied}
+/>
+
+<AddToPlaylistPicker
+	open={addToPlaylistIds !== null}
+	playlists={treeNodes}
+	onpick={(node) => void addTracksToPlaylist(node)}
+	onclose={() => (addToPlaylistIds = null)}
 />
 
 <style>

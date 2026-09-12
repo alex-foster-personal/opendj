@@ -195,6 +195,11 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         "deleted_at": "Tombstone timestamp; added in v6. NULL = live.",
     },
     "playlist_memberships": {
+        "item_id": "Stable membership row id; added in v13.",
+        "order_key": (
+            "Fractional sort key string; added in v13. Integer position is "
+            "computed on read."
+        ),
         "playlist_id": "FK -> playlists(playlist_id), ON DELETE CASCADE.",
         "stable_id": "FK -> tracks(stable_id), ON DELETE CASCADE.",
         "position": (

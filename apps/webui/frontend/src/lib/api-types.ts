@@ -2668,6 +2668,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playlists/{playlist_id}/items:add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Playlist Items */
+        post: operations["add_playlist_items"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playlists/{playlist_id}/tracks": {
         parameters: {
             query?: never;
@@ -4016,6 +4033,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/playlists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Track Playlists
+         * @description Live playlists that currently hold this track (LIBM-29).
+         *
+         *     404 if the stable_id has no tracks row. 200 [] if the track exists
+         *     but has no live memberships. Tombstoned memberships and deleted
+         *     playlists are excluded.
+         */
+        get: operations["list_track_playlists_api_v1_tracks__stable_id__playlists_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}/rb-meta": {
         parameters: {
             query?: never;
@@ -4070,6 +4111,49 @@ export interface paths {
         get: operations["get_stem_file_api_v1_tracks__stable_id__stems__part__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}:remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove Track From Library
+         * @description Soft-delete a track from the library while keeping the audio file on disk.
+         *
+         *     Uses ``POST :remove`` rather than ``DELETE /tracks/{stable_id}`` so
+         *     ``LIBM-53`` can own file deletion later as a separate, harder action.
+         */
+        post: operations["remove_track_from_library_api_v1_tracks__stable_id__remove_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}:undelete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undelete Track From Library
+         * @description Restore a tombstoned track and the memberships this remove stamped.
+         */
+        post: operations["undelete_track_from_library_api_v1_tracks__stable_id__undelete_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7573,6 +7657,16 @@ export interface components {
             /** Title */
             title: string | null;
         };
+        /** MembershipAddIn */
+        MembershipAddIn: {
+            /**
+             * Position
+             * @description 0-based insert index; omit to append after the last member.
+             */
+            position?: number | null;
+            /** Stable Ids */
+            stable_ids: string[];
+        };
         /** MembershipReplaceIn */
         MembershipReplaceIn: {
             /**
@@ -10116,6 +10210,15 @@ export interface components {
             /** Title */
             title?: string;
         };
+        /** TrackLifecycleOut */
+        TrackLifecycleOut: {
+            /** Deleted At */
+            deleted_at: string | null;
+            /** Memberships */
+            memberships: components["schemas"]["TrackMembershipRefOut"][];
+            /** Stable Id */
+            stable_id: string;
+        };
         /**
          * TrackListItemOut
          * @description TrackOut + parity row fields (shared API contract item 1).
@@ -10243,6 +10346,13 @@ export interface components {
             /** Stable Id */
             stable_id: string;
         };
+        /** TrackMembershipRefOut */
+        TrackMembershipRefOut: {
+            /** Playlist Id */
+            playlist_id: string;
+            /** Position */
+            position: number;
+        };
         /** TrackOut */
         TrackOut: {
             /** Album */
@@ -10311,6 +10421,17 @@ export interface components {
             /** Tags Remove */
             tags_remove?: string[] | null;
             tempo_pref?: components["schemas"]["TempoPrefPatch"] | null;
+        };
+        /** TrackPlaylistOut */
+        TrackPlaylistOut: {
+            /** Name */
+            name: string;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Positions */
+            positions: number[];
+            /** Vendor */
+            vendor: string;
         };
         /**
          * TrackRowOut
@@ -16107,6 +16228,41 @@ export interface operations {
             };
         };
     };
+    add_playlist_items: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipAddIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistWriteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     replace_playlist_tracks_api_v1_playlists__playlist_id__tracks_put: {
         parameters: {
             query?: never;
@@ -17951,6 +18107,8 @@ export interface operations {
                 tag?: string | null;
                 /** @description Filter rows on file_exists disk truth (FR-1 agent parity). Applied to the page AFTER cursor pagination, so a page may return fewer than `limit` rows while next_cursor still advances over the full track set. */
                 available?: "all" | "true" | "false";
+                /** @description When true, include rows with tracks.deleted_at set. Default hides them. */
+                show_deleted?: boolean;
                 cursor?: string | null;
                 limit?: number;
             };
@@ -18540,6 +18698,37 @@ export interface operations {
             };
         };
     };
+    list_track_playlists_api_v1_tracks__stable_id__playlists_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackPlaylistOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_track_rb_meta_api_v1_tracks__stable_id__rb_meta_get: {
         parameters: {
             query?: never;
@@ -18620,6 +18809,68 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_track_from_library_api_v1_tracks__stable_id__remove_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackLifecycleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undelete_track_from_library_api_v1_tracks__stable_id__undelete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackLifecycleOut"];
+                };
             };
             /** @description Validation Error */
             422: {

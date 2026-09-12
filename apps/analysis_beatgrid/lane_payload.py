@@ -59,10 +59,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from apps.analysis_beatgrid.activations import FPS as ACTIVATIONS_FPS
 from apps.analysis_beatgrid.bar_phase import BAR_BEATS, assign_bar_phase
 from apps.analysis_beatgrid.bpm import estimate_bpm
 from apps.analysis_beatgrid.flags import evaluate_pulse
-from apps.analysis_beatgrid.activations import FPS as ACTIVATIONS_FPS
 from apps.analysis_beatgrid.tempo_change import detect_tempo_changes
 
 #: A tempo fit that produced no straight line at all. `estimate_bpm` returns

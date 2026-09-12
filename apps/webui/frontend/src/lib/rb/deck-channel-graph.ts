@@ -223,6 +223,7 @@ export async function rebuildKeepingLoadedDecks(deps: {
 }
 
 type MixProcessor = Awaited<ReturnType<typeof StretchDeckProcessor.create>>;
+type DisposableProcessor = Pick<MixProcessor, 'disconnect' | 'dispose'>;
 
 export function snapLoadedDeck(
 	deck: DeckId,
@@ -274,10 +275,10 @@ export interface GraphRecreateEngineAccess {
 		stems: { status: string };
 	};
 	releasePendingStemUpgrade(deck: DeckId): void;
-	detachProcessor(deck: DeckId): MixProcessor | null;
+	detachProcessor(deck: DeckId): DisposableProcessor | null;
 	disarmInstrumentation(): void;
 	muteNode(): GainNode | null;
-	disposeResources(resources: { processors: MixProcessor[]; nodes: AudioNode[] }): Promise<void>;
+	disposeResources(resources: { processors: DisposableProcessor[]; nodes: AudioNode[] }): Promise<void>;
 	resetGraphState(): void;
 	ensureGraph(): AudioContext;
 	resetPresentation(deck: DeckId, positionSec: number): void;
@@ -322,7 +323,7 @@ export interface EngineGraphRecreateBindings {
 	decks: readonly DeckId[];
 	readSnap(deck: DeckId): LoadedDeckRecreateSnap | null;
 	releasePendingStemUpgrade(deck: DeckId): void;
-	detachProcessor(deck: DeckId): MixProcessor | null;
+	detachProcessor(deck: DeckId): DisposableProcessor | null;
 	collectNodes(deck: DeckId): readonly AudioNode[];
 	clearDeckGraph(deck: DeckId): void;
 	getNodes(deck: DeckId): DeckChannelNodes | null;
@@ -333,7 +334,7 @@ export interface EngineGraphRecreateBindings {
 	maybeUpgradeStems(snap: LoadedDeckRecreateSnap, buffer: AudioBuffer, ctx: AudioContext): void;
 	disarmInstrumentation(): void;
 	extraDisposeNodes(): readonly AudioNode[];
-	disposeResources(resources: { processors: MixProcessor[]; nodes: AudioNode[] }): Promise<void>;
+	disposeResources(resources: { processors: DisposableProcessor[]; nodes: AudioNode[] }): Promise<void>;
 	resetGraphState(): void;
 	ensureGraph(): AudioContext;
 }
@@ -351,7 +352,7 @@ export async function recreateEngineGraph(bindings: EngineGraphRecreateBindings)
 		extraDisposeNodes: () => bindings.extraDisposeNodes(),
 		disposeResources: (resources) =>
 			bindings.disposeResources({
-				processors: resources.processors as MixProcessor[],
+				processors: resources.processors as DisposableProcessor[],
 				nodes: resources.nodes
 			}),
 		resetGraphState: () => bindings.resetGraphState(),

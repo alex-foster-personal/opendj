@@ -128,6 +128,8 @@ export interface SoakProgress {
 	eventsRan: string[];
 	toasts: { message: string; kind: string }[];
 	perf: { kind: string; message: string; severity: string }[];
+	/** Every state string `noteUnexpectedPause` was called with. */
+	unexpectedPauses: string[];
 	/** Highest RMS ever seen. A run that never rose above the floor measured nothing. */
 	peakRms: number;
 	/**
@@ -219,6 +221,7 @@ function install(): void {
 		eventsRan: [],
 		toasts: [],
 		perf: [],
+		unexpectedPauses: [],
 		peakRms: 0,
 		peakUpstreamRms: 0,
 		longestDeviceUnreachableMs: 0,
@@ -375,7 +378,8 @@ function install(): void {
 			{
 				pushToast: (message, kind) => progress.toasts.push({ message, kind }),
 				recordPerfTiming: () => {},
-				sleep: (ms) => new Promise<void>((r) => setTimeout(r, ms))
+				sleep: (ms) => new Promise<void>((r) => setTimeout(r, ms)),
+				noteUnexpectedPause: (state) => progress.unexpectedPauses.push(state)
 			},
 			isAnyDeckPlaying
 		);

@@ -155,6 +155,10 @@ test('friendlyLabel turns action types into human labels', () => {
 	assert.equal(fmt.friendlyLabel({ type: 'browse_encoder' }), 'Browse');
 	assert.equal(fmt.friendlyLabel({ type: 'browse_load', deck: 1 }), 'Load (deck 1)');
 	assert.equal(fmt.friendlyLabel({ type: 'shift_modifier' }), 'Shift');
+	assert.equal(fmt.friendlyLabel({ type: 'channel_cue', deck: 1 }), 'Cue / PFL (deck 1)');
+	assert.equal(fmt.friendlyLabel({ type: 'headphone_mix' }), 'Headphones mix');
+	assert.equal(fmt.friendlyLabel({ type: 'headphone_level' }), 'Headphones level');
+	assert.equal(fmt.friendlyLabel({ type: 'master_cue', mode: 'latch' }), 'Master cue');
 });
 
 test('bestGuessHint names a documented-but-unbound control, else null', () => {

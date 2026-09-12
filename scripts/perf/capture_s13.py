@@ -14,7 +14,7 @@ import os
 import socket
 import subprocess
 import tempfile
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -43,7 +43,7 @@ def _machine_name() -> str:
 
 
 def _utc_today() -> date:
-    return datetime.now(timezone.utc).date()
+    return datetime.now(UTC).date()
 
 
 def _http_json(method: str, url: str, body: dict[str, Any] | None = None) -> tuple[int, Any]:

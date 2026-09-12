@@ -123,7 +123,8 @@ def _members_for_playlist(
     columns = protocol.table_columns(conn, MEMBERSHIP_TABLE)
     cursor = conn.execute(
         f"SELECT {', '.join(columns)} FROM {MEMBERSHIP_TABLE} "
-        f"WHERE playlist_id = ? ORDER BY position",
+        f"WHERE playlist_id = ? ORDER BY "
+        f"COALESCE(order_key, printf('%08d', position)), position",
         (playlist_id,),
     )
     members: list[dict[str, Any]] = []

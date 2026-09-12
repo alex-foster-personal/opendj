@@ -13,6 +13,14 @@ from apps.lyrics import cache as lyrics_cache
 from apps.shared import audio_quality
 from apps.shared.events import publish
 from apps.shared.paths import STATE_DB
+from apps.shared.state import db as state_db
+from apps.shared.state.writer import StateWriter
+from apps.shared.state.writer_tracks import (
+    TrackAlreadyRemovedError,
+    TrackLifecycleResult,
+    TrackNotFoundError,
+    TrackNotRemovedError,
+)
 
 from .. import rb_vendor
 from ..backend import ConflictError, StateBackend, Track, TrackFilter
@@ -27,6 +35,7 @@ from ..models import (
     TrackLyricsOut,
     TrackOut,
     TrackPatch,
+    TrackPlaylistOut,
     TracksPage,
 )
 from ..rb_vendor_pkg.track_rows import _artwork_facts
@@ -194,6 +203,10 @@ def list_tracks(
             "advances over the full track set."
         ),
     ),
+    show_deleted: bool = Query(
+        False,
+        description="When true, include rows with tracks.deleted_at set. Default hides them.",
+    ),
     cursor: Optional[str] = None,
     limit: int = Query(200, ge=1, le=1000),
     backend: StateBackend = Depends(get_read_state),
@@ -207,6 +220,7 @@ def list_tracks(
         tag=tag,
         cursor=cursor,
         limit=limit,
+        show_deleted=show_deleted,
     )
     page = backend.list_tracks(flt)
     rows = rb_vendor.build_track_rows(page.items)
@@ -263,6 +277,17 @@ class LyricsCachedIdsOut(BaseModel):
     stable_ids: list[str] = Field(default_factory=list)
 
 
+class TrackMembershipRefOut(BaseModel):
+    playlist_id: str
+    position: int
+
+
+class TrackLifecycleOut(BaseModel):
+    stable_id: str
+    deleted_at: str | None
+    memberships: list[TrackMembershipRefOut]
+
+
 @router.get("/lyrics-cached-ids", response_model=LyricsCachedIdsOut)
 def get_lyrics_cached_ids(request: Request) -> LyricsCachedIdsOut:
     """List cached lyric timelines so the UI can skip explicit cache-miss reads."""
@@ -296,6 +321,139 @@ def get_track_lyrics(stable_id: str, request: Request) -> TrackLyricsOut:
         source=lyrics.source,
         lines=[{"start_ms": line.start_ms, "text": line.text} for line in lyrics.lines],
     )
+
+
+@router.get("/{stable_id}/playlists", response_model=list[TrackPlaylistOut])
+def list_track_playlists(
+    stable_id: str,
+    backend: StateBackend = Depends(get_read_state),
+) -> list[TrackPlaylistOut]:
+    """Live playlists that currently hold this track (LIBM-29).
+
+    404 if the stable_id has no tracks row. 200 [] if the track exists
+    but has no live memberships. Tombstoned memberships and deleted
+    playlists are excluded.
+    """
+    backend.get_track(stable_id)
+    return [
+        TrackPlaylistOut(
+            playlist_id=hit.playlist_id,
+            name=hit.name,
+            vendor=hit.vendor,
+            positions=list(hit.positions),
+        )
+        for hit in backend.list_track_playlists(stable_id)
+    ]
+
+
+def _lifecycle_out(result: TrackLifecycleResult) -> TrackLifecycleOut:
+    return TrackLifecycleOut(
+        stable_id=result.stable_id,
+        deleted_at=result.deleted_at,
+        memberships=[
+            TrackMembershipRefOut(
+                playlist_id=membership.playlist_id,
+                position=membership.position,
+            )
+            for membership in result.memberships
+        ],
+    )
+
+
+def _run_track_lifecycle(
+    request: Request,
+    stable_id: str,
+    action: str,
+) -> TrackLifecycleResult:
+    db_path = Path(request.app.state.state_db_path)
+    if not db_path.is_file():
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "state_db_missing",
+                "message": (
+                    f"state DB not found at {db_path}; track lifecycle writes "
+                    "require an initialised state.db"
+                ),
+            },
+        )
+    conn = state_db.open_rw(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        with StateWriter(conn, actor="webui") as writer:
+            if action == "remove":
+                result = writer.remove_from_library(stable_id)
+            elif action == "undelete":
+                result = writer.undelete_track(stable_id)
+            else:
+                raise AssertionError(f"unknown track lifecycle action: {action}")
+        conn.commit()
+        return result
+    except TrackNotFoundError as exc:
+        conn.rollback()
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "not_found", "message": str(exc)},
+        ) from exc
+    except TrackAlreadyRemovedError as exc:
+        conn.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "already_removed", "message": str(exc)},
+        ) from exc
+    except TrackNotRemovedError as exc:
+        conn.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "not_removed", "message": str(exc)},
+        ) from exc
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@router.post("/{stable_id}:remove", response_model=TrackLifecycleOut)
+def remove_track_from_library(
+    stable_id: str,
+    request: Request,
+    _backend: StateBackend = Depends(get_write_state),
+) -> TrackLifecycleOut:
+    """Soft-delete a track from the library while keeping the audio file on disk.
+
+    Uses ``POST :remove`` rather than ``DELETE /tracks/{stable_id}`` so
+    ``LIBM-53`` can own file deletion later as a separate, harder action.
+    """
+    result = _run_track_lifecycle(request, stable_id, "remove")
+    publish(
+        "library.changed",
+        {
+            "kind": "tracks",
+            "ids": [stable_id],
+            "playlist_ids": [m.playlist_id for m in result.memberships],
+        },
+    )
+    return _lifecycle_out(result)
+
+
+@router.post("/{stable_id}:undelete", response_model=TrackLifecycleOut)
+def undelete_track_from_library(
+    stable_id: str,
+    request: Request,
+    _backend: StateBackend = Depends(get_write_state),
+) -> TrackLifecycleOut:
+    """Restore a tombstoned track and the memberships this remove stamped."""
+    result = _run_track_lifecycle(request, stable_id, "undelete")
+    publish(
+        "library.changed",
+        {
+            "kind": "tracks",
+            "ids": [stable_id],
+            "playlist_ids": [m.playlist_id for m in result.memberships],
+        },
+    )
+    return _lifecycle_out(result)
 
 
 @router.get("/{stable_id}", response_model=TrackOut)

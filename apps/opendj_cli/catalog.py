@@ -45,6 +45,7 @@ EDGE_VALUES: tuple[str, ...] = ("top", "left", "right", "bottom")
 PANEL_VALUES: tuple[str, ...] = ("next", "recommended")
 VOTE_VALUES: tuple[str, ...] = ("bad", "good", "great")
 SYNC_MODE_VALUES: tuple[str, ...] = ("beat", "bar")
+OUTPUT_MODE_VALUES: tuple[str, ...] = ("practice", "two_outputs")
 PITCH_RANGE_VALUES: tuple[int, ...] = (8, 16, 100)
 KEY_NUDGE_VALUES: tuple[int, ...] = (-1, 1)
 QUANTIZE_GRID_VALUES: tuple[int, ...] = (1, 4, 8)
@@ -217,6 +218,9 @@ _VERBS: tuple[Verb, ...] = (
     Verb("headphone_output_acquire", "headphone_output_acquire", ()),
     Verb("headphone_output_select", "headphone_output_select",
          (arg("device_id", "text", text_value),)),
+    Verb("output_mode", "output_mode", (
+        arg("mode", "enum", enum_value(OUTPUT_MODE_VALUES), "practice|two_outputs"),
+    ), note="CUEOUT-01: practice blends PFL into the main output; two_outputs is the split."),
     Verb("analysis_source", "analysis_source", (
         arg("feature", "enum", enum_value(ANALYSIS_SOURCE_FEATURES), "beatgrid"),
         arg("source", "enum", enum_value(ANALYSIS_SOURCE_VALUES), "rekordbox|own"),
