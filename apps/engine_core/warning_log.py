@@ -4,25 +4,53 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 MAX_BYTES = 5 * 1024 * 1024
-ROTATIONS = 5
+RETENTION_DAYS = 7
+MAX_TOTAL_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024
+
+
+def _archive_timestamp() -> str:
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _archive_paths(path: Path) -> list[Path]:
+    base = path.name
+    parent = path.parent
+    archives: list[Path] = []
+    for candidate in parent.glob(f"{base}.*"):
+        if candidate == path:
+            continue
+        archives.append(candidate)
+    return archives
+
+
+def _prune_archives(path: Path) -> None:
+    cutoff = datetime.now(UTC) - timedelta(days=RETENTION_DAYS)
+    archives = _archive_paths(path)
+    for archive in archives:
+        mtime = datetime.fromtimestamp(archive.stat().st_mtime, tz=UTC)
+        if mtime < cutoff:
+            archive.unlink(missing_ok=True)
+    archives = _archive_paths(path)
+    total = sum(item.stat().st_size for item in archives if item.exists())
+    while total > MAX_TOTAL_ARCHIVE_BYTES and archives:
+        oldest = min(archives, key=lambda item: item.stat().st_mtime)
+        size = oldest.stat().st_size
+        oldest.unlink(missing_ok=True)
+        total -= size
+        archives = _archive_paths(path)
 
 
 def _rotate_if_needed(path: Path, next_bytes: int) -> None:
     size = path.stat().st_size if path.exists() else 0
     if size == 0 or size + next_bytes <= MAX_BYTES:
         return
-    oldest = Path(f"{path}.{ROTATIONS}")
-    if oldest.exists():
-        oldest.unlink()
-    for index in range(ROTATIONS - 1, 0, -1):
-        source = Path(f"{path}.{index}")
-        if source.exists():
-            source.rename(Path(f"{path}.{index + 1}"))
-    path.rename(Path(f"{path}.1"))
+    archive = path.with_name(f"{path.name}.{_archive_timestamp()}")
+    path.rename(archive)
+    _prune_archives(path)
 
 
 class _WarningJsonHandler(logging.Handler):

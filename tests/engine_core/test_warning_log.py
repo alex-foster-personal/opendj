@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from apps.engine_core import warning_log
@@ -43,4 +46,27 @@ def test_warning_log_rotates_when_the_next_record_would_exceed_cap(
     assert path.read_text(encoding="utf-8") == "old"
     warning_log._rotate_if_needed(path, 1)
     assert not path.exists()
-    assert (tmp_path / "engine-warn.log.1").read_text(encoding="utf-8") == "old"
+    archives = list(tmp_path.glob("engine-warn.log.*"))
+    assert len(archives) == 1
+    assert archives[0].read_text(encoding="utf-8") == "old"
+
+
+def test_warning_log_prunes_archives_older_than_retention(
+    tmp_path: Path, monkeypatch
+) -> None:
+    path = tmp_path / "engine-warn.log"
+    old_archive = tmp_path / "engine-warn.log.20260101T000000Z"
+    recent_archive = tmp_path / "engine-warn.log.20260901T000000Z"
+    old_archive.write_text("old", encoding="utf-8")
+    recent_archive.write_text("recent", encoding="utf-8")
+    eight_days_ago = (datetime.now(UTC) - timedelta(days=8)).timestamp()
+    one_day_ago = (datetime.now(UTC) - timedelta(days=1)).timestamp()
+    os.utime(old_archive, (eight_days_ago, eight_days_ago))
+    os.utime(recent_archive, (one_day_ago, one_day_ago))
+    monkeypatch.setattr(warning_log, "MAX_BYTES", 3)
+    path.write_text("live", encoding="utf-8")
+
+    warning_log._rotate_if_needed(path, 1)
+
+    assert not old_archive.exists()
+    assert recent_archive.exists()

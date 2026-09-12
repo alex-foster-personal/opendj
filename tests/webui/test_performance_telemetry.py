@@ -102,6 +102,46 @@ def _captured_process_record() -> dict[str, object]:
     }
 
 
+def test_client_sample_get_returns_404_before_any_post(tmp_path: Path) -> None:
+    with TestClient(_app(performance_log_dir=tmp_path)) as client:
+        response = client.get("/api/v1/performance/telemetry/client-samples")
+
+    assert response.status_code == 404
+
+
+def test_client_sample_get_returns_last_post(tmp_path: Path) -> None:
+    payload = _captured_client_sample()
+    payload["audio_health_level"] = "warn"
+    with TestClient(_app(performance_log_dir=tmp_path)) as client:
+        posted = client.post("/api/v1/performance/telemetry/client-samples", json=payload)
+        response = client.get("/api/v1/performance/telemetry/client-samples")
+
+    assert posted.status_code == 202
+    assert response.status_code == 200
+    body = response.json()
+    assert body["audio_health_level"] == "warn"
+    assert body["event_id"] == posted.json()["event_id"]
+
+
+def test_bind_feature_state_defaults_performance_log_dir_to_client_dir(
+    tmp_path: Path,
+) -> None:
+    app = create_app(
+        backend=InMemoryBackend(),
+        mount_frontend=False,
+        enable_cors=False,
+        client_error_log_dir=tmp_path,
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/performance/telemetry/client-samples",
+            json=_captured_client_sample(),
+        )
+
+    assert response.status_code == 202
+    assert list(tmp_path.glob("webui-performance-*.log"))
+
+
 def test_client_sample_writes_private_bounded_record(tmp_path: Path) -> None:
     with TestClient(_app(performance_log_dir=tmp_path)) as client:
         response = client.post(
