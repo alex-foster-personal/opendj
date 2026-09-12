@@ -278,6 +278,45 @@ def _open_ro(path: Path, label: str) -> sqlite3.Connection:
     return conn
 
 
+def _has_membership_order_key(conn: sqlite3.Connection) -> bool:
+    return any(
+        row[1] == "order_key"
+        for row in conn.execute("PRAGMA table_info(playlist_memberships)")
+    )
+
+
+def _playlist_members_sql(conn: sqlite3.Connection) -> str:
+    live = has_soft_deletes(conn, "playlist_memberships")
+    keyed = _has_membership_order_key(conn)
+    members_sql_live_keyed = (
+        "SELECT stable_id FROM playlist_memberships "
+        "WHERE playlist_id = ? AND deleted_at IS NULL "
+        "ORDER BY COALESCE(order_key, printf('%08d', position)), position"
+    )
+    members_sql_live_position = (
+        "SELECT stable_id FROM playlist_memberships "
+        "WHERE playlist_id = ? AND deleted_at IS NULL "
+        "ORDER BY position"
+    )
+    members_sql_keyed = (
+        "SELECT stable_id FROM playlist_memberships "
+        "WHERE playlist_id = ? "
+        "ORDER BY COALESCE(order_key, printf('%08d', position)), position"
+    )
+    members_sql_position = (
+        "SELECT stable_id FROM playlist_memberships "
+        "WHERE playlist_id = ? "
+        "ORDER BY position"
+    )
+    if live and keyed:
+        return members_sql_live_keyed
+    if live:
+        return members_sql_live_position
+    if keyed:
+        return members_sql_keyed
+    return members_sql_position
+
+
 def _playlist_stable_ids(state: sqlite3.Connection, name: str) -> tuple[str, ...]:
     if has_soft_deletes(state, "playlists"):
         lookup_sql = (
@@ -307,19 +346,8 @@ def _playlist_stable_ids(state: sqlite3.Connection, name: str) -> tuple[str, ...
         )
     ids: list[str] = []
     seen: set[str] = set()
+    members_sql = _playlist_members_sql(state)
     for playlist_id, _name in rows:
-        if has_soft_deletes(state, "playlist_memberships"):
-            members_sql = (
-                "SELECT stable_id FROM playlist_memberships "
-                "WHERE playlist_id = ? AND deleted_at IS NULL "
-                "ORDER BY COALESCE(order_key, printf('%08d', position)), position"
-            )
-        else:
-            members_sql = (
-                "SELECT stable_id FROM playlist_memberships "
-                "WHERE playlist_id = ? "
-                "ORDER BY COALESCE(order_key, printf('%08d', position)), position"
-            )
         for (stable_id,) in state.execute(members_sql, (playlist_id,)):
             if stable_id not in seen:
                 seen.add(stable_id)
