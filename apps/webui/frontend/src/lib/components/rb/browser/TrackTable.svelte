@@ -341,7 +341,7 @@
 		/** Remove this row's membership position from the playlist. */
 		onremoverow?: (row: BrowserRow) => void;
 		/** Move the track at `fromOrder` (1-based) to `toOrder`'s slot. */
-		onreorder?: (fromOrder: number, toOrder: number) => void;
+		onreorder?: (fromOrder: number, toOrder: number, count?: number) => void;
 		/** A drag the table refused, with the reason. The table does not own a
 		 * toast channel, so the panel says it (pins 8ba0b15d975b /
 		 * 72be3e505510: a silent refusal reads as a broken feature). */
@@ -898,7 +898,7 @@
 	// Grip-initiated only (not the whole row): the row's own click/dblclick
 	// keep selecting/loading a deck. _dragSourceOrder is plain state, not a
 	// rune - it only matters for the lifetime of one drag gesture.
-	let _dragSourceOrder: number | null = null;
+	let _dragSourceOrder: { start: number; count: number } | null = null;
 
 	function onRowDragStart(event: DragEvent, row: BrowserRow): void {
 		// A refused drag used to just preventDefault and return: no cursor
@@ -943,7 +943,17 @@
 
 	function onGripDragStart(event: DragEvent, row: BrowserRow): void {
 		event.stopPropagation();
-		_dragSourceOrder = row.order;
+		const selected = [...new Set(selectedOrders)].sort((a, b) => a - b);
+		if (
+			selectedOrderSet.has(row.order) &&
+			selected.length > 0 &&
+			selected[selected.length - 1] - selected[0] + 1 === selected.length &&
+			selected.includes(row.order)
+		) {
+			_dragSourceOrder = { start: selected[0], count: selected.length };
+		} else {
+			_dragSourceOrder = { start: row.order, count: 1 };
+		}
 		event.dataTransfer?.setData('text/plain', String(row.order));
 		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
 	}
@@ -956,10 +966,13 @@
 
 	function onRowDrop(event: DragEvent, row: BrowserRow): void {
 		event.preventDefault();
-		const from = _dragSourceOrder;
+		const source = _dragSourceOrder;
 		_dragSourceOrder = null;
-		if (from === null || from === row.order) return;
-		onreorder?.(from, row.order);
+		if (source === null) return;
+		const { start, count } = source;
+		if (row.order >= start && row.order < start + count) return;
+		if (start === row.order) return;
+		onreorder?.(start, row.order, count);
 	}
 </script>
 

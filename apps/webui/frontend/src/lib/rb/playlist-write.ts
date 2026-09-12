@@ -205,6 +205,46 @@ export async function deletePlaylistItem(
 	return { items: out.items, etag: fresh };
 }
 
+export interface MembershipMoveBody {
+	range_start: string;
+	range_length?: number;
+	range_end?: string;
+	before_item_id?: string;
+	after_item_id?: string;
+}
+
+/** POST /playlists/{id}/items:move - O(k) contiguous slice reorder
+ * without rewriting neighbors (LIBM-22). Throws PlaylistConflictError on
+ * a stale If-Match (409). */
+export async function movePlaylistItems(
+	playlistId: string,
+	etag: string,
+	body: MembershipMoveBody
+): Promise<PlaylistWriteResult & { renumbered?: boolean }> {
+	let data: unknown;
+	let response: Response;
+	try {
+		({ data, response } = await api.POST('/api/v1/playlists/{playlist_id}/items:move', {
+			params: { path: { playlist_id: playlistId }, header: { 'If-Match': etag } },
+			body
+		}));
+	} catch (error) {
+		_throwWriteError(error, `move playlist ${playlistId}`);
+	}
+	const fresh = response.headers.get('etag');
+	if (!fresh) {
+		throw new Error(
+			`playlist ${playlistId}: POST items:move response carries no ETag header`
+		);
+	}
+	const out = data as PlaylistRowWire & { renumbered?: boolean };
+	return {
+		items: out.items,
+		etag: fresh,
+		...(out.renumbered === undefined ? {} : { renumbered: out.renumbered })
+	};
+}
+
 /** POST /playlists/{id}/tracks/transfer - atomic cross-playlist add (copy)
  * or move. Throws PlaylistConflictError on a stale If-Match (409). */
 export async function transferPlaylistTracks(

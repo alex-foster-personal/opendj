@@ -2702,6 +2702,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playlists/{playlist_id}/items:move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move Playlist Items */
+        post: operations["move_playlist_items"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playlists/{playlist_id}/tracks": {
         parameters: {
             query?: never;
@@ -3873,7 +3890,7 @@ export interface paths {
          *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
          *     Share-host requests use the share venue cap (lossy ceiling by default).
          */
-        get: operations["get_track_audio_api_v1_tracks__stable_id__audio_head"];
+        get: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3891,7 +3908,7 @@ export interface paths {
          *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
          *     Share-host requests use the share venue cap (lossy ceiling by default).
          */
-        head: operations["get_track_audio_api_v1_tracks__stable_id__audio_head"];
+        head: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
         patch?: never;
         trace?: never;
     };
@@ -7706,6 +7723,40 @@ export interface components {
             position?: number | null;
             /** Stable Ids */
             stable_ids: string[];
+        };
+        /** MembershipMoveIn */
+        MembershipMoveIn: {
+            /** After Item Id */
+            after_item_id?: string | null;
+            /** Before Item Id */
+            before_item_id?: string | null;
+            /** Range End */
+            range_end?: string | null;
+            /** Range Length */
+            range_length?: number | null;
+            /** Range Start */
+            range_start: string;
+        };
+        /** MembershipMoveOut */
+        MembershipMoveOut: {
+            /** Created At */
+            created_at: string;
+            /** Items */
+            items: string[];
+            /** Name */
+            name: string;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Renumbered */
+            renumbered: boolean;
+            /** Track Count */
+            track_count: number;
+            /** Updated At */
+            updated_at: string;
+            /** Vendor */
+            vendor: string;
+            /** Vendor Pl Id */
+            vendor_pl_id: string;
         };
         /** MembershipReplaceIn */
         MembershipReplaceIn: {
@@ -16339,6 +16390,43 @@ export interface operations {
             };
         };
     };
+    move_playlist_items: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipMoveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MembershipMoveOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     replace_playlist_tracks_api_v1_playlists__playlist_id__tracks_put: {
         parameters: {
             query?: never;
@@ -18388,7 +18476,7 @@ export interface operations {
             };
         };
     };
-    get_track_audio_api_v1_tracks__stable_id__audio_head: {
+    get_track_audio_api_v1_tracks__stable_id__audio_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -18417,7 +18505,7 @@ export interface operations {
             };
         };
     };
-    get_track_audio_api_v1_tracks__stable_id__audio_head: {
+    get_track_audio_api_v1_tracks__stable_id__audio_get: {
         parameters: {
             query?: never;
             header?: never;

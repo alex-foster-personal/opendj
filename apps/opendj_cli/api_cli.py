@@ -50,6 +50,7 @@ class _ParsedRequest:
     path: str
     json_body: str | None
     fields: tuple[tuple[str, Any], ...]
+    extra_headers: tuple[tuple[str, str], ...]
 
 
 def exit_for_status(status_code: int) -> int:
@@ -137,6 +138,16 @@ def _fail_unreachable(base_url: str, port: int, error: BaseException) -> int:
     return EXIT_FAILED
 
 
+def _parse_header(raw: str) -> tuple[str, str]:
+    name, separator, value = raw.partition(":")
+    if separator == "":
+        raise UsageError(f"-H expects name:value, got {raw!r}")
+    key = name.strip()
+    if key == "":
+        raise UsageError(f"-H expects a non-empty header name, got {raw!r}")
+    return key, value.strip()
+
+
 def _parse_request(rest: Sequence[str]) -> _ParsedRequest:
     if not rest:
         raise UsageError("METHOD and PATH are required")
@@ -151,6 +162,7 @@ def _parse_request(rest: Sequence[str]) -> _ParsedRequest:
 
     json_body: str | None = None
     fields: list[tuple[str, Any]] = []
+    extra_headers: list[tuple[str, str]] = []
     position = 2
     while position < len(rest):
         token = rest[position]
@@ -166,8 +178,16 @@ def _parse_request(rest: Sequence[str]) -> _ParsedRequest:
             fields.append(_parse_field(rest[position + 1]))
             position += 2
             continue
+        if token == "-H":
+            if position + 1 >= len(rest):
+                raise UsageError("-H requires name:value")
+            extra_headers.append(_parse_header(rest[position + 1]))
+            position += 2
+            continue
         raise UsageError(f"unexpected argument {token!r}")
-    return _ParsedRequest(method, path, json_body, tuple(fields))
+    return _ParsedRequest(
+        method, path, json_body, tuple(fields), tuple(extra_headers),
+    )
 
 
 def _write_response(
@@ -206,6 +226,8 @@ def run(
     url = f"{base_url}{parsed.path}"
     port = int(base_url.rsplit(":", 1)[-1])
     headers = {"Accept": "application/json"}
+    for name, value in parsed.extra_headers:
+        headers[name] = value
     if body is not None:
         headers["Content-Type"] = "application/json"
     try:

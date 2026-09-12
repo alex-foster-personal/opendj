@@ -1,10 +1,16 @@
 """Fractional sort keys for playlist membership rows (LIBM-20 / LIBM-02 subset)."""
 from __future__ import annotations
 
+MAX_ORDER_KEY_LEN = 64
+
 _ALPHANUM = (
     "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 )
 _MID = "V"
+
+
+class PrecisionExhausted(ValueError):
+    """Cannot allocate unique keys in this gap without exceeding MAX_ORDER_KEY_LEN."""
 
 
 def from_index(i: int) -> str:
@@ -48,4 +54,36 @@ def between(left: str | None, right: str | None) -> str:
     return left + _MID
 
 
-__all__ = ["between", "from_index"]
+def allocate_keys(left: str | None, right: str | None, n: int) -> list[str]:
+    """Return n strictly increasing keys with left < k0 < ... < k{n-1} < right."""
+    if n < 1:
+        raise ValueError(f"n must be >= 1, got {n}")
+    max_len = MAX_ORDER_KEY_LEN
+    keys: list[str] = []
+    prev = left
+    for _ in range(n):
+        candidate = between(prev, right)
+        if len(candidate) > max_len:
+            raise PrecisionExhausted(
+                f"order_key length {len(candidate)} exceeds MAX_ORDER_KEY_LEN={max_len}"
+            )
+        if prev is not None and candidate <= prev:
+            raise PrecisionExhausted(
+                f"order_key {candidate!r} is not strictly after {prev!r}"
+            )
+        if right is not None and candidate >= right:
+            raise PrecisionExhausted(
+                f"order_key {candidate!r} is not strictly before {right!r}"
+            )
+        keys.append(candidate)
+        prev = candidate
+    return keys
+
+
+__all__ = [
+    "MAX_ORDER_KEY_LEN",
+    "PrecisionExhausted",
+    "allocate_keys",
+    "between",
+    "from_index",
+]

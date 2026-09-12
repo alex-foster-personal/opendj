@@ -8459,6 +8459,121 @@
         "title": "MembershipAddIn",
         "type": "object"
       },
+      "MembershipMoveIn": {
+        "properties": {
+          "after_item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Item Id"
+          },
+          "before_item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Item Id"
+          },
+          "range_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Range End"
+          },
+          "range_length": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Range Length"
+          },
+          "range_start": {
+            "minLength": 1,
+            "title": "Range Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "range_start"
+        ],
+        "title": "MembershipMoveIn",
+        "type": "object"
+      },
+      "MembershipMoveOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "renumbered": {
+            "title": "Renumbered",
+            "type": "boolean"
+          },
+          "track_count": {
+            "title": "Track Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          },
+          "vendor_pl_id": {
+            "title": "Vendor Pl Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "name",
+          "vendor",
+          "vendor_pl_id",
+          "items",
+          "track_count",
+          "created_at",
+          "updated_at",
+          "renumbered"
+        ],
+        "title": "MembershipMoveOut",
+        "type": "object"
+      },
       "MembershipReplaceIn": {
         "properties": {
           "stable_ids": {
@@ -24593,6 +24708,74 @@
         ]
       }
     },
+    "/api/v1/playlists/{playlist_id}/items:move": {
+      "post": {
+        "operationId": "move_playlist_items",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MembershipMoveIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MembershipMoveOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Move Playlist Items",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
     "/api/v1/playlists/{playlist_id}/tracks": {
       "put": {
         "operationId": "replace_playlist_tracks_api_v1_playlists__playlist_id__tracks_put",
@@ -27666,7 +27849,7 @@
     "/api/v1/tracks/{stable_id}/audio": {
       "get": {
         "description": "Stream the single best working file. FileResponse handles Range/206.\n\nHEAD is served by the same handler: FileResponse sends headers only for a\nHEAD scope, and the LyricsPanel playability probe (``fetch(url,\n{method: 'HEAD'})``) read a GET-only route as \"HTTP 405, audio cannot be\nplayed\" on every track with aligned words (found Sat 12 Sep 2026, #2082).\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).",
-        "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_head",
+        "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_get",
         "parameters": [
           {
             "in": "path",
@@ -27700,7 +27883,7 @@
       },
       "head": {
         "description": "Stream the single best working file. FileResponse handles Range/206.\n\nHEAD is served by the same handler: FileResponse sends headers only for a\nHEAD scope, and the LyricsPanel playability probe (``fetch(url,\n{method: 'HEAD'})``) read a GET-only route as \"HTTP 405, audio cannot be\nplayed\" on every track with aligned words (found Sat 12 Sep 2026, #2082).\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).",
-        "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_head",
+        "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_get",
         "parameters": [
           {
             "in": "path",
