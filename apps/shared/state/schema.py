@@ -217,6 +217,13 @@ FOREIGN_AUTHORITY_TABLES: tuple[str, ...] = (
     # of it, and regenerating AGENTS.md against a launcher-touched state.db
     # raised MissingColumnDocsError.
     "launcher_meta",
+    # apps/sync_hub/engine_identity_map.py :: ensure_identity_remap_table --
+    # spoke-side bookkeeping for content-identity collapses that must outlive
+    # one hub_apply batch. Not in the sync set itself (its own docstring says
+    # so): it carries no updated_at/origin_device_id/deleted_at, and
+    # apps/sync_hub/client.py runs it directly against the shared state.db
+    # connection returned by state_db.open_rw.
+    "sync_identity_remap",
 )
 """Tables this module does NOT create but that legitimately live in the same
 file, written by the other three schema authorities (spec section 1.3 of
