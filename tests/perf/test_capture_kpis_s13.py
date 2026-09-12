@@ -328,7 +328,9 @@ def test_engine_socket_timeout_withholds_instead_of_crashing(
 def test_http_json_turns_a_socket_timeout_into_connection_error() -> None:
     """The negative control for the guard above: without the OSError arm this
     call raises TimeoutError, which no caller catches."""
-    with mock.patch.object(capture_s13, "urlopen", side_effect=TimeoutError("timed out")):
-        with pytest.raises(ConnectionError) as excinfo:
-            capture_s13._http_json("GET", "http://127.0.0.1:9/api/v1/health")
+    with (
+        mock.patch.object(capture_s13, "urlopen", side_effect=TimeoutError("timed out")),
+        pytest.raises(ConnectionError) as excinfo,
+    ):
+        capture_s13._http_json("GET", "http://127.0.0.1:9/api/v1/health")
     assert "TimeoutError" in str(excinfo.value)
