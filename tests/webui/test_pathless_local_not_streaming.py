@@ -1,7 +1,6 @@
 """Pathless/stale FolderPath with a present local file is not streaming.
 
-[if] a track with resolvable local audio is flagged is_streaming on
-listing or rb-meta [then] fail, [else stop].
+[if] a track with resolvable local audio is listed [then] it is never is_streaming, [else stop].
 """
 from __future__ import annotations
 

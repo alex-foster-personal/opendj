@@ -45,12 +45,18 @@ export interface HeadphoneOutputDevice {
 	label: string;
 }
 
+/** Headphone output routing. Unknown modes fail fast. */
+export type HeadphoneOutputMode = 'practice' | 'two_outputs';
+
 /** Serializable headphone cue-bus read model. `active` means the monitor
  * stream is attached to the element and the selected sink accepted playback. */
 export interface HeadphoneState {
 	mix: number;
 	level: number;
 	selected_output_device_id: string | null;
+	/** `practice` blends PFL into the main output when no monitor is selected.
+	 * Selecting a monitor writes `two_outputs` and restores master-only main. */
+	output_mode: HeadphoneOutputMode;
 	outputs: HeadphoneOutputDevice[];
 	supported: boolean;
 	active: boolean;

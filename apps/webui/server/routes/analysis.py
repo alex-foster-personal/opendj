@@ -286,6 +286,10 @@ def synthesize_fallback_beats(record: AnalysisRecord) -> list[FallbackBeatOut] |
     or a single downbeat with no usable BPM). Corrupt data (negative
     duration, non-increasing downbeats, absurd tempo) raises via the
     caller - it is never smoothed over.
+
+    Empty ``downbeats_s`` still returns None. This function does not
+    invent a tempo map and does not call ``fit_tempo_map`` or
+    ``apply_tempo_map``.
     """
     downbeats = [float(d) for d in record.downbeats_s]
     if not downbeats:

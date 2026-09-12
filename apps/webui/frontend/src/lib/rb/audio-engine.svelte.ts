@@ -231,7 +231,9 @@ import {
 	disposeHeadphoneMonitor,
 	ensureHeadphoneGraph,
 	refreshHeadphoneOutputs as refreshMonitorOutputs,
-	selectHeadphoneOutput as selectMonitorOutput
+	selectHeadphoneOutput as selectMonitorOutput,
+	setHeadphoneOutputMode as setMonitorOutputMode,
+	wirePracticeBlendIntoMasterPath
 } from '$lib/player/headphones';
 import {
 	_assertKeyShift,
@@ -686,7 +688,6 @@ function _ensureGraph(): AudioContext {
 	const routing = parseExternalRouting();
 	if (routing === null) {
 		_masterMuteGain.connect(_ctx.destination);
-		_masterGain.connect(_masterMuteGain);
 	} else {
 		const highestUsbChannel = Math.max(...[...routing.values()].map((left) => left + 1));
 		const dest = _ctx.destination;
@@ -711,6 +712,7 @@ function _ensureGraph(): AudioContext {
 		_externalMerger.connect((_externalRouteAnalyser = _ctx.createAnalyser()));
 	}
 	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
+	if (routing === null) wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones);
 	// Post-EQ, pre-fader tap points, one per deck, PLUS one master tap sourced
 	// from `_masterGain` itself (post master gain, so the master volume
 	// control genuinely moves it - pin 5a5c3b8033d8's still-open half).
@@ -4030,16 +4032,13 @@ class RbAudioEngine implements AudioEngine {
 		applyHeadphoneMix();
 	}
 
-	async refreshHeadphoneOutputs(): Promise<void> {
-		return refreshMonitorOutputs();
-	}
-
+	setHeadphoneOutputMode = setMonitorOutputMode;
+	refreshHeadphoneOutputs = refreshMonitorOutputs;
 	/** Must be called from a visible user gesture so the browser can open its
 	 * output chooser. This never requests microphone capture. */
 	async acquireHeadphoneOutput(): Promise<void> {
 		return acquireMonitorOutput(_monitorSource);
 	}
-
 	async selectHeadphoneOutput(deviceId: string): Promise<void> {
 		return selectMonitorOutput(deviceId, _monitorSource);
 	}

@@ -16,8 +16,7 @@ Acceptance, one test each:
 - surviving row wins -> locations, fields, vendor ids, and playlist
   memberships that pointed at the loser now point at the survivor.
 
-[if] two machines ingested the same audio under different PKs [then] the
-hub holds one row, [else stop].
+[if] two machines ingest one audio under different PKs [then] the hub holds one row, [else stop].
 """
 from __future__ import annotations
 

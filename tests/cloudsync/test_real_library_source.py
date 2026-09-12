@@ -13,6 +13,8 @@ Single-line intent:
   - if the migrated copy is taken by byte copy instead of the snapshot then broken
   - if a default library without legacy stamps errors instead of skipping then broken
   - if a named library without legacy stamps skips instead of failing loud then broken
+
+[if] the real-library tier snapshots a library [then] WAL rows show, source unwritten, [else stop].
 """
 
 from __future__ import annotations

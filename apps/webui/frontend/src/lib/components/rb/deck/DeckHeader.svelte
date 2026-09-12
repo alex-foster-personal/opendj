@@ -70,9 +70,9 @@
 
 	const bpmText: string = $derived(deck.bpm === null ? '--.--' : deck.bpm.toFixed(2));
 	const syncBounds = $derived(tempoBoundsFromPitchRange(pitchRanges[deckId]));
-	// A loaded track with no real PQTZ grid has nothing to phase-lock with, so
-	// BEAT SYNC is inert rather than lit-but-dead. Transport is deliberately
-	// NOT gated the same way - play, pause and cue always run.
+	// Beat Sync is inert when gridFeaturesInert is true (missing / failed /
+	// static_grid_untrusted: true). A trusted multi-anchor own map is not
+	// gridless; Q and Beat Sync stay live. Transport is still not gated.
 	const gridless: boolean = $derived(gridFeaturesInert(deck));
 	const gridInertTip: string = $derived(gridFeatureInertTip(deck));
 	const beatSyncTitle: string = $derived(

@@ -73,6 +73,7 @@ from typing import Any
 
 from apps.shared.equivalence import verdict_path
 from apps.shared.mik_energy import readable_mik_energy
+from apps.shared.scan_mass_missing import MassMissingError
 from apps.shared.state import db as state_db
 
 from . import availability as avail
@@ -94,15 +95,17 @@ def cmd_availability(args: argparse.Namespace) -> int:
     # an old (pre-v8) database can still query the v8-only track_availability
     # table without touching the real file.
     conn = state_db.open_rw(path) if args.live else state_db.open_dry_run(path)
+    allow = bool(getattr(args, "allow_mass_missing", False))
     try:
         rows = avail.probe(conn)
         histogram: dict[str, int] = {}
         for row in rows:
             histogram[row.state] = histogram.get(row.state, 0) + 1
         if args.live:
-            report = avail.write(conn, rows)
+            report = avail.write(conn, rows, allow_mass_missing=allow)
             written = {"changed": report.changed, "unchanged": report.unchanged}
         else:
+            avail.guard_present_drop(conn, rows, allow_mass_missing=allow)
             written = {"changed": 0, "unchanged": 0}
         payload: dict[str, Any] = {
             "mode": "live" if args.live else "dry-run",
@@ -112,6 +115,9 @@ def cmd_availability(args: argparse.Namespace) -> int:
             "written": written,
             "stored": avail.counts(conn),
         }
+    except MassMissingError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     finally:
         conn.close()
     total = sum(payload["classified"].values())
@@ -512,6 +518,13 @@ def build_parser() -> argparse.ArgumentParser:
     ):
         child = sub.add_parser(name, help=help_text, parents=[_common_options()])
         child.set_defaults(handler=handler)
+        if name == "availability":
+            child.add_argument(
+                "--allow-mass-missing",
+                action="store_true",
+                help="override LIBM-41: allow a scan that drops more than "
+                "50% of previously present files (including to zero)",
+            )
     return parser
 
 

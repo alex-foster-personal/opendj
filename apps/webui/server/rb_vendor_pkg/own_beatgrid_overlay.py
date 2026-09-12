@@ -13,6 +13,10 @@ the same reason: `anlz-cache` is keyed on the ANLZ file mtime and the points
 parameter, neither of which moves when an own record is written or when the
 source toggle flips. A cached own block would go stale in silence.
 
+Own multi-anchor grids are trusted dynamic grids: per-beat local bpm already
+carries the tempo map, so `static_grid_untrusted` is omitted on that branch
+while `performance_hints.dynamic_tempo` is set from `tempo_changes`.
+
 Split out of `apps/webui/server/rb_vendor_pkg/anlz.py` (which was pushed over
 the 600-line file-size ceiling by this block landing inline) into its own
 module; the logic is unchanged.
@@ -198,7 +202,7 @@ def _own_beatgrid_block(result: Any, stable_id: str) -> tuple[dict[str, Any], li
             f"own beatgrid record for {stable_id} is status ok with an empty "
             "beats array, which is a contract violation and not a state"
         )
-    return {
+    block: dict[str, Any] = {
         "source": SOURCE_OWN,
         "status": "ok",
         "reason": None,
@@ -208,8 +212,11 @@ def _own_beatgrid_block(result: Any, stable_id: str) -> tuple[dict[str, Any], li
             for b in beats
         ],
         "bpm": float(payload["bpm"]),
-        "static_grid_untrusted": bool(payload["static_grid_untrusted"]),
-    }, list(payload["tempo_changes"])
+    }
+    tempo_changes = list(payload["tempo_changes"])
+    if not tempo_changes:
+        block["static_grid_untrusted"] = bool(payload["static_grid_untrusted"])
+    return block, tempo_changes
 
 
 def apply_own_beatgrid(
