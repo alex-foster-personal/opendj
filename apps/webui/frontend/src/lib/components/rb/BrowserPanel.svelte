@@ -177,7 +177,7 @@
 		SortKey
 	} from './browser/pane-contract.svelte';
 	import { clearSelection, pruneSelection } from './browser/pane-row-selection';
-	import PlaylistTree from './browser/PlaylistTree.svelte';
+	import LibraryNav from './browser/LibraryNav.svelte';
 	import {
 		fetchMissingTrackRows,
 		isMissingTracksId,
@@ -1200,6 +1200,16 @@
 		if (snap.playlist_id === MISSING_TRACKS_ID) {
 			return missingTracksNode(allTracksBrokenCount ?? 0);
 		}
+		if (snap.playlist_id.startsWith('taglist:')) {
+			return {
+				playlist_id: snap.playlist_id,
+				name: snap.playlist_name,
+				track_count: 0,
+				broken_count: 0,
+				kind: 'taglist',
+				children: []
+			};
+		}
 		const found = treeNodes.find((n) => n.playlist_id === snap.playlist_id);
 		if (found !== undefined) return found;
 		return {
@@ -1607,7 +1617,12 @@
 		// back-stack, post-mutation refresh), so this is the one place that
 		// needs to remember the selection for the next boot. Folders are not
 		// loadable panes, so only the two real kinds are recorded.
-		if (p === panes[0] && node.kind !== 'folder' && node.kind !== 'missing_tracks') {
+		if (
+			p === panes[0] &&
+			node.kind !== 'folder' &&
+			node.kind !== 'missing_tracks' &&
+			node.kind !== 'taglist'
+		) {
 			setLastPlaylist({
 				playlist_id: node.playlist_id,
 				name: node.name,
@@ -1634,6 +1649,20 @@
 				});
 				return;
 			}
+			if (node.kind === 'taglist') {
+				await fillAllTracksPane({
+					pane: p,
+					seq,
+					fetchPage: (cursor) =>
+						listTracksHydrated({ limit: PAGE_SIZE, cursor, tag: node.name }),
+					mapRow: (t, order) => _rowFromListWire(t, order),
+					progressTotal: node.track_count,
+					onFirstPaint: () => completeLibraryUsable({ source: 'all-tracks' }),
+					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
+					onFillError: (error) => pushToast(`taglist load failed: ${error}`, 'error')
+				});
+				return;
+			}
 			const result =
 				node.kind === 'missing_tracks'
 					? await fetchMissingTrackRows()
@@ -1650,6 +1679,16 @@
 	 * currently-selected pane after a mutation (add-remove-reorder-tracks). */
 	function _currentNode(p: PaneStore): PlaylistNode | null {
 		if (p.playlist_id === null || p.playlist_id === 'all' || isMissingTracksId(p.playlist_id)) return null;
+		if (p.playlist_id.startsWith('taglist:')) {
+			return {
+				playlist_id: p.playlist_id,
+				name: p.title,
+				track_count: p.rows.length,
+				broken_count: 0,
+				kind: 'taglist',
+				children: []
+			};
+		}
 		return {
 			playlist_id: p.playlist_id,
 			name: p.title,
@@ -2705,7 +2744,7 @@
 				onselect={selectSpotifyPlaylist}
 			/>
 		{:else}
-			<PlaylistTree
+			<LibraryNav
 				nodes={treeNodes}
 				playlistsLoading={playlistsLoading}
 				playlistsError={playlistsError}

@@ -21,7 +21,6 @@
 	import { TreeFoldTracker } from './tree-fold-tracker.svelte';
 	import { TreePlaylistRename } from './tree-playlist-rename.svelte';
 	import TreeContextMenu from './TreeContextMenu.svelte';
-	import TreeSmartlistSection from './TreeSmartlistSection.svelte';
 	import MissingTracksFolder from './MissingTracksFolder.svelte';
 	import { MISSING_TRACKS_ID, missingTracksNode } from './missing-tracks';
 	import PlaylistHistoryPanel from './PlaylistHistoryPanel.svelte';
@@ -98,7 +97,6 @@
 	/** playlist_id currently under a track drag, for the drop outline. */
 	let dropTargetId: string | null = $state(null);
 	let treeContextMenu = $state<TreeContextMenu | null>(null);
-	let deleteSmartlistUi: ((sl: { id: string; name: string }) => void) | undefined;
 
 	function _onTrackDragOver(event: DragEvent, node: PlaylistNode): void {
 		// All Tracks is a view, not a playlist, so it can never receive a drop.
@@ -148,8 +146,8 @@
 	let mode = $state<'tree' | 'column'>('tree');
 	// ColumnBrowser mounts lazily on first activation (its onMount walks
 	// every /tracks cursor page - no point paying that for users who never
-	// open Column View) but then STAYS mounted (visibility toggled via CSS
-	// below, not {#if}/{:else}) so switching back to Tree View and back
+	// open column mode) but then STAYS mounted (visibility toggled via CSS
+	// below, not {#if}/{:else}) so switching back to tree mode and back
 	// doesn't re-trigger the full-library fetch every time.
 	let columnMounted = $state(false);
 	$effect(() => {
@@ -206,15 +204,19 @@
 
 <div class="tree-root">
 	<PlaylistHistoryPanel />
-	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} {onselect} ondeletesmartlist={(sl) => deleteSmartlistUi?.(sl)} />
-	<div class="view-tabs">
-		<button class="vt" class:active={mode === 'tree'} onclick={() => (mode = 'tree')}>
-			Tree View
+	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} {onselect} />
+	{#if mode === 'tree'}
+		<button
+			type="button"
+			class="view-toggle"
+			data-testid="playlist-column-view"
+			onclick={() => (mode = 'column')}
+		>
+			Columns
 		</button>
-		<button class="vt" class:active={mode === 'column'} onclick={() => (mode = 'column')}>
-			Column View
-		</button>
-	</div>
+	{:else}
+		<button type="button" class="view-toggle" onclick={() => (mode = 'tree')}>Tree</button>
+	{/if}
 	{#if columnMounted}
 		<div class="tree-scroll column-mode" class:hidden={mode !== 'column'}>
 			<ColumnBrowser selectedId={trackSelectedId} {onselecttrack} {onloadtrack} />
@@ -356,14 +358,6 @@
 				</div>
 			{/each}
 		{/if}
-		<TreeSmartlistSection
-			{selectedId}
-			{onselectsmartlist}
-			{treeContextMenu}
-			onDeleteReady={(fn) => {
-				deleteSmartlistUi = fn;
-			}}
-		/>
 		<!-- data-testid="playlist-missing-tracks" is on MissingTracksFolder -->
 		<MissingTracksFolder
 			brokenCount={allTracksBrokenCount}
@@ -396,29 +390,21 @@
 	.row.child.tint-multi:not(.selected):hover {
 		background: color-mix(in srgb, var(--rb-accent) 40%, transparent);
 	}
-	.view-tabs {
-		display: flex;
-		flex: none;
-		border-bottom: 1px solid var(--rb-border);
-	}
-	.vt {
-		flex: 1;
-		padding: 3px 0;
-		background: var(--rb-panel);
-		border: none;
-		border-right: 1px solid var(--rb-border);
+	.view-toggle {
+		display: block;
+		width: calc(100% - 12px);
+		margin: 2px 6px;
+		padding: 2px 0;
+		background: var(--rb-panel-raised);
+		border: 1px solid var(--rb-border);
 		color: var(--rb-text-dim);
 		font-family: var(--rb-font);
 		font-size: var(--rb-fs-label);
 		cursor: pointer;
 	}
-	.vt:last-child {
-		border-right: none;
-	}
-	.vt.active {
+	.view-toggle:hover {
 		color: var(--rb-text);
-		background: var(--rb-panel-raised);
-		border-bottom: 1px solid var(--rb-accent);
+		border-color: var(--rb-accent);
 	}
 	.tree-scroll {
 		flex: 1;

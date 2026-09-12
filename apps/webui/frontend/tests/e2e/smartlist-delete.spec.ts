@@ -49,6 +49,7 @@ test('smartlist tree: context-menu delete removes row from tree and API', async 
 
 		await page.reload();
 		await expect(page.locator(TREE)).toBeVisible({ timeout: 30_000 });
+		await page.getByTestId('library-source-autolists').click();
 		await expect(_smartlistRow(page, name)).toBeVisible({ timeout: 30_000 });
 
 		await _smartlistRow(page, name).click({ button: 'right' });

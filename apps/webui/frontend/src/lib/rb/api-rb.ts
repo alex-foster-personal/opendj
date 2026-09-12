@@ -549,6 +549,7 @@ export async function listTracksHydrated(params: {
 	limit?: number;
 	cursor?: string | undefined;
 	available?: 'all' | 'true' | 'false';
+	tag?: string;
 }): Promise<TracksPageHydrated> {
 	const qs = Object.entries(params)
 		.filter(([, v]) => v !== undefined && v !== null && v !== '')
