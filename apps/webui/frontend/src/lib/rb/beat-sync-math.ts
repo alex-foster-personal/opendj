@@ -713,11 +713,7 @@ export const BEATGRID_ISSUE_MAX_RUN = 6;
  */
 export {
 	computeQuantizedLaunchArm,
-	planQuantizedLaunch,
-	QUANTIZED_LAUNCH,
-	type QuantizedLaunchArmFacts,
-	type QuantizedLaunchInput,
-	type QuantizedLaunchPlan
+	QUANTIZED_LAUNCH
 } from '$lib/player/transport/quantized-launch';
 export { hasTrustedBeatGrid } from '$lib/player/grid-features';
 

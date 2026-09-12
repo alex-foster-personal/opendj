@@ -4,15 +4,15 @@
  * Pure math only: no DOM, no AudioContext, no engine imports.
  */
 
-import { nextDownbeatAtOrAfter, validateBeatGrid, type AnlzBeat } from '$lib/rb/beat-sync-math';
+import type { AnlzBeat } from '$lib/rb/anlz-types';
 
 export const QUANTIZED_LAUNCH = 'QUANTIZED LAUNCH';
 
-export type QuantizedLaunchPlan =
+type QuantizedLaunchPlan =
 	| { kind: 'armed'; launchAtContextSec: number; followerStartSec: number }
 	| { kind: 'refuse'; reason: string };
 
-export interface QuantizedLaunchInput {
+interface QuantizedLaunchInput {
 	nowContextTimeSec: number;
 	processorLeadSec: number;
 	masterPlaying: boolean;
@@ -24,6 +24,17 @@ export interface QuantizedLaunchInput {
 	followerPositionSec: number;
 }
 
+function _usableGrid(beats: readonly AnlzBeat[]): boolean {
+	if (!Array.isArray(beats) || beats.length < 2) return false;
+	let previous = Number.NEGATIVE_INFINITY;
+	for (const beat of beats) {
+		if (!Number.isInteger(beat.n) || beat.n < 1 || beat.n > 4) return false;
+		if (!Number.isFinite(beat.t) || beat.t < previous) return false;
+		previous = beat.t;
+	}
+	return true;
+}
+
 function _masterBeat1Candidates(beats: readonly AnlzBeat[], fromSec: number): readonly number[] {
 	const downbeats = beats.filter((beat) => beat.n === 1);
 	if (downbeats.length === 0) return [];
@@ -32,11 +43,10 @@ function _masterBeat1Candidates(beats: readonly AnlzBeat[], fromSec: number): re
 	return downbeats.slice(index).map((beat) => beat.t);
 }
 
-function _followerHasLaunchDownbeat(beats: readonly AnlzBeat[], positionSec: number): boolean {
+function _nextDownbeatSec(beats: readonly AnlzBeat[], positionSec: number): number | null {
 	const downbeats = beats.filter((beat) => beat.n === 1);
-	if (downbeats.length === 0) return false;
-	const index = downbeats.findIndex((beat) => beat.t >= positionSec);
-	return index >= 0;
+	const found = downbeats.find((beat) => beat.t >= positionSec);
+	return found === undefined ? null : found.t;
 }
 
 /**
@@ -49,10 +59,7 @@ export function planQuantizedLaunch(input: QuantizedLaunchInput): QuantizedLaunc
 	});
 	if (input.followerPlaying) return refuse('follower is already playing');
 	if (!input.masterPlaying) return refuse('no playing other-deck master');
-	try {
-		validateBeatGrid(input.masterBeats);
-		validateBeatGrid(input.followerBeats);
-	} catch {
+	if (!_usableGrid(input.masterBeats) || !_usableGrid(input.followerBeats)) {
 		return refuse('trusted beatgrid required on both decks');
 	}
 	if (!Number.isFinite(input.masterTempoRatio) || input.masterTempoRatio <= 0) {
@@ -60,10 +67,10 @@ export function planQuantizedLaunch(input: QuantizedLaunchInput): QuantizedLaunc
 	}
 	const candidates = _masterBeat1Candidates(input.masterBeats, input.masterPositionSec);
 	if (candidates.length === 0) return refuse('master beatgrid has no future beat 1');
-	if (!_followerHasLaunchDownbeat(input.followerBeats, input.followerPositionSec)) {
+	const followerStartSec = _nextDownbeatSec(input.followerBeats, input.followerPositionSec);
+	if (followerStartSec === null) {
 		return refuse('follower beatgrid has no beat 1 in range');
 	}
-	const followerStartSec = nextDownbeatAtOrAfter(input.followerBeats, input.followerPositionSec);
 	for (const masterBeat1Sec of candidates) {
 		const deltaTrackSec = masterBeat1Sec - input.masterPositionSec;
 		if (deltaTrackSec < 0) continue;
@@ -75,7 +82,7 @@ export function planQuantizedLaunch(input: QuantizedLaunchInput): QuantizedLaunc
 	return refuse('no master beat 1 lands outside the processor lead window');
 }
 
-export interface QuantizedLaunchArmFacts {
+interface QuantizedLaunchArmFacts {
 	followerPlaying: boolean;
 	followerDesiredActive: boolean;
 	followerTrustedGrid: boolean;
