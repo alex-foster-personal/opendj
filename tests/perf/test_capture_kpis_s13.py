@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import socket
 import subprocess
 import sys
+import threading
+from collections.abc import Iterator
+from contextlib import closing, contextmanager
 from pathlib import Path
-from unittest import mock
 
 import pytest
 
@@ -288,6 +291,50 @@ def test_unreachable_engine_prints_withheld_stderr(
     assert "WITHHELD" in captured.err
     assert str(ledger) in captured.err
 
+@contextmanager
+def _hanging_http_server() -> Iterator[str]:
+    """A REAL listening socket that accepts and never answers.
+
+    Not a mock: the connection completes, the request is sent, and the client
+    blocks on the response until its own timeout fires -- which is the exact
+    transport failure a wedged engine produces. A mocked `urlopen` proves only
+    that the except arm is reachable, not that the real socket path reaches it.
+    """
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", 0))
+    server.listen(8)
+    held: list[socket.socket] = []
+    stop = threading.Event()
+
+    def _accept_and_hold() -> None:
+        server.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                conn, _addr = server.accept()
+            except (TimeoutError, OSError):
+                continue
+            held.append(conn)
+
+    thread = threading.Thread(target=_accept_and_hold, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.getsockname()[1]}"
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+        for conn in held:
+            conn.close()
+        server.close()
+
+
+def test_http_json_turns_a_real_socket_timeout_into_connection_error() -> None:
+    """[if] the engine accepts but never answers [then] _http_json raises
+    ConnectionError naming the timeout, [else the caller cannot withhold]."""
+    with _hanging_http_server() as base, pytest.raises(ConnectionError) as excinfo:
+        capture_s13._http_json("GET", f"{base}/api/v1/health", timeout_s=0.5)
+    assert "TimeoutError" in str(excinfo.value)
+
 
 def test_engine_socket_timeout_withholds_instead_of_crashing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -295,24 +342,22 @@ def test_engine_socket_timeout_withholds_instead_of_crashing(
     """A slow engine must withhold, never raise.
 
     Measured Sat 12 Sep 2026 on a host at load average 118: the probe's
-    `urlopen(timeout=10)` raised `TimeoutError`, which is an OSError and not a
-    URLError, so it escaped `_http_json` and the capture died with a traceback
-    instead of writing the withheld row S13 promises.
+    urlopen raised `TimeoutError`, which is an OSError and not a URLError, so
+    it escaped `_http_json` and the capture died with a traceback instead of
+    writing the withheld row S13 promises. Driven here through a real socket
+    that accepts and stays silent.
     """
     ledger = tmp_path / "kpi-ledger.json"
     ledger.write_text(
         json.dumps({"schema_version": 1, "entries": []}, indent=1) + "\n",
         encoding="utf-8",
     )
-
-    def _raise_timeout(*_args: object, **_kwargs: object) -> None:
-        raise TimeoutError("timed out")
-
-    with mock.patch.object(capture_s13, "urlopen", _raise_timeout):
+    with _hanging_http_server() as base:
         code = capture_s13.capture_s13(
-            engine="http://127.0.0.1:9",
-            frontend="http://127.0.0.1:9",
+            engine=base,
+            frontend=base,
             ledger_path=ledger,
+            probe_timeout_s=0.5,
         )
 
     assert code == 1
@@ -325,12 +370,15 @@ def test_engine_socket_timeout_withholds_instead_of_crashing(
     assert "engine unreachable" in capsys.readouterr().err
 
 
-def test_http_json_turns_a_socket_timeout_into_connection_error() -> None:
-    """The negative control for the guard above: without the OSError arm this
-    call raises TimeoutError, which no caller catches."""
-    with (
-        mock.patch.object(capture_s13, "urlopen", side_effect=TimeoutError("timed out")),
-        pytest.raises(ConnectionError) as excinfo,
-    ):
-        capture_s13._http_json("GET", "http://127.0.0.1:9/api/v1/health")
-    assert "TimeoutError" in str(excinfo.value)
+def test_a_reachable_engine_is_not_reported_as_a_timeout() -> None:
+    """Negative control: the hanging-socket fixture must not make every probe
+    look timed out. A CLOSED port is refused promptly and names refusal, not a
+    timeout, so the assertion above is discriminating rather than universal."""
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as probe:
+        probe.bind(("127.0.0.1", 0))
+        closed_port = probe.getsockname()[1]
+    with pytest.raises(ConnectionError) as excinfo:
+        capture_s13._http_json(
+            "GET", f"http://127.0.0.1:{closed_port}/api/v1/health", timeout_s=2.0
+        )
+    assert "TimeoutError" not in str(excinfo.value)

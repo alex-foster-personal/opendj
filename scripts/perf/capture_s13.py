@@ -52,7 +52,15 @@ def _utc_today() -> date:
     return datetime.now(UTC).date()
 
 
-def _http_json(method: str, url: str, body: dict[str, Any] | None = None) -> tuple[int, Any]:
+_PROBE_TIMEOUT_S = 10.0
+
+
+def _http_json(
+    method: str,
+    url: str,
+    body: dict[str, Any] | None = None,
+    timeout_s: float = _PROBE_TIMEOUT_S,
+) -> tuple[int, Any]:
     data = None
     headers = {"Accept": "application/json"}
     if body is not None:
@@ -60,7 +68,7 @@ def _http_json(method: str, url: str, body: dict[str, Any] | None = None) -> tup
         headers["Content-Type"] = "application/json"
     request = Request(url, data=data, headers=headers, method=method)
     try:
-        with urlopen(request, timeout=10) as response:
+        with urlopen(request, timeout=timeout_s) as response:
             raw = response.read().decode("utf-8")
             payload = json.loads(raw) if raw else None
             return response.status, payload
@@ -81,9 +89,13 @@ def _http_json(method: str, url: str, body: dict[str, Any] | None = None) -> tup
         raise ConnectionError(f"{type(exc).__name__}: {exc}") from exc
 
 
-def _probe_engine(engine: str, frontend: str) -> str | None:
+def _probe_engine(
+    engine: str, frontend: str, timeout_s: float = _PROBE_TIMEOUT_S
+) -> str | None:
     try:
-        status, _payload = _http_json("GET", f"{engine.rstrip('/')}/api/v1/health")
+        status, _payload = _http_json(
+            "GET", f"{engine.rstrip('/')}/api/v1/health", timeout_s=timeout_s
+        )
     except ConnectionError as exc:
         return f"engine unreachable: {exc}"
     if status != 200:
@@ -93,6 +105,7 @@ def _probe_engine(engine: str, frontend: str) -> str | None:
             "POST",
             f"{engine.rstrip('/')}/api/v1/auth/login",
             {"origin": frontend.rstrip("/")},
+            timeout_s=timeout_s,
         )
     except ConnectionError as exc:
         return f"engine unreachable: {exc}"
@@ -185,6 +198,7 @@ def capture_s13(
     ledger_path: Path,
     google_storage_state: str | None = None,
     timeout_s: int = 90,
+    probe_timeout_s: float = _PROBE_TIMEOUT_S,
     dry_run: bool = False,
 ) -> int:
     """Capture S13 login KPI and append ledger rows. Returns process exit code."""
@@ -192,7 +206,7 @@ def capture_s13(
     machine = _machine_name()
     capture_date = _utc_today()
 
-    probe_reason = _probe_engine(engine, frontend)
+    probe_reason = _probe_engine(engine, frontend, timeout_s=probe_timeout_s)
     if probe_reason is not None:
         rows = span_to_ledger_rows(
             None,

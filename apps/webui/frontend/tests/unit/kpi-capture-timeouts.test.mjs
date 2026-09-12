@@ -2,27 +2,35 @@ import { strict as assert } from 'node:assert';
 import test from 'node:test';
 
 import {
-	DEFAULT_KPI_CAPTURE_TIMEOUT_S,
 	KPI_CAPTURE_HEADROOM_MS,
 	KPI_CAPTURE_MIN_TEST_TIMEOUT_MS,
 	kpiCaptureTestTimeoutMs,
 	kpiCaptureTimeoutS
 } from '../e2e/kpi-capture-timeouts.mjs';
 
-test('if KPI_CAPTURE_TIMEOUT_S is unset then the default budget is used, not NaN', () => {
-	assert.equal(kpiCaptureTimeoutS(undefined), DEFAULT_KPI_CAPTURE_TIMEOUT_S);
-	assert.equal(kpiCaptureTimeoutS(''), DEFAULT_KPI_CAPTURE_TIMEOUT_S);
+test('if KPI_CAPTURE_TIMEOUT_S is unset then it is refused, never defaulted', () => {
+	assert.throws(() => kpiCaptureTimeoutS(undefined), /required/);
+	assert.throws(() => kpiCaptureTimeoutS(''), /required/);
+	assert.throws(() => kpiCaptureTimeoutS('   '), /required/);
 });
 
-test('if KPI_CAPTURE_TIMEOUT_S is garbage or non-positive then the default budget is used', () => {
-	assert.equal(kpiCaptureTimeoutS('abc'), DEFAULT_KPI_CAPTURE_TIMEOUT_S);
-	assert.equal(kpiCaptureTimeoutS('0'), DEFAULT_KPI_CAPTURE_TIMEOUT_S);
-	assert.equal(kpiCaptureTimeoutS('-5'), DEFAULT_KPI_CAPTURE_TIMEOUT_S);
+test('if KPI_CAPTURE_TIMEOUT_S is malformed then it is refused naming the value', () => {
+	assert.throws(() => kpiCaptureTimeoutS('abc'), /positive integer/);
+	// parseInt would have read these as 90, 1 and 0 respectively.
+	assert.throws(() => kpiCaptureTimeoutS('90s'), /positive integer/);
+	assert.throws(() => kpiCaptureTimeoutS('1.5'), /positive integer/);
+	assert.throws(() => kpiCaptureTimeoutS('0x10'), /positive integer/);
+});
+
+test('if KPI_CAPTURE_TIMEOUT_S is non-positive then it is refused', () => {
+	assert.throws(() => kpiCaptureTimeoutS('0'), /greater than zero|positive integer/);
+	assert.throws(() => kpiCaptureTimeoutS('-5'), /positive integer/);
 });
 
 test('if KPI_CAPTURE_TIMEOUT_S is a positive integer then it is the capture budget', () => {
 	assert.equal(kpiCaptureTimeoutS('45'), 45);
 	assert.equal(kpiCaptureTimeoutS('300'), 300);
+	assert.equal(kpiCaptureTimeoutS(' 90 '), 90);
 });
 
 test('if --timeout-s equals the old hardcoded 120s then the test timeout still exceeds it', () => {
@@ -45,4 +53,9 @@ test('if any --timeout-s is given then the test timeout leads it by the headroom
 
 test('if --timeout-s is tiny then the test timeout still honors the floor', () => {
 	assert.equal(kpiCaptureTestTimeoutMs('1'), KPI_CAPTURE_MIN_TEST_TIMEOUT_MS);
+});
+
+test('if the test timeout is derived from a bad value then it refuses too', () => {
+	assert.throws(() => kpiCaptureTestTimeoutMs('abc'), /positive integer/);
+	assert.throws(() => kpiCaptureTestTimeoutMs(undefined), /required/);
 });

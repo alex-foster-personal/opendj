@@ -10,8 +10,6 @@
  * the race and always writes KPI_CAPTURE_RESULT.
  */
 
-export const DEFAULT_KPI_CAPTURE_TIMEOUT_S = 90;
-
 /** Slack between the spec's own deadline and Playwright killing the test. */
 export const KPI_CAPTURE_HEADROOM_MS = 60_000;
 
@@ -19,14 +17,29 @@ export const KPI_CAPTURE_HEADROOM_MS = 60_000;
 export const KPI_CAPTURE_MIN_TEST_TIMEOUT_MS = 120_000;
 
 /**
- * Parse KPI_CAPTURE_TIMEOUT_S. Unset, unparseable or non-positive all fall
- * back to the default rather than producing NaN, which Playwright reads as
- * "no timeout" and which is how a typo used to become an unbounded run.
+ * Parse KPI_CAPTURE_TIMEOUT_S, refusing anything that is not a positive
+ * integer number of seconds.
+ *
+ * There is no default here on purpose. `capture_s13.py` always sets this
+ * variable (argparse supplies its own default), and the spec already refuses
+ * to run without `KPI_CAPTURE_RESULT`, so there is no legitimate standalone
+ * invocation for a fallback to serve -- it could only hide a typo and run the
+ * capture under a budget nobody chose. An unparseable value used to become
+ * NaN, which Playwright reads as "no timeout".
  */
 export function kpiCaptureTimeoutS(raw) {
-	const parsed = Number.parseInt(raw ?? '', 10);
-	if (!Number.isFinite(parsed) || parsed <= 0) {
-		return DEFAULT_KPI_CAPTURE_TIMEOUT_S;
+	if (raw === undefined || raw === null || String(raw).trim() === '') {
+		throw new Error('KPI_CAPTURE_TIMEOUT_S is required (positive integer seconds)');
+	}
+	const text = String(raw).trim();
+	if (!/^[0-9]+$/.test(text)) {
+		throw new Error(
+			`KPI_CAPTURE_TIMEOUT_S must be a positive integer number of seconds, got ${JSON.stringify(text)}`
+		);
+	}
+	const parsed = Number.parseInt(text, 10);
+	if (parsed <= 0) {
+		throw new Error(`KPI_CAPTURE_TIMEOUT_S must be greater than zero, got ${parsed}`);
 	}
 	return parsed;
 }

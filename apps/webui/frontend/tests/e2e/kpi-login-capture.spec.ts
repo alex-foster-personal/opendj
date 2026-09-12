@@ -1,4 +1,4 @@
-import { test, type Page, type Request } from '@playwright/test';
+import { test, type Locator, type Page, type Request } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 import { kpiCaptureTimeoutS } from './kpi-capture-timeouts.mjs';
 
@@ -142,14 +142,33 @@ async function waitForAuthSettled(page: Page, timeoutMs: number): Promise<void> 
  * Every failure here falls through to the caller's existing "stuck on Google"
  * withhold rather than throwing.
  */
-async function clickOneGoogleAffordance(page: Page): Promise<boolean> {
+interface GoogleClickOutcome {
+	clicked: boolean;
+	/** Set when a control was FOUND but its click failed; null otherwise. */
+	error: string | null;
+}
+
+/** Click `locator`, distinguishing "did not click" from "was not there". */
+async function clickGoogleControl(
+	locator: Locator,
+	label: string
+): Promise<GoogleClickOutcome> {
+	try {
+		await locator.click({ timeout: 5_000 });
+		return { clicked: true, error: null };
+	} catch (exc) {
+		const detail = exc instanceof Error ? exc.message.split('\n')[0] : String(exc);
+		return { clicked: false, error: `${label}: ${detail}` };
+	}
+}
+
+async function clickOneGoogleAffordance(page: Page): Promise<GoogleClickOutcome> {
 	const proceed = page.getByRole('button', { name: GOOGLE_PROCEED });
 	const proceedCount = await proceed.count().catch(() => 0);
 	for (let index = 0; index < proceedCount; index += 1) {
 		const button = proceed.nth(index);
 		if (!(await button.isVisible().catch(() => false))) continue;
-		await button.click({ timeout: 5_000 }).catch(() => null);
-		return true;
+		return clickGoogleControl(button, 'consent button');
 	}
 	// An account row is the one control carrying an email address; matching on
 	// that rather than on a name keeps a real identity out of this repository.
@@ -161,25 +180,45 @@ async function clickOneGoogleAffordance(page: Page): Promise<boolean> {
 		const text = (await row.innerText().catch(() => '')).trim();
 		if (text === '' || !text.includes('@')) continue;
 		if (GOOGLE_CHOOSER_NOISE.test(text)) continue;
-		await row.click({ timeout: 5_000 }).catch(() => null);
-		return true;
+		return clickGoogleControl(row, 'account row');
 	}
-	return false;
+	return { clicked: false, error: null };
 }
 
-async function driveGoogleInterstitials(page: Page, budgetMs: () => number): Promise<void> {
+/**
+ * Returns the last FAILED click, if any, so the caller can name the real
+ * cause instead of the generic "stuck on Google" it would otherwise reach.
+ * A click that did not happen is never counted as a round of progress: a
+ * blocked or detached control would otherwise burn the round budget while
+ * looking like forward motion.
+ */
+async function driveGoogleInterstitials(
+	page: Page,
+	budgetMs: () => number
+): Promise<string | null> {
 	const deadline = Date.now() + Math.min(budgetMs(), GOOGLE_DRIVE_MAX_MS);
+	let lastError: string | null = null;
 	for (let round = 0; round < GOOGLE_DRIVE_MAX_ROUNDS; round += 1) {
-		if (page.isClosed()) return;
-		if (Date.now() >= deadline) return;
-		if (!page.url().includes(GOOGLE_HOST_FRAGMENT)) return;
+		if (page.isClosed()) return lastError;
+		if (Date.now() >= deadline) return lastError;
+		if (!page.url().includes(GOOGLE_HOST_FRAGMENT)) return null;
 		await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => null);
-		if (!(await clickOneGoogleAffordance(page))) {
-			await sleep(1_000);
-			continue;
+		const outcome = await clickOneGoogleAffordance(page);
+		if (outcome.error !== null) lastError = outcome.error;
+		if (!outcome.clicked) {
+			round -= 1;
+			if (outcome.error === null) {
+				// Nothing actionable on screen yet; wait for it to render.
+				await sleep(1_000);
+				continue;
+			}
+			// A control was there and refused the click. Retrying the same
+			// control cannot help, so stop and let the caller report it.
+			return lastError;
 		}
 		await sleep(1_500);
 	}
+	return lastError;
 }
 
 async function waitForSignInReady(page: Page, budgetMs: () => number) {
@@ -321,7 +360,7 @@ test('capture S13 login submit-to-library-usable span', async ({ page }) => {
 			timeout: Math.min(budgetMs(), LOGIN_POST_WAIT_MS)
 		})
 		.catch(() => null);
-	await driveGoogleInterstitials(page, budgetMs);
+	const googleClickError = await driveGoogleInterstitials(page, budgetMs);
 
 	try {
 		await page.waitForURL(
@@ -332,6 +371,14 @@ test('capture S13 login submit-to-library-usable span', async ({ page }) => {
 			{ timeout: budgetMs() }
 		);
 	} catch {
+		if (googleClickError !== null) {
+			writeResult({
+				ok: false,
+				span: null,
+				reason: `cannot complete real Google login: a consent control refused the click (${googleClickError})`
+			});
+			return;
+		}
 		const host = new URL(page.url()).hostname;
 		if (host.includes('google.')) {
 			const title = await page.title().catch(() => 'title unreadable');
