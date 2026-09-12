@@ -6,9 +6,12 @@
 	 * dashed tick on the midline, and any segment spanning one is dashed, so a
 	 * gap can never read as continuous data. The final segment and end dot take
 	 * the good/bad colour so direction survives without relying on colour alone.
+	 *
+	 * PERF-DASH-02: perf cards pass timeAxis so x follows calendar dates; farm
+	 * cards omit it and keep equal index spacing.
 	 */
 	import { formatDeltaWithUnit, formatWithUnit, judge, type Verdict } from './format';
-	import { SPARK_H, SPARK_W, sparkGeometry, sparkX, sparkY } from './spark-geometry';
+	import { SPARK_H, SPARK_W, sparkGeometry, sparkY, utcToday } from './spark-geometry';
 	import { tip } from './tooltip.svelte';
 	import type { KpiDef, KpiSnapshot } from './kpi-api';
 
@@ -17,21 +20,26 @@
 		kpi: KpiDef;
 		snapshots: KpiSnapshot[];
 		verdict: Verdict;
+		timeAxis?: boolean;
+		today?: string;
 	}
 
-	const { metric, kpi, snapshots, verdict }: Props = $props();
+	const { metric, kpi, snapshots, verdict, timeAxis = false, today }: Props = $props();
 
 	const W = SPARK_W;
 	const H = SPARK_H;
+	const axisToday = $derived(today ?? utcToday());
 
-	const geometry = $derived(sparkGeometry(metric, snapshots));
+	const geometry = $derived(
+		sparkGeometry(
+			metric,
+			snapshots,
+			timeAxis ? { mode: 'date', today: axisToday } : { mode: 'index' }
+		)
+	);
 	const present = $derived(geometry.present);
 	const missing = $derived(geometry.missing);
 	const segments = $derived(geometry.segments);
-
-	function xAt(index: number): number {
-		return sparkX(index, snapshots.length);
-	}
 
 	function yAt(value: number): number {
 		return sparkY(value, geometry.bounds);
@@ -83,7 +91,7 @@
 
 	{#each missing as gapIndex}
 		<circle
-			cx={xAt(gapIndex)}
+			cx={geometry.xs[gapIndex]}
 			cy={geometry.midlineY}
 			r="2.5"
 			fill="none"
@@ -101,7 +109,7 @@
 
 	{#each present as point, order}
 		<circle
-			cx={xAt(point.index)}
+			cx={point.x}
 			cy={yAt(point.value)}
 			r={order === present.length - 1 ? 4 : 2.5}
 			fill={order === present.length - 1 ? statusColor : 'var(--muted)'}

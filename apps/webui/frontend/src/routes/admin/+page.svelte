@@ -201,8 +201,9 @@
 		<p class="sub">
 			The openDJ latency and RAM program, tracked since <strong>{perf.sinceLabel}</strong>, the first
 			perf measurement. Same cards as above: the big number is the latest reading, the arrow is the
-			move since the previous one, and the sparkline is every reading since then, one step per
-			measurement round. Cards that have moved come first.
+			move since the previous one, and the sparkline places each reading by calendar date from the
+			first measurement to today so gaps match the time between them. A card whose latest reading is
+			old shows how many days old. Cards that have moved come first.
 		</p>
 		<p class="note">
 			Withheld and superseded readings are gaps, not numbers. Whether each UX scenario meets its
@@ -217,7 +218,7 @@
 		{/if}
 		<div class="grid">
 			{#each perfMetrics as [metric, kpi] (metric)}
-				<KpiTile {metric} {kpi} snapshots={perf.snapshots} />
+				<KpiTile {metric} {kpi} snapshots={perf.snapshots} timeAxis />
 			{/each}
 		</div>
 

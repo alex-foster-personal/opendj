@@ -19,6 +19,7 @@ import {
 import type { KpiDef, KpiSnapshot } from './kpi-api';
 import { KPI_WHY } from './kpi-why';
 import { originBadge, originText } from './kpi-provenance';
+import { calendarDays, snapshotDay, utcToday } from './spark-geometry';
 import type { TipContent } from './tooltip.svelte';
 
 /** One snapshot that carried a real number for this metric. */
@@ -37,6 +38,8 @@ export interface KpiCardModel {
 	/** 'typed' | 'config' | '' - empty means derived, which is deliberately unbadged. */
 	badge: string;
 	tip: TipContent;
+	ageDays: number | null;
+	ageTitle: string | null;
 }
 
 /** Snapshots where this metric is a real number. Nulls are gaps, never zeros. */
@@ -46,10 +49,16 @@ export function measuredPoints(metric: string, snapshots: KpiSnapshot[]): KpiPoi
 		.filter((point): point is KpiPoint => typeof point.value === 'number');
 }
 
+function ageSentence(ageDays: number, measuredDay: string, today: string): string {
+	const dayWord = ageDays === 1 ? '1 day old' : `${ageDays} days old`;
+	return `Latest reading is ${dayWord} (measured ${measuredDay}; today is ${today}).`;
+}
+
 export function buildKpiCard(
 	metric: string,
 	kpi: KpiDef,
-	snapshots: KpiSnapshot[]
+	snapshots: KpiSnapshot[],
+	options?: { timeAxis?: boolean; today?: string }
 ): KpiCardModel {
 	const directionText = kpi.direction === 'higher_better' ? 'Higher is better.' : 'Lower is better.';
 	const why = KPI_WHY[metric] ?? '';
@@ -58,6 +67,8 @@ export function buildKpiCard(
 	const previous = points.length >= 2 ? points[points.length - 2] : null;
 	const delta = latest !== null && previous !== null ? latest.value - previous.value : 0;
 	const verdict: Verdict = previous !== null ? judge(delta, kpi.direction) : 'flat';
+	let ageDays: number | null = null;
+	let ageTitle: string | null = null;
 
 	const body = [kpi.title];
 	if (why) body.push(why);
@@ -70,7 +81,9 @@ export function buildKpiCard(
 			delta,
 			verdict,
 			badge: '',
-			tip: { title: kpi.label, subtitle: `${kpi.unit} - ${directionText}`, body }
+			tip: { title: kpi.label, subtitle: `${kpi.unit} - ${directionText}`, body },
+			ageDays,
+			ageTitle
 		};
 	}
 
@@ -78,6 +91,14 @@ export function buildKpiCard(
 	body.push(`Latest reading from ${snapshots[latest.index].label} (${snapshots[latest.index].ts}).`);
 	const originLine = originText(origin);
 	if (originLine !== null) body.push(originLine);
+
+	if (options?.timeAxis) {
+		const today = options.today ?? utcToday();
+		const measuredDay = snapshotDay(snapshots[latest.index].ts);
+		ageDays = Math.max(0, calendarDays(measuredDay, today));
+		ageTitle = ageSentence(ageDays, measuredDay, today);
+		body.push(ageTitle);
+	}
 
 	const lines =
 		previous !== null
@@ -101,6 +122,8 @@ export function buildKpiCard(
 			subtitle: `${formatWithUnit(latest.value, kpi.unit)} - ${directionText}`,
 			lines,
 			body
-		}
+		},
+		ageDays,
+		ageTitle
 	};
 }

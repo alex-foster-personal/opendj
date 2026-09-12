@@ -492,3 +492,157 @@ test('perf KPI cards are the second card set: after the farm cards, before the r
 	assert.match(source, /fetchPerfKpiLedger\(\)/);
 	assert.match(source, /perf\.sinceLabel/, 'the time period must be stated from the first measurement');
 });
+
+// PERF-DASH-02: perf sparklines use calendar-date x; farm cards stay index-spaced.
+
+const TODAY = '2026-09-11';
+
+function datedSnapshot(ts, label, values) {
+	return { ts, label, values, provenance: {}, notes: null };
+}
+
+test('date-axis sparkline: a 28-day gap is about 28 times wider than a 1-day gap', () => {
+	const snapshots = [
+		datedSnapshot('2026-07-22', 'R1', { m: 10 }),
+		datedSnapshot('2026-08-19', 'R2', { m: 11 }),
+		datedSnapshot('2026-08-20', 'R3', { m: 12 })
+	];
+	const geometry = spark.sparkGeometry('m', snapshots, { mode: 'date', today: TODAY });
+	const xs = geometry.xs;
+	const dx28 = xs[1] - xs[0];
+	const dx1 = xs[2] - xs[1];
+	assert.ok(Math.abs(dx28 / dx1 - 28) < 1e-6, `28-day vs 1-day ratio was ${dx28 / dx1}, expected ~28`);
+	assert.equal(xs[0], spark.SPARK_PAD, 'window starts at the first measurement');
+	assert.ok(
+		xs[2] < spark.SPARK_W - spark.SPARK_PAD,
+		'last point must sit left of the right pad because today is after the last reading'
+	);
+});
+
+test('date-axis sparkline: a late-only KPI shares the global window, not its own tighter axis', () => {
+	const allPresent = spark.sparkGeometry(
+		'm',
+		[
+			datedSnapshot('2026-07-22', 'R1', { m: 10 }),
+			datedSnapshot('2026-08-19', 'R2', { m: 11 }),
+			datedSnapshot('2026-08-20', 'R3', { m: 12 })
+		],
+		{ mode: 'date', today: TODAY }
+	);
+	const lateOnly = spark.sparkGeometry('m', [
+		datedSnapshot('2026-07-22', 'R1', { m: null }),
+		datedSnapshot('2026-08-19', 'R2', { m: null }),
+		datedSnapshot('2026-08-20', 'R3', { m: 12 })
+	], { mode: 'date', today: TODAY });
+	assert.equal(
+		lateOnly.present[0].x,
+		allPresent.present[2].x,
+		'a late-only KPI must sit at the same x as the third point on the shared window'
+	);
+});
+
+test('date-axis sparkline: same-day rounds spread within the day instead of stacking', () => {
+	const snapshots = [
+		datedSnapshot('2026-07-22', 'R1', { m: 10 }),
+		datedSnapshot('2026-08-19', 'R2a', { m: 11 }),
+		datedSnapshot('2026-08-19', 'R2b', { m: 12 })
+	];
+	const geometry = spark.sparkGeometry('m', snapshots, { mode: 'date', today: TODAY });
+	assert.notEqual(geometry.xs[1], geometry.xs[2], 'same-day rounds must not share x');
+	const intraDay = Math.abs(geometry.xs[2] - geometry.xs[1]);
+	const oneDay = geometry.xs[1] - geometry.xs[0];
+	assert.ok(
+		intraDay < oneDay / 10,
+		'intra-day spread must be much smaller than a 1-day gap on the same window'
+	);
+});
+
+test('index-axis sparkline: farm-like ISO timestamps stay equally spaced by default', () => {
+	const snapshots = [
+		datedSnapshot('2026-07-01T00:00:00Z', 'R1', { m: 10 }),
+		datedSnapshot('2026-07-29T00:00:00Z', 'R2', { m: 11 }),
+		datedSnapshot('2026-08-26T00:00:00Z', 'R3', { m: 12 })
+	];
+	const geometry = spark.sparkGeometry('m', snapshots);
+	const dx0 = geometry.segments[0].x2 - geometry.segments[0].x1;
+	const dx1 = geometry.segments[1].x2 - geometry.segments[1].x1;
+	assert.equal(dx0, dx1, 'default mode must keep equal segment spacing');
+	for (const point of geometry.present) {
+		assert.equal(point.x, spark.sparkX(point.index, 3), 'present x must match sparkX in index mode');
+	}
+	const dated = spark.sparkGeometry('m', snapshots, { mode: 'date', today: TODAY });
+	assert.notEqual(
+		dated.present[1].x,
+		geometry.present[1].x,
+		'date mode must change x when the window ends at today, not at the last snapshot'
+	);
+});
+
+test('M1 gap geometry still uses index x when no axis is passed', () => {
+	const snapshots = [
+		snapshot('1', { m: 10 }),
+		snapshot('2', { m: null }),
+		snapshot('3', { m: 12 })
+	];
+	const geometry = spark.sparkGeometry('m', snapshots);
+	for (const point of geometry.present) {
+		assert.equal(point.x, spark.sparkX(point.index, snapshots.length));
+	}
+});
+
+test('reading age: perf cards show days old with hover title and tip body', () => {
+	const kpi = { label: 'Latency', unit: 'ms', direction: 'lower_better', title: 'Deck load time.' };
+	const snapshots = [
+		datedSnapshot('2026-08-20', 'R1', { deck_load_ms: 220 }),
+		datedSnapshot('2026-08-25', 'R2', { deck_load_ms: 210 })
+	];
+	const model = card.buildKpiCard('deck_load_ms', kpi, snapshots, { timeAxis: true, today: TODAY });
+	assert.equal(model.ageDays, 17);
+	assert.match(model.ageTitle, /17 days old/);
+	assert.match(model.ageTitle, /2026-08-25/);
+	assert.match(model.ageTitle, /2026-09-11/);
+	assert.match(model.tip.body.join(' '), /17 days old/);
+});
+
+test('reading age: measured today shows ageDays 0 and no stale chip', () => {
+	const kpi = { label: 'Latency', unit: 'ms', direction: 'lower_better', title: 'Deck load time.' };
+	const model = card.buildKpiCard(
+		'deck_load_ms',
+		kpi,
+		[datedSnapshot(TODAY, 'R1', { deck_load_ms: 220 })],
+		{ timeAxis: true, today: TODAY }
+	);
+	assert.equal(model.ageDays, 0);
+});
+
+test('reading age: farm cards omit age fields and tip prose', () => {
+	const kpi = { label: 'Latency', unit: 'ms', direction: 'lower_better', title: 'Deck load time.' };
+	const snapshots = [datedSnapshot('2026-08-25', 'R1', { deck_load_ms: 220 })];
+	const model = card.buildKpiCard('deck_load_ms', kpi, snapshots);
+	assert.equal(model.ageDays, null);
+	assert.equal(model.ageTitle, null);
+	assert.ok(!/days old/.test(model.tip.body.join(' ')));
+});
+
+test('perf tiles opt into timeAxis; farm tiles do not', () => {
+	const page = readFileSync(`${ADMIN}/+page.svelte`, 'utf8');
+	assert.match(
+		page,
+		/<KpiTile[^>]*snapshots=\{ledger\.snapshots\}[^>]*\/>/s,
+		'farm tiles must keep ledger snapshots without timeAxis'
+	);
+	assert.doesNotMatch(
+		page.replace(/snapshots=\{ledger\.snapshots\}[\s\S]*?\/>/, ''),
+		/snapshots=\{ledger\.snapshots\}[^>]*timeAxis/s
+	);
+	assert.match(page, /<KpiTile[^>]*snapshots=\{perf\.snapshots\}[^>]*timeAxis/s);
+	assert.doesNotMatch(page, /one step per measurement round/);
+});
+
+test('KpiTile renders an age chip with title when ageDays is positive', () => {
+	const source = readFileSync(`${ADMIN}/KpiTile.svelte`, 'utf8');
+	assert.match(source, /class="age"/);
+	assert.match(source, /title=\{card\.ageTitle\}/);
+	assert.match(source, /ageDays > 0/);
+	assert.match(source, /<Sparkline[^>]*\{timeAxis\}/s);
+});
