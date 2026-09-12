@@ -19,11 +19,13 @@ from apps.webui.server import machine_pressure
 from apps.webui.server.machine_pressure import (
     CACHE_TTL_SECONDS,
     PRESSURE_CHURN_WEIGHT_SWAP,
+    PRESSURE_SAMPLE_P95_WALL_MS,
     MachinePressureCache,
     ProcessInfo,
     live_process_family_members,
     opendj_process_name,
     read_machine_pressure,
+    sample_wall_p95_ms,
 )
 from scripts.diagnostics.probe_process_family import (
     opendj_process_name as probe_opendj_process_name,
@@ -87,6 +89,7 @@ def test_the_response_is_an_allowlist_not_a_passthrough() -> None:
         "band",
         "sample_interval_ms",
         "sample_wall_ms",
+        "sample_wall_p95_ms",
     }
     assert set(body) <= allowed
 
@@ -445,3 +448,33 @@ def test_opendj_process_name_matches_probe_parser() -> None:
     for command, expected in fixtures:
         assert opendj_process_name(command) == expected
         assert probe_opendj_process_name(command) == expected
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_sample_wall_p95_uses_nearest_rank() -> None:
+    """[if] twenty sample walls are recorded [then] p95 is the 19th ordered value, [else stop]."""
+    walls = [float(i) for i in range(1, 21)]
+
+    p95 = sample_wall_p95_ms(walls)
+
+    assert PRESSURE_SAMPLE_P95_WALL_MS == 5
+    assert p95 == pytest.approx(19.0)
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_empty_wall_ring_omits_p95_rather_than_zero() -> None:
+    """[if] no sample walls have been recorded [then] p95 is absent, never 0, [else stop]."""
+    assert sample_wall_p95_ms([]) is None
+
+
+@pytest.mark.requirement("PERFMODE-05")
+def test_pressure_response_exposes_p95_without_failing_over_budget() -> None:
+    """[if] samples are taken [then] sample_wall_p95_ms is present, [else stop]."""
+    cache = MachinePressureCache()
+    sampler, _ = _counting_sampler(FULL_SAMPLE)
+
+    body = cache.read(now=0.0, sampler=sampler, vm_stat_reader=lambda: None)
+
+    assert "sample_wall_ms" in body
+    assert "sample_wall_p95_ms" in body
+    assert body["sample_wall_p95_ms"] != 0 or body["sample_wall_ms"] == 0
