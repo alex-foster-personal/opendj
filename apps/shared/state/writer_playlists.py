@@ -406,6 +406,42 @@ class _PlaylistWriterMixin:
             self.bus.publish(ev)
         return True
 
+    def set_playlist_forbid_duplicates(
+        self: _WriterHost, playlist_id: str, value: bool,
+    ) -> bool:
+        """Set forbid_duplicates on a live playlist. Returns True on change."""
+        with self._tx() as conn:
+            row = conn.execute(
+                "SELECT forbid_duplicates FROM playlists "
+                "WHERE playlist_id = ? AND deleted_at IS NULL",
+                (playlist_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            current = bool(row[0] or 0)
+            if current == value:
+                return False
+            now = next_playlist_revision(conn, playlist_id, self._now_iso())
+            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
+            conn.execute(
+                "UPDATE playlists SET forbid_duplicates=?, updated_at=?, "
+                "origin_device_id=? WHERE playlist_id=?",
+                (
+                    1 if value else 0,
+                    stamp.updated_at,
+                    stamp.origin_device_id,
+                    playlist_id,
+                ),
+            )
+            ev = self._append_event(
+                kind="playlist.update",
+                stable_id=None,
+                payload={"playlist_id": playlist_id, "forbid_duplicates": value},
+                ts=now,
+            )
+            self.bus.publish(ev)
+        return True
+
     def update_playlist_membership_order_keys(
         self: _WriterHost,
         playlist_id: str,

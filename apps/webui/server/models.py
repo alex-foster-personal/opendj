@@ -257,6 +257,7 @@ class PlaylistSummary(BaseModel):
     # None when the playlist is not a rekordbox one or has no live
     # djmdPlaylist row - clients must not invent an order for those.
     seq: int | None = None
+    forbid_duplicates: bool = False
 
 
 class PlaylistDiff(BaseModel):
@@ -326,6 +327,7 @@ class PlaylistDetail(BaseModel):
     playlist_id: str
     name: str
     vendor: str
+    forbid_duplicates: bool = False
     # Full membership as stable_ids (always unfiltered -- the diff viewer
     # and reorder flows key off this).
     items: list[str]

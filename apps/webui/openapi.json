@@ -9153,6 +9153,10 @@
             "title": "Created At",
             "type": "string"
           },
+          "forbid_duplicates": {
+            "title": "Forbid Duplicates",
+            "type": "boolean"
+          },
           "items": {
             "items": {
               "type": "string"
@@ -9198,6 +9202,7 @@
           "track_count",
           "created_at",
           "updated_at",
+          "forbid_duplicates",
           "renumbered"
         ],
         "title": "MembershipMoveOut",
@@ -11269,6 +11274,11 @@
           "diff": {
             "$ref": "#/components/schemas/PlaylistDiff"
           },
+          "forbid_duplicates": {
+            "default": false,
+            "title": "Forbid Duplicates",
+            "type": "boolean"
+          },
           "items": {
             "items": {
               "type": "string"
@@ -11489,6 +11499,18 @@
       },
       "PlaylistRenameIn": {
         "properties": {
+          "forbid_duplicates": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When true, reject extra copies of an already-present track.",
+            "title": "Forbid Duplicates"
+          },
           "name": {
             "anyOf": [
               {
@@ -11736,6 +11758,11 @@
             "title": "Available Count",
             "type": "integer"
           },
+          "forbid_duplicates": {
+            "default": false,
+            "title": "Forbid Duplicates",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -11785,6 +11812,10 @@
             "title": "Created At",
             "type": "string"
           },
+          "forbid_duplicates": {
+            "title": "Forbid Duplicates",
+            "type": "boolean"
+          },
           "items": {
             "items": {
               "type": "string"
@@ -11825,7 +11856,8 @@
           "items",
           "track_count",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "forbid_duplicates"
         ],
         "title": "PlaylistWriteOut",
         "type": "object"

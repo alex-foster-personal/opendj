@@ -8203,6 +8203,8 @@ export interface components {
         MembershipMoveOut: {
             /** Created At */
             created_at: string;
+            /** Forbid Duplicates */
+            forbid_duplicates: boolean;
             /** Items */
             items: string[];
             /** Name */
@@ -8982,6 +8984,11 @@ export interface components {
         /** PlaylistDetail */
         PlaylistDetail: {
             diff: components["schemas"]["PlaylistDiff"];
+            /**
+             * Forbid Duplicates
+             * @default false
+             */
+            forbid_duplicates: boolean;
             /** Items */
             items: string[];
             /** Name */
@@ -9067,6 +9074,11 @@ export interface components {
         };
         /** PlaylistRenameIn */
         PlaylistRenameIn: {
+            /**
+             * Forbid Duplicates
+             * @description When true, reject extra copies of an already-present track.
+             */
+            forbid_duplicates?: boolean | null;
             /**
              * Name
              * @description New display name; omit for a no-op that returns the current row + etag
@@ -9158,6 +9170,11 @@ export interface components {
         PlaylistSummary: {
             /** Available Count */
             available_count: number;
+            /**
+             * Forbid Duplicates
+             * @default false
+             */
+            forbid_duplicates: boolean;
             /** Name */
             name: string;
             /** Playlist Id */
@@ -9175,6 +9192,8 @@ export interface components {
         PlaylistWriteOut: {
             /** Created At */
             created_at: string;
+            /** Forbid Duplicates */
+            forbid_duplicates: boolean;
             /** Items */
             items: string[];
             /** Name */

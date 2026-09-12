@@ -41,6 +41,7 @@
 		onloadtrack,
 		oncreateplaylist,
 		onrenameplaylist,
+		onforbidduplicates,
 		ondeleteplaylist,
 		onduplicateplaylist,
 		ondroptracks
@@ -162,7 +163,7 @@
 
 <div class="tree-root">
 	<PlaylistHistoryPanel />
-	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} {onselect} />
+	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} onforbidduplicates={onforbidduplicates} {onselect} />
 	{#if mode === 'tree'}
 		<button
 			type="button"

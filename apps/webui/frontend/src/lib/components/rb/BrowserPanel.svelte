@@ -119,6 +119,7 @@
 		markPlaylistCreateGrace,
 		movePlaylistItems,
 		PlaylistConflictError,
+		patchPlaylist,
 		renamePlaylist,
 		replacePlaylistTracks
 	} from '$lib/rb/playlist-write';
@@ -501,6 +502,7 @@
 					broken_count: p.track_count - p.available_count,
 					kind: 'playlist',
 					mostly_broken: playlistMostlyBroken(p),
+					forbid_duplicates: p.forbid_duplicates === true,
 					children: []
 				})
 			)
@@ -1570,6 +1572,32 @@
 		} catch (exc) {
 			pushToast(`create playlist failed: ${String(exc)}`, 'error');
 			return null;
+		}
+	}
+
+	async function toggleForbidDuplicates(node: PlaylistNode): Promise<void> {
+		if (
+			node.kind !== 'playlist' ||
+			node.playlist_id === 'all' ||
+			isMissingTracksId(node.playlist_id) ||
+			isAutolistId(node.playlist_id)
+		)
+			return;
+		try {
+			const { etag } = await getPlaylistTracksEtag(node.playlist_id);
+			await patchPlaylist(node.playlist_id, etag, {
+				forbid_duplicates: !node.forbid_duplicates
+			});
+			node.forbid_duplicates = !node.forbid_duplicates;
+			await _refreshPlaylists();
+			pushToast(
+				node.forbid_duplicates
+					? 'Forbid duplicates enabled'
+					: 'Forbid duplicates disabled',
+				'info'
+			);
+		} catch (exc) {
+			pushToast(`forbid duplicates failed: ${String(exc)}`, 'error');
 		}
 	}
 
@@ -2967,6 +2995,7 @@
 				onloadtrack={loadRow}
 				oncreateplaylist={() => createPlaylistUi()}
 				onrenameplaylist={(n, name) => void renamePlaylistUi(n, name)}
+				onforbidduplicates={(n) => void toggleForbidDuplicates(n)}
 				ondeleteplaylist={(n) => void deletePlaylistUi(n)}
 				onduplicateplaylist={(n) => void duplicatePlaylistUi(n)}
 				ondroptracks={(id, ids) => void dropTracksOnPlaylist(id, ids)}

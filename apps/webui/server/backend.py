@@ -127,6 +127,7 @@ class Playlist:
     item_ids: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
+    forbid_duplicates: bool = False
 
 
 @dataclass
