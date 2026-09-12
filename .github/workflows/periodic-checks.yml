@@ -876,7 +876,7 @@ jobs:
       - name: Install waveform native extension
         run: |
           uv pip install 'maturin>=1.8,<2'
-          uv run maturin develop --release \
+          uv run --no-sync maturin develop --release \
             --manifest-path apps/webui/server/native/waveform/Cargo.toml
 
       - name: Waveform-render bench
