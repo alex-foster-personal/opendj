@@ -12,7 +12,7 @@ from apps.smartlists.autolist_groups import (
 )
 from apps.smartlists.evaluator import compile_rule, evaluate
 
-pytestmark = pytest.mark.requirement("SMART-02")
+pytestmark = pytest.mark.requirement("SMART-05")
 
 
 @pytest.fixture

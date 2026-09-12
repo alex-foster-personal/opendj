@@ -54,11 +54,11 @@ from .errors import (
 from .playlist_add import AlreadyExistsError, SmartlistImmutableError
 from .playlist_move import SliceNotContiguousError, TargetInsideSliceError
 from .routes import analysis as analysis_routes
-from .routes import autolists as autolists_routes
 from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
 from .routes import analysis_source as analysis_source_routes
 from .routes import auth as auth_routes
+from .routes import autolists as autolists_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes

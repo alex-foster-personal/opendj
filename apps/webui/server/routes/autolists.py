@@ -101,8 +101,8 @@ def list_groups() -> list[AutolistGroupOut]:
 
 @router.get("/buckets", response_model=list[AutolistBucketOut])
 def list_buckets(
+    conn: Annotated[sqlite3.Connection, Depends(get_smartlists_conn)],
     group: Literal["genre", "rating", "bpm"] = Query(...),
-    conn: sqlite3.Connection = Depends(get_smartlists_conn),
 ) -> list[AutolistBucketOut]:
     try:
         buckets = buckets_with_counts(conn, group)
@@ -116,7 +116,7 @@ def list_buckets(
 
 @router.get("/index", response_model=AutolistIndexOut)
 def get_index(
-    conn: sqlite3.Connection = Depends(get_smartlists_conn),
+    conn: Annotated[sqlite3.Connection, Depends(get_smartlists_conn)],
 ) -> AutolistIndexOut:
     try:
         rows = compact_index_rows(conn)

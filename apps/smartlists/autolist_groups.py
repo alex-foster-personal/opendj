@@ -34,9 +34,7 @@ def bpm_bucket_key(bpm: float | None) -> str:
         return BPM_LT60_ID
     if bpm >= 200:
         return BPM_GE200_ID
-    lo = int(bpm // 10) * 10
-    if lo < 60:
-        lo = 60
+    lo = max(int(bpm // 10) * 10, 60)
     return f"{lo}-{lo + 9}"
 
 
@@ -78,8 +76,10 @@ def static_rating_buckets() -> list[Bucket]:
 
 def static_bpm_buckets() -> list[Bucket]:
     out: list[Bucket] = [Bucket(id=BPM_LT60_ID, label="<60")]
-    for lo in range(60, 200, 10):
-        out.append(Bucket(id=f"{lo}-{lo + 9}", label=f"{lo}-{lo + 9}"))
+    out.extend(
+        Bucket(id=f"{lo}-{lo + 9}", label=f"{lo}-{lo + 9}")
+        for lo in range(60, 200, 10)
+    )
     out.append(Bucket(id=BPM_GE200_ID, label=">=200"))
     out.append(Bucket(id=BPM_UNSPECIFIED_ID, label="Unspecified"))
     return out
@@ -225,8 +225,8 @@ def compact_index_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 
 __all__ = [
-    "Bucket",
     "GROUP_IDS",
+    "Bucket",
     "bpm_bucket_key",
     "bucket_counts_for_group",
     "buckets_with_counts",

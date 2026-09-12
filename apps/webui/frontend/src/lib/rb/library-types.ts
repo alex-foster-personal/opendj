@@ -161,7 +161,7 @@ export interface PlaylistNode {
 	/** Node flavour; 'folder' reserved for future hierarchy, unused v1.
 	 * 'missing_tracks' is the reserved Missing Tracks view (playlist_id
 	 * 'missing'), never matched by a user playlist's display name. */
-	kind: 'all_tracks' | 'playlist' | 'folder' | 'missing_tracks' | 'taglist' | 'autolist';
+	kind: 'all_tracks' | 'playlist' | 'folder' | 'missing_tracks' | 'taglist';
 	/** Fewer than 30% of tracks exist on disk; tree row renders dimmed. */
 	mostly_broken?: boolean;
 	/** Children for folder nodes; always [] at v1. */

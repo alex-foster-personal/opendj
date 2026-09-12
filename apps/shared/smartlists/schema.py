@@ -72,6 +72,59 @@ def _is_relative_date(value: Any) -> bool:
     )
 
 
+def _validate_typed_list(field: str, value: list, path: str, *, op: str) -> None:
+    ftype = FIELD_TYPES[field]
+    for i, elt in enumerate(value):
+        if ftype == "number" and not isinstance(elt, (int, float)):
+            raise _err(f"{path}.value[{i}]",
+                       f"{op} on {field!r} expects numbers")
+        if ftype == "string" and not isinstance(elt, str):
+            raise _err(f"{path}.value[{i}]",
+                       f"{op} on {field!r} expects strings")
+        if ftype == "date" and not (
+            isinstance(elt, str) or _is_relative_date(elt)
+        ):
+            raise _err(f"{path}.value[{i}]",
+                       f"{op} on {field!r} expects date strings "
+                       "or {'$relative': '-Nd'} objects")
+
+
+def _validate_operand(field: str, op: str, value: Any, path: str) -> None:
+    if op == "between":
+        if not (isinstance(value, list) and len(value) == 2):
+            raise _err(f"{path}.value", "between op expects [lo, hi] list")
+        _validate_typed_list(field, value, path, op="between")
+        return
+    if op == "in":
+        if not isinstance(value, list):
+            raise _err(f"{path}.value", "in op expects a list of values")
+        _validate_typed_list(field, value, path, op="in")
+        return
+    if op == "contains":
+        if not isinstance(value, str):
+            raise _err(f"{path}.value",
+                       "contains op expects a string value")
+        return
+    if op == "missing":
+        if value is not None:
+            raise _err(f"{path}.value",
+                       "missing op requires value null")
+        return
+    ftype = FIELD_TYPES[field]
+    if ftype == "number" and not isinstance(value, (int, float)):
+        raise _err(f"{path}.value",
+                   f"field {field!r} expects a number")
+    if ftype == "string" and not isinstance(value, str):
+        raise _err(f"{path}.value",
+                   f"field {field!r} expects a string")
+    if ftype == "date" and not (
+        isinstance(value, str) or _is_relative_date(value)
+    ):
+        raise _err(f"{path}.value",
+                   "date fields accept an ISO-8601 string or a "
+                   "{'$relative': '-Nd'} object")
+
+
 def _validate_predicate(node: dict, path: str) -> None:
     field = node.get("field")
     op = node.get("op")
@@ -86,65 +139,7 @@ def _validate_predicate(node: dict, path: str) -> None:
         raise _err(f"{path}.op",
                    f"op {op!r} not allowed for field {field!r}; "
                    f"expected one of {allowed_ops}")
-    if op == "between":
-        if not (isinstance(value, list) and len(value) == 2):
-            raise _err(f"{path}.value", "between op expects [lo, hi] list")
-        # P08-04: validate element types so a malformed rule fails loud at
-        # plan time instead of yielding wrong query results at runtime.
-        ftype = FIELD_TYPES[field]
-        for i, elt in enumerate(value):
-            if ftype == "number" and not isinstance(elt, (int, float)):
-                raise _err(f"{path}.value[{i}]",
-                           f"between on {field!r} expects numbers")
-            if ftype == "string" and not isinstance(elt, str):
-                raise _err(f"{path}.value[{i}]",
-                           f"between on {field!r} expects strings")
-            if ftype == "date" and not (
-                isinstance(elt, str) or _is_relative_date(elt)
-            ):
-                raise _err(f"{path}.value[{i}]",
-                           f"between on {field!r} expects date strings "
-                           "or {'$relative': '-Nd'} objects")
-    elif op == "in":
-        if not isinstance(value, list):
-            raise _err(f"{path}.value", "in op expects a list of values")
-        # P08-04: validate element types for 'in' the same way.
-        ftype = FIELD_TYPES[field]
-        for i, elt in enumerate(value):
-            if ftype == "number" and not isinstance(elt, (int, float)):
-                raise _err(f"{path}.value[{i}]",
-                           f"in on {field!r} expects numbers")
-            if ftype == "string" and not isinstance(elt, str):
-                raise _err(f"{path}.value[{i}]",
-                           f"in on {field!r} expects strings")
-            if ftype == "date" and not (
-                isinstance(elt, str) or _is_relative_date(elt)
-            ):
-                raise _err(f"{path}.value[{i}]",
-                           f"in on {field!r} expects date strings "
-                           "or {'$relative': '-Nd'} objects")
-    elif op == "contains":
-        if not isinstance(value, str):
-            raise _err(f"{path}.value",
-                       "contains op expects a string value")
-    elif op == "missing":
-        if value is not None:
-            raise _err(f"{path}.value",
-                       "missing op requires value null")
-    else:
-        ftype = FIELD_TYPES[field]
-        if ftype == "number" and not isinstance(value, (int, float)):
-            raise _err(f"{path}.value",
-                       f"field {field!r} expects a number")
-        if ftype == "string" and not isinstance(value, str):
-            raise _err(f"{path}.value",
-                       f"field {field!r} expects a string")
-        if ftype == "date" and not (
-            isinstance(value, str) or _is_relative_date(value)
-        ):
-            raise _err(f"{path}.value",
-                       "date fields accept an ISO-8601 string or a "
-                       "{'$relative': '-Nd'} object")
+    _validate_operand(field, op, value, path)
 
 
 def _validate_node(node: Any, path: str) -> None:

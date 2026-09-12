@@ -1,10 +1,10 @@
-"""Autolists HTTP router tests (issue #2066)."""
+"""Autolists HTTP router tests (issue #2066 / SMART-05)."""
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,15 +12,16 @@ from fastapi.testclient import TestClient
 from apps.shared.pairings.schema_sql import ensure_phase08_tables
 from apps.shared.state import db as state_db
 from apps.webui.server.app import create_app
-from apps.webui.server.routes import autolists as autolists_routes
 from apps.webui.server.sqlite_backend import SqliteBackend
+
+pytestmark = pytest.mark.requirement("SMART-05")
 
 
 def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).isoformat()
+    return dt.astimezone(UTC).isoformat()
 
 
-_BASE = datetime(2026, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
+_BASE = datetime(2026, 7, 1, 12, 0, 0, tzinfo=UTC)
 
 _SEED_TRACKS: list[tuple[str, str, float, str, int]] = [
     ("al-001", "House One", 125.0, "House", 5),
@@ -70,7 +71,6 @@ def _make_client(db_path: Path) -> TestClient:
         state_db_path=str(db_path),
         mount_frontend=False,
     )
-    app.include_router(autolists_routes.router, prefix="/api/v1")
     return TestClient(app)
 
 
