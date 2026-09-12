@@ -98,7 +98,19 @@ function withholdExpired(phase: string): void {
 
 interface SpanCollector {
 	take(): Record<string, unknown> | null;
-	reset(): void;
+	/**
+	 * Start accepting spans, discarding anything seen so far.
+	 *
+	 * Arming the listener early is what makes the span impossible to MISS;
+	 * this gate is what makes it impossible to attribute the WRONG one. A
+	 * restored session's own library load posts a span from the PREVIOUS
+	 * login, and the window between arming and the click is seconds long
+	 * (waitForSignInReady, the sign-out dance, clearing the mark). Accepting
+	 * only from the instant of the click closes that window; a stale span
+	 * scored as this run's KPI would be a wrong NUMBER, which is worse than
+	 * the UNKNOWN this capture exists to remove.
+	 */
+	openAtClick(): void;
 }
 
 /**
@@ -113,7 +125,9 @@ interface SpanCollector {
  */
 function armLoginSpanCollector(page: Page): SpanCollector {
 	let captured: Record<string, unknown> | null = null;
+	let accepting = false;
 	page.on('request', (request: Request) => {
+		if (!accepting) return;
 		if (request.method() !== 'POST') return;
 		if (!request.url().includes(CLIENT_EVENTS_PATH)) return;
 		let body: Record<string, unknown>;
@@ -127,8 +141,9 @@ function armLoginSpanCollector(page: Page): SpanCollector {
 	});
 	return {
 		take: () => captured,
-		reset: () => {
+		openAtClick: () => {
 			captured = null;
+			accepting = true;
 		}
 	};
 }
@@ -430,7 +445,11 @@ async function clearSubmitMark(page: Page): Promise<string | null> {
  * The login POST is the presence-of-the-good-thing check: it exists only when
  * `startLogin` actually ran. Returns null on success, else a withhold reason.
  */
-async function driveSignInClick(page: Page, budget: Budget): Promise<string | null> {
+async function driveSignInClick(
+	page: Page,
+	budget: Budget,
+	collector: SpanCollector
+): Promise<string | null> {
 	for (let attempt = 1; attempt <= SIGN_IN_CLICK_ATTEMPTS; attempt += 1) {
 		if (budget.expired()) return `capture budget of ${TIMEOUT_S}s expired before the sign-in click`;
 		const signInButton = await waitForSignInReady(page, budget);
@@ -455,6 +474,9 @@ async function driveSignInClick(page: Page, budget: Budget): Promise<string | nu
 				{ timeout: waitMs }
 			)
 			.catch(() => null);
+		// Last thing before the click, so no span posted by the page we are
+		// leaving can be attributed to the login we are about to start.
+		collector.openAtClick();
 		// Bounded by the capture budget, not Playwright's default action
 		// timeout: a covered or permanently disabled control would otherwise
 		// wait until the test deadline, where the teardown happens INSTEAD of
@@ -504,9 +526,8 @@ test('capture S13 login submit-to-library-usable span', async ({ page }) => {
 			return;
 		}
 
-		collector.reset();
 		const navLog = armNavigationLog(page);
-		const clickReason = await driveSignInClick(page, budget);
+		const clickReason = await driveSignInClick(page, budget, collector);
 		if (clickReason !== null) {
 			writeResult({ ok: false, span: null, reason: clickReason });
 			return;
