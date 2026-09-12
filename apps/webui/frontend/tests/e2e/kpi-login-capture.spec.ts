@@ -425,23 +425,42 @@ async function driveSignInClick(page: Page, budget: Budget): Promise<string | nu
 		if (budget.expired()) return `capture budget of ${TIMEOUT_S}s expired before the sign-in click`;
 		const signInButton = await waitForSignInReady(page, budget);
 		await clearSubmitMark(page);
-		const loginPost = page
+		const waitMs = Math.min(budget.waitMs(), LOGIN_POST_WAIT_MS);
+		const isLoginPost = (method: string, url: string): boolean =>
+			method === 'POST' && url.includes(AUTH_LOGIN_PATH);
+		// The REQUEST proves the click submitted; the RESPONSE proves the
+		// daemon accepted it. Reading submission off the response conflates
+		// "never submitted" with "submitted and the answer stalled", and the
+		// retry below would then fire a SECOND login start for a click that
+		// had already worked.
+		const loginRequest = page
+			.waitForRequest((request) => isLoginPost(request.method(), request.url()), {
+				timeout: waitMs
+			})
+			.catch(() => null);
+		const loginResponse = page
 			.waitForResponse(
-				(response) =>
-					response.request().method() === 'POST' &&
-					response.url().includes(AUTH_LOGIN_PATH),
-				{ timeout: Math.min(budget.waitMs(), LOGIN_POST_WAIT_MS) }
+				(response) => isLoginPost(response.request().method(), response.url()),
+				{ timeout: waitMs }
 			)
 			.catch(() => null);
 		await signInButton.click();
-		const response = await loginPost;
-		if (response !== null && response.ok()) return null;
-		if (response !== null) {
+		const request = await loginRequest;
+		if (request === null) {
+			// No POST at all: the click hit the bauble in its signed-in state
+			// and opened the account menu instead of calling startLogin.
+			// Close it and retry -- this is the only retryable case.
+			await page.keyboard.press('Escape').catch(() => null);
+			continue;
+		}
+		const response = await loginResponse;
+		if (response === null) {
+			return `cannot start sign-in: ${AUTH_LOGIN_PATH} was submitted but the daemon did not answer within ${Math.round(waitMs / 1000)}s`;
+		}
+		if (!response.ok()) {
 			return `cannot start sign-in: daemon refused the login start (HTTP ${response.status()})`;
 		}
-		// No POST: the click hit the bauble in its signed-in state and opened
-		// the account menu instead of calling startLogin. Close it and retry.
-		await page.keyboard.press('Escape').catch(() => null);
+		return null;
 	}
 	return 'sign-in click did not start a login (the bauble stayed in its signed-in state)';
 }
