@@ -151,6 +151,20 @@
 		modePickerEl.open = false;
 	}
 
+	/** Native `toggle` on `<details>` is wired with a `use:` action; Svelte 5
+	 * does not accept `ontoggle` as a template handler on this element. */
+	function modePickerToggle(node: HTMLDetailsElement): { destroy: () => void } {
+		const onToggle = (): void => {
+			_placeModeMenu();
+		};
+		node.addEventListener('toggle', onToggle);
+		return {
+			destroy: () => {
+				node.removeEventListener('toggle', onToggle);
+			}
+		};
+	}
+
 	/** 4-waveform view icon geometry: 4 stacked jagged polylines (one per
 	 * deck row) so the glyph reads as 4 waveforms, not a dotted grid. */
 	const WAVE_ICON_XS: number[] = [1, 3, 5, 7, 9, 11, 13];
@@ -277,7 +291,7 @@
 	     time; clicking it opens the JOBS drawer for the per-job detail. -->
 	<StemsProgress />
 
-	<details class="mode-picker" bind:this={modePickerEl} ontoggle={_placeModeMenu}>
+	<details class="mode-picker" bind:this={modePickerEl} use:modePickerToggle>
 		<summary class="mode-dd" aria-label="Choose app mode" title="App mode picker - Gig is the current mode">
 			{liveAppMode.label.toUpperCase()}
 			<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
