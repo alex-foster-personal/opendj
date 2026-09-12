@@ -1,4 +1,7 @@
-"""HTTP tests for playlist sets (SET-05)."""
+"""HTTP tests for playlist sets (SET-05).
+
+[if] SET-05 playlist-set routes drift from the store contract [then] fail, [else stop].
+"""
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,4 +1,7 @@
-"""Store-layer tests for playlist sets (SET-05)."""
+"""Store-layer tests for playlist sets (SET-05).
+
+[if] playlist_sets store semantics drift from SET-05 [then] fail, [else stop].
+"""
 from __future__ import annotations
 
 import sqlite3
