@@ -65,7 +65,12 @@ def _snapshot_membership(
             "WHERE playlist_id=? AND deleted_at IS NULL ORDER BY position ASC",
             (playlist_id,),
         ).fetchall()
-    except sqlite3.OperationalError:
+    except sqlite3.OperationalError as exc:
+        if "no such table" not in str(exc):
+            # A schema mismatch (e.g. a pre-migration DB missing deleted_at)
+            # must fail loudly, not be swallowed into an empty snapshot --
+            # only a genuinely absent playlist_memberships table is expected.
+            raise
         return []
     return [(str(r[0]), int(r[1])) for r in rows]
 

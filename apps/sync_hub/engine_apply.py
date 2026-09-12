@@ -328,7 +328,8 @@ def _replace_members(
             )
         track_id = str(member.get("stable_id") or "")
         if conn.execute(
-            "SELECT 1 FROM tracks WHERE stable_id = ? LIMIT 1", (track_id,)
+            "SELECT 1 FROM tracks WHERE stable_id = ? AND deleted_at IS NULL "
+            "LIMIT 1", (track_id,)
         ).fetchone() is None:
             log.warning(
                 "%s: playlist %s pos %r skipped; track %s is not here yet",
