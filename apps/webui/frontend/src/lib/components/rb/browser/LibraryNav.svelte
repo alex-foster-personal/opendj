@@ -6,16 +6,30 @@
 	import TreeSmartlistSection from './TreeSmartlistSection.svelte';
 	import TreeContextMenu from './TreeContextMenu.svelte';
 	import UsbSourceList from './UsbSourceList.svelte';
+	import AutolistBrowser from './AutolistBrowser.svelte';
 
-	let playlistTreeProps: PlaylistTreeProps = $props();
+	let {
+		onautolistchange,
+		...playlistTreeProps
+	}: PlaylistTreeProps = $props();
 
 	let activeTab = $state<LibrarySourceTab>('playlists');
 	let treeContextMenu = $state<TreeContextMenu | null>(null);
 	let deleteSmartlistUi: ((sl: { id: string; name: string }) => void) | undefined;
+	let autolistsMounted = $state(false);
+
+	$effect(() => {
+		if (activeTab === 'autolists') autolistsMounted = true;
+	});
 </script>
 
 <div class="library-nav-root">
 	<LibrarySourceTabs active={activeTab} onchange={(tab) => (activeTab = tab)} />
+	{#if autolistsMounted}
+		<div class="autolist-browser-wrap" class:hidden={activeTab !== 'autolists'}>
+			<AutolistBrowser onselectionchange={(sel, title) => onautolistchange?.(sel, title)} />
+		</div>
+	{/if}
 	{#if activeTab === 'playlists'}
 		<PlaylistTree {...playlistTreeProps} />
 	{:else if activeTab === 'taglists'}
@@ -47,6 +61,9 @@
 		flex-direction: column;
 		min-height: 0;
 		height: 100%;
+	}
+	.autolist-browser-wrap.hidden {
+		display: none;
 	}
 	.autolists-scroll {
 		flex: 1;

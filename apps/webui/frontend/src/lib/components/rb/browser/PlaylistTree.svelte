@@ -75,7 +75,13 @@
 
 	/** Make a playlist row draggable onto the pane tab bar. */
 	function _onPlaylistDragStart(event: DragEvent, node: PlaylistNode): void {
-		if (node.kind === 'missing_tracks') return;
+		if (
+			node.kind === 'missing_tracks' ||
+			node.kind === 'smartlist' ||
+			node.kind === 'taglist' ||
+			node.kind === 'autolist'
+		)
+			return;
 		event.dataTransfer?.setData(
 			PLAYLIST_DRAG_MIME,
 			encodePlaylistDrag({

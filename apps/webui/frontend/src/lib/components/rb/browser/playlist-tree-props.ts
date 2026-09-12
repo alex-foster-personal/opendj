@@ -51,4 +51,6 @@ export type PlaylistTreeProps = {
 	 * drop targets, same absent-means-inert convention as above.
 	 */
 	ondroptracks?: (playlistId: string, stableIds: string[]) => void;
+	/** Autolists tab bucket multi-select; absent = bucket clicks are inert. */
+	onautolistchange?: (selection: import('$lib/smartlists/autolist-rule').AutolistSelection, title: string) => void;
 };

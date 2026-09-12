@@ -34,6 +34,18 @@ export {
 } from '$lib/rb/auto-play';
 export { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
 export { fillAllTracksPane } from './fill-all-tracks';
+export { fillAutolistPane } from './fill-autolist';
+export {
+	autolistNode,
+	isAutolistId,
+	AUTOLIST_ID
+} from './autolist-ids';
+export { queryAutolists } from '$lib/rb/api-autolists';
+export {
+	emptyAutolistSelection,
+	hasAutolistSelection,
+	type AutolistSelection
+} from '$lib/smartlists/autolist-rule';
 export { ensureAudioPrefetch } from '$lib/rb/audio-prefetch-cache.svelte';
 export { clearSelection, pruneSelection } from './pane-row-selection';
 export { fetchAllPages } from './virtual-window';

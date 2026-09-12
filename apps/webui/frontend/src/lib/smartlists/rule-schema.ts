@@ -26,7 +26,7 @@ export type FieldName =
 	| 'last_played'
 	| 'paired_with';
 
-export type Op = '=' | '!=' | '<' | '<=' | '>' | '>=' | 'between' | 'in' | 'contains';
+export type Op = '=' | '!=' | '<' | '<=' | '>' | '>=' | 'between' | 'in' | 'contains' | 'missing';
 
 export type LogicalOp = 'and' | 'or' | 'not';
 
@@ -45,9 +45,9 @@ export const FIELD_TYPES: Record<FieldName, FieldType> = {
 
 export const ALLOWED_FIELDS: FieldName[] = Object.keys(FIELD_TYPES) as FieldName[];
 
-const NUMERIC_OPS: Op[] = ['=', '!=', '<', '<=', '>', '>=', 'between'];
-const STRING_OPS: Op[] = ['=', '!=', 'contains', 'in'];
-const DATE_OPS: Op[] = ['=', '<', '<=', '>', '>=', 'between'];
+const NUMERIC_OPS: Op[] = ['=', '!=', '<', '<=', '>', '>=', 'between', 'missing'];
+const STRING_OPS: Op[] = ['=', '!=', 'contains', 'in', 'missing'];
+const DATE_OPS: Op[] = ['=', '<', '<=', '>', '>=', 'between', 'missing'];
 const LIST_OPS: Op[] = ['contains', 'in'];
 const PAIRED_WITH_OPS: Op[] = ['=', '!=', 'in'];
 

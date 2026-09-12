@@ -79,6 +79,12 @@ test('a bare predicate root (no logical wrapper) round-trips too', () => {
 	assert.deepEqual(ruleForm.formToAst(form), rule);
 });
 
+test('missing op round-trips with null value', () => {
+	const rule = { field: 'genre', op: 'missing', value: null };
+	const form = ruleForm.astToForm(rule);
+	assert.deepEqual(ruleForm.formToAst(form), rule);
+});
+
 test('createEmptyPredicate defaults to the first allowed op for its field', () => {
 	const predicate = ruleForm.createEmptyPredicate('bpm');
 	assert.equal(predicate.field, 'bpm');

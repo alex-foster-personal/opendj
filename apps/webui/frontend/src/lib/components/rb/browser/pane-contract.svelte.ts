@@ -184,7 +184,7 @@ export class PaneStore {
 	/** Selected playlist id ('all' for All Tracks); null = blank pane. */
 	playlist_id = $state<string | null>(null);
 	kind = $state<
-		'all_tracks' | 'playlist' | 'smartlist' | 'folder' | 'missing_tracks' | 'taglist' | null
+		'all_tracks' | 'playlist' | 'smartlist' | 'folder' | 'missing_tracks' | 'taglist' | 'autolist' | null
 	>(null);
 	/** Pane tab title (playlist name; 'blank list' when empty). */
 	title = $state('blank list');
@@ -252,7 +252,8 @@ export class PaneStore {
 			| 'smartlist'
 			| 'folder'
 			| 'missing_tracks'
-			| 'taglist' = playlist_id === 'all' ? 'all_tracks' : 'playlist'
+			| 'taglist'
+			| 'autolist' = playlist_id === 'all' ? 'all_tracks' : 'playlist'
 	): number {
 		this.#load_seq += 1;
 		this.playlist_id = playlist_id;
