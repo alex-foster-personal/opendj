@@ -49,3 +49,19 @@ test('the CloudSync chip stays immediately before the account bauble', () => {
 	assert.ok(chipAt >= 0, 'the app shell must render the CloudSync status chip');
 	assert.ok(baubleAt > chipAt, 'the CloudSync chip must be beside and before the account bauble');
 });
+
+test('the status strip never labels syncthing as sync:', () => {
+	/** if syncthing steals the sync: prefix from CloudSync then broken */
+	assert.doesNotMatch(LAYOUT, /sync: n\/a/);
+	assert.doesNotMatch(LAYOUT, />sync:/);
+	assert.match(
+		LAYOUT,
+		/syncthing: \{health\.data\.syncthing\.peers_connected\} peers - \{health\.data\.syncthing\.folder_state\}/
+	);
+	assert.doesNotMatch(LAYOUT, /PARITY-TODO \(syncthing not configured\)/);
+	const syncthingIf = LAYOUT.match(/\{#if health\.data\.syncthing\}[\s\S]*?\{\/if\}/);
+	assert.ok(syncthingIf, 'syncthing block must exist');
+	assert.match(syncthingIf[0], /class="sep"/, 'syncthing block must include a separator');
+	const sepMatches = LAYOUT.match(/class="sep"[^>]*> · </g) ?? [];
+	assert.ok(sepMatches.length >= 4, `expected at least 4 · separators, got ${sepMatches.length}`);
+});
