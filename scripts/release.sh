@@ -16,6 +16,8 @@
 # - [if] the app or dmg lacks a stapled notary ticket [then] release exits -> broken.
 # - [if] an existing version lacks a matching signed manifest [then] release
 #   refuses it rather than replacing published bytes -> broken.
+# - [if] tauri.conf.json version is not strictly greater than the latest
+#   published release [then] release exits before building -> broken.
 
 set -euo pipefail
 
@@ -53,6 +55,8 @@ git -C "$ROOT" diff --quiet || die "release requires a clean tracked working tre
 git -C "$ROOT" diff --cached --quiet || die "release requires a clean index"
 
 cd "$ROOT"
+python3 -m scripts.release_semver check --config "$CONF" --repo "$PUBLIC_REPO"
+
 if gh release view "$tag" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
     existing_dir="$(mktemp -d "${TMPDIR:-/tmp}/opendj-existing-release.XXXXXX")"
     cleanup() { rm -rf "$existing_dir"; }
