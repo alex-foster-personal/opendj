@@ -41,13 +41,13 @@ test('two_outputs and a selected monitor restore master-only main, including MIX
 	});
 });
 
-test('unknown output_mode values fail fast and split_cable is not in the enum', () => {
-	assert.throws(() => headphones.assertHeadphoneOutputMode('split_cable'), /practice or two_outputs/i);
-	assert.throws(() => headphones.assertHeadphoneOutputMode('nope'), /practice or two_outputs/i);
-	assert.throws(() => headphones.practiceMainGains('split_cable', null, 0.5), /practice or two_outputs/i);
+test('unknown output_mode values fail fast', () => {
+	assert.throws(() => headphones.assertHeadphoneOutputMode('nope'), /split_cable/);
 	assert.doesNotThrow(() => headphones.assertHeadphoneOutputMode('practice'));
 	assert.doesNotThrow(() => headphones.assertHeadphoneOutputMode('two_outputs'));
-	assert.deepEqual(headphones.HEADPHONE_OUTPUT_MODES, ['practice', 'two_outputs']);
+	assert.doesNotThrow(() => headphones.assertHeadphoneOutputMode('split_cable'));
+	assert.deepEqual(headphones.HEADPHONE_OUTPUT_MODES, ['practice', 'two_outputs', 'split_cable']);
+	assert.deepEqual(headphones.practiceMainGains('split_cable', null, 0.5), { cue: 0, master: 0 });
 });
 
 test('practice blend sits on the master mute path, never a second sink', async () => {
@@ -67,7 +67,7 @@ test('practice blend sits on the master mute path, never a second sink', async (
 	assert.match(hpSrc, /practiceMainGains\(/);
 	assert.match(hpSrc, /nodes\.practiceCueMix\.gain/);
 	assert.match(hpSrc, /nodes\.practiceMasterMix\.gain/);
-	assert.doesNotMatch(typesSrc, /split_cable/);
+	assert.match(typesSrc, /split_cable/);
 	assert.match(typesSrc, /output_mode: HeadphoneOutputMode/);
 	assert.match(clusterSrc, /data-output-mode=\{state\.output_mode\}/);
 	assert.match(clusterSrc, /practice/);

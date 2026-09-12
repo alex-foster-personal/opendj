@@ -234,7 +234,8 @@ import {
 	refreshHeadphoneOutputs as refreshMonitorOutputs,
 	selectHeadphoneOutput as selectMonitorOutput,
 	setHeadphoneOutputMode as setMonitorOutputMode,
-	wirePracticeBlendIntoMasterPath
+	wirePracticeBlendIntoMasterPath,
+	wireSplitCableIntoMasterPath
 } from '$lib/player/headphones';
 import {
 	_assertKeyShift,
@@ -769,7 +770,10 @@ function _ensureGraph(): AudioContext {
 		_externalMerger.connect((_externalRouteAnalyser = _ctx.createAnalyser()));
 	}
 	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
-	if (routing === null) wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones);
+	if (routing === null) {
+		wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones);
+		wireSplitCableIntoMasterPath(_masterGain, _masterMuteGain, headphones);
+	}
 	// Post-EQ, pre-fader tap points, one per deck, PLUS one master tap sourced
 	// from `_masterGain` itself (post master gain, so the master volume
 	// control genuinely moves it - pin 5a5c3b8033d8's still-open half).

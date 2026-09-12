@@ -239,6 +239,10 @@ test('the mute gain is the final node before the destination on both output path
 		body.includes('wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones)'),
 		'if the master bus does not feed the mute gain then the mute is out of the chain'
 	);
+	assert.ok(
+		body.includes('wireSplitCableIntoMasterPath(_masterGain, _masterMuteGain, headphones)'),
+		'if the split-cable path does not feed the mute gain then split_cable is out of the chain'
+	);
 
 	// External-mixer path (?extroute=): merger -> mute -> speakers.
 	assert.ok(

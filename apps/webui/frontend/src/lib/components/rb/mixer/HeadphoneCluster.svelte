@@ -5,7 +5,7 @@
 	 */
 	import { knobId } from '$lib/rb/knob-control.svelte';
 	import Knob from './Knob.svelte';
-	import type { HeadphoneState } from '$lib/rb/mixer-types';
+	import type { HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
 
 	interface Props {
 		state: HeadphoneState;
@@ -14,9 +14,26 @@
 		onrefresh: () => void;
 		onacquire: () => void;
 		onselect: (deviceId: string) => void;
+		onmode: (mode: HeadphoneOutputMode) => void;
 	}
 
-	let { state, onmix, onlevel, onrefresh, onacquire, onselect }: Props = $props();
+	let { state, onmix, onlevel, onrefresh, onacquire, onselect, onmode }: Props = $props();
+
+	const modeLabel = $derived(
+		state.output_mode === 'practice'
+			? 'practice'
+			: state.output_mode === 'two_outputs'
+				? 'two outputs'
+				: 'split cable'
+	);
+
+	function toggleSplit(): void {
+		if (state.output_mode === 'split_cable') {
+			onmode(state.selected_output_device_id !== null ? 'two_outputs' : 'practice');
+		} else {
+			onmode('split_cable');
+		}
+	}
 </script>
 
 <div class="hp" data-performance-control="headphones">
@@ -39,8 +56,18 @@
 		title={
 			state.output_mode === 'practice'
 				? 'Practice: MIX blends cue into the main output'
-				: 'Two outputs: MIX feeds the monitor only'
-		}>{state.output_mode === 'practice' ? 'practice' : 'two outputs'}</span
+				: state.output_mode === 'two_outputs'
+					? 'Two outputs: MIX feeds the monitor only'
+					: 'Split cable: mono master on LEFT, mono cue on RIGHT'
+		}>{modeLabel}</span
+	>
+	<button
+		type="button"
+		class="hp-btn"
+		aria-pressed={state.output_mode === 'split_cable'}
+		aria-label="Split cable output mode"
+		title="Room feed is mono on LEFT, cue is mono on RIGHT. Use a DJ splitter cable, not a Y cable."
+		onclick={toggleSplit}>SPLIT</button
 	>
 	<button
 		type="button"
@@ -68,6 +95,11 @@
 			<option value={output.id}>{output.label || output.id}</option>
 		{/each}
 	</select>
+	{#if state.output_mode === 'split_cable'}
+		<span class="hp-split-warn" title="Split-cable mode requires a true DJ splitter cable, not a Y cable">
+			Room feed is mono. Use a DJ splitter cable, not a Y cable.
+		</span>
+	{/if}
 	{#if state.error !== null}<span class="hp-error">{state.error}</span>{/if}
 </div>
 
@@ -112,6 +144,12 @@
 		letter-spacing: 0.04em;
 		color: var(--rb-text-dim, #838990);
 		white-space: nowrap;
+	}
+	.hp-split-warn {
+		font-size: 7px;
+		color: var(--rb-warn, #e6a23c);
+		max-width: 120px;
+		line-height: 1.2;
 	}
 	.hp-error {
 		color: var(--rb-danger, #ff6b6b);

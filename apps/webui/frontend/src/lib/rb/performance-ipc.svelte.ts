@@ -102,10 +102,12 @@ import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import type {
 	CrossfaderAssign,
 	EqBand,
+	HeadphoneOutputMode,
 	HeadphoneState,
 	MixerChannelState
 } from '$lib/rb/mixer-types';
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
+import { assertHeadphoneOutputMode } from '$lib/player/headphones';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
@@ -180,7 +182,7 @@ export type PerformanceCommand =
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
-	| { type: 'output_mode'; mode: 'practice' | 'two_outputs' }
+	| { type: 'output_mode'; mode: HeadphoneOutputMode }
 	| { type: 'analysis_source'; feature: AnalysisSourceFeature; source: AnalysisSource }
 	/** UI contract only: no automatic second-track selection or mixing exists yet. */
 	| { type: 'auto_play_two_track' }
@@ -848,9 +850,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	}
 	if (type === 'output_mode') {
 		_exactKeys(record, ['type', 'mode']);
-		if (record.mode !== 'practice' && record.mode !== 'two_outputs') {
-			throw new TypeError(`output_mode must be practice or two_outputs; got ${String(record.mode)}`);
-		}
+		assertHeadphoneOutputMode(record.mode);
 		return { type, mode: record.mode };
 	}
 	if (type === 'analysis_source') {
