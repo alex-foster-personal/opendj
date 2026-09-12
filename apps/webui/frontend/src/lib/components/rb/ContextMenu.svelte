@@ -6,6 +6,7 @@
 		label: string;
 		run?: (() => void | Promise<void>) | undefined;
 		title?: string;
+		testId?: string;
 	}
 
 	let { items, x, y, onclose }: {
@@ -112,6 +113,7 @@
 		<button
 			type="button"
 			role="menuitem"
+			data-testid={item.testId}
 			aria-disabled={unavailable ? true : undefined}
 			aria-describedby={unavailable ? descId : undefined}
 			title={explanation}

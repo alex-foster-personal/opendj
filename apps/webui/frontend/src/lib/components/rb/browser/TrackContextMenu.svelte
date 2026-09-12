@@ -100,6 +100,7 @@
 			...DECKS.map((deck) => ({
 				id: `load-${deck}`,
 				label: `Load to deck ${deck}`,
+				testId: `context-menu-load-deck-${deck}`,
 				title: loadDeckTitle(deck, row.stable_id),
 				run: () => onloadrow(row, deck)
 			})),

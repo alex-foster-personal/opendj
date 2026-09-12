@@ -44,6 +44,7 @@ from .cloudsync_scheduler import CloudSyncScheduler
 from .errors import (
     handle_already_exists,
     handle_backend_error,
+    handle_bulk_limit,
     handle_conflict,
     handle_not_found,
     handle_rekordbox_writeback_disabled,
@@ -51,7 +52,7 @@ from .errors import (
     handle_smartlist_immutable,
     handle_target_inside_slice,
 )
-from .playlist_add import AlreadyExistsError, SmartlistImmutableError
+from .playlist_add import AlreadyExistsError, BulkLimitError, SmartlistImmutableError
 from .playlist_move import SliceNotContiguousError, TargetInsideSliceError
 from .routes import analysis as analysis_routes
 from .routes import analysis_backfill as analysis_backfill_routes
@@ -330,6 +331,7 @@ def _install_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(SmartlistImmutableError, handle_smartlist_immutable)
     app.add_exception_handler(SliceNotContiguousError, handle_slice_not_contiguous)
     app.add_exception_handler(TargetInsideSliceError, handle_target_inside_slice)
+    app.add_exception_handler(BulkLimitError, handle_bulk_limit)
     app.add_exception_handler(BackendError, handle_backend_error)
 
 
