@@ -189,6 +189,23 @@ test('crossfader ch7 CC 31, master ch7 CC 8 ([PDF] M1/M8)', () => {
 	assert.deepEqual(master.source, { ch: 7, kind: 'cc', id: 0x08 });
 });
 
+test('CH CUE per deck on note 0x54 ([PDF] M7)', () => {
+	for (const deck of DECKS) {
+		const cue = theBinding((b) => b.action.type === 'channel_cue' && b.action.deck === deck);
+		assert.deepEqual(cue.source, { ch: deck, kind: 'note', id: 0x54 });
+	}
+});
+
+test('headphone mix/level and master cue on ch 7 ([PDF] M9/M10/M11)', () => {
+	const mix = theBinding((b) => b.action.type === 'headphone_mix');
+	assert.deepEqual(mix.source, { ch: 7, kind: 'cc', id: 0x0c });
+	const level = theBinding((b) => b.action.type === 'headphone_level');
+	assert.deepEqual(level.source, { ch: 7, kind: 'cc', id: 0x0d });
+	const masterCue = theBinding((b) => b.action.type === 'master_cue');
+	assert.deepEqual(masterCue.source, { ch: 7, kind: 'note', id: 0x63 });
+	assert.equal(masterCue.action.mode, 'latch');
+});
+
 // ------------------------------------------------------------------ browse
 
 test('browse encoder relative CC 0x40 (+shift 0x64), loads 0x46/0x47 ([PDF] B1/B2)', () => {
@@ -212,9 +229,9 @@ test('browse encoder relative CC 0x40 (+shift 0x64), loads 0x46/0x47 ([PDF] B1/B
 
 // -------------------------------------------------------------------- LEDs
 
-test('LED rules: play/cue/reloop + 8 pad rules per deck, on/off only', () => {
+test('LED rules: play/cue/reloop/cue-bus + 8 pad rules per deck, on/off only', () => {
 	const leds = mapModule.DDJ400_MAP.leds;
-	assert.equal(leds.length, 2 * (3 + 8));
+	assert.equal(leds.length, 2 * (4 + 8));
 	for (const deck of DECKS) {
 		const play = leds.filter((r) => r.trigger.kind === 'deck_playing' && r.trigger.deck === deck);
 		assert.equal(play.length, 1);
@@ -225,6 +242,11 @@ test('LED rules: play/cue/reloop + 8 pad rules per deck, on/off only', () => {
 		// no MIDI-OUT column in the [PDF], so lighting it would be invented.
 		const loop = leds.filter((r) => r.trigger.kind === 'loop_engaged' && r.trigger.deck === deck);
 		assert.equal(loop[0].out.note, 0x4d);
+		const chCue = leds.filter(
+			(r) => r.trigger.kind === 'channel_cue_enabled' && r.trigger.deck === deck
+		);
+		assert.equal(chCue.length, 1);
+		assert.deepEqual(chCue[0].out, { ch: deck, note: 0x54, velocityOn: 0x7f, velocityOff: 0x00 });
 		const pads = leds.filter((r) => r.trigger.kind === 'hot_cue_present' && r.trigger.deck === deck);
 		assert.equal(pads.length, 8);
 		for (const r of pads) {
@@ -259,6 +281,16 @@ test('hints name real unbound controls and never shadow a bound source', () => {
 	const labels = mapModule.DDJ400_MAP.hints.filter((h) => h.source.ch === 1).map((h) => h.label);
 	assert.ok(labels.some((l) => l.startsWith('JOG platter, vinyl on')));
 	assert.ok(labels.some((l) => l.startsWith('BEAT SYNC (deck 1)')));
+	const hinted = new Set(mapModule.DDJ400_MAP.hints.map((h) => key(h.source)));
+	for (const src of [
+		{ ch: 1, kind: 'note', id: 0x54 },
+		{ ch: 2, kind: 'note', id: 0x54 },
+		{ ch: 7, kind: 'cc', id: 0x0c },
+		{ ch: 7, kind: 'cc', id: 0x0d },
+		{ ch: 7, kind: 'note', id: 0x63 }
+	]) {
+		assert.ok(!hinted.has(key(src)), `bound source ${key(src)} must not remain hinted`);
+	}
 });
 
 // ---------------------------------------------------------------- registry
