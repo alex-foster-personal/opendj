@@ -2,10 +2,8 @@
 
 Self-contained: every test builds its OWN tmp state.db (real v6 migrations)
 so nothing here touches the repo's live state.db or another lane's fixtures.
-``app.py`` is a hotspot owned by the sync-engine lane, so -- like
-``tests/test_smartlists_route.py`` -- these tests wire
-``app.include_router(cloudsync_routes.router, ...)`` directly onto a bare
-``create_app()`` instead of assuming the include line has landed.
+Cloudsync routes mount through ``app_wiring`` on ``create_app()``; these
+tests only need a real ``SqliteBackend`` and ``state_db_path``.
 
 Regression one-liners:
   - if GET /cloudsync/machines does not self-register this process's machine then broken
@@ -39,7 +37,6 @@ from apps.shared.state import sync_stamp
 from apps.sync_hub import client as sync_client
 from apps.sync_hub import service as sync_service
 from apps.webui.server.app import create_app
-from apps.webui.server.routes import cloudsync as cloudsync_routes
 from apps.webui.server.sqlite_backend import SqliteBackend
 
 _BASE = datetime(2026, 8, 1, 12, 0, 0, tzinfo=UTC)
@@ -132,9 +129,6 @@ def _make_client(db_path: Path) -> TestClient:
         state_db_path=str(db_path),
         mount_frontend=False,
     )
-    # app.py is a hotspot owned by the sync-engine lane; tests wire the
-    # router exactly the way the integrator will.
-    app.include_router(cloudsync_routes.router, prefix="/api/v1")
     return TestClient(app)
 
 

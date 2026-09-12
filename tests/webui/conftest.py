@@ -22,6 +22,19 @@ from apps.webui.server.etag import compute_etag
 WEBUI_TEST_ROOT: Path = Path(__file__).resolve().parent
 
 
+@pytest.fixture(autouse=True)
+def _restore_serving_lanes_after_test() -> Iterator[None]:
+    """``test_analysis_source_serving`` clears :data:`SERVING_LANES` mid-module;
+    restore the bootstrap registration after every webui test so later files
+    (``test_anlz_pssi_on_own_switch``) still see ``waveform`` as served."""
+    from apps.analysis.serving_lanes import SERVING_LANES
+
+    saved = set(SERVING_LANES)
+    yield
+    SERVING_LANES.clear()
+    SERVING_LANES.update(saved)
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Auto-mark webui tests with pytest.mark.rb_parity at collection time.
 

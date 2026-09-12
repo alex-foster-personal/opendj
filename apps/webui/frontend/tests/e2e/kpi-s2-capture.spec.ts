@@ -1,6 +1,12 @@
 import { test } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 
+import {
+	type KpiS2CaptureResult,
+	S2_PRESS_KIND,
+	type S2PressRow
+} from '../../src/lib/perf/kpi-s2-capture-types';
+
 const RESULT_PATH = process.env.KPI_CAPTURE_RESULT;
 const ENGINE_ORIGIN = (
 	process.env.KPI_CAPTURE_ENGINE ??
@@ -13,31 +19,15 @@ const CAPTURE_BROWSER = (process.env.KPI_CAPTURE_BROWSER ?? 'webkit').toLowerCas
 const MASTER_VOLUME = 0.1;
 const DECK = 1 as const;
 
-interface PerfPressRow {
-	kind: string;
-	deck: number | null;
-	stages?: Record<string, number>;
-	labels?: Record<string, string>;
-}
-
-interface CaptureResult {
-	ok: boolean;
-	engine: string;
-	browser: string;
-	presses: PerfPressRow[];
-	reason: string | null;
-	floor?: Record<string, unknown>;
-}
-
-function writeResult(result: CaptureResult): void {
+function writeResult(result: KpiS2CaptureResult): void {
 	if (!RESULT_PATH) {
 		throw new Error('KPI_CAPTURE_RESULT is required');
 	}
 	writeFileSync(RESULT_PATH, JSON.stringify(result), 'utf-8');
 }
 
-function isCompletePress(row: PerfPressRow): boolean {
-	if (row.kind !== 'transport-schedule-press') return false;
+function isCompletePress(row: S2PressRow): boolean {
+	if (row.kind !== S2_PRESS_KIND) return false;
 	const stages = row.stages;
 	if (stages === undefined) return false;
 	const base = stages.base_latency_ms;
@@ -153,10 +143,10 @@ test('capture S2 press-to-audible press rows', async ({ page, request, browser }
 
 	const primed = await page.waitForFunction(
 		() => {
-			const read = (window as Window & { __mdtPerfLog?: () => readonly PerfPressRow[] }).__mdtPerfLog;
+			const read = (window as Window & { __mdtPerfLog?: () => readonly S2PressRow[] }).__mdtPerfLog;
 			if (read === undefined) return false;
 			return read().some((row) => {
-				if (row.kind !== 'transport-schedule-press') return false;
+				if (row.kind !== S2_PRESS_KIND) return false;
 				const stages = row.stages;
 				if (stages === undefined) return false;
 				const base = stages.base_latency_ms;
@@ -174,9 +164,9 @@ test('capture S2 press-to-audible press rows', async ({ page, request, browser }
 	).catch(() => null);
 	if (primed === null) {
 		const floor = await page.evaluate(() => {
-			const read = (window as Window & { __mdtPerfLog?: () => readonly PerfPressRow[] }).__mdtPerfLog;
+			const read = (window as Window & { __mdtPerfLog?: () => readonly S2PressRow[] }).__mdtPerfLog;
 			const rows = read?.() ?? [];
-			const last = rows.findLast((row) => row.kind.includes('transport-schedule-press'));
+			const last = rows.findLast((row) => row.kind.includes(S2_PRESS_KIND));
 			return {
 				labels: last?.labels ?? null,
 				stages: last?.stages ?? null
@@ -204,9 +194,9 @@ test('capture S2 press-to-audible press rows', async ({ page, request, browser }
 		{ timeout: 15_000 }
 	);
 
-	const collected: PerfPressRow[] = [];
+	const collected: S2PressRow[] = [];
 	const seen = new Set<string>();
-	const rowKey = (row: PerfPressRow) =>
+	const rowKey = (row: S2PressRow) =>
 		JSON.stringify({
 			kind: row.kind,
 			deck: row.deck,
@@ -216,9 +206,9 @@ test('capture S2 press-to-audible press rows', async ({ page, request, browser }
 
 	// Prime play/pause rows stay in the ring; mark them seen so they are not scored.
 	const preLoopRows = await page.evaluate(() => {
-		const read = (window as Window & { __mdtPerfLog?: () => readonly PerfPressRow[] }).__mdtPerfLog;
+		const read = (window as Window & { __mdtPerfLog?: () => readonly S2PressRow[] }).__mdtPerfLog;
 		if (read === undefined) return [];
-		return read().filter((row) => row.kind === 'transport-schedule-press') as PerfPressRow[];
+		return read().filter((row) => row.kind === S2_PRESS_KIND) as S2PressRow[];
 	});
 	for (const row of preLoopRows) {
 		seen.add(rowKey(row));
@@ -249,9 +239,9 @@ test('capture S2 press-to-audible press rows', async ({ page, request, browser }
 		);
 
 		const newRows = await page.evaluate(() => {
-			const read = (window as Window & { __mdtPerfLog?: () => readonly PerfPressRow[] }).__mdtPerfLog;
+			const read = (window as Window & { __mdtPerfLog?: () => readonly S2PressRow[] }).__mdtPerfLog;
 			if (read === undefined) throw new Error('__mdtPerfLog is not installed');
-			return read().filter((row) => row.kind === 'transport-schedule-press') as PerfPressRow[];
+			return read().filter((row) => row.kind === S2_PRESS_KIND) as S2PressRow[];
 		});
 		for (const row of newRows) {
 			const key = rowKey(row);
