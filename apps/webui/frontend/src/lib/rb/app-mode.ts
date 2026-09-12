@@ -7,6 +7,9 @@
  * A mode transition is a same-origin route, rather than private component
  * state. That makes the human menu and an agent's HTTP navigation identical.
  * A mode whose real feature contract does not exist stays fail-closed.
+ *
+ * v1 (issue #2040) does not advertise unbuilt modes on the chooser unless
+ * app_mode.show_unbuildable is on; the rows stay in APP_MODES fail-closed.
  */
 
 export type AppModeId = 'performance' | 'library-management' | 'music-player';
@@ -49,6 +52,27 @@ export const APP_MODES: readonly AppMode[] = [
 		unavailableReason: 'Music Player is unavailable until its real playback contract is implemented.'
 	}
 ];
+
+export const SHOW_UNBUILDABLE_APP_MODES_FLAG_ID = 'app_mode.show_unbuildable';
+
+export function showUnbuildableAppModes(
+	flagsLoaded: boolean,
+	flag: { enabled: boolean } | null
+): boolean {
+	if (!flagsLoaded) return false;
+	if (flag === null) {
+		throw new Error(
+			`undeclared feature flag ${SHOW_UNBUILDABLE_APP_MODES_FLAG_ID}: ` +
+				'add a FlagDef to apps/feature_flags/store.FLAGS before reading it.'
+		);
+	}
+	return flag.enabled;
+}
+
+export function chooserAppModes(showUnbuildable: boolean): readonly AppMode[] {
+	if (showUnbuildable) return APP_MODES;
+	return APP_MODES.filter((mode) => mode.available);
+}
 
 export function appModeForPath(pathname: string): AppMode {
 	const mode = APP_MODES.find((candidate) => candidate.href === pathname);

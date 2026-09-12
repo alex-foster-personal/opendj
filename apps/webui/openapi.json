@@ -13438,6 +13438,35 @@
         "title": "StatusResponse",
         "type": "object"
       },
+      "StemHydrateIn": {
+        "properties": {
+          "data_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Dir"
+          },
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "manifest_path": {
+            "title": "Manifest Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "manifest_path"
+        ],
+        "title": "StemHydrateIn",
+        "type": "object"
+      },
       "StemManifestOut": {
         "description": "Frontend manifest projected from a stricter durable artifact manifest.",
         "properties": {
@@ -13507,6 +13536,28 @@
           "media_type"
         ],
         "title": "StemPartOut",
+        "type": "object"
+      },
+      "StemPushMissingIn": {
+        "properties": {
+          "data_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Dir"
+          },
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "title": "StemPushMissingIn",
         "type": "object"
       },
       "StemTierOut": {
@@ -25882,6 +25933,51 @@
         ]
       }
     },
+    "/api/v1/stems/push-missing": {
+      "post": {
+        "operationId": "push_missing_stems_api_v1_stems_push_missing_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemPushMissingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Push Missing Stems Api V1 Stems Push Missing Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Push Missing Stems",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
     "/api/v1/stems/tiers": {
       "get": {
         "operationId": "list_tiers_api_v1_stems_tiers_get",
@@ -25904,6 +26000,62 @@
         "summary": "List Tiers",
         "tags": [
           "stem-tiers"
+        ]
+      }
+    },
+    "/api/v1/stems/{stable_id}/hydrate": {
+      "post": {
+        "operationId": "hydrate_stem_api_v1_stems__stable_id__hydrate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemHydrateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Hydrate Stem Api V1 Stems  Stable Id  Hydrate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Hydrate Stem",
+        "tags": [
+          "stems"
         ]
       }
     },
