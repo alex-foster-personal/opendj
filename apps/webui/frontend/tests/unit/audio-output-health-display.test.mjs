@@ -61,4 +61,12 @@ describe('describeAudioOutputHealth', () => {
 		assert.equal(d.cssClass, 'dead');
 		assert.ok(/reload/i.test(d.title));
 	});
+
+	it('stalled => red, names frozen output position and recovery', () => {
+		const d = mod.describeAudioOutputHealth(snap('stalled'));
+		assert.equal(d.cssClass, 'dead');
+		assert.ok(/output position stopped advancing/i.test(d.title));
+		assert.ok(/recovery is running/i.test(d.title));
+		assert.ok(!/\bOK\b/.test(d.title));
+	});
 });

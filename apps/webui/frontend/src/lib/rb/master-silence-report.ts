@@ -26,7 +26,8 @@ import { recordPerfEvent, readPerfEvents } from '$lib/rb/perf-event-log';
 import {
 	SILENT_WHILE_PLAYING_MS,
 	foldSilenceSample,
-	type SilenceState
+	type SilenceState,
+	type SilenceVerdict
 } from '$lib/rb/silence-watchdog';
 import { foldDeviceLivenessSample, type DeviceLivenessState } from '$lib/rb/output-device-watchdog';
 import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
@@ -234,11 +235,23 @@ export function resetMasterSilenceWatch(): void {
  * the fold's `tMs`, so the mirror can compute an age against `Date.now()`
  * without knowing which clock base the caller used.
  */
+/** Mixer is rendering loudly while the device output position is frozen (issue #2155). */
+export const RENDERING_RMS_FLOOR = 0.05;
+
 export function masterSilenceState(): {
 	rms: number | null;
-	verdict: SilenceState['verdict'];
+	verdict: SilenceVerdict;
 	at_ms: number | null;
 } {
+	const outputStalled = audioOutputHealth.snapshot?.verdict === 'stalled';
+	if (
+		outputStalled &&
+		_lastMasterRms !== null &&
+		_lastMasterRms > RENDERING_RMS_FLOOR &&
+		(_state?.verdict ?? 'ok') === 'ok'
+	) {
+		return { rms: _lastMasterRms, verdict: 'output-stalled-while-rendering', at_ms: _lastMasterRmsAtMs };
+	}
 	return { rms: _lastMasterRms, verdict: _state?.verdict ?? 'ok', at_ms: _lastMasterRmsAtMs };
 }
 

@@ -1,5 +1,4 @@
 import {
-	createMeterTap,
 	SILENT_METER_READING,
 	createMasterMeterSource,
 	masterMeterReading,
@@ -105,6 +104,7 @@ import {
 	disarmContextInstrumentation,
 	stampContextDeviceFloors
 } from '$lib/rb/audio-context-instrumentation';
+import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes } from '$lib/rb/deck-channel-graph';
 import { measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
 import {
 	ConflictError,
@@ -194,18 +194,12 @@ import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
 import type { CrossfaderAssign, EqBand, MixerChannelState, MixerState } from '$lib/rb/mixer-types';
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import {
-	ANALYSER_FFT_SIZE,
 	assertUnitRange,
 	AUDIO_CONTEXT_OPTIONS,
 	CONTEXT_WAIT_POLL_MS,
 	CONTEXT_WAIT_STALL_TIMEOUT_MS,
 	DECK_IDS,
 	eqDbFromKnob,
-	EQ_FREQ_HIGH_HZ,
-	EQ_FREQ_LOW_HZ,
-	EQ_FREQ_MID_HZ,
-	EQ_MID_Q,
-	FILTER_Q,
 	PARAM_SMOOTH_S,
 	PITCH_RANGES,
 	TRIM_MAX_GAIN
@@ -416,20 +410,6 @@ function _hotCuesFromSlots(slots: HotCueSlotState[]): HotCue[] {
 // -------------------------------------------- non-reactive audio runtime
 // AudioNodes and AudioBuffers stay OUT of $state on purpose: proxying
 // native audio objects breaks identity checks and buys nothing reactive.
-
-interface _ChannelNodes {
-	analyser: AnalyserNode;
-	trim: GainNode;
-	low: BiquadFilterNode;
-	mid: BiquadFilterNode;
-	high: BiquadFilterNode;
-	filterLp: BiquadFilterNode; filterHp: BiquadFilterNode;
-	filterDry: GainNode; filterLpWet: GainNode; filterHpWet: GainNode;
-	cue: GainNode;
-	fader: GainNode;
-	xf: GainNode;
-	extsplit: ChannelSplitterNode | null;
-}
 
 export interface DeckTransportClock {
 	source: 'paused_cursor' | 'audio_output';
@@ -655,6 +635,66 @@ function _setParam(param: AudioParam, value: number): void {
 // belong to the hardware mixer. Unrouted decks stay on the internal master,
 // which in this mode feeds ONLY the headphone monitor.
 
+/** Issue #2155: new AudioContext plus re-attached decks after output position stall. */
+async function rebuildAudioGraphKeepingDecks(): Promise<void> {
+	await recreateFromEngineAccess({
+		decks: DECK_IDS,
+		runtime: (deck) => _rt[deck],
+		state: (deck) => deckStates[deck],
+		releasePendingStemUpgrade: (deck) => _releasePendingStemUpgrade(_rt[deck]),
+		detachProcessor: (deck) => detachProcessorForDisposal(_rt[deck]),
+		disarmInstrumentation: () => disarmContextInstrumentation(),
+		muteNode: () => _masterMuteGain,
+		disposeResources: ({ processors, nodes }) =>
+			disposeAudioResources({ rafId: _rafId, processors, nodes, masterGain: _masterGain, context: _ctx }),
+		resetGraphState: () => {
+			disposeHeadphoneMonitor();
+			_rafId = null;
+			_masterGain = null;
+			releaseMasterMeterTap();
+			attachMasterMuteNode(null);
+			_masterMuteGain = null;
+			_externalMerger = _externalRouteAnalyser = null;
+			_ctx = null;
+			resetMasterSilenceWatch();
+			resetPresentationClockStall();
+		},
+		ensureGraph: () => _ensureGraph(),
+		resetPresentation: (deck, positionSec) => {
+			_rt[deck].presentation = createPresentedTransportTimeline(positionSec);
+			_rt[deck].nextScheduleRevision = 0;
+		},
+		attachProcessor: (deck, processor, buffer, latencySec) => {
+			const rt = _rt[deck];
+			rt.processor = processor;
+			rt.audioBuffer = buffer;
+			rt.latencySec = latencySec;
+		},
+		processorFailed: (deck, processor, error) => {
+			if (_rt[deck].processor === processor) _recordProcessorFailure(deck, error);
+		},
+		schedulePlayingDeck: async (snap, ctx) => {
+			await _scheduleDeck(
+				snap.deck,
+				ctx.currentTime,
+				snap.positionSec,
+				true,
+				snap.tempoRatio,
+				snap.masterTempoEnabled,
+				snap.loop,
+				snap.keyShiftSemitones,
+				undefined
+			);
+		},
+		maybeUpgradeStems: (snap, buffer, ctx) => {
+			if (snap.stemsReady && snap.stableId.length > 0) {
+				void _upgradeDeckStems(snap.deck, snap.stableId, _rt[snap.deck].loadToken, ctx, buffer);
+			}
+		}
+	});
+	await _resumeContext();
+}
+
 function _ensureGraph(): AudioContext {
 	if (typeof window === 'undefined') {
 		throw new Error('AudioEngine requires a browser AudioContext (no SSR usage)');
@@ -670,7 +710,11 @@ function _ensureGraph(): AudioContext {
 	// The watchdog owns that re-stamp AND every non-running state: suspended,
 	// interrupted and closed used to fall through in silence, which is how
 	// Wed 2 Sep 2026 cost ~24 minutes of audio with nothing on screen.
-	armAudioContextWatchdog(_ctx, () => DECK_IDS.some((deck) => deckStates[deck].playing));
+	armAudioContextWatchdog(
+		_ctx,
+		() => DECK_IDS.some((deck) => deckStates[deck].playing),
+		rebuildAudioGraphKeepingDecks
+	);
 	_masterGain = _ctx.createGain();
 	_masterGain.gain.value = mixerState.master * _ceilingGainMultiplier();
 	// Silence watchdog tap: an AnalyserNode with nothing downstream is a pure
@@ -718,69 +762,21 @@ function _ensureGraph(): AudioContext {
 	// the graph build is not.
 	const meterSources: MeterTapSource[] = [];
 	meterSources.push(createMasterMeterSource(_masterGain));
-	for (const deck of DECK_IDS) {
-		const ch = mixerState.channels[deck];
-		const analyser = _ctx.createAnalyser();
-		analyser.fftSize = ANALYSER_FFT_SIZE;
-		analyser.minDecibels = -120;
-		analyser.maxDecibels = 0;
-		analyser.smoothingTimeConstant = 0;
-		const trim = _ctx.createGain();
-		trim.gain.value = ch.trim * TRIM_MAX_GAIN;
-		const low = _ctx.createBiquadFilter();
-		low.type = 'lowshelf';
-		low.frequency.value = EQ_FREQ_LOW_HZ;
-		low.gain.value = eqDbFromKnob(ch.eq_low);
-		const mid = _ctx.createBiquadFilter();
-		mid.type = 'peaking';
-		mid.frequency.value = EQ_FREQ_MID_HZ;
-		mid.Q.value = EQ_MID_Q;
-		mid.gain.value = eqDbFromKnob(ch.eq_mid);
-		const high = _ctx.createBiquadFilter();
-		high.type = 'highshelf';
-		high.frequency.value = EQ_FREQ_HIGH_HZ;
-		high.gain.value = eqDbFromKnob(ch.eq_high);
-		const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = filterParamsFromKnob(ch.filter);
-		const filterLp = _ctx.createBiquadFilter();
-		filterLp.type = 'lowpass'; filterLp.Q.value = FILTER_Q; filterLp.frequency.value = lpHz;
-		const filterHp = _ctx.createBiquadFilter();
-		filterHp.type = 'highpass'; filterHp.Q.value = FILTER_Q; filterHp.frequency.value = hpHz;
-		// Separate wet gains (#990): the inactive side is silenced, not left in series.
-		const filterDry = _ctx.createGain(); filterDry.gain.value = dryGain;
-		const filterLpWet = _ctx.createGain(); filterLpWet.gain.value = lpWetGain;
-		const filterHpWet = _ctx.createGain(); filterHpWet.gain.value = hpWetGain;
-		const cue = _ctx.createGain();
-		cue.gain.value = ch.cue_enabled ? 1 : 0;
-		const fader = _ctx.createGain();
-		fader.gain.value = ch.fader;
-		const xf = _ctx.createGain();
-		xf.gain.value = _xfGainFor(ch.assign, mixerState.crossfader);
-		analyser.connect(trim);
-		trim.connect(low);
-		low.connect(mid);
-		mid.connect(high);
-		for (const stage of [filterDry, filterLp, filterHp]) high.connect(stage);
-		filterLp.connect(filterLpWet); filterHp.connect(filterHpWet);
-		for (const branch of [filterDry, filterLpWet, filterHpWet]) branch.connect(cue);
-		cue.connect(headphones.cueSum);
-		for (const branch of [filterDry, filterLpWet, filterHpWet]) branch.connect(fader);
-		const usbLeft = routing?.get(deck) ?? null;
-		let extsplit: ChannelSplitterNode | null = null;
-		if (usbLeft !== null && _externalMerger !== null) {
-			extsplit = _ctx.createChannelSplitter(2);
-			fader.connect(extsplit);
-			extsplit.connect(_externalMerger, 0, usbLeft - 1);
-			extsplit.connect(_externalMerger, 1, usbLeft);
-		} else {
-			fader.connect(xf);
-			xf.connect(_masterGain);
-		}
-		_rt[deck].nodes = { analyser, trim, low, mid, high, filterLp, filterHp, filterDry, filterLpWet, filterHpWet, cue, fader, xf, extsplit };
-		// `high` is post-trim/EQ, pre-filter, pre-fader: the meter reads gain staging INTO the filter (#990).
-		const tap = createMeterTap();
-		_meterTaps[deck] = tap;
-		meterSources.push({ tap, source: high });
-	}
+	meterSources.push(
+		...buildDeckChannelGraph({
+			ctx: _ctx,
+			mixerState,
+			masterGain: _masterGain,
+			externalMerger: _externalMerger,
+			routing,
+			cueSum: headphones.cueSum,
+			xfGainFor: _xfGainFor,
+			onDeck: (deck, nodes, tap) => {
+				_rt[deck].nodes = nodes;
+				_meterTaps[deck] = tap;
+			}
+		})
+	);
 	armXrunSentinel(_ctx);
 	armDeckMeters(_ctx, meterSources);
 	return _ctx;
@@ -937,6 +933,20 @@ function _presentationPending(rt: _DeckRuntime): boolean {
 
 // ./audio-engine-guards (pure functions, no engine state) - re-exported here
 // so external importers and the bundled unit tests keep one import site.
+import {
+	nextPlayingMaster,
+	assertDeckLoadConsistency,
+	type DeckReplacementActivity,
+	assertDeckReplacementAllowed,
+	loadCandidateCanPublish,
+	assertPausedMasterSelectionAllowed,
+	pausedMasterSelectionBlockers,
+	masterSwitchFollowers,
+	naturalEndNeedsRevisionedStop,
+	transportNeedsScheduledMutation,
+	type TransportMutationActivity,
+	filterParamsFromKnob
+} from './audio-engine-guards';
 export {
 	nextPlayingMaster,
 	assertDeckLoadConsistency,
@@ -949,20 +959,7 @@ export {
 	naturalEndNeedsRevisionedStop,
 	transportNeedsScheduledMutation,
 	type TransportMutationActivity
-} from './audio-engine-guards';
-import {
-	assertDeckReplacementAllowed,
-	assertDeckLoadConsistency,
-	loadCandidateCanPublish,
-	filterParamsFromKnob,
-	nextPlayingMaster,
-	pausedMasterSelectionBlockers,
-	assertPausedMasterSelectionAllowed,
-	masterSwitchFollowers,
-	naturalEndNeedsRevisionedStop,
-	transportNeedsScheduledMutation,
-	type TransportMutationActivity
-} from './audio-engine-guards';
+};
 
 function _assertCurrentDeckReplacementAllowed(deck: DeckId): void {
 	const st = deckStates[deck];
