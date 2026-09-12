@@ -38,6 +38,7 @@ from apps.feature_flags.profiles import (
     available_profiles,
     profile_path,
 )
+from apps.shared.google_oauth_client import apply_bundled_oauth
 from apps.shared.sync_bind_guard import SyncBindRefused, assert_sync_bind_allowed
 
 EXIT_OK: int = 0
@@ -132,6 +133,7 @@ def _preflight(cfg: EngineConfig, *, workers: int) -> None:
         )
     assert_no_progress_ledger(cfg.data_dir)
     apply_env_contract(cfg)
+    apply_bundled_oauth(os.environ)
     prepare_layout(cfg)
 
 
