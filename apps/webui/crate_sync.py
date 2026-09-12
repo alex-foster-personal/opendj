@@ -311,12 +311,14 @@ def _playlist_stable_ids(state: sqlite3.Connection, name: str) -> tuple[str, ...
         if has_soft_deletes(state, "playlist_memberships"):
             members_sql = (
                 "SELECT stable_id FROM playlist_memberships "
-                "WHERE playlist_id = ? AND deleted_at IS NULL ORDER BY position"
+                "WHERE playlist_id = ? AND deleted_at IS NULL "
+                "ORDER BY COALESCE(order_key, printf('%08d', position)), position"
             )
         else:
             members_sql = (
                 "SELECT stable_id FROM playlist_memberships "
-                "WHERE playlist_id = ? ORDER BY position"
+                "WHERE playlist_id = ? "
+                "ORDER BY COALESCE(order_key, printf('%08d', position)), position"
             )
         for (stable_id,) in state.execute(members_sql, (playlist_id,)):
             if stable_id not in seen:

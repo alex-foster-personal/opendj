@@ -2668,6 +2668,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playlists/{playlist_id}/items:add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Playlist Items */
+        post: operations["add_playlist_items"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playlists/{playlist_id}/tracks": {
         parameters: {
             query?: never;
@@ -7639,6 +7656,16 @@ export interface components {
             stable_id: string;
             /** Title */
             title: string | null;
+        };
+        /** MembershipAddIn */
+        MembershipAddIn: {
+            /**
+             * Position
+             * @description 0-based insert index; omit to append after the last member.
+             */
+            position?: number | null;
+            /** Stable Ids */
+            stable_ids: string[];
         };
         /** MembershipReplaceIn */
         MembershipReplaceIn: {
@@ -16183,6 +16210,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistWriteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_playlist_items: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipAddIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

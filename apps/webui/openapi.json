@@ -8424,6 +8424,36 @@
         "title": "MemberOut",
         "type": "object"
       },
+      "MembershipAddIn": {
+        "properties": {
+          "position": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0-based insert index; omit to append after the last member.",
+            "title": "Position"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids"
+        ],
+        "title": "MembershipAddIn",
+        "type": "object"
+      },
       "MembershipReplaceIn": {
         "properties": {
           "stable_ids": {
@@ -24428,6 +24458,58 @@
           }
         },
         "summary": "Duplicate Playlist",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/items:add": {
+      "post": {
+        "operationId": "add_playlist_items",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MembershipAddIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistWriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Playlist Items",
         "tags": [
           "playlists-write"
         ]

@@ -81,6 +81,8 @@ from apps.shared.state.writer import StateWriter, compute_playlist_id
 
 from .backend import BackendError, ConflictError, NotFoundError
 from .etag import compute_etag, strip_quotes
+from .playlist_add import add_memberships as _add_memberships
+from .playlist_add import MEMBERSHIP_ORDER_BY
 from .playlist_transfer import (
     apply_dest_write,
     apply_source_write,
@@ -183,7 +185,8 @@ class PlaylistStore:
         items = [
             r[0] for r in self._conn.execute(
                 "SELECT stable_id FROM playlist_memberships "
-                "WHERE playlist_id = ? AND deleted_at IS NULL ORDER BY position",
+                f"WHERE playlist_id = ? AND deleted_at IS NULL "
+                f"ORDER BY {MEMBERSHIP_ORDER_BY}",
                 (playlist_id,),
             )
         ]
@@ -446,6 +449,21 @@ class PlaylistStore:
                         self._snapshot(row), self._snapshot(new_row),
                     )
                 return new_row
+
+    def add_memberships(
+        self,
+        playlist_id: str,
+        stable_ids: list[str],
+        *,
+        position: int | None = None,
+        record_edit: bool = True,
+    ) -> PlaylistRow:
+        """O(1) append/insert via ``:add`` (LIBM-20)."""
+        with self._lock:
+            return _add_memberships(
+                self, playlist_id, stable_ids,
+                position=position, record_edit=record_edit,
+            )
 
     def transfer_memberships(
         self,

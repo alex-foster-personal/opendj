@@ -42,11 +42,14 @@ from .backend import (
 )
 from .cloudsync_scheduler import CloudSyncScheduler
 from .errors import (
+    handle_already_exists,
     handle_backend_error,
     handle_conflict,
     handle_not_found,
     handle_rekordbox_writeback_disabled,
+    handle_smartlist_immutable,
 )
+from .playlist_add import AlreadyExistsError, SmartlistImmutableError
 from .routes import analysis as analysis_routes
 from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
@@ -312,6 +315,8 @@ def _install_exception_handlers(app: FastAPI) -> None:
         RekordboxWritebackDisabled, handle_rekordbox_writeback_disabled
     )
     app.add_exception_handler(ConflictError, handle_conflict)
+    app.add_exception_handler(AlreadyExistsError, handle_already_exists)
+    app.add_exception_handler(SmartlistImmutableError, handle_smartlist_immutable)
     app.add_exception_handler(BackendError, handle_backend_error)
 
 
