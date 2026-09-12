@@ -55,6 +55,13 @@
  * it is called and carries it through all three.
  */
 
+import {
+	AUDIO_CONTEXT_IO_TIMEOUT_MS,
+	AUDIO_OUTPUT_DEAD_TOAST,
+	AudioContextIoTimeoutError,
+	withAudioContextIoTimeout
+} from '$lib/rb/audio-context-io-timeout';
+
 export const REBIND_DEBOUNCE_MS = 400;
 export const REBIND_COOLDOWN_MS = 10_000;
 
@@ -98,7 +105,8 @@ export function installOutputRebind(
 	ctx: RebindableAudioContext,
 	effects: RebindEffects,
 	isAnyDeckPlaying: () => boolean,
-	mediaDevices: { addEventListener(t: 'devicechange', h: () => void): void; removeEventListener(t: 'devicechange', h: () => void): void } | null
+	mediaDevices: { addEventListener(t: 'devicechange', h: () => void): void; removeEventListener(t: 'devicechange', h: () => void): void } | null,
+	ioTimeoutMs: number = AUDIO_CONTEXT_IO_TIMEOUT_MS
 ): OutputRebindHandle {
 	let rebinding = false;
 	let lastRebindAt = Number.NEGATIVE_INFINITY;
@@ -171,11 +179,21 @@ export function installOutputRebind(
 		rebinding = true;
 		lastRebindAt = effects.now();
 		try {
-			if (ctx.state === 'running') await ctx.suspend();
-			await ctx.resume();
+			if (ctx.state === 'running') {
+				await withAudioContextIoTimeout('suspend', ctx.suspend(), ioTimeoutMs);
+			}
+			await withAudioContextIoTimeout('resume', ctx.resume(), ioTimeoutMs);
 			effects.recordPerfEvent('audio-output-rebound', `output re-bound after ${reason}`, 'info');
 			effects.pushToast(`Audio output re-bound (${reason})`, 'info');
 		} catch (error: unknown) {
+			if (error instanceof AudioContextIoTimeoutError) {
+				effects.recordPerfEvent(
+					'audio-output-dead',
+					`AudioContext ${error.operation} timed out after ${error.timeoutMs}ms (watchdog)`,
+					'error'
+				);
+				effects.pushToast(AUDIO_OUTPUT_DEAD_TOAST, 'error');
+			}
 			const message = error instanceof Error ? error.message : String(error);
 			// `error`, so `recordPerfEvent` escalates it to the engine's
 			// client-error log. A silent audio failure recorded only in this
