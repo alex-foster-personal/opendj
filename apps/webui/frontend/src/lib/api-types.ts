@@ -5975,6 +5975,21 @@ export interface components {
             /** Signed In As */
             signed_in_as: string | null;
         };
+        /**
+         * CloudTransferOut
+         * @description A real in-process CloudSync asset operation for one library row.
+         */
+        CloudTransferOut: {
+            /** Bytes Total */
+            bytes_total?: number | null;
+            /** Bytes Transferred */
+            bytes_transferred: number;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "upload" | "download";
+        };
         /** ClusterOut */
         ClusterOut: {
             /** Cluster Id */
@@ -9854,6 +9869,7 @@ export interface components {
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
+            cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Comments */
             comments: string | null;
             /** Duration Ms */
@@ -9872,6 +9888,8 @@ export interface components {
             genre: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /** Has Remote Copy */
+            has_remote_copy: boolean;
             /**
              * Is Radio Edit
              * @default false
@@ -10877,6 +10895,7 @@ export interface components {
             auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
+            cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Created At */
             created_at: string;
             /** Duration Ms */
@@ -10893,6 +10912,8 @@ export interface components {
             file_path?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /** Has Remote Copy */
+            has_remote_copy: boolean;
             /**
              * Is Radio Edit
              * @default false
@@ -11081,6 +11102,7 @@ export interface components {
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
+            cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Comments */
             comments: string | null;
             /** Duration Ms */
@@ -11099,6 +11121,8 @@ export interface components {
             genre: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /** Has Remote Copy */
+            has_remote_copy: boolean;
             /**
              * Is Radio Edit
              * @default false

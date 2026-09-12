@@ -3434,6 +3434,42 @@
         "title": "CloudSyncStatusOut",
         "type": "object"
       },
+      "CloudTransferOut": {
+        "description": "A real in-process CloudSync asset operation for one library row.",
+        "properties": {
+          "bytes_total": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes Total"
+          },
+          "bytes_transferred": {
+            "minimum": 0.0,
+            "title": "Bytes Transferred",
+            "type": "integer"
+          },
+          "direction": {
+            "enum": [
+              "upload",
+              "download"
+            ],
+            "title": "Direction",
+            "type": "string"
+          }
+        },
+        "required": [
+          "direction",
+          "bytes_transferred"
+        ],
+        "title": "CloudTransferOut",
+        "type": "object"
+      },
       "ClusterOut": {
         "properties": {
           "cluster_id": {
@@ -13580,6 +13616,16 @@
             ],
             "title": "Bpm"
           },
+          "cloud_transfer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloudTransferOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "comments": {
             "anyOf": [
               {
@@ -13650,6 +13696,10 @@
           },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
+            "type": "boolean"
+          },
+          "has_remote_copy": {
+            "title": "Has Remote Copy",
             "type": "boolean"
           },
           "is_radio_edit": {
@@ -13834,6 +13884,7 @@
           "preview_max",
           "file_exists",
           "is_streaming",
+          "has_remote_copy",
           "quality",
           "vocals",
           "stems",
@@ -16185,6 +16236,16 @@
             ],
             "title": "Bpm"
           },
+          "cloud_transfer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloudTransferOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -16244,6 +16305,10 @@
           },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
+            "type": "boolean"
+          },
+          "has_remote_copy": {
+            "title": "Has Remote Copy",
             "type": "boolean"
           },
           "is_radio_edit": {
@@ -16421,6 +16486,7 @@
           "preview_b64",
           "preview_max",
           "file_exists",
+          "has_remote_copy",
           "quality",
           "vocals",
           "stems",
@@ -16817,6 +16883,16 @@
             ],
             "title": "Bpm"
           },
+          "cloud_transfer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloudTransferOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "comments": {
             "anyOf": [
               {
@@ -16887,6 +16963,10 @@
           },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
+            "type": "boolean"
+          },
+          "has_remote_copy": {
+            "title": "Has Remote Copy",
             "type": "boolean"
           },
           "is_radio_edit": {
@@ -17067,6 +17147,7 @@
           "preview_max",
           "file_exists",
           "is_streaming",
+          "has_remote_copy",
           "quality",
           "vocals",
           "stems",

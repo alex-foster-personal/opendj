@@ -1847,6 +1847,8 @@
 			file_exists: wire.file_exists,
 			is_streaming: wire.is_streaming,
 			is_remote: wire.is_remote === true,
+			has_remote_copy: wire.has_remote_copy === true,
+			cloud_transfer: wire.cloud_transfer ?? null,
 			spotify_pending:
 				wire.spotify_pending === true || wire.stable_id.startsWith('spotify-pending:'),
 			quality: wire.quality ?? null,
@@ -1898,6 +1900,8 @@
 			file_exists: track.file_exists,
 			is_streaming: null,
 			is_remote: track.is_remote === true,
+			has_remote_copy: track.has_remote_copy === true,
+			cloud_transfer: track.cloud_transfer ?? null,
 			spotify_pending: track.stable_id.startsWith('spotify-pending:'),
 			quality: track.quality ?? null,
 			play_count: typeof track.play_count === 'number' ? track.play_count : 0,

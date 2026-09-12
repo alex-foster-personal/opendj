@@ -19,7 +19,15 @@
 		type WordIndex
 	} from '$lib/lyrics/pointer-word';
 	import type { PreviewStripData, Vocals } from '$lib/rb/api-rb';
+	import type { AnlzData } from '$lib/rb/anlz-types';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import {
+		drawLoopCueBands,
+		drawPhraseMarkers,
+		drawPointCueMarkers,
+		markerBandHeightForSurface,
+		readPalette
+	} from '../wave/cues';
 	import { VOCAL_BLUE, vocalAlpha } from '../wave/render';
 
 	const COL_LOW = '#3d7dd9';
@@ -27,12 +35,14 @@
 	const COL_HIGH = '#cfe0f2';
 	const W = 165;
 	const H = 14;
+	const PREVIEW_MARKER_BAND_PX = markerBandHeightForSurface(H);
 	/** Mini-strip vocal overlay height (CSS px). */
 	const VOCAL_BAR_H = 0.7;
 
 	let {
 		strip,
 		vocals,
+		markerAnlz = null,
 		duration_ms,
 		revealed,
 		nowRatio = null,
@@ -42,6 +52,10 @@
 	}: {
 		strip: PreviewStripData | null;
 		vocals: Vocals | null;
+		/** The same real ANLZ object used by a loaded deck/main waveform, or an
+		 * already-populated shared cache entry. Null deliberately means no
+		 * cue/phrase overlay; this component never fetches per virtual row. */
+		markerAnlz?: AnlzData | null;
 		duration_ms: number | null;
 		revealed: boolean;
 		/**
@@ -99,7 +113,7 @@
 
 	$effect(() => {
 		if (canvas && strip !== null && revealed) {
-			_draw(canvas, strip, vocals, duration_ms, dpr);
+			_draw(canvas, strip, vocals, markerAnlz, duration_ms, dpr);
 		}
 	});
 
@@ -116,6 +130,7 @@
 		el: HTMLCanvasElement,
 		data: PreviewStripData,
 		voc: Vocals | null,
+		markerAnlz: AnlzData | null,
 		durMs: number | null,
 		ratio: number
 	): void {
@@ -153,6 +168,23 @@
 				ctx.fillRect(x0, 0, x1 - x0, VOCAL_BAR_H);
 			}
 			ctx.globalAlpha = 1;
+		}
+		if (markerAnlz !== null && durMs !== null && durMs > 0) {
+			const palette = readPalette(el);
+			const pxPerS = W / (durMs / 1000);
+			// Same order as drawWaveRow: opaque loop spans behind phrase
+			// segmentation, point cues in the foreground (LIBUX-12).
+			drawLoopCueBands(
+				ctx,
+				markerAnlz.cues,
+				0,
+				pxPerS,
+				W,
+				palette,
+				PREVIEW_MARKER_BAND_PX
+			);
+			drawPhraseMarkers(ctx, markerAnlz.phrases, 0, pxPerS, W, palette);
+			drawPointCueMarkers(ctx, markerAnlz.cues, 0, pxPerS, W, palette);
 		}
 	}
 

@@ -5,7 +5,7 @@
 export const COL_DEFAULTS = {
 	funnel: 18,
 	err: 20,
-	cloud: 16,
+	cloud: 22,
 	order: 24,
 	preview: 177,
 	art: 54,

@@ -1,12 +1,13 @@
 /**
- * // requirement: LIBUX-07
+ * Requirements: LIBUX-07, LIBUX-13.
  * Source-shape regression for the library LHS remote-audio glyph.
  *
  * [if] a track's audio is held remotely rather than locally [then] a distinct
  * symbol renders in an LHS status column of that library row
  * [if] the row is streaming or awaiting-volume / missing [then] that symbol
  * is not the streaming cloud and not the missing '!'
- * [if] a track's audio is local [then] no remote symbol renders
+ * [if] a track is local-only [then] LIBUX-13 supersedes the quiet cell with
+ * a crossed-out cloud while preserving remote-versus-streaming semantics
  *
  * No jsdom: repo idiom for .svelte assertions is source-level
  * (see suggest-next-strip.test.mjs).
@@ -19,46 +20,57 @@ import { test } from 'node:test';
 const TRACK_TABLE = fileURLToPath(
 	new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url)
 );
+const TRACK_CLOUD_STATE = fileURLToPath(
+	new URL('../../src/lib/components/rb/browser/track-cloud-state.ts', import.meta.url)
+);
 const source = readFileSync(TRACK_TABLE, 'utf8').replaceAll('\r\n', '\n');
+const stateSource = readFileSync(TRACK_CLOUD_STATE, 'utf8').replaceAll('\r\n', '\n');
 const template = source.slice(source.lastIndexOf('</script>'));
 const cloudCell = template.slice(
 	template.indexOf('td class="c-cloud"'),
 	template.indexOf('td class="c-order"')
 );
 
-test('the remote glyph lives in the existing LHS cloud status cell, not a new column', () => {
-	assert.match(cloudCell, /row\.is_remote/);
-	assert.match(cloudCell, /class="remote"/);
+test('the cloud-presence glyph lives in the existing LHS status cell, not a new column', () => {
+	assert.match(cloudCell, /row\.has_remote_copy/);
+	assert.match(cloudCell, /class="cloud-copy"/);
 	assert.doesNotMatch(template, /class="c-remote"/);
 });
 
-test('the remote glyph is distinct from the streaming cloud and the missing-file mark', () => {
+test('cloud-presence states stay distinct from streaming', () => {
 	assert.match(cloudCell, /class="cloud"/);
-	assert.match(cloudCell, /class="missing"/);
-	assert.match(cloudCell, /class="remote"/);
+	assert.match(cloudCell, /class="cloud-copy"/);
 	assert.notEqual(
-		cloudCell.indexOf('class="remote"'),
+		cloudCell.indexOf('class="cloud-copy"'),
 		cloudCell.indexOf('class="cloud"'),
-		'remote and streaming must not share one class'
+		'CloudSync presence and service streaming must not share one class'
 	);
 });
 
-test('the remote glyph carries a title that names the remote-audio state', () => {
-	assert.match(cloudCell, /class="remote"[^>]*title="[^"]*remote audio/);
+test('every CloudSync glyph carries the production helper title', () => {
+	assert.match(cloudCell, /class="cloud-copy"[^>]*title=\{cloudView\.title\}/);
+	assert.match(stateSource, /Not on CloudSync/);
+	assert.match(stateSource, /On CloudSync but not stored locally/);
+	assert.match(stateSource, /On CloudSync and stored locally/);
 });
 
-test('streaming rows keep the existing cloud and never take the remote class', () => {
-	const streamingBlock = cloudCell.slice(0, cloudCell.indexOf('row.is_remote'));
-	assert.match(streamingBlock, /is_streaming/);
-	assert.doesNotMatch(streamingBlock, /class="remote"/);
+test('streaming rows take precedence over CloudSync storage state', () => {
+	const streamingAt = stateSource.indexOf('if (input.isStreaming)');
+	const remoteAt = stateSource.indexOf('if (input.hasRemoteCopy');
+	assert.ok(streamingAt >= 0 && remoteAt > streamingAt);
 });
 
-test('the missing-file mark is the fallback after remote, so a remote row is not painted as broken', () => {
-	const remoteAt = cloudCell.indexOf('row.is_remote');
-	const missingAt = cloudCell.indexOf('!row.file_exists');
-	assert.ok(remoteAt >= 0 && missingAt > remoteAt, 'remote branch must precede the missing-file mark');
+test('a remote copy takes precedence over an absent local file, so cloud-only is red', () => {
+	const remoteAt = stateSource.indexOf('if (input.hasRemoteCopy)');
+	const localFallbackAt = stateSource.lastIndexOf("'not-on-cloud',");
+	assert.ok(remoteAt >= 0 && localFallbackAt > remoteAt, 'remote branch must precede the local fallback');
 });
 
 test('a remote row is not classed broken the way a missing local file is', () => {
 	assert.match(source, /row\.is_remote !== true/);
+});
+
+test('local-only uses a crossed-out cloud instead of the old blank cell', () => {
+	assert.match(cloudCell, /class:not-on-cloud=/);
+	assert.match(cloudCell, /d="M3 13 13 3"/);
 });

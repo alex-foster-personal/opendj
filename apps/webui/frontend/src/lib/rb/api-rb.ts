@@ -345,6 +345,13 @@ export function parseStemSummary(raw: unknown): StemSummary {
 	return raw as StemSummary;
 }
 
+export interface CloudTransferWire {
+	direction: 'upload' | 'download';
+	bytes_transferred: number;
+	/** Null only when the production transfer source cannot report a total. */
+	bytes_total: number | null;
+}
+
 export interface PlaylistTrackRowWire {
 	stable_id: string;
 	/** v13 membership row id; playlist detail only (LIBM-21). */
@@ -371,6 +378,10 @@ export interface PlaylistTrackRowWire {
 	is_streaming: boolean;
 	/** LIBUX-07: our own audio in non-local storage. Optional for older payloads. */
 	is_remote?: boolean;
+	/** LIBUX-13: a recorded remote copy, including when local audio also exists. */
+	has_remote_copy: boolean;
+	/** LIBUX-13: present only while this engine process is moving real bytes. */
+	cloud_transfer: CloudTransferWire | null;
 	/** Unmatched Spotify placeholder row (light green). Optional for older payloads. */
 	spotify_pending?: boolean;
 	quality: TrackQuality;
@@ -525,6 +536,10 @@ export type TrackListItemWire = Track & {
 	file_exists: boolean;
 	/** LIBUX-07: our own audio in non-local storage. Optional for older payloads. */
 	is_remote?: boolean;
+	/** LIBUX-13: a recorded remote copy, including when local audio also exists. */
+	has_remote_copy: boolean;
+	/** LIBUX-13: present only while this engine process is moving real bytes. */
+	cloud_transfer: CloudTransferWire | null;
 	quality: TrackQuality;
 	play_count: number;
 	vocals: Vocals;

@@ -126,7 +126,10 @@ export function buildDeckChannelGraph(deps: {
 		};
 		const tap = createMeterTap();
 		deps.onDeck(deck, nodes, tap);
-		meterSources.push({ tap, source: high });
+		// The channel fader is the deck-volume control mounted with this meter.
+		// Tap its output so the physical slider and visible light describe the
+		// same audible channel level.
+		meterSources.push({ tap, source: fader });
 	}
 	return meterSources;
 }

@@ -250,6 +250,8 @@ def list_tracks(
                 preview_max=row["preview_max"],
                 file_exists=row["file_exists"],
                 is_remote=bool(row.get("is_remote")),
+                has_remote_copy=bool(row["has_remote_copy"]),
+                cloud_transfer=row["cloud_transfer"],
                 quality=row["quality"],
                 vocals=row["vocals"],
                 stems=row["stems"],

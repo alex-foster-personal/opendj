@@ -133,6 +133,22 @@ class LyricsRowSummaryOut(BaseModel):
     override: str | None = None
 
 
+class CloudTransferOut(BaseModel):
+    """A real in-process CloudSync asset operation for one library row."""
+
+    direction: Literal["upload", "download"]
+    bytes_transferred: int = Field(ge=0)
+    # Null is reserved for a source that genuinely cannot report its total.
+    # The current hydration upload path always supplies a numeric total.
+    bytes_total: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_progress_does_not_exceed_total(self) -> CloudTransferOut:
+        if self.bytes_total is not None and self.bytes_transferred > self.bytes_total:
+            raise ValueError("bytes_transferred must not exceed bytes_total")
+        return self
+
+
 class TrackListItemOut(TrackOut):
     """TrackOut + parity row fields (shared API contract item 1).
 
@@ -156,6 +172,11 @@ class TrackListItemOut(TrackOut):
     # LIBUX-07: our own audio in non-local storage, not streaming and not
     # awaiting-volume. False (the default) is the honest common case.
     is_remote: bool = False
+    # LIBUX-13: a durable remote object is recorded even when local audio
+    # also exists. Unlike is_remote, this does not collapse local+cloud.
+    has_remote_copy: bool
+    # LIBUX-13: only present while this server process is moving real bytes.
+    cloud_transfer: CloudTransferOut | None = None
     quality: QualityOut
     vocals: dict[str, Any]
     stems: dict[str, Any]
@@ -273,6 +294,11 @@ class TrackRowOut(BaseModel):
     is_streaming: bool
     # LIBUX-07: our own audio in non-local storage. False when unset.
     is_remote: bool = False
+    # LIBUX-13: true whenever track_locations records a live remote object,
+    # including the local+cloud state that is_remote deliberately suppresses.
+    has_remote_copy: bool
+    # LIBUX-13: ephemeral operation state, distinct from durable presence.
+    cloud_transfer: CloudTransferOut | None = None
     # Unmatched Spotify placeholder (synthetic spotify-pending:* stable_id).
     # Distinct from generic streaming so the browser can light-green tint.
     spotify_pending: bool = False
@@ -449,6 +475,7 @@ class PreflightOut(BaseModel):
 
 
 __all__ = [
+    "CloudTransferOut",
     "HealthCloud",
     "HealthOut",
     "HealthStateDb",
