@@ -18,6 +18,7 @@
 		rateDeckTrack
 	} from '$lib/rb/audio-engine.svelte';
 	import { tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
+	import { queryPerformanceState } from '$lib/rb/performance-ipc.svelte';
 	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
 	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
@@ -89,18 +90,32 @@
 		'No grid on this track: the button is inert and transport runs unsynced.',
 		'BAR prefers an exact match, and folds to half/double tempo rather than refusing when that is the only lock available - it warns in orange and stays locked.'
 	]);
+	const masterMode = $derived(queryPerformanceState().master_mode);
 	const masterTitle: string = $derived(
 		deck.stable_id === null
 			? 'no track loaded'
-			: deck.is_master
-				? 'MASTER - this deck is the tempo / key sync reference'
-				: 'MASTER - make this deck the tempo / key sync reference'
+			: deck.is_master && masterMode === 'locked'
+				? 'MASTER LOCKED - auto handoff is off; click to restore AUTO'
+				: deck.is_master
+					? 'MASTER AUTO - this deck is the tempo / key sync reference; click to lock'
+					: 'MASTER - make this deck the tempo / key sync reference (locks AUTO)'
 	);
 	const masterBullets: readonly string[] = [
 		'Only one MASTER at a time. Followers with Beat Sync lock phase to this deck.',
 		'KEY SYNC also uses MASTER as the Camelot reference.',
-		'BeatSyncMax keeps BAR phase lock across seeks when followers are synced.'
+		'BeatSyncMax keeps BAR phase lock across seeks when followers are synced.',
+		'AUTO hands off to an on-air, Beat-Synced playing deck when this one pauses, ends, or leaves the mix. LOCKED stays until you click MASTER again.'
 	];
+	const masterDataState = $derived(
+		deck.is_master ? (masterMode === 'locked' ? 'locked' : 'auto') : 'off'
+	);
+	const masterAriaLabel = $derived(
+		deck.is_master
+			? masterMode === 'locked'
+				? `master deck ${deckId} locked`
+				: `master deck ${deckId} auto`
+			: `master deck ${deckId}`
+	);
 	const keySyncPlan = $derived.by(() => {
 		const source = deckStates[deckId];
 		void source.key;
@@ -437,12 +452,14 @@
 					<button
 						class="rb-lit-button master-btn"
 						class:lit={deck.is_master}
+						class:locked={deck.is_master && masterMode === 'locked'}
 						disabled={pending || deck.stable_id === null}
 						aria-pressed={deck.is_master}
 						data-performance-control="master"
 						data-testid={`master-deck-${deckId}`}
-						aria-label={`master deck ${deckId}`}
-						data-state={deck.is_master ? 'on' : 'off'}
+						aria-label={masterAriaLabel}
+						data-state={masterDataState}
+						data-master-mode={masterMode}
 						title={masterTitle}
 						onclick={async () => await onMaster()}
 					>
@@ -715,5 +732,24 @@
 		background: #c9b35a;
 		box-shadow: 0 0 6px rgba(201, 179, 90, 0.45);
 		border-color: #b8a24e;
+	}
+	.master-btn.lit.locked {
+		box-shadow:
+			inset 0 0 0 1px rgba(26, 22, 8, 0.55),
+			0 0 6px rgba(201, 179, 90, 0.45);
+	}
+	.master-btn.lit.locked::after {
+		content: 'LOCK';
+		position: absolute;
+		right: 2px;
+		bottom: 1px;
+		font-size: 7px;
+		line-height: 1;
+		letter-spacing: 0.04em;
+		opacity: 0.85;
+		pointer-events: none;
+	}
+	.master-btn {
+		position: relative;
 	}
 </style>

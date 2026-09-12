@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
+import { readFrontendSource } from './engine-source.mjs';
 
 const REAL_PQTZ_BEATS = [
 	{ n: 1, bpm: 127, t: 0.135 },
@@ -1814,4 +1815,17 @@ test('setPitchRange (pitch-slider range switcher) rejects a range the current pi
 	assert.equal(audio.pitchRanges[deck], 100);
 
 	assert.throws(() => audio.engine.setPitchRange(deck, 12), /invalid range/i);
+});
+
+test('master election uses electMaster instead of audible lowest-id handoff', async () => {
+	const source = await readFrontendSource('src/lib/rb/audio-engine.svelte.ts');
+	assert.match(source, /electMaster\(_electionInput\(\)\)/, '_electPlayingMaster must call electMaster');
+	assert.doesNotMatch(
+		source,
+		/nextPlayingMaster\(DECK_IDS\.filter\(\(deck\) => deckStates\[deck\]\.audible\)\)/
+	);
+});
+
+test('fresh engine exposes AUTO master mode', () => {
+	assert.equal(audio.getMasterMode(), 'auto');
 });

@@ -60,6 +60,8 @@ import {
 	deckTransportClock,
 	engine,
 	getDeckState,
+	getMasterMode,
+	getMasterReason,
 	installScopedSyncRunner,
 	isMasterMuted,
 	keySyncPreview,
@@ -69,6 +71,7 @@ import {
 	type DeckTransportClock,
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
+import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { readTransition } from './transition-read.svelte';
 import type { TransitionStatus } from './transition-classifier';
 import {
@@ -172,7 +175,7 @@ export type PerformanceCommand =
 	| { type: 'quantize_grid'; deck: DeckId; beats: 1 | 4 | 8 | 'phase' }
 	| { type: 'beat_sync'; deck: DeckId; enabled: boolean }
 	| { type: 'sync_mode'; deck: DeckId; mode: SyncMode }
-	| { type: 'master'; deck: DeckId }
+	| { type: 'master'; deck: DeckId; lock?: boolean }
 	| { type: 'master_tempo'; deck: DeckId; enabled: boolean }
 	| { type: 'stem_mute'; deck: DeckId; stem: StemControl; muted: boolean }
 	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean }
@@ -308,6 +311,8 @@ export interface PerformanceDeckSnapshot {
 export interface PerformanceState {
 	version: 1;
 	master_deck: DeckId | null;
+	master_mode: MasterMode;
+	master_reason: MasterReason;
 	/** TRANS-01: dual-deck blend the TopBar pill also reads via readTransition(). */
 	transition: TransitionStatus;
 	command_pending: boolean;
@@ -963,12 +968,16 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'deck', 'refuseIfMaster']);
 		if (record.refuseIfMaster === undefined) return { type, deck };
 		return { type, deck, refuseIfMaster: _boolean('refuseIfMaster', record.refuseIfMaster) };
+	} else if (type === 'cue') {
+		_exactKeys(record, ['type', 'deck']);
+		return { type, deck };
+	} else if (type === 'master') {
+		_exactKeys(record, ['type', 'deck', 'lock']);
+		if (record.lock === undefined) return { type, deck };
+		return { type, deck, lock: _boolean('lock', record.lock) };
 	} else if (type === 'play') {
 		_exactKeys(record, ['type', 'deck', 'playing']);
 		return { type, deck, playing: _boolean('playing', record.playing) };
-	} else if (type === 'cue' || type === 'master') {
-		_exactKeys(record, ['type', 'deck']);
-		return { type, deck };
 	} else if (type === 'safety_loop_save' || type === 'safety_loop_clear') {
 		_exactKeys(record, ['type', 'deck']);
 		return { type, deck };
@@ -1305,6 +1314,8 @@ export function queryPerformanceState(): PerformanceState {
 	return {
 		version: 1,
 		master_deck: masterDecks[0] ?? null,
+		master_mode: getMasterMode(),
+		master_reason: getMasterReason(),
 		transition: readTransition(),
 		command_pending: performanceCommandStatus.active > 0 || performanceCommandStatus.queued > 0,
 		command_queued: performanceCommandStatus.queued,
@@ -1593,7 +1604,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'sync_mode') {
 		await engine.setSyncMode(command.deck, command.mode);
 	} else if (command.type === 'master') {
-		await engine.setDeckMaster(command.deck);
+		await engine.setDeckMaster(
+			command.deck,
+			command.lock === undefined ? undefined : { lock: command.lock }
+		);
 	} else if (command.type === 'master_tempo') {
 		await engine.setMasterTempo(command.deck, command.enabled);
 	} else if (command.type === 'stem_mute') {
