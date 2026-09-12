@@ -163,6 +163,72 @@ def test_list_smartlists_returns_created_rows(client, state_db_path):
     assert "AND" in row["rule_summary"]
     assert row["order_by"] == "added_date desc"
     assert row["referenced_fields"] == ["bpm"]
+    assert row["count"] is None
+
+
+def test_list_smartlists_include_counts_matches_tracks(client, state_db_path):
+    sid = _create_smartlist(state_db_path, "120s", _BPM_RULE)
+
+    listed = client.get("/api/v1/smartlists", params={"include_counts": True})
+    tracks = client.get(f"/api/v1/smartlists/{sid}/tracks")
+
+    assert listed.status_code == 200
+    assert tracks.status_code == 200
+    assert listed.json()[0]["count"] == len(tracks.json()["items"])
+
+
+def test_list_smartlists_count_re_evaluates_after_field_mutation(
+    client, state_db_path,
+):
+    rule = {"field": "rating", "op": ">=", "value": 4}
+    sid = _create_smartlist(state_db_path, "four stars", rule)
+    before = client.get(
+        "/api/v1/smartlists", params={"include_counts": True},
+    )
+    before_tracks = client.get(f"/api/v1/smartlists/{sid}/tracks")
+    assert before.json()[0]["count"] == len(before_tracks.json()["items"]) == 2
+
+    conn = sqlite3.connect(str(state_db_path))
+    try:
+        conn.execute(
+            "UPDATE track_fields SET value_json=? "
+            "WHERE stable_id=? AND field_name='rating'",
+            (json.dumps(4), "sl-track-002"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    after = client.get(
+        "/api/v1/smartlists", params={"include_counts": True},
+    )
+    after_tracks = client.get(f"/api/v1/smartlists/{sid}/tracks")
+    assert after.json()[0]["count"] == len(after_tracks.json()["items"]) == 3
+
+
+def test_list_smartlists_corrupt_rule_keeps_collection_available(
+    client, state_db_path,
+):
+    good_id = _create_smartlist(state_db_path, "good", _BPM_RULE)
+    bad_id = _create_smartlist(state_db_path, "bad", _BPM_RULE)
+    conn = sqlite3.connect(str(state_db_path))
+    try:
+        conn.execute(
+            "UPDATE smartlists SET rule=? WHERE id=?",
+            (json.dumps({"field": "unknown", "op": "=", "value": 1}), bad_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    response = client.get(
+        "/api/v1/smartlists", params={"include_counts": True},
+    )
+
+    assert response.status_code == 200
+    counts = {row["id"]: row["count"] for row in response.json()}
+    assert counts[good_id] == 2
+    assert counts[bad_id] is None
 
 
 def test_list_smartlists_empty_table(client):

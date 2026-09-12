@@ -112,6 +112,7 @@ class SmartlistSummary(BaseModel):
     last_evaluated_at: str | None
     created_at: str
     modified_at: str
+    count: int | None = None
 
 
 class SmartlistCreateIn(BaseModel):
@@ -224,7 +225,9 @@ def summarize_rule(rule: dict[str, Any]) -> str:
     return f"({joined})"
 
 
-def _to_summary(row: SmartlistRow) -> SmartlistSummary:
+def _to_summary(
+    row: SmartlistRow, *, count: int | None = None,
+) -> SmartlistSummary:
     return SmartlistSummary(
         id=row.id,
         name=row.name,
@@ -236,6 +239,7 @@ def _to_summary(row: SmartlistRow) -> SmartlistSummary:
         last_evaluated_at=_iso(row.last_evaluated_at),
         created_at=_iso(row.created_at) or "",
         modified_at=_iso(row.modified_at) or "",
+        count=count,
     )
 
 
@@ -346,6 +350,10 @@ def _fetch_smartlist(
 
 @router.get("", response_model=list[SmartlistSummary])
 def list_smartlists(
+    include_counts: bool = Query(
+        False,
+        description="Live-evaluate each smartlist membership count.",
+    ),
     conn: sqlite3.Connection = Depends(get_smartlists_conn),
 ) -> list[SmartlistSummary]:
     # The smartlists table is created lazily by the first CRUD write
@@ -354,10 +362,21 @@ def list_smartlists(
     # failure to mask, so an empty list is the honest answer.
     if not _table_exists(conn, "smartlists"):
         return []
-    rows = conn.execute(
+    raw_rows = conn.execute(
         f"SELECT {_COLS} FROM smartlists ORDER BY name"
     ).fetchall()
-    return [_to_summary(_row_to_model(r)) for r in rows]
+    rows = [_row_to_model(raw) for raw in raw_rows]
+    if not include_counts:
+        return [_to_summary(row) for row in rows]
+
+    summaries: list[SmartlistSummary] = []
+    for row in rows:
+        try:
+            count = len(evaluate(row.rule, conn, order_by=row.order_by))
+        except (SmartlistRuleError, EvaluatorError):
+            count = None
+        summaries.append(_to_summary(row, count=count))
+    return summaries
 
 
 @router.post(
