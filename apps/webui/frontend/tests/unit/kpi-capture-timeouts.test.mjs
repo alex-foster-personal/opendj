@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
 	KPI_CAPTURE_HEADROOM_MS,
+	KPI_CAPTURE_MAX_TIMEOUT_S,
 	KPI_CAPTURE_MIN_TEST_TIMEOUT_MS,
 	kpiCaptureTestTimeoutMs,
 	kpiCaptureTimeoutS
@@ -41,7 +42,7 @@ test('if --timeout-s equals the old hardcoded 120s then the test timeout still e
 });
 
 test('if any --timeout-s is given then the test timeout leads it by the headroom', () => {
-	for (const seconds of [1, 30, 90, 120, 600]) {
+	for (const seconds of [1, 30, 90, 120, 600, KPI_CAPTURE_MAX_TIMEOUT_S]) {
 		const budgetMs = seconds * 1000;
 		const testTimeoutMs = kpiCaptureTestTimeoutMs(String(seconds));
 		assert.ok(
@@ -58,4 +59,23 @@ test('if --timeout-s is tiny then the test timeout still honors the floor', () =
 test('if the test timeout is derived from a bad value then it refuses too', () => {
 	assert.throws(() => kpiCaptureTestTimeoutMs('abc'), /positive integer/);
 	assert.throws(() => kpiCaptureTestTimeoutMs(undefined), /required/);
+});
+
+test('if KPI_CAPTURE_TIMEOUT_S is a digit run that parses to Infinity then it is refused', () => {
+	// The regex accepts this and parseInt returns Infinity, which survives a
+	// `<= 0` guard and reaches Playwright as an unbounded timeout.
+	const huge = '9'.repeat(400);
+	assert.equal(Number.parseInt(huge, 10), Infinity);
+	assert.throws(() => kpiCaptureTimeoutS(huge), /representable/);
+});
+
+test('if KPI_CAPTURE_TIMEOUT_S exceeds the ceiling then it is refused', () => {
+	assert.throws(() => kpiCaptureTimeoutS(String(KPI_CAPTURE_MAX_TIMEOUT_S + 1)), /at most/);
+	assert.equal(kpiCaptureTimeoutS(String(KPI_CAPTURE_MAX_TIMEOUT_S)), KPI_CAPTURE_MAX_TIMEOUT_S);
+});
+
+test('if a value is accepted then the derived test timeout is always finite', () => {
+	for (const seconds of [1, 90, KPI_CAPTURE_MAX_TIMEOUT_S]) {
+		assert.ok(Number.isFinite(kpiCaptureTestTimeoutMs(String(seconds))));
+	}
 });

@@ -397,14 +397,22 @@ async function readSubmitMarks(page: Page, attempts = 5): Promise<SubmitMarks> {
 	return { state: 'unreadable' };
 }
 
-/** Drop any mark left over from an earlier lifecycle, so the span we accept
- * can only belong to the click this run drives. */
-async function clearSubmitMark(page: Page): Promise<void> {
-	await page
-		.evaluate((key) => {
+/**
+ * Drop any mark left over from an earlier lifecycle, so the span we accept can
+ * only belong to the click this run drives. Returns a reason on failure: a
+ * surviving stale mark would let `completeLibraryUsable` post a span timed
+ * from the PREVIOUS login, and the capture would score it as this one.
+ */
+async function clearSubmitMark(page: Page): Promise<string | null> {
+	try {
+		await page.evaluate((key) => {
 			sessionStorage.removeItem(key);
-		}, LOGIN_SUBMIT_KEY)
-		.catch(() => null);
+		}, LOGIN_SUBMIT_KEY);
+		return null;
+	} catch (exc) {
+		const detail = exc instanceof Error ? exc.message.split('\n')[0] : String(exc);
+		return `cannot isolate this run: ${LOGIN_SUBMIT_KEY} could not be cleared before the click (${detail})`;
+	}
 }
 
 // ----- proof of submit ----------------------------------------------------
@@ -424,7 +432,8 @@ async function driveSignInClick(page: Page, budget: Budget): Promise<string | nu
 	for (let attempt = 1; attempt <= SIGN_IN_CLICK_ATTEMPTS; attempt += 1) {
 		if (budget.expired()) return `capture budget of ${TIMEOUT_S}s expired before the sign-in click`;
 		const signInButton = await waitForSignInReady(page, budget);
-		await clearSubmitMark(page);
+		const clearReason = await clearSubmitMark(page);
+		if (clearReason !== null) return clearReason;
 		const waitMs = Math.min(budget.waitMs(), LOGIN_POST_WAIT_MS);
 		const isLoginPost = (method: string, url: string): boolean =>
 			method === 'POST' && url.includes(AUTH_LOGIN_PATH);

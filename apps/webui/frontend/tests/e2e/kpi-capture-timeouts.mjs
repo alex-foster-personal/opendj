@@ -17,6 +17,13 @@ export const KPI_CAPTURE_HEADROOM_MS = 60_000;
 export const KPI_CAPTURE_MIN_TEST_TIMEOUT_MS = 120_000;
 
 /**
+ * Ceiling. An unbounded capture budget is its own fail-fast violation: a
+ * fat-fingered value would hang a lane instead of failing it. An hour is far
+ * beyond any real login capture, which finishes in seconds.
+ */
+export const KPI_CAPTURE_MAX_TIMEOUT_S = 3600;
+
+/**
  * Parse KPI_CAPTURE_TIMEOUT_S, refusing anything that is not a positive
  * integer number of seconds.
  *
@@ -38,8 +45,21 @@ export function kpiCaptureTimeoutS(raw) {
 		);
 	}
 	const parsed = Number.parseInt(text, 10);
+	// A long enough run of digits passes the regex and parses to Infinity,
+	// which survives a `<= 0` guard and reaches Playwright as a timeout of
+	// Infinity -- an unbounded run from a value that looked validated.
+	if (!Number.isSafeInteger(parsed)) {
+		throw new Error(
+			`KPI_CAPTURE_TIMEOUT_S is not a representable number of seconds, got ${JSON.stringify(text)}`
+		);
+	}
 	if (parsed <= 0) {
 		throw new Error(`KPI_CAPTURE_TIMEOUT_S must be greater than zero, got ${parsed}`);
+	}
+	if (parsed > KPI_CAPTURE_MAX_TIMEOUT_S) {
+		throw new Error(
+			`KPI_CAPTURE_TIMEOUT_S must be at most ${KPI_CAPTURE_MAX_TIMEOUT_S}s, got ${parsed}`
+		);
 	}
 	return parsed;
 }
