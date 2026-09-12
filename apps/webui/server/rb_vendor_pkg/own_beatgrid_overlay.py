@@ -43,6 +43,17 @@ def _beatgrid_payload(tags: dict[str, Any]) -> tuple[dict[str, Any], list[float]
     function is the other half of the same ``source`` discriminator contract
     as ``apply_own_beatgrid`` below (spec section 3,
     ``specs/native-analysis-v1-lanes/nav1-consumers.md`` item 1).
+
+    Wire shape on both sides is ``{n, bpm, t}``. Fixed-tempo write-back
+    (``apps.sync.analysis_writeback_pqtz``, promotion-gated) maps ``n`` to
+    PQTZ ``beat`` uint16 in 1..4; ``bpm`` to PQTZ ``tempo`` uint16
+    ``int(round(bpm * 100))`` (PQTZ boundary, not ``djmdContent.BPM``); ``t``
+    seconds to PQTZ ``time`` uint32 ms ``int(round(t * 1000))``. Read-back
+    is this function: ``bpm`` ``round(., 2)``, ``t`` ``round(., 3)``,
+    ``zip(..., strict=True)``. ``PQTZAnlzTag.set`` cannot change entry count;
+    the writer replaces ``entries`` + ``entry_count`` and ``update_len``.
+    Multi-anchor (``tempo_changes`` non-empty) is refused; dynamic PQTZ is
+    #1481.
     """
     pqtz = tags.get("PQTZ")
     if pqtz is None:

@@ -216,7 +216,12 @@ def _maybe_delete_created_key(conn: sqlite3.Connection, key_id: str) -> None:
 
 
 def undo_writeback(conn: sqlite3.Connection, snapshots: Sequence[Mapping[str, Any]]) -> None:
+    from apps.sync.analysis_writeback_pqtz import restore_pqtz_dat
+
     for snap in reversed(list(snapshots)):
+        if str(snap.get("field")) == "pqtz":
+            restore_pqtz_dat(snap)
+            continue
         restore_content_field(conn, snap)
         created = snap.get("created_key_id")
         if created:
@@ -267,6 +272,7 @@ def validate_writeback_plan(plan: WritebackPlan) -> None:
 def live_writeback(
     *,
     plan: WritebackPlan,
+    state_db: Path,
     rb_db_path: Path,
     rb_conn: sqlite3.Connection,
     fields: tuple[str, ...],
@@ -297,58 +303,119 @@ def live_writeback(
             f"supported: {sorted(_SUPPORTED_RB_WRITE_FIELDS)}."
         )
 
+    dynamic_pqtz = sum(
+        1
+        for row in plan.rows
+        if row.bucket == "dynamic" and row.field == "pqtz" and row.field in fields
+    )
+    if dynamic_pqtz:
+        print(
+            f"[apply_analysis] refused {dynamic_pqtz} dynamic PQTZ grid(s) "
+            "(multi-anchor; see #1481)"
+        )
+
     if not writable_rows:
         print("[apply_analysis] wrote 0 fields")
         return 0
 
+    from apps.shared.state.db import open_ro
+    from apps.sync.analysis_writeback_pqtz import load_own_beatgrid, write_pqtz_row
+
+    state_conn = open_ro(state_db)
     preimages: list[dict[str, Any]] = []
     written = 0
     expected: dict[str, tuple[str, str, object]] = {}
+    pqtz_beats: dict[str, list[dict[str, object]]] = {}
 
     for row in writable_rows:
         content_id = str(row.rb_content_id)
+        if row.field == "pqtz":
+            payload = load_own_beatgrid(state_conn, row.stable_id)
+            if payload is None:
+                raise SafetyAbort(
+                    f"pqtz own beatgrid missing for {row.stable_id}"
+                )
+            beats = list(payload["beats"])
+            pqtz_beats[content_id] = beats
+            tag = f"{content_id}:{row.field}"
+            expected[tag] = (content_id, row.field, beats)
+            continue
         own = _parse_own_value(row.field, row.own_value)
         tag = f"{content_id}:{row.field}"
         expected[tag] = (content_id, row.field, own)
 
     def verifier(tag: str, _unused: object = None) -> bool:
         content_id, fld, val = expected[tag]
+        if fld == "pqtz":
+            from apps.sync.analysis_writeback_pqtz import (
+                resolve_analysis_dat_path,
+                verify_pqtz as _verify_pqtz,
+            )
+
+            dat_path = resolve_analysis_dat_path(rb_conn, content_id)
+            if dat_path is None:
+                return False
+            return _verify_pqtz(dat_path, val)
         return verify_scalar(rb_conn, content_id, fld, val)
 
     with LiveWriteSession(
         target="rekordbox",
-        reason="write-back key/loudness",
+        reason="write-back key/loudness/pqtz",
         flag_ok=flag_ok,
         db_path=rb_db_path,
         verifier=verifier,
     ) as sess:
         _ensure_scalar_table(rb_conn)
         preimage_path = sess.reverse_script_path.parent / "analysis_preimages.json"
-        for row in writable_rows:
-            content_id = str(row.rb_content_id)
-            field = row.field
-            own = _parse_own_value(field, row.own_value)
-            tag = f"{content_id}:{field}"
-            preimage = snapshot_content_field(rb_conn, content_id, field)
-            with sess.per_track(tag) as w:
-                ok = write_scalar(rb_conn, content_id, field, own, preimage)
-                if not ok:
-                    raise SafetyAbort(
-                        f"write_scalar failed for {tag} field={field!r}"
+        try:
+            for row in writable_rows:
+                content_id = str(row.rb_content_id)
+                field = row.field
+                tag = f"{content_id}:{field}"
+                if field == "pqtz":
+                    beats = pqtz_beats[content_id]
+                    preimage: dict[str, Any] = {
+                        "field": "pqtz",
+                        "content_id": content_id,
+                    }
+                    with sess.per_track(tag) as w:
+                        write_pqtz_row(
+                            rb_conn, content_id, beats, preimage=preimage,
+                        )
+                        w.write((field, beats))
+                        if not w.verify_readback():
+                            raise SafetyAbort(
+                                f"verify_readback failed for {tag}"
+                            )
+                        preimages.append(dict(preimage))
+                        w.append_reverse(
+                            f"# analysis preimage recorded in {preimage_path.name}"
+                        )
+                        written += 1
+                    continue
+                own = _parse_own_value(field, row.own_value)
+                preimage = snapshot_content_field(rb_conn, content_id, field)
+                with sess.per_track(tag) as w:
+                    ok = write_scalar(rb_conn, content_id, field, own, preimage)
+                    if not ok:
+                        raise SafetyAbort(
+                            f"write_scalar failed for {tag} field={field!r}"
+                        )
+                    w.write((field, own))
+                    if not verify_scalar(rb_conn, content_id, field, own):
+                        restore_content_field(rb_conn, preimage)
+                        created = preimage.get("created_key_id")
+                        if created:
+                            _maybe_delete_created_key(rb_conn, str(created))
+                    if not w.verify_readback():
+                        raise SafetyAbort(f"verify_readback failed for {tag}")
+                    preimages.append(dict(preimage))
+                    w.append_reverse(
+                        f"# analysis preimage recorded in {preimage_path.name}"
                     )
-                w.write((field, own))
-                if not verify_scalar(rb_conn, content_id, field, own):
-                    restore_content_field(rb_conn, preimage)
-                    created = preimage.get("created_key_id")
-                    if created:
-                        _maybe_delete_created_key(rb_conn, str(created))
-                if not w.verify_readback():
-                    raise SafetyAbort(f"verify_readback failed for {tag}")
-                preimages.append(dict(preimage))
-                w.append_reverse(
-                    f"# analysis preimage recorded in {preimage_path.name}"
-                )
-                written += 1
+                    written += 1
+        finally:
+            state_conn.close()
         preimage_path.write_text(
             json.dumps(preimages, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -368,14 +435,22 @@ def run_undo(
     rb_db_path: Path,
     rb_conn: sqlite3.Connection,
 ) -> int:
+    from apps.sync.analysis_writeback_pqtz import restore_pqtz_dat, snapshot_pqtz_dat
     from apps.sync.safety import assert_target_not_running
 
     assert_target_not_running("rekordbox")
     snapshots = json.loads(preimage_path.read_text(encoding="utf-8"))
     undo_writeback(rb_conn, snapshots)
     for snap in snapshots:
-        content_id = str(snap["content_id"])
         field = str(snap["field"])
+        if field == "pqtz":
+            dat_path = Path(str(snap["dat_path"]))
+            restore_pqtz_dat(snap)
+            expected = snapshot_pqtz_dat(dat_path)
+            if expected.get("dat_bytes_b64") != snap.get("dat_bytes_b64"):
+                raise SafetyAbort(f"undo verify failed: PQTZ for {dat_path}")
+            continue
+        content_id = str(snap["content_id"])
         if field == "key":
             row = rb_conn.execute(
                 "SELECT KeyID FROM djmdContent WHERE ID = ?", (content_id,)
