@@ -14,6 +14,7 @@
  */
 
 import { decodeStemParts, stemDecodeLabels } from '$lib/player/decode/flac-stem-decode';
+import { assertUnitRange, stemLinearFromKnob } from '$lib/player/constants';
 import { processorOnsetLeadSec } from '$lib/player/transport/schedule-math';
 import {
 	StretchDeckProcessor,
@@ -100,9 +101,9 @@ export async function decodeStemBuffers(
 
 export function createDefaultStemControls(): StemControls {
 	return {
-		vocal: { muted: false, solo: false },
-		instrumental: { muted: false, solo: false },
-		drums: { muted: false, solo: false }
+		vocal: { muted: false, solo: false, gain: 0.5 },
+		instrumental: { muted: false, solo: false, gain: 0.5 },
+		drums: { muted: false, solo: false, gain: 0.5 }
 	};
 }
 
@@ -163,26 +164,28 @@ function _validateControls(controls: StemControls): void {
 		if (typeof state !== 'object' || state === null) {
 			throw new TypeError(`stem controls.${stem} must be an object`);
 		}
-		_exactKeys(`stem controls.${stem}`, state, ['muted', 'solo']);
+		_exactKeys(`stem controls.${stem}`, state, ['muted', 'solo', 'gain']);
 		if (typeof state.muted !== 'boolean' || typeof state.solo !== 'boolean') {
 			throw new TypeError(`stem controls.${stem} mute/solo values must be boolean`);
 		}
+		assertUnitRange(`stem controls.${stem}.gain`, state.gain);
 	}
 }
 
 export function stemPartGains(
 	controls: StemControls,
 	layout: StemLayout = 'demucs4'
-): Partial<Record<StemPart, 0 | 1>> {
+): Partial<Record<StemPart, number>> {
 	_validateControls(controls);
 	// Solo is evaluated over the controls this LAYOUT owns. Counting a soloed
 	// DRUMS on a roformer2 deck would silence both real parts and play nothing
 	// -- a control the layout cannot drive must not be able to mute the deck.
 	const owned = STEM_LAYOUT_CONTROLS[layout];
 	const anySolo = owned.some((stem) => controls[stem].solo);
-	const gain = (stem: StemControl): 0 | 1 => {
+	const gain = (stem: StemControl): number => {
 		const state = controls[stem];
-		return !state.muted && (!anySolo || state.solo) ? 1 : 0;
+		const gate = !state.muted && (!anySolo || state.solo) ? 1 : 0;
+		return gate * stemLinearFromKnob(state.gain);
 	};
 	if (layout === 'roformer2') {
 		return { vocals: gain('vocal'), instrumental: gain('instrumental') };

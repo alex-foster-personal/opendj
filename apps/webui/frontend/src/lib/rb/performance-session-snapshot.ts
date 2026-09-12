@@ -35,11 +35,13 @@ export interface PerformanceSessionMixerChannelSnapshot {
 	filter: number;
 	fader: number;
 	assign: CrossfaderAssign;
+	stem_eq_mode?: boolean;
 }
 
 export interface PerformanceSessionStemControlSnapshot {
 	muted: boolean;
 	solo: boolean;
+	gain?: number;
 }
 
 export interface PerformanceSessionSnapshot {
@@ -129,6 +131,11 @@ function _parseChannelSnapshot(raw: unknown): PerformanceSessionMixerChannelSnap
 	}
 	const assign = channel.assign;
 	if (typeof assign !== 'string' || !ASSIGNS.has(assign as CrossfaderAssign)) return null;
+	let stem_eq_mode = false;
+	if (channel.stem_eq_mode !== undefined) {
+		if (typeof channel.stem_eq_mode !== 'boolean') return null;
+		stem_eq_mode = channel.stem_eq_mode;
+	}
 	return {
 		trim: channel.trim as number,
 		eq_high: channel.eq_high as number,
@@ -136,7 +143,8 @@ function _parseChannelSnapshot(raw: unknown): PerformanceSessionMixerChannelSnap
 		eq_low: channel.eq_low as number,
 		filter: channel.filter as number,
 		fader: channel.fader as number,
-		assign: assign as CrossfaderAssign
+		assign: assign as CrossfaderAssign,
+		stem_eq_mode
 	};
 }
 
@@ -144,7 +152,14 @@ function _parseStemControl(raw: unknown): PerformanceSessionStemControlSnapshot 
 	if (raw === null || typeof raw !== 'object') return null;
 	const control = raw as Record<string, unknown>;
 	if (typeof control.muted !== 'boolean' || typeof control.solo !== 'boolean') return null;
-	return { muted: control.muted, solo: control.solo };
+	let gain = 0.5;
+	if (control.gain !== undefined) {
+		if (typeof control.gain !== 'number' || !Number.isFinite(control.gain) || control.gain < 0 || control.gain > 1) {
+			return null;
+		}
+		gain = control.gain;
+	}
+	return { muted: control.muted, solo: control.solo, gain };
 }
 
 export function serializePerformanceSession(input: PerformanceSessionSnapshotInput): string {

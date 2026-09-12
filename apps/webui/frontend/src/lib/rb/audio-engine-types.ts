@@ -92,6 +92,10 @@ export interface AudioEngine {
 	setStemMute(deck: DeckId, stem: StemControl, muted: boolean): void;
 	/** Solo one real stem group. Rejects unless aligned artifacts are ready. */
 	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean): void;
+	/** Per-stem level 0..1 (0.5 = unity). Rejects unless aligned artifacts are ready. */
+	setStemGain(deck: DeckId, stem: StemControl, value: number): void;
+	/** Toggle HI/MID/LOW between EQ and stem level for one channel strip. */
+	setStemEqMode(deck: DeckId, enabled: boolean): void;
 	/** Explicit seek entry point. cueJump delegates here so quantize is central.
 	 * pressT0Ms is Q1's operator-felt press stamp, present on the hot-cue jump
 	 * path and absent on a plain waveform seek. */

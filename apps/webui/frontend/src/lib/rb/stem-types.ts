@@ -12,6 +12,8 @@ export type StemControl = 'vocal' | 'instrumental' | 'drums';
 export interface StemControlState {
 	muted: boolean;
 	solo: boolean;
+	/** 0..1 knob. 0.5 = unity. Independent of mute/solo. */
+	gain: number;
 }
 
 export interface StemAlignment {

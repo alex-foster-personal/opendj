@@ -40,6 +40,16 @@ export function eqDbFromKnob(value: number): number {
 	return EQ_MAX_DB * (value * 2 - 1);
 }
 
+/** STEM-mode EQ-knob law.
+ *  0 -> 0 (kill), 0.5 -> 1 (unity), 1 -> 10^(EQ_MAX_DB/20) (+6 dB, same as EQ).
+ *  Below center is linear kill-to-unity so full CCW is silent (eqDbFromKnob(0)
+ *  is only -26 dB, which would leak). */
+export function stemLinearFromKnob(value: number): number {
+	assertUnitRange('stemLinearFromKnob', value);
+	if (value <= 0.5) return value * 2;
+	return 10 ** (eqDbFromKnob(value) / 20);
+}
+
 /** Throws unless `value` is a finite number in the closed 0..1 unit range,
  * the shape every mixer knob (trim/eq/filter/fader/crossfader/headphone) is
  * defined over. */

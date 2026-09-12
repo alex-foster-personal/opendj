@@ -36,6 +36,8 @@ export interface MixerChannelState {
 	assign: CrossfaderAssign;
 	/** Headphone pre-fader cue assignment for this channel. */
 	cue_enabled: boolean;
+	/** MIXUX-04: HI/MID/LOW knobs control stem levels when true. */
+	stem_eq_mode: boolean;
 }
 
 /** One real browser-selectable audio output. Labels may be empty until the

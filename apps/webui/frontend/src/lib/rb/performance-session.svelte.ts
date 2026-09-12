@@ -74,13 +74,15 @@ function _snapshotInputFromState(
 			eq_low: channel.eq_low,
 			filter: channel.filter,
 			fader: channel.fader,
-			assign: channel.assign
+			assign: channel.assign,
+			stem_eq_mode: channel.stem_eq_mode
 		};
-		const deckStems = {} as Record<StemControl, { muted: boolean; solo: boolean }>;
+		const deckStems = {} as Record<StemControl, { muted: boolean; solo: boolean; gain: number }>;
 		for (const stem of STEM_CONTROLS) {
 			deckStems[stem] = {
 				muted: deck.stems.controls[stem].muted,
-				solo: deck.stems.controls[stem].solo
+				solo: deck.stems.controls[stem].solo,
+				gain: deck.stems.controls[stem].gain
 			};
 		}
 		stems[deckId] = deckStems;
@@ -224,12 +226,16 @@ async function _restoreDeck(
 			{ type: 'eq', deck: deckId, band: 'low', value: channel.eq_low },
 			{ type: 'filter', deck: deckId, value: channel.filter },
 			{ type: 'fader', deck: deckId, value: channel.fader },
-			{ type: 'assign', deck: deckId, assign: channel.assign }
+			{ type: 'assign', deck: deckId, assign: channel.assign },
+			{ type: 'stem_eq_mode', deck: deckId, enabled: channel.stem_eq_mode ?? false }
 		];
 		for (const stem of STEM_CONTROLS) {
 			const control = snapshot.stems[deckId][stem];
 			commands.push({ type: 'stem_mute', deck: deckId, stem, muted: control.muted });
 			commands.push({ type: 'stem_solo', deck: deckId, stem, solo: control.solo });
+			if (control.gain !== undefined) {
+				commands.push({ type: 'stem_gain', deck: deckId, stem, value: control.gain });
+			}
 		}
 		for (const command of commands) {
 			await dispatch(command);

@@ -97,7 +97,8 @@ export function _defaultChannel(deck_id: DeckId): MixerChannelState {
 		fader: 1,
 		// Screenshot assign-matrix default: odd decks -> bus A, even -> bus B.
 		assign: deck_id % 2 === 1 ? 'A' : 'B',
-		cue_enabled: false
+		cue_enabled: false,
+		stem_eq_mode: false
 	};
 }
 

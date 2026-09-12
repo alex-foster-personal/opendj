@@ -94,6 +94,14 @@
 		await runPerformanceCommandFromUi({ type: 'stem_solo', deck, stem, solo: !solo });
 	}
 
+	function handleStemEqMode(deck: DeckId, enabled: boolean): void {
+		void runPerformanceCommandFromUi({ type: 'stem_eq_mode', deck, enabled });
+	}
+
+	function handleStemGain(deck: DeckId, stem: StemControl, value: number): void {
+		void runPerformanceCommandFromUi({ type: 'stem_gain', deck, stem, value });
+	}
+
 	function handleHeadphoneMix(value: number): void {
 		void runPerformanceCommandFromUi({ type: 'headphone_mix', value });
 	}
@@ -174,12 +182,15 @@
 					filter={mixerState.channels[deck].filter}
 					fader={mixerState.channels[deck].fader}
 					cueEnabled={mixerState.channels[deck].cue_enabled}
+					stemEqMode={mixerState.channels[deck].stem_eq_mode}
 					stemPending={performanceCommandStatus.deck_pending[deck] > 0}
 					ontrim={(v) => handleTrim(deck, v)}
 					oneq={(band, v) => handleEq(deck, band, v)}
 					onfilter={(v) => handleFilter(deck, v)}
 					onfader={(v) => handleFader(deck, v)}
 					oncue={(enabled) => handleCue(deck, enabled)}
+					onStemEqMode={(enabled) => handleStemEqMode(deck, enabled)}
+					onStemGain={(stem, value) => handleStemGain(deck, stem, value)}
 					onStemMute={(stem) => handleStemMute(deck, stem)}
 					onStemSolo={(stem) => handleStemSolo(deck, stem)}
 				/>
