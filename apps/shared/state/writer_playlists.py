@@ -228,6 +228,104 @@ class _PlaylistWriterMixin:
             )
             self.bus.publish(ev)
 
+    def tombstone_playlist_memberships(
+        self: _WriterHost, playlist_id: str, item_ids: list[str],
+    ) -> None:
+        """Soft-delete membership rows by item_id without touching neighbors."""
+        if not item_ids:
+            return
+        transaction = (
+            self._tx() if self._conn.in_transaction
+            else immediate_transaction(self._conn)
+        )
+        with transaction as conn:
+            now = next_playlist_revision(conn, playlist_id, self._now_iso())
+            for item_id in item_ids:
+                row = conn.execute(
+                    "SELECT position FROM playlist_memberships "
+                    "WHERE playlist_id = ? AND item_id = ? AND deleted_at IS NULL",
+                    (playlist_id, item_id),
+                ).fetchone()
+                if row is None:
+                    continue
+                position = row[0]
+                member_stamp = self._stamp(
+                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
+                )
+                conn.execute(
+                    "UPDATE playlist_memberships SET deleted_at=?, updated_at=?, "
+                    "origin_device_id=? WHERE playlist_id=? AND position=?",
+                    (
+                        member_stamp.updated_at,
+                        member_stamp.updated_at,
+                        member_stamp.origin_device_id,
+                        playlist_id,
+                        position,
+                    ),
+                )
+            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
+            conn.execute(
+                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
+                "WHERE playlist_id = ?",
+                (stamp.updated_at, stamp.origin_device_id, playlist_id),
+            )
+            ev = self._append_event(
+                kind="playlist.memberships.remove",
+                stable_id=None,
+                payload={"playlist_id": playlist_id, "count": len(item_ids)},
+                ts=now,
+            )
+            self.bus.publish(ev)
+
+    def restore_playlist_memberships(
+        self: _WriterHost, playlist_id: str, item_ids: list[str],
+    ) -> None:
+        """Undelete tombstoned membership rows, preserving item_id/order_key."""
+        if not item_ids:
+            return
+        transaction = (
+            self._tx() if self._conn.in_transaction
+            else immediate_transaction(self._conn)
+        )
+        with transaction as conn:
+            now = next_playlist_revision(conn, playlist_id, self._now_iso())
+            for item_id in item_ids:
+                row = conn.execute(
+                    "SELECT position FROM playlist_memberships "
+                    "WHERE playlist_id = ? AND item_id = ? AND deleted_at IS NOT NULL",
+                    (playlist_id, item_id),
+                ).fetchone()
+                if row is None:
+                    continue
+                position = row[0]
+                member_stamp = self._stamp(
+                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
+                )
+                conn.execute(
+                    "UPDATE playlist_memberships SET deleted_at=NULL, "
+                    "updated_at=?, origin_device_id=? "
+                    "WHERE playlist_id=? AND item_id=?",
+                    (
+                        member_stamp.updated_at,
+                        member_stamp.origin_device_id,
+                        playlist_id,
+                        item_id,
+                    ),
+                )
+            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
+            conn.execute(
+                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
+                "WHERE playlist_id = ?",
+                (stamp.updated_at, stamp.origin_device_id, playlist_id),
+            )
+            ev = self._append_event(
+                kind="playlist.memberships.add",
+                stable_id=None,
+                payload={"playlist_id": playlist_id, "count": len(item_ids)},
+                ts=now,
+            )
+            self.bus.publish(ev)
+
     def delete_playlist(self: _WriterHost, playlist_id: str) -> bool:
         """Tombstone a playlist and its memberships. Returns True when a live row existed.
 

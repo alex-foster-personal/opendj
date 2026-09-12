@@ -37,24 +37,30 @@ class PlaylistSnapshot:
     vendor: str
     vendor_pl_id: str
     items: list[str] = field(default_factory=list)
+    members: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "playlist_id": self.playlist_id,
             "name": self.name,
             "vendor": self.vendor,
             "vendor_pl_id": self.vendor_pl_id,
             "items": list(self.items),
         }
+        if self.members is not None:
+            out["members"] = list(self.members)
+        return out
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PlaylistSnapshot:
+        members_raw = data.get("members")
         return cls(
             playlist_id=data["playlist_id"],
             name=data["name"],
             vendor=data["vendor"],
             vendor_pl_id=data["vendor_pl_id"],
             items=list(data.get("items") or []),
+            members=None if members_raw is None else list(members_raw),
         )
 
 

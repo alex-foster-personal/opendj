@@ -40,6 +40,7 @@ before(async () => {
 function _row(overrides = {}) {
 	return {
 		stable_id: 'sid-default',
+		item_id: null,
 		order: 1,
 		title: null,
 		artist: null,

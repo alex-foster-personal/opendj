@@ -77,6 +77,7 @@
 		collectBlankPlaylistDeletes,
 		createPlaylist,
 		deletePlaylist,
+		deletePlaylistItem,
 		duplicatePlaylist,
 		getPlaylistTracksEtag,
 		transferPlaylistTracks,
@@ -1638,6 +1639,7 @@
 		}
 		return {
 			stable_id: wire.stable_id,
+			item_id: wire.item_id ?? null,
 			order,
 			title: wire.title,
 			artist: wire.artist,
@@ -1687,6 +1689,7 @@
 		}
 		return {
 			stable_id: track.stable_id,
+			item_id: null,
 			order,
 			// TrackOut spells its nullable fields optional; a BrowserRow wants one
 			// spelling of "unknown", so absent collapses onto null here.
@@ -2578,10 +2581,29 @@
 	}
 
 	function removeRow(row: BrowserRow): void {
-		// Positional removal: duplicate stable_ids are allowed in a
-		// playlist, so this must drop the SLOT the row represents, not
-		// every occurrence of that stable_id.
-		void _mutateActivePane((items) => items.filter((_, i) => i !== row.order - 1));
+		void _removeMembership(row);
+	}
+
+	async function _removeMembership(row: BrowserRow): Promise<void> {
+		const p = pane;
+		const id = p.playlist_id;
+		if (id === null || id === 'all' || isMissingTracksId(id)) return;
+		if (source !== 'collection' || p.whole_collection) {
+			pushToast('membership editing is disabled outside the complete playlist view', 'error');
+			return;
+		}
+		if (!row.item_id) {
+			pushToast('playlist row has no membership id - reload and try again', 'error');
+			return;
+		}
+		try {
+			await deletePlaylistItem(id, row.item_id);
+		} catch (exc) {
+			pushToast(`playlist update failed: ${String(exc)}`, 'error');
+			return;
+		}
+		const node = _currentNode(p);
+		if (node !== null) await _loadPane(p, node);
 	}
 
 	let addToPlaylistIds = $state<string[] | null>(null);

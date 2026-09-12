@@ -2668,6 +2668,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playlists/{playlist_id}/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Playlist Item */
+        delete: operations["delete_playlist_item"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playlists/{playlist_id}/items:add": {
         parameters: {
             query?: never;
@@ -3847,16 +3864,34 @@ export interface paths {
          * Get Track Audio
          * @description Stream the single best working file. FileResponse handles Range/206.
          *
+         *     HEAD is served by the same handler: FileResponse sends headers only for a
+         *     HEAD scope, and the LyricsPanel playability probe (``fetch(url,
+         *     {method: 'HEAD'})``) read a GET-only route as "HTTP 405, audio cannot be
+         *     played" on every track with aligned words (found Sat 12 Sep 2026, #2082).
+         *
          *     The backend picks among ``track_locations`` plus the legacy
          *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
          *     Share-host requests use the share venue cap (lossy ceiling by default).
          */
-        get: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
+        get: operations["get_track_audio_api_v1_tracks__stable_id__audio_head"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
-        head?: never;
+        /**
+         * Get Track Audio
+         * @description Stream the single best working file. FileResponse handles Range/206.
+         *
+         *     HEAD is served by the same handler: FileResponse sends headers only for a
+         *     HEAD scope, and the LyricsPanel playability probe (``fetch(url,
+         *     {method: 'HEAD'})``) read a GET-only route as "HTTP 405, audio cannot be
+         *     played" on every track with aligned words (found Sat 12 Sep 2026, #2082).
+         *
+         *     The backend picks among ``track_locations`` plus the legacy
+         *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
+         *     Share-host requests use the share venue cap (lossy ceiling by default).
+         */
+        head: operations["get_track_audio_api_v1_tracks__stable_id__audio_head"];
         patch?: never;
         trace?: never;
     };
@@ -9268,6 +9303,8 @@ export interface components {
             is_remote: boolean;
             /** Is Streaming */
             is_streaming: boolean;
+            /** Item Id */
+            item_id?: string | null;
             /** Key */
             key: string | null;
             /** Key Reason */
@@ -10491,6 +10528,8 @@ export interface components {
             is_remote: boolean;
             /** Is Streaming */
             is_streaming: boolean;
+            /** Item Id */
+            item_id?: string | null;
             /** Key */
             key: string | null;
             /** Key Reason */
@@ -16228,6 +16267,38 @@ export interface operations {
             };
         };
     };
+    delete_playlist_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistWriteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     add_playlist_items: {
         parameters: {
             query?: never;
@@ -18312,7 +18383,36 @@ export interface operations {
             };
         };
     };
-    get_track_audio_api_v1_tracks__stable_id__audio_get: {
+    get_track_audio_api_v1_tracks__stable_id__audio_head: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_track_audio_api_v1_tracks__stable_id__audio_head: {
         parameters: {
             query?: never;
             header?: never;

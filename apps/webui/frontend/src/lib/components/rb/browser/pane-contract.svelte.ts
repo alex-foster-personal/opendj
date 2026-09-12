@@ -46,6 +46,8 @@ export type { SortDir, SortKey } from './browser-sort-ipc';
  * units). */
 export interface BrowserRow extends Pick<TrackRow, 'key_status' | 'key_reason' | 'loudness_status' | 'loudness_reason'> {
 	stable_id: string;
+	/** v13 playlist_memberships.item_id; null outside playlist detail. */
+	item_id: string | null;
 	/** 1-based membership position within the pane playlist (# column). */
 	order: number;
 	title: string | null;
