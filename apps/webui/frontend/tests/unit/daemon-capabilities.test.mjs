@@ -291,6 +291,53 @@ test('fetchProgress fires nothing before the probe has answered', async () => {
 	assert.deepEqual(requested, []);
 });
 
+test('an engine probe records probedAt and handshake fields', async () => {
+	serve(engineHealth());
+
+	assert.equal(await caps.probe(), 'engine');
+	assert.ok(caps.probedAt);
+	assert.deepEqual(caps.handshake, {
+		contract_rev: 'sha256:2f6c',
+		engine_version: '0.1.0',
+		boot_id: 'boot-1'
+	});
+});
+
+test('a legacy probe leaves handshake null', async () => {
+	serve(legacyHealth());
+
+	assert.equal(await caps.probe(), 'legacy');
+	assert.ok(caps.probedAt);
+	assert.equal(caps.handshake, null);
+});
+
+test('a failed probe sets probedAt, clears handshake, and leaves flavor unknown', async () => {
+	globalThis.fetch = async () => {
+		throw new TypeError('fetch failed');
+	};
+
+	assert.equal(await caps.probe(), 'unknown');
+	assert.ok(caps.probedAt);
+	assert.equal(caps.handshake, null);
+});
+
+test('_resetForTests clears probedAt and handshake', async () => {
+	serve(engineHealth());
+	await caps.probe();
+	caps._resetForTests();
+	assert.equal(caps.probedAt, null);
+	assert.equal(caps.handshake, null);
+});
+
+test('a second probe after success does not change probedAt', async () => {
+	serve(engineHealth());
+	await caps.probe();
+	const firstAt = caps.probedAt;
+	await caps.probe();
+	assert.equal(caps.probedAt, firstAt);
+	assert.equal(requested.length, 1);
+});
+
 test('fetchProgress DOES fetch once the legacy daemon is identified', async () => {
 	serve(legacyHealth());
 	await caps.probe();

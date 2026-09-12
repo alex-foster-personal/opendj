@@ -32,6 +32,10 @@
  * unknown daemon is never treated as either one, because guessing wrong is
  * exactly the 404 storm this module exists to stop.
  *
+ * DIAGNOSTICS FIELDS. `probedAt` records when the last probe attempt settled
+ * (success or failure). `handshake` carries the engine's contract_rev /
+ * engine_version / boot_id when flavor is 'engine', else null.
+ *
  * Requirements (mini-PRD):
  *   ✔︎ 🎯 readDaemonFlavor(body): engine iff all three handshake fields are
  *     present, legacy iff none are, explicit throw for a partial set.
@@ -97,6 +101,14 @@ class CapabilityStore {
 	flavor = $state<DaemonFlavor>('unknown');
 	/** Last probe failure, verbatim. null while healthy or before the first try. */
 	error = $state<string | null>(null);
+	/** ISO timestamp when the last probe attempt settled, or null before any try. */
+	probedAt = $state<string | null>(null);
+	/** Engine handshake fields from the probe body, or null for legacy/unknown. */
+	handshake = $state<{
+		contract_rev: string;
+		engine_version: string;
+		boot_id: string;
+	} | null>(null);
 
 	/** In flight or settled-successful probe. Cleared on failure so the next
 	 * caller retries instead of inheriting a verdict of "we never found out". */
@@ -130,16 +142,29 @@ class CapabilityStore {
 
 	async #run(): Promise<DaemonFlavor> {
 		try {
-			this.flavor = readDaemonFlavor(await unwrap(api.GET('/api/v1/health')));
+			const body = await unwrap(api.GET('/api/v1/health'));
+			this.flavor = readDaemonFlavor(body);
 			this.error = null;
+			if (this.flavor === 'engine') {
+				const health = body as Record<string, unknown>;
+				this.handshake = {
+					contract_rev: String(health.contract_rev),
+					engine_version: String(health.engine_version),
+					boot_id: String(health.boot_id)
+				};
+			} else {
+				this.handshake = null;
+			}
 		} catch (exc) {
 			// Not memoized: a daemon that was down at page load may be up by
 			// the time the next surface asks.
 			this.#probe = null;
 			this.flavor = 'unknown';
+			this.handshake = null;
 			this.error = _message(exc);
 			console.error('[capabilities] probe failed; daemon-specific surfaces stay inert', exc);
 		}
+		this.probedAt = new Date().toISOString();
 		return this.flavor;
 	}
 
@@ -148,6 +173,8 @@ class CapabilityStore {
 		this.#probe = null;
 		this.flavor = 'unknown';
 		this.error = null;
+		this.probedAt = null;
+		this.handshake = null;
 	}
 }
 
