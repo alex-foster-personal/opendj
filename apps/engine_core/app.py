@@ -41,6 +41,8 @@ from apps.engine_core.account.api import (
 )
 from apps.engine_core.assistant.api import router as assistant_router
 from apps.engine_core.build_info import BUILD_IDENTITY_STATE_ATTR, add_build_info_route
+from apps.engine_core.host_info import add_host_info_route
+from apps.engine_core.perf_tier_api import add_perf_tier_route
 from apps.engine_core.config import (
     ENGINE_VERSION,
     EngineBootError,
@@ -160,6 +162,8 @@ def create_app(
     add_build_info_route(
         app, environ=dict(os.environ), repo_root=platform_paths.PROJECT_ROOT
     )
+    add_host_info_route(app, data_dir=cfg.data_dir)
+    add_perf_tier_route(app, data_dir=cfg.data_dir)
     build_identity = getattr(app.state, BUILD_IDENTITY_STATE_ATTR)
     if build_identity.info is not None and build_identity.info.source == "payload":
         # An installed engine owns the first-run assessment. A checkout has no

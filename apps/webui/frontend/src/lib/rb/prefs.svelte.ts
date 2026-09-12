@@ -25,7 +25,19 @@ import {
 	validateLibraryFilterPrefFields
 } from './library-filter-prefs';
 import { makeLevelCalibrationSetters } from './level-calibration-prefs';
-import { LYRICS_PREF_DEFAULTS, makeLyricsPrefSetters, validateLyricsPrefFields, type LyricsLoadStrategy } from './lyrics-prefs';
+import {
+	LYRICS_PREF_DEFAULTS,
+	makeLyricsPrefSetters,
+	validateLyricsPrefFields,
+	type LyricsLoadStrategy,
+	type LyricsPrefs
+} from './lyrics-prefs';
+import {
+	PERF_TIER_PREF_DEFAULTS,
+	bindPerfTierPrefSetters,
+	mergePerfTierPrefsFromParsed,
+	type PerfTierPrefs
+} from './perf-tier-prefs';
 import { createDiskPrefsSync, makePrefsHydrator } from './prefs-hydrate';
 import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLibrary } from './prefs-fields';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
@@ -33,6 +45,7 @@ import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
 export { type LyricsLoadStrategy } from './lyrics-prefs';
+export type { PerfTierPref } from './perf-tier-prefs';
 export type { AutoSyncPrefs, LastPlaylistPref } from './prefs-types';
 
 const STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
@@ -54,7 +67,7 @@ export type UiTheme = 'dark' | 'light';
 /** Preferred vendor writeback targets (preference only; CLI writeback today). */
 export type AutoSyncDestination = 'rekordbox' | 'djay' | 'open_dj';
 
-export interface RbUiPrefs {
+export interface RbUiPrefs extends PerfTierPrefs, LyricsPrefs {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
 	/** FR-1: hide missing-file tracks and playlists with available_count == 0. Default OFF. */
@@ -146,18 +159,6 @@ export interface RbUiPrefs {
 	/** Transition duration in ms when deck_layout_animate is true. */
 	deck_layout_duration_ms: DeckLayoutDurationMs;
 	level_calibration: LevelCalibrationPrefs;
-	/** Master switch (TopBar LYR) for every lyric overlay. */
-	lyrics_global: boolean;
-	/** Lyrics column in the library table (hover tip carries the text). */
-	lyrics_library_col: boolean;
-	/** Word readout + click-to-audition while hover-scrubbing a preview strip. */
-	lyrics_hover_scrub: boolean;
-	/** When the library pulls word timings into memory. */
-	lyrics_load_strategy: LyricsLoadStrategy;
-	/** The word-lane gate: word lanes over the main deck waveforms (D13.4). */
-	lyrics_waveform_overlay: boolean;
-	/** Current lyric line under the deck hot cues. */
-	lyrics_deck_line: boolean;
 }
 
 const DEFAULTS: RbUiPrefs = {
@@ -187,7 +188,8 @@ const DEFAULTS: RbUiPrefs = {
 	deck_layout_duration_ms: 200,
 	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false },
 	...LYRICS_PREF_DEFAULTS,
-	...LIBRARY_FILTER_PREF_DEFAULTS
+	...LIBRARY_FILTER_PREF_DEFAULTS,
+	...PERF_TIER_PREF_DEFAULTS
 };
 
 // ----------------------------------------------------------- _helpers
@@ -395,7 +397,8 @@ function _load(): RbUiPrefs {
 		...LYRICS_PREF_DEFAULTS,
 		...validateLyricsPrefFields(parsed, STORAGE_KEY),
 		...LIBRARY_FILTER_PREF_DEFAULTS,
-		...validateLibraryFilterPrefFields(parsed, STORAGE_KEY)
+		...validateLibraryFilterPrefFields(parsed, STORAGE_KEY),
+		...mergePerfTierPrefsFromParsed(parsed, STORAGE_KEY)
 	};
 }
 
@@ -549,6 +552,10 @@ export const {
 	setLyricsWaveformOverlay,
 	setLyricsDeckLine
 } = makeLyricsPrefSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
+
+export const { setPerfTier } = bindPerfTierPrefSetters(uiPrefs, _persist, (patch) =>
+	void _syncDiskPrefs(patch)
+);
 
 export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean): void {
 	uiPrefs.auto_sync[dest] = next;

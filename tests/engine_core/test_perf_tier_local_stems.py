@@ -24,3 +24,11 @@ def test_low_tier_is_refused() -> None:
 def test_standard_tier_is_allowed() -> None:
     assert local_stems_tier_refusal(PerfTier.STANDARD) is None
     assert meets_floor(LOCAL_STEMS_MIN_TIER, PerfTier.HIGH)
+
+
+def test_refusal_uses_resolved_override(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "apps.shared.perf_tier.resolve_tier",
+        lambda **_: PerfTier.LOW,
+    )
+    assert local_stems_tier_refusal() is not None

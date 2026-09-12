@@ -19,7 +19,9 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.routing import Mount
 
 from apps.adapters.rekordbox import config as rb_config
+from apps.engine_core.host_info import HOST_INFO_STATE_ATTR
 from apps.shared.paths import DATA_DIR, STATE_DIR
+from apps.shared.perf_tier import HostFacts, resolve_tier, read_override_from_prefs
 from apps.webui.server.frontend_build import frontend_build_dir
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -133,15 +135,46 @@ def get_settings(request: Request) -> SettingsOut:
         ),
     ]
 
+    host_identity = getattr(state, HOST_INFO_STATE_ATTR, None)
+    machine_perf_tier: SettingItem
+    if host_identity is not None and host_identity.logical_cpus is not None and host_identity.ram_bytes is not None:
+        facts = HostFacts(
+            logical_cpus=host_identity.logical_cpus,
+            ram_bytes=host_identity.ram_bytes,
+        )
+        override = read_override_from_prefs(DATA_DIR)
+        resolved = resolve_tier(facts=facts, override=override)
+        machine_perf_tier = SettingItem(
+            key="machine_perf_tier",
+            value=resolved.value,
+            note=(
+                "Resolved LOW/STANDARD/HIGH from GET /api/v1/perf-tier and "
+                "ui-prefs perf_tier (Auto/Low/Standard/High)."
+            ),
+        )
+    elif host_identity is not None and host_identity.failure is not None:
+        machine_perf_tier = SettingItem(
+            key="machine_perf_tier",
+            tbd=True,
+            note=host_identity.failure,
+        )
+    else:
+        machine_perf_tier = SettingItem(
+            key="machine_perf_tier",
+            tbd=True,
+            note="engine chassis did not resolve host-info",
+        )
+
     toggle_items = [
         SettingItem(
-            key="feature_toggles", tbd=True,
+            key="feature_toggles",
+            tbd=False,
             note=(
-                "No env-var-driven feature toggles exist in apps/webui/server "
-                "today; bind_host and CORS (above) are the only runtime knobs "
-                "documented in apps/webui/README.md."
+                "First machine-tier flag: GET /api/v1/perf-tier plus ui-prefs "
+                "perf_tier (Auto/Low/Standard/High), not an env var."
             ),
         ),
+        machine_perf_tier,
     ]
 
     return SettingsOut(groups=[

@@ -15,6 +15,17 @@ import { hasAnlzBeatgrid } from '$lib/rb/beatgrid-fallback';
 import { recordAnlzPrefetchSampled } from '$lib/rb/library-perf';
 import { currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
 import { analysisSourceState } from '$lib/rb/analysis-source-state.svelte';
+import {
+	applyAnlzCaps,
+	bindAnlzCapCache,
+	nextAnlzTouch,
+	retouchAnlzReadyEntry
+} from '$lib/components/rb/wave/anlz-cache-caps';
+import {
+	dueForEnsureRefetch,
+	isAnlzEntryUsable,
+	isRetryableAnlzData
+} from '$lib/components/rb/wave/anlz-cache-retry';
 import type { AnlzData } from '$lib/rb/anlz-types';
 import {
 	refreshAnalysisSourceDecks as _refreshAnalysisSourceDecksImpl,
@@ -47,10 +58,11 @@ export { analysisSourceState } from '$lib/rb/analysis-source-state.svelte';
 
 export type AnlzEntry =
 	| { status: 'loading'; generation: number }
-	| { status: 'ready'; data: AnlzData; retryAfter?: number }
+	| { status: 'ready'; data: AnlzData; retryAfter?: number; touched?: number }
 	| { status: 'error'; code: string };
 
 const _cache = $state<Record<string, AnlzEntry>>({});
+bindAnlzCapCache(_cache);
 
 /** Floor between refetches of a retryable entry (ms). A stable_id with no
  * decode yet sits behind a reactive $effect (WaveRow.svelte) that reruns on
@@ -61,39 +73,7 @@ const _cache = $state<Record<string, AnlzEntry>>({});
  * follow-up). */
 const RETRYABLE_COOLDOWN_MS = 2000;
 
-/** True for a 'ready' entry whose local_waveform is a TRANSIENT not_decoded
- * (decoder momentarily saturated, issue #735 follow-up) - not a terminal
- * answer, the track itself may still decode. Independent of `retryAfter`
- * timing: this is "is this entry the retryable CLASS", not "is it due for
- * retry right now". Everything else cached (a real decode, a permanent
- * not_decoded, any error) is terminal. */
-function _isRetryableEntry(entry: AnlzEntry): entry is Extract<AnlzEntry, { status: 'ready' }> {
-	if (entry.status !== 'ready') return false;
-	if (entry.data.local_waveform?.status !== 'not_decoded') return false;
-	return entry.data.local_waveform.retryable === true;
-}
-
-/** True once a retryable entry's cooldown has genuinely elapsed - i.e. it is
- * DUE for a refetch right now. Only meaningful for a `_isRetryableEntry`. */
-function _isDueForRetry(entry: Extract<AnlzEntry, { status: 'ready' }>): boolean {
-	return entry.retryAfter === undefined || performance.now() >= entry.retryAfter;
-}
-
-/** True when `ensureAnlz` should fire a fresh fetch for an existing entry:
- * it is the retryable class AND its cooldown has elapsed. Everything else
- * (loading, error, a terminal ready entry, or a retryable entry still
- * inside its cooldown) must not re-trigger a fetch. */
-function _dueForEnsureRefetch(entry: AnlzEntry): boolean {
-	return _isRetryableEntry(entry) && _isDueForRetry(entry);
-}
-
-/** True for a raw (not yet cached) /anlz response whose local_waveform is a
- * transient decoder-saturation reject - the same class `_isRetryableEntry`
- * detects, but usable BEFORE the response has been wrapped in a cache entry
- * (e.g. a deck-load direct fetch inspecting its own result). */
-export function isRetryableAnlzData(data: AnlzData): boolean {
-	return data.local_waveform?.status === 'not_decoded' && data.local_waveform.retryable === true;
-}
+export { isAnlzEntryUsable, isRetryableAnlzData } from '$lib/components/rb/wave/anlz-cache-retry';
 
 /** Unconditionally fetches /anlz and writes the outcome into the cache -
  * shared by `ensureAnlz` (gated behind `_dueForEnsureRefetch`) and the
@@ -377,10 +357,17 @@ function _publishAnlzResult(stable_id: string, data: AnlzData, alreadyScoped = f
 			? _authoritativeGridSink(stable_id, data, hasAnlzBeatgrid(data), alreadyScoped)
 			: undefined;
 	if (!isRetryableAnlzData(data)) {
-		_cache[stable_id] = { status: 'ready', data };
+		_cache[stable_id] = { status: 'ready', data, touched: nextAnlzTouch() };
+		applyAnlzCaps();
 		return sinkSettlement;
 	}
-	_cache[stable_id] = { status: 'ready', data, retryAfter: performance.now() + RETRYABLE_COOLDOWN_MS };
+	_cache[stable_id] = {
+		status: 'ready',
+		data,
+		retryAfter: performance.now() + RETRYABLE_COOLDOWN_MS,
+		touched: nextAnlzTouch()
+	};
+	applyAnlzCaps();
 	_retryTimers.set(
 		stable_id,
 		setTimeout(() => {
@@ -572,10 +559,6 @@ export async function fetchAnlzUntilSourceConfirmed(fetch: () => Promise<AnlzDat
  * pin the empty payload to the deck indefinitely, past `retryAfter`, until
  * the user happens to reselect the row. Callers that get `false` here must
  * re-fetch, exactly like an uncached stable_id. */
-export function isAnlzEntryUsable(entry: AnlzEntry | undefined): entry is Extract<AnlzEntry, { status: 'ready' }> {
-	return entry !== undefined && entry.status === 'ready' && !_isRetryableEntry(entry);
-}
-
 /** Kick off the /anlz fetch for a track unless already cached/in-flight with
  * a terminal result. MUTATES rune state - call from $effect, never from
  * $derived.
@@ -586,7 +569,10 @@ export function isAnlzEntryUsable(entry: AnlzEntry | undefined): entry is Extrac
  * arrow-key row selection fires this in bursts. */
 export function ensureAnlz(stable_id: string): void {
 	const existing = _cache[stable_id];
-	if (existing !== undefined && !_dueForEnsureRefetch(existing)) return;
+	if (existing !== undefined && !dueForEnsureRefetch(existing)) {
+		if (isAnlzEntryUsable(existing)) retouchAnlzReadyEntry(_cache, stable_id);
+		return;
+	}
 	_fetchAndPublish(stable_id);
 }
 

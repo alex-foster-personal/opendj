@@ -201,6 +201,8 @@ def test_engine_registers_build_info_ahead_of_the_spa_mount() -> None:
     """A Mount at "/" matches everything, so ordering is the whole contract."""
     source = (REPO_ROOT / "apps/engine_core/app.py").read_text(encoding="utf-8")
     assert source.index("add_build_info_route(") < source.index("_mount_spa(app)")
+    assert source.index("add_host_info_route(") < source.index("_mount_spa(app)")
+    assert source.index("add_perf_tier_route(") < source.index("_mount_spa(app)")
 
 
 # ----- the repo timestamp is really UTC ----------------------------------

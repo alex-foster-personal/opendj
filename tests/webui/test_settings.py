@@ -75,11 +75,15 @@ def test_settings_publish_vibe_runtime_defaults(client):
 
 @pytest.mark.requirement("CAT-05")
 def test_settings_feature_toggles_group_is_honest_tbd(client):
-    """No env-driven feature toggles exist yet; must not fabricate one."""
+    """machine_perf_tier reports tbd on legacy webui without engine host-info."""
     r = client.get("/api/v1/settings")
     body = r.json()
     toggles = next(g for g in body["groups"] if g["group"] == "Feature toggles")
-    assert all(item["tbd"] for item in toggles["items"])
+    note = next(i for i in toggles["items"] if i["key"] == "feature_toggles")["note"]
+    assert "perf-tier" in note
+    machine = next(i for i in toggles["items"] if i["key"] == "machine_perf_tier")
+    assert machine["tbd"] is True
+    assert "host-info" in machine["note"]
 
 
 @pytest.mark.requirement("CAT-05")

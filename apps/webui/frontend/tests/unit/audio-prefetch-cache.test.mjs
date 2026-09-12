@@ -78,7 +78,7 @@ async function prefetchAndSettle(cache, stable_id, timeoutMs = 20_000) {
 
 test('a 5th prefetched track evicts the least-recently-used one, capping ready at 4', async () => {
 	const cache = await freshCache();
-	assert.equal(cache.MAX_AUDIO_PREFETCH_TRACKS, 4);
+	assert.equal(cache.MAX_AUDIO_PREFETCH_TRACKS(), 4);
 
 	for (const id of ['t1', 't2', 't3', 't4']) {
 		serve(id, 64 * 1024);
@@ -108,7 +108,7 @@ test('a 5th prefetched track evicts the least-recently-used one, capping ready a
 
 test('the byte budget evicts before the track cap would, on big files', async () => {
 	const cache = await freshCache();
-	assert.equal(cache.MAX_AUDIO_PREFETCH_BYTES, 48 * MiB);
+	assert.equal(cache.MAX_AUDIO_PREFETCH_BYTES(), 48 * MiB);
 
 	// 3 x 17 MiB = 51 MiB: over budget with only three entries, so the byte
 	// brake must fire while the track count is still under 4.
@@ -117,13 +117,13 @@ test('the byte budget evicts before the track cap would, on big files', async ()
 		serve(id, big);
 		assert.equal(await prefetchAndSettle(cache, id), 'ready');
 		assert.ok(
-			cache.audioPrefetchReadyBytes() <= cache.MAX_AUDIO_PREFETCH_BYTES,
+			cache.audioPrefetchReadyBytes() <= cache.MAX_AUDIO_PREFETCH_BYTES(),
 			`retained ${cache.audioPrefetchReadyBytes()} bytes after ${id}, budget is ` +
-				`${cache.MAX_AUDIO_PREFETCH_BYTES}`
+				`${cache.MAX_AUDIO_PREFETCH_BYTES()}`
 		);
 	}
 	assert.ok(
-		cache.audioPrefetchReadyCount() < cache.MAX_AUDIO_PREFETCH_TRACKS,
+		cache.audioPrefetchReadyCount() < cache.MAX_AUDIO_PREFETCH_TRACKS(),
 		'the byte budget must bite before the track cap on 17 MiB files, got ' +
 			`${cache.audioPrefetchReadyCount()} entries`
 	);
@@ -138,7 +138,7 @@ test('a single over-budget buffer is never retained alongside anything else', as
 	assert.equal(await prefetchAndSettle(cache, 'small'), 'ready');
 
 	// Larger than the whole budget: it may only ever be held alone.
-	serve('huge', cache.MAX_AUDIO_PREFETCH_BYTES + MiB);
+	serve('huge', cache.MAX_AUDIO_PREFETCH_BYTES() + MiB);
 	assert.equal(await prefetchAndSettle(cache, 'huge'), 'ready');
 
 	assert.equal(
@@ -156,7 +156,22 @@ test('a single over-budget buffer is never retained alongside anything else', as
 	serve('after', 64 * 1024);
 	assert.equal(await prefetchAndSettle(cache, 'after'), 'ready');
 	assert.equal(cache.audioPrefetchStatus('huge'), undefined);
-	assert.ok(cache.audioPrefetchReadyBytes() <= cache.MAX_AUDIO_PREFETCH_BYTES);
+	assert.ok(cache.audioPrefetchReadyBytes() <= cache.MAX_AUDIO_PREFETCH_BYTES());
+});
+
+test('LOW tier evicts on third track with 24 MiB byte cap', async () => {
+	const cache = await loadTypeScriptModule(
+		'tests/unit/fixtures/audio-prefetch-cache-tier.ts',
+		{ viteApiBase: origin }
+	);
+	cache.applyTier('LOW');
+	assert.equal(cache.MAX_AUDIO_PREFETCH_TRACKS(), 2);
+	for (const id of ['l1', 'l2', 'l3']) {
+		serve(id, 8 * MiB);
+		assert.equal(await prefetchAndSettle(cache, id), 'ready');
+	}
+	assert.equal(cache.audioPrefetchReadyCount(), 2);
+	assert.ok(cache.audioPrefetchReadyBytes() <= 24 * MiB);
 });
 
 // ------------------------------------------------------- failures hold none

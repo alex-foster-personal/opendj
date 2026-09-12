@@ -69,6 +69,14 @@ test('filterSettings finds pin 862cd3 deck layout settings, implemented via exis
 	assert.equal(durationDef.control.kind, 'enum');
 });
 
+test('perf_tier is searchable under tier and performance', async () => {
+	const mod = await loadTypeScriptModule('src/lib/settings/search.ts');
+	const tier = mod.filterSettings('tier', { hideTodo: true, group: null });
+	assert.ok(tier.keyword.some((s) => s.id === 'perf_tier'));
+	const perf = mod.filterSettings('performance', { hideTodo: true, group: 'performance' });
+	assert.ok(perf.keyword.some((s) => s.id === 'perf_tier'));
+});
+
 test('keyboard helpers move and toggle booleans', async () => {
 	const mod = await loadTypeScriptModule('src/lib/settings/keyboard.ts');
 	assert.equal(mod.moveSelection(0, 1, 3), 1);

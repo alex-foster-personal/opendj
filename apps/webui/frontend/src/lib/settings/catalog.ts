@@ -175,6 +175,25 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	{
+		id: 'perf_tier',
+		label: 'Performance tier',
+		group: 'performance',
+		keywords: ['tier', 'performance', 'machine', 'ram', 'cpu', 'cache', 'scalability'],
+		title: 'Machine performance tier (Auto, or an explicit Low/Standard/High)',
+		detail:
+			'Latency budgets never relax on weak machines; features scale instead. Auto uses the engine psutil host read (never the webview). Low shrinks prefetch and ANLZ caches; High allows more.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: 'auto', label: 'Auto' },
+				{ value: 'low', label: 'Low' },
+				{ value: 'standard', label: 'Standard' },
+				{ value: 'high', label: 'High' }
+			]
+		}
+	},
+	{
 		id: 'auto_play_enabled',
 		label: 'AutoPlay',
 		group: 'performance',

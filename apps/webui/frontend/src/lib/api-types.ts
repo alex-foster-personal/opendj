@@ -1764,6 +1764,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/host-info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Host Info */
+        get: operations["host_info_api_v1_host_info_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ingest/config": {
         parameters: {
             query?: never;
@@ -2359,6 +2376,23 @@ export interface paths {
         post?: never;
         /** Delete Pairing */
         delete: operations["delete_pairing_api_v1_pairings__pairing_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/perf-tier": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Perf Tier */
+        get: operations["perf_tier_api_v1_perf_tier_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -6835,6 +6869,21 @@ export interface components {
             /** Limit */
             limit: number;
         };
+        /** HostInfoOut */
+        HostInfoOut: {
+            /** Canary Elapsed Ms */
+            canary_elapsed_ms?: number | null;
+            /** Canary Error */
+            canary_error?: string | null;
+            /** Canary Hashes Per Second */
+            canary_hashes_per_second?: number | null;
+            /** Logical Cpus */
+            logical_cpus: number;
+            /** Ram Bytes */
+            ram_bytes: number;
+            /** Ram Gib */
+            ram_gib: number;
+        };
         /** HotCueMutationOut */
         HotCueMutationOut: {
             cue: components["schemas"]["AnlzCueOut"] | null;
@@ -8233,6 +8282,31 @@ export interface components {
             stages?: {
                 [key: string]: number;
             } | null;
+        };
+        /** PerfTierHostOut */
+        PerfTierHostOut: {
+            /** Logical Cpus */
+            logical_cpus: number;
+            /** Ram Bytes */
+            ram_bytes: number;
+        };
+        /** PerfTierOut */
+        PerfTierOut: {
+            /** Auto Tier */
+            auto_tier?: string | null;
+            host?: components["schemas"]["PerfTierHostOut"] | null;
+            /** Min Local Stems Tier */
+            min_local_stems_tier: string;
+            /** Override */
+            override: string;
+            /** Scalers */
+            scalers: {
+                [key: string]: number | string;
+            };
+            /** Source */
+            source: string;
+            /** Tier */
+            tier: string;
         };
         /** PerformanceFeedbackMarkIn */
         PerformanceFeedbackMarkIn: {
@@ -10724,6 +10798,12 @@ export interface components {
              */
             lyrics_waveform_overlay: boolean;
             /**
+             * Perf Tier
+             * @default auto
+             * @enum {string}
+             */
+            perf_tier: "auto" | "low" | "standard" | "high";
+            /**
              * Show Agent Pins
              * @default true
              */
@@ -10764,6 +10844,8 @@ export interface components {
             lyrics_load_strategy?: ("in-view" | "hover" | "off") | null;
             /** Lyrics Waveform Overlay */
             lyrics_waveform_overlay?: boolean | null;
+            /** Perf Tier */
+            perf_tier?: ("auto" | "low" | "standard" | "high") | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
             /** Technically Working Animate */
@@ -14584,6 +14666,33 @@ export interface operations {
             };
         };
     };
+    host_info_api_v1_host_info_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostInfoOut"];
+                };
+            };
+            /** @description host facts could not be measured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_config_api_v1_ingest_config_get: {
         parameters: {
             query?: never;
@@ -15736,6 +15845,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    perf_tier_api_v1_perf_tier_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PerfTierOut"];
+                };
+            };
+            /** @description auto tier cannot resolve without host facts */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
