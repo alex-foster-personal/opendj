@@ -80,17 +80,22 @@ def test_checked_at_only_moves_when_the_state_changes(
 ) -> None:
     audio = tmp_path / "a.mp3"
     audio.write_bytes(b"\x00")
+    keeper = tmp_path / "keep.mp3"
+    keeper.write_bytes(b"\x00")
     add_track("a" * 40, file_path=str(audio))
+    add_track("k" * 40, file_path=str(keeper))
     avail.refresh(state_conn, now="2026-01-01T00:00:00+00:00")
     avail.refresh(state_conn, now="2026-02-02T00:00:00+00:00")
     stamp = state_conn.execute(
-        "SELECT checked_at FROM track_availability"
+        "SELECT checked_at FROM track_availability WHERE stable_id = ?",
+        ("a" * 40,),
     ).fetchone()[0]
     assert stamp == "2026-01-01T00:00:00+00:00"
     audio.unlink()
     avail.refresh(state_conn, now="2026-03-03T00:00:00+00:00")
     state, stamp = state_conn.execute(
-        "SELECT state, checked_at FROM track_availability"
+        "SELECT state, checked_at FROM track_availability WHERE stable_id = ?",
+        ("a" * 40,),
     ).fetchone()
     assert (state, stamp) == ("absent", "2026-03-03T00:00:00+00:00")
 

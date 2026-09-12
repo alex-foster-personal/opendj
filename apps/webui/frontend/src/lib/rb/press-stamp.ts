@@ -12,6 +12,7 @@
 
 import {
 	latencyFloorLabels,
+	type ScheduleRowKind,
 	scheduleRowKind,
 	unavailableLatencyTerms
 } from '$lib/player/transport/press-audible';
@@ -98,7 +99,7 @@ export function scheduleRowFacts(
 	stages: Readonly<Record<string, number>>,
 	contextState: string,
 	pressT0Ms?: number
-): { kind: string; labels: Record<string, string> } {
+): { kind: ScheduleRowKind; labels: Record<string, string> } {
 	return {
 		kind: scheduleRowKind(
 			stages.press_to_schedule_ms,

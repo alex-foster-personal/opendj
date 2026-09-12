@@ -275,6 +275,5 @@ __all__ = [
     "AnalysisRecord",
     "EnergySource",
     "RecordContractError",
-    "activations_ref",
     "validate_record_contract",
 ]

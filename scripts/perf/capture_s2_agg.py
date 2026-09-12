@@ -2,13 +2,29 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypedDict
 
 from scripts.perf.capture_kpi_ledger import (
     CaptureMeta,
     build_row,
     withheld_row,
 )
+
+class PressStages(TypedDict, total=False):
+    press_to_schedule_ms: float
+    scheduled_offset_ms: float
+    input_to_audible_ms: float
+    input_to_output_ms: float
+    base_latency_ms: float
+    output_latency_ms: float
+
+
+class PerfPressRow(TypedDict, total=False):
+    kind: str
+    deck: int | None
+    stages: PressStages
+    labels: dict[str, str]
+
 
 S2_KPI = "input_to_audible_ms_p99"
 FLOOR_KPI = "audio_output_device_floor_ms"
@@ -45,7 +61,7 @@ def counts_as_sample(press: dict[str, Any]) -> bool:
     if not _is_finite_positive(stages.get("output_latency_ms")):
         return False
     labels = press.get("labels")
-    return not (isinstance(labels, dict) and labels.get("latency_floor") != "complete")
+    return isinstance(labels, dict) and labels.get("latency_floor") == "complete"
 
 
 def filter_complete_presses(presses: list[dict[str, Any]]) -> list[dict[str, Any]]:

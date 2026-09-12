@@ -371,10 +371,10 @@ def test_a_stale_cas_refuses_the_whole_put_and_leaves_the_default_unpersisted(cl
 def test_put_own_on_an_unserved_lane_is_refused_with_409(client) -> None:
     put = client.put(
         "/api/v1/analysis/source",
-        json={"lane": "loudness", "toggle": "own"},
+        json={"lane": "vocal", "toggle": "own"},
     )
     assert put.status_code == 409, put.text
-    assert "loudness" in put.json()["detail"]["error"]
+    assert "vocal" in put.json()["detail"]["error"]
     assert "no serving implementation yet" in put.json()["detail"]["error"]
 
 
