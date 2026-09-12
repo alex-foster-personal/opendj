@@ -3873,7 +3873,7 @@ export interface paths {
          *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
          *     Share-host requests use the share venue cap (lossy ceiling by default).
          */
-        get: operations["get_track_audio_api_v1_tracks__stable_id__audio_head"];
+        get: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3891,7 +3891,7 @@ export interface paths {
          *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
          *     Share-host requests use the share venue cap (lossy ceiling by default).
          */
-        head: operations["get_track_audio_api_v1_tracks__stable_id__audio_head"];
+        head: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
         patch?: never;
         trace?: never;
     };
@@ -18388,7 +18388,7 @@ export interface operations {
             };
         };
     };
-    get_track_audio_api_v1_tracks__stable_id__audio_head: {
+    get_track_audio_api_v1_tracks__stable_id__audio_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -18417,7 +18417,7 @@ export interface operations {
             };
         };
     };
-    get_track_audio_api_v1_tracks__stable_id__audio_head: {
+    get_track_audio_api_v1_tracks__stable_id__audio_get: {
         parameters: {
             query?: never;
             header?: never;
