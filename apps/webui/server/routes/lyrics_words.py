@@ -205,7 +205,7 @@ def _titles_by_stable_id(
     out: dict[str, tuple[str | None, str | None]] = {}
     for row in conn.execute(
         f"SELECT stable_id, title, artists_json FROM tracks "
-        f"WHERE stable_id IN ({marks})",
+        f"WHERE stable_id IN ({marks}) AND deleted_at IS NULL",
         stable_ids,
     ):
         artists = json.loads(row[2]) if row[2] else []
@@ -413,7 +413,7 @@ def post_lyric_job(
     known = {
         row[0]
         for row in conn.execute(
-            f"SELECT stable_id FROM tracks WHERE stable_id IN ({marks})",
+            f"SELECT stable_id FROM tracks WHERE stable_id IN ({marks}) AND deleted_at IS NULL",
             body.stable_ids,
         )
     }

@@ -13,6 +13,7 @@ Rails:
 """
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -34,7 +35,9 @@ class SafetyAbort(RuntimeError):
 
 # ----- P04-03: staged rollout (dry-run -> cautious -> bulk) -------------
 # apply_analysis write-back dry-run does not enter LiveWriteSession and must
-# not call backup_db.
+# not call backup_db. Write-back live apply requires the write-back dry-run
+# stamp (``require_writeback_plan``); CSV ``--bulk`` still uses the cautious
+# stamp (``require_cautious_before_bulk``).
 
 _ROLLOUT_STAMP_DIR = Path("data/sync/rollout")
 
@@ -52,6 +55,49 @@ def mark_cautious_success(writer: str) -> Path:
     stamp.parent.mkdir(parents=True, exist_ok=True)
     stamp.write_text(datetime.now(timezone.utc).isoformat() + "\n", encoding="utf-8")
     return stamp
+
+
+def writeback_plan_stamp_path(writer: str) -> Path:
+    return _ROLLOUT_STAMP_DIR / f"{writer}.writeback-plan.json"
+
+
+def mark_writeback_plan(writer: str, plan_hash: str) -> Path:
+    """Record that a write-back dry-run plan was produced."""
+    stamp = writeback_plan_stamp_path(writer)
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.write_text(
+        json.dumps(
+            {
+                "plan_hash": plan_hash,
+                "at": datetime.now(timezone.utc).isoformat(),
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return stamp
+
+
+def require_writeback_plan(writer: str, plan_hash: str) -> None:
+    """Abort write-back live runs without a matching dry-run plan stamp."""
+    stamp = writeback_plan_stamp_path(writer)
+    if not stamp.exists():
+        raise SafetyAbort(
+            f"write-back live for {writer!r} requires a dry-run plan stamp at "
+            f"{stamp}; run without --live first."
+        )
+    try:
+        data = json.loads(stamp.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SafetyAbort(
+            f"write-back dry-run stamp at {stamp} is unreadable: {exc}"
+        ) from exc
+    if data.get("plan_hash") != plan_hash:
+        raise SafetyAbort(
+            f"write-back live plan hash mismatch for {writer!r}: dry-run plan "
+            "is stale; re-run without --live."
+        )
 
 
 def require_cautious_before_bulk(writer: str, override: bool = False) -> None:
@@ -336,6 +382,9 @@ __all__ = [
     "assert_target_not_running",
     "assert_icloud_quiesced",
     "backup_db",
+    "mark_writeback_plan",
     "require_typed_confirm",
+    "require_writeback_plan",
     "target_process_name",
+    "writeback_plan_stamp_path",
 ]

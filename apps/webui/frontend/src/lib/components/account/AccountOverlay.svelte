@@ -306,11 +306,11 @@
 									 the second, which no file on this machine touched.
 
 									 Branching on `flag.overridden` would separate them, and is
-									 NOT what this does: the daemon declares exactly one flag
-									 today (apps/feature_flags/store.FLAGS, usb.export, default
-									 true), so a default-off row cannot be produced by any capture
-									 and that branch would ship untested. One sentence true of
-									 both states beats two sentences where one is unreachable. -->
+									 NOT what this does: app_mode.show_unbuildable is the first
+									 default-off flag in apps/feature_flags/store.FLAGS, and this
+									 heading already covers declared defaults as well as local
+									 overrides. One sentence true of both states beats two
+									 sentences where one is unreachable. -->
 								<p class="ac-muted">
 									Off in the flag configuration this daemon resolved: a declared
 									default, or a local override. Neither the App Store build nor

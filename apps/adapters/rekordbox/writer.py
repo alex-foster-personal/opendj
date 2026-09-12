@@ -364,3 +364,92 @@ def restore_hot_cue(
         "cue": _cue_view(slot, restored, revision) if restored else None,
         "revision": revision,
     }
+
+
+_SCALAR_TABLE = "odjAnalysisScalar"
+
+
+def snapshot_content_field(
+    conn: sqlite3.Connection, content_id: str, field: str
+) -> dict[str, Any]:
+    """Preimage for one analysis field on one djmdContent row."""
+    snap: dict[str, Any] = {
+        "content_id": content_id,
+        "field": field,
+        "key_id": None,
+        "bpm": None,
+        "scalar_value": None,
+        "scalar_existed": False,
+        "created_key_id": None,
+    }
+    if field == "key":
+        row = conn.execute(
+            "SELECT KeyID FROM djmdContent WHERE ID = ?", (content_id,)
+        ).fetchone()
+        if row is not None:
+            snap["key_id"] = row[0]
+    elif field == "bpm":
+        row = conn.execute(
+            "SELECT BPM FROM djmdContent WHERE ID = ?", (content_id,)
+        ).fetchone()
+        if row is not None:
+            snap["bpm"] = row[0]
+    elif field in ("loudness_lufs", "loudness_dbtp"):
+        try:
+            row = conn.execute(
+                f"SELECT value FROM {_SCALAR_TABLE} "
+                "WHERE ContentID = ? AND field = ?",
+                (content_id, field),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            row = None
+        if row is not None:
+            snap["scalar_value"] = str(row[0])
+            snap["scalar_existed"] = True
+    return snap
+
+
+def restore_content_field(
+    conn: sqlite3.Connection, snapshot: Mapping[str, Any]
+) -> None:
+    """Restore one preimage. rowcount != 1 is a hard failure."""
+    field = str(snapshot["field"])
+    content_id = str(snapshot["content_id"])
+    if field == "key":
+        result = conn.execute(
+            "UPDATE djmdContent SET KeyID = ? WHERE ID = ?",
+            (snapshot.get("key_id"), content_id),
+        )
+        if result.rowcount != 1:
+            raise RuntimeError(
+                f"restore_content_field: KeyID restore failed for {content_id}"
+            )
+        return
+    if field == "bpm":
+        result = conn.execute(
+            "UPDATE djmdContent SET BPM = ? WHERE ID = ?",
+            (snapshot.get("bpm"), content_id),
+        )
+        if result.rowcount != 1:
+            raise RuntimeError(
+                f"restore_content_field: BPM restore failed for {content_id}"
+            )
+        return
+    if field in ("loudness_lufs", "loudness_dbtp"):
+        if snapshot.get("scalar_existed"):
+            result = conn.execute(
+                f"UPDATE {_SCALAR_TABLE} SET value = ? "
+                "WHERE ContentID = ? AND field = ?",
+                (snapshot.get("scalar_value"), content_id, field),
+            )
+            if result.rowcount != 1:
+                raise RuntimeError(
+                    f"restore_content_field: sidecar restore failed for {content_id}"
+                )
+        else:
+            conn.execute(
+                f"DELETE FROM {_SCALAR_TABLE} WHERE ContentID = ? AND field = ?",
+                (content_id, field),
+            )
+        return
+    raise RuntimeError(f"restore_content_field: unsupported field {field!r}")

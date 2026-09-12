@@ -18,6 +18,9 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null,
       "rb_cues_db": [
         {
           "in_ms": 1000,
@@ -53,6 +56,9 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null,
       "rb_cues_db": [
         {
           "in_ms": 1000,
@@ -88,6 +94,9 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null,
       "rb_cues_db": [
         {
           "in_ms": 1000,
@@ -113,6 +122,9 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null,
       "rb_cue_db": false,
       "own_cues": [
         {
@@ -138,6 +150,9 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null,
       "rb_cue_db": false,
       "own_cues": [
         {
@@ -181,6 +196,9 @@
       "rb_pssi": false,
       "rb_ext_readable": false,
       "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null,
       "rb_cue_db": false,
       "own_cues": [
         {
@@ -214,6 +232,9 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null,
       "rb_cue_db": false,
       "own_cues": [],
       "rb_cues_pcob": [],
@@ -230,8 +251,12 @@
       "rb_pssi": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null,
       "rb_cue_db": false
     }
   ],
-  "round": 1
+  "round": 1,
+  "parity_round": 1
 }

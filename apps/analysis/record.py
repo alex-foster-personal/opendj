@@ -65,7 +65,6 @@ from .lanes import (
     semver_key,
     validate_lane_result,
 )
-from apps.analysis_beatgrid.activations import activations_ref
 
 EnergySource = Literal["mik", "inferred"]
 
@@ -268,6 +267,5 @@ __all__ = [
     "AnalysisRecord",
     "EnergySource",
     "RecordContractError",
-    "activations_ref",
     "validate_record_contract",
 ]
