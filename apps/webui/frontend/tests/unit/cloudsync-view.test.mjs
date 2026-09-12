@@ -274,6 +274,18 @@ test('the config form mirrors the backend validator', () => {
 	});
 });
 
+// requirement: CSUI-01
+// if /cloudsync tab state stops following the URL query then broken
+test('cloudSyncTabFromUrl maps tab query params to the visible tab', () => {
+	const tab = (query) => view.cloudSyncTabFromUrl(new URL(`http://localhost/cloudsync${query}`));
+	assert.equal(tab('?tab=policies'), 'policies');
+	assert.equal(tab('?tab=pins'), 'pins');
+	assert.equal(tab('?tab=overview'), 'overview');
+	assert.equal(tab('?tab=fleet'), 'fleet');
+	assert.equal(tab(''), 'status');
+	assert.equal(tab('?tab=nope'), 'status');
+});
+
 test('env overrides are named when they mask the saved config', () => {
 	/** if an env-won field is silently shown as the saved value then broken */
 	assert.deepEqual(view.envOverrideNotes(config()), []);

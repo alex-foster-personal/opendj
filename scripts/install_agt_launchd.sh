@@ -90,6 +90,8 @@ if [ -n "$RENDER_ONLY" ]; then
     "$RENDER_ONLY/com.af.agt-personas.plist"
   render_plist "$REPO_ROOT/ops/agentic-testing/com.af.agt-soak.plist.template" \
     "$RENDER_ONLY/com.af.agt-soak.plist"
+  render_plist "$REPO_ROOT/ops/agentic-testing/com.af.agt-pipeline.plist.template" \
+    "$RENDER_ONLY/com.af.agt-pipeline.plist"
   echo "[OK] rendered AGT plists to $RENDER_ONLY (launchctl not touched)"
   exit 0
 fi
@@ -99,10 +101,12 @@ render_plist "$REPO_ROOT/ops/agentic-testing/com.af.agt-personas.plist.template"
   "$HOME/Library/LaunchAgents/com.af.agt-personas.plist"
 render_plist "$REPO_ROOT/ops/agentic-testing/com.af.agt-soak.plist.template" \
   "$HOME/Library/LaunchAgents/com.af.agt-soak.plist"
+render_plist "$REPO_ROOT/ops/agentic-testing/com.af.agt-pipeline.plist.template" \
+  "$HOME/Library/LaunchAgents/com.af.agt-pipeline.plist"
 
 if [ "$INSTALL" = 1 ]; then
   uid="$(id -u)"
-  for label in com.af.agt-personas com.af.agt-soak; do
+  for label in com.af.agt-personas com.af.agt-soak com.af.agt-pipeline; do
     launchctl bootout "gui/$uid/$label" 2>/dev/null || true
     launchctl bootstrap "gui/$uid" "$HOME/Library/LaunchAgents/$label.plist"
   done
