@@ -3847,16 +3847,34 @@ export interface paths {
          * Get Track Audio
          * @description Stream the single best working file. FileResponse handles Range/206.
          *
+         *     HEAD is served by the same handler: FileResponse sends headers only for a
+         *     HEAD scope, and the LyricsPanel playability probe (``fetch(url,
+         *     {method: 'HEAD'})``) read a GET-only route as "HTTP 405, audio cannot be
+         *     played" on every track with aligned words (found Sat 12 Sep 2026, #2082).
+         *
          *     The backend picks among ``track_locations`` plus the legacy
          *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
          *     Share-host requests use the share venue cap (lossy ceiling by default).
          */
-        get: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
+        get: operations["get_track_audio_api_v1_tracks__stable_id__audio_head"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
-        head?: never;
+        /**
+         * Get Track Audio
+         * @description Stream the single best working file. FileResponse handles Range/206.
+         *
+         *     HEAD is served by the same handler: FileResponse sends headers only for a
+         *     HEAD scope, and the LyricsPanel playability probe (``fetch(url,
+         *     {method: 'HEAD'})``) read a GET-only route as "HTTP 405, audio cannot be
+         *     played" on every track with aligned words (found Sat 12 Sep 2026, #2082).
+         *
+         *     The backend picks among ``track_locations`` plus the legacy
+         *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
+         *     Share-host requests use the share venue cap (lossy ceiling by default).
+         */
+        head: operations["get_track_audio_api_v1_tracks__stable_id__audio_head"];
         patch?: never;
         trace?: never;
     };
@@ -6134,11 +6152,16 @@ export interface components {
         };
         /**
          * FallbackBeatOut
-         * @description Identical field set to one ANLZ beatgrid ``beats`` entry.
+         * @description ANLZ beat fields plus ``extrapolated``.
+         *
+         *     PQTZ ``/anlz`` beats stay ``{n, bpm, t}``. This fallback endpoint always
+         *     sends ``extrapolated`` so a client never has to guess which beats are tail.
          */
         FallbackBeatOut: {
             /** Bpm */
             bpm: number;
+            /** Extrapolated */
+            extrapolated: boolean;
             /** N */
             n: number;
             /** T */
@@ -18312,7 +18335,36 @@ export interface operations {
             };
         };
     };
-    get_track_audio_api_v1_tracks__stable_id__audio_get: {
+    get_track_audio_api_v1_tracks__stable_id__audio_head: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_track_audio_api_v1_tracks__stable_id__audio_head: {
         parameters: {
             query?: never;
             header?: never;
