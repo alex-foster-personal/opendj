@@ -106,6 +106,7 @@ from .routes import spotify as spotify_routes
 from .routes import state as state_routes
 from .routes import stem_tiers as stem_tiers_routes
 from .routes import stems as stems_routes
+from .routes import stems_assets as stems_assets_routes
 from .routes import telemetry as telemetry_routes
 from .routes import tracks as tracks_routes
 from .routes import ui_prefs as ui_prefs_routes
@@ -422,6 +423,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         quality_routes.router,
         smartlists_routes.router,
         stems_routes.router,
+        stems_assets_routes.router,
         stem_tiers_routes.router,
         reconcile_routes.router,
         rekordbox_gate_routes.router,

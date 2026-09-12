@@ -346,11 +346,46 @@ def test_rendered_launchd_plists_run_the_booted_argv(tmp_path: Path) -> None:
     assert backup["StartCalendarInterval"] == {"Hour": 3, "Minute": 30}
 
 
+_SYSTEMD_MANAGER_INIT_FAILURE_MARKERS: tuple[str, ...] = (
+    "failed to initialize manager",
+    "failed to lookup runtimedirectory path",
+    "failed to connect to bus",
+)
+
+
+def _systemd_user_manager_unavailable() -> str | None:
+    """``None`` if ``systemd-analyze --user verify`` can measure at all.
+
+    Otherwise the stderr+stdout that proves the USER MANAGER itself could not
+    start on this host (no XDG_RUNTIME_DIR / logind session, common on a
+    self-hosted CI runner with no login session) -- never a verdict on a unit
+    file. Probes a trivial, syntactically-valid unit that ships with systemd
+    itself (``systemd-analyze --user verify`` accepts a bare unit NAME too),
+    so a genuine lint failure on the units under test still fails loudly: this
+    only returns non-None when the manager cannot initialize AT ALL, not on
+    any nonzero exit.
+    """
+    probe = subprocess.run(
+        ["systemd-analyze", "--user", "verify", "systemd-user-sessions.service"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    output = (probe.stdout + probe.stderr).lower()
+    if any(marker in output for marker in _SYSTEMD_MANAGER_INIT_FAILURE_MARKERS):
+        return probe.stdout + probe.stderr
+    return None
+
+
 @pytest.mark.parametrize("tool", ["plutil", "systemd-analyze"])
 def test_rendered_units_pass_the_service_manager_lint(tool: str, tmp_path: Path) -> None:
     """if plutil -lint or systemd-analyze --user verify rejects a rendered unit then broken"""
     if shutil.which(tool) is None:
         pytest.skip(f"{tool} is not installed on this host; the other lint covers its platform")
+    if tool == "systemd-analyze":
+        unavailable = _systemd_user_manager_unavailable()
+        if unavailable is not None:
+            pytest.skip(f"systemd user manager unavailable on this runner: {unavailable}")
     kind: hub_deploy.Kind = "launchd" if tool == "plutil" else "systemd"
     out_dir = tmp_path / kind
     out_dir.mkdir()
