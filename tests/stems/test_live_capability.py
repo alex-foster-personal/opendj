@@ -38,6 +38,7 @@ from apps.stems.live_capability_api import router
 
 @pytest.mark.requirement("LATENCY-04")
 def test_hardware_thresholds_disable_pre_m1_and_tier_apple_silicon() -> None:
+    """[if] hardware is classified [then] pre-M1 disables, M1 is low, M3 is high, [else stop]."""
     pre_m1 = assess_machine("Intel Mac", BENCHMARK_MIN_HASHES_PER_SECOND)
     m1 = assess_machine("Apple M1", BENCHMARK_MIN_HASHES_PER_SECOND)
     m3 = assess_machine("Apple M3 Max", BENCHMARK_MIN_HASHES_PER_SECOND)
@@ -50,6 +51,7 @@ def test_hardware_thresholds_disable_pre_m1_and_tier_apple_silicon() -> None:
 
 @pytest.mark.requirement("LATENCY-04")
 def test_a_failed_benchmark_refuses_before_live_stems_start() -> None:
+    """[if] the benchmark is below floor [then] capability disables before start, [else stop]."""
     capability = assess_machine("Apple M3", BENCHMARK_MIN_HASHES_PER_SECOND - 1)
 
     assert capability.enabled is False
@@ -58,6 +60,7 @@ def test_a_failed_benchmark_refuses_before_live_stems_start() -> None:
 
 @pytest.mark.requirement("LATENCY-04")
 def test_four_decks_receive_the_named_eight_bar_lookahead() -> None:
+    """[if] four decks are planned [then] lookahead is eight bars, [else stop]."""
     capability = assess_machine("Apple M3", BENCHMARK_MIN_HASHES_PER_SECOND)
 
     two_decks = plan_live_stems(capability, deck_count=2, bpm=120)
@@ -73,6 +76,7 @@ def test_four_decks_receive_the_named_eight_bar_lookahead() -> None:
 def test_install_record_is_shared_by_http_and_cli(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """[if] a record is persisted [then] HTTP GET and CLI print the same quality, [else stop]."""
     capability = assess_machine("Apple M3 Pro", BENCHMARK_MIN_HASHES_PER_SECOND)
     persist_capability(tmp_path, capability)
 
@@ -93,6 +97,7 @@ def test_install_record_is_shared_by_http_and_cli(
 
 @pytest.mark.requirement("LATENCY-04")
 def test_first_install_assessment_is_real_and_runs_once(tmp_path: Path) -> None:
+    """[if] assessment runs twice [then] the second returns the first record, [else stop]."""
     first = assess_install_once(tmp_path)
     second = assess_install_once(tmp_path)
 
@@ -102,6 +107,7 @@ def test_first_install_assessment_is_real_and_runs_once(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("LATENCY-04")
 def test_machine_class_change_reassesses_a_copied_install_record(tmp_path: Path) -> None:
+    """[if] a copied record differs in class [then] reassessment replaces it, [else stop]."""
     persist_capability(
         tmp_path, assess_machine("Apple M3 Max", BENCHMARK_MIN_HASHES_PER_SECOND)
     )
@@ -119,6 +125,7 @@ def test_machine_class_change_reassesses_a_copied_install_record(tmp_path: Path)
 @pytest.mark.requirement("LATENCY-04")
 @pytest.mark.parametrize("bpm", [float("nan"), float("inf"), float("-inf")])
 def test_nonfinite_bpm_is_a_named_refusal(bpm: float) -> None:
+    """[if] BPM is NaN or infinite [then] plan raises LiveStemsCapabilityError, [else stop]."""
     capability = assess_machine("Apple M3", BENCHMARK_MIN_HASHES_PER_SECOND)
 
     with pytest.raises(LiveStemsCapabilityError, match="BPM must be finite"):
@@ -127,6 +134,7 @@ def test_nonfinite_bpm_is_a_named_refusal(bpm: float) -> None:
 
 @pytest.mark.requirement("LATENCY-04")
 def test_committed_engine_openapi_exposes_live_capability() -> None:
+    """[if] the OpenAPI is read [then] GET /stems/live-capability is in paths, [else stop]."""
     schema_path = Path(__file__).resolve().parents[2] / "apps/webui/openapi.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
 

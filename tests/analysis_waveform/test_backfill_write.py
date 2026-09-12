@@ -4,6 +4,8 @@ The producer writes AnalysisRecord v2 rows that the mapped-track overlay
 serves when waveform=own. Everything here uses real bytes and the real store;
 ffmpeg-backed tests are marked ``requires_ffmpeg``.
 
+[if] own_waveform.backfill writes a record [then] the store holds a valid v2 waveform, [else stop].
+
 -Cursor
 """
 from __future__ import annotations

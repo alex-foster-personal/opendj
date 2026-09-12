@@ -11,6 +11,8 @@ Regression one-liners:
   - if HTTP adopt and CLI adopt leave different owner rows then broken
   - if a signed-in user can revoke a machine they do not own then broken
   - if the HTTP and CLI credentials readouts differ, or either shows a token, then broken
+
+[if] fleet adopt/revoke run over HTTP/CLI [then] both write one row, no token shown, [else stop].
 """
 
 from __future__ import annotations
