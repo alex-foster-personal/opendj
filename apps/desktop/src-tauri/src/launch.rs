@@ -159,7 +159,7 @@ pub fn stop_holder_pid(pid: u32) {
 mod tests {
     use super::*;
     use std::fs;
-    use std::io::Write;
+    use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
     use std::time::Duration;
@@ -169,6 +169,23 @@ mod tests {
     }
 
     fn health_always_false(_port: u16) -> bool {
+        false
+    }
+
+    fn set_dead_proxy_env() {
+        std::env::set_var("HTTP_PROXY", "http://127.0.0.1:1");
+        std::env::set_var("HTTPS_PROXY", "http://127.0.0.1:1");
+        std::env::set_var("http_proxy", "http://127.0.0.1:1");
+        std::env::set_var("https_proxy", "http://127.0.0.1:1");
+    }
+
+    fn wait_health_ok(port: u16) -> bool {
+        for _ in 0..30 {
+            if engine::health_ok(port) {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
         false
     }
 
@@ -182,8 +199,23 @@ mod tests {
                 "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok";
             for _ in 0..20 {
                 if let Ok((mut stream, _)) = listener.accept() {
+                    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+                    let mut buf = [0_u8; 256];
+                    let mut total = 0usize;
+                    while total < buf.len() {
+                        match stream.read(&mut buf[total..]) {
+                            Ok(0) => break,
+                            Ok(n) => {
+                                total += n;
+                                if total >= 4 && buf[..total].windows(4).any(|w| w == b"\r\n\r\n") {
+                                    break;
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                    }
                     let _ = stream.write_all(response.as_bytes());
-                    let _ = stream.shutdown(std::net::Shutdown::Write);
+                    let _ = stream.flush();
                 }
             }
         });
@@ -236,7 +268,8 @@ mod tests {
             "hold lock for test"
         );
         file.write_all(blob.as_bytes()).expect("write holder json");
-        thread::sleep(Duration::from_millis(20));
+        set_dead_proxy_env();
+        assert!(wait_health_ok(port), "health server should answer before adopt inspect");
         assert_eq!(
             inspect_lock(&lock_path, engine::health_ok),
             LaunchPlan::Adopt {
@@ -306,14 +339,7 @@ mod tests {
     #[test]
     fn health_ok_true_for_local_200_server() {
         let port = spawn_health_server();
-        let mut ok = false;
-        for _ in 0..30 {
-            if engine::health_ok(port) {
-                ok = true;
-                break;
-            }
-            thread::sleep(Duration::from_millis(20));
-        }
-        assert!(ok, "health_ok should accept a local 200 response");
+        set_dead_proxy_env();
+        assert!(wait_health_ok(port), "health_ok should accept a local 200 response");
     }
 }

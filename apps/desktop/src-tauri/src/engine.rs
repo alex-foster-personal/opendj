@@ -254,9 +254,11 @@ pub fn health_ok(port: u16) -> bool {
     let Ok(mut stream) = TcpStream::connect_timeout(&address, SOCKET_TIMEOUT) else {
         return false;
     };
+    let _ = stream.set_nodelay(true);
     if stream.set_read_timeout(Some(SOCKET_TIMEOUT)).is_err() {
         return false;
     }
+    let _ = stream.set_write_timeout(Some(SOCKET_TIMEOUT));
     let request = format!(
         "GET {HEALTH_PATH} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\
          Connection: close\r\nAccept: application/json\r\n\r\n"
@@ -265,8 +267,21 @@ pub fn health_ok(port: u16) -> bool {
         return false;
     }
     let mut response = Vec::new();
-    if stream.take(4096).read_to_end(&mut response).is_err() {
-        return false;
+    let mut byte = [0_u8; 1];
+    loop {
+        if response.len() >= 4096 {
+            break;
+        }
+        match stream.read(&mut byte) {
+            Ok(0) => break,
+            Ok(_) => {
+                response.push(byte[0]);
+                if byte[0] == b'\n' {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
     }
     String::from_utf8_lossy(&response).starts_with("HTTP/1.1 200")
 }
@@ -615,6 +630,10 @@ pub fn append_shell_log(level: &str, message: &str) {
     };
     let line = format!("[shell {level}] {message}\n");
     if let Err(err) = append_rotated(path, line.as_bytes()) {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            eprintln!("[{level}] {message}");
+            return;
+        }
         eprintln!("[shell log failed] {err}: [{level}] {message}");
     }
 }
@@ -907,6 +926,7 @@ mod tests {
             "[shell WARN] monitor scale factor 0\n"
         );
         std::fs::remove_dir_all(directory).unwrap();
+        append_shell_log("panic", "probe");
     }
 
     #[test]
