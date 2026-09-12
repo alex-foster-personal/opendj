@@ -41,7 +41,7 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 			stem: 'instrumental',
 			muted: true
 		}),
-		[2]
+		null
 	);
 	assert.deepEqual(
 		ipc.performanceCommandQueueScopes({ type: 'seek', deck: 3, position_ms: 1000 }),

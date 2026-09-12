@@ -228,9 +228,9 @@ export function handleMidiAction(
 					pressT0Ms
 				);
 			} else if (action.target === 'fader') {
-				void dispatchPerformanceCommand({ type: 'fader', deck: action.deck, value: v });
+				void dispatchPerformanceCommand({ type: 'fader', deck: action.deck, value: v }, pressT0Ms);
 			} else if (action.target === 'filter') {
-				void dispatchPerformanceCommand({ type: 'filter', deck: action.deck, value: v });
+				void dispatchPerformanceCommand({ type: 'filter', deck: action.deck, value: v }, pressT0Ms);
 			} else {
 				const _exhaustive: never = action.target;
 				throw new Error(`Unhandled mixer_channel target: ${_exhaustive}`);
@@ -240,7 +240,7 @@ export function handleMidiAction(
 		case 'mixer_global': {
 			const v = _continuous01(value);
 			if (action.target === 'crossfader') {
-				void dispatchPerformanceCommand({ type: 'crossfader', value: v });
+				void dispatchPerformanceCommand({ type: 'crossfader', value: v }, pressT0Ms);
 			} else if (action.target === 'master') {
 				void dispatchPerformanceCommand({ type: 'master_volume', value: v });
 			} else {

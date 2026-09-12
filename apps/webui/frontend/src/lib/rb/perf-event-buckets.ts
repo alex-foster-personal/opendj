@@ -105,12 +105,19 @@ const TRANSPORT_PRESS_BUDGET = 8;
  * gesture, same size as transport-schedule.
  */
 const EQ_APPLY_BUDGET = 16;
+/**
+ * LATENCY-01: filter/fader/xfader/stem apply rows, kept out of eq-apply and
+ * transport-schedule. One drag is many pointermove applies; 16 rows is the
+ * tail of one gesture, same size as eq-apply.
+ */
+const MIXER_APPLY_BUDGET = 16;
 
 type PerfBucket =
 	| 'deck-load'
 	| 'transport-schedule'
 	| 'transport-schedule-press'
 	| 'eq-apply'
+	| 'mixer-apply'
 	| 'deck-state'
 	| 'audio-health'
 	| 'other';
@@ -120,6 +127,7 @@ const BUDGETS: Record<PerfBucket, number> = {
 	'transport-schedule': TRANSPORT_SCHEDULE_BUDGET,
 	'transport-schedule-press': TRANSPORT_PRESS_BUDGET,
 	'eq-apply': EQ_APPLY_BUDGET,
+	'mixer-apply': MIXER_APPLY_BUDGET,
 	'deck-state': DECK_STATE_BUDGET,
 	'audio-health': AUDIO_HEALTH_BUDGET,
 	other: OTHER_BUDGET
@@ -195,6 +203,15 @@ function _bucketOf(event: PerfEvent): PerfBucket {
 	if (kind.startsWith('transport-schedule-press')) return 'transport-schedule-press';
 	if (kind.startsWith('transport-schedule')) return 'transport-schedule';
 	if (kind === 'eq-apply') return 'eq-apply';
+	if (
+		kind === 'filter-apply' ||
+		kind === 'fader-apply' ||
+		kind === 'xfader-apply' ||
+		kind === 'stem-mute-apply' ||
+		kind === 'stem-solo-apply'
+	) {
+		return 'mixer-apply';
+	}
 	if (kind.startsWith('deck-state') || kind === 'deck-unload') return 'deck-state';
 	return 'other';
 }
@@ -213,6 +230,7 @@ export function withinBudgets(events: readonly PerfEvent[]): PerfEvent[] {
 		'transport-schedule': 0,
 		'transport-schedule-press': 0,
 		'eq-apply': 0,
+		'mixer-apply': 0,
 		'deck-state': 0,
 		'audio-health': 0,
 		other: 0

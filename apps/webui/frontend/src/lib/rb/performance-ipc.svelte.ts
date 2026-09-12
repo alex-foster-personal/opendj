@@ -1447,6 +1447,8 @@ export function performanceCommandQueueScopes(
 		command.type === 'eq' ||
 		command.type === 'filter' ||
 		command.type === 'fader' ||
+		command.type === 'stem_mute' ||
+		command.type === 'stem_solo' ||
 		command.type === 'assign' ||
 		command.type === 'crossfader' ||
 		command.type === 'master_volume' ||
@@ -1620,9 +1622,9 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'master_tempo') {
 		await engine.setMasterTempo(command.deck, command.enabled);
 	} else if (command.type === 'stem_mute') {
-		engine.setStemMute(command.deck, command.stem, command.muted);
+		engine.setStemMute(command.deck, command.stem, command.muted, pressT0Ms);
 	} else if (command.type === 'stem_solo') {
-		engine.setStemSolo(command.deck, command.stem, command.solo);
+		engine.setStemSolo(command.deck, command.stem, command.solo, pressT0Ms);
 	} else if (command.type === 'stem_eq_mode') {
 		engine.setStemEqMode(command.deck, command.enabled);
 	} else if (command.type === 'stem_gain') {
@@ -1638,15 +1640,15 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'eq') {
 		engine.setEq(command.deck, command.band, command.value, pressT0Ms);
 	} else if (command.type === 'filter') {
-		engine.setFilter(command.deck, command.value);
+		engine.setFilter(command.deck, command.value, pressT0Ms);
 	} else if (command.type === 'fader') {
-		engine.setFader(command.deck, command.value);
+		engine.setFader(command.deck, command.value, pressT0Ms);
 		} else if (command.type === 'assign') {
 		engine.assignChannel(command.deck, command.assign);
 	} else if (command.type === 'channel_cue') {
 		engine.setChannelCue(command.deck, command.enabled);
 	} else if (command.type === 'crossfader') {
-		engine.setCrossfader(command.value);
+		engine.setCrossfader(command.value, pressT0Ms);
 	} else if (command.type === 'master_volume') {
 		engine.setMaster(command.value);
 	} else if (command.type === 'master_mute') {
