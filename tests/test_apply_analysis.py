@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import json
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -814,6 +815,58 @@ def _seed_own_grid(
     conn.close()
 
 
+def _pin_reversal_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> Path:
+    from apps.sync import analysis_writeback
+
+    reversal = tmp_path / "reversal"
+    orig = analysis_writeback.LiveWriteSession
+
+    def _session(*args: object, **kwargs: object) -> object:
+        if kwargs.get("reversal_root") is None:
+            kwargs["reversal_root"] = reversal
+        return orig(*args, **kwargs)
+
+    monkeypatch.setattr(analysis_writeback, "LiveWriteSession", _session)
+    return reversal
+
+
+def _analysis_preimage_path(
+    reversal: Path,
+    *,
+    dat_path: Path | None = None,
+    content_id: str | None = None,
+) -> Path:
+    matches = list(reversal.rglob("analysis_preimages.json"))
+    assert matches, "live write did not record analysis_preimages.json"
+    if dat_path is not None:
+        resolved = dat_path.resolve()
+        for path in matches:
+            snapshots = json.loads(path.read_text(encoding="utf-8"))
+            for snap in snapshots:
+                if snap.get("field") != "pqtz":
+                    continue
+                if Path(str(snap["dat_path"])).resolve() == resolved:
+                    return path
+        raise AssertionError(
+            f"no analysis_preimages.json names pqtz dat_path {dat_path}"
+        )
+    if content_id is not None:
+        for path in matches:
+            snapshots = json.loads(path.read_text(encoding="utf-8"))
+            for snap in snapshots:
+                if str(snap.get("content_id")) == content_id:
+                    return path
+        raise AssertionError(
+            f"no analysis_preimages.json names content_id {content_id}"
+        )
+    assert len(matches) == 1, (
+        f"expected one analysis_preimages.json under {reversal}, got {matches}"
+    )
+    return matches[0]
+
+
 def _stamp_writeback(
     state_path: Path,
     rb_path: Path,
@@ -884,6 +937,7 @@ class TestWritebackLive:
             "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
         )
         monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
+        reversal = _pin_reversal_root(tmp_path, monkeypatch)
 
         assert main([
             "--live",
@@ -900,7 +954,7 @@ class TestWritebackLive:
         ).fetchone()[0]
         assert k1_scale == "Am"
         assert _key_camelot(conn, "rb-2") == "8A"
-        preimage_path = next(tmp_path.parent.rglob("analysis_preimages.json"))
+        preimage_path = _analysis_preimage_path(reversal, content_id="rb-1")
         conn.close()
 
         assert main(["--undo", str(preimage_path)]) == 0
@@ -959,6 +1013,7 @@ class TestWritebackLive:
             "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
         )
         monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
+        reversal = _pin_reversal_root(tmp_path, monkeypatch)
 
         assert main([
             "--live",
@@ -982,7 +1037,7 @@ class TestWritebackLive:
         ).fetchone()[0]
         assert abs(float(lufs) - (-8.2)) < 1e-6
         assert abs(float(dbtp) - (-0.5)) < 1e-6
-        preimage_path = next(tmp_path.parent.rglob("analysis_preimages.json"))
+        preimage_path = _analysis_preimage_path(reversal, content_id="rb-1")
         conn.close()
 
         assert main(["--undo", str(preimage_path)]) == 0
@@ -1365,6 +1420,23 @@ class TestPqtzWritebackLive:
         assert "Rekordbox is running" in capsys.readouterr().err
         assert _sha256(dat_path) == dat_hash
 
+    def test_snapshot_write_restore_roundtrip(self, tmp_path: Path) -> None:
+        from apps.sync.analysis_writeback_pqtz import (
+            build_minimal_dat,
+            restore_pqtz_dat,
+            snapshot_pqtz_dat,
+            write_pqtz,
+        )
+
+        dat_path = tmp_path / "track.DAT"
+        build_minimal_dat(dat_path, self._beats(4, 120.0))
+        seed_hash = _sha256(dat_path)
+        snap = snapshot_pqtz_dat(dat_path)
+        assert write_pqtz(dat_path, self._beats())
+        assert _sha256(dat_path) != seed_hash
+        restore_pqtz_dat(snap)
+        assert _sha256(dat_path) == seed_hash
+
     def test_verify_mismatch_restores_dat(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -1441,12 +1513,13 @@ class TestPqtzWritebackLive:
             "apps.sync.apply_analysis._live_rb_db_path", lambda live: rb_path,
         )
         monkeypatch.setattr("apps.sync.safety._is_running", lambda _n: False)
+        reversal = _pin_reversal_root(tmp_path, monkeypatch)
         assert main([
             "--live", "--i-understand-the-risks",
             "--state-db", str(state_path),
             "--lanes", "beatgrid", "--fields", "pqtz",
         ]) == 0
-        preimage_path = next(tmp_path.parent.rglob("analysis_preimages.json"))
+        preimage_path = _analysis_preimage_path(reversal, dat_path=dat_path)
         assert main(["--undo", str(preimage_path)]) == 0
         assert _sha256(dat_path) == seed_hash
         conn = sqlite3.connect(str(rb_path))
