@@ -85,12 +85,7 @@ def score_payload(payload: dict[str, Any]) -> ParityReport:
         elif lane == "cues_anlz":
             figures.append(score_cues_anlz(rows, measured_at=measured_at))
         elif lane == "vocal":
-            if any(row.get("rb_pvdi") for row in rows):
-                figures.append(score_vocal(rows, measured_at=measured_at))
-            else:
-                # Fixtures with no PVDI fourcc (round0, round1-phrase) keep
-                # the pre-vocal pinned digests: nothing to score yet.
-                figures.append(classify_remaining(lane, rows, measured_at=measured_at))
+            figures.append(score_vocal(rows, measured_at=measured_at))
         else:
             figures.append(classify_remaining(lane, rows, measured_at=measured_at))
     return ParityReport(

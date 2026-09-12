@@ -263,14 +263,6 @@ def _iso_to_dt(s: str) -> datetime:
     return dt.astimezone(UTC)
 
 
-def __getattr__(name: str) -> object:
-    if name == "activations_ref":
-        from apps.analysis_beatgrid.activations import activations_ref
-
-        return activations_ref
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
 __all__ = [
     "AnalysisRecord",
     "EnergySource",

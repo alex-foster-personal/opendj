@@ -184,15 +184,6 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
         (fk("machines"), fk("sign-in-identity")),
     ),
     fixed(
-        "machine-credentials",
-        "Per-machine sync bearer credentials",
-        state_tables("machine_credentials"),
-        "machine_local",
-        "Hub-minted bearer hash (migration v11, ADR-0012 amendment). Never "
-        "synced: a credential in the changelog could be pushed by a hostile spoke.",
-        (fk("machines"),),
-    ),
-    fixed(
         "event-log",
         "Engine event bus",
         state_tables("events"),
