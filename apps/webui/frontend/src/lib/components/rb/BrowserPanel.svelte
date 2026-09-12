@@ -9,6 +9,7 @@
 	// PATCH + If-Match; client-side search + sort; FR-1 broken-link
 	// graying + 'Hide broken links' toggle persisted in prefs.svelte.ts.
 	import { onMount, tick, untrack } from 'svelte';
+	import { viewportFloatingPopover } from '$lib/ui/clamp-to-viewport';
 	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
 	import {
 		ConflictError,
@@ -3284,7 +3285,7 @@
 					<span aria-hidden="true"></span>
 				</button>
 			{/each}
-			<div class="health-popover" role="tooltip">
+			<div class="health-popover" role="tooltip" use:viewportFloatingPopover={{ preferred: 'above', gap: 4 }}>
 				{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
 					<p><strong>{dot.label}</strong><br />{dot.detail}</p>
 				{/each}
@@ -3630,9 +3631,7 @@
 	.health-dot.error > span:first-child { background: var(--rb-red, #d9534f); }
 	.health-popover {
 		display: none;
-		position: absolute;
-		right: 0;
-		bottom: calc(100% + 4px);
+		position: fixed;
 		min-width: 180px;
 		max-width: 320px;
 		padding: 6px 8px;

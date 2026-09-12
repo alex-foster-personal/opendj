@@ -11,7 +11,8 @@
 	 * Master volume renders the shared mixer read model and dispatches through
 	 * the same typed command path used by browser IPC and presets.
 	 */
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
+	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 	import { engine, isMasterMuted, mixerState } from '$lib/rb/audio-engine.svelte';
 	import { anyDeckPlaying } from '$lib/rb/playing-gate';
 	import type { AudioEngine } from '$lib/rb/audio-engine-types';
@@ -82,8 +83,10 @@
 	let autoPlayMenuOpen = $state(false);
 	let autoPlayWrapEl: HTMLSpanElement | undefined = $state();
 	let autoPlayMenuStyle = $state('');
+	let autoPlayMenuEl: HTMLDivElement | undefined = $state();
 	let modePickerEl: HTMLDetailsElement | undefined = $state();
 	let modeMenuStyle = $state('');
+	let modeMenuEl: HTMLDivElement | undefined = $state();
 
 	const liveAppMode = APP_MODES.find((mode) => mode.id === 'performance');
 	if (liveAppMode === undefined) {
@@ -116,15 +119,23 @@
 		);
 	}
 
-	function _placeAutoPlayMenu(): void {
+	async function _placeAutoPlayMenu(): Promise<void> {
 		if (!autoPlayWrapEl) return;
 		const r = autoPlayWrapEl.getBoundingClientRect();
-		autoPlayMenuStyle = `left:${Math.round(r.right)}px;top:${Math.round(r.bottom + 6)}px`;
+		await tick();
+		const menuRect = autoPlayMenuEl?.getBoundingClientRect() ?? { width: 220, height: 120 };
+		const box = clampToViewport(
+			r.right,
+			r.bottom + 6,
+			{ width: menuRect.width, height: menuRect.height },
+			{ width: window.innerWidth, height: window.innerHeight }
+		);
+		autoPlayMenuStyle = `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px`;
 	}
 
 	function _showAutoPlayMenu(): void {
-		_placeAutoPlayMenu();
 		autoPlayMenuOpen = true;
+		void _placeAutoPlayMenu();
 	}
 
 	function _hideAutoPlayMenu(e: FocusEvent | PointerEvent): void {
@@ -138,11 +149,19 @@
 		autoPlayMenuOpen = false;
 	}
 
-	function _placeModeMenu(): void {
+	async function _placeModeMenu(): Promise<void> {
 		if (!modePickerEl?.open) return;
 		void buildFlags.load();
 		const rect = modePickerEl.getBoundingClientRect();
-		modeMenuStyle = `left:${Math.round(rect.left)}px;top:${Math.round(rect.bottom + 5)}px`;
+		await tick();
+		const menuRect = modeMenuEl?.getBoundingClientRect() ?? { width: 220, height: 180 };
+		const box = clampToViewport(
+			rect.left,
+			rect.bottom + 5,
+			{ width: menuRect.width, height: menuRect.height },
+			{ width: window.innerWidth, height: window.innerHeight }
+		);
+		modeMenuStyle = `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px`;
 	}
 
 	function _dismissModeMenuOnOutsidePointer(e: PointerEvent): void {
@@ -160,7 +179,7 @@
 	 * does not accept `ontoggle` as a template handler on this element. */
 	function modePickerToggle(node: HTMLDetailsElement): { destroy: () => void } {
 		const onToggle = (): void => {
-			_placeModeMenu();
+			void _placeModeMenu();
 		};
 		node.addEventListener('toggle', onToggle);
 		return {
@@ -305,7 +324,7 @@
 				<path d="M0.5 1 L3.5 4 L6.5 1" fill="none" stroke="currentColor" stroke-width="1.2" />
 			</svg>
 		</summary>
-		<div class="mode-menu" style={modeMenuStyle} aria-label="App modes">
+		<div class="mode-menu" bind:this={modeMenuEl} style={modeMenuStyle} aria-label="App modes">
 			<p class="mode-menu-heading">Choose app mode</p>
 			{#each chooserModes as mode (mode.id)}
 				{#if mode.available}
@@ -493,6 +512,7 @@
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				class="ap-menu"
+				bind:this={autoPlayMenuEl}
 				style={autoPlayMenuStyle}
 				role="dialog"
 				aria-label="AutoPlay options"

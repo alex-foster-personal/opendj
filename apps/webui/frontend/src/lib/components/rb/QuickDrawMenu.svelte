@@ -2,7 +2,8 @@
 	// Performance quick-draw: right-click opens a two-column menu.
 	// Left of the click = always-on tall Unload / Loop tree. At the click =
 	// contextual actions derived from the target (deck-scoped for now).
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
+	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 	import { DECK_IDS, getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
 	import {
 		dispatchPerformanceCommand,
@@ -215,9 +216,8 @@
 		if (!(t instanceof Element) || t.closest('.perf-root') === null) return;
 		e.preventDefault();
 		e.stopPropagation();
-		// Room for Unload/Play/Loop + mid tier + CH column.
-		x = Math.min(Math.max(e.clientX, 320), window.innerWidth - 160);
-		y = Math.min(Math.max(e.clientY, 8), window.innerHeight - 200);
+		x = e.clientX;
+		y = e.clientY;
 		ctx = _contextItems(t, null, e);
 		root = 'unload';
 		loopLeaf = null;
@@ -282,6 +282,46 @@
 		root = next;
 		loopLeaf = null;
 	}
+
+	function _menuUnionRect(): DOMRect | null {
+		if (menuEl === null) return null;
+		const selectors = ['.qd', '.qd-quick', '.qd-mid', '.qd-leaf', '.qd-ctx'];
+		let minX = Infinity;
+		let minY = Infinity;
+		let maxX = -Infinity;
+		let maxY = -Infinity;
+		for (const selector of selectors) {
+			const node = menuEl.querySelector(selector);
+			if (!(node instanceof HTMLElement)) continue;
+			const rect = node.getBoundingClientRect();
+			if (rect.width <= 0 || rect.height <= 0) continue;
+			minX = Math.min(minX, rect.left);
+			minY = Math.min(minY, rect.top);
+			maxX = Math.max(maxX, rect.right);
+			maxY = Math.max(maxY, rect.bottom);
+		}
+		if (!Number.isFinite(minX)) return menuEl.getBoundingClientRect();
+		return new DOMRect(minX, minY, maxX - minX, maxY - minY);
+	}
+
+	async function _clampMenuPosition(): Promise<void> {
+		await tick();
+		const union = _menuUnionRect();
+		if (union === null) return;
+		const box = clampToViewport(
+			union.left,
+			union.top,
+			{ width: union.width, height: union.height },
+			{ width: window.innerWidth, height: window.innerHeight }
+		);
+		x += box.x - union.left;
+		y += box.y - union.top;
+	}
+
+	$effect(() => {
+		if (!open) return;
+		void _clampMenuPosition();
+	});
 
 	onMount(() => {
 		const onPointerDown = (e: PointerEvent): void => {

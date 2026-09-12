@@ -11,6 +11,8 @@
 	 * not always land back on rekordbox.
 	 */
 	import type { Component } from 'svelte';
+	import { tick } from 'svelte';
+	import { placeFloating } from '$lib/ui/clamp-to-viewport';
 	import {
 		ANALYSIS_SOURCE_FEATURES,
 		type AnalysisSource,
@@ -63,13 +65,30 @@
 		});
 	}
 
-	function _show(): void {
+	async function _show(): Promise<void> {
 		_ensureMenu();
-		if (wrapEl !== undefined) {
-			const rect = wrapEl.getBoundingClientRect();
-			menuStyle = `left:${Math.round(rect.left)}px;top:${Math.round(rect.bottom)}px`;
-		}
 		menuOpen = true;
+		await tick();
+		if (wrapEl === undefined) return;
+		const rect = wrapEl.getBoundingClientRect();
+		const menuNode = document.querySelector('.src-menu');
+		const menuRect =
+			menuNode instanceof HTMLElement
+				? menuNode.getBoundingClientRect()
+				: { width: 220, height: 160 };
+		const box = placeFloating({
+			trigger: {
+				left: rect.left,
+				top: rect.top,
+				width: rect.width,
+				height: rect.height
+			},
+			size: { width: menuRect.width, height: menuRect.height },
+			viewport: { width: window.innerWidth, height: window.innerHeight },
+			preferred: 'below',
+			gap: 0
+		});
+		menuStyle = `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px`;
 	}
 
 	function _hide(e: FocusEvent | PointerEvent): void {
