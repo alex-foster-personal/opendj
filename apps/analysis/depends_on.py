@@ -14,14 +14,10 @@ beatgrid. ``decode_fingerprint`` is what catches that, and
 ``record_digest`` catches a beatgrid whose contents changed without any of
 the other four moving.
 
-Ownership note: the lane brief points at nav1-key-record's shared
-``beatgrid_record_digest`` helper. That lane has not merged, and the queue's
-dependency cascade cannot wait for it (a cascade that compares nothing is
-not a cascade), so the helper is defined HERE, in the core package both
-lanes already depend on, rather than duplicated later. When nav1-key-record
-lands it imports this rather than adding a second definition: two digests of
-the same record that disagree is precisely the failure this block exists to
-detect.
+The content digest is defined once in
+:mod:`apps.analysis_key.beatgrid_digest` (stdlib-only) and imported here so
+the queue cascade and the key producer hash the same five beatgrid payload
+fields.
 
 -Claude
 """
@@ -31,6 +27,10 @@ import hashlib
 import json
 from collections.abc import Mapping
 from typing import Any
+
+from apps.analysis_key.beatgrid_digest import (
+    beatgrid_record_digest as _payload_beatgrid_digest,
+)
 
 from .record import AnalysisRecord
 
@@ -49,34 +49,40 @@ DEPENDS_ON_FIELDS: tuple[str, ...] = (
 
 
 def beatgrid_record_digest(record: AnalysisRecord, lane: str = "beatgrid") -> str:
-    """``sha256:`` digest of the CONTENT of one lane block of a record.
-
-    Digests the lane result (status, reason, confidence, payload) rather
-    than the whole record, because the whole record carries fields that move
-    for reasons the dependent lane does not care about (``analyzed_at``, the
-    other lanes' blocks). Two records whose beatgrid block is byte-identical
-    under a canonical serialization produce the same digest.
-    """
+    """``sha256:`` digest of the beatgrid lane payload content."""
     result = record.lanes.get(lane)
     if result is None:
         raise KeyError(
             f"record {record.stable_id!r} from {record.backend!r} carries no "
             f"{lane!r} lane block, so it has no digest to depend on"
         )
-    blob = json.dumps(result.to_dict(), sort_keys=True, separators=(",", ":"))
-    return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
+    return _payload_beatgrid_digest(result.payload)
 
 
 def dependency_identity(
     record: AnalysisRecord, lane: str = "beatgrid"
 ) -> dict[str, Any]:
     """The five-field block naming ``record`` as a dependency."""
+    if lane == "beatgrid" or "beatgrid" in record.lanes:
+        digest = beatgrid_record_digest(record, "beatgrid")
+    else:
+        # ``cascade_dependents`` builds ``actual`` before checking whether
+        # ``lane`` has dependents. A key-only write has no beatgrid block on
+        # the same row; hash the named lane for that unused path only.
+        named = record.lanes.get(lane)
+        if named is None:
+            raise KeyError(
+                f"record {record.stable_id!r} from {record.backend!r} carries no "
+                f"{lane!r} lane block, so it has no digest to depend on"
+            )
+        blob = json.dumps(named.to_dict(), sort_keys=True, separators=(",", ":"))
+        digest = "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
     return {
         "backend": record.backend,
         "producer_version": record.producer_version,
         "model_sha256": record.model_sha256,
         "decode_fingerprint": record.decode_fingerprint,
-        "record_digest": beatgrid_record_digest(record, lane),
+        "record_digest": digest,
     }
 
 
@@ -85,12 +91,21 @@ def declared_dependency(
 ) -> Mapping[str, Any] | None:
     """The dependency block ``record`` declares on ``lane``, if any."""
     block = record.features_blob.get(DEPENDS_ON_KEY)
-    if not isinstance(block, Mapping):
-        return None
-    declared = block.get(lane)
-    if not isinstance(declared, Mapping):
-        return None
-    return declared
+    if isinstance(block, Mapping):
+        declared = block.get(lane)
+        if isinstance(declared, Mapping):
+            return declared
+    for lane_result in record.lanes.values():
+        payload = lane_result.payload
+        if not isinstance(payload, Mapping):
+            continue
+        depends_on = payload.get(DEPENDS_ON_KEY)
+        if not isinstance(depends_on, Mapping):
+            continue
+        declared = depends_on.get(lane)
+        if isinstance(declared, Mapping):
+            return declared
+    return None
 
 
 def dependency_matches(
