@@ -317,7 +317,7 @@ def test_rendered_systemd_unit_runs_the_booted_argv(tmp_path: Path) -> None:
 
 def test_systemd_quoting_round_trips_spaces_and_specifiers() -> None:
     """if a data dir with spaces or a percent sign renders to a different argv then broken"""
-    argv = ["/opt/uv", "--data-dir", "/home/a b/100% hub", "$HOME"]
+    argv = ["/opt/uv", "--data-dir", "/home/dev b/100% hub", "$HOME"]
     assert _systemd_argv(hub_deploy.systemd_exec_line(argv)) == argv
 
 
