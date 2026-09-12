@@ -110,6 +110,17 @@ CHANGELOG_CLASSES: tuple[DataClass, ...] = (
         "playlist (apps/cloud/hydration_core.py).",
         (fk("machines"), fk("library-playlists")),
     ),
+    fixed(
+        "feedback-pins",
+        "Open DJ feedback pins",
+        state_tables("feedback_pins"),
+        "sync_hub_changelog",
+        "The whole pin (text, page, anchor, status, and the rest) rides as "
+        "one JSON doc per row with CloudSync's own row-level last-writer-wins "
+        "on (updated_at, origin_device_id) (ADR-0013). comments.json stays "
+        "the offline-first store of record; the table is just the sync channel.",
+        (),
+    ),
 )
 
 REGISTRY_CLASSES: tuple[DataClass, ...] = (
@@ -152,6 +163,16 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
         "machine (ADR-0004 point 8). Note: the unused Litestream config would "
         "replicate it (see litestream-replica).",
         (),
+    ),
+    fixed(
+        "sync-credentials",
+        "Per-machine sync credential",
+        state_tables("machine_credentials"),
+        "machine_local",
+        "Only the sha256 of the bearer credential is stored (ADR-0012 "
+        "Amendment X5, migration v11). Hub-local, never synced; one live "
+        "credential per machine_id, and re-minting replaces it.",
+        (fk("machines"),),
     ),
     fixed(
         "enrollment-authority",

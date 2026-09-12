@@ -445,6 +445,11 @@ _ALLOWED_HARD_DELETES: frozenset[tuple[str, str]] = frozenset({
     # row -- a vendor database this module owns outright, not our synced
     # state.db. Same {tbl} target on two lines (ContentID and ID cascades).
     ("apps/reconcile/remove_track.py", "dynamic:tbl"),
+    # apps/adapters/rekordbox/writer.py restores odjAnalysisScalar, a sidecar
+    # table inside rekordbox's OWN master.plain.db (this module's docstring
+    # says so explicitly), never data/state/state.db. Same reasoning as the
+    # remove_track.py entry above: the DELETE never touches a synced table.
+    ("apps/adapters/rekordbox/writer.py", "dynamic:_SCALAR_TABLE"),
     # apps/shared/state/normalize_locations.py collapses an NFD/NFC duplicate
     # pair (round 3 finding R3) exactly the way engine_apply._drop_superseded
     # collapses a natural-key duplicate: the loser is hard-deleted because the
