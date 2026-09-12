@@ -14,15 +14,14 @@
 	 * daemon that cannot serve either file renders a banner, not an empty
 	 * grid.
 	 *
-	 * TABS. The panel had exactly one section and therefore no tab strip. Setup
-	 * is the second operator surface that belongs here (an operator panel with
-	 * no route back into first-run setup is the gap this closes), so the strip
-	 * exists now. It is a real ARIA tablist of buttons: "KPI ledger" is this
-	 * page, "Setup" leaves for /setup through the shared entry point, so the
-	 * three doors into the wizard behave identically.
+	 * TABS. Three operator surfaces share one ARIA tablist: "KPI ledger" is this
+	 * page's default content, "Diagnostics" is an in-page panel at
+	 * ?tab=diagnostics, and "Setup" leaves for /setup through the shared entry
+	 * point so the three doors into the wizard behave identically.
 	 */
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { RUN_SETUP_TITLE, runSetup, runSetupBlocked } from '$lib/setup/run-setup';
 	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
 	import KpiTile from './KpiTile.svelte';
@@ -34,6 +33,8 @@
 	import QualityRatchet from './QualityRatchet.svelte';
 	import RunNotes from './RunNotes.svelte';
 	import TipLayer from './TipLayer.svelte';
+	import DiagnosticsPanel from './DiagnosticsPanel.svelte';
+	import { adminTabFromUrl, type AdminTab } from './admin-tab';
 	import {
 		fetchKpiLedger,
 		fetchPerfKpiLedger,
@@ -47,6 +48,18 @@
 	let perfError = $state<string | null>(null);
 
 	// ----- tabs --------------------------------------------------------------
+	const tab = $derived(adminTabFromUrl($page.url));
+
+	function selectTab(next: AdminTab): void {
+		const url = new URL($page.url);
+		if (next === 'kpi') {
+			url.searchParams.delete('tab');
+		} else {
+			url.searchParams.set('tab', next);
+		}
+		void goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+	}
+
 	let setupBusy = $state(false);
 	let setupError = $state<string | null>(null);
 	/** Only a FINAL refusal disables the Setup tab; an unfinished health probe
@@ -89,12 +102,25 @@
 <div class="admin-tabs" role="tablist" aria-label="admin sections">
 	<button
 		type="button"
-		class="admin-tab on"
+		class="admin-tab"
+		class:on={tab === 'kpi'}
 		role="tab"
-		aria-selected="true"
+		aria-selected={tab === 'kpi'}
 		title="The demucs farm KPI ledger, served by GET /api/v1/bench/kpi. This tab is the page you are on."
+		onclick={() => selectTab('kpi')}
 	>
 		KPI ledger
+	</button>
+	<button
+		type="button"
+		class="admin-tab"
+		class:on={tab === 'diagnostics'}
+		role="tab"
+		aria-selected={tab === 'diagnostics'}
+		title="Daemon health, capability probe, event bus, and worktree ports."
+		onclick={() => selectTab('diagnostics')}
+	>
+		Diagnostics
 	</button>
 	<button
 		type="button"
@@ -112,6 +138,7 @@
 	{/if}
 </div>
 
+{#if tab === 'kpi'}
 <EntitlementsInspector />
 
 <section class="panel" id="lyrics-generator">
@@ -241,6 +268,9 @@
 <PreflightScreen mode="admin" />
 
 <TipLayer />
+{:else if tab === 'diagnostics'}
+<DiagnosticsPanel />
+{/if}
 
 <style>
 	/* No success/positive token exists in app.css yet; scoped here rather than

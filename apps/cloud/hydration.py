@@ -22,6 +22,7 @@ from pathlib import Path
 from apps.shared.state import locations as state_locations
 from apps.shared.state import sync_stamp
 
+from . import transfer_status
 from .asset_store import AssetS3Client, object_exists, push_asset
 from .config import CloudConfig
 from .eviction import BYTES_PER_MB, EvictionResult, HydrationError, evict_cache
@@ -202,7 +203,31 @@ def apply_policy_after_produce(
         raise HydrationError(f"produced asset missing at {source}")
 
     policy = resolve_policy(conn, stable_id, machine_id, asset_kind=asset_kind)
-    result = push_asset(cfg, s3, source)
+    transfer_token: str | None = None
+
+    def _publish_upload_progress(transferred: int, total: int) -> None:
+        nonlocal transfer_token
+        # push_asset invokes this only after its object-exists check, at the
+        # point a real request body is about to be consumed. An already
+        # durable object therefore never flashes a fictitious transfer.
+        if transfer_token is None:
+            transfer_token = transfer_status.begin_transfer(
+                stable_id, "upload", bytes_total=total
+            )
+        transfer_status.update_transfer(stable_id, transfer_token, transferred)
+
+    try:
+        result = push_asset(
+            cfg,
+            s3,
+            source,
+            on_progress=_publish_upload_progress,
+        )
+    finally:
+        # The ledger is intentionally a live-operation view. Do not leave a
+        # completed or failed upload looking like a still-running transfer.
+        if transfer_token is not None:
+            transfer_status.clear_transfer(stable_id, transfer_token)
     if not object_exists(cfg, s3, result.content_hash):
         raise HydrationError(
             f"push of {source} reported success but {result.object_key} is "

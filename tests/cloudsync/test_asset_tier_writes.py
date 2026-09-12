@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from apps.cloud import asset_store, hydration
+from apps.cloud import asset_store, hydration, transfer_status
 from apps.cloud.config import CloudConfig
 from apps.shared.state import locations as state_locations
 from apps.shared.state import sync_stamp
@@ -41,6 +41,65 @@ pytestmark = pytest.mark.requirement("CAT-04")
 
 
 # --- push-then-delete ----------------------------------------------------
+
+
+class _ObservingTransferS3(InMemoryAssetS3):
+    """Consume the production progress body while observing its real ledger."""
+
+    def __init__(self, stable_id: str) -> None:
+        super().__init__()
+        self.stable_id = stable_id
+        self.snapshots: list[transfer_status.CloudTransfer] = []
+
+    def put_object_if_none_match(self, bucket: str, key: str, body):
+        first = transfer_status.transfer_for(self.stable_id)
+        assert first is not None
+        self.snapshots.append(first)
+        chunks: list[bytes] = []
+        while chunk := body.read(4):
+            chunks.append(chunk)
+            current = transfer_status.transfer_for(self.stable_id)
+            assert current is not None
+            self.snapshots.append(current)
+        return super().put_object_if_none_match(bucket, key, b"".join(chunks))
+
+
+@pytest.mark.requirement("LIBUX-13")
+def test_real_hydration_upload_publishes_byte_progress_and_clears_terminally(
+    conn: sqlite3.Connection,
+    cfg: CloudConfig,
+    tmp_path: Path,
+) -> None:
+    """[if] real upload bytes move [then] TrackTable can read exact progress.
+
+    [if] the production operation returns [then] the in-process entry is gone
+    [else stop]: a stale full bar must never masquerade as active transfer.
+    """
+    stable_id = "t-progress"
+    body = b"genuine-upload-bytes"
+    s3 = _ObservingTransferS3(stable_id)
+    _seed_track(conn, stable_id)
+    _seed_machine(conn, "m1")
+    _seed_policy(conn, "m1", "pinned", asset_kind="audio")
+
+    hydration.apply_policy_after_produce(
+        conn,
+        s3,
+        cfg,
+        stable_id=stable_id,
+        machine_id="m1",
+        local_path=_write(tmp_path / "out" / "track.flac", body),
+        asset_kind="audio",
+    )
+
+    assert [(item.direction, item.bytes_total) for item in s3.snapshots] == [
+        ("upload", len(body)) for _ in s3.snapshots
+    ]
+    transferred = [item.bytes_transferred for item in s3.snapshots]
+    assert transferred[0] == 0
+    assert transferred[-1] == len(body)
+    assert transferred == sorted(transferred)
+    assert transfer_status.transfer_for(stable_id) is None
 
 
 def test_push_then_delete_keeps_a_pinned_local_file(
@@ -166,7 +225,8 @@ def test_push_then_delete_removes_the_local_copy_under_stream_and_excluded(
     assert asset_store.object_exists(cfg, fake_s3, _sha(body)) is True
 
 
-def test_a_failed_upload_never_deletes_the_local_copy(
+@pytest.mark.requirement("LIBUX-13")
+def test_a_failed_upload_never_deletes_or_leaves_active_transfer_state(
     conn: sqlite3.Connection, cfg: CloudConfig, tmp_path: Path
 ):
     """The single irreversible step in the write path, guarded."""
@@ -190,6 +250,7 @@ def test_a_failed_upload_never_deletes_the_local_copy(
     assert conn.execute(
         "SELECT COUNT(*) FROM track_locations WHERE kind='remote'"
     ).fetchone() == (0,)
+    assert transfer_status.transfer_for("t1") is None
 
 
 def test_push_then_delete_is_idempotent_for_a_second_producer_run(

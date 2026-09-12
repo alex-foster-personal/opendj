@@ -296,6 +296,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/ports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Worktree Ports */
+        get: operations["get_worktree_ports_api_v1_admin_ports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/quality-ratchet": {
         parameters: {
             query?: never;
@@ -5958,6 +5975,21 @@ export interface components {
             /** Signed In As */
             signed_in_as: string | null;
         };
+        /**
+         * CloudTransferOut
+         * @description A real in-process CloudSync asset operation for one library row.
+         */
+        CloudTransferOut: {
+            /** Bytes Total */
+            bytes_total?: number | null;
+            /** Bytes Transferred */
+            bytes_transferred: number;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "upload" | "download";
+        };
         /** ClusterOut */
         ClusterOut: {
             /** Cluster Id */
@@ -8154,6 +8186,8 @@ export interface components {
         MembershipMoveOut: {
             /** Created At */
             created_at: string;
+            /** Forbid Duplicates */
+            forbid_duplicates: boolean;
             /** Items */
             items: string[];
             /** Name */
@@ -8933,6 +8967,11 @@ export interface components {
         /** PlaylistDetail */
         PlaylistDetail: {
             diff: components["schemas"]["PlaylistDiff"];
+            /**
+             * Forbid Duplicates
+             * @default false
+             */
+            forbid_duplicates: boolean;
             /** Items */
             items: string[];
             /** Name */
@@ -9018,6 +9057,11 @@ export interface components {
         };
         /** PlaylistRenameIn */
         PlaylistRenameIn: {
+            /**
+             * Forbid Duplicates
+             * @description When true, reject extra copies of an already-present track.
+             */
+            forbid_duplicates?: boolean | null;
             /**
              * Name
              * @description New display name; omit for a no-op that returns the current row + etag
@@ -9109,6 +9153,11 @@ export interface components {
         PlaylistSummary: {
             /** Available Count */
             available_count: number;
+            /**
+             * Forbid Duplicates
+             * @default false
+             */
+            forbid_duplicates: boolean;
             /** Name */
             name: string;
             /** Playlist Id */
@@ -9126,6 +9175,8 @@ export interface components {
         PlaylistWriteOut: {
             /** Created At */
             created_at: string;
+            /** Forbid Duplicates */
+            forbid_duplicates: boolean;
             /** Items */
             items: string[];
             /** Name */
@@ -9837,6 +9888,7 @@ export interface components {
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
+            cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Comments */
             comments: string | null;
             /** Duration Ms */
@@ -9855,6 +9907,8 @@ export interface components {
             genre: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /** Has Remote Copy */
+            has_remote_copy: boolean;
             /**
              * Is Radio Edit
              * @default false
@@ -10860,6 +10914,7 @@ export interface components {
             auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
+            cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Created At */
             created_at: string;
             /** Duration Ms */
@@ -10876,6 +10931,8 @@ export interface components {
             file_path?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /** Has Remote Copy */
+            has_remote_copy: boolean;
             /**
              * Is Radio Edit
              * @default false
@@ -11064,6 +11121,7 @@ export interface components {
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
+            cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Comments */
             comments: string | null;
             /** Duration Ms */
@@ -11082,6 +11140,8 @@ export interface components {
             genre: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /** Has Remote Copy */
+            has_remote_copy: boolean;
             /**
              * Is Radio Edit
              * @default false
@@ -11570,6 +11630,15 @@ export interface components {
             };
             /** Transcript */
             transcript: string;
+        };
+        /** WorktreePortsOut */
+        WorktreePortsOut: {
+            /** Api Proxy Target */
+            api_proxy_target: string;
+            /** Backend */
+            backend: number;
+            /** Frontend */
+            frontend: number;
         };
         /** WriteSurfaceOut */
         WriteSurfaceOut: {
@@ -12351,6 +12420,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_worktree_ports_api_v1_admin_ports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorktreePortsOut"];
                 };
             };
         };

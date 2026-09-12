@@ -119,6 +119,7 @@
 		markPlaylistCreateGrace,
 		movePlaylistItems,
 		PlaylistConflictError,
+		patchPlaylist,
 		renamePlaylist,
 		replacePlaylistTracks
 	} from '$lib/rb/playlist-write';
@@ -501,6 +502,7 @@
 					broken_count: p.track_count - p.available_count,
 					kind: 'playlist',
 					mostly_broken: playlistMostlyBroken(p),
+					forbid_duplicates: p.forbid_duplicates === true,
 					children: []
 				})
 			)
@@ -1573,6 +1575,32 @@
 		}
 	}
 
+	async function toggleForbidDuplicates(node: PlaylistNode): Promise<void> {
+		if (
+			node.kind !== 'playlist' ||
+			node.playlist_id === 'all' ||
+			isMissingTracksId(node.playlist_id) ||
+			isAutolistId(node.playlist_id)
+		)
+			return;
+		try {
+			const { etag } = await getPlaylistTracksEtag(node.playlist_id);
+			await patchPlaylist(node.playlist_id, etag, {
+				forbid_duplicates: !node.forbid_duplicates
+			});
+			node.forbid_duplicates = !node.forbid_duplicates;
+			await _refreshPlaylists();
+			pushToast(
+				node.forbid_duplicates
+					? 'Forbid duplicates enabled'
+					: 'Forbid duplicates disabled',
+				'info'
+			);
+		} catch (exc) {
+			pushToast(`forbid duplicates failed: ${String(exc)}`, 'error');
+		}
+	}
+
 	async function renamePlaylistUi(node: PlaylistNode, name: string): Promise<void> {
 		if (
 			node.kind === 'all_tracks' ||
@@ -1847,6 +1875,8 @@
 			file_exists: wire.file_exists,
 			is_streaming: wire.is_streaming,
 			is_remote: wire.is_remote === true,
+			has_remote_copy: wire.has_remote_copy === true,
+			cloud_transfer: wire.cloud_transfer ?? null,
 			spotify_pending:
 				wire.spotify_pending === true || wire.stable_id.startsWith('spotify-pending:'),
 			quality: wire.quality ?? null,
@@ -1898,6 +1928,8 @@
 			file_exists: track.file_exists,
 			is_streaming: null,
 			is_remote: track.is_remote === true,
+			has_remote_copy: track.has_remote_copy === true,
+			cloud_transfer: track.cloud_transfer ?? null,
 			spotify_pending: track.stable_id.startsWith('spotify-pending:'),
 			quality: track.quality ?? null,
 			play_count: typeof track.play_count === 'number' ? track.play_count : 0,
@@ -2963,6 +2995,7 @@
 				onloadtrack={loadRow}
 				oncreateplaylist={() => createPlaylistUi()}
 				onrenameplaylist={(n, name) => void renamePlaylistUi(n, name)}
+				onforbidduplicates={(n) => void toggleForbidDuplicates(n)}
 				ondeleteplaylist={(n) => void deletePlaylistUi(n)}
 				onduplicateplaylist={(n) => void duplicatePlaylistUi(n)}
 				ondroptracks={(id, ids) => void dropTracksOnPlaylist(id, ids)}

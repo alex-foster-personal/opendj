@@ -3434,6 +3434,42 @@
         "title": "CloudSyncStatusOut",
         "type": "object"
       },
+      "CloudTransferOut": {
+        "description": "A real in-process CloudSync asset operation for one library row.",
+        "properties": {
+          "bytes_total": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes Total"
+          },
+          "bytes_transferred": {
+            "minimum": 0.0,
+            "title": "Bytes Transferred",
+            "type": "integer"
+          },
+          "direction": {
+            "enum": [
+              "upload",
+              "download"
+            ],
+            "title": "Direction",
+            "type": "string"
+          }
+        },
+        "required": [
+          "direction",
+          "bytes_transferred"
+        ],
+        "title": "CloudTransferOut",
+        "type": "object"
+      },
       "ClusterOut": {
         "properties": {
           "cluster_id": {
@@ -9117,6 +9153,10 @@
             "title": "Created At",
             "type": "string"
           },
+          "forbid_duplicates": {
+            "title": "Forbid Duplicates",
+            "type": "boolean"
+          },
           "items": {
             "items": {
               "type": "string"
@@ -9162,6 +9202,7 @@
           "track_count",
           "created_at",
           "updated_at",
+          "forbid_duplicates",
           "renumbered"
         ],
         "title": "MembershipMoveOut",
@@ -11233,6 +11274,11 @@
           "diff": {
             "$ref": "#/components/schemas/PlaylistDiff"
           },
+          "forbid_duplicates": {
+            "default": false,
+            "title": "Forbid Duplicates",
+            "type": "boolean"
+          },
           "items": {
             "items": {
               "type": "string"
@@ -11453,6 +11499,18 @@
       },
       "PlaylistRenameIn": {
         "properties": {
+          "forbid_duplicates": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When true, reject extra copies of an already-present track.",
+            "title": "Forbid Duplicates"
+          },
           "name": {
             "anyOf": [
               {
@@ -11700,6 +11758,11 @@
             "title": "Available Count",
             "type": "integer"
           },
+          "forbid_duplicates": {
+            "default": false,
+            "title": "Forbid Duplicates",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -11749,6 +11812,10 @@
             "title": "Created At",
             "type": "string"
           },
+          "forbid_duplicates": {
+            "title": "Forbid Duplicates",
+            "type": "boolean"
+          },
           "items": {
             "items": {
               "type": "string"
@@ -11789,7 +11856,8 @@
           "items",
           "track_count",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "forbid_duplicates"
         ],
         "title": "PlaylistWriteOut",
         "type": "object"
@@ -13580,6 +13648,16 @@
             ],
             "title": "Bpm"
           },
+          "cloud_transfer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloudTransferOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "comments": {
             "anyOf": [
               {
@@ -13650,6 +13728,10 @@
           },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
+            "type": "boolean"
+          },
+          "has_remote_copy": {
+            "title": "Has Remote Copy",
             "type": "boolean"
           },
           "is_radio_edit": {
@@ -13834,6 +13916,7 @@
           "preview_max",
           "file_exists",
           "is_streaming",
+          "has_remote_copy",
           "quality",
           "vocals",
           "stems",
@@ -16185,6 +16268,16 @@
             ],
             "title": "Bpm"
           },
+          "cloud_transfer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloudTransferOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -16244,6 +16337,10 @@
           },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
+            "type": "boolean"
+          },
+          "has_remote_copy": {
+            "title": "Has Remote Copy",
             "type": "boolean"
           },
           "is_radio_edit": {
@@ -16421,6 +16518,7 @@
           "preview_b64",
           "preview_max",
           "file_exists",
+          "has_remote_copy",
           "quality",
           "vocals",
           "stems",
@@ -16817,6 +16915,16 @@
             ],
             "title": "Bpm"
           },
+          "cloud_transfer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloudTransferOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "comments": {
             "anyOf": [
               {
@@ -16887,6 +16995,10 @@
           },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
+            "type": "boolean"
+          },
+          "has_remote_copy": {
+            "title": "Has Remote Copy",
             "type": "boolean"
           },
           "is_radio_edit": {
@@ -17067,6 +17179,7 @@
           "preview_max",
           "file_exists",
           "is_streaming",
+          "has_remote_copy",
           "quality",
           "vocals",
           "stems",
@@ -18263,6 +18376,29 @@
           "intent"
         ],
         "title": "VoiceProbeResponse",
+        "type": "object"
+      },
+      "WorktreePortsOut": {
+        "properties": {
+          "api_proxy_target": {
+            "title": "Api Proxy Target",
+            "type": "string"
+          },
+          "backend": {
+            "title": "Backend",
+            "type": "integer"
+          },
+          "frontend": {
+            "title": "Frontend",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "backend",
+          "frontend",
+          "api_proxy_target"
+        ],
+        "title": "WorktreePortsOut",
         "type": "object"
       },
       "WriteSurfaceOut": {
@@ -19549,6 +19685,27 @@
         ]
       }
     },
+    "/api/v1/admin/ports": {
+      "get": {
+        "operationId": "get_worktree_ports_api_v1_admin_ports_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorktreePortsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Worktree Ports",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/quality-ratchet": {
       "get": {
         "operationId": "get_quality_ratchet_api_v1_admin_quality_ratchet_get",
@@ -20025,6 +20182,27 @@
         "summary": "Put Analysis Source",
         "tags": [
           "analysis"
+        ]
+      }
+    },
+    "/api/v1/app-posture": {
+      "get": {
+        "operationId": "app_posture_api_v1_app_posture_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppPostureOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "App Posture",
+        "tags": [
+          "health"
         ]
       }
     },

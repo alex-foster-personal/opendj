@@ -225,13 +225,16 @@ def _pull_in_chunks(
     *,
     limit: int,
 ) -> _PullOutcome:
-    """Drain the hub's changelog from ``since_seq``, applying as we go.
+    """Drain the hub's changelog from ``since_seq``, applying once at the end.
 
-    Each non-playlist chunk is applied in its own transaction: a failure
-    part way through leaves the watermark unwritten, so the next sync
-    re-pulls from the old floor and LWW rejects what already landed.
-    Playlists wait until the drain finishes because a pull window is a
-    seq slice, and a playlist's LIVE members can name tracks logged later.
+    A pull window is a seq slice. Child rows in an early window can name
+    parents logged later (track_locations, track_fields, track_vendor_ids,
+    lyric_verdict, and playlist members). Applying per-chunk dies on FK.
+    Buffer every RowChange until has_more is false, then one spoke_apply so
+    apply_rank can order parents first across the whole snapshot. Machines
+    still merge per-chunk: track_locations.machine_id is an FK. A failure
+    leaves the watermark unwritten, so the next sync re-pulls from the old
+    floor and LWW rejects what already landed.
     """
     pulled = 0
     applied = 0
@@ -239,7 +242,7 @@ def _pull_in_chunks(
     quarantined = 0
     reported: list[Any] = []
     cursor = int(since_seq)
-    playlist_rows: list[protocol.RowChange] = []
+    pending: list[protocol.RowChange] = []
     while True:
         payload = channel.get(
             f"{API_PREFIX}/pull",
@@ -251,10 +254,7 @@ def _pull_in_chunks(
             },
         )
         incoming = _rows_from(payload, "pull")
-        rest = [change for change in incoming if change.table != "playlists"]
-        playlist_rows.extend(
-            change for change in incoming if change.table == "playlists"
-        )
+        pending.extend(incoming)
         chunk_seq = _int_from(payload, "seq", "pull")
         has_more = bool(payload.get("has_more", False))
         reported.append(payload.get("quarantined"))
@@ -266,14 +266,11 @@ def _pull_in_chunks(
             engine.merge_machines(
                 conn, _machines_from(payload, "pull"), caller_id=hub_machine_id
             )
-            result = engine.spoke_apply(conn, rest)
-            applied += result.accepted
-            quarantined += result.quarantined
         pulled += len(incoming)
         if not has_more:
-            if playlist_rows:
+            if pending:
                 with _transaction(conn):
-                    result = engine.spoke_apply(conn, playlist_rows)
+                    result = engine.spoke_apply(conn, pending)
                     applied += result.accepted
                     quarantined += result.quarantined
             return _PullOutcome(

@@ -1,4 +1,6 @@
 /**
+ * Requirements: DECKUX-05, DECKUX-07, LIBUX-12.
+ *
  * Cue-marker painting on the main waveform (issue #877): a hot cue, a loop
  * hot cue, and a memory cue must be visually separable, and a loop must
  * render as a spanning element rather than a point.
@@ -15,11 +17,21 @@
  *   that keeps it readable regardless of fill hue
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let render;
+let cues;
+
+const PREVIEW_STRIP = fileURLToPath(
+	new URL('../../src/lib/components/rb/browser/PreviewStrip.svelte', import.meta.url)
+);
+const TRACK_TABLE = fileURLToPath(
+	new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url)
+);
 
 before(async () => {
 	globalThis.Path2D = class {
@@ -31,6 +43,7 @@ before(async () => {
 		}
 	};
 	render = await loadTypeScriptModule('src/lib/components/rb/wave/render.ts');
+	cues = await loadTypeScriptModule('src/lib/components/rb/wave/cues.ts');
 });
 
 const PALETTE = {
@@ -204,6 +217,7 @@ describe('wave cue markers', () => {
 		// in_ms 15s, out_ms 17s at 10px/s and window-left 8s -> x 70..90.
 		assert.equal(band.x, 70);
 		assert.ok(band.w >= 19, `loop band width ${band.w} collapsed toward a point`);
+		assert.equal(band.h, 10, 'the main waveform keeps its existing 10px marker band');
 		const loopOutlines = strokeRects.filter((r) => r.strokeStyle === PALETTE.cueOutline);
 		assert.equal(loopOutlines.length, 1);
 	});
@@ -254,5 +268,58 @@ describe('wave cue markers', () => {
 			loopBandIndex < phraseChevronIndex,
 			'the loop band must paint before phrase chevrons, or it blanks out any chevron under its span'
 		);
+	});
+});
+
+describe('library preview marker parity (LIBUX-12)', () => {
+	it('scales the opaque loop band below half of the 14px mini waveform', () => {
+		const previewHeight = 14;
+		const miniBandHeight = cues.markerBandHeightForSurface(previewHeight);
+		assert.ok(miniBandHeight >= 2, 'the loop band must remain visible');
+		assert.ok(
+			miniBandHeight < previewHeight / 2,
+			`the ${miniBandHeight}px mini loop band obscures too much of a ${previewHeight}px preview`
+		);
+		assert.equal(cues.markerBandHeightForSurface(60), 10, 'large surfaces clamp at the main-wave cap');
+
+		const rec = recordingCtx();
+		cues.drawLoopCueBands(
+			rec.ctx,
+			[LOOP_HOT_CUE_B],
+			0,
+			10,
+			240,
+			PALETTE,
+			miniBandHeight
+		);
+		assert.equal(rec.fillRects[0].h, miniBandHeight);
+		assert.equal(rec.strokeRects[0].h, miniBandHeight - 1);
+	});
+
+	it('uses the main waveform painters in the same loop, phrase, point order', () => {
+		const source = readFileSync(PREVIEW_STRIP, 'utf8');
+		const loop = source.indexOf('drawLoopCueBands(');
+		const phrase = source.indexOf('drawPhraseMarkers(ctx, markerAnlz.phrases');
+		const point = source.indexOf('drawPointCueMarkers(ctx, markerAnlz.cues');
+
+		assert.ok(loop >= 0, 'browser preview never paints stored loop spans');
+		assert.ok(phrase >= 0, 'browser preview never paints phrase segmentation boundaries');
+		assert.ok(point >= 0, 'browser preview never paints point hot/memory cues');
+		assert.ok(loop < phrase, 'opaque loop spans must paint behind phrase markers');
+		assert.ok(phrase < point, 'point cues must stay in the foreground');
+		const previewLoopCall = source.slice(loop, phrase);
+		assert.match(previewLoopCall, /PREVIEW_MARKER_BAND_PX/);
+	});
+
+	it('receives only real loaded or already-cached ANLZ, without a per-row fetch', () => {
+		const source = readFileSync(TRACK_TABLE, 'utf8');
+		const start = source.indexOf('function _markerAnlzFor');
+		const end = source.indexOf('function _badgeFor', start);
+		const helper = start >= 0 && end > start ? source.slice(start, end) : '';
+
+		assert.match(source, /markerAnlz=\{_markerAnlzFor\(row\.stable_id\)\}/);
+		assert.match(helper, /resolveDisplayedAnlz\(/, 'loaded deck ANLZ is not reused');
+		assert.match(helper, /getAnlzEntry\(/, 'shared real ANLZ cache is not reused');
+		assert.doesNotMatch(helper, /ensureAnlz|fetchAnlz/, 'virtual rows must not fan out /anlz fetches');
 	});
 });

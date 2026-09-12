@@ -1,12 +1,14 @@
-"""Empty-spoke first-sync must not abort on playlist members whose tracks
+"""Empty-spoke first-sync must not abort on child rows whose parents
 land in a later pull chunk (or never land).
 
-Live shape (Sat 12 Sep 2026, agentbox hub): every playlist_memberships
-stable_id exists on hub tracks, but pull windows by hub_changelog seq.
-A playlist logged at seq 1860 is offered with its LIVE member list, which
-includes tracks logged at seq 5000+. The spoke applies that chunk with
-foreign_keys ON and raises SyncApplyError, rolling back the playlist and
-stopping the drain. First-sync of an empty machine cannot complete.
+Live shape (Sat 12 Sep 2026, agentbox hub): pull windows by hub_changelog
+seq, then offers LIVE child rows. A playlist logged at seq 1860 is offered
+with members whose tracks logged at seq 5000+. A track_locations row
+logged early can name a track logged later (identity collapse / retarget).
+The spoke applies that chunk with foreign_keys ON and raises
+SyncApplyError, stopping the drain. First-sync of an empty machine cannot
+complete. Playlist-only buffering is not enough: nucbox first-sync still
+died on track_locations after that landed.
 
 Acceptance:
 - if a playlist bundle names a track this machine does not have yet, the
@@ -14,11 +16,14 @@ Acceptance:
   the whole sync aborts.
 - if the same bundle names a track that IS here, that member lands -- a
   skip-everything pass would satisfy the first check and delete playlists.
-- if a later pull chunk carries the missing track, buffering playlists
+- if a later pull chunk carries the missing track, buffering ALL rows
   until the drain finishes lands the member rather than freezing an
   incomplete bundle behind the pull watermark.
+- if a track_locations row in chunk one names a track in chunk two,
+  buffering all rows then apply_rank lands the location -- broken if
+  per-chunk apply raises FOREIGN KEY.
 
-[if] empty first-sync dies on a playlist member [then] fail, [else stop].
+[if] empty first-sync dies on a child row [then] fail, [else stop].
 """
 from __future__ import annotations
 
@@ -29,6 +34,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from apps.shared.state import sync_stamp
 from apps.sync_hub import client, engine, protocol, service
 from apps.sync_hub.engine_common import SyncApplyError
 
@@ -40,11 +46,14 @@ from .test_hub_sync import (
     _TestClientTransport,
     _insert_playlist,
     _insert_track,
+    _log,
     _members,
     _open,
     _set_members,
     _sync,
 )
+
+_LOC_ID = "cccccccccccccccccccccccccccccccc"
 
 
 @pytest.fixture(autouse=True)
@@ -217,8 +226,116 @@ def test_first_sync_pull_lands_members_whose_tracks_are_in_a_later_chunk(
     conn = _open(spoke_b)
     try:
         assert _members(conn, "pl-1") == ("trk-1", "trk-3"), (
-            "buffering playlists until the pull drain finishes must land the "
+            "buffering the pull drain until it finishes must land the "
             "member whose track arrived in a later chunk"
         )
+    finally:
+        conn.close()
+
+
+def _insert_location(
+    conn,
+    *,
+    location_id: str,
+    stable_id: str,
+    machine_id: str,
+    file_path: str,
+    updated_at: str,
+    origin: str,
+) -> None:
+    stamped = _log(conn, "track_locations", (location_id,), origin, updated_at)
+    conn.execute(
+        "INSERT INTO track_locations("
+        "location_id, stable_id, machine_id, kind, role, file_path, "
+        "available, created_at, updated_at, origin_device_id) "
+        "VALUES (?, ?, ?, 'local', 'primary', ?, 0, ?, ?, ?)",
+        (location_id, stable_id, machine_id, file_path, _T0, stamped, origin),
+    )
+
+
+def _retarget_location(
+    conn,
+    *,
+    location_id: str,
+    stable_id: str,
+    updated_at: str,
+    origin: str,
+) -> None:
+    stamped = _log(conn, "track_locations", (location_id,), origin, updated_at)
+    conn.execute(
+        "UPDATE track_locations SET stable_id = ?, updated_at = ?, "
+        "origin_device_id = ? WHERE location_id = ?",
+        (stable_id, stamped, origin, location_id),
+    )
+
+
+def test_first_sync_pull_lands_locations_whose_tracks_are_in_a_later_chunk(
+    hub: _TestClientTransport,
+    spoke_a: Path,
+    spoke_b: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Location seq in chunk one, parent track seq in chunk two.
+
+    Hub offers the LIVE location on the early changelog row, so the late
+    track is named before it has been pulled. Buffering every row until
+    the drain finishes is what makes apply_rank land the parent first.
+    """
+    conn = _open(spoke_a)
+    try:
+        machine_id = sync_stamp.ensure_local_machine(conn)
+        _insert_track(conn, "trk-loc-1", title="early", updated_at=_T0, origin=_DEV_A)
+        _insert_location(
+            conn,
+            location_id=_LOC_ID,
+            stable_id="trk-loc-1",
+            machine_id=machine_id,
+            file_path="/tmp/early.mp3",
+            updated_at=_T0,
+            origin=_DEV_A,
+        )
+    finally:
+        conn.close()
+    _sync(spoke_a, hub, "spoke-a")
+
+    conn = _open(spoke_a)
+    try:
+        _insert_track(conn, "trk-loc-2", title="late", updated_at=_T2, origin=_DEV_A)
+        _retarget_location(
+            conn,
+            location_id=_LOC_ID,
+            stable_id="trk-loc-2",
+            updated_at=_T2,
+            origin=_DEV_A,
+        )
+    finally:
+        conn.close()
+    _sync(spoke_a, hub, "spoke-a")
+
+    monkeypatch.setattr(client, "PULL_LIMIT", 1)
+    try:
+        _sync(spoke_b, hub, "spoke-b")
+    except SyncApplyError as exc:
+        pytest.fail(
+            "empty-spoke first-sync aborted on a track_locations row whose "
+            f"parent track was in a later pull chunk: {exc}"
+        )
+
+    conn = _open(spoke_b)
+    try:
+        row = conn.execute(
+            "SELECT stable_id FROM track_locations WHERE location_id = ?",
+            (_LOC_ID,),
+        ).fetchone()
+        assert row is not None, "location must land on the empty spoke"
+        assert row[0] == "trk-loc-2", (
+            "buffering the pull drain must land the location on the track "
+            "that arrived in a later chunk"
+        )
+        landed = {
+            str(item[0])
+            for item in conn.execute("SELECT stable_id FROM tracks")
+        }
+        assert {"trk-loc-1", "trk-loc-2"} <= landed
     finally:
         conn.close()

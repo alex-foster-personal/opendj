@@ -27,7 +27,7 @@
  * (tests/unit/load-typescript.mjs) can load this module directly.
  */
 
-import type { PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
+import type { CloudTransferWire, PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
 import type { RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
@@ -80,6 +80,10 @@ export interface BrowserRow extends Pick<TrackRow, 'key_status' | 'key_reason' |
 	 * not provided inline -> fall back to rb_meta. */
 	is_streaming: boolean | null;
 	is_remote?: boolean;
+	/** Durable cloud presence; unlike is_remote, stays true for local+cloud. */
+	has_remote_copy?: boolean;
+	/** Live CloudSync bytes from the same listing snapshot as this row. */
+	cloud_transfer?: CloudTransferWire | null;
 	/** Spotify-unmatched placeholder (light green row). True when the
 	 * row is a synthetic spotify-pending track or wire spotify_pending. */
 	spotify_pending?: boolean;

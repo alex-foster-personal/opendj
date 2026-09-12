@@ -48,6 +48,7 @@
 		type TrackEditModalKind
 	} from './track-table-support';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
+	import type { AnlzData } from '$lib/rb/anlz-types';
 	import { autoPlayOrder } from '$lib/rb/auto-play.svelte';
 	import { autoPlayQueue } from '$lib/rb/autoplay-queue.svelte';
 	import { deckHoverUi } from '$lib/rb/deck-hover.svelte';
@@ -83,6 +84,11 @@
 	import SpinnerIcon from './SpinnerIcon.svelte';
 	import TrackContextMenu from './TrackContextMenu.svelte';
 	import TrackPlaylistsPopover from './TrackPlaylistsPopover.svelte';
+	import { trackCloudView } from './track-cloud-state';
+	import {
+		getAnlzEntry,
+		resolveDisplayedAnlz
+	} from '../wave/anlz-cache.svelte';
 
 	type DeckId = (typeof DECK_IDS)[number];
 
@@ -222,6 +228,25 @@
 			if (fallback === null) fallback = ratio;
 		}
 		return fallback;
+	}
+
+	/** Marker data for the browser mini-strip, sourced from the exact object
+	 * the main waveform renders. A ready shared-cache entry may outlive a deck
+	 * load and is still real production data; an uncached row stays markerless
+	 * rather than starting one /anlz request per virtual row (LIBUX-12). */
+	function _markerAnlzFor(stableId: string): AnlzData | null {
+		let fallback: AnlzData | null = null;
+		for (const d of DECK_IDS) {
+			const st = deckStates[d];
+			if (st.stable_id !== stableId) continue;
+			const anlz = resolveDisplayedAnlz(st.anlz, stableId);
+			if (anlz === null) continue;
+			if (st.playing) return anlz;
+			fallback ??= anlz;
+		}
+		if (fallback !== null) return fallback;
+		const cached = getAnlzEntry(stableId);
+		return cached?.status === 'ready' ? cached.data : null;
 	}
 
 	function _badgeFor(row: BrowserRow): AnalysisBadge {
@@ -1138,7 +1163,9 @@
 					<th
 						class="h-icon"
 						style={`width:${colWidths.cloud}px`}
-						use:columnExplainer={{ text: 'cloud/streaming flag' }}
+						use:columnExplainer={{
+							text: 'CloudSync audio - crossed cloud: not on cloud; red cloud: on cloud, not local; plain cloud: on cloud and local. Hover a row icon for detail.'
+						}}
 					>
 						<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
 							<path
@@ -1447,49 +1474,82 @@
 						<td class="c-err">
 							<AnalysisDotsPopover issues={_issuesFor(row)} mode="issues" stableId={row.stable_id} />
 						</td>
-						<!-- Cloud column is DATA-DRIVEN: rekordbox's per-row cloud icons
-						     reflect Cloud Library Sync state we do not have locally, so a
-						     cloud renders ONLY for real streaming rows and '!' for missing
-						     files - an empty cell is the honest state for local tracks.
-						     is_streaming is inline for playlist rows (contract 4); All
-						     Tracks rows fall back to the lazily fetched rb-meta. -->
+						<!-- CloudSync presence, local availability, and transfer bytes are
+						     separate backend facts; this cell never guesses a percentage. -->
 						<td class="c-cloud">
-							{#if row.is_streaming ?? row.rb_meta?.is_streaming}
-								<span
-									class="cloud"
-									title="streaming track (tidal/soundcloud/spotify) - deck load not implemented, see PARITY-TODO"
-								>
-									<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-										<path
-											d="M4.5 12a3 3 0 0 1-.4-5.97A4 4 0 0 1 12 6.5 2.75 2.75 0 0 1 11.5 12z"
-											fill="currentColor"
-										/>
-									</svg>
+							{@const cloudView = trackCloudView({
+								fileExists: row.file_exists,
+								isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
+								hasRemoteCopy: row.has_remote_copy === true,
+								transfer:
+									row.cloud_transfer === null || row.cloud_transfer === undefined
+										? null
+										: {
+												direction: row.cloud_transfer.direction,
+												bytesTransferred: row.cloud_transfer.bytes_transferred,
+												bytesTotal: row.cloud_transfer.bytes_total
+											}
+							})}
+							{#if cloudView.showIcon}
+								<span class="cloud-state-wrap" data-cloud-state={cloudView.kind}>
+									{#if cloudView.kind === 'streaming'}
+										<span class="cloud" title={cloudView.title} aria-label={cloudView.title}>
+											<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+												<path
+													d="M4.5 12a3 3 0 0 1-.4-5.97A4 4 0 0 1 12 6.5 2.75 2.75 0 0 1 11.5 12z"
+													fill="currentColor"
+												/>
+											</svg>
+										</span>
+									{:else}
+										<span
+											class="cloud-copy"
+											class:not-on-cloud={cloudView.kind === 'not-on-cloud'}
+											class:on-cloud-not-local={cloudView.kind === 'on-cloud-not-local'}
+											class:on-cloud-and-local={cloudView.kind === 'on-cloud-and-local'}
+											title={cloudView.title}
+											aria-label={cloudView.title}
+										>
+											<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+												<path
+													d="M4.5 12a3 3 0 0 1-.4-5.97A4 4 0 0 1 12 6.5 2.75 2.75 0 0 1 11.5 12z"
+													fill={cloudView.kind === 'not-on-cloud' ? 'none' : 'currentColor'}
+													stroke="currentColor"
+													stroke-width="1.25"
+												/>
+												{#if cloudView.kind === 'not-on-cloud'}
+													<path
+														d="M3 13 13 3"
+														fill="none"
+														stroke="currentColor"
+														stroke-width="1.5"
+														stroke-linecap="round"
+													/>
+												{/if}
+											</svg>
+										</span>
+									{/if}
+									{#if cloudView.transfer !== null}
+										<span
+											class="cloud-transfer-track"
+											role="progressbar"
+											aria-label={`CloudSync ${cloudView.transfer.direction}`}
+											aria-valuemin="0"
+											aria-valuemax="100"
+											aria-valuenow={cloudView.transfer.percent ?? undefined}
+											aria-valuetext={cloudView.transfer.label}
+											title={cloudView.transfer.label}
+										>
+											<span
+												class="cloud-transfer-indicator"
+												class:indeterminate={cloudView.transfer.percent === null}
+												style={cloudView.transfer.percent === null
+													? undefined
+													: `width:${cloudView.transfer.percent}%`}
+											></span>
+										</span>
+									{/if}
 								</span>
-							{:else if row.is_remote}
-								<span
-									class="remote"
-									title="remote audio - our file is in non-local storage, not on this machine"
-								>
-									<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-										<path
-											d="M4.5 9a3 3 0 0 1-.4-5.97A4 4 0 0 1 12 3.5 2.75 2.75 0 0 1 11.5 9"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="1.25"
-										/>
-										<path
-											d="M8 7.25v6M5.75 11.25 8 13.25 10.25 11.25"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="1.25"
-											stroke-linecap="round"
-											stroke-linejoin="round"
-										/>
-									</svg>
-								</span>
-							{:else if !row.file_exists}
-								<span class="missing" title="audio file missing on disk (broken link)">!</span>
 							{/if}
 						</td>
 						<td class="c-order" title={orderCellTitle(row.order)}>
@@ -1544,6 +1604,7 @@
 							<PreviewStrip
 								strip={row.strip}
 								vocals={vocalsById[row.stable_id] ?? null}
+								markerAnlz={_markerAnlzFor(row.stable_id)}
 								duration_ms={row.duration_ms}
 								revealed={row.revealed}
 								nowRatio={_nowRatioFor(row.stable_id)}
@@ -2395,13 +2456,66 @@
 		text-align: center;
 		color: var(--rb-text-dim);
 	}
+	.cloud-state-wrap {
+		position: relative;
+		display: inline-flex;
+		width: 18px;
+		height: 18px;
+		align-items: flex-start;
+		justify-content: center;
+		vertical-align: middle;
+	}
+	.cloud,
+	.cloud-copy {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
 	.missing {
 		color: var(--rb-red);
 		font-weight: 600;
 	}
-	.remote {
-		display: inline-flex;
+	.not-on-cloud {
 		color: var(--rb-text-dim);
+	}
+	.on-cloud-not-local {
+		color: var(--rb-red);
+	}
+	.on-cloud-and-local {
+		color: var(--rb-text);
+	}
+	.cloud-transfer-track {
+		position: absolute;
+		right: 0;
+		bottom: 1px;
+		left: 0;
+		height: 2px;
+		overflow: hidden;
+		border-radius: 1px;
+		background: color-mix(in srgb, var(--rb-text-dim) 28%, transparent);
+	}
+	.cloud-transfer-indicator {
+		display: block;
+		width: 0;
+		height: 100%;
+		border-radius: inherit;
+		background: var(--rb-orange);
+		transition: width 120ms linear;
+	}
+	.cloud-transfer-indicator.indeterminate {
+		width: 45%;
+		animation: cloud-transfer-slide 850ms linear infinite;
+	}
+	@keyframes cloud-transfer-slide {
+		from { transform: translateX(-110%); }
+		to { transform: translateX(245%); }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.cloud-transfer-indicator.indeterminate {
+			width: 100%;
+			animation: none;
+			opacity: 0.75;
+		}
 	}
 
 	/* FR-1: missing-file rows gray out (dim text + dim artwork) but stay

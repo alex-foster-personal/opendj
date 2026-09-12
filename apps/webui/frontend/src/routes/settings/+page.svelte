@@ -8,10 +8,12 @@
 		runSetup,
 		runSetupBlocked
 	} from '$lib/setup/run-setup';
+	import { catalogLinkSettings } from '$lib/settings/catalog';
 	import { openSettings } from '$lib/settings/hotkeys';
 	import { pushToast } from '$lib/stores.svelte';
 
 	let settings = $state<SettingsOut | null>(null);
+	const cloudsyncLinks = catalogLinkSettings('cloudsync');
 
 	/** Why the setup wizard is unreachable from here, or null when it is not.
 	 * Only a FINAL refusal disables; an unfinished health probe is resolved by
@@ -72,6 +74,17 @@
 	</button>
 </section>
 
+<section class="settings-group" aria-label="CloudSync">
+	<h3>CloudSync</h3>
+	<ul class="cloudsync-links">
+		{#each cloudsyncLinks as def (def.id)}
+			<li>
+				<a href={def.control.href} title={def.title}>{def.label}</a>
+			</li>
+		{/each}
+	</ul>
+</section>
+
 {#if settings}
 	{#each settings.groups as group}
 		<section class="settings-group">
@@ -119,6 +132,18 @@
 		color: var(--accent);
 		font: inherit;
 		cursor: pointer;
+		text-decoration: underline;
+	}
+	.cloudsync-links {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+	}
+	.cloudsync-links li {
+		margin: 0.35rem 0;
+	}
+	.cloudsync-links a {
+		color: var(--accent);
 		text-decoration: underline;
 	}
 </style>

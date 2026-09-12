@@ -362,11 +362,26 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 	it('labels the tap position honestly and does not claim speaker risk', () => {
 		// The old label said "post-deck, pre-channel-fader" while the underlying
 		// tap sat BEFORE trim and EQ, so no mixer control moved it.
-		assert.match(meter, /post-EQ pre-fader/);
+		assert.match(meter, /post-EQ post-fader/);
+		assert.match(meter, /channel volume fader/);
 		assert.match(meter, /not speaker risk/);
 		assert.doesNotMatch(meter, /speaker damage|damage risk/i);
 		// House rule: a numeric readout says what the number is.
 		assert.match(meter, /dBFS/);
+	});
+
+	it('feeds the fader meter from the same post-fader AudioNode that setFader changes', () => {
+		const graph = readFileSync(
+			fileURLToPath(new URL('../../src/lib/rb/deck-channel-graph.ts', import.meta.url)),
+			'utf8'
+		);
+		const engine = readFileSync(
+			fileURLToPath(new URL('../../src/lib/rb/audio-engine.svelte.ts', import.meta.url)),
+			'utf8'
+		);
+		assert.match(graph, /meterSources\.push\(\{ tap, source: fader \}\)/);
+		assert.match(engine, /_setParam\(nodes\.fader\.gain, value\)/);
+		assert.doesNotMatch(graph, /meterSources\.push\(\{ tap, source: high \}\)/);
 	});
 
 	it('keeps real analyser sampling in the extracted component and does not use a gradient', () => {

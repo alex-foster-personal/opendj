@@ -1,4 +1,6 @@
-"""LIBUX-07: remote-audio status is a third bucket, never streaming or awaiting-volume.
+"""Requirements: LIBUX-07, LIBUX-13.
+
+Remote-audio status is a third bucket, never streaming or awaiting-volume.
 
 [if] a track's audio is held remotely rather than locally [then] is_remote is True, [else stop].
 [if] the row is streaming or awaiting-volume [then] is_remote stays False, [else stop].
@@ -14,10 +16,11 @@ from pathlib import Path
 
 import pytest
 
+from apps.cloud import transfer_status
 from apps.shared import remote_status
 from apps.shared.state import db as state_db
 
-pytestmark = pytest.mark.requirement("LIBUX-07")
+pytestmark = [pytest.mark.requirement("LIBUX-07"), pytest.mark.requirement("LIBUX-13")]
 
 SID_REMOTE = "a" * 40
 SID_LOCAL = "b" * 40
@@ -99,12 +102,17 @@ def test_sids_with_remote_copy_reads_kind_remote_url_rows(tmp_path: Path) -> Non
             duration_ms=180_000,
             file_path=str(tmp_path / "local.flac"),
         )
+        writer.upsert_track_location(
+            stable_id=SID_LOCAL,
+            kind="remote",
+            remote_url="r2://library/audio/" + SID_LOCAL,
+        )
         writer.close()
         found = remote_status.sids_with_remote_copy(conn, [SID_REMOTE, SID_LOCAL, "e" * 40])
     finally:
         conn.close()
     assert SID_REMOTE in found
-    assert SID_LOCAL not in found
+    assert SID_LOCAL in found
 
 
 def test_cli_json_lists_only_recorded_remote_sids(
@@ -163,6 +171,11 @@ def test_build_track_rows_sets_is_remote_from_track_locations(
             duration_ms=180_000,
             file_path=str(tmp_path / "local.flac"),
         )
+        writer.upsert_track_location(
+            stable_id=SID_LOCAL,
+            kind="remote",
+            remote_url="r2://library/audio/" + SID_LOCAL,
+        )
         writer.close()
     finally:
         conn.close()
@@ -186,9 +199,24 @@ def test_build_track_rows_sets_is_remote_from_track_locations(
         "bulk_stem_summaries",
         lambda stable_ids: {sid: {} for sid in stable_ids},
     )
-    rows = {row["stable_id"]: row for row in track_rows.build_track_rows(tracks)}
+    transfer_token = transfer_status.begin_transfer(
+        SID_LOCAL, "upload", bytes_total=12
+    )
+    transfer_status.update_transfer(SID_LOCAL, transfer_token, 3)
+    try:
+        rows = {row["stable_id"]: row for row in track_rows.build_track_rows(tracks)}
+    finally:
+        transfer_status.clear_transfer(SID_LOCAL, transfer_token)
     assert rows[SID_REMOTE]["is_remote"] is True
     assert rows[SID_LOCAL]["is_remote"] is False
+    assert rows[SID_REMOTE]["has_remote_copy"] is True
+    assert rows[SID_LOCAL]["has_remote_copy"] is True
+    assert rows[SID_REMOTE]["cloud_transfer"] is None
+    assert rows[SID_LOCAL]["cloud_transfer"] == {
+        "direction": "upload",
+        "bytes_transferred": 3,
+        "bytes_total": 12,
+    }
 
 
 def _init_track(conn, stable_id: str):

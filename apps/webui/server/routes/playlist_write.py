@@ -82,6 +82,10 @@ class PlaylistRenameIn(BaseModel):
         description="New display name; omit for a no-op that returns the "
                     "current row + etag",
     )
+    forbid_duplicates: bool | None = Field(
+        None,
+        description="When true, reject extra copies of an already-present track.",
+    )
 
 
 class PlaylistDuplicateIn(BaseModel):
@@ -139,6 +143,7 @@ class PlaylistWriteOut(BaseModel):
     track_count: int
     created_at: str
     updated_at: str
+    forbid_duplicates: bool
 
 
 class MembershipMoveOut(PlaylistWriteOut):
@@ -188,7 +193,7 @@ def _out(row: PlaylistRow, response: Response) -> PlaylistWriteOut:
         playlist_id=row.playlist_id, name=row.name, vendor=row.vendor,
         vendor_pl_id=row.vendor_pl_id, items=list(row.items),
         track_count=len(row.items), created_at=row.created_at,
-        updated_at=row.updated_at,
+        updated_at=row.updated_at, forbid_duplicates=row.forbid_duplicates,
     )
 
 
@@ -200,7 +205,8 @@ def _move_out(
         playlist_id=row.playlist_id, name=row.name, vendor=row.vendor,
         vendor_pl_id=row.vendor_pl_id, items=list(row.items),
         track_count=len(row.items), created_at=row.created_at,
-        updated_at=row.updated_at, renumbered=renumbered,
+        updated_at=row.updated_at, forbid_duplicates=row.forbid_duplicates,
+        renumbered=renumbered,
     )
 
 
@@ -232,11 +238,16 @@ def rename_playlist(
         return precondition_required(
             "PATCH /playlists/{playlist_id} requires If-Match header"
         )
-    if body.name is None:
+    if body.name is None and body.forbid_duplicates is None:
         # Explicit no-op: CAS-verify and echo the current row.
         row = store.verify_etag(playlist_id, if_match)
         return _out(row, response)
-    row = store.rename_playlist(playlist_id, body.name, expected_etag=if_match)
+    row = store.update_playlist(
+        playlist_id,
+        expected_etag=if_match,
+        name=body.name,
+        forbid_duplicates=body.forbid_duplicates,
+    )
     publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
     return _out(row, response)
 
