@@ -26,7 +26,7 @@ export interface ChartSample {
 
 export interface ProcessFamilyMember {
 	label: string;
-	mb: number;
+	mb: number | null;
 }
 
 export interface ProcessFamilySnapshot {
@@ -226,7 +226,7 @@ export function breakdownLines(input: BreakdownInput): BreakdownLine[] {
 			key: 'compressor',
 			label: 'Compressor',
 			value: String(input.compressorRate),
-			title: 'Memory compressor rate from the process probe.'
+			title: 'Memory compressor footprint from the process probe.'
 		});
 	}
 
@@ -240,14 +240,14 @@ export function breakdownLines(input: BreakdownInput): BreakdownLine[] {
 	}
 
 	if (input.processes !== null) {
-		for (const member of input.processes.members) {
+		input.processes.members.forEach((member, index) => {
 			lines.push({
-				key: `proc-${member.label}`,
+				key: `proc-${index}-${member.label}`,
 				label: member.label,
-				value: `${member.mb} MB`,
+				value: member.mb === null ? 'unavailable' : `${member.mb} MB`,
 				title: 'Process-family footprint by role.'
 			});
-		}
+		});
 	}
 
 	return lines;

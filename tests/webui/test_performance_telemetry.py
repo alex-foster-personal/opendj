@@ -381,4 +381,5 @@ def test_pressure_route_does_not_leak_process_detail() -> None:
         "band",
         "sample_interval_ms",
         "sample_wall_ms",
+        "sample_wall_p95_ms",
     }

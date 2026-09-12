@@ -210,7 +210,14 @@ def _pressure_overlay_fields(pressure: dict[str, object]) -> dict[str, object]:
     kernel = valid_kernel_pressure_level(pressure.get("kernel_memory_pressure_level"))
     if kernel is not None:
         overlay["kernel_memory_pressure_level"] = kernel
-    for key in ("churn_score", "band", "sample_interval_ms"):
+    for key in (
+        "churn_score",
+        "band",
+        "sample_interval_ms",
+        "compressed_mb",
+        "sample_wall_ms",
+        "sample_wall_p95_ms",
+    ):
         value = pressure.get(key)
         if value is not None:
             overlay[key] = value
