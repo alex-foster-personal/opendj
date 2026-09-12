@@ -56,7 +56,22 @@ def beatgrid_record_digest(record: AnalysisRecord, lane: str = "beatgrid") -> st
             f"record {record.stable_id!r} from {record.backend!r} carries no "
             f"{lane!r} lane block, so it has no digest to depend on"
         )
+    if result.status != "ok":
+        # A failed lane carries a status and a reason and no grid fields at
+        # all (payload {}), so hashing the grid raised KeyError 'beats' and
+        # reddened every failed-lane write on main (Sat 12 Sep 2026). Name
+        # the failure instead: dependents re-queue when the failure changes
+        # and stay put while it does not.
+        return _failed_lane_digest(result.status, result.reason)
     return _payload_beatgrid_digest(result.payload)
+
+
+def _failed_lane_digest(status: str, reason: str | None) -> str:
+    """``sha256:`` digest naming a non-ok lane by its status and reason."""
+    blob = json.dumps(
+        {"status": status, "reason": reason}, sort_keys=True, separators=(",", ":")
+    )
+    return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def dependency_identity(
