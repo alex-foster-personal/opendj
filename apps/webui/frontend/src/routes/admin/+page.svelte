@@ -30,6 +30,7 @@
 	import LyricSourceOrder from './LyricSourceOrder.svelte';
 	import LyricTriage from './LyricTriage.svelte';
 	import LyricsKpiPanel from './LyricsKpiPanel.svelte';
+	import EntitlementsInspector from './EntitlementsInspector.svelte';
 	import QualityRatchet from './QualityRatchet.svelte';
 	import RunNotes from './RunNotes.svelte';
 	import TipLayer from './TipLayer.svelte';
@@ -110,6 +111,8 @@
 		<span class="admin-tab-err" title={setupError}>{setupError}</span>
 	{/if}
 </div>
+
+<EntitlementsInspector />
 
 <section class="panel" id="lyrics-generator">
 	<h3>Lyrics generator</h3>
