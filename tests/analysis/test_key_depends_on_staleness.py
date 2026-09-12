@@ -33,6 +33,8 @@ from apps.analysis_key.lane_payload import (
 )
 from apps.webui.server.rb_vendor_pkg import own_key_overlay as overlay_mod
 
+pytestmark = pytest.mark.requirement("NATIVE-05")
+
 FINGERPRINT_V1 = "sha256:" + ("aa" * 32)
 FINGERPRINT_V2 = "sha256:" + ("bb" * 32)
 C_MAJOR = canon.Key(0, False)

@@ -97,10 +97,7 @@ def _key_row_is_stale(
     conn: sqlite3.Connection, stable_id: str, record_json: str,
 ) -> bool:
     """True when an ok key record's beatgrid dependency no longer matches."""
-    from apps.analysis_key.lane_payload import (
-        beatgrid_dependency_matches,
-        beatgrid_identity_from_record,
-    )
+    from .depends_on import dependency_identity, dependency_matches
 
     record = AnalysisRecord.from_json(record_json)
     key_lane = record.lanes.get("key")
@@ -115,9 +112,7 @@ def _key_row_is_stale(
         # canonical for scalar projection. Segment staleness is enforced at
         # read time in the /anlz overlay.
         return False
-    return not beatgrid_dependency_matches(
-        depends_on, beatgrid_identity_from_record(current)
-    )
+    return not dependency_matches(depends_on, dependency_identity(current))
 
 
 def key_lane_stale_but_unpromoted(
