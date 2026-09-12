@@ -32,6 +32,7 @@ pytestmark = pytest.mark.requirement("CUEOUT-04")
 _DEFAULT_HEADPHONES: dict[str, Any] = {
     "mix": 0.5,
     "level": 0.5,
+    "head_delay_ms": 0,
     "selected_output_device_id": None,
     "output_mode": "practice",
     "outputs": [],
@@ -63,7 +64,7 @@ _HEADPHONE_IPC_PREDICATE = frozenset(
 _IPC_ERROR_FRAGMENTS = (
     "must be a finite number",
     "must be within 0..1",
-    "output_mode must be practice or two_outputs; got",
+    "headphone output_mode must be practice, two_outputs, or split_cable; got",
     "deck must be one of 1, 2, 3, 4; got",
     "must be boolean",
     "device_id must be a non-empty string",
@@ -108,6 +109,9 @@ def _apply_command(
     elif command_type == "headphone_level":
         mirror["mixer"]["headphones"]["level"] = command["value"]
         changed = {"mixer": {"headphones": {"level": command["value"]}}}
+    elif command_type == "head_delay_ms":
+        mirror["mixer"]["headphones"]["head_delay_ms"] = command["value"]
+        changed = {"mixer": {"headphones": {"head_delay_ms": command["value"]}}}
     elif command_type == "channel_cue":
         deck = str(command["deck"])
         mirror["mixer"]["channels"][deck]["cue_enabled"] = command["enabled"]
@@ -193,12 +197,17 @@ def test_performance_headphone_predicate_matches_headphone_command_union() -> No
 
 
 def test_ipc_error_strings_appear_in_performance_ipc_source() -> None:
-    source = (
-        __import__("pathlib").Path(__file__).resolve().parents[2]
-        / "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts"
+    root = __import__("pathlib").Path(__file__).resolve().parents[2]
+    ipc_source = (
+        root / "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts"
     ).read_text(encoding="utf-8")
+    headphones_source = (
+        root / "apps/webui/frontend/src/lib/player/headphones.ts"
+    ).read_text(encoding="utf-8")
+    combined = ipc_source + headphones_source
+    assert "assertHeadphoneOutputMode" in ipc_source
     for fragment in _IPC_ERROR_FRAGMENTS:
-        assert fragment in source
+        assert fragment in combined
 
 
 def test_mix_happy_path() -> None:
@@ -259,13 +268,13 @@ def test_unknown_output_mode_is_rejected() -> None:
             await _open_page(client)
             response = await client.post(
                 "/api/v1/performance/headphones/output-mode",
-                json={"mode": "split_cable"},
+                json={"mode": "nope"},
             )
             got = await client.get("/api/v1/performance/headphones")
         assert response.status_code == 400
         assert (
             response.json()["detail"]
-            == "output_mode must be practice or two_outputs; got split_cable"
+            == "headphone output_mode must be practice, two_outputs, or split_cable; got nope"
         )
         assert got.json()["output_mode"] == "practice"
 

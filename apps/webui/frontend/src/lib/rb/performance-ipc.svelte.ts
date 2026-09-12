@@ -138,9 +138,10 @@ export type HeadphoneCommand =
 	| { type: 'channel_cue'; deck: DeckId; enabled: boolean }
 	| { type: 'headphone_mix'; value: number }
 	| { type: 'headphone_level'; value: number }
+	| { type: 'head_delay_ms'; value: number }
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_select'; device_id: string }
-	| { type: 'output_mode'; mode: 'practice' | 'two_outputs' };
+	| { type: 'output_mode'; mode: HeadphoneOutputMode };
 
 export type PerformanceCommand =
 	// refuseIfMaster: opt-in, checked live inside _execute rather than at the
