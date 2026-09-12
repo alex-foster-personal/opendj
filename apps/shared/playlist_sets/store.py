@@ -62,7 +62,7 @@ def _snapshot_membership(
     try:
         rows = conn.execute(
             "SELECT stable_id, position FROM playlist_memberships "
-            "WHERE playlist_id=? ORDER BY position ASC",
+            "WHERE playlist_id=? AND deleted_at IS NULL ORDER BY position ASC",
             (playlist_id,),
         ).fetchall()
     except sqlite3.OperationalError:
