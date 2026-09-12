@@ -1,9 +1,23 @@
 #!/usr/bin/env node
 /** Headed Chromium sign-in wait loop for scripts.perf.s13_signin (issue #2113). */
 
-import { chromium } from "@playwright/test";
 import { unlinkSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+
+// ESM bare imports resolve from this file's directory (scripts/perf), not from the
+// frontend tree the launcher uses as cwd, so resolve @playwright/test through CommonJS.
+async function loadChromium() {
+  const resolver = createRequire(path.join(process.cwd(), "package.json"));
+  const entry = resolver.resolve("@playwright/test");
+  const mod = await import(pathToFileURL(entry).href);
+  const { chromium } = mod.default ?? mod;
+  if (!chromium) throw new Error("@playwright/test has no chromium export");
+  return chromium;
+}
+const chromium = await loadChromium();
 
 const { values } = parseArgs({
   options: {
