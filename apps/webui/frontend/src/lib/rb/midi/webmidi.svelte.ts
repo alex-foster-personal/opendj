@@ -189,6 +189,11 @@ function _rescanPorts(): void {
 		};
 		input.onmidimessage = (ev: MIDIMessageEvent) => _dispatch(device, ev);
 		_resolved.set(input.id, device);
+		if (map !== null) {
+			console.info(
+				`[midi] selected ${map.vendor} map ${map.nameMatch} on ${name}: ${map.bindings.length} bindings`
+			);
+		}
 	}
 	for (const id of [..._resolved.keys()]) {
 		if (!seen.has(id)) {

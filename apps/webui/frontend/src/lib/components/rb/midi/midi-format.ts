@@ -131,6 +131,7 @@ export function friendlyLabel(action: MidiAction): string {
 					? `EQ (deck ${action.deck})`
 					: `EQ ${action.band} (deck ${action.deck})`;
 			}
+			if (action.target === 'filter') return `Filter (deck ${action.deck})`;
 			const _exhaustiveTarget: never = action.target;
 			throw new Error(`Unhandled mixer_channel target: ${_exhaustiveTarget}`);
 		}

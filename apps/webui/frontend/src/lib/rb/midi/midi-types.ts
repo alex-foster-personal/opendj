@@ -54,7 +54,7 @@ export interface MidiSource {
 // ------------------------------------------------------------ midi actions
 
 /** Continuous mixer targets scoped to one channel strip. */
-export type MixerChannelTarget = 'trim' | 'eq' | 'fader';
+export type MixerChannelTarget = 'trim' | 'eq' | 'fader' | 'filter';
 
 /** Transport commands (spike rows FLX10 1-2 / Mixtour 7: EASY, near-1:1
  * onto engine play/pause/pressCue). */

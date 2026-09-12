@@ -39,6 +39,7 @@ let webmidi; // $lib/rb/midi/webmidi.svelte.ts
 let flx10; // $lib/rb/midi/maps/ddj-flx10.ts
 let mixtour; // $lib/rb/midi/maps/reloop-mixtour.ts
 let ddj400; // $lib/rb/midi/maps/ddj-400.ts
+let flx4; // $lib/rb/midi/maps/ddj-flx4.ts
 
 // ------------------------------------------------------- fake WebMIDI ports
 
@@ -63,16 +64,20 @@ const flxOut = _fakeOutput('flx-out', 'DDJ-FLX10');
 const mixIn = _fakeInput('mix-in', 'Mixtour', 'Reloop');
 const ddjIn = _fakeInput('ddj-in', 'DDJ-400', 'Pioneer DJ');
 const ddjOut = _fakeOutput('ddj-out', 'DDJ-400');
+const flx4In = _fakeInput('flx4-in', 'DDJ-FLX4', 'Pioneer DJ');
+const flx4Out = _fakeOutput('flx4-out', 'DDJ-FLX4');
 
 const fakeAccess = {
 	inputs: new Map([
 		[flxIn.id, flxIn],
 		[mixIn.id, mixIn],
-		[ddjIn.id, ddjIn]
+		[ddjIn.id, ddjIn],
+		[flx4In.id, flx4In]
 	]),
 	outputs: new Map([
 		[flxOut.id, flxOut],
-		[ddjOut.id, ddjOut]
+		[ddjOut.id, ddjOut],
+		[flx4Out.id, flx4Out]
 	]),
 	onstatechange: null
 };
@@ -106,6 +111,7 @@ before(async () => {
 	flx10 = await vite.ssrLoadModule('/src/lib/rb/midi/maps/ddj-flx10.ts');
 	mixtour = await vite.ssrLoadModule('/src/lib/rb/midi/maps/reloop-mixtour.ts');
 	ddj400 = await vite.ssrLoadModule('/src/lib/rb/midi/maps/ddj-400.ts');
+	flx4 = await vite.ssrLoadModule('/src/lib/rb/midi/maps/ddj-flx4.ts');
 
 	// Patch navigator.requestMIDIAccess (Node 22 ships a navigator object;
 	// fall back to redefining the global if it rejects new properties).
@@ -126,6 +132,7 @@ before(async () => {
 	webmidi.registerDeviceMap(flx10.FLX10_MAP);
 	webmidi.registerDeviceMap(mixtour.RELOOP_MIXTOUR_MAP);
 	webmidi.registerDeviceMap(ddj400.DDJ400_MAP);
+	webmidi.registerDeviceMap(flx4.FLX4_MAP);
 	webmidi.registerActionHandler((action, value, deviceId) => {
 		actions.push({ action, value, deviceId });
 	});
@@ -154,6 +161,12 @@ test('initMidi requested sysex:false and resolved both fake devices to maps', ()
 	assert.equal(byId.get('mix-in').hasOutput, false);
 	assert.equal(byId.get('ddj-in').mapVendor, 'Pioneer DJ');
 	assert.equal(byId.get('ddj-in').hasOutput, true);
+	assert.equal(byId.get('flx4-in').mapVendor, 'Pioneer DJ');
+	assert.equal(byId.get('flx4-in').hasOutput, true);
+	const flx4Map = webmidi.getDeviceMap('flx4-in');
+	assert.notEqual(flx4Map, null);
+	assert.equal(flx4Map.bindings.length, flx4.FLX4_MAP.bindings.length);
+	assert.ok(flx4Map.bindings.length > 0);
 });
 
 // ------------------------------------------------------------ FLX10 inbound
@@ -264,6 +277,38 @@ test('Mixtour PFL note 0x03 -> channel_cue deck 1', () => {
 	wire(mixIn, 0x90, 0x03, 0x7f);
 	assert.equal(actions.length, n + 1);
 	assert.deepEqual(actions[n].action, { type: 'channel_cue', deck: 1 });
+});
+
+test('FLX4 play note -> deck_play_toggle and CFX CC -> filter action', () => {
+	const n = actions.length;
+	// [PDF] 1-1 PLAY/PAUSE deck 1: Note On ch 1, note 11.
+	wire(flx4In, 0x90, 0x0b, 0x7f);
+	assert.equal(actions.length, n + 1);
+	assert.deepEqual(actions[n].action, { type: 'deck_play_toggle', deck: 1 });
+	wire(flx4In, 0xb0, 0x17, 64);
+	assert.equal(actions.length, n + 2);
+	assert.deepEqual(actions[n + 1].action, {
+		type: 'mixer_channel',
+		deck: 1,
+		target: 'filter'
+	});
+});
+
+test('FLX4 unmapped JOG CC -> learn-log unmapped source, no action', () => {
+	const n = actions.length;
+	// [PDF] 1-4 JOG vinyl on: ch 1 CC 34 - hinted, not bound.
+	wire(flx4In, 0xb0, 0x22, 64);
+	assert.equal(actions.length, n);
+	assert.equal(webmidi.learnLog[0].mapped, false);
+	assert.equal(webmidi.learnLog[0].note, 'unmapped source');
+});
+
+test('FLX4 program change -> learn-log out of P0 scope, no action', () => {
+	const n = actions.length;
+	wire(flx4In, 0xc0, 0x05, 0x00);
+	assert.equal(actions.length, n);
+	assert.equal(webmidi.learnLog[0].mapped, false);
+	assert.match(webmidi.learnLog[0].note, /out of P0 scope/);
 });
 
 test('DDJ-400 cue-surface bindings dispatch on the DDJ-400 map only', () => {
