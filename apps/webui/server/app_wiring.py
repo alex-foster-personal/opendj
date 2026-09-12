@@ -58,6 +58,7 @@ from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
 from .routes import analysis_source as analysis_source_routes
 from .routes import auth as auth_routes
+from .routes import autolists as autolists_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes
@@ -441,6 +442,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         progress_routes.router,
         quality_routes.router,
         smartlists_routes.router,
+        autolists_routes.router,
         stems_routes.router,
         stems_assets_routes.router,
         stem_tiers_routes.router,

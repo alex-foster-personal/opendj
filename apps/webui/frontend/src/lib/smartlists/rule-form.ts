@@ -144,6 +144,8 @@ export function astToForm(rule: RuleAst | WireRule): FormNode {
 		form.valueHi = stringifyAstScalar(hi);
 	} else if (predicate.op === 'in') {
 		form.valueList = (predicate.value as unknown[]).map(stringifyAstScalar);
+	} else if (predicate.op === 'missing') {
+		form.value = '';
 	} else {
 		form.value = stringifyAstScalar(predicate.value);
 	}
@@ -219,6 +221,9 @@ export function formToAst(form: FormNode, path = 'root'): RuleAst {
 	if (form.op === 'in') {
 		return { field: form.field, op: form.op, value: parseList(form.valueList, form.field, `${path}.value`) };
 	}
+	if (form.op === 'missing') {
+		return { field: form.field, op: form.op, value: null };
+	}
 	return { field: form.field, op: form.op, value: parseScalar(form.value, form.field, `${path}.value`) };
 }
 
@@ -254,6 +259,8 @@ export function validateNodeOwn(form: FormNode, path = 'root'): ValidationError[
 			parseScalar(form.valueHi, form.field, `${path}.value[1]`);
 		} else if (form.op === 'in') {
 			parseList(form.valueList, form.field, `${path}.value`);
+		} else if (form.op === 'missing') {
+			// missing requires no operand
 		} else {
 			parseScalar(form.value, form.field, `${path}.value`);
 		}

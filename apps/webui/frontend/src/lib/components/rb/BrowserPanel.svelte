@@ -63,6 +63,14 @@
 		getSpotifyPendingTracks,
 		type SpotifyPendingTrack,
 		fillAllTracksPane,
+		fillAutolistPane,
+		autolistNode,
+		isAutolistId,
+		AUTOLIST_ID,
+		queryAutolists,
+		emptyAutolistSelection,
+		hasAutolistSelection,
+		type AutolistSelection,
 		ensureAudioPrefetch,
 		clearSelection,
 		pruneSelection,
@@ -256,6 +264,8 @@
 	let spotifyPendingLoading = $state(false);
 	let spotifyPendingError = $state<string | null>(null);
 	let spotifyPendingSequence = 0;
+	let autolistSelection = $state<AutolistSelection>(emptyAutolistSelection());
+	let autolistTitle = $state('Autolists');
 	const _inflight = new Set<string>();
 	/** Brief unload affordance after a load blocked by an active deck. */
 	let unloadOffer = $state<{ deck: DeckId; until: number } | null>(null);
@@ -698,6 +708,10 @@
 			if (pane.error !== null) return `load failed: ${pane.error}`;
 			else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 			else if (isMissingTracksId(pane.playlist_id) && visibleRows.length === 0) return 'no missing tracks';
+			else if (isAutolistId(pane.playlist_id) && !hasAutolistSelection(autolistSelection))
+				return 'select an autolist';
+			else if (isAutolistId(pane.playlist_id) && visibleRows.length === 0)
+				return 'no tracks in stacked autolists';
 			else if (visibleRows.length === 0) return 'empty playlist';
 			else return null;
 		}
@@ -708,6 +722,10 @@
 		else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 		else if (visibleRows.length === 0 && pane.search.trim() !== '') return 'no tracks match the search';
 		else if (isMissingTracksId(pane.playlist_id) && visibleRows.length === 0) return 'no missing tracks';
+		else if (isAutolistId(pane.playlist_id) && !hasAutolistSelection(autolistSelection))
+			return 'select an autolist';
+		else if (isAutolistId(pane.playlist_id) && visibleRows.length === 0)
+			return 'no tracks in stacked autolists';
 		else if (visibleRows.length === 0 && pane.rows.length > 0 && hideBrokenForActivePane)
 			return 'all tracks in this list are broken links (hidden by Broken filter)';
 		else if (
@@ -1197,6 +1215,9 @@
 		if (snap.playlist_id === MISSING_TRACKS_ID) {
 			return missingTracksNode(allTracksBrokenCount ?? 0);
 		}
+		if (isAutolistId(snap.playlist_id)) {
+			return autolistNode(autolistTitle, 0);
+		}
 		if (snap.playlist_id.startsWith('taglist:')) {
 			return {
 				playlist_id: snap.playlist_id,
@@ -1406,7 +1427,9 @@
 						? await _fetchAllRows()
 						: isMissingTracksId(requestedPlaylistId)
 							? await fetchMissingTrackRows()
-							: p.kind === 'smartlist'
+							: isAutolistId(requestedPlaylistId)
+								? await _fetchAutolistRows(autolistSelection)
+								: p.kind === 'smartlist'
 								? await _fetchSmartlistRows(requestedPlaylistId)
 								: await _fetchPlaylistRows(requestedPlaylistId);
 				if (p.playlist_id !== requestedPlaylistId) continue;
@@ -1534,7 +1557,13 @@
 	}
 
 	async function renamePlaylistUi(node: PlaylistNode, name: string): Promise<void> {
-		if (node.kind === 'all_tracks' || node.playlist_id === 'all' || isMissingTracksId(node.playlist_id)) return;
+		if (
+			node.kind === 'all_tracks' ||
+			node.playlist_id === 'all' ||
+			isMissingTracksId(node.playlist_id) ||
+			isAutolistId(node.playlist_id)
+		)
+			return;
 		const next = name.trim();
 		if (next === '' || next === node.name) return;
 		try {
@@ -1549,7 +1578,13 @@
 	}
 
 	async function deletePlaylistUi(node: PlaylistNode): Promise<void> {
-		if (node.kind === 'all_tracks' || node.playlist_id === 'all' || isMissingTracksId(node.playlist_id)) return;
+		if (
+			node.kind === 'all_tracks' ||
+			node.playlist_id === 'all' ||
+			isMissingTracksId(node.playlist_id) ||
+			isAutolistId(node.playlist_id)
+		)
+			return;
 		const skip = uiPrefs.confirm.delete_playlist === false;
 		if (!skip) {
 			const every = window.confirm(`Delete playlist "${node.name}"?`);
@@ -1624,6 +1659,27 @@
 		}
 	}
 
+	function loadAutolistUi(selection: AutolistSelection, title: string): void {
+		autolistSelection = selection;
+		autolistTitle = title;
+		const node = autolistNode(title, 0);
+		if (pane.playlist_id !== AUTOLIST_ID) _pushNav();
+		void _loadPane(panes[activePane], node);
+	}
+
+	async function _fetchAutolistRows(
+		selection: AutolistSelection
+	): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
+		if (!hasAutolistSelection(selection)) {
+			return { rows: [], truncated: false, etag: '' };
+		}
+		const page = await queryAutolists(selection, 0, PAGE_SIZE);
+		const rows = page.tracks.map((wire, i) =>
+			_rowFromPlaylistWire(wire as PlaylistTrackRowWire, i + 1)
+		);
+		return { rows, truncated: page.total > rows.length, etag: '' };
+	}
+
 	async function _loadPane(p: PaneStore, node: PlaylistNode): Promise<void> {
 		// Every route into a pane funnels through here (tree click, new tab,
 		// back-stack, post-mutation refresh), so this is the one place that
@@ -1634,7 +1690,8 @@
 			node.kind !== 'folder' &&
 			node.kind !== 'missing_tracks' &&
 			node.kind !== 'taglist' &&
-			node.kind !== 'smartlist'
+			node.kind !== 'smartlist' &&
+			node.kind !== 'autolist'
 		) {
 			setLastPlaylist({
 				playlist_id: node.playlist_id,
@@ -1649,6 +1706,19 @@
 		// completeLoad/failLoad no-op when a newer load superseded this one.
 		const seq = p.beginLoad(node.playlist_id, node.name, node.kind);
 		try {
+			if (node.kind === 'autolist') {
+				await fillAutolistPane({
+					pane: p,
+					seq,
+					selection: autolistSelection,
+					pageSize: PAGE_SIZE,
+					fetchPage: (offset, limit) => queryAutolists(autolistSelection, offset, limit),
+					mapRow: (wire, order) =>
+						_rowFromPlaylistWire(wire as PlaylistTrackRowWire, order),
+					onFillError: (error) => pushToast(`autolist load failed: ${error}`, 'error')
+				});
+				return;
+			}
 			if (node.kind === 'all_tracks') {
 				await fillAllTracksPane({
 					pane: p,
@@ -1694,6 +1764,9 @@
 	 * currently-selected pane after a mutation (add-remove-reorder-tracks). */
 	function _currentNode(p: PaneStore): PlaylistNode | null {
 		if (p.playlist_id === null || p.playlist_id === 'all' || isMissingTracksId(p.playlist_id)) return null;
+		if (isAutolistId(p.playlist_id) || p.kind === 'autolist') {
+			return autolistNode(p.title, p.rows.length);
+		}
 		if (p.kind === 'smartlist') {
 			return {
 				playlist_id: p.playlist_id,
@@ -2584,7 +2657,9 @@
 			? { playlist_id: 'all', name: 'All Tracks', track_count: 0, broken_count: 0, kind: 'all_tracks' as const, children: [] }
 			: isMissingTracksId(pane.playlist_id)
 				? missingTracksNode(allTracksBrokenCount ?? 0)
-				: treeNodes.find((candidate) => candidate.playlist_id === pane.playlist_id);
+				: isAutolistId(pane.playlist_id)
+					? autolistNode(autolistTitle, 0)
+					: treeNodes.find((candidate) => candidate.playlist_id === pane.playlist_id);
 		if (node !== undefined) void _loadPane(pane, node);
 	}
 
@@ -2655,7 +2730,7 @@
 	async function _mutateActivePane(computeNext: (items: string[]) => string[]): Promise<void> {
 		const p = pane;
 		const id = p.playlist_id;
-		if (id === null || id === 'all' || isMissingTracksId(id)) return;
+		if (id === null || id === 'all' || isMissingTracksId(id) || isAutolistId(id)) return;
 		if (source !== 'collection' || p.whole_collection) {
 			pushToast('membership editing is disabled outside the complete playlist view', 'error');
 			return;
@@ -2697,7 +2772,7 @@
 	async function _removeMembership(row: BrowserRow): Promise<void> {
 		const p = pane;
 		const id = p.playlist_id;
-		if (id === null || id === 'all' || isMissingTracksId(id)) return;
+		if (id === null || id === 'all' || isMissingTracksId(id) || isAutolistId(id)) return;
 		if (source !== 'collection' || p.whole_collection) {
 			pushToast('membership editing is disabled outside the complete playlist view', 'error');
 			return;
@@ -2763,7 +2838,7 @@
 	): Promise<void> {
 		const p = pane;
 		const id = p.playlist_id;
-		if (id === null || id === 'all' || isMissingTracksId(id)) return;
+		if (id === null || id === 'all' || isMissingTracksId(id) || isAutolistId(id)) return;
 		if (source !== 'collection' || p.whole_collection) {
 			pushToast('membership editing is disabled outside the complete playlist view', 'error');
 			return;
@@ -2866,6 +2941,7 @@
 				multiPanePlaylistIds={multiPanePlaylistIds_}
 				onselect={selectPlaylist}
 				onselectsmartlist={selectSmartlist}
+				onautolistchange={(sel, title) => loadAutolistUi(sel, title)}
 				onselecttrack={selectRow}
 				onloadtrack={loadRow}
 				oncreateplaylist={() => createPlaylistUi()}
