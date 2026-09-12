@@ -9,6 +9,7 @@ re-queued and a stale key is.
 """
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,7 @@ from apps.analysis.depends_on import (
     dependency_identity,
 )
 from apps.analysis.queue import cascade_dependents
+from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import open_conn, upsert_record
 from apps.analysis_key import lane_payload
 
@@ -175,3 +177,23 @@ def test_cascade_requeues_when_only_decode_fingerprint_moves(state_db: Path) -> 
         assert canonical_pointer(conn, stable_id, "key") is None
     finally:
         conn.close()
+
+
+def test_a_failed_beatgrid_lane_digests_its_named_failure() -> None:
+    """[if] the beatgrid lane failed [then] its dependency digest names the status
+    and reason, differs between reasons and is stable for one reason
+    [⛔️ KeyError 'beats' on every failed-lane write]."""
+    from apps.analysis.depends_on import beatgrid_record_digest
+    from apps.analysis.lanes import LaneResult
+
+    def _failed(reason: str) -> AnalysisRecord:
+        record = _beatgrid_record(
+            "sid-failed", backend_version="v1", decode_fingerprint=FINGERPRINT_V1
+        )
+        failed = LaneResult(status="failed", reason=reason, payload={})
+        return dataclasses.replace(record, lanes={"beatgrid": failed})
+
+    below = beatgrid_record_digest(_failed("activation_below_threshold"))
+    decode = beatgrid_record_digest(_failed("decode_failed"))
+    assert below.startswith("sha256:") and below != decode
+    assert below == beatgrid_record_digest(_failed("activation_below_threshold"))
