@@ -2806,6 +2806,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playlists/deleted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Deleted Playlists */
+        get: operations["list_deleted_playlists"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playlists/{playlist_id}": {
         parameters: {
             query?: never;
@@ -3075,6 +3092,23 @@ export interface paths {
         get: operations["get_writeback_targets_api_v1_playlists__playlist_id__writeback_targets_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlists/{playlist_id}:undelete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undelete Playlist */
+        post: operations["undelete_playlist"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6414,6 +6448,23 @@ export interface components {
             sync_error?: string | null;
             /** Transport Pending */
             transport_pending: boolean;
+        };
+        /** DeletedPlaylistOut */
+        DeletedPlaylistOut: {
+            /** Deleted At */
+            deleted_at: string;
+            /** Name */
+            name: string;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Track Count */
+            track_count: number;
+            /** Updated At */
+            updated_at: string;
+            /** Vendor */
+            vendor: string;
+            /** Vendor Pl Id */
+            vendor_pl_id: string;
         };
         /** DigestResponse */
         DigestResponse: {
@@ -17071,6 +17122,26 @@ export interface operations {
             };
         };
     };
+    list_deleted_playlists: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedPlaylistOut"][];
+                };
+            };
+        };
+    };
     get_playlist_api_v1_playlists__playlist_id__get: {
         parameters: {
             query?: {
@@ -17716,6 +17787,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WritebackTargetsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undelete_playlist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistWriteOut"];
                 };
             };
             /** @description Validation Error */

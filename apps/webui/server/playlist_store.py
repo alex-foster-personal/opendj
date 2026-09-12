@@ -25,6 +25,10 @@ from typing import Any, Literal
 from apps.shared.state import db as _state_db
 from apps.shared.state.events import EventBus, FakeEventBus
 from apps.shared.state.writer import StateWriter, compute_playlist_id
+from apps.shared.state.writer_playlists import (
+    PlaylistNotDeletedError,
+    PlaylistNotFoundError,
+)
 
 from .backend import BackendError, ConflictError, NotFoundError
 from .etag import compute_etag, strip_quotes
@@ -365,6 +369,17 @@ class PlaylistStore:
                     self._record_edit(
                         "delete", playlist_id, self._snapshot(row), None,
                     )
+
+    def undelete_playlist(self, playlist_id: str) -> PlaylistRow:
+        with self._lock:
+            with self._writer.playlist_transaction():
+                try:
+                    self._writer.undelete_playlist(playlist_id)
+                except PlaylistNotFoundError as exc:
+                    raise NotFoundError(f"playlist not found: {playlist_id}") from exc
+                except PlaylistNotDeletedError:
+                    raise
+                return self._load(playlist_id)
 
     def duplicate_playlist(
         self,

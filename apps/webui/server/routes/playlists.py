@@ -1,7 +1,12 @@
 """Playlist endpoints + diff viewer -- CAT-05 (+ parity contract items 2/4)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from pydantic import BaseModel
+
+from apps.shared.state import db as state_db
 
 from .. import rb_vendor
 from ..backend import StateBackend
@@ -11,6 +16,28 @@ from ..models import PlaylistDetail, PlaylistDiff, PlaylistSummary, TrackRowOut
 from .tracks import AvailableFilter, keep_by_availability
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
+
+
+class DeletedPlaylistOut(BaseModel):
+    playlist_id: str
+    name: str
+    vendor: str
+    vendor_pl_id: str
+    deleted_at: str
+    updated_at: str
+    track_count: int
+
+
+_DELETED_PLAYLISTS_SQL = """
+SELECT p.playlist_id, p.name, p.vendor, p.vendor_pl_id,
+       p.deleted_at, p.updated_at,
+       (SELECT COUNT(*) FROM playlist_memberships m
+        WHERE m.playlist_id = p.playlist_id
+          AND m.deleted_at = p.deleted_at) AS track_count
+FROM playlists p
+WHERE p.deleted_at IS NOT NULL
+ORDER BY p.deleted_at DESC, p.playlist_id
+"""
 
 
 @router.get("", response_model=list[PlaylistSummary])
@@ -59,6 +86,43 @@ def list_playlists(
             ),
         )
         for pl in playlists
+    ]
+
+
+@router.get(
+    "/deleted",
+    response_model=list[DeletedPlaylistOut],
+    operation_id="list_deleted_playlists",
+)
+def list_deleted_playlists(
+    request: Request,
+    _backend: StateBackend = Depends(get_read_state),
+) -> list[DeletedPlaylistOut]:
+    db_path = Path(getattr(request.app.state, "state_db_path", "data/state/state.db"))
+    if not db_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "state_db_missing",
+                "message": f"state DB not found at {db_path}",
+            },
+        )
+    conn = state_db.open_ro(db_path)
+    try:
+        rows = conn.execute(_DELETED_PLAYLISTS_SQL).fetchall()
+    finally:
+        conn.close()
+    return [
+        DeletedPlaylistOut(
+            playlist_id=row[0],
+            name=row[1],
+            vendor=row[2],
+            vendor_pl_id=row[3],
+            deleted_at=row[4],
+            updated_at=row[5],
+            track_count=row[6],
+        )
+        for row in rows
     ]
 
 
