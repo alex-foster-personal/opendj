@@ -13,6 +13,7 @@ import json
 import os
 import socket
 import subprocess
+import sys
 import tempfile
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -20,7 +21,12 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from scripts.perf.capture_ledger import append_ledger_rows, span_to_ledger_rows
+from scripts.perf.capture_kpi_ledger import format_appended
+from scripts.perf.capture_ledger import (
+    append_ledger_rows,
+    classify_s13_withhold_reason,
+    span_to_ledger_rows,
+)
 
 _REPO = Path(__file__).resolve().parents[2]
 _FRONTEND_ROOT = _REPO / "apps" / "webui" / "frontend"
@@ -155,6 +161,17 @@ def _run_playwright_capture(
     return result
 
 
+def _emit_withheld_stderr(rows: list[dict[str, Any]], ledger_path: Path) -> None:
+    scored = next(row for row in rows if row.get("kpi") == "login_submit_to_library_usable_s")
+    print(format_appended(scored), file=sys.stderr)
+    print(
+        "[capture-s13] ledger row: "
+        f"kpi={scored['kpi']} date={scored['date']} "
+        f"capture_id={scored.get('capture_id', '')} path={ledger_path}",
+        file=sys.stderr,
+    )
+
+
 def capture_s13(
     *,
     engine: str,
@@ -180,6 +197,7 @@ def capture_s13(
         )
         if not dry_run:
             append_ledger_rows(ledger_path, rows)
+        _emit_withheld_stderr(rows, ledger_path)
         return 1
 
     result = _run_playwright_capture(
@@ -196,10 +214,11 @@ def capture_s13(
             sha=sha,
             machine=machine,
             capture_date=capture_date,
-            reason=reason,
+            reason=classify_s13_withhold_reason(reason),
         )
         if not dry_run:
             append_ledger_rows(ledger_path, rows)
+        _emit_withheld_stderr(rows, ledger_path)
         return 1
 
     rows = span_to_ledger_rows(

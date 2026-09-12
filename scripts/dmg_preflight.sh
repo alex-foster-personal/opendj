@@ -45,6 +45,8 @@
 #   MDT_MACOS_NOTARY_KEYCHAIN_PROFILE   notarytool keychain profile
 #   MDT_SHIP_UNSIGNED                   1 = deliberately unsigned dev image
 #   TAURI_SIGNING_PRIVATE_KEY           updater minisign key (never printed)
+#   OPENDJ_GOOGLE_OAUTH_CLIENT_ID       Desktop-app client baked into payload
+#   OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET   non-confidential installed-app secret
 #
 # -Claude
 set -euo pipefail
@@ -648,6 +650,42 @@ print("OK", pub_id)
     esac
 }
 
+#----- I. Google OAuth client (packaged sign-in) --------------------------
+
+# The gap this closes: every packaged install since Google sign-in shipped
+# has had GET /api/v1/health google_oauth_configured: false, because nothing
+# under apps/desktop or the payload builder set OPENDJ_GOOGLE_OAUTH_CLIENT_ID.
+# The Desktop-app client must be in the build environment (or Doppler
+# general/dev_personal) so bake_google_oauth can write it into the payload.
+# THE VALUE IS NEVER PRINTED.
+check_google_oauth_client() {
+    section "I. Google OAuth client (packaged sign-in)"
+    local client_id="${OPENDJ_GOOGLE_OAUTH_CLIENT_ID:-${GOOGLE_OAUTH_CLIENT_ID:-}}"
+    local client_secret="${OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET:-${GOOGLE_OAUTH_CLIENT_SECRET:-}}"
+    if [ -n "$client_id" ] && [ -n "$client_secret" ]; then
+        ok "Google OAuth client id and secret are present in the environment (values not printed)"
+        return
+    fi
+    if command -v doppler >/dev/null 2>&1; then
+        local got_id="" got_secret=""
+        got_id="$(doppler secrets get OPENDJ_GOOGLE_OAUTH_CLIENT_ID --project general --config dev_personal --plain 2>/dev/null || true)"
+        if [ -z "$got_id" ]; then
+            got_id="$(doppler secrets get GOOGLE_OAUTH_CLIENT_ID --project general --config dev_personal --plain 2>/dev/null || true)"
+        fi
+        got_secret="$(doppler secrets get OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET --project general --config dev_personal --plain 2>/dev/null || true)"
+        if [ -z "$got_secret" ]; then
+            got_secret="$(doppler secrets get GOOGLE_OAUTH_CLIENT_SECRET --project general --config dev_personal --plain 2>/dev/null || true)"
+        fi
+        if [ -n "$got_id" ] && [ -n "$got_secret" ]; then
+            ok "Google OAuth client id and secret are available from Doppler (values not printed)"
+            return
+        fi
+    fi
+    fail "Google OAuth client" \
+         "OPENDJ_GOOGLE_OAUTH_CLIENT_ID or OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET is empty or unset and Doppler did not yield a Desktop-app client. A packaged install cannot sign in without the client baked into the payload" \
+         "export OPENDJ_GOOGLE_OAUTH_CLIENT_ID=\"\$(doppler secrets get OPENDJ_GOOGLE_OAUTH_CLIENT_ID --project general --config dev_personal --plain)\" and export OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET=\"\$(doppler secrets get OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET --project general --config dev_personal --plain)\" (Desktop-app client; Google documents the secret as not confidential for installed apps)."
+}
+
 #----- main ---------------------------------------------------------------
 
 echo "Open DJ dmg preflight (read-only)"
@@ -661,6 +699,7 @@ check_uv
 check_pnpm_pin
 check_spa_built
 check_updater_signing_key
+check_google_oauth_client
 
 section "summary"
 if [ "$FAILURES" -gt 0 ]; then
