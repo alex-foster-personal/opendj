@@ -63,6 +63,20 @@ def open_rw(
     ``track_locations`` row that migration v6 could not stamp (schema.py
     reading 3). It is a no-op on a DB with nothing to claim, so an ordinary
     open still mints no identity file and writes no ``machines`` row.
+
+    After migrations and machine-id backfill,
+    :func:`apps.database.regenerate_agents_md_if_writable` regenerates
+    ``<state_dir>/AGENTS.md`` when the state directory is writable; a docs
+    gap on an owned table
+    (:class:`apps.database.generate_agents_md.MissingColumnDocsError`)
+    still fails the open. Leftover tables that are not in
+    :data:`apps.shared.state.schema.ALL_KNOWN_TABLES` are omitted from
+    the sidecar rather than aborting the open -- they are one-shot
+    conversion leftovers, not a forgotten schema column. Foreign-authority
+    tables (pairings, play_orders, launcher_meta, FTS) stay in the sidecar
+    when they are live. An
+    unwritable directory is a spec-mandated skip, not a caught failure.
+    ``MissingColumnDocsError`` is intentionally not caught here.
     """
     target = Path(path) if path is not None else state_paths.STATE_DB
     _ensure_parent(target)
@@ -75,6 +89,12 @@ def open_rw(
         if apply_schema:
             _schema.apply_migrations(conn)
             _sync_stamp.backfill_local_machine_id(conn)
+            from apps.database import regenerate_agents_md_if_writable
+            regenerate_agents_md_if_writable(
+                conn,
+                target.parent,
+                owned_tables=_schema.ALL_KNOWN_TABLES,
+            )
     except Exception:
         conn.close()
         raise

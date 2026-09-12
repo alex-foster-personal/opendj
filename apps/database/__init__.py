@@ -23,22 +23,19 @@ from pathlib import Path
 __all__ = ["regenerate_agents_md_if_writable"]
 
 
-def regenerate_agents_md_if_writable(conn: sqlite3.Connection, state_dir: Path) -> bool:
+def regenerate_agents_md_if_writable(
+    conn: sqlite3.Connection,
+    state_dir: Path,
+    *,
+    owned_tables: frozenset[str] | None = None,
+) -> bool:
     """Regenerate ``<state_dir>/AGENTS.md`` from ``conn``, if ``state_dir`` is writable.
 
-    WIRING ASK for whoever owns ``apps/shared/state/db.py`` (that module is
-    a layer below this package, so it should import this locally rather
-    than at module scope -- see ``apps/database/generate_agents_md.py``'s
-    module docstring for why a top-level import the other way round would
-    cycle): call this one line right after
-    ``apps.shared.state.schema.apply_migrations(conn)`` succeeds inside
-    ``open_rw``::
-
-        from apps.database import regenerate_agents_md_if_writable
-        regenerate_agents_md_if_writable(conn, target.parent)
-
-    (``target`` is already the state.db path in ``open_rw``; ``target.parent``
-    is the state directory both state.db and AGENTS.md live in.)
+    Called from ``apps.shared.state.db.open_rw`` after migrations and machine-id
+    backfill succeed (local import there, not at module scope -- see
+    ``apps/database/generate_agents_md.py``'s module docstring for the
+    circular-import risk). ``target.parent`` in ``open_rw`` is the state
+    directory both state.db and AGENTS.md live in.
 
     Returns False, writing nothing, when ``state_dir`` is not writable -- a
     read-only mount, a CI sandbox, a directory that does not exist yet.
@@ -49,6 +46,12 @@ def regenerate_agents_md_if_writable(conn: sqlite3.Connection, state_dir: Path) 
     :class:`apps.database.generate_agents_md.MissingColumnDocsError`, the
     drift guard) still propagates: migrations succeeding does not make a
     stale ``column_docs.py`` acceptable.
+
+    ``owned_tables`` is forwarded to :func:`write_agents_md`. ``open_rw``
+    passes ``schema.ALL_KNOWN_TABLES`` so leftover tables that are not on
+    the current ladder cannot abort the open, while foreign-authority
+    tables stay in the sidecar. The CLI and tests that omit it keep the
+    strict every-live-table guard.
     """
     if not os.access(state_dir, os.W_OK):
         return False
@@ -61,5 +64,5 @@ def regenerate_agents_md_if_writable(conn: sqlite3.Connection, state_dir: Path) 
     # avoids it.
     from apps.database.generate_agents_md import write_agents_md
 
-    write_agents_md(conn, state_dir / "AGENTS.md")
+    write_agents_md(conn, state_dir / "AGENTS.md", owned_tables=owned_tables)
     return True
