@@ -3,16 +3,26 @@
 The performance page owns the audio engine, so it pushes its rendered state to
 this small engine-side store. A missing push is a closed page, never an empty
 mirror that could be mistaken for an idle four-deck screen.
+
+Agents compute staleness from ``received_at``; ``meter.age_ms`` is page-relative
+and freezes with the page.
 """
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/state", tags=["agent-state"])
+
+
+def _received_at() -> str:
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace(
+        "+00:00", "Z"
+    )
 
 
 def _mirror_store(request: Request) -> dict[str, Any] | None:
@@ -27,7 +37,9 @@ def _mirror_store(request: Request) -> dict[str, Any] | None:
 @router.put("/ui-mirror", status_code=202)
 async def publish_ui_mirror(request: Request, body: dict[str, Any]) -> dict[str, bool]:
     """Replace the page's current screen document with strict JSON input."""
-    request.app.state.ui_mirror = deepcopy(body)
+    stored = deepcopy(body)
+    stored["received_at"] = _received_at()
+    request.app.state.ui_mirror = stored
     return {"accepted": True}
 
 
