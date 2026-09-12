@@ -84,6 +84,21 @@ test('startup is unmuted with no window, so SSR never mutes anything', () => {
 	assert.equal(mute.startupMasterMuted(), false);
 });
 
+// [if] the unit runner installs a fake window without location [then] startupMasterMuted
+// does not throw and the page stays audible
+test('startup is unmuted when window exists but location.search is missing', async () => {
+	globalThis.window = {
+		localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} }
+	};
+	try {
+		const fresh = await loadTypeScriptModule('src/lib/player/master-mute.svelte.ts');
+		assert.equal(fresh.startupMasterMuted(), false);
+		assert.equal(fresh.isMasterMuted(), false);
+	} finally {
+		delete globalThis.window;
+	}
+});
+
 //-----------------------------------------------------------------------------
 // gain endpoints
 //-----------------------------------------------------------------------------

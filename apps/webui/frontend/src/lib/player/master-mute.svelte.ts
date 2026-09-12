@@ -53,7 +53,9 @@ export function parseMasterMutedParam(search: string): boolean {
  * location and no audio graph to mute. */
 export function startupMasterMuted(): boolean {
 	if (typeof window === 'undefined') return false;
-	return parseMasterMutedParam(window.location.search);
+	const search = window.location?.search;
+	if (typeof search !== 'string') return false;
+	return parseMasterMutedParam(search);
 }
 
 //-----------------------------------------------------------------------------
