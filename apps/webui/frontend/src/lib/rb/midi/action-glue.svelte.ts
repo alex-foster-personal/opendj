@@ -226,6 +226,8 @@ export function handleMidiAction(
 				void dispatchPerformanceCommand({ type: 'eq', deck: action.deck, band: action.band, value: v });
 			} else if (action.target === 'fader') {
 				void dispatchPerformanceCommand({ type: 'fader', deck: action.deck, value: v });
+			} else if (action.target === 'filter') {
+				void dispatchPerformanceCommand({ type: 'filter', deck: action.deck, value: v });
 			} else {
 				const _exhaustive: never = action.target;
 				throw new Error(`Unhandled mixer_channel target: ${_exhaustive}`);

@@ -61,3 +61,15 @@ See the subagent transcript for the complete 36-row table with links; key rows:
 - Roland DJ-505/808: no MIDI implementation chart; Mixxx community.
 - Rane One / Seventy-Two / Twelve MK2: no confirmed charts; community WIP journals.
 - Reloop Mixtour: OFFICIAL PDF (our second test device - fast path applies).
+
+## FLX4 follow-up (Sat 12 Sep 2026, issue #1855)
+
+| Field | Value |
+| --- | --- |
+| Device | DDJ-FLX4 |
+| Official PDF | https://downloads.support.alphatheta.com/software_info/dj-controllers/DDJ-FLX4/DDJ-FLX4_MIDI_message_List_E1.pdf |
+| sha256 | `e03ac376ebaa2d461c1a2c832c3c182e3579c893a1531944ebac1b5ce620388f` |
+| Expected map | `tools/controller-probe/flx4_expected_map.json` (control_count = 402) |
+| Runtime map | `apps/webui/frontend/src/lib/rb/midi/maps/ddj-flx4.ts` (bindings.length = 65) |
+| Status | Theory-first complete; hardware adjudication pending Jake's boat, week commencing Mon 14 Sep 2026 |
+| Out of band | HID jog screen / meters; beat-sync (#1777) |
