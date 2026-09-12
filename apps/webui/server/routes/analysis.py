@@ -88,11 +88,16 @@ class AutoCuesOut(BaseModel):
 
 
 class FallbackBeatOut(BaseModel):
-    """Identical field set to one ANLZ beatgrid ``beats`` entry."""
+    """ANLZ beat fields plus ``extrapolated``.
+
+    PQTZ ``/anlz`` beats stay ``{n, bpm, t}``. This fallback endpoint always
+    sends ``extrapolated`` so a client never has to guess which beats are tail.
+    """
 
     n: int      # beat-in-bar 1..4
     bpm: float  # rounded 2dp, like /anlz
     t: float    # seconds, rounded 3dp, like /anlz
+    extrapolated: bool
 
 
 class FallbackBeatgridOut(BaseModel):
@@ -279,8 +284,9 @@ def synthesize_fallback_beats(record: AnalysisRecord) -> list[FallbackBeatOut] |
     Anchored on ``downbeats_s`` (n=1 on every detected downbeat, beats
     2..4 interpolated inside each bar), extended past the last downbeat
     at the last measured bar tempo (or ``record.bpm`` when only one
-    downbeat exists). The grid starts at the FIRST detected downbeat -
-    beats before it are not invented.
+    downbeat exists). Beats past the last detected downbeat are marked
+    ``extrapolated: true`` on the wire. The grid starts at the FIRST
+    detected downbeat - beats before it are not invented.
 
     Returns None when nothing measurable anchors a grid (no downbeats,
     or a single downbeat with no usable BPM). Corrupt data (negative

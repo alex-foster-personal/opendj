@@ -4647,11 +4647,15 @@
         "type": "object"
       },
       "FallbackBeatOut": {
-        "description": "Identical field set to one ANLZ beatgrid ``beats`` entry.",
+        "description": "ANLZ beat fields plus ``extrapolated``.\n\nPQTZ ``/anlz`` beats stay ``{n, bpm, t}``. This fallback endpoint always\nsends ``extrapolated`` so a client never has to guess which beats are tail.",
         "properties": {
           "bpm": {
             "title": "Bpm",
             "type": "number"
+          },
+          "extrapolated": {
+            "title": "Extrapolated",
+            "type": "boolean"
           },
           "n": {
             "title": "N",
@@ -4665,7 +4669,8 @@
         "required": [
           "n",
           "bpm",
-          "t"
+          "t",
+          "extrapolated"
         ],
         "title": "FallbackBeatOut",
         "type": "object"
@@ -12669,6 +12674,17 @@
             "title": "Is Streaming",
             "type": "boolean"
           },
+          "item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Id"
+          },
           "key": {
             "anyOf": [
               {
@@ -15883,6 +15899,17 @@
           "is_streaming": {
             "title": "Is Streaming",
             "type": "boolean"
+          },
+          "item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Id"
           },
           "key": {
             "anyOf": [
@@ -24463,6 +24490,57 @@
         ]
       }
     },
+    "/api/v1/playlists/{playlist_id}/items/{item_id}": {
+      "delete": {
+        "operationId": "delete_playlist_item",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistWriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Playlist Item",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
     "/api/v1/playlists/{playlist_id}/items:add": {
       "post": {
         "operationId": "add_playlist_items",
@@ -27587,8 +27665,42 @@
     },
     "/api/v1/tracks/{stable_id}/audio": {
       "get": {
-        "description": "Stream the single best working file. FileResponse handles Range/206.\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).",
-        "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_get",
+        "description": "Stream the single best working file. FileResponse handles Range/206.\n\nHEAD is served by the same handler: FileResponse sends headers only for a\nHEAD scope, and the LyricsPanel playability probe (``fetch(url,\n{method: 'HEAD'})``) read a GET-only route as \"HTTP 405, audio cannot be\nplayed\" on every track with aligned words (found Sat 12 Sep 2026, #2082).\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).",
+        "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_head",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Audio",
+        "tags": [
+          "rb-assets"
+        ]
+      },
+      "head": {
+        "description": "Stream the single best working file. FileResponse handles Range/206.\n\nHEAD is served by the same handler: FileResponse sends headers only for a\nHEAD scope, and the LyricsPanel playability probe (``fetch(url,\n{method: 'HEAD'})``) read a GET-only route as \"HTTP 405, audio cannot be\nplayed\" on every track with aligned words (found Sat 12 Sep 2026, #2082).\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).",
+        "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_head",
         "parameters": [
           {
             "in": "path",

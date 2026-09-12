@@ -677,19 +677,21 @@ class SqliteBackend:
             if row is None:
                 raise NotFoundError(f"playlist not found: {playlist_id}")
             items: list[str] = []
+            item_ids: list[str] = []
             if self._table_exists(conn, "playlist_memberships"):
-                items = [
-                    r[0] for r in conn.execute(
-                        "SELECT stable_id FROM playlist_memberships "
-                        "WHERE playlist_id = ? AND deleted_at IS NULL "
-                        "ORDER BY COALESCE(order_key, printf('%08d', position)), "
-                        "position",
-                        (playlist_id,),
-                    )
-                ]
+                member_rows = conn.execute(
+                    "SELECT stable_id, item_id FROM playlist_memberships "
+                    "WHERE playlist_id = ? AND deleted_at IS NULL "
+                    "ORDER BY COALESCE(order_key, printf('%08d', position)), "
+                    "position",
+                    (playlist_id,),
+                ).fetchall()
+                items = [r[0] for r in member_rows]
+                item_ids = [r[1] or "" for r in member_rows]
         return Playlist(
             playlist_id=row["playlist_id"], name=row["name"],
             vendor=row["vendor"], vendor_pl_id=row["vendor_pl_id"], items=items,
+            item_ids=item_ids,
             created_at=row["created_at"], updated_at=row["updated_at"],
         )
 

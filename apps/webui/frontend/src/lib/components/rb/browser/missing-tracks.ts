@@ -32,6 +32,7 @@ export function missingTracksNode(brokenCount: number): PlaylistNode {
 export function brokenTrackToBrowserRow(track: BrokenTrack, order: number): BrowserRow {
 	return {
 		stable_id: track.stable_id,
+		item_id: null,
 		order,
 		title: track.title ?? null,
 		artist: track.artist ?? null,

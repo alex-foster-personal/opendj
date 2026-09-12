@@ -148,6 +148,9 @@ def add_memberships(
 __all__ = [
     "AlreadyExistsError",
     "MEMBERSHIP_ORDER_BY",
+    "MembershipRow",
     "SmartlistImmutableError",
+    "_is_smartlist",
+    "_load_live_members",
     "add_memberships",
 ]

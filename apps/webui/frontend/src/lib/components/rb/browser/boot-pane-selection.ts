@@ -51,12 +51,24 @@ export const ALL_TRACKS_CHOICE: BootPlaylistChoice = {
  *
  * Pure so the decision is unit-testable without a DOM or a live library.
  */
+export { parseLv1, writeLv1 } from '$lib/rb/performance-deeplink';
+
 export function resolveBootPlaylist(args: {
 	remembered: BootPlaylistChoice | null;
 	known_playlist_ids: readonly string[];
 	all_tracks_count: number;
+	url_playlist_id?: string | null;
 }): BootPlaylistChoice | null {
 	if (!Number.isFinite(args.all_tracks_count) || args.all_tracks_count <= 0) return null;
+	const urlPlaylistId = args.url_playlist_id ?? null;
+	if (urlPlaylistId === 'all') return ALL_TRACKS_CHOICE;
+	if (
+		urlPlaylistId !== null &&
+		urlPlaylistId.length > 0 &&
+		args.known_playlist_ids.includes(urlPlaylistId)
+	) {
+		return { playlist_id: urlPlaylistId, name: urlPlaylistId, kind: 'playlist' };
+	}
 	const remembered = args.remembered;
 	if (remembered === null) return ALL_TRACKS_CHOICE;
 	if (remembered.kind === 'all_tracks') return ALL_TRACKS_CHOICE;

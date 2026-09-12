@@ -46,6 +46,8 @@ export type { SortDir, SortKey } from './browser-sort-ipc';
  * units). */
 export interface BrowserRow extends Pick<TrackRow, 'key_status' | 'key_reason' | 'loudness_status' | 'loudness_reason'> {
 	stable_id: string;
+	/** v13 playlist_memberships.item_id; null outside playlist detail. */
+	item_id: string | null;
 	/** 1-based membership position within the pane playlist (# column). */
 	order: number;
 	title: string | null;
@@ -414,7 +416,7 @@ export function rowHasVocalLyrics(row: BrowserRow): boolean {
 // Only the two decisions BrowserPanel calls are re-exported: the All Tracks
 // identity and its type are read straight from ./boot-pane-selection by the
 // one suite that asserts on them, so no unreferenced export lands here.
-export { resolveBootPlaylist, shouldRetryBootPane } from './boot-pane-selection';
+export { resolveBootPlaylist, shouldRetryBootPane, parseLv1, writeLv1 } from './boot-pane-selection';
 
 // ------------------------------------------------ boot health-read retries
 

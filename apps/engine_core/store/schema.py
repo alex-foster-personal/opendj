@@ -186,11 +186,16 @@ _STATE_CORE: tuple[str, ...] = (
     "name TEXT NOT NULL, vendor TEXT NOT NULL, vendor_pl_id TEXT NOT NULL, "
     "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
     "origin_device_id TEXT, deleted_at TEXT, UNIQUE (vendor, vendor_pl_id) )",
+    # Legacy v13 ALTER-splices item_id / order_key after deleted_at, still
+    # before the table-level PRIMARY KEY. Do not pretty-print; the parity
+    # gate compares normalised sqlite_master bytes.
     "CREATE TABLE IF NOT EXISTS playlist_memberships ( playlist_id TEXT NOT "
     "NULL REFERENCES playlists(playlist_id) ON DELETE CASCADE, stable_id TEXT "
     "NOT NULL REFERENCES tracks(stable_id) ON DELETE CASCADE, position "
     "INTEGER NOT NULL, updated_at TEXT, origin_device_id TEXT, deleted_at "
-    "TEXT, PRIMARY KEY (playlist_id, position) )",
+    "TEXT, item_id TEXT, order_key TEXT, PRIMARY KEY (playlist_id, position) )",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_playlist_memberships_item_id "
+    "ON playlist_memberships(item_id)",
     """
     CREATE TABLE IF NOT EXISTS adapters (
         adapter_id   TEXT PRIMARY KEY,
