@@ -3,7 +3,15 @@ import { test } from 'node:test';
 
 import { readFrontendSource } from './engine-source.mjs';
 
-const ENGINE = readFrontendSource('src/lib/rb/audio-engine.svelte.ts');
+// deck-channel-graph.ts was extracted from audio-engine.svelte.ts on
+// Sat 12 Sep 2026 (commit 1db624ef7, #2155 output-stall recovery) and now
+// owns the per-deck node construction and wiring this file pins; the mixer
+// knob update path (audio-engine.svelte.ts's _setParam calls) stayed behind.
+// Read both so the extraction does not leave this guard un-anchored.
+const ENGINE =
+	readFrontendSource('src/lib/rb/audio-engine.svelte.ts') +
+	'\n' +
+	readFrontendSource('src/lib/rb/deck-channel-graph.ts');
 
 test('centered FILTER has a real dry route around both BiquadFilterNodes', () => {
 	assert.match(ENGINE, /filterDry: GainNode;/);
