@@ -83,6 +83,7 @@
 		transferPlaylistTracks,
 		isWithinCreateGrace,
 		markPlaylistCreateGrace,
+		movePlaylistItems,
 		PlaylistConflictError,
 		renamePlaylist,
 		replacePlaylistTracks
@@ -2714,13 +2715,84 @@
 		pushToast(removeFromLibraryToastMessage(okCount), 'info');
 	}
 
-	function reorderRows(fromOrder: number, toOrder: number): void {
-		void _mutateActivePane((items) => {
-			const next = items.slice();
-			const [moved] = next.splice(fromOrder - 1, 1);
-			next.splice(toOrder - 1, 0, moved);
-			return next;
-		});
+	function reorderRows(fromOrder: number, toOrder: number, count = 1): void {
+		void _moveMembershipSlice(fromOrder, toOrder, count);
+	}
+
+	async function _moveMembershipSlice(
+		fromOrder: number,
+		toOrder: number,
+		count: number
+	): Promise<void> {
+		const p = pane;
+		const id = p.playlist_id;
+		if (id === null || id === 'all' || isMissingTracksId(id)) return;
+		if (source !== 'collection' || p.whole_collection) {
+			pushToast('membership editing is disabled outside the complete playlist view', 'error');
+			return;
+		}
+		if (p.truncated) {
+			pushToast('playlist is truncated - membership editing is disabled to preserve unrendered tracks', 'error');
+			return;
+		}
+		if (p.etag === '') {
+			pushToast('playlist still loading - try again in a moment', 'error');
+			return;
+		}
+		const rowsByOrder = new Map(p.rows.map((row) => [row.order, row]));
+		const slice: BrowserRow[] = [];
+		for (let order = fromOrder; order < fromOrder + count; order += 1) {
+			const row = rowsByOrder.get(order);
+			if (row === undefined) {
+				pushToast('playlist row has no membership id - reload and try again', 'error');
+				return;
+			}
+			slice.push(row);
+		}
+		const target = rowsByOrder.get(toOrder);
+		if (target === undefined) {
+			pushToast('playlist row has no membership id - reload and try again', 'error');
+			return;
+		}
+		for (const row of [...slice, target]) {
+			if (!row.item_id) {
+				pushToast('playlist row has no membership id - reload and try again', 'error');
+				return;
+			}
+		}
+		if (toOrder >= fromOrder && toOrder < fromOrder + count) {
+			return;
+		}
+		const body: {
+			range_start: string;
+			range_length: number;
+			range_end: string;
+			before_item_id?: string;
+			after_item_id?: string;
+		} = {
+			range_start: slice[0].item_id!,
+			range_length: count,
+			range_end: slice[count - 1].item_id!
+		};
+		if (toOrder > fromOrder + count - 1) {
+			body.after_item_id = target.item_id!;
+		} else if (toOrder < fromOrder) {
+			body.before_item_id = target.item_id!;
+		} else {
+			return;
+		}
+		try {
+			await movePlaylistItems(id, p.etag, body);
+		} catch (exc) {
+			if (exc instanceof PlaylistConflictError) {
+				pushToast('playlist changed elsewhere - reloaded with the latest version', 'error');
+			} else {
+				pushToast(`playlist update failed: ${String(exc)}`, 'error');
+				return;
+			}
+		}
+		const node = _currentNode(p);
+		if (node !== null) await _loadPane(p, node);
 	}
 </script>
 

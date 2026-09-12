@@ -406,6 +406,67 @@ class _PlaylistWriterMixin:
             self.bus.publish(ev)
         return True
 
+    def update_playlist_membership_order_keys(
+        self: _WriterHost,
+        playlist_id: str,
+        rows: list[tuple[str, str]],
+        *,
+        renumbered: bool = False,
+    ) -> None:
+        """UPDATE order_key for named live membership rows only."""
+        if not rows:
+            return
+        transaction = (
+            self._tx() if self._conn.in_transaction
+            else immediate_transaction(self._conn)
+        )
+        with transaction as conn:
+            now = next_playlist_revision(conn, playlist_id, self._now_iso())
+            changed = 0
+            for item_id, new_key in rows:
+                row = conn.execute(
+                    "SELECT position, order_key FROM playlist_memberships "
+                    "WHERE playlist_id = ? AND item_id = ? AND deleted_at IS NULL",
+                    (playlist_id, item_id),
+                ).fetchone()
+                if row is None or row[1] == new_key:
+                    continue
+                position = row[0]
+                member_stamp = self._stamp(
+                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
+                )
+                conn.execute(
+                    "UPDATE playlist_memberships SET order_key=?, updated_at=?, "
+                    "origin_device_id=? WHERE playlist_id=? AND item_id=?",
+                    (
+                        new_key,
+                        member_stamp.updated_at,
+                        member_stamp.origin_device_id,
+                        playlist_id,
+                        item_id,
+                    ),
+                )
+                changed += 1
+            if changed == 0:
+                return
+            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
+            conn.execute(
+                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
+                "WHERE playlist_id = ?",
+                (stamp.updated_at, stamp.origin_device_id, playlist_id),
+            )
+            ev = self._append_event(
+                kind="playlist.memberships.move",
+                stable_id=None,
+                payload={
+                    "playlist_id": playlist_id,
+                    "count": changed,
+                    "renumbered": renumbered,
+                },
+                ts=now,
+            )
+            self.bus.publish(ev)
+
     def append_playlist_history(
         self: _WriterHost, kind: str, payload: dict[str, Any]
     ) -> object:
