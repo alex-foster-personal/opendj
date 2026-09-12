@@ -5,6 +5,7 @@
     "src/hooks.{client,server}.{js,ts}",
     "src/service-worker.{js,ts}",
     "tests/unit/**/*.test.mjs",
+    "tests/live/stem-decode-harness-entry.ts",
     "tests/unit/fixtures/**/*.ts",
     "tests/e2e/fixtures/**/*.ts",
     "tests/manual/wkwebview-spike/inject.mjs",

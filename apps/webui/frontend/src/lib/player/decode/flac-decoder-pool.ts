@@ -1,22 +1,12 @@
 /**
- * The page's FLAC worker decoders, checked out and put back.
+ * The page's stem worker decoders, checked out and put back.
  *
- * Decoders live for the PAGE, not for the load. Spawning a worker and
- * compiling the wasm costs 5-41ms cold for four decoders, and a DJ loads decks
- * all night, so paying it per load would spend a slice of the win on setup the
- * previous load already did. Bounded by the widest layout: four workers total,
- * never four per deck.
- *
- * A decoder that errors is DISCARDED rather than returned: a wasm decoder that
- * has thrown mid-stream has undefined internal state, and reusing it would let
- * one corrupt file poison every later load.
- *
- * Its own module because the policy file next door had reached the 600-line
- * ratchet, and because ownership rules (who frees what, on which exit) read
- * better beside each other than interleaved with refusal policy.
+ * Decoders live for the PAGE, not for the load. Bounded by the widest layout:
+ * four workers total per codec pool, never four per deck. FLAC and MPEG workers
+ * cannot share a pool: reset of a FLAC wasm heap is not an MPEG decoder.
  */
 
-/** One FLAC decoder running in its own worker. */
+/** One stem decoder running in its own worker. */
 export interface StemFlacDecoder {
 	ready: Promise<void>;
 	decodeFile: (bytes: Uint8Array) => Promise<DecodedStemAudio>;
@@ -29,10 +19,6 @@ export type StemFlacDecoderFactory = () => StemFlacDecoder;
 
 /**
  * What a decode comes back as, declared structurally rather than imported.
- *
- * The vendor's own types would be a static import of the decoder package,
- * which is the one reference that would pull it into the boot bundle it is
- * dynamically imported to stay out of.
  */
 export interface DecodedStemAudio {
 	channelData: readonly Float32Array[];
@@ -41,37 +27,42 @@ export interface DecodedStemAudio {
 	errors?: readonly unknown[];
 }
 
-const _pool: StemFlacDecoder[] = [];
 const MAX_POOLED_DECODERS = 4;
+const _pools = new Map<string, StemFlacDecoder[]>();
 
-/** How many decoders are parked right now. */
-export function pooledCount(): number {
-	return _pool.length;
+function _pool(poolKey: string): StemFlacDecoder[] {
+	let pool = _pools.get(poolKey);
+	if (pool === undefined) {
+		pool = [];
+		_pools.set(poolKey, pool);
+	}
+	return pool;
 }
 
-/** Forget the pool. The workers themselves are dropped, not freed. */
-export function forgetPool(): void {
-	_pool.length = 0;
+/** How many decoders are parked right now for `poolKey`. */
+export function pooledCount(poolKey = 'flac'): number {
+	return _pool(poolKey).length;
 }
 
-/**
- * Check out a decoder, owning it on EVERY exit.
- *
- * Both awaits can reject - a wasm compile that never finishes ready, a
- * `reset()` on a decoder whose worker has died - and a rejection escaping here
- * escapes holding a live worker thread nothing else references. The caller
- * cannot free what it never received, so cleanup belongs on the only frame
- * that ever held the object. The leak is per RETRY, not per page: a failed
- * checkout is no lane trial, so every later load strands four more.
- */
-export async function takeDecoder(make: StemFlacDecoderFactory): Promise<StemFlacDecoder> {
-	const pooled = _pool.pop();
+/** Forget the pool for `poolKey`, or every pool when omitted. */
+export function forgetPool(poolKey?: string): void {
+	if (poolKey === undefined) {
+		_pools.clear();
+		return;
+	}
+	_pool(poolKey).length = 0;
+}
+
+export async function takeDecoder(
+	make: StemFlacDecoderFactory,
+	poolKey = 'flac'
+): Promise<StemFlacDecoder> {
+	const pool = _pool(poolKey);
+	const pooled = pool.pop();
 	if (pooled !== undefined) {
 		try {
 			await pooled.reset();
 		} catch (exc) {
-			// Not returned to the pool: a decoder that cannot reset is not a
-			// decoder, and reusing it would carry the previous stream's state.
 			await freeQuietly(pooled);
 			throw exc;
 		}
@@ -87,21 +78,15 @@ export async function takeDecoder(make: StemFlacDecoderFactory): Promise<StemFla
 	return fresh;
 }
 
-export function returnDecoder(decoder: StemFlacDecoder): void {
-	if (_pool.length >= MAX_POOLED_DECODERS) {
+export function returnDecoder(decoder: StemFlacDecoder, poolKey = 'flac'): void {
+	const pool = _pool(poolKey);
+	if (pool.length >= MAX_POOLED_DECODERS) {
 		void decoder.free();
 		return;
 	}
-	_pool.push(decoder);
+	pool.push(decoder);
 }
 
-/**
- * Release a decoder without letting the release replace the real failure.
- *
- * `free()` on a decoder that never became ready can itself throw, and that
- * throw would propagate in place of the reason we are freeing it - turning a
- * reported `decode-failed` into an unhandled rejection out of the deck load.
- */
 export async function freeQuietly(decoder: StemFlacDecoder): Promise<void> {
 	try {
 		await decoder.free();
@@ -110,35 +95,20 @@ export async function freeQuietly(decoder: StemFlacDecoder): Promise<void> {
 	}
 }
 
-/**
- * Spawn and compile up to `count` decoders BEFORE something times them.
- *
- * The lane calibration is a stopwatch over one whole load, and the worker
- * trial is the load that first builds this pool. Charging spawn plus wasm
- * compile to it measures a cost that no later load pays - every one of them
- * reuses these decoders - and the bias is not academic: on this repo's own
- * live run the stopwatch had the workers 1.71x faster while the trial that
- * paid the cold start settled the session on the main thread. That verdict is
- * permanent, so a one-time cost would have cost every deck load in the session.
- *
- * A decoder that cannot start is NOT swallowed into a silent half-warm pool:
- * warming stops at the first failure and the decoders it did get are parked,
- * so the load that follows meets the same failure through `takeDecoder` and
- * reports it per part, which is the path that already handles it.
- */
-export async function warmPool(make: StemFlacDecoderFactory, count: number): Promise<void> {
+export async function warmPool(
+	make: StemFlacDecoderFactory,
+	count: number,
+	poolKey = 'flac'
+): Promise<void> {
+	const pool = _pool(poolKey);
 	const taken: StemFlacDecoder[] = [];
 	try {
-		while (taken.length < count && _pool.length + taken.length < MAX_POOLED_DECODERS) {
-			taken.push(await takeDecoder(make));
+		while (taken.length < count && pool.length + taken.length < MAX_POOLED_DECODERS) {
+			taken.push(await takeDecoder(make, poolKey));
 		}
 	} catch {
-		// Deliberately not rethrown, and not a masked failure: the load that
-		// follows calls takeDecoder again for its first part, meets the same
-		// failure, and reports it as a per-part refusal with the decoder freed.
-		// Rethrowing would fail a whole deck load for a warmup that is only
-		// ever an optimization.
+		// The load that follows calls takeDecoder again and reports per-part.
 	} finally {
-		for (const decoder of taken) returnDecoder(decoder);
+		for (const decoder of taken) returnDecoder(decoder, poolKey);
 	}
 }
