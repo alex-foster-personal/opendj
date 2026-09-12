@@ -19,6 +19,7 @@ import { anyDeckPlaying, startBackgroundDemandShed } from './playing-gate';
 import { installReloadCountdown } from './reload-countdown';
 import { readXrunSessionCounter } from './xrun-sentinel';
 import { pushToast } from '$lib/stores.svelte';
+import { startClientPerformanceSampling } from './client-performance-samples';
 import { startUsageHeartbeat } from './usage-heartbeat';
 import { DECK_IDS, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
 import { getAutoPlayPlaylist, pickNextStableId, tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
@@ -94,6 +95,7 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	const stopUsageHeartbeat = startUsageHeartbeat(scheduler);
 	const stopReloadCountdown = installReloadCountdown();
 	const stopMachinePressurePolling = startMachinePressurePolling(scheduler);
+	const stopClientPerformanceSampling = startClientPerformanceSampling(scheduler);
 	const stopBackgroundDemandShed = startBackgroundDemandShed({
 		isPlaying: anyDeckPlaying,
 		pressureElevated: () => pressureIsElevated(readMachinePressure()),
@@ -126,6 +128,7 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 		setSilenceDropoutContextReader(null);
 		stopBackgroundDemandShed();
 		stopMachinePressurePolling();
+		stopClientPerformanceSampling();
 		stopReloadCountdown();
 		stopUsageHeartbeat();
 		stopBootScheduler();

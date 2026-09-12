@@ -17,15 +17,18 @@ All runtime logs stay in the engine data directory, so they survive app restarts
 
 | Path | Writer | Retention and purpose |
 | --- | --- | --- |
-| `<data-dir>/logs/engine.log` | Bundled engine stdout and stderr | Appended across launches. Rotates at 5 MiB, retaining `engine.log.1` through `.5`. |
-| `<data-dir>/logs/engine-warn.log` | Python logging and uvicorn errors | JSONL warnings and errors only, with a `boot_id` on every record. Use `tail -f` for the focused incident stream. |
+| `<data-dir>/logs/engine.log` | Bundled engine stdout and stderr | Appended across launches. Rotates at 5 MiB; timestamped archives older than 7 days are deleted. |
+| `<data-dir>/logs/engine-warn.log` | Python logging and uvicorn errors | JSONL warnings and errors only, with a `boot_id` on every record. Same 5 MiB live cap and 7-day archive retention as `engine.log`. Use `tail -f` for the focused incident stream. |
 | `<data-dir>/logs/webui-client-errors-YYYY-MM-DD.log` | Browser error API | Full daily JSONL browser-error records. The file is never rewritten by triage. |
+| `<data-dir>/logs/webui-performance-YYYY-MM-DD.log` | Live page telemetry | Boot-deferred client performance samples (10 s while visible). Error-bearing rows also appear in `GET /api/v1/errors`. |
 | `<data-dir>/logs/webui-client-errors-YYYY-MM-DD.triage.jsonl` | Browser error triage API | Append-only decisions: `fix`, `no-fix`, or `duplicate`, with a required reference. |
 | `~/.local/share/music-dj-tools/webui/webui-backend-YYYY-MM-DD.log` | `just webui-backend` | Development backend stdout and stderr. |
 
 For the Chrome loop, `scripts/run_chrome_loop.sh --engine` appends the direct engine output to `<chrome-loop-data-dir>/logs/engine.log`; do not start the engine bare if the output needs to survive the terminal session.
 
 List outstanding browser incidents with `GET /api/v1/client-errors?untriaged=1`. Record a decision with `PATCH /api/v1/client-errors/<event_id>` and a JSON body such as `{"disposition":"no-fix","ref":"issue #896"}`.
+
+Aggregate ERROR/WARN records from every server-readable sink for the last hour (or a custom window) with `GET /api/v1/errors?since=<ISO8601>`. Each event carries `source`, `level`, `message`, and `stack` / `url` / `context` when the sink has them. Missing sinks are listed under `sinks` without failing the request.
 
 ## Baseline (every feature needs this)
 

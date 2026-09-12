@@ -19,6 +19,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod engine;
+mod engine_log;
 mod launch;
 
 use std::path::{Path, PathBuf};
