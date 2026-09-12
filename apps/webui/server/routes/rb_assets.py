@@ -109,13 +109,18 @@ class RbMetaOut(BaseModel):
     quality: QualityOut
 
 
-@router.get("/{stable_id}/audio", response_class=FileResponse)
+@router.api_route("/{stable_id}/audio", methods=["GET", "HEAD"], response_class=FileResponse)
 def get_track_audio(
     stable_id: str,
     request: Request,
     _backend: StateBackend = Depends(get_read_state),
 ) -> FileResponse:
     """Stream the single best working file. FileResponse handles Range/206.
+
+    HEAD is served by the same handler: FileResponse sends headers only for a
+    HEAD scope, and the LyricsPanel playability probe (``fetch(url,
+    {method: 'HEAD'})``) read a GET-only route as "HTTP 405, audio cannot be
+    played" on every track with aligned words (found Sat 12 Sep 2026, #2082).
 
     The backend picks among ``track_locations`` plus the legacy
     ``file_path`` / FolderPath. The frontend never sees the alternatives.
