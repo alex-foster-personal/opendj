@@ -18265,6 +18265,29 @@
         "title": "VoiceProbeResponse",
         "type": "object"
       },
+      "WorktreePortsOut": {
+        "properties": {
+          "api_proxy_target": {
+            "title": "Api Proxy Target",
+            "type": "string"
+          },
+          "backend": {
+            "title": "Backend",
+            "type": "integer"
+          },
+          "frontend": {
+            "title": "Frontend",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "backend",
+          "frontend",
+          "api_proxy_target"
+        ],
+        "title": "WorktreePortsOut",
+        "type": "object"
+      },
       "WriteSurfaceOut": {
         "properties": {
           "entrypoint": {
@@ -19549,6 +19572,27 @@
         ]
       }
     },
+    "/api/v1/admin/ports": {
+      "get": {
+        "operationId": "get_worktree_ports_api_v1_admin_ports_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorktreePortsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Worktree Ports",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/quality-ratchet": {
       "get": {
         "operationId": "get_quality_ratchet_api_v1_admin_quality_ratchet_get",
@@ -20025,6 +20069,27 @@
         "summary": "Put Analysis Source",
         "tags": [
           "analysis"
+        ]
+      }
+    },
+    "/api/v1/app-posture": {
+      "get": {
+        "operationId": "app_posture_api_v1_app_posture_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppPostureOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "App Posture",
+        "tags": [
+          "health"
         ]
       }
     },

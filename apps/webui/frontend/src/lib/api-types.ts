@@ -296,6 +296,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/ports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Worktree Ports */
+        get: operations["get_worktree_ports_api_v1_admin_ports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/quality-ratchet": {
         parameters: {
             query?: never;
@@ -11571,6 +11588,15 @@ export interface components {
             /** Transcript */
             transcript: string;
         };
+        /** WorktreePortsOut */
+        WorktreePortsOut: {
+            /** Api Proxy Target */
+            api_proxy_target: string;
+            /** Backend */
+            backend: number;
+            /** Frontend */
+            frontend: number;
+        };
         /** WriteSurfaceOut */
         WriteSurfaceOut: {
             /** Entrypoint */
@@ -12351,6 +12377,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_worktree_ports_api_v1_admin_ports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorktreePortsOut"];
                 };
             };
         };
