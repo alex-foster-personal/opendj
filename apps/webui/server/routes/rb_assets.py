@@ -28,6 +28,10 @@ from ..backend import StateBackend
 from ..deps import get_read_state
 from ..models import QualityOut
 from ..rb_vendor_pkg import own_beatgrid_overlay
+from ..rb_vendor_pkg.anlz_missing_analysis import (
+    apply_own_beatgrid_when_vendor_absent,
+    vendor_analysis_path_absent,
+)
 from ..rb_vendor_pkg.own_overlays import apply_own_overlays
 from . import analysis as analysis_routes
 from . import analysis_source as analysis_source_routes
@@ -375,6 +379,7 @@ def get_track_anlz(
     # (discussion_r3974235458 P2 BLOCKING).
     beatgrid_source = _current_beatgrid_source(request)
     state_db_path = _state_db_override(request)
+    rescued_missing_analysis_path = False
     try:
         content = rb_vendor.resolve_content(stable_id)
         payload = rb_vendor.build_anlz_payload(content, points, state_db_path)
@@ -403,21 +408,35 @@ def get_track_anlz(
             # the two branches.
             payload = apply_own_overlays(payload, stable_id, state_db_path)
         elif code == "ANALYSIS_NOT_FOUND":
-            # A MAPPED track whose vendor ANLZ files are missing, unsafe, or
-            # wholly unparseable -- ordinarily a hard 404. `build_anlz_payload`
-            # raised before the own overlay ever ran, so a track with the
-            # beatgrid lane promoted to own and a valid canonical own record
-            # could not be served at all (Codex P1 BLOCKING, PR #1587) even
-            # though the own lane has a real, honest answer independent of
-            # the vendor's broken file.
-            #
-            # Cues live in djmdCue, not the ANLZ files, so they are still real
-            # data for this track and are fetched for real rather than reused
-            # from `empty_anlz_payload`'s local-import stub.
-            payload = rb_vendor.empty_anlz_payload(stable_id, points)
-            payload["cues"] = rb_vendor.fetch_cues(content.vendor_id)
-            payload = apply_own_overlays(payload, stable_id, state_db_path)
-            if payload["beatgrid"]["source"] != own_beatgrid_overlay.SOURCE_OWN and beatgrid_source != "own":
+            if vendor_analysis_path_absent(content):
+                rescued_missing_analysis_path = True
+                share = getattr(request.state, "share_audience", "local") == "share"
+                payload = rb_vendor.local_anlz_payload(stable_id, points, share=share)
+                payload["cues"] = rb_vendor.fetch_cues(content.vendor_id)
+                payload = apply_own_overlays(payload, stable_id, state_db_path)
+                payload = apply_own_beatgrid_when_vendor_absent(
+                    payload, stable_id, state_db_path
+                )
+            else:
+                # A MAPPED track whose vendor ANLZ files are missing, unsafe, or
+                # wholly unparseable -- ordinarily a hard 404. `build_anlz_payload`
+                # raised before the own overlay ever ran, so a track with the
+                # beatgrid lane promoted to own and a valid canonical own record
+                # could not be served at all (Codex P1 BLOCKING, PR #1587) even
+                # though the own lane has a real, honest answer independent of
+                # the vendor's broken file.
+                #
+                # Cues live in djmdCue, not the ANLZ files, so they are still real
+                # data for this track and are fetched for real rather than reused
+                # from `empty_anlz_payload`'s local-import stub.
+                payload = rb_vendor.empty_anlz_payload(stable_id, points)
+                payload["cues"] = rb_vendor.fetch_cues(content.vendor_id)
+                payload = apply_own_overlays(payload, stable_id, state_db_path)
+            if (
+                not rescued_missing_analysis_path
+                and payload["beatgrid"]["source"] != own_beatgrid_overlay.SOURCE_OWN
+                and beatgrid_source != "own"
+            ):
                 # Neither this DB-level overlay nor the explicit PARITY-02
                 # toggle wants own here, so there is nothing real to show:
                 # the rekordbox stub in `payload` would be indistinguishable

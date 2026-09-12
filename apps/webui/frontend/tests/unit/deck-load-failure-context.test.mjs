@@ -50,6 +50,17 @@ before(async () => {
 // the context itself
 //-----------------------------------------------------------------------------
 
+test('[if] decode or audio fetch fails after getTrack [then] the toast message contains the track title and the reason, [else stop].', () => {
+	assert.equal(
+		failureContext.formatDeckLoadFailureMessage('Night Ride', 'abc', 'EncodingError: corrupt audio'),
+		'Night Ride: EncodingError: corrupt audio'
+	);
+	assert.equal(
+		failureContext.formatDeckLoadFailureMessage(null, 'abc123', 'EncodingError: corrupt audio'),
+		'abc123: EncodingError: corrupt audio'
+	);
+});
+
 test('the context names the source, the deck, and every stage that was measured', () => {
 	const context = failureContext.deckLoadFailureContext(2, {
 		getTrack: 41,

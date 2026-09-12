@@ -29,6 +29,7 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { drawStripWaveform } from './strip-waveform-render';
+	import { shouldShowNativeGridMarker } from './strip-native-grid';
 
 	let {
 		deck,
@@ -97,6 +98,7 @@
 	const ownGridUnavailable: string | null = $derived(
 		deck.anlz?.beatgrid_source === 'own' ? deck.anlz.beatgrid_own_unavailable_reason : null
 	);
+	const showNativeGridMarker: boolean = $derived(shouldShowNativeGridMarker(deck.anlz));
 
 	// First stored loop in the hot-cue bank -> in/out time chips (display-only
 	// at v1 per COMPONENT-MAP 1.3; sparse coverage is real).
@@ -241,6 +243,8 @@
 			<span class="no-anlz" title="No rekordbox ANLZ for this track - the strip has no waveform, beatgrid, or cue overlay">NO ANALYSIS</span>
 		{:else if ownGridUnavailable !== null}
 			<span class="no-anlz" title={ownGridUnavailable}>NO OWN GRID</span>
+		{:else if showNativeGridMarker}
+			<span class="native-grid" data-testid="native-grid-marker" title="Measured native beatgrid; rekordbox has no AnalysisDataPath.">native grid</span>
 		{/if}
 
 		{#each memoryCuesMs as ms, i (i)}
@@ -339,6 +343,17 @@
 		font-size: var(--rb-fs-label);
 		color: var(--rb-text-dim);
 		letter-spacing: 1px;
+	}
+	.native-grid {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: var(--rb-fs-label);
+		color: var(--rb-green);
+		letter-spacing: 1px;
+		pointer-events: none;
 	}
 	.mem-cue {
 		position: absolute;
