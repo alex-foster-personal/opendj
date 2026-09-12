@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
 
 from .backend import BackendError, ConflictError, NotFoundError
-from .playlist_add import AlreadyExistsError, SmartlistImmutableError
+from .playlist_add import AlreadyExistsError, BulkLimitError, SmartlistImmutableError
 from .playlist_move import SliceNotContiguousError, TargetInsideSliceError
 
 
@@ -94,6 +94,13 @@ async def handle_target_inside_slice(
     )
 
 
+async def handle_bulk_limit(_request: Request, exc: BulkLimitError) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content=ErrorBody(error="bulk_limit", message=str(exc)).model_dump(),
+    )
+
+
 async def handle_backend_error(_request: Request, exc: BackendError) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -130,6 +137,7 @@ __all__ = [
     "ErrorBody",
     "handle_already_exists",
     "handle_backend_error",
+    "handle_bulk_limit",
     "handle_conflict",
     "handle_not_found",
     "handle_rekordbox_writeback_disabled",

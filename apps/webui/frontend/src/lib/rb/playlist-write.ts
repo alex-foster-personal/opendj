@@ -205,6 +205,37 @@ export async function deletePlaylistItem(
 	return { items: out.items, etag: fresh };
 }
 
+/** POST /playlists/{id}/items:remove - O(k) bulk remove without rewriting
+ * existing membership rows (LIBM-21). No If-Match required. */
+export async function removePlaylistItems(
+	playlistId: string,
+	itemIds: string[]
+): Promise<PlaylistWriteResult> {
+	let data: unknown;
+	let response: Response;
+	try {
+		({ data, response } = await api.POST('/api/v1/playlists/{playlist_id}/items:remove', {
+			params: { path: { playlist_id: playlistId } },
+			body: { item_ids: itemIds }
+		}));
+	} catch (error) {
+		if (error instanceof ApiError) {
+			throw new Error(
+				`remove from playlist ${playlistId} failed (${error.status}): ${_messageOf(error)}`
+			);
+		}
+		throw error;
+	}
+	const fresh = response.headers.get('etag');
+	if (!fresh) {
+		throw new Error(
+			`playlist ${playlistId}: POST items:remove response carries no ETag header`
+		);
+	}
+	const out = data as PlaylistRowWire;
+	return { items: out.items, etag: fresh };
+}
+
 export interface MembershipMoveBody {
 	range_start: string;
 	range_length?: number;
