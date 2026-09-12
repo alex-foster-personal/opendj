@@ -9,8 +9,8 @@
  * concept, and it keeps BrowserPanel.svelte importing one module for both.
  */
 
-/** Physical deck slot 1-4. Layout: 1 top-left, 2 top-right, 3 bottom-left, 4 bottom-right. */
-export type DeckId = 1 | 2 | 3 | 4;
+export type { DeckId } from './deck-id';
+import type { DeckId } from './deck-id';
 
 /** Everything the picker needs about one slot to rank it as a victim. */
 export interface DeckSlotState {

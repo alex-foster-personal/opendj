@@ -2,16 +2,16 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
 
-from apps.smartlists.repo import SmartlistsRepo
 from apps.shared.state import db as state_db
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter
+from apps.smartlists.repo import SmartlistsRepo
 from apps.webui.server.app import create_app
 from apps.webui.server.routes import playlist_write
 from apps.webui.server.sqlite_backend import SqliteBackend

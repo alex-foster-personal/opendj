@@ -3,7 +3,7 @@
  * mixer/deck config. Pure serialize/parse - no DOM or audio imports.
  */
 
-import type { DeckId } from '$lib/rb/deck-slots';
+import type { DeckId } from '$lib/rb/deck-id';
 import type { CrossfaderAssign } from '$lib/rb/mixer-types';
 import type { PitchRange } from '$lib/player/constants';
 import type { StemControl } from '$lib/rb/stem-types';

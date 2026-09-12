@@ -563,12 +563,6 @@ export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean)
 	void _syncDiskPrefs({ auto_sync: { ...uiPrefs.auto_sync } });
 }
 
-export function setAutoSync(next: AutoSyncPrefs): void {
-	uiPrefs.auto_sync = { ...next };
-	_persist();
-	void _syncDiskPrefs({ auto_sync: { ...uiPrefs.auto_sync } });
-}
-
 export const { setLevelCalibrationCapture, setLevelCalibrationDisabled } = makeLevelCalibrationSetters(
 	uiPrefs,
 	_persist,

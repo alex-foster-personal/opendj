@@ -469,7 +469,7 @@ class InMemoryBackend:
                     raise BackendError("rating must be between 0 and 5")
             now = _utcnow_iso()
             results: list[Track] = []
-            for track, update in zip(current_rows, updates):
+            for track, update in zip(current_rows, updates, strict=True):
                 if not update.patch:
                     results.append(track)
                     continue
@@ -513,13 +513,13 @@ class InMemoryBackend:
                 updated.provenance = prov
                 results.append(updated)
             changed = any(
-                updated is not current for current, updated in zip(current_rows, results)
+                updated is not current for current, updated in zip(current_rows, results, strict=True)
             )
             previous_last_writer = self._last_writer
             if mutation_guard is not None:
                 mutation_guard()
             try:
-                for current, updated in zip(current_rows, results):
+                for current, updated in zip(current_rows, results, strict=True):
                     if updated is not current:
                         self._tracks[updated.stable_id] = updated
                 if changed:

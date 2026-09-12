@@ -12,11 +12,15 @@ from ``writer`` itself -- see that module's docstring for why.
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections.abc import Iterable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from . import locations as _locations
+from .events import EventBus, FakeEventBus
+from .sync_stamp import Stamp
 from . import provenance as _prov
 from .types import Event, Source
 from .writer_common import (
@@ -26,6 +30,31 @@ from .writer_common import (
     VENDOR_IDS_TABLE,
     next_playlist_revision,
 )
+
+
+class _WriterHost(Protocol):
+    """StateWriter surface this mixin uses. Copy the real types; do not guess."""
+
+    bus: EventBus | FakeEventBus
+    _conn: sqlite3.Connection
+    _actor: str | None
+
+    def _tx(self) -> AbstractContextManager[sqlite3.Connection]: ...
+
+    def _stamp(self, table: str, row_pk: tuple[Any, ...], now: str) -> Stamp: ...
+
+    def _now_iso(self) -> str: ...
+
+    def _append_event(
+        self,
+        *,
+        kind: str,
+        stable_id: str | None,
+        payload: dict[str, Any],
+        ts: str | None = None,
+    ) -> Event: ...
+
+    def machine_id(self) -> str: ...
 
 
 class TrackNotFoundError(LookupError):
@@ -59,7 +88,7 @@ class _TrackWriterMixin:
     # --- tracks -------------------------------------------------------
 
     def upsert_track(
-        self,
+        self: _WriterHost,
         *,
         stable_id: str,
         stable_id_tier: str,
@@ -161,7 +190,7 @@ class _TrackWriterMixin:
         return True
 
     def upsert_track_location(
-        self,
+        self: _WriterHost,
         *,
         stable_id: str,
         kind: _locations.Kind,
@@ -201,7 +230,7 @@ class _TrackWriterMixin:
     # --- vendor ids -----------------------------------------------------
 
     def set_vendor_id(
-        self, stable_id: str, vendor: str, vendor_id: str
+        self: _WriterHost, stable_id: str, vendor: str, vendor_id: str
     ) -> None:
         now = self._now_iso()
         with self._tx() as conn:
@@ -235,7 +264,7 @@ class _TrackWriterMixin:
     # --- wrapped fields ---------------------------------------------------
 
     def set_field(
-        self,
+        self: _WriterHost,
         stable_id: str,
         field_name: str,
         value: Any,
@@ -288,7 +317,7 @@ class _TrackWriterMixin:
                 )
         return changed
 
-    def remove_from_library(self, stable_id: str) -> TrackLifecycleResult:
+    def remove_from_library(self: _WriterHost, stable_id: str) -> TrackLifecycleResult:
         """Soft-delete a track and its live playlist memberships.
 
         The audio file on disk is never touched. Membership tombstones use the
@@ -363,7 +392,7 @@ class _TrackWriterMixin:
             self.bus.publish(ev)
         return TrackLifecycleResult(stable_id, tombstone_ts, memberships)
 
-    def undelete_track(self, stable_id: str) -> TrackLifecycleResult:
+    def undelete_track(self: _WriterHost, stable_id: str) -> TrackLifecycleResult:
         """Clear a track tombstone and restore memberships from this remove."""
         with self._tx() as conn:
             row = conn.execute(

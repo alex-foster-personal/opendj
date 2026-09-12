@@ -188,12 +188,12 @@ def _track_to_out(
 @router.get("", response_model=TracksPage)
 def list_tracks(
     request: Request,
-    q: Optional[str] = Query(None, description="Substring match on title/artist"),
-    bpm_min: Optional[float] = None,
-    bpm_max: Optional[float] = None,
-    key: Optional[str] = None,
-    rating_min: Optional[int] = None,
-    tag: Optional[str] = None,
+    q: str | None = Query(None, description="Substring match on title/artist"),
+    bpm_min: float | None = None,
+    bpm_max: float | None = None,
+    key: str | None = None,
+    rating_min: int | None = None,
+    tag: str | None = None,
     available: AvailableFilter = Query(
         "all",
         description=(
@@ -207,7 +207,7 @@ def list_tracks(
         False,
         description="When true, include rows with tracks.deleted_at set. Default hides them.",
     ),
-    cursor: Optional[str] = None,
+    cursor: str | None = None,
     limit: int = Query(200, ge=1, le=1000),
     backend: StateBackend = Depends(get_read_state),
 ) -> TracksPage:
@@ -494,7 +494,7 @@ def patch_track(
     patch: TrackPatch,
     request: Request,
     response: Response,
-    if_match: Optional[str] = Header(None, alias="If-Match"),
+    if_match: str | None = Header(None, alias="If-Match"),
     backend: StateBackend = Depends(get_write_state),
 ):
     if not if_match:
