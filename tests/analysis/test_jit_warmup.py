@@ -177,6 +177,7 @@ record = os.environ["MDT_LOCK_RECORD"]
 hold_s = float(os.environ.get("MDT_LOCK_HOLD_S", "0.6"))
 ready_n = int(os.environ.get("MDT_LOCK_READY_N", "4"))
 barrier = record + ".ready"
+go = record + ".go"
 with open(barrier, "a", encoding="utf-8") as fh:
     fh.write(str(os.getpid()) + "\\n")
     fh.flush()
@@ -188,6 +189,16 @@ while time.monotonic() < deadline:
     except OSError:
         pass
     time.sleep(0.01)
+try:
+    with open(go, "x", encoding="utf-8") as gf:
+        gf.write(str(time.monotonic() + 0.05))
+except FileExistsError:
+    pass
+while not os.path.exists(go):
+    time.sleep(0.001)
+start_at = float(open(go, encoding="utf-8").read().strip())
+while time.monotonic() < start_at:
+    time.sleep(0.001)
 entered = time.monotonic()
 time.sleep(hold_s)
 left = time.monotonic()

@@ -1,5 +1,7 @@
 """AUTH-01: the engine reads a baked Desktop-app Google OAuth client.
 
+[if] a packaged install lacks a bundled Google OAuth client [then] sign-in stays dead, [else stop].
+
 A packaged install has no Doppler and no shell env. GoogleOAuthConfig must
 load the client from a bundled JSON file (explicit path, sidecar, or
 payload-manifest sibling) so health can report google_oauth_configured

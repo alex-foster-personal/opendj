@@ -1,5 +1,7 @@
 """AUTH-01: payload bake + fail-loud verify for the Google OAuth client.
 
+[if] a payload ships without a bundled Google client id [then] verify must fail naming OPENDJ_GOOGLE_OAUTH_CLIENT_ID, [else stop].
+
 The packaged engine has had google_oauth_configured: false on every
 install because nothing baked OPENDJ_GOOGLE_OAUTH_CLIENT_ID into the
 payload. Bake writes a JSON file next to the staged google_oauth_client

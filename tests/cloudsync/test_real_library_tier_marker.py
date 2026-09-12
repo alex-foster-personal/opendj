@@ -27,6 +27,7 @@ REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 REAL_LIBRARY_MODULE_PREFIX: str = "tests/cloudsync/test_real_library_"
 #: Modules in this directory that hold no real-library test by design.
 NOT_REAL_LIBRARY_MODULES: tuple[str, ...] = (
+    "tests/cloudsync/test_real_library_availability.py",
     "tests/cloudsync/test_real_library_source.py",
     "tests/cloudsync/test_real_library_tier_marker.py",
 )

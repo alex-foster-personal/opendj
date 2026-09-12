@@ -380,7 +380,7 @@ IGNORED_PATHS: tuple[IgnoredPath, ...] = (
         "data/usb/",
         "apps/sync/usb/pioneer/traces/",
     ),
-    *_ignored("user_data", "secrets", ".env"),
+    *_ignored("user_data", "secrets", ".env", "apps/shared/bundled_google_oauth.json"),
     *_ignored(
         "user_data",
         "stem-experiments",
