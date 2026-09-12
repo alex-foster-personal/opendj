@@ -73,7 +73,14 @@ async function waitForSignedIn(page, deadlineMs) {
 let browser;
 let finished = false;
 try {
-  browser = await chromium.launch({ headless });
+  // Google refuses sign-in in a browser that advertises automation ("This browser or
+  // app may not be secure"). Use the installed Chrome channel and drop the flag.
+  browser = await chromium.launch({
+    headless,
+    channel: "chrome",
+    ignoreDefaultArgs: ["--enable-automation"],
+    args: ["--disable-blink-features=AutomationControlled"],
+  });
   browser.on("disconnected", () => {
     if (finished) {
       return;
