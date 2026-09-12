@@ -17,6 +17,8 @@ Two pieces of state, deliberately different in kind:
 * The TOGGLE is process-local and in-memory. It is a dev/testing
   affordance for live A/B, so it cannot outlive its session and it cannot
   undo a promotion by launching as ``rbx``. It launches ``unset``.
+  Rekordbox write-back (later) is gated on the persisted default via
+  :func:`lane_is_promoted`, not on :func:`effective_source`.
 
 `effective_fields` is the second half: the ONE function every scalar
 reader goes through, so the track list, the browser row hydration, the CLI
@@ -160,6 +162,15 @@ def set_default(conn: sqlite3.Connection, lane: str, source: str) -> Source:
 
 def all_defaults(conn: sqlite3.Connection) -> dict[str, Source]:
     return {lane: get_default(conn, lane) for lane in LANES}
+
+
+def lane_is_promoted(conn: sqlite3.Connection, lane: str) -> bool:
+    """True iff ``analysis_source_default`` for this lane is ``own``.
+
+    Ignores the PARITY-02 toggle. Later write paths call this, never
+    :func:`effective_source`.
+    """
+    return get_default(conn, lane) == "own"
 
 
 #-----------------------------------------------------------------------------
@@ -568,6 +579,7 @@ __all__ = [
     "get_toggle",
     "get_toggle_revision",
     "lane_for_field",
+    "lane_is_promoted",
     "register_serving_lane",
     "reset_toggles",
     "serving_lanes",

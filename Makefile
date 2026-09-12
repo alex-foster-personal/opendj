@@ -29,7 +29,7 @@ test:
 rb-parity-check:
 	@echo "[rb-parity-check] focused Python, frontend unit, and type gates"
 	$(PYTEST) -q -m rb_parity
-	cd apps/webui/frontend && $(FRONTEND_NODE) --test --test-concurrency=1 tests/unit/*.test.mjs
+	cd apps/webui/frontend && $(FRONTEND_NODE) --test --test-concurrency=4 tests/unit/*.test.mjs
 	cd apps/webui/frontend && pnpm check
 
 rb-parity-final: rb-parity-check
@@ -77,11 +77,11 @@ clean:
 # ----- Pre-release checks -----------------------------------------------
 # `release-check` is the single command CI and humans run before cutting a
 # release tag. It runs the standard gates in sequence:
-#   1. test        — full pytest suite
-#   2. lint        — ruff check across apps/tests/scripts
-#   3. build-dist  — python -m build (wheel + sdist)
-#   4. reqs-check  — verify reqs.json is fresh vs REQUIREMENTS.md
-#   5. prior-tag   — best-effort `gh release view v1.0.1` sanity check (non-fatal)
+#   1. test        -- full pytest suite
+#   2. lint        -- ruff check across apps/tests/scripts
+#   3. build-dist  -- python -m build (wheel + sdist)
+#   4. reqs-check  -- verify reqs.json is fresh vs REQUIREMENTS.md
+#   5. prior-tag   -- best-effort `gh release view v1.0.1` sanity check (non-fatal)
 # Keep this target serial; failures should halt the pipeline immediately.
 
 lint:
@@ -176,7 +176,7 @@ spotify-watched:
 # (gitignored shim: scripts/spotdl_watched.py; pointer: scripts/spotdl_watched.md).
 spotdl-watched:
 	@if [ ! -f scripts/spotdl_watched.py ]; then \
-		echo "missing scripts/spotdl_watched.py — see scripts/spotdl_watched.md"; exit 2; \
+		echo "missing scripts/spotdl_watched.py -- see scripts/spotdl_watched.md"; exit 2; \
 	fi
 	$(PY) scripts/spotdl_watched.py $(SPOTDL_WATCHED_ARGS)
 
@@ -187,13 +187,13 @@ webui.dev:
 	just webui-backend
 
 webui.prod:
-	doppler run -p music-dj-tools -c prod -- $(PY) -m apps.webui.server --prod
+	doppler run -p general -c dev_personal -- $(PY) -m apps.webui.server --prod
 
 webui.openapi:
 	$(PY) -m apps.webui.server --dump-openapi apps/webui/openapi.json
 
 cloud.replicate:
-	doppler run -p music-dj-tools -c prod -- $(PY) -m apps.cloud.replicate
+	doppler run -p general -c dev_personal -- $(PY) -m apps.cloud.replicate
 
 cloud.self-check:
 	$(PY) -m apps.cloud.replicate --self-check

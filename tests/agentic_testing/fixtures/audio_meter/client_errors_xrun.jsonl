@@ -1,0 +1,2 @@
+{"kind":"ui-error","received_at":"2026-09-11T18:00:00.000Z","context":{"source":"perf-event","perf_kind":"xrun"},"message":"xrun: buffer underrun"}
+{"kind":"ui-error","received_at":"2026-09-11T18:00:00.500Z","context":{"source":"perf-event","perf_kind":"xrun"},"message":"xrun: buffer underrun"}

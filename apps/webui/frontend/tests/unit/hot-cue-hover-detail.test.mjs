@@ -14,6 +14,14 @@ test('filled hot-cue pads do not consume main-view space with timestamps', () =>
 });
 
 test('loop hot-cue hover detail reports exact endpoints and decoded beat and bar length', () => {
-	assert.match(source, /title=\{entry\.cue === null[\s\S]*?: hotCueTitle\(entry\.cue, deck\.anlz\?\.beatgrid\.beats \?\? \[\]\)\}/);
+	assert.match(
+		source,
+		/title=\{entry\.cue === null[\s\S]*?: hotCueTitle\(entry\.cue, deck\.anlz\?\.beatgrid\.beats \?\? \[\], lyricsState\.lyrics\?\.lines \?\? \[\]\)\}/
+	);
 	assert.doesNotMatch(source, /cue\.beat_loop_size/);
+});
+
+test('HotCueBank fetches lyrics for hover titles', () => {
+	assert.match(source, /import \{ fetchTrackLyrics/);
+	assert.match(source, /createLyricsFetchState/);
 });

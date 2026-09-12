@@ -88,7 +88,7 @@ _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 4
+SCHEMA_VERSION: int = 6
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -372,6 +372,24 @@ _ENROLLMENT: tuple[str, ...] = (
 
 
 # ==========================================================================
+# DOMAIN: per-machine sync credentials (legacy v11, ADR 12 amendment)
+# Legacy source: apps/shared/state/migrations_v11.py (_V11). Its own domain
+# for the reason _ENROLLMENT gives: never synced, hub is the only writer.
+# ==========================================================================
+
+_CREDENTIALS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS machine_credentials (
+        machine_id         TEXT PRIMARY KEY
+                             REFERENCES machines(machine_id) ON DELETE CASCADE,
+        credential_sha256  TEXT NOT NULL UNIQUE,
+        minted_at          TEXT NOT NULL
+    )
+    """,
+)
+
+
+# ==========================================================================
 # DOMAIN: analysis records + analysis event log
 # Legacy source: apps/analysis/store.py  (_ANALYSIS_TABLES_SQL, run by
 # open_conn() on top of the shared-state migrations)
@@ -642,6 +660,27 @@ _LYRICS: tuple[str, ...] = (
         "CREATE INDEX IF NOT EXISTS idx_lyric_verdict_red "
         "ON lyric_verdict(pct_witness_red DESC)"
     ),
+)
+
+
+# ==========================================================================
+# DOMAIN: feedback -- one synced row per in-app feedback comment pin
+# Legacy source: apps/shared/state/migrations_v12.py (_V12, FBSYNC-01,
+# docs/decisions/ADR-0013-feedback-pin-cloudsync.md). Reproduced verbatim
+# apart from ``IF NOT EXISTS``, for the adoption reason the lyrics domain
+# above spells out.
+# ==========================================================================
+
+_FEEDBACK: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS feedback_pins (
+        pin_id           TEXT PRIMARY KEY CHECK (length(pin_id) > 0),
+        doc              TEXT NOT NULL CHECK (json_valid(doc)),
+        updated_at       TEXT NOT NULL,
+        origin_device_id TEXT,
+        deleted_at       TEXT
+    )
+    """,
 )
 
 
@@ -989,9 +1028,11 @@ DOMAINS: dict[str, tuple[str, ...]] = {
     "state_core": _STATE_CORE,
     "sync_infra": _SYNC_INFRA,
     "enrollment": _ENROLLMENT,
+    "credentials": _CREDENTIALS,
     "analysis": _ANALYSIS,
     "analysis_retention": _ANALYSIS_RETENTION,
     "lyrics": _LYRICS,
+    "feedback": _FEEDBACK,
     "curation": _CURATION,
     "play_orders": _PLAY_ORDERS,
     "spotify": _SPOTIFY,
@@ -1018,10 +1059,12 @@ LEGACY_SOURCES: dict[str, str] = {
     "state_core": "apps/shared/state/schema.py",
     "sync_infra": "apps/shared/state/schema.py",
     "enrollment": "apps/shared/state/migrations_v9.py",
+    "credentials": "apps/shared/state/migrations_v11.py",
     "analysis": "apps/analysis/store.py",
     "native_analysis_v1": "apps/analysis/store.py",
     "analysis_retention": "apps/shared/state/schema.py",
     "lyrics": "apps/shared/state/migrations_v10.py",
+    "feedback": "apps/shared/state/migrations_v12.py",
     "curation": "apps/shared/pairings/schema_sql.py",
     "play_orders": "apps/shared/play_orders/schema.py",
     "spotify": "apps/spotify/state_writer.py",
@@ -1062,6 +1105,7 @@ TABLES: dict[str, tuple[str, ...]] = {
         "machine_owners",
         "enrollment_grants",
     ),
+    "credentials": ("machine_credentials",),
     "analysis": ("analysis", "analysis_events"),
     "native_analysis_v1": (
         "analysis_canonical",
@@ -1078,6 +1122,7 @@ TABLES: dict[str, tuple[str, ...]] = {
         "analysis_field_verification",
     ),
     "lyrics": ("lyric_verdict",),
+    "feedback": ("feedback_pins",),
     "curation": ("pairings", "smartlists"),
     "play_orders": ("play_orders", "play_order_entries", "play_orders_schema_meta"),
     "spotify": (
@@ -1114,7 +1159,7 @@ ALL_CACHE_TABLES: tuple[str, ...] = tuple(
 #: its own rung. Named here rather than inline so the exclusion and the rung
 #: that compensates for it cannot drift apart silently.
 _POST_V1_DOMAINS: frozenset[str] = frozenset(
-    {"native_analysis_v1", "enrollment", "lyrics"}
+    {"native_analysis_v1", "enrollment", "lyrics", "credentials", "feedback"}
 )
 
 _V1: list[str] = [
@@ -1154,7 +1199,19 @@ already in ``_SYNC_INFRA``. ``LEGACY_SHARED_STATE_VERSION`` deliberately stays
 where scripts/sync_drift_rules.MIRROR_VERSION_DEBT pins it; REPORT.md O-16
 records what that costs."""
 
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4]
+_V5: list[str] = list(_CREDENTIALS)
+"""4 -> 5: the per-machine sync credential (legacy ladder v11).
+
+Its own rung for the reason _V2 and _V3 spell out: an install already
+stamped at v4 never re-runs an earlier rung."""
+
+_V6: list[str] = list(_FEEDBACK)
+"""5 -> 6: the synced feedback pin row (legacy ladder v12, FBSYNC-01).
+
+Its own rung for the reason _V2 and _V3 spell out. ``LEGACY_SHARED_STATE_VERSION``
+stays where scripts/sync_drift_rules.MIRROR_VERSION_DEBT pins it."""
+
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
 """Every rung, flattened. What both the fresh path and adoption execute.

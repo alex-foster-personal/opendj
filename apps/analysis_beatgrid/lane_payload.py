@@ -35,7 +35,10 @@ A beat entry carries its local BPM and the deck plays against it, so deriving
 it from one inter-beat interval would publish the beat tracker's own frame
 quantization as tempo wobble. `detect_tempo_changes` already fits
 piecewise-constant sections; each beat takes the mean tempo of the section it
-falls in, which is the same curve `tempo_changes` describes.
+falls in, which is the same curve `tempo_changes` describes. That local bpm
+**is** the served tempo map on `/anlz`. Multi-anchor maps are trusted dynamic
+grids (`static_grid_untrusted` is false on the record, omitted on `/anlz`).
+One-anchor maps are the v1 static grid.
 
 **The octave multiple is applied to every tempo this module publishes.** The
 octave policy multiplies the least-squares fit to reach the published BPM, and
@@ -59,6 +62,7 @@ from typing import Any, Literal
 from apps.analysis_beatgrid.bar_phase import BAR_BEATS, assign_bar_phase
 from apps.analysis_beatgrid.bpm import estimate_bpm
 from apps.analysis_beatgrid.flags import evaluate_pulse
+from apps.analysis_beatgrid.activations import FPS as ACTIVATIONS_FPS
 from apps.analysis_beatgrid.tempo_change import detect_tempo_changes
 
 #: A tempo fit that produced no straight line at all. `estimate_bpm` returns
@@ -217,6 +221,25 @@ def _pulse_and_phase(
     return _PulseCheck(beats=beats, tempo=tempo, phase=phase)
 
 
+def _stamp_activations(result: Mapping[str, Any], payload: dict[str, Any]) -> None:
+    """Copy the retained-logits pointer onto an ok payload without stat()ing paths."""
+    activations_npz = result.get("activations_npz")
+    activations_blob = result.get("activations_blob")
+    if activations_npz or activations_blob:
+        fps_raw = result.get("fps", ACTIVATIONS_FPS)
+        fps = int(fps_raw)
+        if activations_blob is not None:
+            payload["activations"] = {"blob": activations_blob, "fps": fps}
+        else:
+            payload["activations"] = {"npz": activations_npz, "fps": fps}
+        return
+    if result.get("n_frames") is not None or result.get("beats"):
+        raise LanePayloadError(
+            "runner result produced logits but carries no activations_npz or "
+            "activations_blob pointer; producer contract drift"
+        )
+
+
 def build_beatgrid_lane(
     result: Mapping[str, Any], *, threshold: float
 ) -> BeatgridLane:
@@ -254,8 +277,9 @@ def build_beatgrid_lane(
             }
             for marker in changes.markers
         ],
-        "static_grid_untrusted": changes.static_grid_untrusted,
+        "static_grid_untrusted": False,
     }
+    _stamp_activations(result, payload)
     return BeatgridLane(
         status="ok", reason=None, confidence=tempo.confidence, payload=payload
     )

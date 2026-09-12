@@ -284,6 +284,7 @@ HARD_ZERO: frozenset[str] = frozenset({
     "sync_drift.mirror_version_mismatch",
     "sync_drift.migration_step_changed",
     "sync_drift.undeclared_state_table",
+    "sync_drift.wire_shape_changed",
 })
 
 # Metrics that are measured and printed but never gated, because their value
@@ -906,11 +907,21 @@ def _eval_mypy() -> list[Metric]:
     host) would otherwise share one process-global directory, each wiping the
     other's `--linecount-report` output mid-run.
     """
+    from scripts.mypy_cache import mypy_cache_dir_flag
+
+    cache_dir = mypy_cache_dir_flag()
     report_dir = Path(tempfile.mkdtemp(prefix="quality-gate-mypy-"))
     try:
         code, out = _uv(
-            "mypy", *CFG.MYPY_FLAGS, "--linecount-report", str(report_dir),
-            allow_fail=True, reqs=MYPY_REQS, isolated=True,
+            "mypy",
+            *CFG.MYPY_FLAGS,
+            "--cache-dir",
+            cache_dir,
+            "--linecount-report",
+            str(report_dir),
+            allow_fail=True,
+            reqs=MYPY_REQS,
+            isolated=True,
         )
         # 0 = clean, 1 = type errors found. Anything else is mypy declining to
         # run at all (bad config, unreadable source), which has to abort: a
@@ -922,7 +933,14 @@ def _eval_mypy() -> list[Metric]:
             # a path that is already aborting and makes _run raise with BOTH
             # streams attached, so the reader gets the actual complaint
             # instead of a bare exit code.
-            _uv("mypy", *CFG.MYPY_FLAGS, reqs=MYPY_REQS, isolated=True)
+            _uv(
+                "mypy",
+                *CFG.MYPY_FLAGS,
+                "--cache-dir",
+                cache_dir,
+                reqs=MYPY_REQS,
+                isolated=True,
+            )
             raise RuntimeError(f"mypy exited {code} on the scored run, then {out[-2000:]}")
 
         linecount = report_dir / "linecount.txt"

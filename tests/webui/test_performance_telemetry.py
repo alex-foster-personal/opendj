@@ -215,6 +215,7 @@ def test_process_endpoint_is_explicit_when_native_probe_is_absent(tmp_path: Path
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_process_endpoint_labels_members_by_opendj_name(tmp_path: Path) -> None:
+    """[if] a probe log lists named opendj [then] endpoint exposes opendj-desktop, [else stop]."""
     record = _captured_process_record()
     record["processes"] = [
         {
@@ -249,6 +250,7 @@ def test_process_endpoint_labels_members_by_opendj_name(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_process_endpoint_lists_unnamed_members(tmp_path: Path) -> None:
+    """[if] a probe log includes a WebKit helper without [then] endpoint lists it, [else stop]."""
     record = _captured_process_record()
     record["processes"] = [
         {
@@ -278,6 +280,7 @@ def test_process_endpoint_lists_unnamed_members(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_process_endpoint_omits_unread_kernel_pressure(tmp_path: Path) -> None:
+    """[if] machine kernel [then] endpoint omits kernel_memory_pressure_level, [else stop]."""
     record = _captured_process_record()
     record["machine"] = {"load_average_1m": 1.0}
     (tmp_path / "opendj-performance-2026-08-21.jsonl").write_text(
@@ -300,6 +303,7 @@ def test_process_endpoint_omits_unread_kernel_pressure(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_process_endpoint_never_zero_fills_kernel_pressure(tmp_path: Path) -> None:
+    """[if] endpoint has no readable kernel pressure [then] it never returns zero, [else stop]."""
     record = _captured_process_record()
     (tmp_path / "opendj-performance-2026-08-21.jsonl").write_text(
         json.dumps(record) + "\n", encoding="utf-8"
@@ -312,6 +316,7 @@ def test_process_endpoint_never_zero_fills_kernel_pressure(tmp_path: Path) -> No
 
 @pytest.mark.requirement("PERFMODE-05")
 def test_client_sample_stamps_pressure_from_the_same_write(tmp_path: Path) -> None:
+    """[if] a client performance sample is accepted [then] the stored record, [else stop]."""
     with TestClient(_app(performance_log_dir=tmp_path)) as client:
         response = client.post(
             "/api/v1/performance/telemetry/client-samples",

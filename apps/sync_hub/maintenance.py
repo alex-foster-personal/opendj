@@ -1,6 +1,7 @@
 """Operator actions on a sync hub or spoke, as functions and as a CLI.
 
     uv run python -m apps.sync_hub sync         --data-dir DIR --hub URL [--name N]
+    uv run python -m apps.sync_hub status       --data-dir DIR
     uv run python -m apps.sync_hub generation   --data-dir DIR
     uv run python -m apps.sync_hub rotate       --data-dir DIR
     uv run python -m apps.sync_hub prune        --data-dir DIR [--changelog T]
@@ -10,15 +11,37 @@
     uv run python -m apps.sync_hub enroll       --data-dir DIR --hub URL
                                                 (--grant TOKEN | --grant-file F)
                                                 [--name N]
-    uv run python -m apps.sync_hub fleet        --data-dir DIR [--json]
+    uv run python -m apps.sync_hub policy <verb> --data-dir DIR ...  (see maintenance_policy)
+    uv run python -m apps.sync_hub config show|set --data-dir DIR
+                                                [--enabled|--disabled]
+                                                [--hub URL] [--name N]
+    uv run python -m apps.sync_hub adopt        --data-dir DIR --machine-id ID
+                                                --owner EMAIL
+    uv run python -m apps.sync_hub revoke       --data-dir DIR --machine-id ID
+    uv run python -m apps.sync_hub credentials  --data-dir DIR [--json]
+    uv run python -m apps.sync_hub hosted       --data-dir DIR
 
-Seven operations:
+``config`` (see :mod:`apps.sync_hub.config_cli`) is the CLI twin of
+``GET/PUT /api/v1/cloudsync/config``: the persisted per-machine config the
+background scheduler (:mod:`apps.sync_hub.scheduler`) reads.
+
+Eight operations, plus ``policy`` (per-machine sync policy, its own module
+:mod:`apps.sync_hub.maintenance_policy`, dry-run by default, exit 0/1/3/4),
+plus adopt, revoke and credentials, which live in
+:mod:`apps.sync_hub.fleet_admin` (plan X5) and register themselves below,
+plus ``hosted`` (JSON: whether this hub is HOSTED, its entitlement provider
+and owner count, the same checks the webui runs at startup --
+:mod:`apps.sync_hub.hosted_config`):
 
 * **sync** runs one spoke round trip against ``--hub`` (round 3 finding R7).
   Nothing outside pytest called ``run_sync`` before -- the whole spoke
   protocol, and the retention prune it depends on, was library code with no
-  operator or agent entry point. This is the agent-native-parity twin of the
-  ``/cloudsync`` UI's own sync button.
+  operator or agent entry point. Its HTTP twin is ``POST
+  /api/v1/cloudsync/sync`` (``apps/webui/server/routes/cloudsync_ops.py``),
+  which calls :func:`sync` itself. The ``/cloudsync`` page has no sync button
+  yet (plan W17).
+* **status** prints the CloudSync status object, including the journal every
+  :func:`sync` writes; its HTTP twin is ``GET /api/v1/cloudsync/status``.
 * **prune** bounds a changelog that had no retention at all (round 2 finding
   N6) -- one row per synced-table write, forever. It only ever drops entries
   that a NEWER entry for the same row supersedes, so the pull loses no
@@ -30,7 +53,8 @@ Seven operations:
 * **generation** prints the current token.
 * **grant** mints one single-use enrollment credential on this hub, for a
   user who has signed in through the webui. Hub-local, because minting a
-  credential is an act of hub authority.
+  credential is an act of hub authority. HTTP twin: ``POST
+  /api/v1/cloudsync/enrollment-grants`` (loopback-only, hub-only).
 * **enroll** is the DEV half of ``specs/design_decision_12.md``: the
   formalized single method for adding a machine to cloudsync. It is a thin
   shell over ``POST /api/v1/sync/enroll`` -- it opens no database and holds
@@ -38,7 +62,8 @@ Seven operations:
   in-app path will use. Idempotent: a re-run says "already enrolled".
 * **fleet** prints who owns which machine on this hub, and how many
   machines are unowned. That count is what an operator closes before
-  enrollment is ever enforced.
+  enrollment is ever enforced. HTTP twin: ``GET /api/v1/cloudsync/fleet``,
+  which returns exactly ``fleet --json``.
 
 Every UI/daemon action in this repo has a CLI twin (the agent-native parity
 rule); these are the twin the sync surface will match.
@@ -47,7 +72,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
@@ -55,10 +85,14 @@ from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
 from apps.sync_hub import (
     client,
+    config_cli,
     engine,
     enrollment_credentials,
+    fleet_admin,
     generation,
+    hosted_config,
     maintenance_enroll,
+    maintenance_policy,
 )
 from apps.sync_hub import status as sync_status
 
@@ -67,6 +101,11 @@ from apps.sync_hub import status as sync_status
 #: wrong or the hub is down" from "rows moved but the check was excluded", and
 #: distinct from 0 because an unmeasured comparison is not a clean one.
 EXIT_INCONCLUSIVE: int = 4
+
+#: Exit code for a sync whose PUSH a hosted hub refused on plan grounds while
+#: its pull completed. Distinct from 1 (nothing came in) and from 4 (nothing
+#: was withheld): here rows arrived and this machine's own edits did not leave.
+EXIT_PUSH_REFUSED: int = 5
 
 
 def _open(data_dir: Path) -> sqlite3.Connection:
@@ -120,7 +159,23 @@ def _journal_entry(
     stamping ``ok`` on it is exactly the "failed measurement rendered as a
     clean result" ``.claude/rules/verification.md`` exists to stop. So the
     journal carries the third verdict rather than rounding to one of two.
+
+    A refused push is ``error``: rows came IN, but this machine's edits did
+    not go out, so the sync did not do its job and ``ok`` would be a lie.
     """
+    if result.push_refused:
+        return sync_status.SyncResult(
+            finished_at=sync_stamp.canonical_now(),
+            status="error",
+            message=(
+                f"sync started at {started_at}: hub {result.hub_machine_id} "
+                f"REFUSED the push (entitlement_not_in_plan: the owner's plan "
+                f"is read_only). Pulled {result.pulled} row(s); this "
+                f"machine's edits stay local and are offered again next sync."
+            ),
+            pushed=result.accepted,
+            pulled=result.pulled,
+        )
     if result.digest_inconclusive:
         return sync_status.SyncResult(
             finished_at=sync_stamp.canonical_now(),
@@ -276,9 +331,10 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "a token from `python -m apps.sync_hub grant` on the hub. The "
-            "other credential kind, google_id_token, is the in-app path and "
-            "is not yet resolvable by the hub. Prefer --grant-file: an "
-            "argument is readable in /proc and lands in shell history."
+            "other credential kind, google_id_token, is the in-app path: "
+            "POST it to /api/v1/sync/enroll on a hub configured with the "
+            "OAuth client id. Prefer --grant-file: an argument is readable "
+            "in /proc and lands in shell history."
         ),
     )
     grant_source.add_argument(
@@ -297,6 +353,18 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
 
+    feedback_command = subcommands.add_parser(
+        "feedback-pins",
+        help="sync or inspect a running engine's feedback pins (FBSYNC-04)",
+    )
+    feedback_command.add_argument("action", choices=("sync", "status"))
+    feedback_command.add_argument(
+        "--engine", required=True, help="the engine base URL, e.g. http://127.0.0.1:8728"
+    )
+    feedback_command.add_argument(
+        "--pin-id", default=None, help="status only: narrow the answer to one pin"
+    )
+
     fleet_command = subcommands.add_parser(
         "fleet", parents=[common], help="print who owns which machine on this hub"
     )
@@ -304,6 +372,14 @@ def _parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="print the same readout as JSON (agent parity with the UI)",
+    )
+    fleet_admin.add_subcommands(subcommands, common)
+    maintenance_policy.add_policy_parser(subcommands, common)
+    config_cli.add_config_parser(subcommands, common)
+    subcommands.add_parser(
+        "hosted",
+        parents=[common],
+        help="print whether this hub is hosted, its entitlement provider and owner count",
     )
     return parser
 
@@ -333,6 +409,13 @@ def _report_sync(result: client.SyncResult) -> int:
             f"row(s) refused; repair with `python -m apps.shared.state."
             f"normalize_stamps --live` on the machine holding them"
         )
+    if result.push_refused:
+        print(
+            "PUSH REFUSED: the hub's plan check (entitlement_not_in_plan) "
+            "does not admit writes for this machine's owner; pulled rows "
+            "arrived, local edits did not leave this machine"
+        )
+        return EXIT_PUSH_REFUSED
     if not result.digest_inconclusive:
         return 0
     # NOT a silent 0. The sync completed and the comparison did not, so the
@@ -405,6 +488,47 @@ def _print_fleet(args: argparse.Namespace) -> None:
         print(line)
 
 
+#: CFG. A feedback-pins sync is a whole CloudSync round trip on the engine.
+FEEDBACK_PINS_CLI_TIMEOUT_S: float = 300.0
+
+
+def _feedback_pins(args: argparse.Namespace) -> int:
+    """FBSYNC-04 CLI twin: drive a RUNNING engine's feedback pin sync over HTTP.
+
+    A thin shell, like ``enroll``: it opens no database and no comments.json,
+    because the engine owns both and holds the lock every pin write takes.
+    Prints the engine's JSON answer; exits 1 on any HTTP error or an
+    unreachable engine, printing why.
+    """
+    base = args.engine.rstrip("/")
+    if args.action == "sync":
+        request = urllib.request.Request(
+            f"{base}/api/v1/feedback/sync", data=b"", method="POST"
+        )
+    else:
+        query = (
+            f"?{urllib.parse.urlencode({'pin_id': args.pin_id})}" if args.pin_id else ""
+        )
+        request = urllib.request.Request(
+            f"{base}/api/v1/feedback/sync/status{query}", method="GET"
+        )
+    try:
+        with urllib.request.urlopen(request, timeout=FEEDBACK_PINS_CLI_TIMEOUT_S) as response:
+            payload = json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        print(f"[ERROR] feedback-pins {args.action}: HTTP {exc.code} {exc.read().decode()}")
+        return 1
+    except urllib.error.URLError as exc:
+        print(f"[ERROR] feedback-pins {args.action}: engine {base} unreachable: {exc.reason}")
+        return 1
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def _print_hosted(args: argparse.Namespace) -> None:
+    print(json.dumps(hosted_config.describe_for_cli(os.environ, args.data_dir), sort_keys=True))
+
+
 #: Subcommand name -> handler, for the commands that PRINT and exit 0.
 #: ``sync`` and ``status`` are not here: they own their own exit codes and
 #: returning one is the whole point of them.
@@ -419,7 +543,9 @@ def _print_fleet(args: argparse.Namespace) -> None:
 #: and exiting 0. Named here, not in the test, so "every registered
 #: subcommand is dispatched" can be re-derived from the module instead of
 #: from a list a test author kept up to date by hand.
-EXIT_CODE_COMMANDS: frozenset[str] = frozenset({"sync", "status"})
+EXIT_CODE_COMMANDS: frozenset[str] = frozenset(
+    {"sync", "status", "feedback-pins", "policy"}
+)
 
 
 PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
@@ -429,16 +555,34 @@ PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
     "grant": _print_grant,
     "enroll": _print_enroll,
     "fleet": _print_fleet,
+    "config": config_cli.run_config,
+    **fleet_admin.PRINTING_COMMANDS,
+    "hosted": _print_hosted,
 }
+
+
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
+    """argparse exits 2 on a usage error; ``policy`` documents 1, so remap it there."""
+    try:
+        return _parser().parse_args(argv)
+    except SystemExit as exc:
+        tokens = sys.argv[1:] if argv is None else argv
+        if exc.code == 2 and maintenance_policy.is_policy_argv(tokens):
+            raise SystemExit(maintenance_policy.EXIT_USAGE) from exc
+        raise
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run one subcommand. Returns a process exit code."""
-    args = _parser().parse_args(argv)
+    args = _parse_args(argv)
     if args.command == "sync":
         return _report_sync(sync(args.data_dir, args.hub, name=args.name))
     if args.command == "status":
         return _report_status(sync_status.read_status(args.data_dir))
+    if args.command == "feedback-pins":
+        return _feedback_pins(args)
+    if args.command == "policy":
+        return maintenance_policy.run(args)
     # Everything below prints and exits 0; the two above own their own codes.
     handler = PRINTING_COMMANDS.get(args.command)
     if handler is None:

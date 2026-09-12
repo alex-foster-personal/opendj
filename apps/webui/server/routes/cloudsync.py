@@ -20,30 +20,34 @@ these; nothing here is UI-only):
   * ``GET  /cloudsync/policies``       -- ``sync_policies`` rows, optionally
     filtered by ``machine_id``.
   * ``PUT  /cloudsync/policies``       -- upsert one (machine_id, asset_kind)
-    cell. Stamps ``updated_at`` + ``origin_device_id`` (this server's own
-    machine id, NOT the target machine) per D5, through
-    :func:`apps.shared.state.sync_stamp.stamp_and_log` so the write also
-    lands in ``local_changelog``.
+    cell through :func:`apps.sync_hub.policy_store.apply_proposal`: gated
+    (409 ``POLICY_VIOLATION`` with the violations, nothing written), then
+    stamped with ``updated_at`` + ``origin_device_id`` (this server's own
+    machine id, NOT the target machine) per D5 and logged to
+    ``local_changelog`` in the same transaction.
   * ``GET  /cloudsync/playlist-pins``  -- ``playlist_pins`` rows joined to
     ``playlists.name``, optionally filtered by ``machine_id``.
   * ``PUT  /cloudsync/playlist-pins``  -- upsert one (machine_id,
-    playlist_id) pin.
+    playlist_id) pin, through the same gate and write path.
   * ``GET  /cloudsync/overview``       -- per-machine track counts derived
     from ``playlist_pins`` x ``playlist_memberships``, an unhydrated-pinned
     count, and ``last_sync_at`` from the machine-local ``sync_state`` table.
+
+Both PUTs write through :mod:`apps.sync_hub.policy_store` (the policy gate:
+409 on an error the change introduces or leaves on the cell it names).
+Validate, plan, apply, the DELETE tombstones and ``/data-classes`` live in
+``routes/cloudsync_policy.py``.
 
 Honest-denominator note (project house rule): ``pinned_tracks`` /
 ``cached_tracks`` / ``stream_tracks`` count DISTINCT tracks in playlists that
 carry an explicit pin for that machine and mode -- NOT the whole library.
 A track outside every pinned playlist is governed only by the machine's
 per-asset-kind default policy (``sync_policies``) and is not attributed to
-any bucket here, because the schema has no per-machine signal for
-"un-pinned but locally present" (``track_locations`` is not yet
-machine-scoped -- that is Phase 2 / the sync engine, not this lane).
-``unhydrated_pinned_count`` reads real ``track_locations`` rows
-(``kind='local' AND available=1``) as the best hydration proxy the current
-schema exposes; it is a real query against real data, with a documented
-scope limit, not a fabricated number.
+any bucket here. ``unhydrated_pinned_count`` counts a machine's pinned tracks
+with no ``track_locations`` row ON THAT MACHINE (``machine_id`` matches,
+``kind='local' AND available=1``, not tombstoned): another machine's local
+copy does not make this one hydrated. A location with a NULL ``machine_id``
+belongs to nobody until ``sync_stamp.backfill_local_machine_id`` claims it.
 
 Registered in ``app.py`` by the sync-engine lane (hotspot, not edited here):
 ``app.include_router(cloudsync_routes.router, prefix=api_prefix)``.
@@ -61,25 +65,29 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterator
-from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from apps.shared.events import publish
-from apps.shared.state import schema as state_schema
+from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
 from apps.shared.state.machine_identity import (
     MachineIdentityError,
     register_machine,
 )
+from apps.sync_hub import config as sync_config
+from apps.sync_hub.policy_rules import PinCell, PolicyCell
+from apps.sync_hub.policy_store import empty_proposal
+from apps.webui.server.cloudsync_policy_http import (
+    apply_policy_or_raise,
+    author_or_raise,
+    policy_write_responses,
+)
 
 router = APIRouter(prefix="/cloudsync", tags=["cloudsync"])
-
-POLICIES_TABLE: str = "sync_policies"
-PLAYLIST_PINS_TABLE: str = "playlist_pins"
 
 AssetKind = Literal[
     "audio",
@@ -158,12 +166,7 @@ def get_cloudsync_write_conn(request: Request) -> Iterator[sqlite3.Connection]:
     db_path = _db_path(request)
     if not db_path.exists():
         raise _unavailable(db_path)
-    conn = sqlite3.connect(
-        str(db_path), isolation_level=None, check_same_thread=False,
-    )
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 5000")
-    state_schema.apply_migrations(conn)
+    conn = state_db.open_rw(db_path, apply_schema=True, check_same_thread=False)
     try:
         yield conn
     finally:
@@ -175,36 +178,6 @@ def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,),
     ).fetchone()
     return row is not None
-
-
-@contextmanager
-def _write_unit(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
-    """One transaction around a policy write and its changelog entry.
-
-    ``get_cloudsync_write_conn`` hands out an autocommit handle, so without
-    this the row INSERT and the ``local_changelog`` append are two separate
-    commits and a crash between them leaves a row the push fence will never
-    offer -- the same shape as round 2 finding N3a.
-    """
-    with sync_stamp.stamped_transaction(conn) as open_conn:
-        yield open_conn
-
-
-def _origin_device_id(conn: sqlite3.Connection) -> str:
-    """This server process's own machine id (the write's origin), not the
-    machine_id of whichever machine's policy is being edited.
-
-    ``ensure_local_machine`` rather than ``get_or_create_machine_id``: the
-    stamped write needs the ``machines`` row its foreign keys point at to
-    exist, and the id must be the one every other writer on this machine
-    stamps with.
-    """
-    try:
-        return sync_stamp.ensure_local_machine(conn)
-    except sync_stamp.SyncStampError as exc:
-        raise HTTPException(status_code=500, detail={
-            "code": "CLOUDSYNC_IDENTITY_ERROR", "message": str(exc),
-        }) from exc
 
 
 # ----------------------------------------------------------- schemas
@@ -303,32 +276,6 @@ def _row_to_pin(row: tuple) -> PlaylistPinOut:
     )
 
 
-def _require_machine(conn: sqlite3.Connection, machine_id: str) -> None:
-    if not _table_exists(conn, "machines"):
-        raise HTTPException(status_code=404, detail={
-            "code": "MACHINE_NOT_FOUND",
-            "message": f"no machines registered yet; unknown machine_id {machine_id!r}",
-        })
-    row = conn.execute(
-        "SELECT 1 FROM machines WHERE machine_id = ?", (machine_id,),
-    ).fetchone()
-    if row is None:
-        raise HTTPException(status_code=404, detail={
-            "code": "MACHINE_NOT_FOUND", "message": f"unknown machine_id {machine_id!r}",
-        })
-
-
-def _require_playlist(conn: sqlite3.Connection, playlist_id: str) -> None:
-    row = conn.execute(
-        "SELECT 1 FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL",
-        (playlist_id,),
-    ).fetchone()
-    if row is None:
-        raise HTTPException(status_code=404, detail={
-            "code": "PLAYLIST_NOT_FOUND", "message": f"unknown playlist_id {playlist_id!r}",
-        })
-
-
 # ----------------------------------------------------------- machines
 #
 # ``Depends(...)`` in a parameter default below (every route in this file) is
@@ -340,12 +287,26 @@ def _require_playlist(conn: sqlite3.Connection, playlist_id: str) -> None:
 # output), so a config change belongs to whichever lane owns pyproject.toml's
 # ruff block, not this one.
 
-@router.get("/machines", response_model=list[MachineOut])
+@router.get("/machines", response_model=list[MachineOut], responses={500: {
+    "description": "CLOUDSYNC_IDENTITY_ERROR or CLOUDSYNC_CONFIG_INVALID "
+    "(cloudsync-config.json is malformed, so the configured name is unknown)",
+}})
 def list_machines(
     conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),  # noqa: B008
 ) -> list[MachineOut]:
+    # Register under the CONFIGURED name, the one Sync now and the scheduler
+    # use; the hostname default would rename this machine back (and collide
+    # with a same-host hub's row on UNIQUE machines.name).
+    data_dir = _data_dir(conn)
     try:
-        register_machine(conn, data_dir=_data_dir(conn))
+        stored = sync_config.read_config(data_dir)
+        register_machine(
+            conn, data_dir=data_dir, name=None if stored is None else stored.machine_name
+        )
+    except sync_config.CloudSyncConfigError as exc:
+        raise HTTPException(status_code=500, detail={
+            "code": "CLOUDSYNC_CONFIG_INVALID", "message": str(exc),
+        }) from exc
     except MachineIdentityError as exc:
         raise HTTPException(status_code=500, detail={
             "code": "CLOUDSYNC_IDENTITY_ERROR", "message": str(exc),
@@ -379,51 +340,32 @@ def list_policies(
     return [_row_to_policy(r) for r in rows]
 
 
-@router.put("/policies", response_model=SyncPolicyOut)
+@router.put(
+    "/policies",
+    response_model=SyncPolicyOut,
+    response_description="The stored cell",
+    responses=policy_write_responses("MACHINE_NOT_FOUND"),
+)
 def put_policy(
     body: SyncPolicyPut,
     conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),  # noqa: B008
 ) -> SyncPolicyOut:
-    """Upsert one policy cell THROUGH the stamp chokepoint.
+    """Upsert one policy cell through the policy gate (``policy set --live`` twin).
 
-    Round 2 finding N1a: this endpoint stamped the row correctly but skipped
-    ``local_changelog``, so the edit was never offered to the hub and the
-    machine then failed its post-sync digest compare on ``sync_policies``
-    forever. Changing one policy in the config UI stopped that machine
-    syncing anything at all.
+    ``apps.sync_hub.policy_store`` stamps the row and its ``local_changelog``
+    entry in one transaction (round 2 finding N1a: a write with no changelog
+    entry is never offered to the hub) and answers 409 when the change
+    introduces an error-severity violation, writing nothing.
     """
-    with _write_unit(conn):
-        _require_machine(conn, body.machine_id)
-        origin = _origin_device_id(conn)
-        stamp = sync_stamp.stamp_and_log(
-            conn, POLICIES_TABLE, (body.machine_id, body.asset_kind), origin,
-        )
-        conn.execute(
-            """
-            INSERT INTO sync_policies(
-                machine_id, asset_kind, mode, cache_budget_mb,
-                updated_at, origin_device_id, deleted_at
-            ) VALUES (?, ?, ?, ?, ?, ?, NULL)
-            ON CONFLICT(machine_id, asset_kind) DO UPDATE SET
-                mode             = excluded.mode,
-                cache_budget_mb  = excluded.cache_budget_mb,
-                updated_at       = excluded.updated_at,
-                origin_device_id = excluded.origin_device_id,
-                deleted_at       = NULL
-            """,
-            (
-                body.machine_id, body.asset_kind, body.mode,
-                body.cache_budget_mb, stamp.updated_at, stamp.origin_device_id,
-            ),
-        )
-    publish("library.changed", {
-        "kind": "cloudsync_policy", "ids": [f"{body.machine_id}:{body.asset_kind}"],
-    })
-    return SyncPolicyOut(
-        machine_id=body.machine_id, asset_kind=body.asset_kind, mode=body.mode,
-        cache_budget_mb=body.cache_budget_mb, updated_at=stamp.updated_at,
-        origin_device_id=stamp.origin_device_id,
-    )
+    cell = PolicyCell(body.machine_id, body.asset_kind, body.mode, body.cache_budget_mb)
+    proposed = replace(empty_proposal(author_or_raise(conn)), policies=(cell,))
+    apply_policy_or_raise(conn, proposed, live=True)
+    row = conn.execute(
+        "SELECT machine_id, asset_kind, mode, cache_budget_mb, updated_at, "
+        "origin_device_id FROM sync_policies WHERE machine_id = ? AND asset_kind = ?",
+        (body.machine_id, body.asset_kind),
+    ).fetchone()
+    return _row_to_policy(row)
 
 
 # ----------------------------------------------------------- playlist pins
@@ -451,49 +393,28 @@ def list_playlist_pins(
     return [_row_to_pin(r) for r in rows]
 
 
-@router.put("/playlist-pins", response_model=PlaylistPinOut)
+@router.put(
+    "/playlist-pins",
+    response_model=PlaylistPinOut,
+    response_description="The stored pin",
+    responses=policy_write_responses("MACHINE_NOT_FOUND", "PLAYLIST_NOT_FOUND"),
+)
 def put_playlist_pin(
     body: PlaylistPinPut,
     conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),  # noqa: B008
 ) -> PlaylistPinOut:
-    """Upsert one pin THROUGH the stamp chokepoint. See :func:`put_policy`."""
-    with _write_unit(conn):
-        _require_machine(conn, body.machine_id)
-        _require_playlist(conn, body.playlist_id)
-        origin = _origin_device_id(conn)
-        stamp = sync_stamp.stamp_and_log(
-            conn, PLAYLIST_PINS_TABLE, (body.machine_id, body.playlist_id),
-            origin,
-        )
-        conn.execute(
-            """
-            INSERT INTO playlist_pins(
-                machine_id, playlist_id, mode, updated_at, origin_device_id,
-                deleted_at
-            ) VALUES (?, ?, ?, ?, ?, NULL)
-            ON CONFLICT(machine_id, playlist_id) DO UPDATE SET
-                mode             = excluded.mode,
-                updated_at       = excluded.updated_at,
-                origin_device_id = excluded.origin_device_id,
-                deleted_at       = NULL
-            """,
-            (
-                body.machine_id, body.playlist_id, body.mode,
-                stamp.updated_at, stamp.origin_device_id,
-            ),
-        )
-        name_row = conn.execute(
-            "SELECT name FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL",
-            (body.playlist_id,),
-        ).fetchone()
-    publish("library.changed", {
-        "kind": "cloudsync_playlist_pin", "ids": [f"{body.machine_id}:{body.playlist_id}"],
-    })
-    return PlaylistPinOut(
-        machine_id=body.machine_id, playlist_id=body.playlist_id,
-        playlist_name=name_row[0] if name_row else None, mode=body.mode,
-        updated_at=stamp.updated_at, origin_device_id=stamp.origin_device_id,
-    )
+    """Upsert one pin through the policy gate. See :func:`put_policy`."""
+    pin = PinCell(body.machine_id, body.playlist_id, body.mode)
+    proposed = replace(empty_proposal(author_or_raise(conn)), pins=(pin,))
+    apply_policy_or_raise(conn, proposed, live=True)
+    row = conn.execute(
+        "SELECT pp.machine_id, pp.playlist_id, p.name, pp.mode, pp.updated_at, "
+        "pp.origin_device_id FROM playlist_pins pp LEFT JOIN playlists p "
+        "ON p.playlist_id = pp.playlist_id "
+        "WHERE pp.machine_id = ? AND pp.playlist_id = ?",
+        (body.machine_id, body.playlist_id),
+    ).fetchone()
+    return _row_to_pin(row)
 
 
 # ----------------------------------------------------------- overview
@@ -522,6 +443,7 @@ def _machine_overview_row(conn: sqlite3.Connection, machine_id: str, name: str) 
           AND NOT EXISTS (
             SELECT 1 FROM track_locations tl
             WHERE tl.stable_id = pm.stable_id AND tl.kind = 'local'
+              AND tl.machine_id = pp.machine_id
               AND tl.available = 1 AND tl.deleted_at IS NULL
           )
         """,

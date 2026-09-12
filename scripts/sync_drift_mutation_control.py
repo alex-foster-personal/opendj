@@ -53,6 +53,7 @@ TESTS: tuple[str, ...] = (
     "tests/quality/test_sync_drift_authorities.py",
     "tests/quality/test_sync_drift_floors.py",
     "tests/quality/test_sync_drift_sources.py",
+    "tests/quality/test_sync_drift_wire.py",
 )
 
 EXPECTED: dict[str, str] = {
@@ -64,6 +65,7 @@ EXPECTED: dict[str, str] = {
     "check_mirror_version_mismatch": "d06",
     "check_migration_step_changed": "d07",
     "check_undeclared_state_table": "d08",
+    "check_wire_shape_changed": "d12",
 }
 """Check -> the rule token its OWN tests are named after.
 

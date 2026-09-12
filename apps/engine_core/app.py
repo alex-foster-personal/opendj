@@ -28,6 +28,7 @@ import os
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
@@ -39,7 +40,7 @@ from apps.engine_core.account.api import (
     flags_router,
 )
 from apps.engine_core.assistant.api import router as assistant_router
-from apps.engine_core.build_info import add_build_info_route
+from apps.engine_core.build_info import BUILD_IDENTITY_STATE_ATTR, add_build_info_route
 from apps.engine_core.config import (
     ENGINE_VERSION,
     EngineBootError,
@@ -64,8 +65,12 @@ from apps.feature_flags import load_flags
 from apps.shared import events, platform_paths
 from apps.shared.library_mode import apply_library_env, assert_ready
 from apps.shared.paths import STATE_DB
+from apps.shared.sync_bind_guard import assert_sync_bind_allowed
 from apps.stems import job as stems_job
 from apps.stems.api import router as stems_plan_router
+from apps.stems.live_capability import assess_install_once
+from apps.stems.live_capability_api import router as live_stems_capability_router
+from apps.sync_hub.scheduler import scheduler_lifespan
 from apps.webui.library_assets import ensure_stem_storage, stem_storage
 from apps.webui.server import analysis_autostart
 from apps.webui.server.app import _SpaStaticFiles
@@ -103,6 +108,7 @@ def create_app(
 ) -> FastAPI:
     """Build the engine app. No import-time construction, no globals."""
     assert_no_progress_ledger(cfg.data_dir)
+    assert_sync_bind_allowed(cfg.host)
     prepare_layout(cfg)
 
     boot_id = lock.boot_id if lock is not None else str(uuid.uuid4())
@@ -129,6 +135,7 @@ def create_app(
     app.include_router(jobs_router, prefix=API_PREFIX)
     # Engine-only: the plan describes a run only an engine can start.
     app.include_router(stems_plan_router, prefix=API_PREFIX)
+    app.include_router(live_stems_capability_router, prefix=API_PREFIX)
     # Importing the setup router is also what REGISTERS its job kind, so the
     # order matters: the jobs surface must be able to build a worker for
     # setup.import-rekordbox before anything can enqueue one.
@@ -153,6 +160,11 @@ def create_app(
     add_build_info_route(
         app, environ=dict(os.environ), repo_root=platform_paths.PROJECT_ROOT
     )
+    build_identity = getattr(app.state, BUILD_IDENTITY_STATE_ATTR)
+    if build_identity.info is not None and build_identity.info.source == "payload":
+        # An installed engine owns the first-run assessment. A checkout has no
+        # record because its development host is not the user's installed app.
+        app.state.live_stems_capability = assess_install_once(cfg.data_dir)
     # The update channel, mounted AFTER build-info because it reads the
     # identity that route resolves onto app.state. It reports only: applying
     # an update is the desktop shell's Tauri updater, which owns signature
@@ -241,6 +253,10 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
         # in the optional analysis extra, so the installed app must decline to
         # arm a loop whose every drain would raise BackendNotAvailable.
         auto_analyze=analysis_autostart.arm_from_environ(os.environ),
+        # FBSYNC-01: the desktop engine is where pins must sync with no manual
+        # step, so it arms the CloudSync scheduler. Armed is not running: it
+        # still waits for MDT_CLOUDSYNC_SCHEDULER=1 and MDT_CLOUDSYNC_HUB_URL.
+        cloudsync_scheduler=True,
     )
 
 
@@ -365,7 +381,10 @@ def _wrap_lifespan(
             },
         )
         try:
-            async with legacy_lifespan(instance):
+            # The CloudSync scheduler idles until cloudsync-config.json (or
+            # its env overrides) turns it on, and never starts on the hub.
+            cloudsync_dir = Path(str(instance.state.state_db_path)).resolve().parent.parent
+            async with legacy_lifespan(instance), scheduler_lifespan(cloudsync_dir):
                 yield
         finally:
             if heartbeat is not None:

@@ -15,12 +15,21 @@ own submodules resolves one of them partially initialized).
 """
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from apps.sync_hub import protocol
 
+from .fault_transport import FaultInjected
+from .scenario_runner_adversarial import (
+    ADVERSARIAL_EDIT_TABLES,
+    assert_faults_spent,
+    dispatch_adversarial,
+    edit_adversarial_table,
+)
 from .scenario_runner_common import (
+    _ADVERSARIAL_ACTIONS,
     _EDITABLE_TABLES,
     _SEED_ORIGIN,
     _SYNC_RESULT_FIELDS,
@@ -32,6 +41,7 @@ from .scenario_runner_common import (
     _require,
     _require_mapping,
     _require_nonempty_list,
+    _resolve_pk,
     _stamp,
     _validate_editable_columns,
     client,
@@ -53,12 +63,20 @@ def _seed_track(run: SimRun, entry: Mapping[str, Any]) -> None:
             conn.execute(
                 """
                 INSERT INTO tracks(
-                    stable_id, stable_id_tier, title, created_at, updated_at,
-                    origin_device_id
+                    stable_id, stable_id_tier, title, content_hash, created_at,
+                    updated_at, origin_device_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (stable_id, stable_id_tier, title, updated_at, updated_at, _SEED_ORIGIN),
+                (
+                    stable_id,
+                    stable_id_tier,
+                    title,
+                    hashlib.sha256(stable_id.encode("utf-8")).hexdigest(),
+                    updated_at,
+                    updated_at,
+                    _SEED_ORIGIN,
+                ),
             )
         finally:
             conn.close()
@@ -227,7 +245,7 @@ def _edit_track(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
         _validate_editable_columns(conn, "tracks", changes)
         origin = run.machine_ids[machine]
         updated_at = _log_edit(
-            conn, "tracks", (stable_id,), origin, _stamp(args, run)
+            conn, "tracks", (stable_id,), origin, _stamp(args, run, machine)
         )
         assignments = ", ".join(f"{col} = ?" for col in changes)
         cursor = conn.execute(
@@ -253,7 +271,7 @@ def _edit_playlist(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
     try:
         origin = run.machine_ids[machine]
         updated_at = _log_edit(
-            conn, "playlists", (playlist_id,), origin, _stamp(args, run)
+            conn, "playlists", (playlist_id,), origin, _stamp(args, run, machine)
         )
         if changes:
             _validate_editable_columns(conn, "playlists", changes)
@@ -292,7 +310,7 @@ def _edit_playlist(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
 
 def _edit_policy(run: SimRun, machine: str, table: str, args: Mapping[str, Any]) -> None:
     mode = str(_require(args, "mode", where=f"edit {table}"))
-    updated_at = _stamp(args, run)
+    updated_at = _stamp(args, run, machine)
     if table == "sync_policies":
         asset_kind = str(_require(args, "asset_kind", where="edit sync_policies"))
         _write_policy(
@@ -317,8 +335,40 @@ def _apply_edit(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
         _edit_track(run, machine, args)
     elif table == "playlists":
         _edit_playlist(run, machine, args)
-    else:
+    elif table == "playlist_memberships":
+        # Membership has no row of its own on the wire: it rides its
+        # playlist row (whole-list replacement), so it is written the same
+        # way. Unlike 'reorder', an edit may EMPTY the playlist (members: []).
+        _replace_members(run, machine, args, verb="edit playlist_memberships", allow_empty=True)
+    elif table in ADVERSARIAL_EDIT_TABLES:
+        edit_adversarial_table(run, machine, table, args)
+    elif table in ("sync_policies", "playlist_pins"):
         _edit_policy(run, machine, table, args)
+    else:
+        raise ScenarioError(f"edit: no editor for table {table!r}")
+
+
+def _apply_reorder(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
+    """Reorder a playlist: a nonempty whole-list replacement."""
+    _replace_members(run, machine, args, verb="reorder", allow_empty=False)
+
+
+def _replace_members(
+    run: SimRun, machine: str, args: Mapping[str, Any], *, verb: str, allow_empty: bool
+) -> None:
+    """Replace a playlist's whole member list, stamped on its playlist row."""
+    _require(args, "playlist_id", where=verb)
+    members = args.get("members")
+    if allow_empty:
+        if not isinstance(members, list):
+            raise ScenarioError(
+                f"{verb}: 'members' must be a list of stable_ids ([] empties the playlist)"
+            )
+    elif not allow_empty:
+        _require_nonempty_list(members, where=f"{verb}.members")
+    if args.get("set"):
+        raise ScenarioError(f"{verb} changes membership only; use edit playlists for 'set'")
+    _edit_playlist(run, machine, args)
 
 
 def _apply_sync(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
@@ -328,8 +378,29 @@ def _apply_sync(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
             "the hub in this state -- add a 'partition' step to reconnect "
             "it first"
         )
+    expect_error = args.get("expect_error")
+    if expect_error is not None:
+        if expect_error != "transport" or "expect" in args:
+            raise ScenarioError(
+                "sync.expect_error must be 'transport' and cannot be combined with 'expect'"
+            )
+        try:
+            client.run_sync(
+                run.data_dirs[machine],
+                "http://hub.invalid",
+                transport=run.transport_for(machine),
+                name=run.sync_name(machine),
+            )
+        except FaultInjected:
+            return
+        raise ScenarioError(
+            "sync.expect_error was 'transport' but the sync completed: no armed fault fired"
+        )
     result = client.run_sync(
-        run.data_dirs[machine], "http://hub.invalid", transport=run.hub_transport, name=machine
+        run.data_dirs[machine],
+        "http://hub.invalid",
+        transport=run.transport_for(machine),
+        name=run.sync_name(machine),
     )
     expect = args.get("expect")
     if expect is None:
@@ -354,40 +425,6 @@ def _apply_partition(run: SimRun, machine: str, args: Mapping[str, Any]) -> None
         run.offline.discard(machine)
     else:
         raise ScenarioError(f"partition.state must be 'offline' or 'online', got {state!r}")
-
-
-def _resolve_pk(
-    run: SimRun, table: str, raw_pk: Mapping[str, Any], *, self_machine: str
-) -> dict[str, str]:
-    """Expand a scenario's ``pk`` block to real column values.
-
-    A string value starting with ``@`` resolves to that logical machine's
-    real (randomly minted) ``machine_id`` -- the only way a YAML file can
-    name another machine's row on a fleet-wide policy table without knowing
-    its id in advance. ``sync_policies``/``playlist_pins`` default a missing
-    ``machine_id`` to the checked machine's own id, since that is what a
-    scenario asks for in the common case.
-    """
-    spec = protocol.SPEC_BY_TABLE.get(table)
-    if spec is None and table == protocol.MEMBERSHIP_TABLE:
-        spec = protocol.MEMBERSHIP_SPEC
-    if spec is None:
-        raise ScenarioError(f"{table!r} is not a syncable/digest table")
-    resolved: dict[str, str] = {}
-    for column, value in raw_pk.items():
-        if isinstance(value, str) and value.startswith("@"):
-            ref = value[1:]
-            if ref not in run.machine_ids:
-                raise ScenarioError(f"pk reference '@{ref}' is not a declared machine")
-            resolved[column] = run.machine_ids[ref]
-        else:
-            resolved[column] = str(value)
-    if table in ("sync_policies", "playlist_pins") and "machine_id" not in resolved:
-        resolved["machine_id"] = run.machine_ids[self_machine]
-    missing = [column for column in spec.pk if column not in resolved]
-    if missing:
-        raise ScenarioError(f"{table} pk incomplete: missing {missing}")
-    return resolved
 
 
 def _apply_assert_converged(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
@@ -475,6 +512,11 @@ def _dispatch_step(run: SimRun, step: Step) -> None:
     elif step.action == "partition":
         _ensure_spoke(run, step.on, "partition")
         _apply_partition(run, step.on, step.args)
+    elif step.action == "reorder":
+        _ensure_spoke(run, step.on, "reorder")
+        _apply_reorder(run, step.on, step.args)
+    elif step.action in _ADVERSARIAL_ACTIONS:
+        dispatch_adversarial(run, step)
     else:
         raise ScenarioError(f"unknown action {step.action!r}")
 
@@ -488,6 +530,7 @@ def _execute_step(run: SimRun, index: int, step: Step) -> None:
 
 
 def _assert_expected(run: SimRun) -> None:
+    assert_faults_spent(run)
     expected = run.scenario.expected
     if "digest_converged" not in expected:
         return

@@ -45,6 +45,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from apps.shared.scan_mass_missing import guard_scan_count
 from apps.shared.state.locations import list_location_paths
 from apps.shared.state.schema import AVAILABILITY_STATES
 
@@ -161,18 +162,45 @@ def probe(conn: sqlite3.Connection) -> list[AvailabilityRow]:
     return rows
 
 
+def guard_present_drop(
+    conn: sqlite3.Connection,
+    rows: list[AvailabilityRow],
+    *,
+    allow_mass_missing: bool = False,
+) -> None:
+    """Refuse a probe that would wipe a previously present library (LIBM-41)."""
+    prior = conn.execute(
+        "SELECT COUNT(*) FROM track_availability "
+        "JOIN tracks ON tracks.stable_id = track_availability.stable_id "
+        "WHERE tracks.deleted_at IS NULL AND track_availability.state = 'present'"
+    ).fetchone()[0]
+    current = sum(1 for row in rows if row.state == "present")
+    guard_scan_count(
+        "library",
+        current,
+        prior if prior else None,
+        allow_mass_missing=allow_mass_missing,
+    )
+
+
 def write(
     conn: sqlite3.Connection,
     rows: list[AvailabilityRow],
     *,
     now: str | None = None,
+    allow_mass_missing: bool = False,
 ) -> AvailabilityReport:
     """Upsert ``rows`` into ``track_availability``. Idempotent.
 
     A row whose state and path are unchanged keeps its original
     ``checked_at``, so the timestamp answers "when did this state last change"
     rather than "when did the probe last run".
+
+    LIBM-41: a library that was present and is now empty (or dropped by more
+    than 50%) is refused unless ``allow_mass_missing`` is set. The check
+    runs before any row is written.
     """
+    guard_present_drop(conn, rows, allow_mass_missing=allow_mass_missing)
     stamp = now or datetime.now(UTC).isoformat()
     report = AvailabilityReport()
     existing: dict[str, tuple[str, str | None]] = {
@@ -203,9 +231,16 @@ def write(
     return report
 
 
-def refresh(conn: sqlite3.Connection, *, now: str | None = None) -> AvailabilityReport:
+def refresh(
+    conn: sqlite3.Connection,
+    *,
+    now: str | None = None,
+    allow_mass_missing: bool = False,
+) -> AvailabilityReport:
     """Probe then write in one call."""
-    return write(conn, probe(conn), now=now)
+    return write(
+        conn, probe(conn), now=now, allow_mass_missing=allow_mass_missing
+    )
 
 
 def counts(conn: sqlite3.Connection) -> dict[str, int]:
@@ -250,6 +285,7 @@ __all__ = [
     "AvailabilityRow",
     "classify_path",
     "counts",
+    "guard_present_drop",
     "probe",
     "refresh",
     "resolve_data_dir",

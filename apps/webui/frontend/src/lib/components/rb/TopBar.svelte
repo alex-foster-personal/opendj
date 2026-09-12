@@ -26,6 +26,7 @@
 		setAutoPlayEnforceOrder,
 		setAutoPlayMaximizeReach,
 		setBeatSyncMax,
+		toggleLyricsGlobal,
 		toggleTheme,
 		uiPrefs
 	} from '$lib/rb/prefs.svelte';
@@ -56,7 +57,15 @@
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 	import MasterLevelMeter from './mixer/MasterLevelMeter.svelte';
-	import { APP_MODES } from '$lib/rb/app-mode';
+	import { buildFlags } from '$lib/api/store-build.svelte';
+	import {
+		APP_MODES,
+		LOCAL_STEMS_EXECUTOR_FLAG_ID,
+		SHOW_UNBUILDABLE_APP_MODES_FLAG_ID,
+		chooserAppModes,
+		modeFeatureEnabled,
+		showUnbuildableAppModes
+	} from '$lib/rb/app-mode';
 
 	interface MasterCapableEngine extends AudioEngine {
 		setMaster(value: number): void;
@@ -75,6 +84,22 @@
 	let autoPlayMenuStyle = $state('');
 	let modePickerEl: HTMLDetailsElement | undefined = $state();
 	let modeMenuStyle = $state('');
+
+	const liveAppMode = APP_MODES.find((mode) => mode.id === 'performance');
+	if (liveAppMode === undefined) {
+		throw new Error('APP_MODES is missing the live /performance route');
+	}
+
+	const showUnbuildableModes = $derived(
+		showUnbuildableAppModes(
+			buildFlags.loaded,
+			buildFlags.flag(SHOW_UNBUILDABLE_APP_MODES_FLAG_ID)
+		)
+	);
+	const chooserModes = $derived(chooserAppModes(showUnbuildableModes));
+	const stemsProgressLive = $derived(
+		modeFeatureEnabled(liveAppMode.id, LOCAL_STEMS_EXECUTOR_FLAG_ID)
+	);
 
 	const autoPlayTitle: string = $derived.by(() => {
 		const d = describeAutoPlayMode(uiPrefs);
@@ -115,6 +140,7 @@
 
 	function _placeModeMenu(): void {
 		if (!modePickerEl?.open) return;
+		void buildFlags.load();
 		const rect = modePickerEl.getBoundingClientRect();
 		modeMenuStyle = `left:${Math.round(rect.left)}px;top:${Math.round(rect.bottom + 5)}px`;
 	}
@@ -254,18 +280,20 @@
 	<!-- Stems separation, aggregate and live off jobs.updated. Renders nothing
 	     while no stems job is active, so it costs no space the rest of the
 	     time; clicking it opens the JOBS drawer for the per-job detail. -->
-	<StemsProgress />
+	{#if stemsProgressLive}
+		<StemsProgress />
+	{/if}
 
 	<details class="mode-picker" bind:this={modePickerEl} ontoggle={_placeModeMenu}>
-		<summary class="mode-dd" aria-label="Choose app mode" title="App mode picker - PERFORMANCE is the current mode">
-			PERFORMANCE
+		<summary class="mode-dd" aria-label="Choose app mode" title="App mode picker - Gig is the current mode">
+			{liveAppMode.label.toUpperCase()}
 			<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
 				<path d="M0.5 1 L3.5 4 L6.5 1" fill="none" stroke="currentColor" stroke-width="1.2" />
 			</svg>
 		</summary>
 		<div class="mode-menu" style={modeMenuStyle} aria-label="App modes">
 			<p class="mode-menu-heading">Choose app mode</p>
-			{#each APP_MODES as mode (mode.id)}
+			{#each chooserModes as mode (mode.id)}
 				{#if mode.available}
 					<a class="mode-card" href={mode.href} aria-current={mode.id === 'performance' ? 'page' : undefined}>
 						<span class={`mode-thumbnail ${mode.thumbnail}`} aria-hidden="true"></span>
@@ -401,6 +429,19 @@
 		onclick={() => setBeatSyncMax(!uiPrefs.beat_sync_max)}
 	>
 		BeatSyncMax
+	</button>
+
+	<button
+		type="button"
+		class="bsm-toggle topbar-slot-lyr"
+		class:on={uiPrefs.lyrics_global}
+		aria-pressed={uiPrefs.lyrics_global}
+		title={uiPrefs.lyrics_global
+			? 'Lyric overlays ON - click to hide waveform word lanes, deck lyric lines and scrub-hover words everywhere (per-surface toggles keep their state)'
+			: 'Lyric overlays OFF globally - click to restore them (library Lyrics column is unaffected; it has its own setting)'}
+		onclick={toggleLyricsGlobal}
+	>
+		LYR
 	</button>
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->

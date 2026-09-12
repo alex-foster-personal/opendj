@@ -98,12 +98,19 @@ export const PRESS_SCHEDULE_LOAD_SPAN_KIND = 'transport-schedule-press-load-span
  */
 export const PRESS_SCHEDULE_ARMED_KIND = 'transport-schedule-press-armed';
 
+/** Every kind ``scheduleRowKind`` may return for a perf ring row. */
+export type ScheduleRowKind =
+	| typeof SCHEDULE_KIND
+	| typeof PRESS_SCHEDULE_KIND
+	| typeof PRESS_SCHEDULE_LOAD_SPAN_KIND
+	| typeof PRESS_SCHEDULE_ARMED_KIND;
+
 /** Which ring kind this schedule's row belongs under. */
 export function scheduleRowKind(
 	pressToScheduleMs: number | undefined,
 	loadSpanning: boolean,
 	armed = false
-): string {
+): ScheduleRowKind {
 	if (pressToScheduleMs === undefined) return SCHEDULE_KIND;
 	if (loadSpanning) return PRESS_SCHEDULE_LOAD_SPAN_KIND;
 	if (armed) return PRESS_SCHEDULE_ARMED_KIND;

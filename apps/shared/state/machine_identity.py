@@ -10,6 +10,7 @@ Nothing here guesses. An unknown platform, an unwritable data dir, a
 corrupt id file or an ambiguous ``MDT_IS_HUB`` value all raise
 :class:`MachineIdentityError` rather than falling back to a plausible value.
 """
+
 from __future__ import annotations
 
 import os
@@ -19,7 +20,6 @@ import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 # sync_stamp imports THIS module (identity comes from the data dir), so this
 # binds the module object rather than a specific name off it -- that is safe
@@ -73,18 +73,38 @@ def _validate_machine_id(raw: str, source: Path) -> str:
 
 
 def _write_machine_id(path: Path, machine_id: str) -> bool:
-    """Create ``path`` with ``machine_id`` at 0600. False if it already exists."""
+    """Publish ``machine_id`` at ``path`` (0600) atomically. False if it already exists.
+
+    The id is written and fsynced to a private temp file first, then
+    ``os.link``-ed into place. ``link`` fails with ``EEXIST`` exactly like
+    ``O_CREAT | O_EXCL``, so the first writer still wins, but the final path
+    only ever appears WITH its content. Creating the final path directly and
+    writing it afterwards left a window where a concurrent caller that lost
+    the ``O_EXCL`` race read an empty file and raised, which a fresh hub
+    answered as HTTP 500 ``SYNC_HUB_IDENTITY`` (PR #1993 review;
+    tests/shared/state/test_machine_identity_race.py).
+    """
+    staging = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, MACHINE_ID_MODE)
-    except FileExistsError:
-        return False
+        fd = os.open(staging, os.O_CREAT | os.O_EXCL | os.O_WRONLY, MACHINE_ID_MODE)
     except OSError as exc:
-        raise MachineIdentityError(
-            f"cannot write the machine id file at {path}: {exc}"
-        ) from exc
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(machine_id)
-    return True
+        raise MachineIdentityError(f"cannot write the machine id file at {path}: {exc}") from exc
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(machine_id)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.link(staging, path)
+        except FileExistsError:
+            return False
+        except OSError as exc:
+            raise MachineIdentityError(
+                f"cannot publish the machine id file at {path}: {exc}"
+            ) from exc
+        return True
+    finally:
+        staging.unlink(missing_ok=True)
 
 
 def get_or_create_machine_id(data_dir: Path) -> str:
@@ -104,8 +124,12 @@ def get_or_create_machine_id(data_dir: Path) -> str:
         ) from exc
 
     path = machine_id_path(target_dir)
-    if _write_machine_id(path, uuid.uuid4().hex):
-        return _validate_machine_id(path.read_text(encoding="utf-8"), path)
+    # Read first: every lookup after the first mint is a plain read, so a
+    # hub whose data dir is not writable still answers /hello, and the
+    # request path pays no create/fsync/unlink (PR #1993 review, P0). Only an
+    # absent file goes through the staged, link-based first-writer-wins mint.
+    if not path.exists():
+        _write_machine_id(path, uuid.uuid4().hex)
     try:
         existing = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -129,7 +153,7 @@ def detect_platform() -> str:
     return platform
 
 
-def is_hub_from_env(env: Optional[dict[str, str]] = None) -> bool:
+def is_hub_from_env(env: dict[str, str] | None = None) -> bool:
     """True iff ``MDT_IS_HUB`` is exactly ``1``.
 
     Unset or ``0`` is False. Any other value raises rather than being read
@@ -144,9 +168,7 @@ def is_hub_from_env(env: Optional[dict[str, str]] = None) -> bool:
         return True
     if raw == "0":
         return False
-    raise MachineIdentityError(
-        f"{IS_HUB_ENV}={raw!r} is not understood; use 1 or 0."
-    )
+    raise MachineIdentityError(f"{IS_HUB_ENV}={raw!r} is not understood; use 1 or 0.")
 
 
 def default_machine_name() -> str:
@@ -154,8 +176,7 @@ def default_machine_name() -> str:
     hostname = socket.gethostname().strip()
     if not hostname:
         raise MachineIdentityError(
-            "socket.gethostname() returned nothing; pass an explicit name "
-            "to register_machine()."
+            "socket.gethostname() returned nothing; pass an explicit name to register_machine()."
         )
     return hostname.split(".")[0]
 
@@ -167,8 +188,8 @@ def register_machine(
     conn: sqlite3.Connection,
     *,
     data_dir: Path,
-    name: Optional[str] = None,
-    now: Optional[str] = None,
+    name: str | None = None,
+    now: str | None = None,
 ) -> MachineIdentity:
     """Upsert this machine into ``machines`` and return what was written.
 
@@ -221,13 +242,10 @@ def register_machine(
     return identity
 
 
-def load_machine(
-    conn: sqlite3.Connection, machine_id: str
-) -> Optional[MachineIdentity]:
+def load_machine(conn: sqlite3.Connection, machine_id: str) -> MachineIdentity | None:
     """Read one ``machines`` row back, or None if it was never registered."""
     row = conn.execute(
-        "SELECT machine_id, name, platform, is_hub, data_root "
-        "FROM machines WHERE machine_id = ?",
+        "SELECT machine_id, name, platform, is_hub, data_root FROM machines WHERE machine_id = ?",
         (machine_id,),
     ).fetchone()
     if row is None:

@@ -169,6 +169,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sets/{session_id}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Get Metadata Share
+         * @description Get an existing metadata-only share link for a finalized published set.
+         */
+        get: operations["api_get_metadata_share_api_sets__session_id__share_get"];
+        put?: never;
+        /**
+         * Api Publish Metadata Share
+         * @description Publish timeline metadata after explicit acknowledgement, never MP3 audio.
+         */
+        post: operations["api_publish_metadata_share_api_sets__session_id__share_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sets/{session_id}/soundcloud-export": {
         parameters: {
             query?: never;
@@ -631,6 +655,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bench/lyrics-kpi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Kpi Ledger
+         * @description The lyrics KPI ledger verbatim (``scripts/bench/lyrics_kpi_ledger.json``).
+         *
+         *     Read-only here: appending a snapshot is a CLI act
+         *     (``scripts/bench/lyrics_kpi_append.py``) so the ledger keeps one writer.
+         *     A missing key raises rather than defaulting - a KPI panel drawing invented
+         *     numbers is worse than a panel that fails.
+         */
+        get: operations["get_lyrics_kpi_ledger_api_v1_bench_lyrics_kpi_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bench/perf-kpi": {
         parameters: {
             query?: never;
@@ -776,6 +825,145 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cloudsync/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Config */
+        get: operations["get_config_api_v1_cloudsync_config_get"];
+        /** Put Config */
+        put: operations["put_config_api_v1_cloudsync_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/data-classes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Data Classes
+         * @description Every class of data and how it syncs (``policy classes`` twin).
+         */
+        get: operations["get_data_classes_api_v1_cloudsync_data_classes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/enrollment-grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mint Enrollment Grant
+         * @description Mint one single-use grant on this hub. The token is returned once and
+         *     never logged; only its sha256 reaches the database.
+         */
+        post: operations["mint_enrollment_grant_api_v1_cloudsync_enrollment_grants_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/fleet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fleet
+         * @description Exactly ``fleet --json``: the one function both entry points call.
+         */
+        get: operations["get_fleet_api_v1_cloudsync_fleet_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/fleet/adopt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Adopt Machine
+         * @description Twin of ``adopt``, always adopting to the signed-in user.
+         */
+        post: operations["adopt_machine_api_v1_cloudsync_fleet_adopt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/fleet/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Credentials
+         * @description Twin of ``python -m apps.sync_hub credentials --json``.
+         */
+        get: operations["read_credentials_api_v1_cloudsync_fleet_credentials_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/fleet/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke Machine
+         * @description Twin of ``revoke``, limited to machines the signed-in user owns.
+         */
+        post: operations["revoke_machine_api_v1_cloudsync_fleet_revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cloudsync/machines": {
         parameters: {
             query?: never;
@@ -821,7 +1009,7 @@ export interface paths {
         get: operations["list_playlist_pins_api_v1_cloudsync_playlist_pins_get"];
         /**
          * Put Playlist Pin
-         * @description Upsert one pin THROUGH the stamp chokepoint. See :func:`put_policy`.
+         * @description Upsert one pin through the policy gate. See :func:`put_policy`.
          */
         put: operations["put_playlist_pin_api_v1_cloudsync_playlist_pins_put"];
         post?: never;
@@ -842,17 +1030,97 @@ export interface paths {
         get: operations["list_policies_api_v1_cloudsync_policies_get"];
         /**
          * Put Policy
-         * @description Upsert one policy cell THROUGH the stamp chokepoint.
+         * @description Upsert one policy cell through the policy gate (``policy set --live`` twin).
          *
-         *     Round 2 finding N1a: this endpoint stamped the row correctly but skipped
-         *     ``local_changelog``, so the edit was never offered to the hub and the
-         *     machine then failed its post-sync digest compare on ``sync_policies``
-         *     forever. Changing one policy in the config UI stopped that machine
-         *     syncing anything at all.
+         *     ``apps.sync_hub.policy_store`` stamps the row and its ``local_changelog``
+         *     entry in one transaction (round 2 finding N1a: a write with no changelog
+         *     entry is never offered to the hub) and answers 409 when the change
+         *     introduces an error-severity violation, writing nothing.
          */
         put: operations["put_policy_api_v1_cloudsync_policies_put"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/policies/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Policies
+         * @description Gate the change set and, unless ``dry_run``, write it in one transaction.
+         */
+        post: operations["apply_policies_api_v1_cloudsync_policies_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/policies/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Plan Policies
+         * @description Rows ``body`` would touch, with the gate's verdict. Never writes.
+         */
+        post: operations["plan_policies_api_v1_cloudsync_policies_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/policies/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate Policies
+         * @description The fleet with ``body`` applied, judged. No body judges the stored fleet
+         *     (``policy validate`` without ``--proposal``).
+         */
+        post: operations["validate_policies_api_v1_cloudsync_policies_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/policies/{machine_id}/{asset_kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Policy
+         * @description Unset one cell: a synced tombstone (``policy unset --live`` twin).
+         */
+        delete: operations["delete_policy_api_v1_cloudsync_policies__machine_id___asset_kind__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -869,6 +1137,26 @@ export interface paths {
         get: operations["get_status_api_v1_cloudsync_status_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Sync Round
+         * @description One spoke round trip against ``hub_url``, journaled for ``/status``.
+         */
+        post: operations["run_sync_round_api_v1_cloudsync_sync_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1276,6 +1564,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feedback/comments/{comment_id}/replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Append a follow-up on the same pin
+         * @description Appends a follow-up comment on the same pin without creating a second marker. This is not POST /follow-on, which opens a new pin at the same anchor only after the parent is fixed or merged. The agent_note scalar remains the latest agent lifecycle note; PATCH of agent_note also appends an agent reply unless it duplicates the last agent turn.
+         */
+        post: operations["add_reply_api_v1_feedback_comments__comment_id__replies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/general": {
         parameters: {
             query?: never;
@@ -1306,6 +1614,40 @@ export interface paths {
         put?: never;
         /** Create Performance Mark */
         post: operations["create_performance_mark_api_v1_feedback_performance_marks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feedback/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Feedback Sync */
+        post: operations["post_feedback_sync_api_v1_feedback_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feedback/sync/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Feedback Sync Status */
+        get: operations["get_feedback_sync_status_api_v1_feedback_sync_status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1741,6 +2083,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lyrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Lyric Verdicts
+         * @description The triage listing: least trustworthy first by default, with the track
+         *     names joined in so a human can act on a row without a second request.
+         */
+        get: operations["list_lyric_verdicts_api_v1_lyrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lyrics/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Config
+         * @description The source ordering the pipeline will use on its next run.
+         *
+         *     No DB connection: the order is a JSON file beside state.db, read by BOTH
+         *     this endpoint and the offline scripts, so what the admin panel shows is
+         *     what the next fetch uses.
+         */
+        get: operations["get_lyrics_config_api_v1_lyrics_config_get"];
+        /**
+         * Put Lyrics Config
+         * @description Persist a full reordering. Partial lists are rejected: an ordering that
+         *     silently omits a source is an ordering the operator never saw.
+         */
+        put: operations["put_lyrics_config_api_v1_lyrics_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lyrics/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyric Jobs
+         * @description Newest first. The queue is drained by the offline runner scripts:
+         *     stems and alignment never run in the daemon (house rule).
+         */
+        get: operations["get_lyric_jobs_api_v1_lyrics_jobs_get"];
+        put?: never;
+        /**
+         * Post Lyric Job
+         * @description Record a processing request from the UI (context menu / admin panel).
+         *
+         *     Every stable_id is checked against ``tracks`` in ONE select (the second and
+         *     last raw statement here, see :func:`_titles_by_stable_id`): a queue entry
+         *     for a track the library does not know is a job no runner can honour.
+         */
+        post: operations["post_lyric_job_api_v1_lyrics_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lyrics/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Lyrics Purge
+         * @description Remove one provider's lyrics from the row, the disk and R2 - parity for
+         *     the ``python -m apps.lyrics purge`` CLI, same function underneath.
+         *
+         *     ``writing=not dry_run`` is how the CLI asks for credentials too: a
+         *     rehearsal pushes and deletes nothing, so it must stay runnable on a
+         *     machine that has none.
+         */
+        post: operations["post_lyrics_purge_api_v1_lyrics_purge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/lyrics/search": {
         parameters: {
             query?: never;
@@ -1750,6 +2196,27 @@ export interface paths {
         };
         /** Search Lyrics */
         get: operations["search_lyrics_api_v1_lyrics_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lyrics/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Summary
+         * @description Library-wide verdict histogram plus the calibrated bands, so a client
+         *     never hardcodes the thresholds it displays.
+         */
+        get: operations["get_lyrics_summary_api_v1_lyrics_summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2792,6 +3259,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stems/live-capability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Live Stems Capability
+         * @description Read install-time capability and, when requested, its deck plan.
+         */
+        get: operations["get_live_stems_capability_api_v1_stems_live_capability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stems/plan": {
         parameters: {
             query?: never;
@@ -2809,6 +3296,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stems/push-missing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Push Missing Stems */
+        post: operations["push_missing_stems_api_v1_stems_push_missing_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stems/tiers": {
         parameters: {
             query?: never;
@@ -2820,6 +3324,23 @@ export interface paths {
         get: operations["list_tiers_api_v1_stems_tiers_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stems/{stable_id}/hydrate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hydrate Stem */
+        post: operations["hydrate_stem_api_v1_stems__stable_id__hydrate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3063,6 +3584,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/lyrics-cached-ids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Cached Ids
+         * @description List cached lyric timelines so the UI can skip explicit cache-miss reads.
+         */
+        get: operations["get_lyrics_cached_ids_api_v1_tracks_lyrics_cached_ids_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/quality-ladder": {
         parameters: {
             query?: never;
@@ -3186,6 +3727,10 @@ export interface paths {
         /**
          * Get Auto Cues
          * @description PROPOSED hot cues from apps.analysis (META-04). Never committed cues.
+         *
+         *     Returns HTTP 200 with ``proposals: []`` and ``backend="none"`` when the
+         *     track is in the library but has no analysis row yet. Unknown stable_id
+         *     and unmatched ``?backend=`` still 404 with ``ANALYSIS_NOT_FOUND``.
          */
         get: operations["get_auto_cues_api_v1_tracks__stable_id__auto_cues_get"];
         put?: never;
@@ -3292,6 +3837,51 @@ export interface paths {
          * @description Read the real cached line timeline without fetching or inventing lyrics.
          */
         get: operations["get_track_lyrics_api_v1_tracks__stable_id__lyrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/lyrics/override": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Lyric Override
+         * @description Set (or clear with null) the human verdict, which always beats the
+         *     computed one wherever it is read (``store.LyricVerdict.effective``).
+         *
+         *     The override VALUE is validated before the write so the two failures stay
+         *     distinguishable: an unknown value is the caller's mistake (422), while a
+         *     refusal from the store means there is no live row to override (404).
+         */
+        put: operations["put_lyric_override_api_v1_tracks__stable_id__lyrics_override_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/lyrics/words": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Track Karaoke Words
+         * @description This track's karaoke timeline: the verdict envelope plus every word.
+         */
+        get: operations["get_track_karaoke_words_api_v1_tracks__stable_id__lyrics_words_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3594,6 +4184,21 @@ export interface components {
             google_sub: string;
             /** Name */
             name: string | null;
+        };
+        /** AdoptOut */
+        AdoptOut: {
+            /** Created */
+            created: boolean;
+            /** Enrolled At */
+            enrolled_at: string;
+            /** Enrolled Via */
+            enrolled_via: string;
+            /** Machine Id */
+            machine_id: string;
+            /** Name */
+            name: string;
+            /** Owner Email */
+            owner_email: string;
         };
         /** AiApplyIn */
         AiApplyIn: {
@@ -4253,6 +4858,18 @@ export interface components {
              */
             severity: "warning" | "error";
         };
+        /** BlockerOut */
+        BlockerOut: {
+            /** Machine Id */
+            machine_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "unowned" | "foreign" | "no_credential";
+        };
         /** Body_upload_api_v1_ingest_upload_post */
         Body_upload_api_v1_ingest_upload_post: {
             /** Batch */
@@ -4434,6 +5051,21 @@ export interface components {
              */
             role: "system" | "user" | "assistant";
         };
+        /** CheckedViolationOut */
+        CheckedViolationOut: {
+            /** Blocking */
+            blocking: boolean;
+            /** Introduced */
+            introduced: boolean;
+            /** Message */
+            message: string;
+            /** Rule Id */
+            rule_id: string;
+            /** Severity */
+            severity: string;
+            /** Subject */
+            subject: string;
+        };
         /** ClientErrorIn */
         ClientErrorIn: {
             /** Audio Worklet Available */
@@ -4588,12 +5220,120 @@ export interface components {
             /** Stored */
             stored: boolean;
         };
-        /** CloudSyncStatusOut */
-        CloudSyncStatusOut: {
+        /**
+         * CloudSyncConfig
+         * @description The persisted file, validated. Also the HTTP PUT body.
+         */
+        CloudSyncConfig: {
+            /** Enabled */
+            enabled: boolean;
+            /** Hub Url */
+            hub_url: string | null;
+            /** Machine Name */
+            machine_name: string | null;
+        };
+        /** CloudSyncConfigOut */
+        CloudSyncConfigOut: {
+            effective: components["schemas"]["CloudSyncEffectiveConfigOut"];
+            file: components["schemas"]["CloudSyncConfig"] | null;
+            /** Path */
+            path: string;
+        };
+        /** CloudSyncEffectiveConfigOut */
+        CloudSyncEffectiveConfigOut: {
+            /** Configured */
+            configured: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Enabled Source
+             * @enum {string}
+             */
+            enabled_source: "env" | "file" | "default";
+            /** Hub Url */
+            hub_url: string | null;
+            /**
+             * Hub Url Source
+             * @enum {string}
+             */
+            hub_url_source: "env" | "file" | "default";
+            /** Machine Name */
+            machine_name: string | null;
+        };
+        /** CloudSyncLinkOut */
+        CloudSyncLinkOut: {
             /** Enabled */
             enabled: boolean;
             /** Endpoint */
             endpoint: string | null;
+            /** Last Finished At */
+            last_finished_at: string | null;
+            /** Last Message */
+            last_message: string | null;
+            /** Last Result */
+            last_result: string | null;
+            /** Reason */
+            reason: string | null;
+        };
+        /**
+         * CloudSyncSchedulerOut
+         * @description The engine's CloudSync scheduler: is its thread alive, and what last failed.
+         *
+         *     ``not_armed``: this app never builds one (tests, non-daemon boots).
+         *     ``off``: armed, switch not on. ``misconfigured``: switched on but it could
+         *     not start (``reason`` says why); the engine booted regardless.
+         *     ``dead``: it was started and its thread is gone without ``stop()``.
+         */
+        CloudSyncSchedulerOut: {
+            /** Alive */
+            alive: boolean;
+            /** Last Error */
+            last_error: string | null;
+            /** Last Error At */
+            last_error_at: string | null;
+            /** Last Ok At */
+            last_ok_at: string | null;
+            /** Reason */
+            reason: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "not_armed" | "off" | "misconfigured" | "running" | "stopped" | "dead";
+            /** Ticks */
+            ticks: number;
+        };
+        /** CloudSyncStatusOut */
+        CloudSyncStatusOut: {
+            /**
+             * Configured
+             * @description the effective config is on and names a hub
+             */
+            configured: boolean;
+            /**
+             * Enabled
+             * @description configured AND running: a scheduler heartbeat is fresh
+             */
+            enabled: boolean;
+            /**
+             * Enabled Source
+             * @description which source decided 'enabled': env override, config file, or default
+             * @enum {string}
+             */
+            enabled_source: "env" | "file" | "default";
+            /** Endpoint */
+            endpoint: string | null;
+            /**
+             * Endpoint Source
+             * @description which source decided the hub URL: env override, config file, or default
+             * @enum {string}
+             */
+            endpoint_source: "env" | "file" | "default";
+            /**
+             * Heartbeat At
+             * @description UTC time of the last scheduler beat, fresh or stale
+             */
+            heartbeat_at: string | null;
             /** Last Pull At */
             last_pull_at: string | null;
             /** Last Push At */
@@ -4605,6 +5345,11 @@ export interface components {
             recent_results: components["schemas"]["RecentResultOut"][];
             /** Rows Pending */
             rows_pending: number | null;
+            /**
+             * Running
+             * @description a scheduler heartbeat is fresh
+             */
+            running: boolean;
             /** Signed In As */
             signed_in_as: string | null;
         };
@@ -4705,6 +5450,8 @@ export interface components {
             issue_url?: string | null;
             /** Page */
             page: string;
+            /** Replies */
+            replies?: components["schemas"]["CommentReplyOut"][];
             /** Status */
             status?: string | null;
             /** Text */
@@ -4715,6 +5462,35 @@ export interface components {
             x_pct: number;
             /** Y Pct */
             y_pct: number;
+        };
+        /** CommentReplyIn */
+        CommentReplyIn: {
+            /** Agent Kind */
+            agent_kind?: string | null;
+            /**
+             * Author
+             * @default operator
+             * @enum {string}
+             */
+            author: "operator" | "agent";
+            /** Text */
+            text: string;
+        };
+        /** CommentReplyOut */
+        CommentReplyOut: {
+            /** Agent Kind */
+            agent_kind?: string | null;
+            /**
+             * Author
+             * @enum {string}
+             */
+            author: "operator" | "agent";
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
         };
         /** CommentUpdateIn */
         CommentUpdateIn: {
@@ -4776,6 +5552,116 @@ export interface components {
             total_tracks: number;
             /** Unreachable */
             unreachable: number;
+        };
+        /**
+         * CoverageVerdictOut
+         * @description One ``lyric_verdict`` row as the API states it.
+         */
+        CoverageVerdictOut: {
+            /** Artist */
+            artist?: string | null;
+            /**
+             * Computed At
+             * @description when the pipeline judged the track
+             */
+            computed_at: string;
+            /**
+             * Coverage Pct
+             * @description share of the track the vocal stem carries energy
+             */
+            coverage_pct?: number | null;
+            /**
+             * Effective
+             * @description same as effective_verdict; kept for clients that read .effective
+             */
+            effective: string;
+            /**
+             * Effective Verdict
+             * @description what to act on: the human override if set, else verdict
+             */
+            effective_verdict: string;
+            /**
+             * Has Words
+             * @description a words artifact exists for this track (the row records a words_content_hash); false means the words route will 404
+             */
+            has_words: boolean;
+            /** Language Iso3 */
+            language_iso3?: string | null;
+            /**
+             * N Lines
+             * @description derived lines in the artifact
+             */
+            n_lines?: number | null;
+            /**
+             * N Words
+             * @description words in the karaoke artifact
+             */
+            n_words?: number | null;
+            /** Override */
+            override?: string | null;
+            /** Override Note */
+            override_note?: string | null;
+            /**
+             * Pct Witness Red
+             * @description share of words the independent ASR witness distrusts
+             */
+            pct_witness_red?: number | null;
+            /**
+             * Pipeline Version
+             * @description the code version that produced this row's hash
+             */
+            pipeline_version: string;
+            /**
+             * Source
+             * @description lyric provider + match method
+             */
+            source?: string | null;
+            /** Stable Id */
+            stable_id: string;
+            /** Title */
+            title?: string | null;
+            /**
+             * Updated At
+             * @description sync stamp: when a machine last wrote the row
+             */
+            updated_at: string;
+            /**
+             * Verdict
+             * @description computed verdict from stem vocal coverage
+             */
+            verdict: string;
+        };
+        /** CredentialMachineOut */
+        CredentialMachineOut: {
+            /** Credential Minted At */
+            credential_minted_at: string | null;
+            /** Is This Hub */
+            is_this_hub: boolean;
+            /** Machine Id */
+            machine_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Ownership
+             * @enum {string}
+             */
+            ownership: "owned" | "unowned" | "foreign" | "revoked";
+        };
+        /** CredentialsOut */
+        CredentialsOut: {
+            /** Blockers */
+            blockers: components["schemas"]["BlockerOut"][];
+            /** Enforce Ready */
+            enforce_ready: boolean;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Machines */
+            machines: components["schemas"]["CredentialMachineOut"][];
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "observe" | "enforce";
         };
         /** DecisionIn */
         DecisionIn: {
@@ -4921,6 +5807,8 @@ export interface components {
             contract_rev: string;
             /** Engine Version */
             engine_version: string;
+            /** Google Oauth Configured */
+            google_oauth_configured: boolean;
             state_db: components["schemas"]["HealthStateDb"];
             /**
              * Status
@@ -4982,6 +5870,11 @@ export interface components {
             machine: components["schemas"]["MachineModel"];
             /** Schema Version */
             schema_version: number;
+            /**
+             * Wire Version
+             * @description sync wire version; absent on pre-split builds
+             */
+            wire_version?: number | null;
         };
         /** EnrollResponse */
         EnrollResponse: {
@@ -4999,6 +5892,8 @@ export interface components {
             owner_email: string;
             /** Owner Google Sub */
             owner_google_sub: string;
+            /** Sync Credential */
+            sync_credential: string | null;
         };
         /** EntitlementsOut */
         EntitlementsOut: {
@@ -5076,6 +5971,49 @@ export interface components {
             quota: number | null;
             /** Server Side */
             server_side: boolean;
+        };
+        /** FeedbackStoreSyncOut */
+        FeedbackStoreSyncOut: {
+            /** Archived */
+            archived: number;
+            /** Attachments Missing */
+            attachments_missing: number;
+            /** Harvested */
+            harvested: number;
+            /** Live */
+            live: number;
+            /** Pending Push */
+            pending_push: number;
+            /** Synced */
+            synced: number;
+            /** Unreconciled */
+            unreconciled: number;
+        };
+        /** FeedbackSyncOut */
+        FeedbackSyncOut: {
+            /** Exported */
+            exported: number;
+            /** Imported */
+            imported: number;
+            /** Message */
+            message: string;
+            /** Pulled */
+            pulled: number;
+            /** Pushed */
+            pushed: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "inconclusive";
+        };
+        /** FeedbackSyncStatusOut */
+        FeedbackSyncStatusOut: {
+            cloudsync: components["schemas"]["CloudSyncLinkOut"];
+            /** Pins */
+            pins: components["schemas"]["PinSyncOut"][];
+            scheduler: components["schemas"]["CloudSyncSchedulerOut"];
+            store: components["schemas"]["FeedbackStoreSyncOut"];
         };
         /**
          * FileProbeOut
@@ -5222,6 +6160,56 @@ export interface components {
             /** Sandboxed */
             sandboxed: boolean;
         };
+        /** FleetErrorBody */
+        FleetErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /** FleetErrorResponse */
+        FleetErrorResponse: {
+            detail: components["schemas"]["FleetErrorBody"];
+        };
+        /**
+         * FleetMachineOut
+         * @description One row of ``fleet --json``. ``extra=forbid`` so a field the shared
+         *     function adds fails loudly here instead of silently vanishing from HTTP.
+         */
+        FleetMachineOut: {
+            /** Enrolled At */
+            enrolled_at: string | null;
+            /** Enrolled Via */
+            enrolled_via: string | null;
+            /** Machine Id */
+            machine_id: string;
+            /** Name */
+            name: string;
+            /** Owner Email */
+            owner_email: string | null;
+            /** Owner Google Sub */
+            owner_google_sub: string | null;
+            /** Row Hub Machine Id */
+            row_hub_machine_id: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "owned" | "unowned" | "foreign";
+        };
+        /** FleetOut */
+        FleetOut: {
+            /** Foreign */
+            foreign: number;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Machines */
+            machines: components["schemas"]["FleetMachineOut"][];
+            /** Owned */
+            owned: number;
+            /** Unowned */
+            unowned: number;
+        };
         /**
          * FolderImportIn
          * @description Point at one or more folders of audio files. No rekordbox involved.
@@ -5310,6 +6298,25 @@ export interface components {
             /** Sample */
             sample?: string[];
         };
+        /**
+         * GateErrorBody
+         * @description The refusal. ``ui_title`` is present only on a plan refusal (ENT-02).
+         */
+        GateErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Ui Title */
+            ui_title?: string | null;
+        };
+        /**
+         * GateErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        GateErrorResponse: {
+            detail: components["schemas"]["GateErrorBody"];
+        };
         /** GeneralNoteOut */
         GeneralNoteOut: {
             build: components["schemas"]["BuildStampOut"] | null;
@@ -5329,6 +6336,35 @@ export interface components {
             stable_id: string;
             /** Tier */
             tier: string;
+        };
+        /** GrantIn */
+        GrantIn: {
+            /**
+             * Owner Email
+             * @description email of a user who has signed in on this hub (CLI --owner)
+             */
+            owner_email: string;
+            /**
+             * Ttl Seconds
+             * @description how long the grant stays redeemable (CLI --ttl-seconds)
+             * @default 900
+             */
+            ttl_seconds: number;
+        };
+        /**
+         * GrantOut
+         * @description The raw token exists in this response and nowhere else; only its
+         *     sha256 is stored. Redeem with ``python -m apps.sync_hub enroll``.
+         */
+        GrantOut: {
+            /** Created At */
+            created_at: string;
+            /** Expires At */
+            expires_at: string;
+            /** Owner Email */
+            owner_email: string;
+            /** Token */
+            token: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -5410,11 +6446,21 @@ export interface components {
             machines?: components["schemas"]["MachineModel"][];
             /** Schema Version */
             schema_version: number;
+            /**
+             * Wire Version
+             * @description sync wire version; absent on pre-split builds
+             */
+            wire_version?: number | null;
         };
         /** HelloResponse */
         HelloResponse: {
             /** Capabilities */
             capabilities?: string[];
+            /**
+             * Credential
+             * @enum {string}
+             */
+            credential: "valid" | "missing" | "invalid" | "revoked" | "unowned";
             /** Hub Generation */
             hub_generation: string;
             /** Hub Machine Id */
@@ -5430,6 +6476,8 @@ export interface components {
             schema_version: number;
             /** Seq */
             seq: number;
+            /** Wire Version */
+            wire_version: number;
         };
         /** HistoryApplyOut */
         HistoryApplyOut: {
@@ -5588,6 +6636,143 @@ export interface components {
             worker_pid?: number | null;
             /** Worker Started At */
             worker_started_at?: number | null;
+        };
+        /**
+         * KaraokeLineOut
+         * @description One derived line (:mod:`apps.lyrics.lines`, the canonical grouping).
+         *
+         *     Served rather than client-derived so every surface agrees and an agent can
+         *     curl exactly what the deck renders.
+         */
+        KaraokeLineOut: {
+            /**
+             * Band
+             * @description good | uncertain | bad | unjudged
+             */
+            band: string;
+            /**
+             * End S
+             * @description last sung offset in the line, seconds
+             */
+            end_s: number | null;
+            /** First Idx */
+            first_idx: number;
+            /** Last Idx */
+            last_idx: number;
+            /**
+             * N Judged
+             * @description words the witness judged at all
+             */
+            n_judged: number;
+            /**
+             * N Red
+             * @description words the witness put in a red class
+             */
+            n_red: number;
+            /** N Words */
+            n_words: number;
+            /**
+             * Para Final
+             * @description gap-derived paragraph break: a blank line follows
+             */
+            para_final: boolean;
+            /**
+             * Quality
+             * @description share of witness-judged words NOT in the red classes; null when no word in the line was judged
+             */
+            quality: number | null;
+            /**
+             * Start S
+             * @description first sung onset in the line, seconds
+             */
+            start_s: number | null;
+            /** Text */
+            text: string;
+        };
+        /** KaraokeSummaryOut */
+        KaraokeSummaryOut: {
+            /**
+             * Counts
+             * @description effective-verdict histogram
+             */
+            counts: {
+                [key: string]: number;
+            };
+            /**
+             * No Lyrics Max Coverage
+             * @description calibrated band: at or below this stem vocal coverage a track is auto-stamped no-lyrics (novox round 0, pinned by test)
+             */
+            no_lyrics_max_coverage: number;
+            /**
+             * Sparse Max Coverage
+             * @description above this coverage a track is treated as vocal; between the two, other evidence decides
+             */
+            sparse_max_coverage: number;
+            /**
+             * Total
+             * @description live verdict rows, the histogram's denominator
+             */
+            total: number;
+        };
+        /**
+         * KaraokeTrackOut
+         * @description The words payload. ``verdict`` is ALWAYS set: see the 404 rule.
+         */
+        KaraokeTrackOut: {
+            /**
+             * Lines
+             * @description present only when requested with ?include=lines
+             */
+            lines?: components["schemas"]["KaraokeLineOut"][] | null;
+            verdict: components["schemas"]["CoverageVerdictOut"];
+            /** Words */
+            words: components["schemas"]["KaraokeWordOut"][];
+        };
+        /**
+         * KaraokeWordOut
+         * @description One aligned word, exactly as the artifact stores it.
+         */
+        KaraokeWordOut: {
+            /**
+             * End S
+             * @description sung offset in seconds
+             */
+            end_s?: number | null;
+            /**
+             * Idx
+             * @description position in the track's flat word list, from 0
+             */
+            idx: number;
+            /**
+             * Line Final
+             * @description this word closes its line (the grouping flag)
+             * @default false
+             */
+            line_final: boolean;
+            /**
+             * Score
+             * @description aligner confidence for this word, 0..1
+             */
+            score?: number | null;
+            /**
+             * Start S
+             * @description sung onset in seconds
+             */
+            start_s?: number | null;
+            /**
+             * Witness
+             * @description ASR-witness verdict: agree/drift/unheard/unmatchable are shown normally; contradict/lost are the suspect classes.
+             */
+            witness?: string | null;
+            /** Word */
+            word: string;
+        };
+        /** KindDefaultIn */
+        KindDefaultIn: {
+            /** Asset Kind */
+            asset_kind: string;
+            /** Mode */
+            mode: string;
         };
         /**
          * LabelRequest
@@ -5878,6 +7063,8 @@ export interface components {
         LoginIn: {
             /** Origin */
             origin?: string | null;
+            /** Return To */
+            return_to?: string | null;
         };
         /** LoginOut */
         LoginOut: {
@@ -5895,6 +7082,45 @@ export interface components {
             /** Out Ms */
             out_ms: number;
         };
+        /** LyricJobIn */
+        LyricJobIn: {
+            /**
+             * Kind
+             * @description analyze | lyricsync | stems
+             */
+            kind: string;
+            /** Note */
+            note?: string | null;
+            /**
+             * Stable Ids
+             * @description tracks to process; each must exist
+             */
+            stable_ids: string[];
+        };
+        /** LyricJobOut */
+        LyricJobOut: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /**
+             * Note
+             * @description the runner's stage progress
+             */
+            note?: string | null;
+            /** Stable Ids */
+            stable_ids: string[];
+            /**
+             * Status
+             * @description queued | done | failed
+             */
+            status: string;
+            /**
+             * Ts
+             * @description when the job was queued, UTC
+             */
+            ts: string;
+        };
         /**
          * LyricLineOut
          * @description One cache-backed line timestamp in integer track milliseconds.
@@ -5906,12 +7132,190 @@ export interface components {
             text: string;
         };
         /**
+         * LyricsCachedIdsOut
+         * @description Stable ids with a valid on-disk lyrics-cache entry.
+         */
+        LyricsCachedIdsOut: {
+            /** Stable Ids */
+            stable_ids?: string[];
+        };
+        /** LyricsConfigIn */
+        LyricsConfigIn: {
+            /**
+             * Source Order
+             * @description every known source, ranked; a partial list is rejected
+             */
+            source_order: string[];
+        };
+        /** LyricsConfigOut */
+        LyricsConfigOut: {
+            /**
+             * Is Default
+             * @description true while no operator has persisted a custom order
+             */
+            is_default: boolean;
+            /**
+             * Source Order
+             * @description lyric sources, strongest first; the pipeline's tie-break
+             */
+            source_order: string[];
+            /**
+             * Source Titles
+             * @description hover text per source (what the method actually does)
+             */
+            source_titles: {
+                [key: string]: string;
+            };
+        };
+        /** LyricsKpiDefOut */
+        LyricsKpiDefOut: {
+            /**
+             * Direction
+             * @description lower_better | higher_better
+             */
+            direction: string;
+            /** Label */
+            label: string;
+            /**
+             * Title
+             * @description hover text: what the number actually measures
+             */
+            title: string;
+            /** Unit */
+            unit: string;
+        };
+        /** LyricsKpiOut */
+        LyricsKpiOut: {
+            /** Kpis */
+            kpis: {
+                [key: string]: components["schemas"]["LyricsKpiDefOut"];
+            };
+            /**
+             * Snapshots
+             * @description oldest first
+             */
+            snapshots: components["schemas"]["LyricsKpiSnapshotOut"][];
+        };
+        /** LyricsKpiSnapshotOut */
+        LyricsKpiSnapshotOut: {
+            /**
+             * Label
+             * @description the experiment round or shipped milestone
+             */
+            label: string;
+            /** Notes */
+            notes: string;
+            /**
+             * Provenance
+             * @description 'measured' at append time, or 'hand' transcribed from the experiment log. House rule: never quote a value without its ts.
+             */
+            provenance: string;
+            /** Ts */
+            ts: string;
+            /**
+             * Values
+             * @description one entry per KPI; null is a gap, never a carried-forward number
+             */
+            values: {
+                [key: string]: number | null;
+            };
+        };
+        /** LyricsPurgeIn */
+        LyricsPurgeIn: {
+            /**
+             * Dry Run
+             * @description NO default on purpose: a purge deletes licensed text from disk and R2, so the caller states which one it wants
+             */
+            dry_run: boolean;
+            /**
+             * Source Prefix
+             * @description source prefix, matched LIKE prefix%
+             */
+            source_prefix: string;
+        };
+        /**
+         * LyricsPurgeOut
+         * @description :class:`apps.lyrics.purge.PurgeReport`. Every count is observed.
+         */
+        LyricsPurgeOut: {
+            /** Dry Run */
+            dry_run: boolean;
+            /**
+             * Files Absent
+             * @description matched rows with no local artifact
+             */
+            files_absent: number;
+            /**
+             * Files Removed
+             * @description local karaoke artifacts deleted
+             */
+            files_removed: number;
+            /**
+             * Objects Absent
+             * @description R2 keys already gone
+             */
+            objects_absent: number;
+            /**
+             * Objects Deleted
+             * @description R2 objects deleted
+             */
+            objects_deleted: number;
+            /**
+             * R2 Skipped Reason
+             * @description why R2 was left alone; null means it was visited
+             */
+            r2_skipped_reason?: string | null;
+            /**
+             * Rows Matched
+             * @description live verdict rows whose source matched
+             */
+            rows_matched: number;
+            /**
+             * Rows Tombstoned
+             * @description rows soft-deleted; 0 on a dry run
+             */
+            rows_tombstoned: number;
+            /** Source Prefix */
+            source_prefix: string;
+            /** Stable Ids */
+            stable_ids: string[];
+        };
+        /**
+         * LyricsRowSummaryOut
+         * @description Per-row karaoke verdict summary for library listings.
+         */
+        LyricsRowSummaryOut: {
+            /** Effective */
+            effective: string;
+            /** Has Words */
+            has_words: boolean;
+            /** Language Iso3 */
+            language_iso3?: string | null;
+            /** N Lines */
+            n_lines?: number | null;
+            /** N Words */
+            n_words?: number | null;
+            /** Override */
+            override?: string | null;
+            /** Pct Witness Red */
+            pct_witness_red?: number | null;
+            /** Source */
+            source?: string | null;
+            /** Verdict */
+            verdict: string;
+        };
+        /**
          * LyricsUnavailableOut
          * @description The explicit cache-miss response for one track's lyrics timeline.
          */
         LyricsUnavailableOut: {
             /** Detail */
             detail: string;
+        };
+        /** MachineIdIn */
+        MachineIdIn: {
+            /** Machine Id */
+            machine_id: string;
         };
         /**
          * MachineModel
@@ -6043,6 +7447,37 @@ export interface components {
         MembershipTransferOut: {
             dest: components["schemas"]["PlaylistWriteOut"];
             source?: components["schemas"]["PlaylistWriteOut"] | null;
+        };
+        /**
+         * MetadataShareRequest
+         * @description Explicit acknowledgement that the resulting web view excludes audio.
+         */
+        MetadataShareRequest: {
+            /**
+             * Confirm Metadata Only
+             * @constant
+             */
+            confirm_metadata_only: true;
+        };
+        /**
+         * MetadataShareResponse
+         * @description A browser URL for the non-audio set history presentation.
+         */
+        MetadataShareResponse: {
+            /**
+             * Content
+             * @constant
+             */
+            content: "metadata_only";
+            /** Session Id */
+            session_id: string;
+            /**
+             * Share State
+             * @constant
+             */
+            share_state: "shared_cloud";
+            /** Share Url */
+            share_url: string;
         };
         /** MixerChannelMarkOut */
         MixerChannelMarkOut: {
@@ -6184,6 +7619,33 @@ export interface components {
         MyTagSweepOut: {
             /** Tracks Updated */
             tracks_updated: number;
+        };
+        /** OpsErrorBody */
+        OpsErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * OpsErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        OpsErrorResponse: {
+            detail: components["schemas"]["OpsErrorBody"];
+        };
+        /** OverrideIn */
+        OverrideIn: {
+            /**
+             * Note
+             * @description why the human disagreed
+             */
+            note?: string | null;
+            /**
+             * Override
+             * @description vocal|sparse|no-lyrics, or null to clear
+             */
+            override?: string | null;
         };
         /** OverviewOut */
         OverviewOut: {
@@ -6449,6 +7911,15 @@ export interface components {
             /** Roots */
             roots?: components["schemas"]["AccessProbeOut"][];
         };
+        /** PinCellIn */
+        PinCellIn: {
+            /** Machine Id */
+            machine_id: string;
+            /** Mode */
+            mode: string;
+            /** Playlist Id */
+            playlist_id: string;
+        };
         /**
          * PinEnvironmentOut
          * @description Non-personal runtime facts needed to reproduce a pinned UI defect.
@@ -6472,6 +7943,57 @@ export interface components {
             viewport_height: number;
             /** Viewport Width */
             viewport_width: number;
+        };
+        /** PinKeyIn */
+        PinKeyIn: {
+            /** Machine Id */
+            machine_id: string;
+            /** Playlist Id */
+            playlist_id: string;
+        };
+        /**
+         * PinSyncOut
+         * @description Where one pin stands. ``attachment_bytes: missing`` is FBSYNC-05's gap:
+         *     the screenshot's metadata synced here but its bytes did not.
+         */
+        PinSyncOut: {
+            /** Archived */
+            archived: boolean;
+            /**
+             * Attachment Bytes
+             * @enum {string}
+             */
+            attachment_bytes: "none" | "present" | "missing";
+            /** Origin Device Id */
+            origin_device_id: string | null;
+            /** Pin Id */
+            pin_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "synced" | "pending_push" | "unreconciled" | "harvested";
+            /** Updated At */
+            updated_at: string;
+        };
+        /** PlanEntryOut */
+        PlanEntryOut: {
+            /** Action */
+            action: string;
+            /** After */
+            after: {
+                [key: string]: string | number | null;
+            } | null;
+            /** Before */
+            before: {
+                [key: string]: string | number | null;
+            } | null;
+            /** Key */
+            key: string;
+            /** Machine Id */
+            machine_id: string;
+            /** Table */
+            table: string;
         };
         /** PlanModel */
         PlanModel: {
@@ -6770,6 +8292,90 @@ export interface components {
             vendor_pl_id: string;
         };
         /**
+         * PolicyApplyIn
+         * @description ``POST /policies/apply``. Dry-run unless ``dry_run`` is false, like the CLI's ``--live``.
+         */
+        PolicyApplyIn: {
+            changes: components["schemas"]["PolicyChangesIn"];
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+        };
+        /** PolicyCellIn */
+        PolicyCellIn: {
+            /** Asset Kind */
+            asset_kind: string;
+            /** Cache Budget Mb */
+            cache_budget_mb?: number | null;
+            /** Machine Id */
+            machine_id: string;
+            /** Mode */
+            mode: string;
+        };
+        /**
+         * PolicyChangesIn
+         * @description A change set. Every list is optional; an empty body validates the stored fleet.
+         */
+        PolicyChangesIn: {
+            /**
+             * Defaults
+             * @default []
+             */
+            defaults: components["schemas"]["KindDefaultIn"][];
+            /**
+             * Excluded Tables
+             * @default []
+             */
+            excluded_tables: string[];
+            /**
+             * Pins
+             * @default []
+             */
+            pins: components["schemas"]["PinCellIn"][];
+            /**
+             * Policies
+             * @default []
+             */
+            policies: components["schemas"]["PolicyCellIn"][];
+            /**
+             * Removed Pins
+             * @default []
+             */
+            removed_pins: components["schemas"]["PinKeyIn"][];
+            /**
+             * Removed Policies
+             * @default []
+             */
+            removed_policies: components["schemas"]["PolicyKeyIn"][];
+        };
+        /** PolicyKeyIn */
+        PolicyKeyIn: {
+            /** Asset Kind */
+            asset_kind: string;
+            /** Machine Id */
+            machine_id: string;
+        };
+        /**
+         * PolicyOutcomeOut
+         * @description :meth:`apps.sync_hub.policy_store.PolicyOutcome.to_wire`, typed.
+         */
+        PolicyOutcomeOut: {
+            /** Author Machine Id */
+            author_machine_id: string;
+            /** Blocking */
+            blocking: boolean;
+            /** Measurable */
+            measurable: boolean;
+            /** Plan */
+            plan: components["schemas"]["PlanEntryOut"][];
+            /** Violations */
+            violations: components["schemas"]["CheckedViolationOut"][];
+            /** Written */
+            written: boolean;
+        };
+        /**
          * PreflightCheckOut
          * @description One row of PREFLIGHT-01's boot gate (issue #771).
          *
@@ -6874,6 +8480,11 @@ export interface components {
             rows: components["schemas"]["RowModel"][];
             /** Schema Version */
             schema_version: number;
+            /**
+             * Wire Version
+             * @description sync wire version; absent on pre-split builds
+             */
+            wire_version?: number | null;
         };
         /** PushResponse */
         PushResponse: {
@@ -7331,6 +8942,17 @@ export interface components {
             /** Triple Validated */
             triple_validated: boolean;
         };
+        /** RevokeOut */
+        RevokeOut: {
+            /** Changed */
+            changed: boolean;
+            /** Credential Deleted */
+            credential_deleted: boolean;
+            /** Machine Id */
+            machine_id: string;
+            /** Revoked At */
+            revoked_at: string;
+        };
         /**
          * RowModel
          * @description One offered row. ``members`` is set only on a ``playlists`` row.
@@ -7384,6 +9006,16 @@ export interface components {
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
              * Is Remote
              * @default false
              */
@@ -7406,6 +9038,7 @@ export interface components {
              * @enum {string}
              */
             loudness_status: "ok" | "failed" | "missing";
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Match Context */
             match_context: string;
             /**
@@ -7712,6 +9345,10 @@ export interface components {
         };
         /** StatusResponse */
         StatusResponse: {
+            /** Entitlement Provider */
+            entitlement_provider: string | null;
+            /** Hosted */
+            hosted: boolean;
             /** Hub Generation */
             hub_generation: string;
             /** Hub Machine Id */
@@ -7726,6 +9363,20 @@ export interface components {
             schema_version: number;
             /** Seq */
             seq: number;
+            /** Wire Version */
+            wire_version: number;
+        };
+        /** StemHydrateIn */
+        StemHydrateIn: {
+            /** Data Dir */
+            data_dir?: string | null;
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
+            /** Manifest Path */
+            manifest_path: string;
         };
         /**
          * StemManifestOut
@@ -7769,6 +9420,16 @@ export interface components {
         StemPartOut: {
             /** Media Type */
             media_type: string;
+        };
+        /** StemPushMissingIn */
+        StemPushMissingIn: {
+            /** Data Dir */
+            data_dir?: string | null;
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
         };
         /**
          * StemTierOut
@@ -7979,6 +9640,23 @@ export interface components {
             /** Seconds Since Request */
             seconds_since_request: number | null;
         };
+        /**
+         * SyncErrorBody
+         * @description The ``detail`` of every sync refusal: a stable code and prose.
+         */
+        SyncErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * SyncErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        SyncErrorResponse: {
+            detail: components["schemas"]["SyncErrorBody"];
+        };
         /** SyncPolicyOut */
         SyncPolicyOut: {
             /**
@@ -8016,6 +9694,57 @@ export interface components {
              * @enum {string}
              */
             mode: "pinned" | "cached" | "stream" | "excluded";
+        };
+        /** SyncRunIn */
+        SyncRunIn: {
+            /**
+             * Hub Url
+             * @description the hub base URL, e.g. http://hub.tailnet:8686 (CLI --hub)
+             */
+            hub_url: string;
+            /**
+             * Name
+             * @description this machine's display name; the hostname when omitted (CLI --name)
+             */
+            name?: string | null;
+        };
+        /**
+         * SyncRunOut
+         * @description What one ``run_sync`` observed. Every count is observed, none inferred.
+         *
+         *     ``digest_inconclusive`` True is the CLI's exit code 4: rows moved but the
+         *     post-sync digest compare excluded rows, so agreement was NOT verified.
+         *     ``hub_quarantined`` None means the hub did not report it (unknown, not 0).
+         */
+        SyncRunOut: {
+            /** Accepted */
+            accepted: number;
+            /** Applied */
+            applied: number;
+            /** Digest Inconclusive */
+            digest_inconclusive: boolean;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Hub Quarantined */
+            hub_quarantined: number | null;
+            /** Hub Restore Detected */
+            hub_restore_detected: boolean;
+            /** Hub Seq */
+            hub_seq: number;
+            /** Machine Id */
+            machine_id: string;
+            /** Pulled */
+            pulled: number;
+            /** Pushed */
+            pushed: number;
+            /** Quarantined Incoming */
+            quarantined_incoming: number;
+            /** Quarantined Rows */
+            quarantined_rows: number;
+            /** Rejected */
+            rejected: number;
+            /** Rounds */
+            rounds: number;
         };
         /** SyncSnapshotIn */
         SyncSnapshotIn: {
@@ -8086,6 +9815,31 @@ export interface components {
              * @enum {string}
              */
             sync_mode: "bar" | "beat";
+        };
+        /**
+         * TempoPrefOut
+         * @description PREF-01: a track's user-set preferred tempo plus its playable range.
+         *
+         *     Any of the three may be null (unset). Never fabricated on read - a track
+         *     with no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,
+         *     not this shape with all-null members (see sqlite_backend._row_to_track).
+         */
+        TempoPrefOut: {
+            /** Max */
+            max?: number | null;
+            /** Min */
+            min?: number | null;
+            /** Regular */
+            regular?: number | null;
+        };
+        /** TempoPrefPatch */
+        TempoPrefPatch: {
+            /** Max */
+            max?: number | null;
+            /** Min */
+            min?: number | null;
+            /** Regular */
+            regular?: number | null;
         };
         /**
          * TierEstimateOut
@@ -8260,6 +10014,16 @@ export interface components {
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
              * Is Remote
              * @default false
              */
@@ -8268,6 +10032,7 @@ export interface components {
             key?: string | null;
             /** Last Played At */
             last_played_at?: string | null;
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Lyrics Available */
             lyrics_available: boolean;
             /** Notes */
@@ -8304,6 +10069,7 @@ export interface components {
              * @default []
              */
             tags: string[];
+            tempo_pref?: components["schemas"]["TempoPrefOut"] | null;
             /** Title */
             title?: string | null;
             /** Updated At */
@@ -8376,6 +10142,7 @@ export interface components {
              * @default []
              */
             tags: string[];
+            tempo_pref?: components["schemas"]["TempoPrefOut"] | null;
             /** Title */
             title?: string | null;
             /** Updated At */
@@ -8391,6 +10158,7 @@ export interface components {
             tags_add?: string[] | null;
             /** Tags Remove */
             tags_remove?: string[] | null;
+            tempo_pref?: components["schemas"]["TempoPrefPatch"] | null;
         };
         /**
          * TrackRowOut
@@ -8434,6 +10202,16 @@ export interface components {
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
              * Is Remote
              * @default false
              */
@@ -8456,6 +10234,7 @@ export interface components {
              * @enum {string}
              */
             loudness_status: "ok" | "failed" | "missing";
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /**
              * Play Count
              * @default 0
@@ -8527,6 +10306,37 @@ export interface components {
             jog_radial_waveform: boolean;
             level_calibration?: components["schemas"]["LevelCalibrationOut"];
             /**
+             * Lyrics Deck Line
+             * @default true
+             */
+            lyrics_deck_line: boolean;
+            /**
+             * Lyrics Global
+             * @default true
+             */
+            lyrics_global: boolean;
+            /**
+             * Lyrics Hover Scrub
+             * @default true
+             */
+            lyrics_hover_scrub: boolean;
+            /**
+             * Lyrics Library Col
+             * @default true
+             */
+            lyrics_library_col: boolean;
+            /**
+             * Lyrics Load Strategy
+             * @default hover
+             * @enum {string}
+             */
+            lyrics_load_strategy: "in-view" | "hover" | "off";
+            /**
+             * Lyrics Waveform Overlay
+             * @default true
+             */
+            lyrics_waveform_overlay: boolean;
+            /**
              * Show Agent Pins
              * @default true
              */
@@ -8555,6 +10365,18 @@ export interface components {
             /** Jog Radial Waveform */
             jog_radial_waveform?: boolean | null;
             level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
+            /** Lyrics Deck Line */
+            lyrics_deck_line?: boolean | null;
+            /** Lyrics Global */
+            lyrics_global?: boolean | null;
+            /** Lyrics Hover Scrub */
+            lyrics_hover_scrub?: boolean | null;
+            /** Lyrics Library Col */
+            lyrics_library_col?: boolean | null;
+            /** Lyrics Load Strategy */
+            lyrics_load_strategy?: ("in-view" | "hover" | "off") | null;
+            /** Lyrics Waveform Overlay */
+            lyrics_waveform_overlay?: boolean | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
             /** Technically Working Animate */
@@ -9352,6 +11174,72 @@ export interface operations {
             };
         };
     };
+    api_get_metadata_share_api_sets__session_id__share_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataShareResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_publish_metadata_share_api_sets__session_id__share_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MetadataShareRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataShareResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get: {
         parameters: {
             query?: never;
@@ -10116,6 +12004,26 @@ export interface operations {
             };
         };
     };
+    get_lyrics_kpi_ledger_api_v1_bench_lyrics_kpi_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsKpiOut"];
+                };
+            };
+        };
+    };
     get_perf_kpi_ledger_api_v1_bench_perf_kpi_get: {
         parameters: {
             query?: never;
@@ -10416,6 +12324,371 @@ export interface operations {
             };
         };
     };
+    get_config_api_v1_cloudsync_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudSyncConfigOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description a CloudSync state file in the data dir is malformed or unreadable */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_config_api_v1_cloudsync_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloudSyncConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudSyncConfigOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description a CloudSync state file in the data dir is malformed or unreadable */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_data_classes_api_v1_cloudsync_data_classes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: {
+                            [key: string]: unknown;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    mint_enrollment_grant_api_v1_cloudsync_enrollment_grants_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrantIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrantOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description No signed-in user on this hub has that email; none is created. code: CLOUDSYNC_GRANT_OWNER_UNKNOWN. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description This machine is not a hub (MDT_IS_HUB is not 1); a grant is an act of hub authority. code: CLOUDSYNC_NOT_A_HUB. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description MDT_IS_HUB holds a value other than 1, 0 or empty. code: CLOUDSYNC_HUB_FLAG_INVALID. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+        };
+    };
+    get_fleet_api_v1_cloudsync_fleet_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+        };
+    };
+    adopt_machine_api_v1_cloudsync_fleet_adopt_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MachineIdIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdoptOut"];
+                };
+            };
+            /** @description adopt needs a signed-in user. code: AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description No such machine on this hub. code: CLOUDSYNC_UNKNOWN_MACHINE. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description This install is not a hub (CLOUDSYNC_NOT_A_HUB), or the machine is owned by someone else (CLOUDSYNC_OWNER_CONFLICT) or revoked (CLOUDSYNC_REVOKED). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_credentials_api_v1_cloudsync_fleet_credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialsOut"];
+                };
+            };
+            /** @description Not signed in. code: AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description This install is not a hub (CLOUDSYNC_NOT_A_HUB). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+        };
+    };
+    revoke_machine_api_v1_cloudsync_fleet_revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MachineIdIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeOut"];
+                };
+            };
+            /** @description revoke needs a signed-in user. code: AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description The machine is owned by another user. code: CLOUDSYNC_NOT_YOUR_MACHINE. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description This install is not a hub (CLOUDSYNC_NOT_A_HUB), or the machine has no owner row to revoke (CLOUDSYNC_FLEET). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_machines_api_v1_cloudsync_machines_get: {
         parameters: {
             query?: never;
@@ -10433,6 +12706,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MachineOut"][];
                 };
+            };
+            /** @description CLOUDSYNC_IDENTITY_ERROR or CLOUDSYNC_CONFIG_INVALID (cloudsync-config.json is malformed, so the configured name is unknown) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -10500,7 +12780,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Successful Response */
+            /** @description The stored pin */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -10508,6 +12788,20 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["PlaylistPinOut"];
                 };
+            };
+            /** @description MACHINE_NOT_FOUND or PLAYLIST_NOT_FOUND; nothing written */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10564,7 +12858,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Successful Response */
+            /** @description The stored cell */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -10572,6 +12866,179 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SyncPolicyOut"];
                 };
+            };
+            /** @description MACHINE_NOT_FOUND; nothing written */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_policies_api_v1_cloudsync_policies_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyApplyIn"];
+            };
+        };
+        responses: {
+            /** @description Gated; written is true only when dry_run is false */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyOutcomeOut"];
+                };
+            };
+            /** @description MACHINE_NOT_FOUND or PLAYLIST_NOT_FOUND or POLICY_NOT_FOUND or PIN_NOT_FOUND; nothing written */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    plan_policies_api_v1_cloudsync_policies_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyChangesIn"];
+            };
+        };
+        responses: {
+            /** @description The rows the change set would touch; CLI exit 3 when blocking */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyOutcomeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_policies_api_v1_cloudsync_policies_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PolicyChangesIn"] | null;
+            };
+        };
+        responses: {
+            /** @description The fleet with the change set applied, judged; CLI exit 3 on any error */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyOutcomeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_policy_api_v1_cloudsync_policies__machine_id___asset_kind__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                machine_id: string;
+                asset_kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The cell is tombstoned and will sync */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyOutcomeOut"];
+                };
+            };
+            /** @description MACHINE_NOT_FOUND or POLICY_NOT_FOUND; nothing written */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10600,6 +13067,80 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CloudSyncStatusOut"];
+                };
+            };
+            /** @description a CloudSync state file in the data dir is malformed or unreadable */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    run_sync_round_api_v1_cloudsync_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncRunIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncRunOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description run_sync raised an error it does not declare (a defect). Journaled as error by maintenance.sync; the body is the server's plain 500, not an OpsErrorResponse. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The hub was unreachable or answered with something unusable. code: CLOUDSYNC_HUB_UNREACHABLE. Journaled as error. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
                 };
             };
         };
@@ -11270,6 +13811,41 @@ export interface operations {
             };
         };
     };
+    add_reply_api_v1_feedback_comments__comment_id__replies_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentReplyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_general_api_v1_feedback_general_get: {
         parameters: {
             query?: never;
@@ -11363,6 +13939,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PerformanceFeedbackMarksOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_feedback_sync_api_v1_feedback_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackSyncOut"];
+                };
+            };
+        };
+    };
+    get_feedback_sync_status_api_v1_feedback_sync_status_get: {
+        parameters: {
+            query?: {
+                pin_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackSyncStatusOut"];
                 };
             };
             /** @description Validation Error */
@@ -12131,6 +14758,181 @@ export interface operations {
             };
         };
     };
+    list_lyric_verdicts_api_v1_lyrics_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                /** @description filter by effective verdict */
+                verdict?: string | null;
+                /** @description suspect|coverage|recent */
+                order?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoverageVerdictOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lyrics_config_api_v1_lyrics_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsConfigOut"];
+                };
+            };
+        };
+    };
+    put_lyrics_config_api_v1_lyrics_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LyricsConfigIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsConfigOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lyric_jobs_api_v1_lyrics_jobs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricJobOut"][];
+                };
+            };
+        };
+    };
+    post_lyric_job_api_v1_lyrics_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LyricJobIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricJobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_lyrics_purge_api_v1_lyrics_purge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LyricsPurgeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsPurgeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     search_lyrics_api_v1_lyrics_search_get: {
         parameters: {
             query?: {
@@ -12161,6 +14963,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lyrics_summary_api_v1_lyrics_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KaraokeSummaryOut"];
                 };
             };
         };
@@ -14146,6 +16968,40 @@ export interface operations {
             };
         };
     };
+    get_live_stems_capability_api_v1_stems_live_capability_get: {
+        parameters: {
+            query?: {
+                deck_count?: number | null;
+                bpm?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_stems_plan_api_v1_stems_plan_get: {
         parameters: {
             query?: {
@@ -14165,6 +17021,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StemsPlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    push_missing_stems_api_v1_stems_push_missing_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StemPushMissingIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -14198,6 +17089,43 @@ export interface operations {
             };
         };
     };
+    hydrate_stem_api_v1_stems__stable_id__hydrate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StemHydrateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     digest_api_v1_sync_digest_get: {
         parameters: {
             query: {
@@ -14221,6 +17149,13 @@ export interface operations {
                     "application/json": components["schemas"]["DigestResponse"];
                 };
             };
+            /** @description digest refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -14229,6 +17164,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description digest refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -14263,7 +17205,7 @@ export interface operations {
                     "application/json": components["schemas"]["EnrollErrorResponse"];
                 };
             };
-            /** @description The machine is already owned by somebody else (SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked (SYNC_ENROLL_REVOKED), or the enrollment was otherwise refused (SYNC_ENROLL). */
+            /** @description The machine is already owned by somebody else (SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked (SYNC_ENROLL_REVOKED), the enrollment was otherwise refused (SYNC_ENROLL), or the caller speaks another sync wire version (SYNC_WIRE_VERSION, or SYNC_SCHEMA_VERSION for a pre-split build). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14281,8 +17223,8 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description The credential KIND is real and reserved but not built yet. code: SYNC_ENROLL_KIND_UNAVAILABLE. */
-            501: {
+            /** @description The credential KIND is real but this hub cannot resolve it right now: for google_id_token, no OAuth client id is configured or Google's signing keys are unreachable. Never answered with an unverified acceptance. code: SYNC_ENROLL_KIND_UNAVAILABLE. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14314,6 +17256,22 @@ export interface operations {
                     "application/json": components["schemas"]["HelloResponse"];
                 };
             };
+            /** @description hello refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -14322,6 +17280,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description hello refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -14352,6 +17317,22 @@ export interface operations {
                     "application/json": components["schemas"]["PullResponse"];
                 };
             };
+            /** @description pull refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description HOSTED hubs only. pull is refused with entitlement_not_in_plan when the calling machine's owner is archived (never read_only: a lapsed user can always pull), or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -14359,6 +17340,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description HOSTED hubs only. pull cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
                 };
             };
         };
@@ -14385,6 +17375,31 @@ export interface operations {
                     "application/json": components["schemas"]["PushResponse"];
                 };
             };
+            /** @description push refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description HOSTED hubs only. push is refused with entitlement_not_in_plan when the calling machine's owner is read_only or archived, or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
+            /** @description The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -14392,6 +17407,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description HOSTED hubs only. push cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
                 };
             };
             /** @description The hub sqlite database cannot take the write. code: SYNC_HUB_STORAGE. */
@@ -14426,6 +17450,13 @@ export interface operations {
                     "application/json": components["schemas"]["StatusResponse"];
                 };
             };
+            /** @description status refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -14434,6 +17465,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description status refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -14527,6 +17565,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lyrics_cached_ids_api_v1_tracks_lyrics_cached_ids_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsCachedIdsOut"];
                 };
             };
         };
@@ -14989,6 +18047,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LyricsUnavailableOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_lyric_override_api_v1_tracks__stable_id__lyrics_override_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverrideIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoverageVerdictOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_track_karaoke_words_api_v1_tracks__stable_id__lyrics_words_get: {
+        parameters: {
+            query?: {
+                /** @description 'lines' adds the derived line objects */
+                include?: string | null;
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KaraokeTrackOut"];
                 };
             };
             /** @description Validation Error */

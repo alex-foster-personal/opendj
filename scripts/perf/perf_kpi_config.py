@@ -42,6 +42,7 @@ class PerfKpiConfig:
     samples: int
     machine: str
     tracks: tuple[TrackProfile, ...]
+    data_dir: Path | None = None
 
 
 def _env(name: str) -> str | None:
@@ -65,28 +66,30 @@ def load_config() -> PerfKpiConfig:
             key="small_mp3",
             stable_id=_require_stable_id(
                 "MDT_PERF_KPI_SMALL_STABLE_ID",
-                "67f6957f7a3b4c2d9e1f0a8b6c5d4e3f2a1b0c9d",
+                "6739d7d3865ccc8204e265c0157369666841acfd",
             ),
-            label="small MP3 4.1 MB / 126 s (#1501 harness)",
+            label="small MP3 4.1 MB / 126 s (Air-verified)",
         ),
         TrackProfile(
             key="large_mp3",
             stable_id=_require_stable_id(
                 "MDT_PERF_KPI_LARGE_STABLE_ID",
-                "3fa8b00fa2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b",
+                "a918118117aac4c01c1b660a0add558640add0d2",
             ),
-            label="large MP3 32.4 MB / 1008 s (#1501 harness)",
+            label="large MP3 32.4 MB / 1008 s (Air-verified)",
         ),
         TrackProfile(
             key="stemmed_mp3",
             stable_id=_require_stable_id(
                 "MDT_PERF_KPI_STEMMED_STABLE_ID",
-                "8682ab12cd34ef56a7890bcde1234567890abcd",
+                "a76d51f6fa000ec9b7048ad51703de2cdf1d52a8",
             ),
-            label="stemmed MP3 20.3 MB / 631 s (#1501 harness)",
+            label="stemmed MP3 27 MB / 598 s (Air-verified; /stems 200)",
         ),
     )
     state_dir = Path(_env("MDT_PERF_KPI_STATE_DIR") or str(DEFAULT_STATE_DIR))
+    raw_data_dir = _env("MDT_PERF_KPI_DATA_DIR")
+    data_dir = Path(raw_data_dir).expanduser().resolve() if raw_data_dir else None
     return PerfKpiConfig(
         ledger_path=Path(_env("MDT_PERF_KPI_LEDGER") or str(DEFAULT_LEDGER)),
         state_dir=state_dir,
@@ -103,6 +106,7 @@ def load_config() -> PerfKpiConfig:
         samples=int(_env("MDT_PERF_KPI_SAMPLES") or DEFAULT_SAMPLES),
         machine=_env("MDT_PERF_KPI_MACHINE") or "air",
         tracks=tracks,
+        data_dir=data_dir,
     )
 
 

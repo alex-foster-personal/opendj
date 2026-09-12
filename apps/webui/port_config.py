@@ -19,6 +19,11 @@ Requirements:
   port, so a process running as a DIFFERENT unix user on the same host (a
   self-hosted CI runner sharing the box with this fleet's worktrees) can name
   the claimant instead of reporting an unreadable ``/proc`` entry.
+- ✔︎ A worktree's CONFIGURED pair (from ``.env``, or an explicit request) is
+  kept when that worktree's own backend already holds it, exactly as the
+  REMEMBERED registry pair already is, so a config reload cannot evict a
+  worktree from ports its own running engine is serving (issue observed on
+  the Air's preview worktree, 8728/9448 -> 8700/9420, Fri 11 Sep 2026).
 
 Acceptance tests:
 
@@ -34,6 +39,11 @@ Acceptance tests:
   binds directly [then ⛔️] the pair is returned or restored.
 - [if] a claimed port has no ownership marker afterward [then ⛔️] a foreign
   user's process on it can be named.
+- [if] a worktree's configured pair has no registry entry yet and that
+  worktree's own backend already listens on it [then ⛔️] the claim moves it
+  to a fresh pair instead of keeping the configured one.
+- [if] a genuinely foreign process holds the configured pair [then ⛔️] the
+  claim keeps that pair rather than moving off it.
 """
 
 from __future__ import annotations
@@ -110,12 +120,15 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         5323,  # tests/e2e/playwright.preflight-gate.config.ts / vite.full-reload-gate.config.ts
         5324,  # tests/e2e/vite.autoplay-stall-gate.config.ts / playwright.audio-soak.config.ts
         5326,  # tests/e2e/vite.autoplay-error-hunt.config.ts AUTOPLAY_HUNT_FRONTEND_PORT
+        5328,  # tests/e2e/vite.lyrics-words.config.ts frontend port
+        5331,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_FRONTEND_PORT
         5399,  # tests/e2e/vite.rekordbox-gate.config.ts REKORDBOX_GATE_E2E_PORT
         8686,  # tests/e2e/vite.performance.config.ts DEFAULT_API_BASE
         8688,  # tests/e2e/stems-e2e-endpoints.ts DEFAULT_BACKEND_PORT
         8690,  # tests/e2e/playwright.webkit-deckload.config.ts WEBKIT_DECKLOAD_PORT
         8691,  # apps/desktop/wdio.conf.ts ENGINE_PORT
         8692,  # tests/e2e/playwright.boot-burst.config.ts BOOT_BURST_PORT
+        8700,  # tests/e2e/playwright.stem-decode-bench.config.ts STEM_DECODE_BENCH_PORT
         8695,  # tests/e2e/vite.hotcue-mapping-gate.config.ts API port
         8696,  # tests/e2e/vite.comment-hotkey-gate.config.ts / playwright.preflight-gate.config.ts
         8697,  # tests/e2e/playwright.preflight-gate.config.ts PREFLIGHT_GATE_BROKEN_API_PORT
@@ -123,6 +136,9 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8699,  # tests/e2e/vite.autoplay-stall-gate.config.ts API port
         8703,  # tests/e2e/vite.autoplay-error-hunt.config.ts AUTOPLAY_HUNT_API_PORT
         8704,  # tests/e2e/library-jobs-e2e-endpoints.ts LIBRARY_JOBS_E2E_BACKEND_PORT
+        8706,  # tests/e2e/vite.lyrics-words.config.ts API port
+        8711,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_HUB_PORT
+        8712,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_SPOKE_PORT
         9408,  # tests/e2e/stems-e2e-endpoints.ts DEFAULT_FRONTEND_PORT
         9414,  # tests/e2e/playwright.play-analytics.config.ts backend port
         9428,  # tests/e2e/playwright.library-wheel.config.ts engine port
@@ -772,7 +788,7 @@ def claim_ports(
                 reservations,
                 excluding_path=root_key,
             )
-            and _pair_is_available(configured)
+            and (_pair_is_available(configured) or _backend_listener_matches_pair(configured))
         ):
             selected = configured
         else:

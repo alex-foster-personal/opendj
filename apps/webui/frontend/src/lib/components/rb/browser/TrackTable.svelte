@@ -45,6 +45,7 @@
 	import AutoPlayRankCell from './AutoPlayRankCell.svelte';
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
 	import { columnExplainer } from './column-explainer-placement';
+	import LyricColumn from './LyricColumn.svelte';
 	import PreviewStrip from './PreviewStrip.svelte';
 	import QualityBadge from '../QualityBadge.svelte';
 	import RatingStars from './RatingStars.svelte';
@@ -53,11 +54,11 @@
 	import VocalAnalyzeButton from './VocalAnalyzeButton.svelte';
 	import {
 		computeVirtualWindow,
+		createRowVisibilityObserver,
 		TRACK_TABLE_THEAD_PX,
 		masterFoldVisibility,
 		scrollTopForRowIndex
 	} from './virtual-window';
-	import { createRowVisibilityObserver } from './observe-row';
 	import {
 		ANALYSIS_COLORS,
 		jobProgress,
@@ -103,7 +104,7 @@
 	let contextMenu = $state<{ x: number; y: number; row: BrowserRow } | null>(null);
 
 	function trackMenuItems(row: BrowserRow): ContextMenuItem[] {
-		const selected = selectedIds.includes(row.stable_id) ? selectedIds : [row.stable_id];
+		const selected = selectedOrderSet.has(row.order) ? selectedIds : [row.stable_id];
 		return [
 			...DECKS.map((deck) => ({ id: `load-${deck}`, label: `Load to deck ${deck}`, run: () => onloadrow(row, deck) })),
 			{ id: 'add-playlist', label: 'Add to playlist...' }, { id: 'edit', label: 'Edit' },
@@ -123,14 +124,14 @@
 	function openTrackMenu(event: MouseEvent, row: BrowserRow): void {
 		event.preventDefault();
 		event.stopPropagation();
-		if (!selectedIds.includes(row.stable_id)) onselectrow(row);
+		if (!selectedOrderSet.has(row.order)) onselectrow(row);
 		contextMenu = { x: event.clientX, y: event.clientY, row };
 	}
 
 	function onTrackKeydown(event: KeyboardEvent, row: BrowserRow): void {
 		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
 		event.preventDefault();
-		if (!selectedIds.includes(row.stable_id)) onselectrow(row);
+		if (!selectedOrderSet.has(row.order)) onselectrow(row);
 		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		contextMenu = { x: rect.left + 8, y: rect.top + 8, row };
 	}
@@ -259,6 +260,7 @@
 	let {
 		provider,
 		selectedIds,
+		selectedOrders,
 		loadedIds,
 		vocalsById,
 		sortKey,
@@ -270,6 +272,7 @@
 		removable = false,
 		reorderable = false,
 		onscrollcursor,
+		onrenderedrowcapacity,
 		onsort,
 		onselectrow,
 		onloadrow,
@@ -302,6 +305,7 @@
 		 * pane-contract.svelte.ts. */
 		provider: RowProvider;
 		selectedIds: string[];
+		selectedOrders: number[];
 		loadedIds: Set<string>;
 		/** Vocals ALREADY known client-side (loaded decks / anlz cache) -
 		 * v1 scope: strips never fetch /anlz themselves (see BrowserPanel). */
@@ -325,6 +329,9 @@
 		reorderable?: boolean;
 		/** Reports the live table-wrap scrollTop back to the pane store. */
 		onscrollcursor: (top: number) => void;
+		/** Reports the number of actual rows the viewport can show after its
+		 * header and current density are accounted for. */
+		onrenderedrowcapacity?: (count: number) => void;
 		onsort: (key: SortKey) => void;
 		onselectrow: (row: BrowserRow, event?: MouseEvent) => void;
 		/** deck null = legacy free-deck load; prefer onpickdoubledeck for dblclick.
@@ -466,7 +473,7 @@
 				}
 			}
 		}
-		if (!selectedIdSet.has(row.stable_id)) return;
+		if (!selectedOrderSet.has(row.order)) return;
 		if (dblclickGuardRowIds.has(row.stable_id)) return;
 		_armCorridorGrace(row.stable_id);
 	}
@@ -594,7 +601,7 @@
 			...autoMusicalWidths(current, musical, manuallyResizedColumns)
 		};
 	});
-	const selectedIdSet = $derived(new Set(selectedIds));
+	const selectedOrderSet = $derived(new Set(selectedOrders));
 	const rowHeight = $derived(
 		uiPrefs.library_density === 'cosy' ? ROW_HEIGHT_COSY : ROW_HEIGHT_COMPACT
 	);
@@ -602,6 +609,10 @@
 	// ----- AUTOPLAY-COL helpers ---------------------------------------------
 	let hoveredApId = $state<string | null>(null);
 	const autoPlayMode = $derived(describeAutoPlayMode(uiPrefs).mode);
+	const showLyricsCol = $derived(uiPrefs.lyrics_library_col && uiPrefs.lyrics_global);
+	const colCount = $derived(
+		(autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT) + (showLyricsCol ? 1 : 0)
+	);
 
 	function _autoPlayRank(stableId: string): number | null {
 		return autoPlayOrder.rankOf.get(stableId) ?? null;
@@ -638,7 +649,10 @@
 	 * to redistribute - narrower than the wrap just leaves blank space to the
 	 * right, same as any wrap wider than its content. */
 	const tableWidthPx = $derived(
-		Object.values(colWidths).reduce((sum, w) => sum + w, 0)
+		Object.entries(colWidths).reduce(
+			(sum, [id, w]) => sum + (id === 'lyrics' && !showLyricsCol ? 0 : w),
+			0
+		)
 	);
 
 	// ------------------------------------------- per-pane scroll cursor
@@ -705,6 +719,16 @@
 		})
 	);
 	const visibleRows = $derived(rows.slice(windowInfo.startIndex, windowInfo.endIndex));
+	const renderedRowCapacity = $derived(
+		Math.min(
+			rows.length,
+			Math.max(0, Math.floor((viewportHeight - TRACK_TABLE_THEAD_PX) / rowHeight))
+		)
+	);
+
+	$effect(() => {
+		onrenderedrowcapacity?.(renderedRowCapacity);
+	});
 
 	/** Jump to first in-place find match when the query becomes active. */
 	$effect(() => {
@@ -732,6 +756,7 @@
 	const masterIndex = $derived(
 		masterStableId === null ? -1 : rows.findIndex((r) => r.stable_id === masterStableId)
 	);
+	const masterOrder = $derived(masterIndex < 0 ? null : (rows[masterIndex]?.order ?? null));
 	const masterFold = $derived.by((): 'above' | 'below' | null =>
 		masterFoldVisibility({
 			rowIndex: masterIndex,
@@ -848,7 +873,7 @@
 			return;
 		}
 		const ids =
-			selectedIds.includes(row.stable_id) && selectedIds.length > 1
+			selectedOrderSet.has(row.order) && selectedIds.length > 1
 				? selectedIds
 				: [row.stable_id];
 		// The MIME is still set for cross-app interop; drop targets accept on
@@ -999,6 +1024,9 @@
 				<col style={`width:${colWidths.energy}px`} />
 				<col style={`width:${colWidths.genre}px`} />
 				<col style={`width:${colWidths.stems}px`} />
+				{#if showLyricsCol}
+					<col style={`width:${colWidths.lyrics}px`} />
+				{/if}
 			</colgroup>
 			<thead bind:clientHeight={theadHeightPx}>
 				<tr>
@@ -1268,12 +1296,15 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
+					{#if showLyricsCol}
+						{@render sortableTh('lyrics', 'Lyrics', 'lyrics')}
+					{/if}
 				</tr>
 			</thead>
 			<tbody>
 				{#if windowInfo.topPad > 0}
 					<tr class="tt-spacer" style={`height:${windowInfo.topPad}px`} aria-hidden="true">
-						<td colspan={autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT}></td>
+						<td colspan={colCount}></td>
 					</tr>
 				{/if}
 				{#each visibleRows as row, i (`${row.stable_id}:${row.order}`)}
@@ -1287,7 +1318,7 @@
 						data-stable-id={row.stable_id}
 						tabindex="0"
 						draggable="true"
-						class:rb-row-selected={selectedIdSet.has(row.stable_id)}
+						class:rb-row-selected={selectedOrderSet.has(row.order)}
 						class:rb-row-first={windowInfo.topPad === 0 && i === 0}
 						class:dblclick-guard-active={dblclickGuardRowIds.has(row.stable_id)}
 						class:corridor-grace-active={corridorGraceRowIds.has(row.stable_id)}
@@ -1296,7 +1327,7 @@
 						class:rb-row-spotify-pending={row.spotify_pending === true ||
 							row.stable_id.startsWith('spotify-pending:')}
 						class:loaded={loadedIds.has(row.stable_id)}
-						class:rb-row-master={masterStableId !== null && row.stable_id === masterStableId}
+						class:rb-row-master={masterOrder !== null && row.order === masterOrder}
 						class:rb-row-deck-hover={hoverStableId !== null &&
 							row.stable_id === hoverStableId &&
 							row.stable_id !== masterStableId}
@@ -1443,6 +1474,8 @@
 								duration_ms={row.duration_ms}
 								revealed={row.revealed}
 								nowRatio={_nowRatioFor(row.stable_id)}
+								stable_id={row.stable_id}
+								enabled={row.lyrics?.has_words === true}
 								onseek={(ratio) => onpreviewseek?.(row, ratio)}
 							/>
 						</td>
@@ -1604,11 +1637,14 @@
 							<StemTags stems={row.stems} />
 							<VocalAnalyzeButton stableId={row.stable_id} stems={row.stems} />
 						</td>
+						{#if showLyricsCol}
+							<LyricColumn {row} />
+						{/if}
 					</tr>
 				{/each}
 				{#if windowInfo.bottomPad > 0}
 					<tr class="tt-spacer" style={`height:${windowInfo.bottomPad}px`} aria-hidden="true">
-						<td colspan={autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT}></td>
+						<td colspan={colCount}></td>
 					</tr>
 				{/if}
 			</tbody>

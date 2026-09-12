@@ -87,7 +87,7 @@ def _report_request(
 
 @pytest.mark.requirement("PERFMODE-06")
 def test_dirty_app_build_is_rejected() -> None:
-    """If app_build_dirty is true, then validate_capture rejects it."""
+    """[if] app_build_dirty is true [then] validate_capture rejects capture, [else stop]."""
     payload = _valid_capture(app_build_dirty=True)
     with pytest.raises(SystemExit):
         validate_capture(payload, "baseline")
@@ -95,7 +95,7 @@ def test_dirty_app_build_is_rejected() -> None:
 
 @pytest.mark.requirement("PERFMODE-06")
 def test_write_report_rejects_dirty_app_build(tmp_path: Path) -> None:
-    """If app_build_dirty is true, then write_report does not write a report file."""
+    """[if] app_build_dirty is true [then] write_report rejects write, [else stop]."""
     paths = _write_four_captures(tmp_path)
     dirty = _valid_capture(app_build_dirty=True)
     _write_capture(paths["baseline"], dirty)
@@ -107,7 +107,7 @@ def test_write_report_rejects_dirty_app_build(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("PERFMODE-06")
 def test_finished_report_contains_required_kpis(tmp_path: Path) -> None:
-    """If four valid captures exist, then write_report emits the required schema."""
+    """[if] four valid captures exist [then] write_report emits the required KPI, [else stop]."""
     paths = _write_four_captures(tmp_path)
     output = tmp_path / "report.json"
     report = write_report(_report_request(paths, output))
@@ -125,7 +125,7 @@ def test_finished_report_contains_required_kpis(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("PERFMODE-06")
 def test_missing_kpi_is_not_zero(capsys: pytest.CaptureFixture[str]) -> None:
-    """If deck_load_ms is missing or null, then validation rejects it without substituting 0."""
+    """[if] a required KPI is missing or null [then] validation rejects it, [else stop]."""
     for payload in (
         {k: v for k, v in _valid_capture().items() if k != "deck_load_ms"},
         {**_valid_capture(), "deck_load_ms": None},
@@ -144,7 +144,7 @@ def test_missing_kpi_is_not_zero(capsys: pytest.CaptureFixture[str]) -> None:
 
 @pytest.mark.requirement("PERFMODE-06")
 def test_compare_two_hosts_with_same_schema(tmp_path: Path) -> None:
-    """If two reports differ only by machine id, then compare_reports succeeds."""
+    """[if] two reports differ only by machine id [then] compare_reports succeeds, [else stop]."""
     paths = _write_four_captures(tmp_path)
     report_a_path = tmp_path / "silver.json"
     report_b_path = tmp_path / "air.json"
@@ -164,7 +164,7 @@ def test_compare_two_hosts_with_same_schema(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("PERFMODE-06")
 def test_compare_rejects_missing_required_kpi(capsys: pytest.CaptureFixture[str]) -> None:
-    """If a required KPI is missing, then compare rejects rather than filling zero."""
+    """[if] a required KPI is missing from either [then] compare_reports fails, [else stop]."""
     complete = json.loads((FIXTURES / "silver-report.json").read_text(encoding="utf-8"))
     broken_path = FIXTURES / "air-report-missing-ui-latency.json"
     broken = json.loads(broken_path.read_text(encoding="utf-8"))
@@ -177,7 +177,7 @@ def test_compare_rejects_missing_required_kpi(capsys: pytest.CaptureFixture[str]
 
 @pytest.mark.requirement("PERFMODE-06")
 def test_library_scale_absent_names_gap() -> None:
-    """If no library-scale fixture is present, then track_count is null and reason names the gap."""
+    """[if] no library-scale fixture is present [then] track_count is null and the, [else stop]."""
     resolved = resolve_library_scale(None)
     assert resolved["present"] is False
     assert resolved["track_count"] is None
@@ -192,7 +192,7 @@ def test_library_scale_absent_names_gap() -> None:
 
 @pytest.mark.requirement("PERFMODE-06")
 def test_two_track_fixture_is_not_library_scale(tmp_path: Path) -> None:
-    """If track_count is 2, then it is not labeled library-scale."""
+    """[if] track_count is two [then] library_scale.present stays false and the, [else stop]."""
     fixture = tmp_path / "two-track.json"
     fixture.write_text(json.dumps({"track_count": 2}), encoding="utf-8")
     resolved = resolve_library_scale(fixture)
@@ -208,7 +208,7 @@ def test_two_track_fixture_is_not_library_scale(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("PERFMODE-06")
 def test_qualifying_library_scale_fixture(tmp_path: Path) -> None:
-    """If track_count is at least 1000, then library_scale.present is true."""
+    """[if] track_count is at least [then] library_scale.present is true, [else stop]."""
     fixture = tmp_path / "library-scale.json"
     fixture.write_text(json.dumps({"track_count": LIBRARY_SCALE_MIN_TRACKS}), encoding="utf-8")
     resolved = resolve_library_scale(fixture)
@@ -218,7 +218,7 @@ def test_qualifying_library_scale_fixture(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("PERFMODE-06")
 def test_cli_compare_two_reports(tmp_path: Path) -> None:
-    """If compare is invoked on two valid reports, then it exits successfully."""
+    """[if] compare is invoked on two valid reports [then] the CLI exits, [else stop]."""
     paths = _write_four_captures(tmp_path)
     report_a = tmp_path / "a.json"
     report_b = tmp_path / "b.json"
@@ -236,7 +236,7 @@ def test_cli_compare_two_reports(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("PERFMODE-06")
 def test_library_scale_cli_prints_named_gap() -> None:
-    """If library-scale is invoked without a fixture, then it names the gap on stderr."""
+    """[if] library-scale is invoked without a fixture [then] stderr names the, [else stop]."""
     result = subprocess.run(
         [sys.executable, "-m", "scripts.perf.squeeze_report", "library-scale"],
         check=False,

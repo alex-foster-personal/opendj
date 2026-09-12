@@ -24,6 +24,7 @@ from apps.feature_flags import FlagStore, load_flags
 from apps.play_analytics.api import router as play_analytics_router
 from apps.sets.api import router as sets_router
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
+from apps.sync_hub import hosted_config as sync_hub_hosted_config
 from apps.sync_hub.service import router as sync_hub_router
 from apps.webui.port_config import (
     PortConfigError,
@@ -39,6 +40,7 @@ from .backend import (
     NotFoundError,
     StateBackend,
 )
+from .cloudsync_scheduler import CloudSyncScheduler
 from .errors import (
     handle_backend_error,
     handle_conflict,
@@ -55,6 +57,10 @@ from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes
 from .routes import client_events as client_events_routes
 from .routes import cloudsync as cloudsync_routes
+from .routes import cloudsync_config as cloudsync_config_routes
+from .routes import cloudsync_fleet as cloudsync_fleet_routes
+from .routes import cloudsync_ops as cloudsync_ops_routes
+from .routes import cloudsync_policy as cloudsync_policy_routes
 from .routes import cloudsync_status as cloudsync_status_routes
 from .routes import commands as commands_routes
 from .routes import copilot as copilot_routes
@@ -63,6 +69,8 @@ from .routes import feedback as feedback_routes
 from .routes import feedback_attachments as feedback_attachments_routes
 from .routes import feedback_performance_marks as feedback_performance_marks_routes
 from .routes import feedback_pins as feedback_pins_routes
+from .routes import feedback_replies as feedback_replies_routes
+from .routes import feedback_sync as feedback_sync_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
@@ -70,6 +78,7 @@ from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
 from .routes import library_jobs as library_jobs_routes
 from .routes import lyrics_search as lyrics_search_routes
+from .routes import lyrics_words as lyrics_words_routes
 from .routes import mytag as mytag_routes
 from .routes import pairing_capture as pairing_capture_routes
 from .routes import pairings as pairings_routes
@@ -97,6 +106,7 @@ from .routes import spotify as spotify_routes
 from .routes import state as state_routes
 from .routes import stem_tiers as stem_tiers_routes
 from .routes import stems as stems_routes
+from .routes import stems_assets as stems_assets_routes
 from .routes import telemetry as telemetry_routes
 from .routes import tracks as tracks_routes
 from .routes import ui_prefs as ui_prefs_routes
@@ -180,16 +190,24 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
     # and start live INSIDE this try: a raise here must still stop the
     # auto-analyze watcher above via the finally, not leak its thread.
     lyric_watcher: lyric_index_autostart.LyricIndexWatcher | None = None
+    cloudsync_scheduler: CloudSyncScheduler | None = None
     try:
         lyric_watcher = getattr(app.state, "lyric_index_watcher", None)
         if lyric_watcher is None:
             lyric_watcher = build_lyric_index_watcher(app)
             app.state.lyric_index_watcher = lyric_watcher
         lyric_watcher.start()
+        # FBSYNC-01: built only on an app the daemon entry point ARMED, and
+        # even then inert unless MDT_CLOUDSYNC_SCHEDULER=1 and a hub URL are
+        # set; retained on the app for the reason the watchers above are.
+        if app.state.cloudsync_scheduler_armed:
+            cloudsync_scheduler = getattr(app.state, "cloudsync_scheduler", None)
+            if cloudsync_scheduler is None:
+                cloudsync_scheduler = CloudSyncScheduler(app)
+                app.state.cloudsync_scheduler = cloudsync_scheduler
+            cloudsync_scheduler.start()
         jobs_watcher = getattr(app.state, "library_jobs_watcher", None)
         if jobs_watcher is None:
-            from pathlib import Path
-
             db = Path(app.state.state_db_path)
             data_dir = db.parent.parent if db.parent.name == "state" else db.parent
             roots = getattr(app.state, "stem_roots", None)
@@ -206,6 +224,8 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         jobs_watcher.start()
         yield
     finally:
+        if cloudsync_scheduler is not None:
+            cloudsync_scheduler.stop()
         jobs_w = getattr(app.state, "library_jobs_watcher", None)
         if jobs_w is not None:
             jobs_w.stop()
@@ -236,6 +256,8 @@ def _bind_core_state(
     app.state.state_db_path = state_db_path
     app.state.analysis_db_path = state_db_path
     app.state.usb_simulation_enabled = usb_volumes_sim_routes.simulation_enabled()
+    # MDT_SYNC_HUB_HOSTED: off unless "1"; hosted mode fails fast right here.
+    sync_hub_hosted_config.configure(app, os.environ, db_path=Path(state_db_path))
 
 
 def _bind_feature_state(
@@ -391,6 +413,8 @@ def _mount_api_routers(app: FastAPI) -> None:
         feedback_attachments_routes.router,
         feedback_performance_marks_routes.router,
         feedback_pins_routes.router,
+        feedback_replies_routes.router,
+        feedback_sync_routes.router,
         share_routes.router,
         rb_assets_routes.router,
         search_routes.router,
@@ -399,6 +423,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         quality_routes.router,
         smartlists_routes.router,
         stems_routes.router,
+        stems_assets_routes.router,
         stem_tiers_routes.router,
         reconcile_routes.router,
         rekordbox_gate_routes.router,
@@ -414,6 +439,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         ingest_upload_routes.router,
         library_routes.router,
         lyrics_search_routes.router,
+        lyrics_words_routes.router,
         health_routes.router,
         preflight_routes.router,
         settings_routes.router,
@@ -422,7 +448,11 @@ def _mount_api_routers(app: FastAPI) -> None:
         commands_routes.router,
         ui_prefs_routes.router,
         cloudsync_routes.router,
+        cloudsync_ops_routes.router,
+        cloudsync_policy_routes.router,
         cloudsync_status_routes.router,
+        cloudsync_config_routes.router,
+        cloudsync_fleet_routes.router,
         spotify_routes.router,
         usb_export_routes.router,
         usb_volumes_routes.router,

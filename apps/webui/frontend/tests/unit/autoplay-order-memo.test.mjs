@@ -39,6 +39,10 @@ const CONTROLLER_SOURCE = readFileSync(
 	fileURLToPath(new URL('../../src/lib/rb/auto-play.svelte.ts', import.meta.url)),
 	'utf8'
 );
+const CHART_ORDER_SOURCE = readFileSync(
+	fileURLToPath(new URL('../../src/lib/rb/auto-play-chart-order.ts', import.meta.url)),
+	'utf8'
+);
 const CHAIN_SOURCE = readFileSync(
 	fileURLToPath(new URL('../../src/lib/rb/auto-play-chain.ts', import.meta.url)),
 	'utf8'
@@ -121,28 +125,28 @@ describe('chartedOrderKey', () => {
 
 describe('the poll consults the memo (source guards; the controller is rune-bound)', () => {
 	it('_refreshChartedOrder computes the key and returns before simulating when it is unchanged', () => {
-		const start = CONTROLLER_SOURCE.indexOf('function _refreshChartedOrder(');
-		const end = CONTROLLER_SOURCE.indexOf('\n}\n', start);
-		const body = CONTROLLER_SOURCE.slice(start, end);
+		const start = CHART_ORDER_SOURCE.indexOf('export function refreshChartedAutoPlayOrder(');
+		const end = CHART_ORDER_SOURCE.indexOf('\n}\n', start);
+		const body = CHART_ORDER_SOURCE.slice(start, end);
 		const keyAt = body.indexOf('chartedOrderKey(');
-		const guardAt = body.indexOf('if (key === _chartedOrderKey) return;');
+		const guardAt = body.indexOf('if (key === input.chartKey.current) return;');
 		const simAt = body.indexOf('simulateAutoPlayChain(');
 		assert.ok(keyAt > 0 && guardAt > keyAt && simAt > guardAt,
 			'if _refreshChartedOrder simulates before checking the memo key then the poll ignores the memo - broken');
 	});
 
 	it('every published empty order invalidates the memo before the next chart', () => {
-		const clearStart = CONTROLLER_SOURCE.indexOf('function _clearChartedOrder(): void {');
-		const clearEnd = CONTROLLER_SOURCE.indexOf('\n}', clearStart);
+		const clearStart = CHART_ORDER_SOURCE.indexOf('export function clearChartedAutoPlayOrder(');
+		const clearEnd = CHART_ORDER_SOURCE.indexOf('\n}\n', clearStart);
 		assert.ok(clearStart >= 0 && clearEnd > clearStart, 'if the clear helper is absent then an empty order can leave its memo live - broken');
-		const clear = CONTROLLER_SOURCE.slice(clearStart, clearEnd);
-		assert.match(clear, /_chartedOrderKey = null;/);
+		const clear = CHART_ORDER_SOURCE.slice(clearStart, clearEnd);
+		assert.match(clear, /chartKey\.current = null;/);
 		assert.match(clear, /publishAutoPlayOrder\(\[\]\);/);
 
-		const refreshStart = CONTROLLER_SOURCE.indexOf('function _refreshChartedOrder(');
-		const refresh = CONTROLLER_SOURCE.slice(refreshStart, CONTROLLER_SOURCE.indexOf('\n}\n', refreshStart));
+		const refreshStart = CHART_ORDER_SOURCE.indexOf('export function refreshChartedAutoPlayOrder(');
+		const refresh = CHART_ORDER_SOURCE.slice(refreshStart, CHART_ORDER_SOURCE.indexOf('\n}\n', refreshStart));
 		assert.equal(
-			refresh.split('_clearChartedOrder();').length - 1,
+			refresh.split('clearChartedAutoPlayOrder(input.chartKey);').length - 1,
 			2,
 			'if either chart guard publishes an empty order without clearing the memo then an unchanged recovery stays blank - broken'
 		);
@@ -170,9 +174,9 @@ describe('the poll consults the memo (source guards; the controller is rune-boun
 	});
 
 	it('the chart uses the selected follower pitch range, and keys it', () => {
-		const start = CONTROLLER_SOURCE.indexOf('function _refreshChartedOrder(');
-		const body = CONTROLLER_SOURCE.slice(start, CONTROLLER_SOURCE.indexOf('\n}\n', start));
-		assert.match(body, /const follower = pickFollowerDeck\(snaps, source\.id\)/);
+		const start = CHART_ORDER_SOURCE.indexOf('export function refreshChartedAutoPlayOrder(');
+		const body = CHART_ORDER_SOURCE.slice(start, CHART_ORDER_SOURCE.indexOf('\n}\n', start));
+		assert.match(body, /const follower = pickFollowerDeck\(input\.snaps, input\.source\.id\)/);
 		assert.match(body, /const followerPitchRange = pitchRanges\[follower\]/);
 		assert.match(body, /tempoBoundsFromPitchRange\(followerPitchRange\)/);
 		assert.match(body, /follower_deck: follower/);
@@ -309,7 +313,7 @@ describe('simulateAutoPlayChain at library scale', () => {
 
 	it('the controller passes the horizon, so the column never walks the whole library', () => {
 		assert.ok(
-			CONTROLLER_SOURCE.includes('max_chain_length: CHARTED_ORDER_HORIZON + 1'),
+			CHART_ORDER_SOURCE.includes('max_chain_length: CHARTED_ORDER_HORIZON + 1'),
 			'if _refreshChartedOrder simulates without max_chain_length then a 7 s freeze returns at every handoff - broken'
 		);
 	});

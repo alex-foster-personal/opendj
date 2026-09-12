@@ -156,6 +156,44 @@
         "title": "AccountUserOut",
         "type": "object"
       },
+      "AdoptOut": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "enrolled_at": {
+            "title": "Enrolled At",
+            "type": "string"
+          },
+          "enrolled_via": {
+            "title": "Enrolled Via",
+            "type": "string"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_email": {
+            "title": "Owner Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "name",
+          "owner_email",
+          "enrolled_at",
+          "enrolled_via",
+          "created"
+        ],
+        "title": "AdoptOut",
+        "type": "object"
+      },
       "AiApplyIn": {
         "properties": {
           "instruction": {
@@ -1614,6 +1652,34 @@
         "title": "BeatgridIssueOut",
         "type": "object"
       },
+      "BlockerOut": {
+        "properties": {
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "unowned",
+              "foreign",
+              "no_credential"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "name",
+          "reason"
+        ],
+        "title": "BlockerOut",
+        "type": "object"
+      },
       "Body_upload_api_v1_ingest_upload_post": {
         "properties": {
           "batch": {
@@ -2139,6 +2205,45 @@
         "title": "ChatMessage",
         "type": "object"
       },
+      "CheckedViolationOut": {
+        "additionalProperties": false,
+        "properties": {
+          "blocking": {
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "introduced": {
+            "title": "Introduced",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule_id",
+          "severity",
+          "subject",
+          "message",
+          "introduced",
+          "blocking"
+        ],
+        "title": "CheckedViolationOut",
+        "type": "object"
+      },
       "ClientErrorIn": {
         "properties": {
           "audio_worklet_available": {
@@ -2570,7 +2675,136 @@
         "title": "ClientPerformanceSampleOut",
         "type": "object"
       },
-      "CloudSyncStatusOut": {
+      "CloudSyncConfig": {
+        "additionalProperties": false,
+        "description": "The persisted file, validated. Also the HTTP PUT body.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "hub_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Url"
+          },
+          "machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Name"
+          }
+        },
+        "required": [
+          "enabled",
+          "hub_url",
+          "machine_name"
+        ],
+        "title": "CloudSyncConfig",
+        "type": "object"
+      },
+      "CloudSyncConfigOut": {
+        "properties": {
+          "effective": {
+            "$ref": "#/components/schemas/CloudSyncEffectiveConfigOut"
+          },
+          "file": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloudSyncConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "file",
+          "effective"
+        ],
+        "title": "CloudSyncConfigOut",
+        "type": "object"
+      },
+      "CloudSyncEffectiveConfigOut": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "enabled_source": {
+            "enum": [
+              "env",
+              "file",
+              "default"
+            ],
+            "title": "Enabled Source",
+            "type": "string"
+          },
+          "hub_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Url"
+          },
+          "hub_url_source": {
+            "enum": [
+              "env",
+              "file",
+              "default"
+            ],
+            "title": "Hub Url Source",
+            "type": "string"
+          },
+          "machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Name"
+          }
+        },
+        "required": [
+          "enabled",
+          "hub_url",
+          "machine_name",
+          "configured",
+          "enabled_source",
+          "hub_url_source"
+        ],
+        "title": "CloudSyncEffectiveConfigOut",
+        "type": "object"
+      },
+      "CloudSyncLinkOut": {
         "properties": {
           "enabled": {
             "title": "Enabled",
@@ -2586,6 +2820,197 @@
               }
             ],
             "title": "Endpoint"
+          },
+          "last_finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Finished At"
+          },
+          "last_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Message"
+          },
+          "last_result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Result"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "enabled",
+          "reason",
+          "endpoint",
+          "last_result",
+          "last_message",
+          "last_finished_at"
+        ],
+        "title": "CloudSyncLinkOut",
+        "type": "object"
+      },
+      "CloudSyncSchedulerOut": {
+        "description": "The engine's CloudSync scheduler: is its thread alive, and what last failed.\n\n``not_armed``: this app never builds one (tests, non-daemon boots).\n``off``: armed, switch not on. ``misconfigured``: switched on but it could\nnot start (``reason`` says why); the engine booted regardless.\n``dead``: it was started and its thread is gone without ``stop()``.",
+        "properties": {
+          "alive": {
+            "title": "Alive",
+            "type": "boolean"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_error_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error At"
+          },
+          "last_ok_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Ok At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "state": {
+            "enum": [
+              "not_armed",
+              "off",
+              "misconfigured",
+              "running",
+              "stopped",
+              "dead"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "ticks": {
+            "title": "Ticks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "alive",
+          "reason",
+          "ticks",
+          "last_ok_at",
+          "last_error",
+          "last_error_at"
+        ],
+        "title": "CloudSyncSchedulerOut",
+        "type": "object"
+      },
+      "CloudSyncStatusOut": {
+        "properties": {
+          "configured": {
+            "description": "the effective config is on and names a hub",
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "enabled": {
+            "description": "configured AND running: a scheduler heartbeat is fresh",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "enabled_source": {
+            "description": "which source decided 'enabled': env override, config file, or default",
+            "enum": [
+              "env",
+              "file",
+              "default"
+            ],
+            "title": "Enabled Source",
+            "type": "string"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "endpoint_source": {
+            "description": "which source decided the hub URL: env override, config file, or default",
+            "enum": [
+              "env",
+              "file",
+              "default"
+            ],
+            "title": "Endpoint Source",
+            "type": "string"
+          },
+          "heartbeat_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "UTC time of the last scheduler beat, fresh or stale",
+            "title": "Heartbeat At"
           },
           "last_pull_at": {
             "anyOf": [
@@ -2648,6 +3073,11 @@
             ],
             "title": "Rows Pending"
           },
+          "running": {
+            "description": "a scheduler heartbeat is fresh",
+            "title": "Running",
+            "type": "boolean"
+          },
           "signed_in_as": {
             "anyOf": [
               {
@@ -2662,6 +3092,11 @@
         },
         "required": [
           "enabled",
+          "configured",
+          "running",
+          "heartbeat_at",
+          "enabled_source",
+          "endpoint_source",
           "reason",
           "signed_in_as",
           "last_push_at",
@@ -2991,6 +3426,13 @@
             "title": "Page",
             "type": "string"
           },
+          "replies": {
+            "items": {
+              "$ref": "#/components/schemas/CommentReplyOut"
+            },
+            "title": "Replies",
+            "type": "array"
+          },
           "status": {
             "anyOf": [
               {
@@ -3037,6 +3479,83 @@
           "build"
         ],
         "title": "CommentOut",
+        "type": "object"
+      },
+      "CommentReplyIn": {
+        "properties": {
+          "agent_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Kind"
+          },
+          "author": {
+            "default": "operator",
+            "enum": [
+              "operator",
+              "agent"
+            ],
+            "title": "Author",
+            "type": "string"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "CommentReplyIn",
+        "type": "object"
+      },
+      "CommentReplyOut": {
+        "properties": {
+          "agent_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Kind"
+          },
+          "author": {
+            "enum": [
+              "operator",
+              "agent"
+            ],
+            "title": "Author",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "author",
+          "text",
+          "created_at"
+        ],
+        "title": "CommentReplyOut",
         "type": "object"
       },
       "CommentUpdateIn": {
@@ -3237,6 +3756,266 @@
           "generated_at"
         ],
         "title": "CoverageOut",
+        "type": "object"
+      },
+      "CoverageVerdictOut": {
+        "description": "One ``lyric_verdict`` row as the API states it.",
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "computed_at": {
+            "description": "when the pipeline judged the track",
+            "title": "Computed At",
+            "type": "string"
+          },
+          "coverage_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "share of the track the vocal stem carries energy",
+            "title": "Coverage Pct"
+          },
+          "effective": {
+            "description": "same as effective_verdict; kept for clients that read .effective",
+            "title": "Effective",
+            "type": "string"
+          },
+          "effective_verdict": {
+            "description": "what to act on: the human override if set, else verdict",
+            "title": "Effective Verdict",
+            "type": "string"
+          },
+          "has_words": {
+            "description": "a words artifact exists for this track (the row records a words_content_hash); false means the words route will 404",
+            "title": "Has Words",
+            "type": "boolean"
+          },
+          "language_iso3": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language Iso3"
+          },
+          "n_lines": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "derived lines in the artifact",
+            "title": "N Lines"
+          },
+          "n_words": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "words in the karaoke artifact",
+            "title": "N Words"
+          },
+          "override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override"
+          },
+          "override_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Note"
+          },
+          "pct_witness_red": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "share of words the independent ASR witness distrusts",
+            "title": "Pct Witness Red"
+          },
+          "pipeline_version": {
+            "description": "the code version that produced this row's hash",
+            "title": "Pipeline Version",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "lyric provider + match method",
+            "title": "Source"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "updated_at": {
+            "description": "sync stamp: when a machine last wrote the row",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "verdict": {
+            "description": "computed verdict from stem vocal coverage",
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "verdict",
+          "effective_verdict",
+          "effective",
+          "has_words",
+          "pipeline_version",
+          "computed_at",
+          "updated_at"
+        ],
+        "title": "CoverageVerdictOut",
+        "type": "object"
+      },
+      "CredentialMachineOut": {
+        "properties": {
+          "credential_minted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Minted At"
+          },
+          "is_this_hub": {
+            "title": "Is This Hub",
+            "type": "boolean"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ownership": {
+            "enum": [
+              "owned",
+              "unowned",
+              "foreign",
+              "revoked"
+            ],
+            "title": "Ownership",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "name",
+          "ownership",
+          "credential_minted_at",
+          "is_this_hub"
+        ],
+        "title": "CredentialMachineOut",
+        "type": "object"
+      },
+      "CredentialsOut": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/BlockerOut"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "enforce_ready": {
+            "title": "Enforce Ready",
+            "type": "boolean"
+          },
+          "hub_machine_id": {
+            "title": "Hub Machine Id",
+            "type": "string"
+          },
+          "machines": {
+            "items": {
+              "$ref": "#/components/schemas/CredentialMachineOut"
+            },
+            "title": "Machines",
+            "type": "array"
+          },
+          "mode": {
+            "enum": [
+              "observe",
+              "enforce"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_machine_id",
+          "mode",
+          "enforce_ready",
+          "blockers",
+          "machines"
+        ],
+        "title": "CredentialsOut",
         "type": "object"
       },
       "DecisionIn": {
@@ -3591,6 +4370,10 @@
             "title": "Engine Version",
             "type": "string"
           },
+          "google_oauth_configured": {
+            "title": "Google Oauth Configured",
+            "type": "boolean"
+          },
           "state_db": {
             "$ref": "#/components/schemas/HealthStateDb"
           },
@@ -3623,6 +4406,7 @@
           "waveform_materialization",
           "bind_host",
           "version",
+          "google_oauth_configured",
           "contract_rev",
           "engine_version",
           "boot_id"
@@ -3698,6 +4482,18 @@
           "schema_version": {
             "title": "Schema Version",
             "type": "integer"
+          },
+          "wire_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sync wire version; absent on pre-split builds",
+            "title": "Wire Version"
           }
         },
         "required": [
@@ -3737,6 +4533,17 @@
           "owner_google_sub": {
             "title": "Owner Google Sub",
             "type": "string"
+          },
+          "sync_credential": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Credential"
           }
         },
         "required": [
@@ -3746,7 +4553,8 @@
           "hub_machine_id",
           "enrolled_at",
           "enrolled_via",
-          "created"
+          "created",
+          "sync_credential"
         ],
         "title": "EnrollResponse",
         "type": "object"
@@ -3933,6 +4741,119 @@
           "note"
         ],
         "title": "FeatureEntitlementOut",
+        "type": "object"
+      },
+      "FeedbackStoreSyncOut": {
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "integer"
+          },
+          "attachments_missing": {
+            "title": "Attachments Missing",
+            "type": "integer"
+          },
+          "harvested": {
+            "title": "Harvested",
+            "type": "integer"
+          },
+          "live": {
+            "title": "Live",
+            "type": "integer"
+          },
+          "pending_push": {
+            "title": "Pending Push",
+            "type": "integer"
+          },
+          "synced": {
+            "title": "Synced",
+            "type": "integer"
+          },
+          "unreconciled": {
+            "title": "Unreconciled",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "live",
+          "archived",
+          "synced",
+          "pending_push",
+          "unreconciled",
+          "harvested",
+          "attachments_missing"
+        ],
+        "title": "FeedbackStoreSyncOut",
+        "type": "object"
+      },
+      "FeedbackSyncOut": {
+        "properties": {
+          "exported": {
+            "title": "Exported",
+            "type": "integer"
+          },
+          "imported": {
+            "title": "Imported",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "pulled": {
+            "title": "Pulled",
+            "type": "integer"
+          },
+          "pushed": {
+            "title": "Pushed",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "inconclusive"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "exported",
+          "imported",
+          "pushed",
+          "pulled",
+          "message"
+        ],
+        "title": "FeedbackSyncOut",
+        "type": "object"
+      },
+      "FeedbackSyncStatusOut": {
+        "properties": {
+          "cloudsync": {
+            "$ref": "#/components/schemas/CloudSyncLinkOut"
+          },
+          "pins": {
+            "items": {
+              "$ref": "#/components/schemas/PinSyncOut"
+            },
+            "title": "Pins",
+            "type": "array"
+          },
+          "scheduler": {
+            "$ref": "#/components/schemas/CloudSyncSchedulerOut"
+          },
+          "store": {
+            "$ref": "#/components/schemas/FeedbackStoreSyncOut"
+          }
+        },
+        "required": [
+          "store",
+          "cloudsync",
+          "scheduler",
+          "pins"
+        ],
+        "title": "FeedbackSyncStatusOut",
         "type": "object"
       },
       "FileProbeOut": {
@@ -4298,6 +5219,163 @@
         "title": "FlagsOut",
         "type": "object"
       },
+      "FleetErrorBody": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "FleetErrorBody",
+        "type": "object"
+      },
+      "FleetErrorResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/FleetErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "FleetErrorResponse",
+        "type": "object"
+      },
+      "FleetMachineOut": {
+        "additionalProperties": false,
+        "description": "One row of ``fleet --json``. ``extra=forbid`` so a field the shared\nfunction adds fails loudly here instead of silently vanishing from HTTP.",
+        "properties": {
+          "enrolled_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enrolled At"
+          },
+          "enrolled_via": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enrolled Via"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Email"
+          },
+          "owner_google_sub": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Google Sub"
+          },
+          "row_hub_machine_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Hub Machine Id"
+          },
+          "state": {
+            "enum": [
+              "owned",
+              "unowned",
+              "foreign"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "name",
+          "state",
+          "owner_google_sub",
+          "owner_email",
+          "row_hub_machine_id",
+          "enrolled_at",
+          "enrolled_via"
+        ],
+        "title": "FleetMachineOut",
+        "type": "object"
+      },
+      "FleetOut": {
+        "additionalProperties": false,
+        "properties": {
+          "foreign": {
+            "title": "Foreign",
+            "type": "integer"
+          },
+          "hub_machine_id": {
+            "title": "Hub Machine Id",
+            "type": "string"
+          },
+          "machines": {
+            "items": {
+              "$ref": "#/components/schemas/FleetMachineOut"
+            },
+            "title": "Machines",
+            "type": "array"
+          },
+          "owned": {
+            "title": "Owned",
+            "type": "integer"
+          },
+          "unowned": {
+            "title": "Unowned",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hub_machine_id",
+          "machines",
+          "owned",
+          "unowned",
+          "foreign"
+        ],
+        "title": "FleetOut",
+        "type": "object"
+      },
       "FolderImportIn": {
         "description": "Point at one or more folders of audio files. No rekordbox involved.",
         "properties": {
@@ -4465,6 +5543,49 @@
         "title": "FolderScanOut",
         "type": "object"
       },
+      "GateErrorBody": {
+        "description": "The refusal. ``ui_title`` is present only on a plan refusal (ENT-02).",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ui_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ui Title"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "GateErrorBody",
+        "type": "object"
+      },
+      "GateErrorResponse": {
+        "description": "FastAPI wraps an ``HTTPException`` detail under ``detail``.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/GateErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "GateErrorResponse",
+        "type": "object"
+      },
       "GeneralNoteOut": {
         "properties": {
           "build": {
@@ -4530,6 +5651,59 @@
           "tier"
         ],
         "title": "GenerateIn",
+        "type": "object"
+      },
+      "GrantIn": {
+        "additionalProperties": false,
+        "properties": {
+          "owner_email": {
+            "description": "email of a user who has signed in on this hub (CLI --owner)",
+            "minLength": 1,
+            "title": "Owner Email",
+            "type": "string"
+          },
+          "ttl_seconds": {
+            "default": 900,
+            "description": "how long the grant stays redeemable (CLI --ttl-seconds)",
+            "exclusiveMinimum": 0.0,
+            "maximum": 3600.0,
+            "title": "Ttl Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "owner_email"
+        ],
+        "title": "GrantIn",
+        "type": "object"
+      },
+      "GrantOut": {
+        "description": "The raw token exists in this response and nowhere else; only its\nsha256 is stored. Redeem with ``python -m apps.sync_hub enroll``.",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "owner_email": {
+            "title": "Owner Email",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "owner_email",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "GrantOut",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -4754,6 +5928,18 @@
           "schema_version": {
             "title": "Schema Version",
             "type": "integer"
+          },
+          "wire_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sync wire version; absent on pre-split builds",
+            "title": "Wire Version"
           }
         },
         "required": [
@@ -4771,6 +5957,17 @@
             },
             "title": "Capabilities",
             "type": "array"
+          },
+          "credential": {
+            "enum": [
+              "valid",
+              "missing",
+              "invalid",
+              "revoked",
+              "unowned"
+            ],
+            "title": "Credential",
+            "type": "string"
           },
           "hub_generation": {
             "title": "Hub Generation",
@@ -4803,15 +6000,21 @@
           "seq": {
             "title": "Seq",
             "type": "integer"
+          },
+          "wire_version": {
+            "title": "Wire Version",
+            "type": "integer"
           }
         },
         "required": [
           "hub_machine_id",
           "schema_version",
+          "wire_version",
           "seq",
           "machines",
           "hub_generation",
-          "ownership"
+          "ownership",
+          "credential"
         ],
         "title": "HelloResponse",
         "type": "object"
@@ -5320,6 +6523,262 @@
           "owner_boot_id"
         ],
         "title": "JobOut",
+        "type": "object"
+      },
+      "KaraokeLineOut": {
+        "description": "One derived line (:mod:`apps.lyrics.lines`, the canonical grouping).\n\nServed rather than client-derived so every surface agrees and an agent can\ncurl exactly what the deck renders.",
+        "properties": {
+          "band": {
+            "description": "good | uncertain | bad | unjudged",
+            "title": "Band",
+            "type": "string"
+          },
+          "end_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "last sung offset in the line, seconds",
+            "title": "End S"
+          },
+          "first_idx": {
+            "title": "First Idx",
+            "type": "integer"
+          },
+          "last_idx": {
+            "title": "Last Idx",
+            "type": "integer"
+          },
+          "n_judged": {
+            "description": "words the witness judged at all",
+            "title": "N Judged",
+            "type": "integer"
+          },
+          "n_red": {
+            "description": "words the witness put in a red class",
+            "title": "N Red",
+            "type": "integer"
+          },
+          "n_words": {
+            "title": "N Words",
+            "type": "integer"
+          },
+          "para_final": {
+            "description": "gap-derived paragraph break: a blank line follows",
+            "title": "Para Final",
+            "type": "boolean"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "share of witness-judged words NOT in the red classes; null when no word in the line was judged",
+            "title": "Quality"
+          },
+          "start_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "first sung onset in the line, seconds",
+            "title": "Start S"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first_idx",
+          "last_idx",
+          "text",
+          "start_s",
+          "end_s",
+          "n_words",
+          "n_red",
+          "n_judged",
+          "quality",
+          "band",
+          "para_final"
+        ],
+        "title": "KaraokeLineOut",
+        "type": "object"
+      },
+      "KaraokeSummaryOut": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "effective-verdict histogram",
+            "title": "Counts",
+            "type": "object"
+          },
+          "no_lyrics_max_coverage": {
+            "description": "calibrated band: at or below this stem vocal coverage a track is auto-stamped no-lyrics (novox round 0, pinned by test)",
+            "title": "No Lyrics Max Coverage",
+            "type": "number"
+          },
+          "sparse_max_coverage": {
+            "description": "above this coverage a track is treated as vocal; between the two, other evidence decides",
+            "title": "Sparse Max Coverage",
+            "type": "number"
+          },
+          "total": {
+            "description": "live verdict rows, the histogram's denominator",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "counts",
+          "total",
+          "no_lyrics_max_coverage",
+          "sparse_max_coverage"
+        ],
+        "title": "KaraokeSummaryOut",
+        "type": "object"
+      },
+      "KaraokeTrackOut": {
+        "description": "The words payload. ``verdict`` is ALWAYS set: see the 404 rule.",
+        "properties": {
+          "lines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/KaraokeLineOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "present only when requested with ?include=lines",
+            "title": "Lines"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/CoverageVerdictOut"
+          },
+          "words": {
+            "items": {
+              "$ref": "#/components/schemas/KaraokeWordOut"
+            },
+            "title": "Words",
+            "type": "array"
+          }
+        },
+        "required": [
+          "verdict",
+          "words"
+        ],
+        "title": "KaraokeTrackOut",
+        "type": "object"
+      },
+      "KaraokeWordOut": {
+        "description": "One aligned word, exactly as the artifact stores it.",
+        "properties": {
+          "end_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sung offset in seconds",
+            "title": "End S"
+          },
+          "idx": {
+            "description": "position in the track's flat word list, from 0",
+            "title": "Idx",
+            "type": "integer"
+          },
+          "line_final": {
+            "default": false,
+            "description": "this word closes its line (the grouping flag)",
+            "title": "Line Final",
+            "type": "boolean"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "aligner confidence for this word, 0..1",
+            "title": "Score"
+          },
+          "start_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sung onset in seconds",
+            "title": "Start S"
+          },
+          "witness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ASR-witness verdict: agree/drift/unheard/unmatchable are shown normally; contradict/lost are the suspect classes.",
+            "title": "Witness"
+          },
+          "word": {
+            "title": "Word",
+            "type": "string"
+          }
+        },
+        "required": [
+          "idx",
+          "word"
+        ],
+        "title": "KaraokeWordOut",
+        "type": "object"
+      },
+      "KindDefaultIn": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_kind": {
+            "title": "Asset Kind",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_kind",
+          "mode"
+        ],
+        "title": "KindDefaultIn",
         "type": "object"
       },
       "LabelRequest": {
@@ -6002,6 +7461,17 @@
               }
             ],
             "title": "Origin"
+          },
+          "return_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return To"
           }
         },
         "title": "LoginIn",
@@ -6048,6 +7518,90 @@
         "title": "LoopMarkOut",
         "type": "object"
       },
+      "LyricJobIn": {
+        "properties": {
+          "kind": {
+            "description": "analyze | lyricsync | stems",
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "stable_ids": {
+            "description": "tracks to process; each must exist",
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "stable_ids"
+        ],
+        "title": "LyricJobIn",
+        "type": "object"
+      },
+      "LyricJobOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "the runner's stage progress",
+            "title": "Note"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          },
+          "status": {
+            "description": "queued | done | failed",
+            "title": "Status",
+            "type": "string"
+          },
+          "ts": {
+            "description": "when the job was queued, UTC",
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ts",
+          "kind",
+          "stable_ids",
+          "status"
+        ],
+        "title": "LyricJobOut",
+        "type": "object"
+      },
       "LyricLineOut": {
         "description": "One cache-backed line timestamp in integer track milliseconds.",
         "properties": {
@@ -6069,6 +7623,355 @@
         "title": "LyricLineOut",
         "type": "object"
       },
+      "LyricsCachedIdsOut": {
+        "description": "Stable ids with a valid on-disk lyrics-cache entry.",
+        "properties": {
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "title": "LyricsCachedIdsOut",
+        "type": "object"
+      },
+      "LyricsConfigIn": {
+        "properties": {
+          "source_order": {
+            "description": "every known source, ranked; a partial list is rejected",
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Order",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_order"
+        ],
+        "title": "LyricsConfigIn",
+        "type": "object"
+      },
+      "LyricsConfigOut": {
+        "properties": {
+          "is_default": {
+            "description": "true while no operator has persisted a custom order",
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "source_order": {
+            "description": "lyric sources, strongest first; the pipeline's tie-break",
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Order",
+            "type": "array"
+          },
+          "source_titles": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "hover text per source (what the method actually does)",
+            "title": "Source Titles",
+            "type": "object"
+          }
+        },
+        "required": [
+          "source_order",
+          "source_titles",
+          "is_default"
+        ],
+        "title": "LyricsConfigOut",
+        "type": "object"
+      },
+      "LyricsKpiDefOut": {
+        "properties": {
+          "direction": {
+            "description": "lower_better | higher_better",
+            "title": "Direction",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "title": {
+            "description": "hover text: what the number actually measures",
+            "title": "Title",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "unit",
+          "direction",
+          "title"
+        ],
+        "title": "LyricsKpiDefOut",
+        "type": "object"
+      },
+      "LyricsKpiOut": {
+        "properties": {
+          "kpis": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/LyricsKpiDefOut"
+            },
+            "title": "Kpis",
+            "type": "object"
+          },
+          "snapshots": {
+            "description": "oldest first",
+            "items": {
+              "$ref": "#/components/schemas/LyricsKpiSnapshotOut"
+            },
+            "title": "Snapshots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kpis",
+          "snapshots"
+        ],
+        "title": "LyricsKpiOut",
+        "type": "object"
+      },
+      "LyricsKpiSnapshotOut": {
+        "properties": {
+          "label": {
+            "description": "the experiment round or shipped milestone",
+            "title": "Label",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "provenance": {
+            "description": "'measured' at append time, or 'hand' transcribed from the experiment log. House rule: never quote a value without its ts.",
+            "title": "Provenance",
+            "type": "string"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "one entry per KPI; null is a gap, never a carried-forward number",
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "ts",
+          "label",
+          "values",
+          "provenance",
+          "notes"
+        ],
+        "title": "LyricsKpiSnapshotOut",
+        "type": "object"
+      },
+      "LyricsPurgeIn": {
+        "properties": {
+          "dry_run": {
+            "description": "NO default on purpose: a purge deletes licensed text from disk and R2, so the caller states which one it wants",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "source_prefix": {
+            "description": "source prefix, matched LIKE prefix%",
+            "title": "Source Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_prefix",
+          "dry_run"
+        ],
+        "title": "LyricsPurgeIn",
+        "type": "object"
+      },
+      "LyricsPurgeOut": {
+        "description": ":class:`apps.lyrics.purge.PurgeReport`. Every count is observed.",
+        "properties": {
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "files_absent": {
+            "description": "matched rows with no local artifact",
+            "title": "Files Absent",
+            "type": "integer"
+          },
+          "files_removed": {
+            "description": "local karaoke artifacts deleted",
+            "title": "Files Removed",
+            "type": "integer"
+          },
+          "objects_absent": {
+            "description": "R2 keys already gone",
+            "title": "Objects Absent",
+            "type": "integer"
+          },
+          "objects_deleted": {
+            "description": "R2 objects deleted",
+            "title": "Objects Deleted",
+            "type": "integer"
+          },
+          "r2_skipped_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "why R2 was left alone; null means it was visited",
+            "title": "R2 Skipped Reason"
+          },
+          "rows_matched": {
+            "description": "live verdict rows whose source matched",
+            "title": "Rows Matched",
+            "type": "integer"
+          },
+          "rows_tombstoned": {
+            "description": "rows soft-deleted; 0 on a dry run",
+            "title": "Rows Tombstoned",
+            "type": "integer"
+          },
+          "source_prefix": {
+            "title": "Source Prefix",
+            "type": "string"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_prefix",
+          "dry_run",
+          "rows_matched",
+          "rows_tombstoned",
+          "files_removed",
+          "files_absent",
+          "objects_deleted",
+          "objects_absent",
+          "stable_ids"
+        ],
+        "title": "LyricsPurgeOut",
+        "type": "object"
+      },
+      "LyricsRowSummaryOut": {
+        "description": "Per-row karaoke verdict summary for library listings.",
+        "properties": {
+          "effective": {
+            "title": "Effective",
+            "type": "string"
+          },
+          "has_words": {
+            "title": "Has Words",
+            "type": "boolean"
+          },
+          "language_iso3": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language Iso3"
+          },
+          "n_lines": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Lines"
+          },
+          "n_words": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Words"
+          },
+          "override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override"
+          },
+          "pct_witness_red": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct Witness Red"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "effective",
+          "has_words"
+        ],
+        "title": "LyricsRowSummaryOut",
+        "type": "object"
+      },
       "LyricsUnavailableOut": {
         "description": "The explicit cache-miss response for one track's lyrics timeline.",
         "properties": {
@@ -6081,6 +7984,20 @@
           "detail"
         ],
         "title": "LyricsUnavailableOut",
+        "type": "object"
+      },
+      "MachineIdIn": {
+        "properties": {
+          "machine_id": {
+            "minLength": 1,
+            "title": "Machine Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id"
+        ],
+        "title": "MachineIdIn",
         "type": "object"
       },
       "MachineModel": {
@@ -6511,6 +8428,52 @@
         "title": "MembershipTransferOut",
         "type": "object"
       },
+      "MetadataShareRequest": {
+        "description": "Explicit acknowledgement that the resulting web view excludes audio.",
+        "properties": {
+          "confirm_metadata_only": {
+            "const": true,
+            "title": "Confirm Metadata Only",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirm_metadata_only"
+        ],
+        "title": "MetadataShareRequest",
+        "type": "object"
+      },
+      "MetadataShareResponse": {
+        "description": "A browser URL for the non-audio set history presentation.",
+        "properties": {
+          "content": {
+            "const": "metadata_only",
+            "title": "Content",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "share_state": {
+            "const": "shared_cloud",
+            "title": "Share State",
+            "type": "string"
+          },
+          "share_url": {
+            "title": "Share Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "share_state",
+          "share_url",
+          "content"
+        ],
+        "title": "MetadataShareResponse",
+        "type": "object"
+      },
       "MixerChannelMarkOut": {
         "properties": {
           "assign": {
@@ -6861,6 +8824,67 @@
           "tracks_updated"
         ],
         "title": "MyTagSweepOut",
+        "type": "object"
+      },
+      "OpsErrorBody": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "OpsErrorBody",
+        "type": "object"
+      },
+      "OpsErrorResponse": {
+        "description": "FastAPI wraps an ``HTTPException`` detail under ``detail``.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/OpsErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "OpsErrorResponse",
+        "type": "object"
+      },
+      "OverrideIn": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "why the human disagreed",
+            "title": "Note"
+          },
+          "override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "vocal|sparse|no-lyrics, or null to clear",
+            "title": "Override"
+          }
+        },
+        "title": "OverrideIn",
         "type": "object"
       },
       "OverviewOut": {
@@ -7583,6 +9607,30 @@
         "title": "PermissionsOut",
         "type": "object"
       },
+      "PinCellIn": {
+        "additionalProperties": false,
+        "properties": {
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "playlist_id",
+          "mode"
+        ],
+        "title": "PinCellIn",
+        "type": "object"
+      },
       "PinEnvironmentOut": {
         "description": "Non-personal runtime facts needed to reproduce a pinned UI defect.\n\n``machine`` and ``release_version`` are already exposed by the running\ndaemon's settings/health surfaces. The browser contributes only its UI\nkind and viewport dimensions: no username, user agent, URL query, or\nother new personal data enters the pin store.",
         "properties": {
@@ -7619,6 +9667,161 @@
           "release_version"
         ],
         "title": "PinEnvironmentOut",
+        "type": "object"
+      },
+      "PinKeyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "playlist_id"
+        ],
+        "title": "PinKeyIn",
+        "type": "object"
+      },
+      "PinSyncOut": {
+        "description": "Where one pin stands. ``attachment_bytes: missing`` is FBSYNC-05's gap:\nthe screenshot's metadata synced here but its bytes did not.",
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "attachment_bytes": {
+            "enum": [
+              "none",
+              "present",
+              "missing"
+            ],
+            "title": "Attachment Bytes",
+            "type": "string"
+          },
+          "origin_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Device Id"
+          },
+          "pin_id": {
+            "title": "Pin Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "synced",
+              "pending_push",
+              "unreconciled",
+              "harvested"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pin_id",
+          "state",
+          "archived",
+          "updated_at",
+          "origin_device_id",
+          "attachment_bytes"
+        ],
+        "title": "PinSyncOut",
+        "type": "object"
+      },
+      "PlanEntryOut": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table",
+          "machine_id",
+          "key",
+          "action",
+          "before",
+          "after"
+        ],
+        "title": "PlanEntryOut",
         "type": "object"
       },
       "PlanModel": {
@@ -8476,6 +10679,181 @@
         "title": "PlaylistWriteOut",
         "type": "object"
       },
+      "PolicyApplyIn": {
+        "additionalProperties": false,
+        "description": "``POST /policies/apply``. Dry-run unless ``dry_run`` is false, like the CLI's ``--live``.",
+        "properties": {
+          "changes": {
+            "$ref": "#/components/schemas/PolicyChangesIn"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "changes"
+        ],
+        "title": "PolicyApplyIn",
+        "type": "object"
+      },
+      "PolicyCellIn": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_kind": {
+            "title": "Asset Kind",
+            "type": "string"
+          },
+          "cache_budget_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Budget Mb"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "asset_kind",
+          "mode"
+        ],
+        "title": "PolicyCellIn",
+        "type": "object"
+      },
+      "PolicyChangesIn": {
+        "additionalProperties": false,
+        "description": "A change set. Every list is optional; an empty body validates the stored fleet.",
+        "properties": {
+          "defaults": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/KindDefaultIn"
+            },
+            "title": "Defaults",
+            "type": "array"
+          },
+          "excluded_tables": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Excluded Tables",
+            "type": "array"
+          },
+          "pins": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PinCellIn"
+            },
+            "title": "Pins",
+            "type": "array"
+          },
+          "policies": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PolicyCellIn"
+            },
+            "title": "Policies",
+            "type": "array"
+          },
+          "removed_pins": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PinKeyIn"
+            },
+            "title": "Removed Pins",
+            "type": "array"
+          },
+          "removed_policies": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PolicyKeyIn"
+            },
+            "title": "Removed Policies",
+            "type": "array"
+          }
+        },
+        "title": "PolicyChangesIn",
+        "type": "object"
+      },
+      "PolicyKeyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_kind": {
+            "title": "Asset Kind",
+            "type": "string"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "asset_kind"
+        ],
+        "title": "PolicyKeyIn",
+        "type": "object"
+      },
+      "PolicyOutcomeOut": {
+        "additionalProperties": false,
+        "description": ":meth:`apps.sync_hub.policy_store.PolicyOutcome.to_wire`, typed.",
+        "properties": {
+          "author_machine_id": {
+            "title": "Author Machine Id",
+            "type": "string"
+          },
+          "blocking": {
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "measurable": {
+            "title": "Measurable",
+            "type": "boolean"
+          },
+          "plan": {
+            "items": {
+              "$ref": "#/components/schemas/PlanEntryOut"
+            },
+            "title": "Plan",
+            "type": "array"
+          },
+          "violations": {
+            "items": {
+              "$ref": "#/components/schemas/CheckedViolationOut"
+            },
+            "title": "Violations",
+            "type": "array"
+          },
+          "written": {
+            "title": "Written",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "author_machine_id",
+          "measurable",
+          "blocking",
+          "written",
+          "plan",
+          "violations"
+        ],
+        "title": "PolicyOutcomeOut",
+        "type": "object"
+      },
       "PreflightCheckOut": {
         "description": "One row of PREFLIGHT-01's boot gate (issue #771).\n\n``status`` is never a two-way pass/fail: ``pending`` covers a check that\ngenuinely could not be exercised (e.g. audio-access with no resolvable\ntrack anywhere in a small sample), which is an honest denominator, never\na fabricated pass. ``remediation`` is null on a pass or a pending row and\na real sentence on a fail.",
         "properties": {
@@ -8677,6 +11055,18 @@
           "schema_version": {
             "title": "Schema Version",
             "type": "integer"
+          },
+          "wire_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sync wire version; absent on pre-split builds",
+            "title": "Wire Version"
           }
         },
         "required": [
@@ -9956,6 +12346,34 @@
         "title": "RelocateCandidateOut",
         "type": "object"
       },
+      "RevokeOut": {
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "credential_deleted": {
+            "title": "Credential Deleted",
+            "type": "boolean"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "revoked_at": {
+            "title": "Revoked At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "revoked_at",
+          "changed",
+          "credential_deleted"
+        ],
+        "title": "RevokeOut",
+        "type": "object"
+      },
       "RowModel": {
         "description": "One offered row. ``members`` is set only on a ``playlists`` row.",
         "properties": {
@@ -10119,6 +12537,16 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
           "is_remote": {
             "default": false,
             "title": "Is Remote",
@@ -10178,6 +12606,16 @@
             ],
             "title": "Loudness Status",
             "type": "string"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "match_context": {
             "title": "Match Context",
@@ -10936,6 +13374,21 @@
       },
       "StatusResponse": {
         "properties": {
+          "entitlement_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entitlement Provider"
+          },
+          "hosted": {
+            "title": "Hosted",
+            "type": "boolean"
+          },
           "hub_generation": {
             "title": "Hub Generation",
             "type": "string"
@@ -10965,17 +13418,53 @@
           "seq": {
             "title": "Seq",
             "type": "integer"
+          },
+          "wire_version": {
+            "title": "Wire Version",
+            "type": "integer"
           }
         },
         "required": [
           "hub_machine_id",
           "schema_version",
+          "wire_version",
           "seq",
           "machines",
           "row_counts",
-          "hub_generation"
+          "hub_generation",
+          "hosted",
+          "entitlement_provider"
         ],
         "title": "StatusResponse",
+        "type": "object"
+      },
+      "StemHydrateIn": {
+        "properties": {
+          "data_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Dir"
+          },
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "manifest_path": {
+            "title": "Manifest Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "manifest_path"
+        ],
+        "title": "StemHydrateIn",
         "type": "object"
       },
       "StemManifestOut": {
@@ -11047,6 +13536,28 @@
           "media_type"
         ],
         "title": "StemPartOut",
+        "type": "object"
+      },
+      "StemPushMissingIn": {
+        "properties": {
+          "data_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Dir"
+          },
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "title": "StemPushMissingIn",
         "type": "object"
       },
       "StemTierOut": {
@@ -11493,6 +14004,38 @@
         "title": "SurfaceActivityOut",
         "type": "object"
       },
+      "SyncErrorBody": {
+        "description": "The ``detail`` of every sync refusal: a stable code and prose.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "SyncErrorBody",
+        "type": "object"
+      },
+      "SyncErrorResponse": {
+        "description": "FastAPI wraps an ``HTTPException`` detail under ``detail``.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/SyncErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "SyncErrorResponse",
+        "type": "object"
+      },
       "SyncPolicyOut": {
         "properties": {
           "asset_kind": {
@@ -11610,6 +14153,122 @@
           "mode"
         ],
         "title": "SyncPolicyPut",
+        "type": "object"
+      },
+      "SyncRunIn": {
+        "additionalProperties": false,
+        "properties": {
+          "hub_url": {
+            "description": "the hub base URL, e.g. http://hub.tailnet:8686 (CLI --hub)",
+            "minLength": 1,
+            "pattern": "^https?://",
+            "title": "Hub Url",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "this machine's display name; the hostname when omitted (CLI --name)",
+            "title": "Name"
+          }
+        },
+        "required": [
+          "hub_url"
+        ],
+        "title": "SyncRunIn",
+        "type": "object"
+      },
+      "SyncRunOut": {
+        "description": "What one ``run_sync`` observed. Every count is observed, none inferred.\n\n``digest_inconclusive`` True is the CLI's exit code 4: rows moved but the\npost-sync digest compare excluded rows, so agreement was NOT verified.\n``hub_quarantined`` None means the hub did not report it (unknown, not 0).",
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "digest_inconclusive": {
+            "title": "Digest Inconclusive",
+            "type": "boolean"
+          },
+          "hub_machine_id": {
+            "title": "Hub Machine Id",
+            "type": "string"
+          },
+          "hub_quarantined": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Quarantined"
+          },
+          "hub_restore_detected": {
+            "title": "Hub Restore Detected",
+            "type": "boolean"
+          },
+          "hub_seq": {
+            "title": "Hub Seq",
+            "type": "integer"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "pulled": {
+            "title": "Pulled",
+            "type": "integer"
+          },
+          "pushed": {
+            "title": "Pushed",
+            "type": "integer"
+          },
+          "quarantined_incoming": {
+            "title": "Quarantined Incoming",
+            "type": "integer"
+          },
+          "quarantined_rows": {
+            "title": "Quarantined Rows",
+            "type": "integer"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "rounds": {
+            "title": "Rounds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "machine_id",
+          "hub_machine_id",
+          "pushed",
+          "accepted",
+          "rejected",
+          "pulled",
+          "applied",
+          "hub_seq",
+          "rounds",
+          "hub_restore_detected",
+          "quarantined_rows",
+          "quarantined_incoming",
+          "hub_quarantined",
+          "digest_inconclusive"
+        ],
+        "title": "SyncRunOut",
         "type": "object"
       },
       "SyncSnapshotIn": {
@@ -11828,6 +14487,85 @@
           "captured_at"
         ],
         "title": "SyncSnapshotOut",
+        "type": "object"
+      },
+      "TempoPrefOut": {
+        "description": "PREF-01: a track's user-set preferred tempo plus its playable range.\n\nAny of the three may be null (unset). Never fabricated on read - a track\nwith no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,\nnot this shape with all-null members (see sqlite_backend._row_to_track).",
+        "properties": {
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "regular": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regular"
+          }
+        },
+        "title": "TempoPrefOut",
+        "type": "object"
+      },
+      "TempoPrefPatch": {
+        "properties": {
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "regular": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regular"
+          }
+        },
+        "title": "TempoPrefPatch",
         "type": "object"
       },
       "TierEstimateOut": {
@@ -12338,6 +15076,16 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
           "is_remote": {
             "default": false,
             "title": "Is Remote",
@@ -12364,6 +15112,16 @@
               }
             ],
             "title": "Last Played At"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "lyrics_available": {
             "title": "Lyrics Available",
@@ -12449,6 +15207,16 @@
             },
             "title": "Tags",
             "type": "array"
+          },
+          "tempo_pref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoPrefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "title": {
             "anyOf": [
@@ -12679,6 +15447,16 @@
             "title": "Tags",
             "type": "array"
           },
+          "tempo_pref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoPrefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "title": {
             "anyOf": [
               {
@@ -12759,6 +15537,16 @@
               }
             ],
             "title": "Tags Remove"
+          },
+          "tempo_pref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoPrefPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "TrackPatch",
@@ -12882,6 +15670,16 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
           "is_remote": {
             "default": false,
             "title": "Is Remote",
@@ -12941,6 +15739,16 @@
             ],
             "title": "Loudness Status",
             "type": "string"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "play_count": {
             "default": 0,
@@ -13164,6 +15972,41 @@
           "level_calibration": {
             "$ref": "#/components/schemas/LevelCalibrationOut"
           },
+          "lyrics_deck_line": {
+            "default": true,
+            "title": "Lyrics Deck Line",
+            "type": "boolean"
+          },
+          "lyrics_global": {
+            "default": true,
+            "title": "Lyrics Global",
+            "type": "boolean"
+          },
+          "lyrics_hover_scrub": {
+            "default": true,
+            "title": "Lyrics Hover Scrub",
+            "type": "boolean"
+          },
+          "lyrics_library_col": {
+            "default": true,
+            "title": "Lyrics Library Col",
+            "type": "boolean"
+          },
+          "lyrics_load_strategy": {
+            "default": "hover",
+            "enum": [
+              "in-view",
+              "hover",
+              "off"
+            ],
+            "title": "Lyrics Load Strategy",
+            "type": "string"
+          },
+          "lyrics_waveform_overlay": {
+            "default": true,
+            "title": "Lyrics Waveform Overlay",
+            "type": "boolean"
+          },
           "show_agent_pins": {
             "default": true,
             "title": "Show Agent Pins",
@@ -13242,6 +16085,77 @@
                 "type": "null"
               }
             ]
+          },
+          "lyrics_deck_line": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Deck Line"
+          },
+          "lyrics_global": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Global"
+          },
+          "lyrics_hover_scrub": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Hover Scrub"
+          },
+          "lyrics_library_col": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Library Col"
+          },
+          "lyrics_load_strategy": {
+            "anyOf": [
+              {
+                "enum": [
+                  "in-view",
+                  "hover",
+                  "off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Load Strategy"
+          },
+          "lyrics_waveform_overlay": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Waveform Overlay"
           },
           "show_agent_pins": {
             "anyOf": [
@@ -14962,6 +17876,100 @@
         ]
       }
     },
+    "/api/sets/{session_id}/share": {
+      "get": {
+        "description": "Get an existing metadata-only share link for a finalized published set.",
+        "operationId": "api_get_metadata_share_api_sets__session_id__share_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataShareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Metadata Share",
+        "tags": [
+          "sets"
+        ]
+      },
+      "post": {
+        "description": "Publish timeline metadata after explicit acknowledgement, never MP3 audio.",
+        "operationId": "api_publish_metadata_share_api_sets__session_id__share_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataShareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataShareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Publish Metadata Share",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
     "/api/sets/{session_id}/soundcloud-export": {
       "get": {
         "operationId": "api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get",
@@ -15968,6 +18976,28 @@
         ]
       }
     },
+    "/api/v1/bench/lyrics-kpi": {
+      "get": {
+        "description": "The lyrics KPI ledger verbatim (``scripts/bench/lyrics_kpi_ledger.json``).\n\nRead-only here: appending a snapshot is a CLI act\n(``scripts/bench/lyrics_kpi_append.py``) so the ledger keeps one writer.\nA missing key raises rather than defaulting - a KPI panel drawing invented\nnumbers is worse than a panel that fails.",
+        "operationId": "get_lyrics_kpi_ledger_api_v1_bench_lyrics_kpi_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsKpiOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyrics Kpi Ledger",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
     "/api/v1/bench/perf-kpi": {
       "get": {
         "description": "The perf ledger as cards: same kpis + snapshots shape as /bench/kpi.\n\nOne snapshot per (date, round), in date order, so the sparkline runs from\nthe first perf measurement to the latest. Cards with the most real readings\ncome first: the ones that have actually travelled lead the panel.",
@@ -16359,6 +19389,422 @@
         ]
       }
     },
+    "/api/v1/cloudsync/config": {
+      "get": {
+        "operationId": "get_config_api_v1_cloudsync_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudSyncConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "500": {
+            "description": "a CloudSync state file in the data dir is malformed or unreadable"
+          }
+        },
+        "summary": "Get Config",
+        "tags": [
+          "cloudsync"
+        ]
+      },
+      "put": {
+        "operationId": "put_config_api_v1_cloudsync_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudSyncConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudSyncConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "a CloudSync state file in the data dir is malformed or unreadable"
+          }
+        },
+        "summary": "Put Config",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/data-classes": {
+      "get": {
+        "description": "Every class of data and how it syncs (``policy classes`` twin).",
+        "operationId": "get_data_classes_api_v1_cloudsync_data_classes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "title": "Response Get Data Classes Api V1 Cloudsync Data Classes Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Data Classes",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/enrollment-grants": {
+      "post": {
+        "description": "Mint one single-use grant on this hub. The token is returned once and\nnever logged; only its sha256 reaches the database.",
+        "operationId": "mint_enrollment_grant_api_v1_cloudsync_enrollment_grants_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "No signed-in user on this hub has that email; none is created. code: CLOUDSYNC_GRANT_OWNER_UNKNOWN."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "This machine is not a hub (MDT_IS_HUB is not 1); a grant is an act of hub authority. code: CLOUDSYNC_NOT_A_HUB."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "MDT_IS_HUB holds a value other than 1, 0 or empty. code: CLOUDSYNC_HUB_FLAG_INVALID."
+          }
+        },
+        "summary": "Mint Enrollment Grant",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/fleet": {
+      "get": {
+        "description": "Exactly ``fleet --json``: the one function both entry points call.",
+        "operationId": "get_fleet_api_v1_cloudsync_fleet_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          }
+        },
+        "summary": "Get Fleet",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/fleet/adopt": {
+      "post": {
+        "description": "Twin of ``adopt``, always adopting to the signed-in user.",
+        "operationId": "adopt_machine_api_v1_cloudsync_fleet_adopt_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MachineIdIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdoptOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "adopt needs a signed-in user. code: AUTH_REQUIRED."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "No such machine on this hub. code: CLOUDSYNC_UNKNOWN_MACHINE."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "This install is not a hub (CLOUDSYNC_NOT_A_HUB), or the machine is owned by someone else (CLOUDSYNC_OWNER_CONFLICT) or revoked (CLOUDSYNC_REVOKED)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Adopt Machine",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/fleet/credentials": {
+      "get": {
+        "description": "Twin of ``python -m apps.sync_hub credentials --json``.",
+        "operationId": "read_credentials_api_v1_cloudsync_fleet_credentials_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "Not signed in. code: AUTH_REQUIRED."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "This install is not a hub (CLOUDSYNC_NOT_A_HUB)."
+          }
+        },
+        "summary": "Read Credentials",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/fleet/revoke": {
+      "post": {
+        "description": "Twin of ``revoke``, limited to machines the signed-in user owns.",
+        "operationId": "revoke_machine_api_v1_cloudsync_fleet_revoke_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MachineIdIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "revoke needs a signed-in user. code: AUTH_REQUIRED."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "The machine is owned by another user. code: CLOUDSYNC_NOT_YOUR_MACHINE."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetErrorResponse"
+                }
+              }
+            },
+            "description": "This install is not a hub (CLOUDSYNC_NOT_A_HUB), or the machine has no owner row to revoke (CLOUDSYNC_FLEET)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Machine",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
     "/api/v1/cloudsync/machines": {
       "get": {
         "operationId": "list_machines_api_v1_cloudsync_machines_get",
@@ -16376,6 +19822,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "500": {
+            "description": "CLOUDSYNC_IDENTITY_ERROR or CLOUDSYNC_CONFIG_INVALID (cloudsync-config.json is malformed, so the configured name is unknown)"
           }
         },
         "summary": "List Machines",
@@ -16458,7 +19907,7 @@
         ]
       },
       "put": {
-        "description": "Upsert one pin THROUGH the stamp chokepoint. See :func:`put_policy`.",
+        "description": "Upsert one pin through the policy gate. See :func:`put_policy`.",
         "operationId": "put_playlist_pin_api_v1_cloudsync_playlist_pins_put",
         "requestBody": {
           "content": {
@@ -16479,7 +19928,13 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "The stored pin"
+          },
+          "404": {
+            "description": "MACHINE_NOT_FOUND or PLAYLIST_NOT_FOUND; nothing written"
+          },
+          "409": {
+            "description": "POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written"
           },
           "422": {
             "content": {
@@ -16551,7 +20006,7 @@
         ]
       },
       "put": {
-        "description": "Upsert one policy cell THROUGH the stamp chokepoint.\n\nRound 2 finding N1a: this endpoint stamped the row correctly but skipped\n``local_changelog``, so the edit was never offered to the hub and the\nmachine then failed its post-sync digest compare on ``sync_policies``\nforever. Changing one policy in the config UI stopped that machine\nsyncing anything at all.",
+        "description": "Upsert one policy cell through the policy gate (``policy set --live`` twin).\n\n``apps.sync_hub.policy_store`` stamps the row and its ``local_changelog``\nentry in one transaction (round 2 finding N1a: a write with no changelog\nentry is never offered to the hub) and answers 409 when the change\nintroduces an error-severity violation, writing nothing.",
         "operationId": "put_policy_api_v1_cloudsync_policies_put",
         "requestBody": {
           "content": {
@@ -16572,7 +20027,13 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "The stored cell"
+          },
+          "404": {
+            "description": "MACHINE_NOT_FOUND; nothing written"
+          },
+          "409": {
+            "description": "POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written"
           },
           "422": {
             "content": {
@@ -16591,6 +20052,203 @@
         ]
       }
     },
+    "/api/v1/cloudsync/policies/apply": {
+      "post": {
+        "description": "Gate the change set and, unless ``dry_run``, write it in one transaction.",
+        "operationId": "apply_policies_api_v1_cloudsync_policies_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyApplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOutcomeOut"
+                }
+              }
+            },
+            "description": "Gated; written is true only when dry_run is false"
+          },
+          "404": {
+            "description": "MACHINE_NOT_FOUND or PLAYLIST_NOT_FOUND or POLICY_NOT_FOUND or PIN_NOT_FOUND; nothing written"
+          },
+          "409": {
+            "description": "POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Policies",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/policies/plan": {
+      "post": {
+        "description": "Rows ``body`` would touch, with the gate's verdict. Never writes.",
+        "operationId": "plan_policies_api_v1_cloudsync_policies_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyChangesIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOutcomeOut"
+                }
+              }
+            },
+            "description": "The rows the change set would touch; CLI exit 3 when blocking"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Plan Policies",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/policies/validate": {
+      "post": {
+        "description": "The fleet with ``body`` applied, judged. No body judges the stored fleet\n(``policy validate`` without ``--proposal``).",
+        "operationId": "validate_policies_api_v1_cloudsync_policies_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PolicyChangesIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOutcomeOut"
+                }
+              }
+            },
+            "description": "The fleet with the change set applied, judged; CLI exit 3 on any error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Policies",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/policies/{machine_id}/{asset_kind}": {
+      "delete": {
+        "description": "Unset one cell: a synced tombstone (``policy unset --live`` twin).",
+        "operationId": "delete_policy_api_v1_cloudsync_policies__machine_id___asset_kind__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "title": "Machine Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_kind",
+            "required": true,
+            "schema": {
+              "title": "Asset Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOutcomeOut"
+                }
+              }
+            },
+            "description": "The cell is tombstoned and will sync"
+          },
+          "404": {
+            "description": "MACHINE_NOT_FOUND or POLICY_NOT_FOUND; nothing written"
+          },
+          "409": {
+            "description": "POLICY_VIOLATION (the change introduces an error, or leaves one on a cell it names) or POLICY_INCONCLUSIVE (no machines registered); detail.outcome; nothing written"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Policy",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
     "/api/v1/cloudsync/status": {
       "get": {
         "operationId": "get_status_api_v1_cloudsync_status_get",
@@ -16604,9 +20262,87 @@
               }
             },
             "description": "Successful Response"
+          },
+          "500": {
+            "description": "a CloudSync state file in the data dir is malformed or unreadable"
           }
         },
         "summary": "Get Status",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/sync": {
+      "post": {
+        "description": "One spoke round trip against ``hub_url``, journaled for ``/status``.",
+        "operationId": "run_sync_round_api_v1_cloudsync_sync_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncRunIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "run_sync raised an error it does not declare (a defect). Journaled as error by maintenance.sync; the body is the server's plain 500, not an OpsErrorResponse."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The hub was unreachable or answered with something unusable. code: CLOUDSYNC_HUB_UNREACHABLE. Journaled as error."
+          }
+        },
+        "summary": "Run Sync Round",
         "tags": [
           "cloudsync"
         ]
@@ -17513,6 +21249,59 @@
         ]
       }
     },
+    "/api/v1/feedback/comments/{comment_id}/replies": {
+      "post": {
+        "description": "Appends a follow-up comment on the same pin without creating a second marker. This is not POST /follow-on, which opens a new pin at the same anchor only after the parent is fixed or merged. The agent_note scalar remains the latest agent lifecycle note; PATCH of agent_note also appends an agent reply unless it duplicates the last agent turn.",
+        "operationId": "add_reply_api_v1_feedback_comments__comment_id__replies_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "title": "Comment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentReplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Append a follow-up on the same pin",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
     "/api/v1/feedback/general": {
       "get": {
         "operationId": "get_general_api_v1_feedback_general_get",
@@ -17628,6 +21417,76 @@
           }
         },
         "summary": "Create Performance Mark",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/sync": {
+      "post": {
+        "operationId": "post_feedback_sync_api_v1_feedback_sync_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackSyncOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Feedback Sync",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/sync/status": {
+      "get": {
+        "operationId": "get_feedback_sync_status_api_v1_feedback_sync_status_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "pin_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pin Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackSyncStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Feedback Sync Status",
         "tags": [
           "feedback"
         ]
@@ -18677,6 +22536,267 @@
         ]
       }
     },
+    "/api/v1/lyrics": {
+      "get": {
+        "description": "The triage listing: least trustworthy first by default, with the track\nnames joined in so a human can act on a row without a second request.",
+        "operationId": "list_lyric_verdicts_api_v1_lyrics_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "filter by effective verdict",
+            "in": "query",
+            "name": "verdict",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "filter by effective verdict",
+              "title": "Verdict"
+            }
+          },
+          {
+            "description": "suspect|coverage|recent",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "suspect",
+              "description": "suspect|coverage|recent",
+              "title": "Order",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CoverageVerdictOut"
+                  },
+                  "title": "Response List Lyric Verdicts Api V1 Lyrics Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Lyric Verdicts",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/config": {
+      "get": {
+        "description": "The source ordering the pipeline will use on its next run.\n\nNo DB connection: the order is a JSON file beside state.db, read by BOTH\nthis endpoint and the offline scripts, so what the admin panel shows is\nwhat the next fetch uses.",
+        "operationId": "get_lyrics_config_api_v1_lyrics_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyrics Config",
+        "tags": [
+          "lyrics"
+        ]
+      },
+      "put": {
+        "description": "Persist a full reordering. Partial lists are rejected: an ordering that\nsilently omits a source is an ordering the operator never saw.",
+        "operationId": "put_lyrics_config_api_v1_lyrics_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LyricsConfigIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Lyrics Config",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/jobs": {
+      "get": {
+        "description": "Newest first. The queue is drained by the offline runner scripts:\nstems and alignment never run in the daemon (house rule).",
+        "operationId": "get_lyric_jobs_api_v1_lyrics_jobs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LyricJobOut"
+                  },
+                  "title": "Response Get Lyric Jobs Api V1 Lyrics Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyric Jobs",
+        "tags": [
+          "lyrics"
+        ]
+      },
+      "post": {
+        "description": "Record a processing request from the UI (context menu / admin panel).\n\nEvery stable_id is checked against ``tracks`` in ONE select (the second and\nlast raw statement here, see :func:`_titles_by_stable_id`): a queue entry\nfor a track the library does not know is a job no runner can honour.",
+        "operationId": "post_lyric_job_api_v1_lyrics_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LyricJobIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Lyric Job",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/purge": {
+      "post": {
+        "description": "Remove one provider's lyrics from the row, the disk and R2 - parity for\nthe ``python -m apps.lyrics purge`` CLI, same function underneath.\n\n``writing=not dry_run`` is how the CLI asks for credentials too: a\nrehearsal pushes and deletes nothing, so it must stay runnable on a\nmachine that has none.",
+        "operationId": "post_lyrics_purge_api_v1_lyrics_purge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LyricsPurgeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsPurgeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Lyrics Purge",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
     "/api/v1/lyrics/search": {
       "get": {
         "operationId": "search_lyrics_api_v1_lyrics_search_get",
@@ -18740,6 +22860,28 @@
           }
         },
         "summary": "Search Lyrics",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/summary": {
+      "get": {
+        "description": "Library-wide verdict histogram plus the calibrated bands, so a client\nnever hardcodes the thresholds it displays.",
+        "operationId": "get_lyrics_summary_api_v1_lyrics_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaraokeSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyrics Summary",
         "tags": [
           "lyrics"
         ]
@@ -21684,6 +25826,68 @@
         ]
       }
     },
+    "/api/v1/stems/live-capability": {
+      "get": {
+        "description": "Read install-time capability and, when requested, its deck plan.",
+        "operationId": "get_live_stems_capability_api_v1_stems_live_capability_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "deck_count",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Deck Count"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bpm",
+            "required": false,
+            "schema": {
+              "default": 120.0,
+              "title": "Bpm",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Live Stems Capability Api V1 Stems Live Capability Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Live Stems Capability",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
     "/api/v1/stems/plan": {
       "get": {
         "operationId": "get_stems_plan_api_v1_stems_plan_get",
@@ -21729,6 +25933,51 @@
         ]
       }
     },
+    "/api/v1/stems/push-missing": {
+      "post": {
+        "operationId": "push_missing_stems_api_v1_stems_push_missing_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemPushMissingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Push Missing Stems Api V1 Stems Push Missing Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Push Missing Stems",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
     "/api/v1/stems/tiers": {
       "get": {
         "operationId": "list_tiers_api_v1_stems_tiers_get",
@@ -21751,6 +26000,62 @@
         "summary": "List Tiers",
         "tags": [
           "stem-tiers"
+        ]
+      }
+    },
+    "/api/v1/stems/{stable_id}/hydrate": {
+      "post": {
+        "operationId": "hydrate_stem_api_v1_stems__stable_id__hydrate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemHydrateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Hydrate Stem Api V1 Stems  Stable Id  Hydrate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Hydrate Stem",
+        "tags": [
+          "stems"
         ]
       }
     },
@@ -21797,6 +26102,9 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "description": "digest refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -21806,6 +26114,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "digest refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
           }
         },
         "summary": "Digest",
@@ -21857,7 +26168,7 @@
                 }
               }
             },
-            "description": "The machine is already owned by somebody else (SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked (SYNC_ENROLL_REVOKED), or the enrollment was otherwise refused (SYNC_ENROLL)."
+            "description": "The machine is already owned by somebody else (SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked (SYNC_ENROLL_REVOKED), the enrollment was otherwise refused (SYNC_ENROLL), or the caller speaks another sync wire version (SYNC_WIRE_VERSION, or SYNC_SCHEMA_VERSION for a pre-split build)."
           },
           "422": {
             "content": {
@@ -21869,7 +26180,7 @@
             },
             "description": "Validation Error"
           },
-          "501": {
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -21877,7 +26188,7 @@
                 }
               }
             },
-            "description": "The credential KIND is real and reserved but not built yet. code: SYNC_ENROLL_KIND_UNAVAILABLE."
+            "description": "The credential KIND is real but this hub cannot resolve it right now: for google_id_token, no OAuth client id is configured or Google's signing keys are unreachable. Never answered with an unverified acceptance. code: SYNC_ENROLL_KIND_UNAVAILABLE."
           }
         },
         "summary": "Enroll",
@@ -21911,6 +26222,19 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "description": "hello refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncErrorResponse"
+                }
+              }
+            },
+            "description": "The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -21920,6 +26244,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "hello refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
           }
         },
         "summary": "Hello",
@@ -21998,6 +26325,19 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "description": "pull refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateErrorResponse"
+                }
+              }
+            },
+            "description": "HOSTED hubs only. pull is refused with entitlement_not_in_plan when the calling machine's owner is archived (never read_only: a lapsed user can always pull), or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -22007,6 +26347,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateErrorResponse"
+                }
+              }
+            },
+            "description": "HOSTED hubs only. pull cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER)."
           }
         },
         "summary": "Pull",
@@ -22040,6 +26390,29 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "description": "push refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateErrorResponse"
+                }
+              }
+            },
+            "description": "HOSTED hubs only. push is refused with entitlement_not_in_plan when the calling machine's owner is read_only or archived, or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncErrorResponse"
+                }
+              }
+            },
+            "description": "The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -22049,6 +26422,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateErrorResponse"
+                }
+              }
+            },
+            "description": "HOSTED hubs only. push cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER)."
           },
           "507": {
             "content": {
@@ -22096,6 +26479,9 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "description": "status refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -22105,6 +26491,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "status refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
           }
         },
         "summary": "Status",
@@ -22348,6 +26737,28 @@
           }
         },
         "summary": "List Tracks",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
+    "/api/v1/tracks/lyrics-cached-ids": {
+      "get": {
+        "description": "List cached lyric timelines so the UI can skip explicit cache-miss reads.",
+        "operationId": "get_lyrics_cached_ids_api_v1_tracks_lyrics_cached_ids_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsCachedIdsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyrics Cached Ids",
         "tags": [
           "tracks"
         ]
@@ -22633,7 +27044,7 @@
     },
     "/api/v1/tracks/{stable_id}/auto-cues": {
       "get": {
-        "description": "PROPOSED hot cues from apps.analysis (META-04). Never committed cues.",
+        "description": "PROPOSED hot cues from apps.analysis (META-04). Never committed cues.\n\nReturns HTTP 200 with ``proposals: []`` and ``backend=\"none\"`` when the\ntrack is in the library but has no analysis row yet. Unknown stable_id\nand unmatched ``?backend=`` still 404 with ``ANALYSIS_NOT_FOUND``.",
         "operationId": "get_auto_cues_api_v1_tracks__stable_id__auto_cues_get",
         "parameters": [
           {
@@ -23074,6 +27485,120 @@
         "summary": "Get Track Lyrics",
         "tags": [
           "tracks"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/lyrics/override": {
+      "put": {
+        "description": "Set (or clear with null) the human verdict, which always beats the\ncomputed one wherever it is read (``store.LyricVerdict.effective``).\n\nThe override VALUE is validated before the write so the two failures stay\ndistinguishable: an unknown value is the caller's mistake (422), while a\nrefusal from the store means there is no live row to override (404).",
+        "operationId": "put_lyric_override_api_v1_tracks__stable_id__lyrics_override_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageVerdictOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Lyric Override",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/lyrics/words": {
+      "get": {
+        "description": "This track's karaoke timeline: the verdict envelope plus every word.",
+        "operationId": "get_track_karaoke_words_api_v1_tracks__stable_id__lyrics_words_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "'lines' adds the derived line objects",
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "'lines' adds the derived line objects",
+              "title": "Include"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaraokeTrackOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Karaoke Words",
+        "tags": [
+          "lyrics"
         ]
       }
     },

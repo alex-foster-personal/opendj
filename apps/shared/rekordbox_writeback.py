@@ -19,7 +19,10 @@ GATED (a bug here can damage the user's library):
 NOT GATED (the app's own working copies; losing them costs a re-import):
 
   * ``data/master.plain.db`` -- decrypted working copy.  ``rb_vendor`` and the
-    hot-cue routes write here on purpose.
+    hot-cue routes write here on purpose.  ``python -m apps.sync.apply_analysis``
+    without ``--live`` opens that file ``mode=ro`` and is not a write surface;
+    the gated surface ``module.sync.apply_analysis`` remains the ``--live`` path
+    through ``_live_rb_db_path(live=True)``.
   * ``data/master.db.copy`` (``REKORDBOX_WORKING_DB``), ``data/state/state.db``,
     ``data/writeback-backups/``, ``data/reconcile/backups/``, the anlz cache.
   * djay Pro's ``MediaLibrary.db`` and audio-file ID3 tags -- different vendors,
@@ -55,7 +58,8 @@ blocked half.  ``tests/test_rekordbox_writeback_gate.py`` iterates it, so:
   module.sync.rb_writer.write_cues            live master.db djmdCue, on an
                                               INJECTED db handle (no path)
   module.sync.apply_ratings                   live master.db ratings
-  module.sync.apply_analysis                  live master.db bpm/key
+  module.sync.apply_analysis                  live master.db bpm/key/loudness
+                                              (write-back and CSV bpm/energy)
   module.sync.apply_cues                      live master.db djmdCue
   module.sync.safety.live_write_session       live master.db (backstop rail)
   module.reconcile.apply                      live master.db rows
@@ -276,7 +280,10 @@ WRITE_SURFACES: tuple[WriteSurface, ...] = (
         surface_id="module.sync.apply_analysis",
         kind="module",
         entrypoint="apps.sync.apply_analysis._live_rb_db_path(live=True)",
-        target="live master.db bpm / key analysis",
+        target=(
+            "live master.db bpm / key / loudness (sidecar) write-back and "
+            "CSV bpm/energy analysis sync"
+        ),
         guard_site="apps/sync/apply_analysis.py",
     ),
     WriteSurface(

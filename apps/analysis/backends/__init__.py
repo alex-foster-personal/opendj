@@ -1,4 +1,5 @@
 """Backend registry.  Backends call :func:`register` at import-time."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -48,6 +49,10 @@ OWN_BEATGRID_BACKEND: str = "own_beatgrid.backfill"
 #: held equal by ``tests/analysis_key/test_backfill_write.py``.
 OWN_KEY_BACKEND: str = "own_key.backfill"
 
+#: The own waveform backfill producer, spelled out for the identical reason and
+#: held equal by ``tests/analysis_waveform/test_backfill_write.py``.
+OWN_WAVEFORM_BACKEND: str = "own_waveform.backfill"
+
 #: What ``DEFAULT_BACKEND`` needs importable at runtime. Kept in step with
 #: ``LibrosaBackend._require_deps``, which raises BackendNotAvailable on the
 #: same names; a test asserts the two agree.
@@ -63,10 +68,7 @@ def default_backend_installed() -> bool:
     build that ships without the ``analysis`` extra can decline to arm a loop
     whose every attempt would end in BackendNotAvailable.
     """
-    return all(
-        importlib.util.find_spec(name) is not None
-        for name in DEFAULT_BACKEND_MODULES
-    )
+    return all(importlib.util.find_spec(name) is not None for name in DEFAULT_BACKEND_MODULES)
 
 
 def register(name: str, cls: type[AnalyzerBackend]) -> None:
@@ -95,8 +97,12 @@ def get_backend(name: str) -> type[AnalyzerBackend]:
             from . import mik
         elif name == OWN_BEATGRID_BACKEND:
             from . import own_beatgrid
+        elif name == "own_loudness.backfill":
+            from . import own_loudness
         elif name == OWN_KEY_BACKEND:
             from . import own_key
+        elif name == OWN_WAVEFORM_BACKEND:
+            from . import own_waveform
         else:
             from . import (
                 librosa,  # noqa: F401
@@ -104,14 +110,14 @@ def get_backend(name: str) -> type[AnalyzerBackend]:
                 mik,  # noqa: F401
                 own_beatgrid,  # noqa: F401
                 own_key,  # noqa: F401
+                own_loudness,  # noqa: F401
+                own_waveform,  # noqa: F401
             )
     try:
         return BACKENDS[name]
     except KeyError as exc:
         avail = ", ".join(sorted(BACKENDS)) or "<none>"
-        raise KeyError(
-            f"Unknown analyser backend {name!r}; available: {avail}"
-        ) from exc
+        raise KeyError(f"Unknown analyser backend {name!r}; available: {avail}") from exc
 
 
 __all__ = [
@@ -122,6 +128,7 @@ __all__ = [
     "NONSHIPPABLE_ENV",
     "OWN_BEATGRID_BACKEND",
     "OWN_KEY_BACKEND",
+    "OWN_WAVEFORM_BACKEND",
     "default_backend_installed",
     "get_backend",
     "register",

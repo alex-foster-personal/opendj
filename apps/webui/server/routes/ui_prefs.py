@@ -32,6 +32,20 @@ _DEFAULT_TECH_WORKING_ANIMATE = True
 _DEFAULT_JOG_RADIAL_WAVEFORM = False
 _DEFAULT_SHOW_AGENT_PINS = True
 
+# Karaoke lyric prefs (PR-4 section C). Every surface ships ON; the loading
+# strategy defaults to the middle setting because preloading a playlist of
+# word timings is the RAM cost "in-view" opts into deliberately.
+LyricsLoadStrategy = Literal["in-view", "hover", "off"]
+_DEFAULT_LYRICS_LOAD_STRATEGY: LyricsLoadStrategy = "hover"
+_DEFAULT_LYRICS_BOOLS: dict[str, bool] = {
+    "lyrics_global": True,
+    "lyrics_library_col": True,
+    "lyrics_hover_scrub": True,
+    "lyrics_waveform_overlay": True,
+    "lyrics_deck_line": True,
+}
+_LYRICS_KEYS: tuple[str, ...] = (*_DEFAULT_LYRICS_BOOLS, "lyrics_load_strategy")
+
 
 def _path(request: Request) -> Path:
     configured = getattr(request.app.state, "data_dir", None)
@@ -159,6 +173,38 @@ def _parse_auto_sync(raw: Any) -> dict[str, bool]:
     return out
 
 
+def _lyrics_defaults() -> dict[str, Any]:
+    return {**_DEFAULT_LYRICS_BOOLS, "lyrics_load_strategy": _DEFAULT_LYRICS_LOAD_STRATEGY}
+
+
+def _parse_lyrics(raw: dict[str, Any]) -> dict[str, Any]:
+    """Fill the six lyric prefs from a stored blob. A missing key is a blob
+    written before that key existed and takes its default; a present but
+    wrong-typed key is refused rather than silently coerced."""
+    out = _lyrics_defaults()
+    for key in _DEFAULT_LYRICS_BOOLS:
+        if key not in raw:
+            continue
+        if not isinstance(raw[key], bool):
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "UI_PREFS_INVALID", "message": f"{key} must be a boolean"},
+            )
+        out[key] = raw[key]
+    if "lyrics_load_strategy" in raw:
+        strategy = raw["lyrics_load_strategy"]
+        if strategy not in ("in-view", "hover", "off"):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "UI_PREFS_INVALID",
+                    "message": "lyrics_load_strategy must be in-view|hover|off",
+                },
+            )
+        out["lyrics_load_strategy"] = strategy
+    return out
+
+
 def _load(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {
@@ -170,6 +216,7 @@ def _load(path: Path) -> dict[str, Any]:
             "jog_radial_waveform": _DEFAULT_JOG_RADIAL_WAVEFORM,
             "show_agent_pins": _DEFAULT_SHOW_AGENT_PINS,
             "level_calibration": dict(_DEFAULT_LEVEL_CALIBRATION),
+            **_lyrics_defaults(),
         }
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
@@ -234,6 +281,7 @@ def _load(path: Path) -> dict[str, Any]:
         "jog_radial_waveform": jog_radial,
         "show_agent_pins": show_agent_pins,
         "level_calibration": _parse_level_calibration(raw.get("level_calibration")),
+        **_parse_lyrics(raw),
     }
 
 
@@ -272,6 +320,12 @@ class UiPrefsOut(BaseModel):
     jog_radial_waveform: bool = _DEFAULT_JOG_RADIAL_WAVEFORM
     show_agent_pins: bool = _DEFAULT_SHOW_AGENT_PINS
     level_calibration: LevelCalibrationOut = Field(default_factory=LevelCalibrationOut)
+    lyrics_global: bool = _DEFAULT_LYRICS_BOOLS["lyrics_global"]
+    lyrics_library_col: bool = _DEFAULT_LYRICS_BOOLS["lyrics_library_col"]
+    lyrics_hover_scrub: bool = _DEFAULT_LYRICS_BOOLS["lyrics_hover_scrub"]
+    lyrics_load_strategy: LyricsLoadStrategy = _DEFAULT_LYRICS_LOAD_STRATEGY
+    lyrics_waveform_overlay: bool = _DEFAULT_LYRICS_BOOLS["lyrics_waveform_overlay"]
+    lyrics_deck_line: bool = _DEFAULT_LYRICS_BOOLS["lyrics_deck_line"]
 
 
 class UiPrefsPatch(BaseModel):
@@ -285,6 +339,26 @@ class UiPrefsPatch(BaseModel):
     jog_radial_waveform: bool | None = None
     show_agent_pins: bool | None = None
     level_calibration: LevelCalibrationOut | None = None
+    lyrics_global: bool | None = None
+    lyrics_library_col: bool | None = None
+    lyrics_hover_scrub: bool | None = None
+    lyrics_load_strategy: LyricsLoadStrategy | None = None
+    lyrics_waveform_overlay: bool | None = None
+    lyrics_deck_line: bool | None = None
+
+
+def _merge_lyrics(current: dict[str, Any], body: UiPrefsPatch) -> None:
+    """Apply the six lyric prefs a PATCH names, leaving the rest as stored.
+
+    Its own helper rather than an inline loop in `put_ui_prefs`: that route
+    already carries one branch per pref and the loop tipped it over the
+    complexity ratchet's CC limit. Pydantic has already validated the values,
+    so this only decides which keys the caller actually named.
+    """
+    for key in _LYRICS_KEYS:
+        value = getattr(body, key)
+        if value is not None:
+            current[key] = value
 
 
 @router.get("", response_model=UiPrefsOut)
@@ -312,6 +386,7 @@ def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
         current["jog_radial_waveform"] = body.jog_radial_waveform
     if body.show_agent_pins is not None:
         current["show_agent_pins"] = body.show_agent_pins
+    _merge_lyrics(current, body)
     if body.level_calibration is not None:
         # R and M are independent (see LevelCalibrationOut docstring): merge onto
         # what's stored so a PUT naming only one half cannot silently wipe the

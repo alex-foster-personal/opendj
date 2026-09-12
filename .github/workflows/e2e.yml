@@ -79,6 +79,8 @@ concurrency:
 
 permissions:
   contents: read
+  # Cross-workflow artifact download from ci.yml (issue #1513).
+  actions: read
 
 env:
   # apps.shared.library_mode refuses to import on non-darwin platforms without
@@ -496,16 +498,18 @@ jobs:
           # check plus the mutation must be one critical section. See the script.
           scripts/ci_host_lock.sh pulse-sink scripts/ci_pulse_sink.sh setup
 
-      - name: Build the production frontend
-        working-directory: apps/webui/frontend
-        # The webkit gate refuses to load without this and says so at config
-        # time. It deliberately does NOT use vite: dev serves packages
-        # untransformed and the artifact does not, which is exactly where the
-        # faults it hunts for live.
-        run: pnpm build
+      - name: Acquire production frontend artifact from CI
+        # The webkit gate refuses to load without a production build and says
+        # so at config time. Poll CI for the stamped artifact; never rebuild
+        # locally (issue #1513).
+        id: frontend-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci_frontend_build_acquire_from_ci.sh "${{ github.sha }}"
 
       # -- TIER 1a: the WebKit artifact gate ----------------------------------
       - name: WebKit artifact gate (production build, named subset)
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
         working-directory: apps/webui/frontend
         # Engine-served production build, webkit, one worker, zero retries.
         # Retries stay at zero because a flaky worklet IS the defect under
@@ -559,7 +563,7 @@ jobs:
       # -- TIER 1a-bis: cross-browser deck-load smoke (#770) -------------------
       - name: Deck-load smoke (chromium + webkit, production build)
         working-directory: apps/webui/frontend
-        if: ${{ !cancelled() }}
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
         # Separate step, same engine-served artifact and fixture library as
         # the step above (webServer boots fresh per `playwright test`
         # invocation, so this pays one more ~1s engine boot -- everything
@@ -723,7 +727,7 @@ jobs:
             apps/webui/frontend/playwright-report/**
             apps/webui/frontend/tests/e2e/fixtures/root-playwright-data/logs/**
           if-no-files-found: ignore
-          retention-days: 3
+          retention-days: 2
 
   # ---------------------------------------------------------------------------
   # TIER 2, NIGHTLY. Not a PR gate, but a real red when it breaks.
@@ -990,13 +994,14 @@ jobs:
           # check plus the mutation must be one critical section. See the script.
           scripts/ci_host_lock.sh pulse-sink scripts/ci_pulse_sink.sh setup
 
-      - name: Build the production frontend
-        working-directory: apps/webui/frontend
-        # stretch-artifact globs the built immutable assets, so the build is a
-        # prerequisite here too.
-        run: pnpm build
+      - name: Acquire production frontend artifact from CI
+        id: frontend-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci_frontend_build_acquire_from_ci.sh "${{ github.sha }}"
 
       - name: Extended - FULL webkit artifact suite (no grep)
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
         working-directory: apps/webui/frontend
         # Whole webkit-deckload config, no grep. Serial skip is gone (#712);
         # the next step asserts every listed test executed. Quarantined tests
@@ -1141,4 +1146,4 @@ jobs:
             apps/webui/frontend/test-results/**
             apps/webui/frontend/playwright-report/**
           if-no-files-found: ignore
-          retention-days: 3
+          retention-days: 2

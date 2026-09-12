@@ -11,6 +11,12 @@ Acceptance lines exercised here:
 - [if] the toggle is set to rbx or own [then] it wins over the default; when
   it is `unset` it delegates.
 - [if] an agent sets the source over HTTP [then] reading it back returns it.
+- [if] a lane default is rbx and the PARITY-02 toggle is forced to own [then]
+  the predicate is false.
+- [if] a lane default is own and the toggle is unset or rbx [then] the
+  predicate is true.
+- [if] the toggle launch state is read [then] it is still unset and is not
+  persisted.
 
 -Claude
 """
@@ -93,6 +99,8 @@ def test_toggle_overrides_the_default_in_both_directions(db) -> None:
 def test_unknown_lane_source_and_toggle_state_are_refused(db) -> None:
     with pytest.raises(selection.SelectionError, match="unknown lane"):
         selection.get_default(db, "phrases")
+    with pytest.raises(selection.SelectionError, match="unknown lane"):
+        selection.lane_is_promoted(db, "phrases")
     with pytest.raises(selection.SelectionError, match="unknown source"):
         selection.set_default(db, "key", "maybe")
     with pytest.raises(selection.SelectionError, match="unknown toggle state"):
@@ -192,8 +200,50 @@ def test_get_default_works_on_a_connection_that_cannot_write(tmp_path) -> None:
     ro = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
         assert selection.get_default(ro, "beatgrid") == "rbx"
+        assert selection.lane_is_promoted(ro, "beatgrid") is False
     finally:
         ro.close()
+
+
+def test_lane_is_promoted_is_false_when_default_is_rbx_even_if_toggle_is_own(db) -> None:
+    assert selection.get_default(db, "key") == "rbx"
+    selection.set_toggle("key", "own")
+    assert selection.effective_source(db, "key") == "own"
+    assert selection.lane_is_promoted(db, "key") is False
+
+
+def test_lane_is_promoted_is_true_when_default_is_own_even_if_toggle_is_unset_or_rbx(db) -> None:
+    selection.set_default(db, "key", "own")
+    assert selection.get_toggle("key") == "unset"
+    assert selection.lane_is_promoted(db, "key") is True
+    selection.set_toggle("key", "rbx")
+    assert selection.effective_source(db, "key") == "rbx"
+    assert selection.lane_is_promoted(db, "key") is True
+
+
+def test_lane_is_promoted_does_not_persist_the_toggle(tmp_path) -> None:
+    db_path = tmp_path / "state.db"
+    conn = sqlite3.connect(db_path)
+    selection.set_default(conn, "key", "own")
+    conn.commit()
+    conn.close()
+
+    selection.set_toggle("key", "rbx")
+    assert selection.get_toggle("key") == "rbx"
+
+    out = subprocess.run(
+        [sys.executable, "-c",
+         "import sqlite3, sys;"
+         "from apps.analysis import selection;"
+         "c = sqlite3.connect(sys.argv[1]);"
+         "print(selection.lane_is_promoted(c, 'key'), selection.get_toggle('key'))",
+         str(db_path)],
+        capture_output=True, text=True, check=True,
+    )
+    assert out.stdout.strip() == "True unset"
+    # Parent process still holds the session toggle; the child did not
+    # inherit it and nothing wrote it to the database.
+    assert selection.get_toggle("key") == "rbx"
 
 
 #-----------------------------------------------------------------------------
@@ -248,7 +298,7 @@ def test_persisting_a_default_on_an_in_memory_backend_is_refused(tmp_path) -> No
 def test_get_source_reports_every_lane(client) -> None:
     body = client.get("/api/v1/analysis/source").json()
     assert sorted(body["lanes"]) == sorted(LANES)
-    assert sorted(body["serving"]) == ["beatgrid", "key"]
+    assert sorted(body["serving"]) == ["beatgrid", "key", "waveform"]
     assert body["lanes"]["beatgrid"] == {
         "default": "rbx", "toggle": "unset", "toggle_revision": 0, "effective": "rbx",
     }
@@ -321,10 +371,10 @@ def test_a_stale_cas_refuses_the_whole_put_and_leaves_the_default_unpersisted(cl
 def test_put_own_on_an_unserved_lane_is_refused_with_409(client) -> None:
     put = client.put(
         "/api/v1/analysis/source",
-        json={"lane": "waveform", "toggle": "own"},
+        json={"lane": "vocal", "toggle": "own"},
     )
     assert put.status_code == 409, put.text
-    assert "waveform" in put.json()["detail"]["error"]
+    assert "vocal" in put.json()["detail"]["error"]
     assert "no serving implementation yet" in put.json()["detail"]["error"]
 
 

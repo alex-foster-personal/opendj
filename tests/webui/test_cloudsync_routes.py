@@ -2,10 +2,8 @@
 
 Self-contained: every test builds its OWN tmp state.db (real v6 migrations)
 so nothing here touches the repo's live state.db or another lane's fixtures.
-``app.py`` is a hotspot owned by the sync-engine lane, so -- like
-``tests/test_smartlists_route.py`` -- these tests wire
-``app.include_router(cloudsync_routes.router, ...)`` directly onto a bare
-``create_app()`` instead of assuming the include line has landed.
+Cloudsync routes mount through ``app_wiring`` on ``create_app()``; these
+tests only need a real ``SqliteBackend`` and ``state_db_path``.
 
 Regression one-liners:
   - if GET /cloudsync/machines does not self-register this process's machine then broken
@@ -23,6 +21,7 @@ Regression one-liners:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from collections.abc import Iterator, Mapping
@@ -39,7 +38,6 @@ from apps.shared.state import sync_stamp
 from apps.sync_hub import client as sync_client
 from apps.sync_hub import service as sync_service
 from apps.webui.server.app import create_app
-from apps.webui.server.routes import cloudsync as cloudsync_routes
 from apps.webui.server.sqlite_backend import SqliteBackend
 
 _BASE = datetime(2026, 8, 1, 12, 0, 0, tzinfo=UTC)
@@ -51,12 +49,13 @@ def _iso(dt: datetime) -> str:
 
 def _insert_track(conn: sqlite3.Connection, stable_id: str, title: str) -> None:
     now = _iso(_BASE)
+    content_hash = hashlib.sha256(stable_id.encode("utf-8")).hexdigest()
     conn.execute(
         "INSERT INTO tracks (stable_id, stable_id_tier, title, artists_json, "
         "album, isrc, duration_ms, file_path, content_hash, created_at, "
         "updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (stable_id, "inferred", title, json.dumps(["Test Artist"]), None,
-         None, 300000, None, None, now, now),
+         None, 300000, None, content_hash, now, now),
     )
 
 
@@ -132,9 +131,6 @@ def _make_client(db_path: Path) -> TestClient:
         state_db_path=str(db_path),
         mount_frontend=False,
     )
-    # app.py is a hotspot owned by the sync-engine lane; tests wire the
-    # router exactly the way the integrator will.
-    app.include_router(cloudsync_routes.router, prefix="/api/v1")
     return TestClient(app)
 
 
@@ -284,8 +280,19 @@ def test_put_playlist_pin_unknown_machine_404s(client: TestClient):
 
 # ----------------------------------------------------------- overview
 
-def test_overview_counts_pinned_and_unhydrated(client: TestClient):
+def test_overview_counts_pinned_and_unhydrated(client: TestClient, state_db_path: Path):
     machine_id = _registered_machine_id(client)
+    # The seed rows carry no machine_id. A writable open claims them for this
+    # machine (open_rw's post-migration backfill), the way production does,
+    # so they count as THIS machine's copies.
+    claim = state_db.open_rw(state_db_path)
+    try:
+        claimed = claim.execute(
+            "SELECT COUNT(*) FROM track_locations WHERE machine_id = ?", (machine_id,)
+        ).fetchone()[0]
+    finally:
+        claim.close()
+    assert claimed == 2
     client.put("/api/v1/cloudsync/playlist-pins", json={
         "machine_id": machine_id, "playlist_id": "cs-pl-001", "mode": "pinned",
     })

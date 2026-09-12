@@ -16,6 +16,7 @@ import os
 import sys
 from pathlib import Path
 
+from apps.shared.sync_bind_guard import SyncBindRefused, assert_sync_bind_allowed
 from apps.webui.port_config import (
     BACKEND_ENV,
     FRONTEND_ENV,
@@ -75,6 +76,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.dump_openapi:
         return _dump_openapi(args.dump_openapi)
+
+    # This daemon mounts /api/v1/sync/* too: same bind rule as the engine.
+    try:
+        assert_sync_bind_allowed(args.host)
+    except SyncBindRefused as exc:
+        sys.stderr.write(f"[ERROR] {exc}\n")
+        return 2
 
     from apps.shared import platform_paths
     from apps.shared.library_mode import apply_library_env, assert_ready

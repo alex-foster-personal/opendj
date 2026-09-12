@@ -58,7 +58,21 @@ test('shouldDisarmAutoPlayIdle waits for the hunt threshold', () => {
 	);
 	assert.equal(shouldDisarmAutoPlayIdle({ ...base, any_playing: true }), false);
 	assert.equal(shouldDisarmAutoPlayIdle({ ...base, pending_master: true }), false);
+	assert.equal(shouldDisarmAutoPlayIdle({ ...base, silence_recovering: true }), false);
 	assert.equal(shouldDisarmAutoPlayIdle({ ...base, enabled: false }), false);
+});
+
+test('planAutoPlayIdleDisarm continues while silence_recovering is true', () => {
+	const { planAutoPlayIdleDisarm, AUTO_PLAY_IDLE_DISARM_MS } = autoPlay;
+	const plan = planAutoPlayIdleDisarm({
+		enabled: true,
+		snaps: [{ playing: false }, { playing: false }],
+		pending_master: false,
+		silence_recovering: true,
+		now_ms: AUTO_PLAY_IDLE_DISARM_MS + 5_000,
+		stall_active: false
+	});
+	assert.equal(plan.action, 'continue');
 });
 
 test('RUNNING it: idle disarm drops the pref after every deck stops', async () => {
@@ -132,7 +146,7 @@ test('SHAPE GUARD: idle disarm calls setAutoPlayEnabled from the poll', () => {
 		'utf8'
 	);
 	assert.match(controller, /planAutoPlayIdleDisarm\(/);
-	assert.match(controller, /idlePlan\.action === 'disarm'/);
+	assert.match(controller, /applyAutoPlayIdleDisarmAction\(/);
 	assert.match(controller, /setAutoPlayEnabled\(false\)/);
 	assert.match(idle, /shouldDisarmAutoPlayIdle\(/);
 });

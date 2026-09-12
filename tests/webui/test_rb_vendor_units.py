@@ -500,3 +500,42 @@ def test_build_track_rows_dedupes_shared_analysis_data_path_resolution(
         f"shared AnalysisDataPath/ImagePath across {n_rows} rows to far "
         f"fewer than {n_rows * 3} real Path.resolve() calls, got {calls['n']}"
     )
+
+
+def test_is_remix_title_vocabulary() -> None:
+    """'Remixes' filter heuristic: altered-version markers only."""
+    from apps.webui.server.rb_vendor_pkg.track_rows import is_remix_title
+
+    for yes in (
+        "Gabriel - Soulwax Remix",
+        "Song (VIP)",
+        "Track [Bootleg]",
+        "Tune (Pete's Edit)",
+        "Anthem (Re-Edit)",
+        "Two Tunes (Mashup)",
+        "Groove (Rework)",
+    ):
+        assert is_remix_title(yes), yes
+    for no in (
+        "Um (Radio Edit)",
+        "Song (Original Mix)",
+        "Track (Extended Mix)",
+        "Plain Title",
+        "Club Mix Anthem",
+        None,
+    ):
+        assert not is_remix_title(no), no
+
+
+def test_is_radio_edit_title_is_its_own_tag() -> None:
+    """Radio edits are length trims, not remixes."""
+    from apps.webui.server.rb_vendor_pkg.track_rows import (
+        is_radio_edit_title,
+        is_remix_title,
+    )
+
+    for title in ("Um (Radio Edit)", "Song - Radio  Edit", "Tune [radio edit]"):
+        assert is_radio_edit_title(title), title
+        assert not is_remix_title(title), f"{title} must not double as a remix"
+    for title in ("Tune (Pete's Edit)", "Plain Title", None):
+        assert not is_radio_edit_title(title), title

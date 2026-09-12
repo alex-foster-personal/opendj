@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared import audio_files, fs_access, fs_residency
+from apps.shared.scan_mass_missing import MassMissingError, guard_roots
 from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
@@ -123,6 +124,7 @@ def ingest_folder(
     limit: int | None = None,
     clock: _ClockFn | None = None,
     on_progress: ProgressFn | None = None,
+    allow_mass_missing: bool = False,
 ) -> FolderIngestReport:
     """Ingest every audio file under ``roots`` into the state DB."""
     start = time.perf_counter()
@@ -136,10 +138,11 @@ def ingest_folder(
     report.unreadable_roots = denied
     report.files_dataless = dataless
     report.files_seen = len(files)
-    if limit is not None:
-        files = files[:limit]
 
     conn = writer.raw_conn
+    _guard_folder_scan(conn, root_list, files, allow_mass_missing)
+    if limit is not None:
+        files = files[:limit]
     savepoint = "setup_ingest_folder"
     original_bus = writer.bus
     if dry_run:
@@ -171,6 +174,28 @@ def ingest_folder(
         report.duration_s = round(time.perf_counter() - start, 3)
 
     return report
+
+
+def _guard_folder_scan(
+    conn: Any,
+    roots: list[Path],
+    files: list[audio_files.AudioFile],
+    allow_mass_missing: bool,
+) -> None:
+    """LIBM-41: refuse an empty (or mass-dropped) walk of a populated root."""
+    prior_paths = [
+        row[0]
+        for row in conn.execute(
+            "SELECT file_path FROM tracks "
+            "WHERE deleted_at IS NULL AND file_path IS NOT NULL"
+        )
+    ]
+    guard_roots(
+        roots,
+        [str(entry.path) for entry in files],
+        prior_paths,
+        allow_mass_missing=allow_mass_missing,
+    )
 
 
 def _write_tracks(
@@ -317,9 +342,18 @@ def run_cli(args: argparse.Namespace) -> int:
     writer = StateWriter(conn, actor="ingest-folder")
     try:
         report = ingest_folder(
-            writer, roots, dry_run=not args.write, limit=args.limit
+            writer,
+            roots,
+            dry_run=not args.write,
+            limit=args.limit,
+            allow_mass_missing=bool(
+                getattr(args, "allow_mass_missing", False)
+            ),
         )
         _print_summary(report)
+    except MassMissingError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     finally:
         writer.close()
         conn.close()

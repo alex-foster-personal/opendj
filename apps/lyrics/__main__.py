@@ -40,8 +40,14 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from apps.lyrics.annotations import load_annotations, validate_against_songs
+from apps.lyrics.cli_pipeline import PIPELINE_COMMANDS, add_pipeline_commands, cmd_pipeline
 from apps.lyrics.cli_storage import STORAGE_COMMANDS, add_storage_commands, cmd_storage
-from apps.lyrics.crosscheck import crosscheck, flagged_indices, witness_verdicts
+from apps.lyrics.crosscheck import (
+    WITNESS_LOCAL_WINDOW_S,
+    crosscheck,
+    flagged_indices,
+    witness_verdicts,
+)
 from apps.lyrics.jamendo import DEFAULT_DATASET_DIR, JamendoSong, load_songs
 from apps.lyrics.metrics import OnsetErrorReport, aggregate, format_report, score_onsets
 from apps.lyrics.search_index import index_batch, index_path
@@ -69,6 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m apps.lyrics")
     subcommands = parser.add_subparsers(dest="command", required=True)
     add_storage_commands(subcommands)
+    add_pipeline_commands(subcommands)
 
     fetch = subcommands.add_parser("fetch", help="fetch and cache line-synced lyrics")
     fetch.add_argument("track", help="stable track id")
@@ -158,8 +165,8 @@ def build_parser() -> argparse.ArgumentParser:
     we.add_argument(
         "--local-window",
         type=float,
-        default=3.0,
-        help="local same-token match window seconds (0 = round-4 diff-only)",
+        default=WITNESS_LOCAL_WINDOW_S,
+        help="local same-token match window seconds (0 = round-4 diff-only; default is shipped window)",
     )
     return parser
 
@@ -479,6 +486,12 @@ def _cmd_witness_eval(
     return 0
 
 
+def _pct(numerator: int, denominator: int) -> str:
+    if denominator == 0:
+        return "n/a"
+    return f"{numerator / denominator:.1%}"
+
+
 def _print_witness_table(
     per_class: dict[str, list[int]],
     *,
@@ -498,20 +511,22 @@ def _print_witness_table(
     print(f"{'class':<12s} {'words':>7s} {'share':>7s} {'P(error|class)':>15s}")
     for cls in WITNESS_CLASS_ORDER:
         n, n_err = per_class[cls]
-        p_err = f"{n_err / n:.1%}" if n else "n/a"
-        print(f"{cls:<12s} {n:>7d} {n / total_words:>7.1%} {p_err:>15s}")
+        p_err = _pct(n_err, n)
+        print(f"{cls:<12s} {n:>7d} {_pct(n, total_words):>7s} {p_err:>15s}")
     n_red = sum(per_class[c][0] for c in WITNESS_RED_CLASSES)
     n_red_err = sum(per_class[c][1] for c in WITNESS_RED_CLASSES)
     n_green, n_green_err = per_class["agree"]
     n_correct = total_words - total_errors
     print("-" * 44)
-    print(f"base error rate     {total_errors / total_words:.1%}")
+    print(f"base error rate     {_pct(total_errors, total_words)}")
     print(
-        f"red precision       {n_red_err / n_red:.1%}  recall "
-        f"{n_red_err / total_errors:.1%}  ({n_red} red)"
+        f"red precision       {_pct(n_red_err, n_red)}  recall "
+        f"{_pct(n_red_err, total_errors)}  ({n_red} red)"
     )
-    print(f"FALSE-RED rate      {red_on_correct / n_correct:.1%} of correct words painted red")
-    print(f"green error rate    {n_green_err / n_green:.1%} of green-lit words are wrong")
+    print(
+        f"FALSE-RED rate      {_pct(red_on_correct, n_correct)} of correct words painted red"
+    )
+    print(f"green error rate    {_pct(n_green_err, n_green)} of green-lit words are wrong")
 
 
 #-----------------------------------------------------------------------------
@@ -542,6 +557,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     elif args.command in STORAGE_COMMANDS:
         return cmd_storage(args)
+    elif args.command in PIPELINE_COMMANDS:
+        return cmd_pipeline(args)
     else:
         raise AssertionError(f"unhandled command {args.command!r}")
 

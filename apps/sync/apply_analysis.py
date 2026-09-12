@@ -6,22 +6,26 @@ import csv
 import sys
 from pathlib import Path
 
+from apps.analysis.selection import SelectionError
 from apps.shared import paths
 from apps.shared.rekordbox_writeback import require_writeback_enabled
-from apps.sync.djay_writer import (
-    patch_color_index,
-    patch_key_signature_index,
-    patch_manual_bpm,
-    patch_tags,
+from apps.sync.analysis_writeback_diff import (
+    UnpromotedLaneError,
+    WRITEBACK_FIELDS,
+    WRITEBACK_LANES,
+    dry_run as writeback_dry_run,
 )
-from apps.sync.safety import LiveWriteSession, SafetyAbort
+from apps.sync.analysis_csv_live import _camelot_to_djay_key_idx, live_run
+from apps.sync.safety import SafetyAbort
 
 # Codex P04-02: RB-side writes are only implemented for these fields.
 # ``apply_analysis`` used to silently skip any other field and still
 # exit 0, which made the CLI report success after a partial apply.
 # See ``_write_rb_field`` and ``live_run`` below: unsupported RB fields
 # now fail the run with a non-zero exit instead of being dropped.
-_SUPPORTED_RB_WRITE_FIELDS = frozenset({"bpm", "energy"})
+_SUPPORTED_RB_WRITE_FIELDS = frozenset({
+    "bpm", "energy", "key", "loudness_lufs", "loudness_dbtp",
+})
 
 
 # ----- Path resolution (mirrors apply_ratings._live_*_db_path) ----------
@@ -63,7 +67,7 @@ def _load_diff(path: Path) -> list[dict]:
         return list(csv.DictReader(fp))
 
 
-def dry_run(rows: list[dict]) -> int:
+def _csv_resolution_summary(rows: list[dict]) -> int:
     if not rows:
         print("[apply_analysis] no rows in analysis-diff.csv (dry-run).")
         return 0
@@ -79,17 +83,99 @@ def dry_run(rows: list[dict]) -> int:
     return 0
 
 
-def _camelot_to_djay_key_idx(camelot: str) -> int | None:
-    from apps.shared.djay_db import _DJAY_KEY_IDX_TO_STD
-    from apps.shared.harmonic import key_to_camelot
+def dry_run(
+    *,
+    state_db: Path | None = None,
+    rb_db: Path | None = None,
+    lanes: tuple[str, ...] = WRITEBACK_LANES,
+    fields: tuple[str, ...] | None = None,
+    only_tracks: set[str] | None = None,
+) -> int:
+    """Write-back dry-run planner (read-only rekordbox + state)."""
+    from apps.sync.analysis_writeback import dry_run_writeback
 
-    for idx, std in _DJAY_KEY_IDX_TO_STD.items():
+    resolved_state = state_db or paths.STATE_DB
+    resolved_rb = rb_db or paths.REKORDBOX_PLAIN_DB
+    return dry_run_writeback(
+        state_db=resolved_state,
+        rb_db=resolved_rb,
+        lanes=lanes,
+        fields=fields or tuple(WRITEBACK_FIELDS),
+        only_tracks=only_tracks,
+    )
+
+
+def _open_rb_connection(path: Path):
+    import sqlite3
+
+    try:
+        conn = sqlite3.connect(str(path))
+        conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+        return conn, conn
+    except sqlite3.DatabaseError:
+        from apps.shared.rekordbox_db import open_db
+
+        db = open_db(path)
+        return db, db.engine.raw_connection()
+
+
+def _close_rb_connection(handle, conn) -> None:
+    try:
+        conn.close()
+    except Exception:
+        pass
+    if handle is not conn:
         try:
-            if str(key_to_camelot(std)) == camelot:
-                return idx
-        except ValueError:
-            continue
-    return None
+            handle.close()
+        except Exception:
+            pass
+
+
+def _run_writeback_live(
+    *,
+    state_db: Path,
+    lanes: tuple[str, ...],
+    fields: tuple[str, ...],
+    only_tracks: set[str] | None,
+    flag_ok: bool,
+) -> int:
+    from apps.sync.analysis_writeback import (
+        build_writeback_plan,
+        live_writeback,
+        validate_writeback_plan,
+    )
+
+    plan = build_writeback_plan(
+        state_db=state_db,
+        rb_db_path=paths.REKORDBOX_PLAIN_DB,
+        lanes=lanes,
+        fields=fields,
+        only_tracks=only_tracks,
+    )
+    validate_writeback_plan(plan)
+    rb_db_path = _live_rb_db_path(True)
+    handle, conn = _open_rb_connection(rb_db_path)
+    try:
+        return live_writeback(
+            plan=plan,
+            rb_db_path=rb_db_path,
+            rb_conn=conn,
+            fields=fields,
+            flag_ok=flag_ok,
+        )
+    finally:
+        _close_rb_connection(handle, conn)
+
+
+def _run_writeback_undo(preimage_path: Path) -> int:
+    from apps.sync.analysis_writeback import run_undo
+
+    rb_db_path = _live_rb_db_path(True)
+    handle, conn = _open_rb_connection(rb_db_path)
+    try:
+        return run_undo(preimage_path, rb_db_path=rb_db_path, rb_conn=conn)
+    finally:
+        _close_rb_connection(handle, conn)
 
 
 class UnsupportedRbFieldError(RuntimeError):
@@ -110,6 +196,18 @@ def _write_rb_field(db, content_id: str, field: str, value) -> bool:
             "refusing to partial-apply. Supported: "
             f"{sorted(_SUPPORTED_RB_WRITE_FIELDS)}."
         )
+    import sqlite3
+
+    if isinstance(db, sqlite3.Connection) and field in (
+        "key", "loudness_lufs", "loudness_dbtp", "bpm",
+    ):
+        from apps.sync.analysis_writeback import write_scalar
+
+        preimage: dict[str, object] = {"created_key_id": None}
+        ok = write_scalar(db, content_id, field, value, preimage)
+        if ok:
+            db.commit()
+        return ok
     try:
         content = db.get_content(ID=str(content_id)).one()
     except Exception:
@@ -136,6 +234,14 @@ def _verify_rb_field(db, content_id: str, field: str, value) -> bool:
     persisted exactly as intended; ``False`` trips the session's
     verify-failure branch (abort/skip/continue).
     """
+    import sqlite3
+
+    if isinstance(db, sqlite3.Connection) and field in (
+        "key", "loudness_lufs", "loudness_dbtp", "bpm",
+    ):
+        from apps.sync.analysis_writeback import verify_scalar
+
+        return verify_scalar(db, content_id, field, value)
     try:
         content = db.get_content(ID=str(content_id)).one()
     except Exception:
@@ -152,212 +258,8 @@ def _verify_rb_field(db, content_id: str, field: str, value) -> bool:
     return False
 
 
-def _write_djay_field(db_path: Path, uuid: str, field: str, value) -> bool:
-    import sqlite3
-
-    collection = (
-        "mediaItemAnalyzedData"
-        if field in ("manual_bpm", "key_camelot", "bpm")
-        else "mediaItemUserData"
-    )
-    with sqlite3.connect(str(db_path)) as con:
-        row = con.execute(
-            "SELECT data FROM database2 WHERE collection = ? AND key = ?",
-            (collection, uuid),
-        ).fetchone()
-        if not row:
-            return False
-        blob = row[0] or b""
-        if field == "manual_bpm":
-            try:
-                new_blob = patch_manual_bpm(blob, float(value))
-            except (TypeError, ValueError):
-                return False
-        elif field == "key_camelot":
-            idx = _camelot_to_djay_key_idx(str(value))
-            if idx is None:
-                return False
-            new_blob = patch_key_signature_index(blob, idx)
-        elif field == "energy":
-            try:
-                new_blob = patch_color_index(blob, int(value))
-            except (TypeError, ValueError):
-                return False
-        elif field == "tags":
-            new_blob = patch_tags(blob, str(value))
-        else:
-            return False
-        con.execute(
-            "UPDATE database2 SET data = ? WHERE collection = ? AND key = ?",
-            (new_blob, collection, uuid),
-        )
-        con.commit()
-    return True
-
-
-def _verify_djay_field(db_path: Path, uuid: str, field: str, value) -> bool:
-    """Rail 4 (post-write verify) for the djay side.
-
-    Re-reads the TSAF blob and checks that:
-
-    * the row still exists in the expected collection, and
-    * the stored blob differs structurally from an empty/absent payload
-      (the per-field patch helpers in :mod:`apps.sync.djay_writer`
-      mutate known byte offsets, so a non-empty blob after write is the
-      strongest invariant we can cheaply assert without re-implementing
-      the TSAF parser here).
-
-    The more expensive per-field byte-level verification happens inside
-    :func:`_write_djay_field` itself via the patch helpers; this verify
-    step catches the "row vanished after write" and "blob was emptied
-    after write" failure modes.
-    """
-    import sqlite3
-
-    collection = (
-        "mediaItemAnalyzedData"
-        if field in ("manual_bpm", "key_camelot", "bpm")
-        else "mediaItemUserData"
-    )
-    try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as con:
-            row = con.execute(
-                "SELECT data FROM database2 "
-                "WHERE collection = ? AND key = ?",
-                (collection, uuid),
-            ).fetchone()
-    except Exception:
-        return False
-    if not row:
-        return False
-    blob = row[0] or b""
-    # Key-by-key structural checks.
-    if field == "key_camelot":
-        return _camelot_to_djay_key_idx(str(value)) is not None \
-            and len(blob) > 0
-    # All other fields: we require a non-empty blob (writes that left
-    # the row truncated would fail here) and rely on the writer's own
-    # return value for byte-exact validation.
-    return len(blob) > 0
-
-
-def live_run(
-    rows: list[dict],
-    *,
-    fields: set[str] | None = None,
-    only_tracks: set[str] | None = None,
-    flag_ok: bool = False,
-    rb_db_path: Path,
-    djay_db_path: Path,
-) -> int:
-    # v1.0 adversarial review (#1, CRITICAL): ``rb_db_path`` and
-    # ``djay_db_path`` are required -- callers MUST decide live vs
-    # working explicitly via ``_live_rb_db_path`` / ``_live_djay_db_path``.
-    # Default values were removed here so a missing kwarg in ``main`` is
-    # a loud TypeError instead of a silent WORKING-DB misroute.
-    from apps.shared.rekordbox_db import open_db
-
-    written = 0
-    rb_plan: list[tuple[str, str, object]] = []
-    djay_plan: list[tuple[str, str, object]] = []
-    for r in rows:
-        field = r.get("field", "")
-        if fields is not None and field not in fields:
-            continue
-        rb_id = r.get("rb_content_id", "")
-        djay_uuid = r.get("djay_uuid", "")
-        if only_tracks is not None and rb_id not in only_tracks and djay_uuid not in only_tracks:
-            continue
-        res = r.get("resolution", "")
-        if res == "accept_rb" and djay_uuid:
-            djay_plan.append((djay_uuid, field, r.get("rb_value", "")))
-        elif res == "accept_djay" and rb_id:
-            rb_plan.append((rb_id, field, r.get("djay_value", "")))
-
-    # Codex P04-02: refuse to open a live session if the plan contains
-    # any RB-side field we can't actually write. Previously these rows
-    # were silently skipped inside ``_write_rb_field`` and the CLI
-    # exited 0, misreporting a partial apply as success.
-    unsupported_rb = sorted({
-        fld for _cid, fld, _val in rb_plan
-        if fld not in _SUPPORTED_RB_WRITE_FIELDS
-    })
-    if unsupported_rb:
-        raise UnsupportedRbFieldError(
-            "Refusing to apply: RB-side writes not implemented for "
-            f"fields {unsupported_rb}. Re-run with --fields limited to "
-            f"{sorted(_SUPPORTED_RB_WRITE_FIELDS)} or resolve those "
-            "rows on the djay side first."
-        )
-
-    if rb_plan:
-        db = open_db(rb_db_path)
-        try:
-            # Rail 4: per-track verifier keyed by the "content_id:field"
-            # tag so the session can read back the RB column after each
-            # write. Populated before opening the session so the closure
-            # has a stable mapping.
-            rb_expected: dict[str, tuple[str, object]] = {
-                f"{cid}:{fld}": (fld, val) for cid, fld, val in rb_plan
-            }
-
-            def rb_verifier(tag: str, _unused: object = None) -> bool:
-                fld, val = rb_expected[tag]
-                cid = tag.split(":", 1)[0]
-                return _verify_rb_field(db, cid, fld, val)
-
-            with LiveWriteSession(
-                target="rekordbox",
-                reason="SYNC-05 analysis sync (RB side)",
-                flag_ok=flag_ok,
-                db_path=rb_db_path,
-                verifier=rb_verifier,
-            ) as sess:
-                for content_id, field, value in rb_plan:
-                    with sess.per_track(f"{content_id}:{field}") as w:
-                        ok = _write_rb_field(db, content_id, field, value)
-                        w.write((field, value))
-                        if ok and w.verify_readback():
-                            w.append_reverse(
-                                f"# revert RB {field} for ContentID={content_id}"
-                            )
-                            written += 1
-        finally:
-            try:
-                db.close()
-            except Exception:
-                pass
-
-    if djay_plan:
-        djay_expected: dict[str, tuple[str, object]] = {
-            f"{uuid}:{fld}": (fld, val) for uuid, fld, val in djay_plan
-        }
-
-        def djay_verifier(tag: str, _unused: object = None) -> bool:
-            fld, val = djay_expected[tag]
-            uuid = tag.split(":", 1)[0]
-            return _verify_djay_field(djay_db_path, uuid, fld, val)
-
-        with LiveWriteSession(
-            target="djay",
-            reason="SYNC-05 analysis sync (djay side)",
-            flag_ok=flag_ok,
-            db_path=djay_db_path,
-            verifier=djay_verifier,
-        ) as sess:
-            for uuid, field, value in djay_plan:
-                with sess.per_track(f"{uuid}:{field}") as w:
-                    ok = _write_djay_field(djay_db_path, uuid, field, value)
-                    w.write((field, value))
-                    if ok and w.verify_readback():
-                        w.append_reverse(f"# revert djay {field} for uuid={uuid}")
-                        written += 1
-
-    print(
-        f"[apply_analysis] wrote {written} fields of "
-        f"{len(rb_plan) + len(djay_plan)} planned"
-    )
-    return 0
+_LIVE_DEFAULT_FIELDS = "bpm,manual_bpm,key_camelot,energy,tags"
+_WRITEBACK_DEFAULT_FIELDS = "bpm,key,loudness_lufs,loudness_dbtp"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -365,7 +267,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--diff-csv",
         type=Path,
-        default=paths.DATA_DIR / "sync" / "analysis-diff.csv",
+        default=None,
+        help="SYNC-05 rb-vs-djay CSV resolution summary (not the no-flag default).",
     )
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--bulk", action="store_true")
@@ -373,7 +276,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--fields",
         type=str,
-        default="bpm,manual_bpm,key_camelot,energy,tags",
+        default="",
+        help="Comma-separated fields; default depends on --live.",
+    )
+    parser.add_argument(
+        "--lanes",
+        type=str,
+        default=",".join(WRITEBACK_LANES),
+        help="Write-back lanes (dry-run and write-back live; ignored with --diff-csv --live).",
+    )
+    parser.add_argument(
+        "--state-db",
+        type=Path,
+        default=paths.STATE_DB,
+        help="State DB (write-back dry-run and write-back live; ignored with --diff-csv --live).",
+    )
+    parser.add_argument(
+        "--rb-db",
+        type=Path,
+        default=paths.REKORDBOX_PLAIN_DB,
+        help="Rekordbox plain working copy for write-back dry-run only.",
+    )
+    parser.add_argument(
+        "--undo",
+        type=Path,
+        default=None,
+        help="Restore analysis preimages from a prior write-back live session.",
     )
     parser.add_argument(
         "--i-understand-the-risks",
@@ -390,17 +318,87 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    rows = _load_diff(args.diff_csv)
+    if args.undo is not None:
+        if args.live:
+            print("[apply_analysis] --undo is mutually exclusive with --live", file=sys.stderr)
+            return 2
+        try:
+            return _run_writeback_undo(args.undo)
+        except SafetyAbort as e:
+            print(f"[apply_analysis] SafetyAbort: {e}", file=sys.stderr)
+            return 3
+
+    fields_raw = args.fields.strip()
+    if fields_raw:
+        fields_list = tuple(f.strip() for f in fields_raw.split(",") if f.strip())
+    elif args.live and args.diff_csv is not None:
+        fields_list = tuple(
+            f.strip() for f in _LIVE_DEFAULT_FIELDS.split(",") if f.strip()
+        )
+    else:
+        fields_list = tuple(
+            f.strip() for f in _WRITEBACK_DEFAULT_FIELDS.split(",") if f.strip()
+        )
+
+    only_tracks: set[str] | None = None
+    if args.tracks:
+        only_tracks = {t.strip() for t in args.tracks.split(",") if t.strip()}
+
+    lanes = tuple(l.strip() for l in args.lanes.split(",") if l.strip())
+
     if not args.live:
-        return dry_run(rows)
+        if args.diff_csv is not None:
+            return _csv_resolution_summary(_load_diff(args.diff_csv))
+        try:
+            return dry_run(
+                state_db=args.state_db,
+                rb_db=args.rb_db,
+                lanes=lanes,
+                fields=fields_list,
+                only_tracks=only_tracks,
+            )
+        except UnpromotedLaneError as e:
+            print(f"[apply_analysis] {e}", file=sys.stderr)
+            return 2
+        except SelectionError as e:
+            print(f"[apply_analysis] {e}", file=sys.stderr)
+            return 2
+        except FileNotFoundError as e:
+            print(f"[apply_analysis] {e}", file=sys.stderr)
+            return 2
+
+    if args.diff_csv is None:
+        try:
+            return _run_writeback_live(
+                state_db=args.state_db,
+                lanes=lanes,
+                fields=fields_list,
+                only_tracks=only_tracks,
+                flag_ok=args.i_understand_the_risks,
+            )
+        except UnpromotedLaneError as e:
+            print(f"[apply_analysis] {e}", file=sys.stderr)
+            return 2
+        except SelectionError as e:
+            print(f"[apply_analysis] {e}", file=sys.stderr)
+            return 2
+        except FileNotFoundError as e:
+            print(f"[apply_analysis] {e}", file=sys.stderr)
+            return 2
+        except SafetyAbort as e:
+            print(f"[apply_analysis] SafetyAbort: {e}", file=sys.stderr)
+            return 3
+        except UnsupportedRbFieldError as e:
+            print(f"[apply_analysis] UnsupportedRbField: {e}", file=sys.stderr)
+            return 4
+
+    csv_path = args.diff_csv
+    rows = _load_diff(csv_path)
     if args.bulk and not args.i_understand_the_risks:
         print("[apply_analysis] --bulk requires --i-understand-the-risks", file=sys.stderr)
         return 2
 
-    fields = {f.strip() for f in args.fields.split(",") if f.strip()}
-    only_tracks: set[str] | None = None
-    if args.tracks:
-        only_tracks = {t.strip() for t in args.tracks.split(",") if t.strip()}
+    fields = set(fields_list)
 
     from apps.sync.safety import (
         mark_cautious_success,
@@ -415,6 +413,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[apply_analysis] SafetyAbort: {e}", file=sys.stderr)
             return 3
 
+    from apps.shared.rekordbox_db import open_db
+
     try:
         rc = live_run(
             rows,
@@ -423,13 +423,12 @@ def main(argv: list[str] | None = None) -> int:
             flag_ok=args.i_understand_the_risks,
             rb_db_path=_live_rb_db_path(args.live),
             djay_db_path=_live_djay_db_path(args.live),
+            open_rb_db=open_db,
         )
     except SafetyAbort as e:
         print(f"[apply_analysis] SafetyAbort: {e}", file=sys.stderr)
         return 3
     except UnsupportedRbFieldError as e:
-        # Codex P04-02: non-zero exit on unsupported RB-side fields so
-        # the CLI no longer reports success after a partial apply.
         print(f"[apply_analysis] UnsupportedRbField: {e}", file=sys.stderr)
         return 4
 
@@ -442,4 +441,4 @@ if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
 
 
-__all__ = ["dry_run", "live_run", "main"]
+__all__ = ["UnpromotedLaneError", "dry_run", "live_run", "main"]

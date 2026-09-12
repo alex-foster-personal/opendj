@@ -1,0 +1,249 @@
+{
+  "schema": 1,
+  "measured_at": "Fri 11 Sep 2026",
+  "population": {
+    "present": 6,
+    "tracks_rows": 9986,
+    "djmd_content_live": 10479
+  },
+  "tracks": [
+    {
+      "stable_id": "phrase-exact",
+      "present": true,
+      "rb_bpm_x100": null,
+      "own_bpm": null,
+      "rb_key_scale_name": null,
+      "own_key_camelot": null,
+      "own_key_openkey": null,
+      "rb_pssi": true,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null,
+      "rb_phrases": [
+        {
+          "start_s": 0.0,
+          "end_s": 16.0,
+          "kind": 2,
+          "mood": 2
+        },
+        {
+          "start_s": 16.0,
+          "end_s": 32.0,
+          "kind": 4,
+          "mood": 2
+        }
+      ],
+      "own_phrases": [
+        {
+          "start_s": 0.0,
+          "end_s": 16.0,
+          "kind": 2,
+          "mood": 2
+        },
+        {
+          "start_s": 16.0,
+          "end_s": 32.0,
+          "kind": 4,
+          "mood": 2
+        }
+      ],
+      "rb_cue_db": false
+    },
+    {
+      "stable_id": "phrase-shift-0.4",
+      "present": true,
+      "rb_bpm_x100": null,
+      "own_bpm": null,
+      "rb_key_scale_name": null,
+      "own_key_camelot": null,
+      "own_key_openkey": null,
+      "rb_pssi": true,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null,
+      "rb_phrases": [
+        {
+          "start_s": 0.0,
+          "end_s": 16.0,
+          "kind": 2,
+          "mood": 2
+        },
+        {
+          "start_s": 16.0,
+          "end_s": 32.0,
+          "kind": 4,
+          "mood": 2
+        }
+      ],
+      "own_phrases": [
+        {
+          "start_s": 0.4,
+          "end_s": 16.4,
+          "kind": 2,
+          "mood": 2
+        },
+        {
+          "start_s": 16.4,
+          "end_s": 32.4,
+          "kind": 4,
+          "mood": 2
+        }
+      ],
+      "rb_cue_db": false
+    },
+    {
+      "stable_id": "phrase-shift-2.0",
+      "present": true,
+      "rb_bpm_x100": null,
+      "own_bpm": null,
+      "rb_key_scale_name": null,
+      "own_key_camelot": null,
+      "own_key_openkey": null,
+      "rb_pssi": true,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null,
+      "rb_phrases": [
+        {
+          "start_s": 0.0,
+          "end_s": 16.0,
+          "kind": 2,
+          "mood": 2
+        },
+        {
+          "start_s": 16.0,
+          "end_s": 32.0,
+          "kind": 4,
+          "mood": 2
+        }
+      ],
+      "own_phrases": [
+        {
+          "start_s": 2.0,
+          "end_s": 18.0,
+          "kind": 2,
+          "mood": 2
+        },
+        {
+          "start_s": 18.0,
+          "end_s": 34.0,
+          "kind": 4,
+          "mood": 2
+        }
+      ],
+      "rb_cue_db": false
+    },
+    {
+      "stable_id": "phrase-kind-miss",
+      "present": true,
+      "rb_bpm_x100": null,
+      "own_bpm": null,
+      "rb_key_scale_name": null,
+      "own_key_camelot": null,
+      "own_key_openkey": null,
+      "rb_pssi": true,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null,
+      "rb_phrases": [
+        {
+          "start_s": 0.0,
+          "end_s": 16.0,
+          "kind": 2,
+          "mood": 2
+        },
+        {
+          "start_s": 16.0,
+          "end_s": 32.0,
+          "kind": 4,
+          "mood": 2
+        }
+      ],
+      "own_phrases": [
+        {
+          "start_s": 0.0,
+          "end_s": 16.0,
+          "kind": 99,
+          "mood": 2
+        },
+        {
+          "start_s": 16.0,
+          "end_s": 32.0,
+          "kind": 88,
+          "mood": 2
+        }
+      ],
+      "rb_cue_db": false
+    },
+    {
+      "stable_id": "phrase-no-own",
+      "present": true,
+      "rb_bpm_x100": null,
+      "own_bpm": null,
+      "rb_key_scale_name": null,
+      "own_key_camelot": null,
+      "own_key_openkey": null,
+      "rb_pssi": true,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null,
+      "rb_phrases": [
+        {
+          "start_s": 0.0,
+          "end_s": 16.0,
+          "kind": 2,
+          "mood": 2
+        },
+        {
+          "start_s": 16.0,
+          "end_s": 32.0,
+          "kind": 4,
+          "mood": 2
+        }
+      ],
+      "rb_cue_db": false
+    },
+    {
+      "stable_id": "phrase-missing-pssi",
+      "present": true,
+      "rb_bpm_x100": null,
+      "own_bpm": null,
+      "rb_key_scale_name": null,
+      "own_key_camelot": null,
+      "own_key_openkey": null,
+      "rb_pssi": false,
+      "rb_ext_readable": true,
+      "rb_pvdi": false,
+      "rb_vocal_regions": null,
+      "own_vocal_regions": null,
+      "duration_s": null,
+      "own_phrases": [
+        {
+          "start_s": 0.0,
+          "end_s": 16.0,
+          "kind": 2,
+          "mood": 2
+        },
+        {
+          "start_s": 16.0,
+          "end_s": 32.0,
+          "kind": 4,
+          "mood": 2
+        }
+      ],
+      "rb_cue_db": false
+    }
+  ],
+  "round": 1,
+  "parity_round": 1
+}
