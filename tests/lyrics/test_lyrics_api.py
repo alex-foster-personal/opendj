@@ -16,7 +16,7 @@ from apps.shared.state import sync_stamp
 from apps.webui.server.app import create_app
 from apps.webui.server.sqlite_backend import SqliteBackend
 
-from .conftest import seed_track, use_local_mode, word
+from .conftest import use_local_mode, word
 
 WORDS = [
     word("one", start_s=1.0, end_s=1.4, score=-0.5, witness="contradict", line_final=False),

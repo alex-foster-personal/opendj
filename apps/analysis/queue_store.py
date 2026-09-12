@@ -546,7 +546,6 @@ from .queue_batch_lease import (  # noqa: E402
     take_batch_runner,
 )
 
-
 __all__ = [
     "BATCH_CANCELLED",
     "BATCH_DONE",

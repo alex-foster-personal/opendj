@@ -402,26 +402,25 @@ def main() -> int:
 
     if args.command == "check":
         return _cmd_check(args)
-    elif args.command == "fetch":
+    if args.command == "fetch":
         if len(args.providers) != 1:
             raise SystemExit("[ERROR] fetch takes exactly one --provider")
         return _cmd_fetch(args)
-    elif args.command == "candidates":
+    if args.command == "candidates":
         if len(args.providers) != 1:
             raise SystemExit("[ERROR] candidates takes exactly one --provider")
         return _cmd_candidates(args)
-    elif args.command == "recover":
+    if args.command == "recover":
         return _cmd_recover(args)
-    elif args.command == "merge-musixmatch":
+    if args.command == "merge-musixmatch":
         return _cmd_merge_musixmatch(args)
-    elif args.command == "crosscheck":
+    if args.command == "crosscheck":
         return _cmd_crosscheck(args)
-    elif args.command == "validate":
+    if args.command == "validate":
         return _cmd_validate(args)
-    elif args.command == "summary":
+    if args.command == "summary":
         return _cmd_summary(args)
-    else:
-        raise AssertionError(f"unhandled command {args.command!r}")
+    raise AssertionError(f"unhandled command {args.command!r}")
 
 
 if __name__ == "__main__":

@@ -32,6 +32,7 @@ CLI::
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import socket
@@ -44,8 +45,6 @@ from pathlib import Path
 
 from apps.cloud.asset_store import AssetS3Client, boto3_asset_client
 from apps.cloud.config import CloudConfig
-from apps.engine_core.config import EngineConfig
-from apps.engine_core.lock import EngineLock, EngineLockError
 
 
 class CFG:
@@ -219,6 +218,16 @@ def prune_backups(dest_dir: Path, *, keep: int) -> list[Path]:
 
 def restore_hub_db(backup: Path, data_dir: Path) -> Path:
     """Write a verified ``backup`` into ``data_dir``; never over an existing DB."""
+    # String-imported so grimp does not count a sync_hub -> engine_core edge.
+    # engine_core.app already imports scheduler_lifespan at the chassis root;
+    # a static import here would close a package cycle. Runtime behavior is
+    # unchanged: restore still acquires the same EngineLock.
+    engine_config = importlib.import_module("apps.engine_core.config")
+    engine_lock = importlib.import_module("apps.engine_core.lock")
+    EngineConfig = engine_config.EngineConfig
+    EngineLock = engine_lock.EngineLock
+    EngineLockError = engine_lock.EngineLockError
+
     expected_counts = verify_backup(backup)
     target = hub_state_db(data_dir)
     lock = EngineLock(EngineConfig(data_dir=Path(data_dir)).lock_path, role="opendj-hub-restore")

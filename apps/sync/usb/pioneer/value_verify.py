@@ -19,7 +19,6 @@ from apps.sync.usb.pioneer.reader import (
     read_usb_export,
 )
 from apps.sync.usb.pioneer.value_verify_sidecar import (
-    probe_odj_analysis_scalar,
     read_scalar_sidecar_from_onelibrary,
 )
 

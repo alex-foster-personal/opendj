@@ -43,9 +43,9 @@ class MusixmatchProvider:
         code = message.get("header", {}).get("status_code")
         if code == 401:
             raise SystemExit("[ERROR] musixmatch rejected the API key (401)")
-        elif code == 402:
+        if code == 402:
             raise SystemExit("[ERROR] musixmatch daily quota exhausted server-side (402)")
-        elif code != 200:
+        if code != 200:
             return None
         return message.get("body") or None
 

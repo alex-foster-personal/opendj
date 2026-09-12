@@ -7,8 +7,8 @@ thin call site. Tests read :func:`last_capture`; ``POST /login`` also exposes
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
 
 _inject_delay_s: float = 0.0
 _last: dict[str, float] | None = None

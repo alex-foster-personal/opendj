@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
 from apps.webui.server.app import create_app
-from apps.webui.server.auth import GoogleOAuthConfig, GoogleIdentity
+from apps.webui.server.auth import GoogleIdentity, GoogleOAuthConfig
 from apps.webui.server.auth_timing import inject_delay, last_capture, reset_inject_delay
 from tests.webui.test_auth import FAKE_CONFIG, _identity
 

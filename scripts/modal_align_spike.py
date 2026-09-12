@@ -199,7 +199,7 @@ class AlignWorker:
                     {"word": w, "start_s": s["start"], "end_s": s["end"], "score": s["score"]}
                     for w, s in zip(words, stamps, strict=True)
                 ]
-        except Exception as exc:  # noqa: BLE001 -- per-song isolation is the whole point
+        except Exception as exc:
             return {"name": name, "error": f"{type(exc).__name__}: {exc}",
                     "gpu_s": time.perf_counter() - t0}
         return {
@@ -239,7 +239,7 @@ def _resolve_audio_path(
             f"[ERROR] {name}: {len(existing)} audio candidates exist "
             f"({', '.join(str(p) for p in existing)}) -- ambiguous, need exactly 1"
         )
-    elif not existing:
+    if not existing:
         if missing_ok:
             return None
         raise SystemExit(
@@ -396,7 +396,7 @@ def cmd_align_files(args: argparse.Namespace) -> int:
         existing = [p for p in candidates if p.is_file()]
         if len(existing) > 1:
             raise SystemExit(f"[ERROR] {name}: {len(existing)} stem candidates exist -- ambiguous")
-        elif not existing:
+        if not existing:
             if not args.skip_missing_audio:
                 raise SystemExit(
                     f"[ERROR] {name}: no stem candidate exists "

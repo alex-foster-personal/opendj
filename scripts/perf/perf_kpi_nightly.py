@@ -6,8 +6,8 @@ import contextlib
 import datetime as dt
 import json
 import os
-import signal
 import shutil
+import signal
 import socket
 import statistics
 import subprocess

@@ -148,8 +148,8 @@ def fit_dynamic_grid(record_or_ref: Any, beat_times: Sequence[float] | None = No
 
 __all__ = [
     "ACTIVATIONS_DIR_ENV",
-    "ActivationsMissing",
     "FPS",
+    "ActivationsMissing",
     "activation_npz_name",
     "activations_ref",
     "default_activations_dir",
