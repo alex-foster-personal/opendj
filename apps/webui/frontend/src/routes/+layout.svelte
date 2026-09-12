@@ -28,6 +28,7 @@
 	import { entitlements } from '$lib/api/entitlements.svelte';
 	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
 	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
+	import PerformanceAppNav from '$lib/components/PerformanceAppNav.svelte';
 
 	let { children } = $props();
 
@@ -123,6 +124,7 @@
 
 {#if isPerformance}
 	{@render children()}
+	<PerformanceAppNav />
 {:else}
 <div class="app-shell">
 	<aside class="sidebar">
