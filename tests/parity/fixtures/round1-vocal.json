@@ -1,7 +1,6 @@
 {
   "schema": 1,
   "measured_at": "Fri 11 Sep 2026",
-  "parity_round": 1,
   "population": {
     "present": 10,
     "tracks_rows": 9986,
@@ -17,7 +16,6 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": true,
       "rb_vocal_regions": [
@@ -32,7 +30,8 @@
           "end_s": 89.5
         }
       ],
-      "duration_s": 100.0
+      "duration_s": 100.0,
+      "rb_cue_db": false
     },
     {
       "stable_id": "exact-key-c",
@@ -43,12 +42,12 @@
       "own_key_camelot": "8B",
       "own_key_openkey": "1d",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": true,
       "rb_vocal_regions": [],
       "own_vocal_regions": [],
-      "duration_s": 100.0
+      "duration_s": 100.0,
+      "rb_cue_db": false
     },
     {
       "stable_id": "bpm-within-0.1",
@@ -59,7 +58,6 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": true,
       "rb_vocal_regions": [
@@ -74,7 +72,8 @@
           "end_s": 100.0
         }
       ],
-      "duration_s": 100.0
+      "duration_s": 100.0,
+      "rb_cue_db": false
     },
     {
       "stable_id": "bpm-octave-half",
@@ -85,7 +84,6 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": true,
       "rb_vocal_regions": [],
@@ -95,7 +93,8 @@
           "end_s": 80.0
         }
       ],
-      "duration_s": 100.0
+      "duration_s": 100.0,
+      "rb_cue_db": false
     },
     {
       "stable_id": "key-relative",
@@ -106,7 +105,6 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": true,
       "rb_vocal_regions": [
@@ -121,7 +119,8 @@
           "end_s": 38.0
         }
       ],
-      "duration_s": null
+      "duration_s": null,
+      "rb_cue_db": false
     },
     {
       "stable_id": "missing-rb-bpm",
@@ -132,12 +131,12 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
       "rb_vocal_regions": null,
       "own_vocal_regions": null,
-      "duration_s": null
+      "duration_s": null,
+      "rb_cue_db": false
     },
     {
       "stable_id": "missing-rb-key",
@@ -148,12 +147,12 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
       "rb_vocal_regions": null,
       "own_vocal_regions": null,
-      "duration_s": null
+      "duration_s": null,
+      "rb_cue_db": false
     },
     {
       "stable_id": "no-own-bpm",
@@ -164,7 +163,6 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": true,
       "rb_vocal_regions": [
@@ -174,7 +172,8 @@
         }
       ],
       "own_vocal_regions": null,
-      "duration_s": null
+      "duration_s": null,
+      "rb_cue_db": false
     },
     {
       "stable_id": "no-own-key",
@@ -185,7 +184,6 @@
       "own_key_camelot": null,
       "own_key_openkey": null,
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": true,
       "rb_vocal_regions": [
@@ -200,7 +198,8 @@
           "end_s": 58.0
         }
       ],
-      "duration_s": 100.0
+      "duration_s": 100.0,
+      "rb_cue_db": false
     },
     {
       "stable_id": "ungradable-key-all",
@@ -211,12 +210,12 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
       "rb_vocal_regions": null,
       "own_vocal_regions": null,
-      "duration_s": null
+      "duration_s": null,
+      "rb_cue_db": false
     },
     {
       "stable_id": "absent-audio",
@@ -227,13 +226,14 @@
       "own_key_camelot": "8A",
       "own_key_openkey": "1m",
       "rb_pssi": false,
-      "rb_cue_db": false,
       "rb_ext_readable": true,
       "rb_pvdi": false,
       "rb_vocal_regions": null,
       "own_vocal_regions": null,
-      "duration_s": null
+      "duration_s": null,
+      "rb_cue_db": false
     }
   ],
-  "round": 1
+  "round": 1,
+  "parity_round": 1
 }
