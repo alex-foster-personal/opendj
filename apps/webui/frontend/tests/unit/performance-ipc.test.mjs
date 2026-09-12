@@ -1287,3 +1287,24 @@ test('queryPerformanceState reports the analysis source selection, as a snapshot
 		'an IPC consumer mutating its own snapshot must not write back into the toggle'
 	);
 });
+
+test('master command accepts optional lock and query exposes master_mode', async () => {
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'master', deck: 4, lock: true }),
+		[4, 'sync']
+	);
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'master', deck: 1, lock: true, extra: true }),
+			/unexpected fields/i
+		);
+		const state = ipc.queryPerformanceState();
+		assert.equal(state.master_mode, 'auto');
+		assert.equal(state.master_reason, null);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});

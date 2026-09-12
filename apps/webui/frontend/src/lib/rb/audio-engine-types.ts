@@ -7,6 +7,20 @@
  */
 
 import type { DeckId } from './deck-slots';
+
+export type MasterMode = 'auto' | 'locked';
+
+export type MasterReason =
+	| 'manual'
+	| 'play-claim'
+	| 'first-claim'
+	| 'master-left'
+	| 'unload'
+	| 'natural-end'
+	| 'beat-sync-enable'
+	| 'unlock-reelect'
+	| 'dispose'
+	| null;
 import type { DeckAudioSnapshot, QuantizeGrid, SyncMode } from './deck-state-types';
 import type { CrossfaderAssign, EqBand, HeadphoneOutputMode } from './mixer-types';
 import type { StemControl } from './stem-types';
@@ -73,7 +87,7 @@ export interface AudioEngine {
 	/** Select beat or bar phase alignment for Beat Sync. */
 	setSyncMode(deck: DeckId, mode: SyncMode): Promise<void>;
 	/** Elect one loaded deck as the globally exclusive master. */
-	setDeckMaster(deck: DeckId): Promise<void>;
+	setDeckMaster(deck: DeckId, options?: { lock?: boolean }): Promise<void>;
 	/** Mute one real stem group. Rejects unless aligned artifacts are ready. */
 	setStemMute(deck: DeckId, stem: StemControl, muted: boolean): void;
 	/** Solo one real stem group. Rejects unless aligned artifacts are ready. */
