@@ -715,7 +715,6 @@ export {
 	computeQuantizedLaunchArm,
 	QUANTIZED_LAUNCH
 } from '$lib/player/transport/quantized-launch';
-export { hasTrustedBeatGrid } from '$lib/player/grid-features';
 
 export function detectBeatgridIssue(beats: readonly AnlzBeat[]): BeatgridIssue | null {
 	if (!Array.isArray(beats) || beats.length < 2) return null;

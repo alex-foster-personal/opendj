@@ -160,7 +160,6 @@ import {
 	computeFollowerSyncPlan,
 	displayLoopFrom,
 	computeQuantizedLaunchArm,
-	hasTrustedBeatGrid,
 	planPhaseCompensatedReanchor,
 	playbackBpm,
 	quantizeToNearestBeat,
@@ -175,7 +174,8 @@ import {
 	effectiveQuantize,
 	gridFeatureInertTip,
 	gridFeaturesInert,
-	hasRealBeatGrid
+	hasRealBeatGrid,
+	hasTrustedBeatGrid
 } from '$lib/player/grid-features';
 import {
 	beatFourLeadInSec,
