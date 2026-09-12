@@ -146,3 +146,14 @@ test('every hover line explains the number next to it', () => {
 		assert.ok(hover.includes(line), `the hover lost its "${line}" line`);
 	}
 });
+
+test('LOW sample hover names tier and cap instead of UNCAPPED', () => {
+	const hover = model.memoryReadout({
+		...PCM_ONLY,
+		anlzCount: 8,
+		anlzCap: 8,
+		tierLabel: 'LOW'
+	}).hover;
+	assert.ok(!hover.includes('UNCAPPED'));
+	assert.match(hover, /8\/8 tracks, LOW/);
+});

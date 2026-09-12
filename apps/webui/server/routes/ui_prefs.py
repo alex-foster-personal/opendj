@@ -20,7 +20,9 @@ router = APIRouter(prefix="/ui-prefs", tags=["ui-prefs"])
 
 _FILENAME = "ui-prefs.json"
 UiTheme = Literal["dark", "light"]
+PerfTierPref = Literal["auto", "low", "standard", "high"]
 _DEFAULT_THEME: UiTheme = "dark"
+_DEFAULT_PERF_TIER: PerfTierPref = "auto"
 _DEFAULT_AUTO_SYNC: dict[str, bool] = {
     "rekordbox": False,
     "djay": False,
@@ -205,6 +207,21 @@ def _parse_lyrics(raw: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _parse_perf_tier(raw: dict[str, Any]) -> str:
+    if "perf_tier" not in raw:
+        return _DEFAULT_PERF_TIER
+    value = raw["perf_tier"]
+    if value not in ("auto", "low", "standard", "high"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "perf_tier must be auto|low|standard|high",
+            },
+        )
+    return value
+
+
 def _load(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {
@@ -216,6 +233,7 @@ def _load(path: Path) -> dict[str, Any]:
             "jog_radial_waveform": _DEFAULT_JOG_RADIAL_WAVEFORM,
             "show_agent_pins": _DEFAULT_SHOW_AGENT_PINS,
             "level_calibration": dict(_DEFAULT_LEVEL_CALIBRATION),
+            "perf_tier": _DEFAULT_PERF_TIER,
             **_lyrics_defaults(),
         }
     raw = json.loads(path.read_text(encoding="utf-8"))
@@ -281,6 +299,7 @@ def _load(path: Path) -> dict[str, Any]:
         "jog_radial_waveform": jog_radial,
         "show_agent_pins": show_agent_pins,
         "level_calibration": _parse_level_calibration(raw.get("level_calibration")),
+        "perf_tier": _parse_perf_tier(raw),
         **_parse_lyrics(raw),
     }
 
@@ -326,6 +345,7 @@ class UiPrefsOut(BaseModel):
     lyrics_load_strategy: LyricsLoadStrategy = _DEFAULT_LYRICS_LOAD_STRATEGY
     lyrics_waveform_overlay: bool = _DEFAULT_LYRICS_BOOLS["lyrics_waveform_overlay"]
     lyrics_deck_line: bool = _DEFAULT_LYRICS_BOOLS["lyrics_deck_line"]
+    perf_tier: PerfTierPref = _DEFAULT_PERF_TIER
 
 
 class UiPrefsPatch(BaseModel):
@@ -345,6 +365,7 @@ class UiPrefsPatch(BaseModel):
     lyrics_load_strategy: LyricsLoadStrategy | None = None
     lyrics_waveform_overlay: bool | None = None
     lyrics_deck_line: bool | None = None
+    perf_tier: PerfTierPref | None = None
 
 
 def _merge_lyrics(current: dict[str, Any], body: UiPrefsPatch) -> None:
@@ -387,6 +408,8 @@ def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
     if body.show_agent_pins is not None:
         current["show_agent_pins"] = body.show_agent_pins
     _merge_lyrics(current, body)
+    if body.perf_tier is not None:
+        current["perf_tier"] = body.perf_tier
     if body.level_calibration is not None:
         # R and M are independent (see LevelCalibrationOut docstring): merge onto
         # what's stored so a PUT naming only one half cannot silently wipe the

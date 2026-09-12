@@ -12,6 +12,7 @@
  */
 
 import { bootScheduler, type BootScheduler } from './boot-scheduler';
+import { applyExplicitPerfTierPref, fetchPerfTier } from './perf-tier-client';
 import { pressureIsElevated, readMachinePressure, startMachinePressurePolling } from './machine-pressure';
 import { installPerfEventLogGlobal } from './perf-event-log';
 import { anyDeckPlaying, startBackgroundDemandShed } from './playing-gate';
@@ -85,6 +86,10 @@ let _xrunsAtPrevious = 0;
  */
 export function startAppInstruments(scheduler: BootScheduler = bootScheduler): () => void {
 	installPerfEventLogGlobal();
+	if (uiPrefs.perf_tier !== 'auto') {
+		applyExplicitPerfTierPref(uiPrefs.perf_tier);
+	}
+	scheduler.defer('perf-tier:fetch', () => fetchPerfTier());
 	const stopBootScheduler = scheduler.start();
 	const stopUsageHeartbeat = startUsageHeartbeat(scheduler);
 	const stopReloadCountdown = installReloadCountdown();

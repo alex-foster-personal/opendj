@@ -24,6 +24,7 @@ import {
 	setLyricsLoadStrategy,
 	setLyricsWaveformOverlay,
 	setNextOnlyFilter,
+	setPerfTier,
 	setRemixesFilter,
 	setTechnicallyWorkingAnimate,
 	setTheme,
@@ -34,6 +35,7 @@ import {
 	type DeckLayoutMode,
 	type LibraryDensity,
 	type LyricsLoadStrategy,
+	type PerfTierPref,
 	type UiTheme
 } from '$lib/rb/prefs.svelte';
 import {
@@ -77,7 +79,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'confirm.delete_playlist',
 	'confirm.dblclick_load_play',
 	'wheel_sensitivity.mouse',
-	'wheel_sensitivity.trackpad'
+	'wheel_sensitivity.trackpad',
+	'perf_tier'
 ] as const;
 
 export type AllowedSettingKey = (typeof ALLOWED_SETTING_KEYS)[number];
@@ -160,6 +163,12 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return String(wheelSensitivity().mouse);
 		case 'wheel_sensitivity.trackpad':
 			return String(wheelSensitivity().trackpad);
+		case 'perf_tier':
+			return uiPrefs.perf_tier;
+		default: {
+			const _exhaustive: never = key;
+			throw new Error(`Unhandled setting key: ${_exhaustive}`);
+		}
 	}
 }
 
@@ -300,6 +309,22 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			const kind = key.slice('wheel_sensitivity.'.length) as WheelInputKind;
 			setWheelSensitivity(kind, _asFactor(value, key));
 			return;
+		}
+		case 'perf_tier': {
+			if (
+				value !== 'auto' &&
+				value !== 'low' &&
+				value !== 'standard' &&
+				value !== 'high'
+			) {
+				throw new Error(`perf_tier must be auto|low|standard|high, got ${String(value)}`);
+			}
+			setPerfTier(value as PerfTierPref);
+			return;
+		}
+		default: {
+			const _exhaustive: never = key;
+			throw new Error(`Unhandled setting key: ${_exhaustive}`);
 		}
 	}
 }

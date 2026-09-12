@@ -6240,6 +6240,62 @@
         "title": "HistoryGetOut",
         "type": "object"
       },
+      "HostInfoOut": {
+        "properties": {
+          "canary_elapsed_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canary Elapsed Ms"
+          },
+          "canary_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canary Error"
+          },
+          "canary_hashes_per_second": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canary Hashes Per Second"
+          },
+          "logical_cpus": {
+            "title": "Logical Cpus",
+            "type": "integer"
+          },
+          "ram_bytes": {
+            "title": "Ram Bytes",
+            "type": "integer"
+          },
+          "ram_gib": {
+            "title": "Ram Gib",
+            "type": "number"
+          }
+        },
+        "required": [
+          "logical_cpus",
+          "ram_bytes",
+          "ram_gib"
+        ],
+        "title": "HostInfoOut",
+        "type": "object"
+      },
       "HotCueMutationOut": {
         "properties": {
           "cue": {
@@ -9748,6 +9804,88 @@
           "client_timestamp"
         ],
         "title": "PerfSpanIn",
+        "type": "object"
+      },
+      "PerfTierHostOut": {
+        "properties": {
+          "logical_cpus": {
+            "title": "Logical Cpus",
+            "type": "integer"
+          },
+          "ram_bytes": {
+            "title": "Ram Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "logical_cpus",
+          "ram_bytes"
+        ],
+        "title": "PerfTierHostOut",
+        "type": "object"
+      },
+      "PerfTierOut": {
+        "properties": {
+          "auto_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Tier"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PerfTierHostOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "min_local_stems_tier": {
+            "title": "Min Local Stems Tier",
+            "type": "string"
+          },
+          "override": {
+            "title": "Override",
+            "type": "string"
+          },
+          "scalers": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "title": "Scalers",
+            "type": "object"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tier",
+          "source",
+          "override",
+          "min_local_stems_tier",
+          "scalers"
+        ],
+        "title": "PerfTierOut",
         "type": "object"
       },
       "PerformanceFeedbackMarkIn": {
@@ -16349,6 +16487,17 @@
             "title": "Lyrics Waveform Overlay",
             "type": "boolean"
           },
+          "perf_tier": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "low",
+              "standard",
+              "high"
+            ],
+            "title": "Perf Tier",
+            "type": "string"
+          },
           "show_agent_pins": {
             "default": true,
             "title": "Show Agent Pins",
@@ -16498,6 +16647,23 @@
               }
             ],
             "title": "Lyrics Waveform Overlay"
+          },
+          "perf_tier": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "low",
+                  "standard",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Perf Tier"
           },
           "show_agent_pins": {
             "anyOf": [
@@ -22071,6 +22237,30 @@
         ]
       }
     },
+    "/api/v1/host-info": {
+      "get": {
+        "operationId": "host_info_api_v1_host_info_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostInfoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "description": "host facts could not be measured"
+          }
+        },
+        "summary": "Host Info",
+        "tags": [
+          "health"
+        ]
+      }
+    },
     "/api/v1/ingest/config": {
       "get": {
         "operationId": "get_config_api_v1_ingest_config_get",
@@ -23793,6 +23983,30 @@
         "summary": "Delete Pairing",
         "tags": [
           "pairings"
+        ]
+      }
+    },
+    "/api/v1/perf-tier": {
+      "get": {
+        "operationId": "perf_tier_api_v1_perf_tier_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PerfTierOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "description": "auto tier cannot resolve without host facts"
+          }
+        },
+        "summary": "Perf Tier",
+        "tags": [
+          "health"
         ]
       }
     },

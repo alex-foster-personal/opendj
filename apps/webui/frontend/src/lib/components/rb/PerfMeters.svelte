@@ -33,6 +33,12 @@
 		MAX_AUDIO_PREFETCH_TRACKS
 	} from '$lib/rb/audio-prefetch-cache.svelte';
 	import {
+		anlzEntryCap,
+		prefetchTrackCap,
+		tierHoverSuffix,
+		tierLabelForHover
+	} from '$lib/rb/perf-tier';
+	import {
 		anlzCacheEntryCount,
 		anlzCacheEstimatedBytes,
 		invalidateAllAnlzCacheEntries
@@ -63,9 +69,9 @@
 	const cacheN = $derived(audioPrefetchReadyCount());
 	const cacheBytes = $derived(audioPrefetchReadyBytes());
 	const cacheHover = $derived(
-		`Prefetched audio tracks in memory: ${cacheN}/${MAX_AUDIO_PREFETCH_TRACKS} ` +
-			`(${Math.round(cacheBytes / (1024 * 1024))} / ${MAX_AUDIO_PREFETCH_BYTES / (1024 * 1024)} MiB). ` +
-			'LRU + byte budget - prevents RAM pressure that causes audible skips.'
+		`Prefetched audio tracks in memory: ${cacheN}/${MAX_AUDIO_PREFETCH_TRACKS()} ` +
+			`(${Math.round(cacheBytes / (1024 * 1024))} / ${MAX_AUDIO_PREFETCH_BYTES() / (1024 * 1024)} MiB). ` +
+			`LRU + byte budget - prevents RAM pressure that causes audible skips. ${tierHoverSuffix()}`
 	);
 
 	let monitorOpen = $state(false);
@@ -112,7 +118,9 @@
 			anlzMB: Math.round(anlzCacheEstimatedBytes() / (1024 * 1024)),
 			anlzCount: anlzCacheEntryCount(),
 			prefetchMB: Math.round(cacheBytes / (1024 * 1024)),
-			prefetchCount: cacheN
+			prefetchCount: cacheN,
+			anlzCap: anlzEntryCap(),
+			tierLabel: tierLabelForHover()
 		});
 		if (
 			readout.text === memoryText &&

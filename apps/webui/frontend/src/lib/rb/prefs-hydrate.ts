@@ -10,6 +10,7 @@ import {
 } from './deck-layout-prefs';
 import { makeDiskWriteChain } from './disk-write-chain';
 import { LYRICS_BOOLEAN_KEYS, LYRICS_LOAD_STRATEGIES, type LyricsLoadStrategy } from './lyrics-prefs';
+import { PERF_TIER_PREFS, type PerfTierPref } from './perf-tier-prefs';
 import { parseAutoSync, parseLevelCalibration } from './prefs-fields';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
 
@@ -37,6 +38,7 @@ export type DiskPrefsPatch = {
 	lyrics_load_strategy?: LyricsLoadStrategy;
 	lyrics_waveform_overlay?: boolean;
 	lyrics_deck_line?: boolean;
+	perf_tier?: PerfTierPref;
 };
 
 async function _putDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
@@ -70,6 +72,7 @@ export interface PrefsHydrateTarget {
 	lyrics_load_strategy: LyricsLoadStrategy;
 	lyrics_waveform_overlay: boolean;
 	lyrics_deck_line: boolean;
+	perf_tier: PerfTierPref;
 }
 
 /** The five boolean lyric prefs hydrate in one loop rather than five ifs. */
@@ -140,6 +143,12 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 				);
 			}
 			_hydrateLyrics(uiPrefs, body);
+			if (
+				body.perf_tier !== undefined &&
+				(PERF_TIER_PREFS as readonly string[]).includes(body.perf_tier)
+			) {
+				uiPrefs.perf_tier = body.perf_tier;
+			}
 			persist();
 		} catch {
 			/* ignore */

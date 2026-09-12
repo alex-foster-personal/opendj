@@ -23,11 +23,16 @@
  */
 import { audioUrl } from '$lib/rb/api-rb';
 import { recordAudioPrefetchSampled } from '$lib/rb/library-perf';
+import { prefetchByteCap, prefetchTrackCap } from '$lib/rb/perf-tier';
 
-/** Soft cap on how many full files stay warm. 4 ~= one browse-ahead. */
-export const MAX_AUDIO_PREFETCH_TRACKS = 4;
-/** Hard byte budget (~48 MiB). Primary RAM brake vs track count alone. */
-export const MAX_AUDIO_PREFETCH_BYTES = 48 * 1024 * 1024;
+/** Soft cap on how many full files stay warm. Tier-driven via perf-tier. */
+export function MAX_AUDIO_PREFETCH_TRACKS(): number {
+	return prefetchTrackCap();
+}
+/** Hard byte budget. Tier-driven via perf-tier. */
+export function MAX_AUDIO_PREFETCH_BYTES(): number {
+	return prefetchByteCap();
+}
 
 export type AudioPrefetchStatus = 'loading' | 'ready' | 'error';
 
@@ -69,8 +74,8 @@ function _readyCount(): number {
 
 function _evictLruUntilFit(extraBytes: number): void {
 	while (
-		(_readyCount() >= MAX_AUDIO_PREFETCH_TRACKS ||
-			_readyBytesTotal() + extraBytes > MAX_AUDIO_PREFETCH_BYTES) &&
+		(_readyCount() >= MAX_AUDIO_PREFETCH_TRACKS() ||
+			_readyBytesTotal() + extraBytes > MAX_AUDIO_PREFETCH_BYTES()) &&
 		_readyCount() > 0
 	) {
 		let victim: string | null = null;
@@ -90,7 +95,7 @@ function _evictLruUntilFit(extraBytes: number): void {
 function _insertReady(stable_id: string, bytes: ArrayBuffer): void {
 	_evictLruUntilFit(bytes.byteLength);
 	// Still over budget for a single huge file: keep it only if alone.
-	if (bytes.byteLength > MAX_AUDIO_PREFETCH_BYTES) {
+	if (bytes.byteLength > MAX_AUDIO_PREFETCH_BYTES()) {
 		for (const sid of Object.keys(_entries)) {
 			if (_entries[sid]?.status === 'ready') delete _entries[sid];
 		}
@@ -199,6 +204,11 @@ export function audioPrefetchReadyCount(): number {
 /** Ready bytes total for TopBar hover detail. */
 export function audioPrefetchReadyBytes(): number {
 	return _readyBytesTotal();
+}
+
+/** Re-run LRU eviction after a tier cap change. */
+export function applyPrefetchCaps(): void {
+	_evictLruUntilFit(0);
 }
 
 /**

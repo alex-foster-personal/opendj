@@ -60,6 +60,10 @@ export interface MemorySample {
 	anlzCount: number;
 	prefetchMB: number;
 	prefetchCount: number;
+	/** Active ANLZ LRU cap; defaults to STANDARD when omitted. */
+	anlzCap?: number;
+	/** Active tier label for hover; defaults to STANDARD when omitted. */
+	tierLabel?: string;
 }
 
 export interface MemoryReadout {
@@ -116,6 +120,8 @@ export function memoryReadout(sample: MemorySample): MemoryReadout {
 	const critMB = heapMeasured ? HEAP_PLUS_PCM_CRIT_MB : PCM_ONLY_CRIT_MB;
 	const level: MemoryReadout['level'] =
 		totalMB > critMB ? 'crit' : totalMB > warnMB ? 'warn' : 'ok';
+	const anlzCap = sample.anlzCap ?? 32;
+	const tierLabel = sample.tierLabel ?? 'STANDARD';
 
 	const basis = heapMeasured ? 'JS heap + decoded PCM' : 'decoded PCM only';
 	const heapLine = heapMeasured
@@ -137,7 +143,7 @@ export function memoryReadout(sample: MemorySample): MemoryReadout {
 		hover:
 			`Approx retained: ${totalMB} MB (${basis})\n` +
 			`${heapLine}\n` +
-			`• ANLZ cache: ~${sample.anlzMB} MB (${sample.anlzCount} tracks, UNCAPPED, in heap${outsideTotal})\n` +
+			`• ANLZ cache: ~${sample.anlzMB} MB (${sample.anlzCount}/${anlzCap} tracks, ${tierLabel}, in heap${outsideTotal})\n` +
 			`• Deck PCM (+ 4 stems when ready): ${sample.pcmMB} MB\n` +
 			`• Audio prefetch: ${sample.prefetchMB} MB (${sample.prefetchCount} tracks, in heap${outsideTotal})\n` +
 			thresholdLine
