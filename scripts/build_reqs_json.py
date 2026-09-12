@@ -17,6 +17,8 @@ file has a stable shape):
     ``- [x] **RECON-01** ...`` or ``- [ ] **RECON-01** ...`` / ``- **CROSS-01**``
     become requirements. ``[x]`` = shipped, ``[ ]`` = pending, no-checkbox = pending.
   * ``(shipped Phase N)`` inline tags populate ``shipped_phase``.
+  * Indented non-bullet, non-stopper lines after a requirement bullet join
+    ``desc`` (wrapped descriptions; issue #1683).
   * The traceability table feeds each requirement's ``phase`` field.
 """
 from __future__ import annotations
@@ -43,6 +45,8 @@ COVERAGE_MATRIX_TEMPLATE: Path = REPO_ROOT / "coverage-matrix.md"
 # Each segment can also mix in digits after its leading letter (A11Y), which
 # widened it a second time after A11Y-01/A11Y-02 parsed as nothing at all --
 # same silent-miss shape, caught only by grepping reqs.json by hand.
+# Wrapped continuation lines used to truncate ``desc`` with no error (issue
+# #1683), same silent-miss class as those two.
 _CODE = r"[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*"
 # A full requirement id (e.g. "A11Y-01", "SYNC-ONEWAY-04c"): a category code
 # plus its numeric suffix. Every place in this file that recognizes a
@@ -60,6 +64,27 @@ _BULLET_V2_RE = re.compile(
     rf"^-\s+(?:\[( |x)\]\s+)?\*\*({_REQ_ID})\*\*\s*:?\s*(.*)$"
 )
 _SHIPPED_PHASE_RE = re.compile(r"\(shipped\s+(Phase\s+[\w.]+)\)", re.IGNORECASE)
+_CONTINUATION_STOP_PREFIXES = ("-", "#", ">", "<!--", "|")
+
+
+def _is_description_continuation(line: str) -> bool:
+    if line.strip() == "":
+        return False
+    if not line[:1].isspace():
+        return False
+    stripped = line.lstrip()
+    return not stripped.startswith(_CONTINUATION_STOP_PREFIXES)
+
+
+def _continuation_text(lines: list[str], bullet_index: int) -> str:
+    parts: list[str] = []
+    j = bullet_index + 1
+    while j < len(lines) and _is_description_continuation(lines[j]):
+        piece = lines[j].strip()
+        if piece:
+            parts.append(piece)
+        j += 1
+    return " ".join(parts)
 
 
 def _read_lines(src: Path) -> list[str]:
@@ -112,7 +137,8 @@ def _parse_v1(lines: list[str]) -> dict:
         if sm:
             shipped_phase = sm.group(1)
         # Strip leading "(shipped …):" / ":" and return the rest as description.
-        desc = rest
+        cont = _continuation_text(lines, i)
+        desc = f"{rest} {cont}" if cont else rest
         desc = _SHIPPED_PHASE_RE.sub("", desc).strip()
         desc = desc.lstrip(":").strip()
         # Also drop a leading paren-tag like "(shipped ...)" leftovers and
@@ -161,8 +187,10 @@ def _parse_v2(lines: list[str]) -> dict:
         m_b = _BULLET_V2_RE.match(line.lstrip())
         if not m_b:
             continue
-        check, rid, desc = m_b.group(1), m_b.group(2), m_b.group(3).strip()
+        check, rid, rest = m_b.group(1), m_b.group(2), m_b.group(3).strip()
         status = "shipped" if check == "x" else "pending"
+        cont = _continuation_text(lines, i)
+        desc = f"{rest} {cont}" if cont else rest
         # Infer code from the bullet's prefix if the heading was free-text.
         if current_code is None:
             current_code = rid.split("-", 1)[0]
