@@ -17,6 +17,10 @@ import {
 } from '$lib/rb/audio-context-watchdog';
 import { installOutputRebind, type OutputRebindHandle } from '$lib/rb/audio-output-rebind';
 import { installOutputLiveness, type AudioOutputSnapshot } from '$lib/rb/audio-output-liveness';
+import {
+	installOutputStallRecovery,
+	type OutputStallRecoveryHandle
+} from '$lib/rb/audio-output-stall-recovery';
 import { clearAudioOutputHealth, setAudioOutputHealth } from '$lib/rb/audio-output-health.svelte';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
@@ -142,6 +146,7 @@ export function armXrunSentinel(ctx: AudioContext): void {
  */
 let _outputRebind: OutputRebindHandle | null = null;
 let _outputLiveness: ReturnType<typeof installOutputLiveness> | null = null;
+let _outputStallRecovery: OutputStallRecoveryHandle | null = null;
 let _watchdogDetach: (() => void) | null = null;
 let _recoveryEdgesDetach: (() => void) | null = null;
 
@@ -206,6 +211,7 @@ export function disarmContextInstrumentation(): void {
 	// stops it, and `_ensureGraph` arms a fresh one on the way back in.
 	_outputLiveness?.uninstall();
 	_outputLiveness = null;
+	_outputStallRecovery = null;
 	// Same identity-scoped teardown as the two above. The watchdog's recovery
 	// listener sits on a module-level fan-out, so one left behind by a route
 	// unmount answers every later device change by resuming a CLOSED context.
@@ -240,7 +246,8 @@ export function disarmContextInstrumentation(): void {
  */
 export function armAudioContextWatchdog(
 	ctx: AudioContext,
-	isAnyDeckPlaying: () => boolean
+	isAnyDeckPlaying: () => boolean,
+	recreateGraph: (() => Promise<void>) | null = null
 ): void {
 	ctx.addEventListener('statechange', () => {
 		if (ctx.state === 'running') stampContextDeviceFloors(ctx);
@@ -287,6 +294,12 @@ export function armAudioContextWatchdog(
 		isAnyDeckPlaying,
 		typeof navigator !== 'undefined' && navigator.mediaDevices ? navigator.mediaDevices : null
 	);
+	_outputStallRecovery = installOutputStallRecovery(_outputRebind, {
+		recreateGraph,
+		pushToast,
+		recordPerfEvent: (kind, message, severity) => recordPerfEvent(kind, message, null, severity),
+		now: () => performance.now()
+	});
 	// A context can be `running`, advancing, and rendering into a dead device
 	// (Wed 2 Sep 2026 18:33: no sound, every other signal green). The only
 	// device-level tell the browser gives is outputLatency staying 0.
@@ -298,6 +311,10 @@ export function armAudioContextWatchdog(
 			recordPerfEvent: (kind, message, severity) => recordPerfEvent(kind, message, null, severity),
 			setInterval: (fn, ms) => setInterval(fn, ms),
 			clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
+			now: () => performance.now(),
+			recoverOutput: () => {
+				void _outputStallRecovery?.recover();
+			},
 			onSnapshot: (snapshot) => setAudioOutputHealth(snapshot)
 		},
 		isAnyDeckPlaying

@@ -75,7 +75,11 @@ export function buildUiMirror(): Record<string, unknown> {
 				stable_id: deck.stable_id,
 				title: deck.title, artist: deck.artist, key: deck.key, bpm: deck.bpm,
 				effective_bpm: deck.effective_bpm, position: _position(deck), playing: deck.playing,
-				audible: deck.audible && silence.verdict !== 'silent-while-playing' && deviceLiveness.verdict !== 'device-unreachable',
+				audible:
+					deck.audible &&
+					silence.verdict !== 'silent-while-playing' &&
+					silence.verdict !== 'output-stalled-while-rendering' &&
+					deviceLiveness.verdict !== 'device-unreachable',
 				presentation_clock: { trust: deck.transport_clock.source === 'audio_output' && deck.transport_clock.desired_revision === deck.transport_clock.presented_revision ? 'trusted' : 'untrusted', ...deck.transport_clock },
 				loop: deck.loop, hot_cues: deck.hot_cue_slots, pitch: deck.pitch,
 				sync: { mode: deck.sync_mode, enabled: deck.beat_sync_enabled }, stems: deck.stems,
@@ -86,6 +90,9 @@ export function buildUiMirror(): Record<string, unknown> {
 		toasts: [
 			...toasts.map((toast) => ({ id: toast.logId, kind: toast.kind, message: toast.message })),
 			...(silence.verdict === 'silent-while-playing' ? [{ id: 'silent-while-playing' }] : []),
+			...(silence.verdict === 'output-stalled-while-rendering'
+				? [{ id: 'output-stalled-while-rendering' }]
+				: []),
 			...(deviceLiveness.verdict === 'device-unreachable' ? [{ id: 'output-device-unreachable' }] : [])
 		],
 		// AGENT-02 parity for audio health, and the durable half of the toast
