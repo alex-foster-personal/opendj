@@ -45,13 +45,15 @@ export type HeadphoneOutput = (typeof mixerState)['headphones']['outputs'][numbe
  */
 export type MonitorSource = () => { context: AudioContext; masterGain: GainNode };
 
-/** Legal `HeadphoneState.output_mode` values. `split_cable` is CUEOUT-02. */
-export const HEADPHONE_OUTPUT_MODES = ['practice', 'two_outputs'] as const;
+/** Legal `HeadphoneState.output_mode` values. */
+export const HEADPHONE_OUTPUT_MODES = ['practice', 'two_outputs', 'split_cable'] as const;
 export type HeadphoneOutputMode = (typeof HEADPHONE_OUTPUT_MODES)[number];
 
 export function assertHeadphoneOutputMode(mode: unknown): asserts mode is HeadphoneOutputMode {
-	if (mode !== 'practice' && mode !== 'two_outputs') {
-		throw new TypeError(`headphone output_mode must be practice or two_outputs; got ${String(mode)}`);
+	if (!HEADPHONE_OUTPUT_MODES.includes(mode as HeadphoneOutputMode)) {
+		throw new TypeError(
+			`headphone output_mode must be practice, two_outputs, or split_cable; got ${String(mode)}`
+		);
 	}
 }
 
@@ -66,10 +68,26 @@ export function practiceMainGains(
 	if (selectedOutputDeviceId !== null && typeof selectedOutputDeviceId !== 'string') {
 		throw new TypeError('selected headphone output device id must be a string or null');
 	}
+	if (mode === 'split_cable') {
+		return { cue: 0, master: 0 };
+	}
 	if (mode !== 'practice' || selectedOutputDeviceId !== null) {
 		return { cue: 0, master: 1 };
 	}
 	return headphoneMixGains(mix);
+}
+
+/** Split-cable L/R gains. Left is master-only mono; right carries cue and MIX master. */
+export function splitCableGains(
+	mode: unknown,
+	mix: number
+): { left: number; rightCue: number; rightMaster: number } {
+	assertHeadphoneOutputMode(mode);
+	if (mode !== 'split_cable') {
+		return { left: 0, rightCue: 0, rightMaster: 0 };
+	}
+	const { cue, master } = headphoneMixGains(mix);
+	return { left: 1, rightCue: cue, rightMaster: master };
 }
 
 /** The monitor graph: channel cue sum and a master tap, blended equal-power,
@@ -86,6 +104,18 @@ export interface HeadphoneNodes {
 	element: HTMLAudioElement;
 	practiceCueMix: GainNode;
 	practiceMasterMix: GainNode;
+	masterSplitter: ChannelSplitterNode;
+	cueSplitter: ChannelSplitterNode;
+	masterLeftHalf: GainNode;
+	masterRightHalf: GainNode;
+	cueLeftHalf: GainNode;
+	cueRightHalf: GainNode;
+	masterMono: GainNode;
+	cueMono: GainNode;
+	splitLeftGain: GainNode;
+	splitRightCueGain: GainNode;
+	splitRightMasterGain: GainNode;
+	splitMerger: ChannelMergerNode;
 }
 
 let _headphoneNodes: HeadphoneNodes | null = null;
@@ -260,6 +290,10 @@ export function applyHeadphoneMix(): void {
 	);
 	_setMonitorParam(nodes, nodes.practiceCueMix.gain, practice.cue);
 	_setMonitorParam(nodes, nodes.practiceMasterMix.gain, practice.master);
+	const split = splitCableGains(mixerState.headphones.output_mode, mix);
+	_setMonitorParam(nodes, nodes.splitLeftGain.gain, split.left);
+	_setMonitorParam(nodes, nodes.splitRightCueGain.gain, split.rightCue);
+	_setMonitorParam(nodes, nodes.splitRightMasterGain.gain, split.rightMaster);
 	nodes.delay.delayTime.setValueAtTime(
 		headDelaySeconds(mixerState.headphones.head_delay_ms),
 		nodes.level.context.currentTime
@@ -352,6 +386,31 @@ export function wirePracticeBlendIntoMasterPath(
 	nodes.practiceCueMix.connect(muteGain);
 }
 
+/** Split-cable path: mono master on L, mono cue (plus MIX master) on R of the main output. */
+export function wireSplitCableIntoMasterPath(
+	masterGain: GainNode,
+	muteGain: GainNode,
+	nodes: HeadphoneNodes
+): void {
+	masterGain.connect(nodes.masterSplitter);
+	nodes.masterSplitter.connect(nodes.masterLeftHalf, 0, 0);
+	nodes.masterSplitter.connect(nodes.masterRightHalf, 1, 0);
+	nodes.masterLeftHalf.connect(nodes.masterMono);
+	nodes.masterRightHalf.connect(nodes.masterMono);
+	nodes.masterMono.connect(nodes.splitLeftGain);
+	nodes.splitLeftGain.connect(nodes.splitMerger, 0, 0);
+	nodes.masterMono.connect(nodes.splitRightMasterGain);
+	nodes.splitRightMasterGain.connect(nodes.splitMerger, 0, 1);
+	nodes.cueSum.connect(nodes.cueSplitter);
+	nodes.cueSplitter.connect(nodes.cueLeftHalf, 0, 0);
+	nodes.cueSplitter.connect(nodes.cueRightHalf, 1, 0);
+	nodes.cueLeftHalf.connect(nodes.cueMono);
+	nodes.cueRightHalf.connect(nodes.cueMono);
+	nodes.cueMono.connect(nodes.splitRightCueGain);
+	nodes.splitRightCueGain.connect(nodes.splitMerger, 0, 1);
+	nodes.splitMerger.connect(muteGain);
+}
+
 function _headphoneError(operation: string, error: unknown): Error {
 	const message = error instanceof Error ? error.message : String(error);
 	mixerState.headphones.error = `${operation}: ${message}`;
@@ -407,6 +466,25 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 	const delay = context.createDelay(HEAD_DELAY_MAX_MS / 1000);
 	const practiceCueMix = context.createGain();
 	const practiceMasterMix = context.createGain();
+	const masterSplitter = context.createChannelSplitter(2);
+	const cueSplitter = context.createChannelSplitter(2);
+	const masterLeftHalf = context.createGain();
+	const masterRightHalf = context.createGain();
+	const cueLeftHalf = context.createGain();
+	const cueRightHalf = context.createGain();
+	const masterMono = context.createGain();
+	const cueMono = context.createGain();
+	const splitLeftGain = context.createGain();
+	const splitRightCueGain = context.createGain();
+	const splitRightMasterGain = context.createGain();
+	const splitMerger = context.createChannelMerger(2);
+	masterLeftHalf.gain.value = 0.5;
+	masterRightHalf.gain.value = 0.5;
+	cueLeftHalf.gain.value = 0.5;
+	cueRightHalf.gain.value = 0.5;
+	splitLeftGain.gain.value = 0;
+	splitRightCueGain.gain.value = 0;
+	splitRightMasterGain.gain.value = 0;
 	const destination = context.createMediaStreamDestination();
 	const element = _createDetachedHeadphoneElement();
 	cueSum.connect(cueMix);
@@ -426,7 +504,19 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 		destination,
 		element,
 		practiceCueMix,
-		practiceMasterMix
+		practiceMasterMix,
+		masterSplitter,
+		cueSplitter,
+		masterLeftHalf,
+		masterRightHalf,
+		cueLeftHalf,
+		cueRightHalf,
+		masterMono,
+		cueMono,
+		splitLeftGain,
+		splitRightCueGain,
+		splitRightMasterGain,
+		splitMerger
 	};
 	applyHeadphoneMix();
 	return _headphoneNodes;
@@ -454,7 +544,19 @@ function _disposeHeadphoneGraph(): void {
 		nodes.delay,
 		nodes.destination,
 		nodes.practiceCueMix,
-		nodes.practiceMasterMix
+		nodes.practiceMasterMix,
+		nodes.masterSplitter,
+		nodes.cueSplitter,
+		nodes.masterLeftHalf,
+		nodes.masterRightHalf,
+		nodes.cueLeftHalf,
+		nodes.cueRightHalf,
+		nodes.masterMono,
+		nodes.cueMono,
+		nodes.splitLeftGain,
+		nodes.splitRightCueGain,
+		nodes.splitRightMasterGain,
+		nodes.splitMerger
 	]) {
 		node.disconnect();
 	}
@@ -495,7 +597,7 @@ export async function refreshHeadphoneOutputs(): Promise<void> {
 	}
 	mixerState.headphones.active = reconciled.active;
 	mixerState.headphones.selected_output_device_id = reconciled.selected_output_device_id;
-	if (reconciled.selected_output_device_id === null) {
+	if (reconciled.selected_output_device_id === null && mixerState.headphones.output_mode === 'two_outputs') {
 		mixerState.headphones.output_mode = 'practice';
 	}
 	mixerState.headphones.error = null;

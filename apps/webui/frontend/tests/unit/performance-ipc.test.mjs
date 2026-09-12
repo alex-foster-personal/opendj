@@ -59,6 +59,7 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_output_select', device_id: 'usb' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'practice' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'two_outputs' }), ['headphone']);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'split_cable' }), ['headphone']);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'head_delay_ms', value: 40 }), null);
 	assert.deepEqual(
 		ipc.performanceCommandQueueScopes({ type: 'analysis_source', feature: 'beatgrid', source: 'own' }),
@@ -1037,25 +1038,25 @@ test('mixer headphone controls use the typed dispatcher from every visible contr
 
 // requirement: CUEOUT-01
 // [if] output_mode is set outside the enum via IPC [then] the command throws and state is unchanged
-test('output_mode IPC rejects unknown modes without changing headphone state', async () => {
+test('output_mode IPC accepts split_cable and rejects unknown modes', async () => {
 	globalThis.window = {};
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
 		const before = ipc.queryPerformanceState().mixer.headphones;
 		assert.equal(before.output_mode, 'practice');
-		await assert.rejects(
-			ipc.dispatchPerformanceCommand({ type: 'output_mode', mode: 'split_cable' }),
-			/practice or two_outputs/i
-		);
-		await assert.rejects(
-			ipc.dispatchPerformanceCommand({ type: 'output_mode', mode: 'nope' }),
-			/practice or two_outputs/i
-		);
-		assert.deepEqual(ipc.queryPerformanceState().mixer.headphones, before);
-		await ipc.dispatchPerformanceCommand({ type: 'output_mode', mode: 'two_outputs' });
-		assert.equal(ipc.queryPerformanceState().mixer.headphones.output_mode, 'two_outputs');
+		await ipc.dispatchPerformanceCommand({ type: 'output_mode', mode: 'split_cable' });
+		assert.equal(ipc.queryPerformanceState().mixer.headphones.output_mode, 'split_cable');
 		await ipc.dispatchPerformanceCommand({ type: 'output_mode', mode: 'practice' });
 		assert.equal(ipc.queryPerformanceState().mixer.headphones.output_mode, 'practice');
+		await ipc.dispatchPerformanceCommand({ type: 'output_mode', mode: 'split_cable' });
+		assert.equal(ipc.queryPerformanceState().mixer.headphones.output_mode, 'split_cable');
+		await ipc.dispatchPerformanceCommand({ type: 'output_mode', mode: 'two_outputs' });
+		assert.equal(ipc.queryPerformanceState().mixer.headphones.output_mode, 'two_outputs');
+		await assert.rejects(
+			ipc.dispatchPerformanceCommand({ type: 'output_mode', mode: 'nope' }),
+			/split_cable/
+		);
+		assert.equal(ipc.queryPerformanceState().mixer.headphones.output_mode, 'two_outputs');
 	} finally {
 		uninstall();
 		delete globalThis.window;
