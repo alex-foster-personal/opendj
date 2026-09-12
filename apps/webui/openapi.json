@@ -25264,6 +25264,40 @@
       }
     },
     "/api/v1/smartlists/{smartlist_id}": {
+      "delete": {
+        "description": "Remove a smartlist row (hard delete via SmartlistsRepo.delete).",
+        "operationId": "delete_smartlist_api_v1_smartlists__smartlist_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "smartlist_id",
+            "required": true,
+            "schema": {
+              "title": "Smartlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Smartlist",
+        "tags": [
+          "smartlists"
+        ]
+      },
       "get": {
         "operationId": "get_smartlist_api_v1_smartlists__smartlist_id__get",
         "parameters": [

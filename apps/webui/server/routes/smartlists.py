@@ -12,6 +12,8 @@ The rule editor and agents share this router's contract:
   * ``GET  /api/v1/smartlists/{id}``           -- one summary.
   * ``PUT  /api/v1/smartlists/{id}``           -- complete rule replacement,
     requiring the detail response ETag through ``If-Match``.
+  * ``DELETE /api/v1/smartlists/{id}``         -- remove a smartlist (hard
+    delete; no ``deleted_at`` column on this table yet).
   * ``GET  /api/v1/smartlists/{id}/tracks``    -- live evaluation:
     ordered ``items`` (stable_ids) + hydrated ``tracks`` rows shaped
     exactly like playlist detail (:class:`..models.TrackRowOut`).
@@ -454,6 +456,31 @@ def update_smartlist(
     response.headers["ETag"] = _etag(smartlist_revision(row))
     publish("library.changed", {"kind": "smartlists", "ids": [smartlist_id]})
     return _to_summary(row)
+
+
+@router.delete(
+    "/{smartlist_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_smartlist(
+    smartlist_id: str,
+    _backend: Annotated[StateBackend, Depends(get_write_state)],
+    conn: Annotated[sqlite3.Connection, Depends(get_smartlists_write_conn)],
+) -> Response:
+    """Remove a smartlist row (hard delete via SmartlistsRepo.delete)."""
+    if not _table_exists(conn, "smartlists"):
+        raise HTTPException(status_code=404, detail={
+            "code": "SMARTLIST_NOT_FOUND",
+            "message": f"smartlist not found: {smartlist_id}",
+        })
+    removed = SmartlistsRepo(conn, ensure_schema=False).delete(smartlist_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail={
+            "code": "SMARTLIST_NOT_FOUND",
+            "message": f"smartlist not found: {smartlist_id}",
+        })
+    publish("library.changed", {"kind": "smartlists", "ids": [smartlist_id]})
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{smartlist_id}/tracks", response_model=SmartlistTracks)

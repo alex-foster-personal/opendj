@@ -19,9 +19,9 @@
 	import { type PlaylistTint, playlistTintOf } from './pane-contract.svelte';
 	import TreeCurrentFold from './TreeCurrentFold.svelte';
 	import { TreeFoldTracker } from './tree-fold-tracker.svelte';
-	import { TreeSmartlists } from './tree-smartlists.svelte';
 	import { TreePlaylistRename } from './tree-playlist-rename.svelte';
 	import TreeContextMenu from './TreeContextMenu.svelte';
+	import TreeSmartlistSection from './TreeSmartlistSection.svelte';
 	import MissingTracksFolder from './MissingTracksFolder.svelte';
 	import { MISSING_TRACKS_ID, missingTracksNode } from './missing-tracks';
 	import PlaylistHistoryPanel from './PlaylistHistoryPanel.svelte';
@@ -98,6 +98,7 @@
 	/** playlist_id currently under a track drag, for the drop outline. */
 	let dropTargetId: string | null = $state(null);
 	let treeContextMenu = $state<TreeContextMenu | null>(null);
+	let deleteSmartlistUi: ((sl: { id: string; name: string }) => void) | undefined;
 
 	function _onTrackDragOver(event: DragEvent, node: PlaylistNode): void {
 		// All Tracks is a view, not a playlist, so it can never receive a drop.
@@ -155,8 +156,6 @@
 		if (mode === 'column') columnMounted = true;
 	});
 	let playlistsOpen = $state(true);
-	/** Smartlists tree-section state (tree-smartlists.svelte.ts). */
-	const smartlists = new TreeSmartlists(() => onselectsmartlist);
 
 	const allNode = $derived<PlaylistNode>({
 		playlist_id: 'all',
@@ -207,7 +206,7 @@
 
 <div class="tree-root">
 	<PlaylistHistoryPanel />
-	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} {onselect} />
+	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} {onselect} ondeletesmartlist={(sl) => deleteSmartlistUi?.(sl)} />
 	<div class="view-tabs">
 		<button class="vt" class:active={mode === 'tree'} onclick={() => (mode = 'tree')}>
 			Tree View
@@ -357,57 +356,14 @@
 				</div>
 			{/each}
 		{/if}
-		<div
-			class="row folder"
-			role="button"
-			tabindex="0"
-			onclick={() => smartlists.toggle()}
-			onkeydown={(e) => {
-				if (e.key === 'Enter') smartlists.toggle();
+		<TreeSmartlistSection
+			{selectedId}
+			{onselectsmartlist}
+			{treeContextMenu}
+			onDeleteReady={(fn) => {
+				deleteSmartlistUi = fn;
 			}}
-		>
-			<span class="disclosure" class:open={smartlists.open}>&#9656;</span>
-			<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-				<path d="M1 3h5l1.5 2H15v8H1z" fill="currentColor" />
-			</svg>
-			<span class="name">Smartlists</span>
-		</div>
-		{#if smartlists.open}
-			{#if smartlists.error !== null}
-				<div class="row child rb-inert" title={smartlists.error}>
-					<span class="name error">smartlists unavailable</span>
-				</div>
-			{:else if smartlists.rows === null}
-				<div class="row child rb-inert">
-					<span class="name dim">...</span>
-				</div>
-			{:else}
-				{#each smartlists.rows as sl (sl.id)}
-					<div
-						class="row child"
-						class:rb-inert={!onselectsmartlist}
-						class:selected={selectedId === sl.id}
-						role="button"
-						tabindex="0"
-						title={onselectsmartlist
-							? sl.rule_summary
-							: 'not implemented - see PARITY-TODO'}
-						onclick={() => smartlists.click(sl)}
-						onkeydown={(e) => {
-							if (e.key === 'Enter') smartlists.click(sl);
-						}}
-					>
-						<svg class="gear" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-							<path
-								d="M8 5.2A2.8 2.8 0 1 0 8 10.8 2.8 2.8 0 0 0 8 5.2zm0 4.3a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm6-.5.1-1-1.5-.6-.2-.6.8-1.4-.7-.7-1.4.8-.6-.3L9.9 3.7h-1L8.3 5.2l-.6.3-1.4-.8-.7.7.8 1.4-.3.6-1.5.5v1l1.5.6.3.6-.8 1.4.7.7 1.4-.8.6.3.6 1.5h1l.6-1.5.6-.3 1.4.8.7-.7-.8-1.4.3-.6z"
-								fill="currentColor"
-							/>
-						</svg>
-						<span class="name" title={sl.rule_summary}>{sl.name}</span>
-					</div>
-				{/each}
-			{/if}
-		{/if}
+		/>
 		<!-- data-testid="playlist-missing-tracks" is on MissingTracksFolder -->
 		<MissingTracksFolder
 			brokenCount={allTracksBrokenCount}

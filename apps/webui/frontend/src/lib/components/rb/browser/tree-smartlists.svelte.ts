@@ -6,7 +6,7 @@
  *
  * Rune class - the .svelte.ts extension is REQUIRED for $state.
  */
-import { listSmartlists, type SmartlistSummary } from '$lib/rb/api-smartlists';
+import { deleteSmartlist, listSmartlists, type SmartlistSummary } from '$lib/rb/api-smartlists';
 import { RbApiError } from '$lib/rb/api-rb-error';
 
 export class TreeSmartlists {
@@ -32,5 +32,12 @@ export class TreeSmartlists {
 	click(sl: SmartlistSummary): void {
 		const onselect = this.onselect();
 		if (onselect) onselect(sl);
+	}
+
+	async remove(id: string): Promise<void> {
+		await deleteSmartlist(id);
+		if (this.rows !== null) {
+			this.rows = this.rows.filter((row) => row.id !== id);
+		}
 	}
 }

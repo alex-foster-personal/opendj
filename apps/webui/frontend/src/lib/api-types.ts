@@ -3097,7 +3097,11 @@ export interface paths {
          */
         put: operations["update_smartlist_api_v1_smartlists__smartlist_id__put"];
         post?: never;
-        delete?: never;
+        /**
+         * Delete Smartlist
+         * @description Remove a smartlist row (hard delete via SmartlistsRepo.delete).
+         */
+        delete: operations["delete_smartlist_api_v1_smartlists__smartlist_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -9817,6 +9821,31 @@ export interface components {
             sync_mode: "bar" | "beat";
         };
         /**
+         * TempoPrefOut
+         * @description PREF-01: a track's user-set preferred tempo plus its playable range.
+         *
+         *     Any of the three may be null (unset). Never fabricated on read - a track
+         *     with no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,
+         *     not this shape with all-null members (see sqlite_backend._row_to_track).
+         */
+        TempoPrefOut: {
+            /** Max */
+            max?: number | null;
+            /** Min */
+            min?: number | null;
+            /** Regular */
+            regular?: number | null;
+        };
+        /** TempoPrefPatch */
+        TempoPrefPatch: {
+            /** Max */
+            max?: number | null;
+            /** Min */
+            min?: number | null;
+            /** Regular */
+            regular?: number | null;
+        };
+        /**
          * TierEstimateOut
          * @description Cost of one track at one tier. ``measured`` false means we do not know.
          */
@@ -9883,31 +9912,6 @@ export interface components {
             unavailable_because: string;
             /** Where */
             where: string;
-        };
-        /**
-         * TempoPrefOut
-         * @description PREF-01: a track's user-set preferred tempo plus its playable range.
-         *
-         *     Any of the three may be null (unset). Never fabricated on read - a track
-         *     with no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,
-         *     not this shape with all-null members (see sqlite_backend._row_to_track).
-         */
-        TempoPrefOut: {
-            /** Max */
-            max?: number | null;
-            /** Min */
-            min?: number | null;
-            /** Regular */
-            regular?: number | null;
-        };
-        /** TempoPrefPatch */
-        TempoPrefPatch: {
-            /** Max */
-            max?: number | null;
-            /** Min */
-            min?: number | null;
-            /** Regular */
-            regular?: number | null;
         };
         /** TodoCreateIn */
         TodoCreateIn: {
@@ -16686,6 +16690,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SmartlistPreconditionRequiredBody"];
+                };
+            };
+        };
+    };
+    delete_smartlist_api_v1_smartlists__smartlist_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                smartlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
