@@ -157,20 +157,25 @@ def test_omitted_position_appends_after_last(client: TestClient, db_path: Path) 
     assert new_row[3] > last_key
 
 
-def test_already_member_409_no_write(client: TestClient, db_path: Path) -> None:
+@pytest.mark.requirement("LIBM-03")
+def test_already_member_creates_second_row(client: TestClient, db_path: Path) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
     etag = _put_tracks(client, pid, etag, ["t-001", "t-002"])
     before = dump_members(db_path, pid)
-    kinds_before = _event_kinds(db_path)
+    original_t001 = [row for row in before if row[1] == "t-001"][0]
     r = client.post(
         f"/api/v1/playlists/{pid}/items:add",
         json={"stable_ids": ["t-001"]},
     )
-    assert r.status_code == 409
-    assert r.json()["error"] == "already_exists"
-    assert dump_members(db_path, pid) == before
-    assert _event_kinds(db_path) == kinds_before
+    assert r.status_code == 200, r.text
+    after = dump_members(db_path, pid)
+    assert len(after) == len(before) + 1
+    assert original_t001 in after
+    t001_rows = [row for row in after if row[1] == "t-001"]
+    assert len(t001_rows) == 2
+    assert t001_rows[0][0] != t001_rows[1][0]
+    assert r.json()["items"].count("t-001") == 2
 
 
 def test_smartlist_refused(client: TestClient, db_path: Path) -> None:
@@ -253,7 +258,8 @@ def test_bulk_all_new(client: TestClient, db_path: Path) -> None:
     assert r.json()["items"] == ["t-001", "t-002", "t-003"]
 
 
-def test_bulk_with_one_already_present_409(client: TestClient, db_path: Path) -> None:
+@pytest.mark.requirement("LIBM-03")
+def test_bulk_with_one_already_present_adds_both(client: TestClient, db_path: Path) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
     etag = _put_tracks(client, pid, etag, ["t-001", "t-002"])
@@ -262,5 +268,9 @@ def test_bulk_with_one_already_present_409(client: TestClient, db_path: Path) ->
         f"/api/v1/playlists/{pid}/items:add",
         json={"stable_ids": ["t-001", "t-003"]},
     )
-    assert r.status_code == 409
-    assert dump_members(db_path, pid) == before
+    assert r.status_code == 200, r.text
+    after = dump_members(db_path, pid)
+    assert len(after) == len(before) + 2
+    for row in before:
+        assert row in after
+    assert r.json()["items"] == ["t-001", "t-002", "t-001", "t-003"]

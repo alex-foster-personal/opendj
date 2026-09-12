@@ -11,6 +11,7 @@ from .playlist_add import (
     SmartlistImmutableError,
     _is_smartlist,
     _load_live_members,
+    _reject_over_cap,
 )
 from .playlist_history import PlaylistSnapshot
 
@@ -85,14 +86,14 @@ def apply_membership_snapshot(
     return store._load(snap.playlist_id)
 
 
-def remove_membership(
+def remove_memberships(
     store: PlaylistStore,
     playlist_id: str,
-    item_id: str,
+    item_ids: list[str],
     *,
     record_edit: bool = True,
 ) -> PlaylistRow:
-    """Tombstone one membership row without rewriting neighbors."""
+    """Tombstone membership rows without rewriting neighbors."""
     writer: StateWriter = store._writer
     conn: sqlite3.Connection = store._conn
 
@@ -105,16 +106,20 @@ def remove_membership(
             ) from None
         raise
 
+    _reject_over_cap(item_ids)
+
     members = _load_live_members(conn, playlist_id)
-    if not any(m.item_id == item_id for m in members):
-        raise NotFoundError(
-            f"playlist {playlist_id} has no membership {item_id}",
-        )
+    live_by_id = {m.item_id: m for m in members}
+    for item_id in item_ids:
+        if item_id not in live_by_id:
+            raise NotFoundError(
+                f"playlist {playlist_id} has no membership {item_id}",
+            )
 
     before_snap = _snapshot_with_members(store, before_row) if record_edit else None
 
     with writer.playlist_transaction():
-        writer.tombstone_playlist_memberships(playlist_id, [item_id])
+        writer.tombstone_playlist_memberships(playlist_id, item_ids)
 
     new_row = store._load(playlist_id)
     if record_edit:
@@ -125,4 +130,17 @@ def remove_membership(
     return new_row
 
 
-__all__ = ["apply_membership_snapshot", "remove_membership"]
+def remove_membership(
+    store: PlaylistStore,
+    playlist_id: str,
+    item_id: str,
+    *,
+    record_edit: bool = True,
+) -> PlaylistRow:
+    """Tombstone one membership row without rewriting neighbors."""
+    return remove_memberships(
+        store, playlist_id, [item_id], record_edit=record_edit,
+    )
+
+
+__all__ = ["apply_membership_snapshot", "remove_membership", "remove_memberships"]
