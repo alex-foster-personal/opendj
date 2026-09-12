@@ -67,6 +67,19 @@ def unit_value(key: str, raw: str) -> float:
     return parsed
 
 
+HEAD_DELAY_MAX_MS = 500  # keep in sync with apps/webui/frontend/src/lib/player/constants.ts
+
+
+def head_delay_ms_value(key: str, raw: str) -> float:
+    parsed = number_value(key, raw)
+    if parsed < 0.0 or parsed > HEAD_DELAY_MAX_MS:
+        raise ValueError(
+            f"{key} must be within 0..{HEAD_DELAY_MAX_MS} (head delay milliseconds), "
+            f"got {raw!r}"
+        )
+    return parsed
+
+
 def text_value(key: str, raw: str) -> str:
     if raw == "":
         raise ValueError(f"{key} must not be empty")
