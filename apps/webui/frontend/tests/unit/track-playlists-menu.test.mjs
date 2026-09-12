@@ -20,9 +20,13 @@ test('showInPlaylistsMenuItem uses the exact Show in playlists label', async () 
 	assert.equal(menu.showInPlaylistsMenuItem(() => {}).id, 'show-in-playlists');
 });
 
-test('TrackTable wires the popover and menu helper without BrowserPanel edits', () => {
+test('TrackContextMenu wires the popover and menu helper without BrowserPanel edits', () => {
 	const trackTable = fs.readFileSync(
 		path.join(FRONTEND_ROOT, 'src/lib/components/rb/browser/TrackTable.svelte'),
+		'utf8'
+	);
+	const trackContextMenu = fs.readFileSync(
+		path.join(FRONTEND_ROOT, 'src/lib/components/rb/browser/TrackContextMenu.svelte'),
 		'utf8'
 	);
 	const browserPanel = fs.readFileSync(
@@ -30,7 +34,8 @@ test('TrackTable wires the popover and menu helper without BrowserPanel edits', 
 		'utf8'
 	);
 
-	assert.match(trackTable, /showInPlaylistsMenuItem/);
+	assert.match(trackContextMenu, /showInPlaylistsMenuItem/);
 	assert.match(trackTable, /TrackPlaylistsPopover/);
+	assert.match(trackTable, /TrackContextMenu/);
 	assert.doesNotMatch(browserPanel, /Show in playlists/);
 });

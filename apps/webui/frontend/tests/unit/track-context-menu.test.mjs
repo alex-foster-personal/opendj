@@ -1,0 +1,102 @@
+import assert from 'node:assert/strict';
+import { before, test } from 'node:test';
+
+import { loadTypeScriptModule } from './load-typescript.mjs';
+
+let mod;
+
+before(async () => {
+	mod = await loadTypeScriptModule('src/lib/components/rb/browser/track-context-menu.ts');
+});
+
+test('menuTargetIds returns full selection when row is inside it', () => {
+	const selected = ['a', 'b', 'c'];
+	const ids = mod.menuTargetIds({ stable_id: 'b', order: 2 }, [1, 2, 3], selected);
+	assert.deepEqual(ids, selected);
+	assert.notEqual(ids, selected);
+});
+
+test('menuTargetIds returns clicked row only when outside selection', () => {
+	assert.deepEqual(
+		mod.menuTargetIds({ stable_id: 'solo', order: 9 }, [1, 2], ['a', 'b']),
+		['solo']
+	);
+});
+
+test('runCopyPaths joins local paths and toasts success', async () => {
+	const toasts = [];
+	const item = await mod.runCopyPaths(['a', 'b'], {
+		getTrack: async (id) => ({
+			track: { file_path: id === 'a' ? '/music/a.flac' : '/music/b.flac' }
+		}),
+		writeClipboard: async (text) => {
+			assert.equal(text, '/music/a.flac\n/music/b.flac');
+		},
+		pushToast: (message, kind) => toasts.push({ message, kind })
+	});
+	assert.equal(item, undefined);
+	assert.deepEqual(toasts, [{ message: 'Copied 2 paths', kind: 'info' }]);
+});
+
+test('runCopyPaths errors when no local paths remain', async () => {
+	const toasts = [];
+	await mod.runCopyPaths(['stream'], {
+		getTrack: async () => ({ track: { file_path: 'spotify:track:abc' } }),
+		writeClipboard: async () => {
+			throw new Error('clipboard must not run');
+		},
+		pushToast: (message, kind) => toasts.push({ message, kind })
+	});
+	assert.deepEqual(toasts, [
+		{ message: 'no file_path on GET /api/v1/tracks/stream', kind: 'error' }
+	]);
+});
+
+test('runReanalyze enqueues beatgrid backfill once and toasts batch summary', async () => {
+	const toasts = [];
+	const seen = [];
+	await mod.runReanalyze(['a', 'b'], {
+		enqueueBackfill: async (args) => {
+			seen.push(args);
+			return { admitted: 2, offered: 2, refused: 0, batch_id: 'batch-1' };
+		},
+		pushToast: (message, kind) => toasts.push({ message, kind })
+	});
+	assert.deepEqual(seen, [
+		{
+			stableIds: ['a', 'b'],
+			lane: 'beatgrid',
+			backend: 'own_beatgrid.backfill',
+			note: 'track context menu'
+		}
+	]);
+	assert.deepEqual(toasts, [
+		{
+			message: 'Queued 2 of 2 for re-analyze (batch batch-1)',
+			kind: 'info'
+		}
+	]);
+});
+
+test('runRevealTracks posts once per id and toasts successes', async () => {
+	const seen = [];
+	const toasts = [];
+	await mod.runRevealTracks(['a', 'b'], {
+		revealTrack: async (id) => {
+			seen.push(id);
+		},
+		pushToast: (message, kind) => toasts.push({ message, kind })
+	});
+	assert.deepEqual(seen, ['a', 'b']);
+	assert.deepEqual(toasts, [{ message: 'Revealed 2 tracks', kind: 'info' }]);
+});
+
+test('title constants match agent-native tooltips', () => {
+	assert.equal(mod.REVEAL_TRACK_TITLE, 'POST /api/v1/tracks/{stable_id}:reveal');
+	assert.equal(mod.COPY_PATH_TITLE, 'GET /api/v1/tracks/{stable_id}');
+	assert.equal(
+		mod.REANALYZE_TITLE,
+		'POST /api/v1/analysis/backfill/enqueue (`python -m apps.analysis.queue_cli enqueue --lane beatgrid --backend own_beatgrid.backfill`)'
+	);
+	assert.equal(mod.loadDeckTitle(1, 'sid-123'), 'opendj load 1 sid-123');
+});

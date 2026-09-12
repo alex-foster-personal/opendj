@@ -29686,6 +29686,42 @@
         ]
       }
     },
+    "/api/v1/tracks/{stable_id}:reveal": {
+      "post": {
+        "description": "Reveal a track's local file in the OS file manager.",
+        "operationId": "reveal_track",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reveal Track",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}:undelete": {
       "post": {
         "description": "Restore a tombstoned track and the memberships this remove stamped.",

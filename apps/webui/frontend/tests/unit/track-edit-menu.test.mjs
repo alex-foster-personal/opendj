@@ -48,11 +48,11 @@ test('Bulk edit and Find/replace stay disabled with a selection tooltip when the
 	assert.deepEqual(kinds, ['mytag']);
 });
 
-test('TrackTable spreads the helper and BrowserPanel passes the toolbar opener', () => {
-	const table = readFileSync(`${SRC}/lib/components/rb/browser/TrackTable.svelte`, 'utf8');
+test('TrackContextMenu spreads the helper and BrowserPanel passes the toolbar opener', () => {
+	const menu = readFileSync(`${SRC}/lib/components/rb/browser/TrackContextMenu.svelte`, 'utf8');
 	const panel = readFileSync(`${SRC}/lib/components/rb/BrowserPanel.svelte`, 'utf8');
-	const menu = readFileSync(`${SRC}/lib/components/rb/ContextMenu.svelte`, 'utf8');
-	assert.match(table, /trackEditMenuItems\(selected\.length, onopeneditmodal\)/);
+	const contextMenu = readFileSync(`${SRC}/lib/components/rb/ContextMenu.svelte`, 'utf8');
+	assert.match(menu, /trackEditMenuItems\(targetIds\.length, onopeneditmodal\)/);
 	assert.match(panel, /onopeneditmodal=\{\(kind\) => void openEditModal\(kind\)\}/);
-	assert.match(menu, /item\.title \?\? \(unavailable \? 'not implemented - see PARITY-TODO' : item\.label\)/);
+	assert.match(contextMenu, /item\.title \?\? \(unavailable \? 'not implemented - see PARITY-TODO' : item\.label\)/);
 });

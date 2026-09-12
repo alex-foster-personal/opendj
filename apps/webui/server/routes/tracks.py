@@ -39,6 +39,7 @@ from ..models import (
     TracksPage,
 )
 from ..rb_vendor_pkg.track_rows import _artwork_facts
+from ..reveal_path import RevealPathError, reveal_track_path
 from ..stem_artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
 from .ingest_job import valid_lyrics_ids
 
@@ -486,6 +487,23 @@ def get_track(
         stems_available=stems_avail,
         artwork_available=artwork_available,
     )
+
+
+@router.post("/{stable_id}:reveal", status_code=204, operation_id="reveal_track")
+def reveal_track(
+    stable_id: str,
+    backend: StateBackend = Depends(get_read_state),
+) -> Response:
+    """Reveal a track's local file in the OS file manager."""
+    track = backend.get_track(stable_id)
+    try:
+        reveal_track_path(track.file_path)
+    except RevealPathError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+    return Response(status_code=204)
 
 
 @router.patch("/{stable_id}", response_model=TrackOut)
