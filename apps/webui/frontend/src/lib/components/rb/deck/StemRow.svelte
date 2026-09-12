@@ -65,7 +65,8 @@
 			class:muted={deck.stems.controls[stem.id].muted}
 			class:solo={deck.stems.controls[stem.id].solo}
 			class:unavailable={unavailable(stem.id)}
-			disabled={!ready || pending || unavailable(stem.id)}
+			disabled={!ready || unavailable(stem.id)}
+			aria-busy={pending}
 			title={chipTip(stem.id, stem.label)}
 			aria-label={`${stem.label} stem mute deck ${deck.deck_id}; Shift+click solo`}
 			data-testid={`stem-${stem.id}-deck-${deck.deck_id}`}

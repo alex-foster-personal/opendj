@@ -58,8 +58,8 @@ export function applyStemControl(
 		}
 		controls[stem][field] = value;
 	}
-	rt.processor.setControls(controls);
 	st.stems.controls = controls;
+	rt.processor.setControls(controls);
 }
 
 export function applyStemEqMode(
