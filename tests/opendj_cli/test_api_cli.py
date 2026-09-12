@@ -121,6 +121,15 @@ def test_exit_for_status_maps_412_and_409() -> None:
     assert api_cli.exit_for_status(409) == api_cli.EXIT_CONFLICT
 
 
+def test_parse_request_accepts_repeatable_headers() -> None:
+    parsed = api_cli._parse_request([
+        "PUT", "/api/v1/playlists/pl-1/tracks",
+        "-H", 'If-Match: "etag-1"',
+        "--json", '{"stable_ids":[]}',
+    ])
+    assert parsed.extra_headers == (("If-Match", '"etag-1"'),)
+
+
 def test_api_patch_with_json_body(
     library_daemon: tuple[str, int],
     monkeypatch: pytest.MonkeyPatch,

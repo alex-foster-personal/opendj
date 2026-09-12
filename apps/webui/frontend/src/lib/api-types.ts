@@ -2401,6 +2401,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/performance/headphones/head-delay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Head Delay Ms */
+        post: operations["post_head_delay_ms_api_v1_performance_headphones_head_delay_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/performance/headphones/level": {
         parameters: {
             query?: never;
@@ -2696,6 +2713,23 @@ export interface paths {
         put?: never;
         /** Add Playlist Items */
         post: operations["add_playlist_items"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlists/{playlist_id}/items:move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move Playlist Items */
+        post: operations["move_playlist_items"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3873,7 +3907,7 @@ export interface paths {
          *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
          *     Share-host requests use the share venue cap (lossy ceiling by default).
          */
-        get: operations["get_track_audio_api_v1_tracks__stable_id__audio_head"];
+        get: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3891,7 +3925,7 @@ export interface paths {
          *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
          *     Share-host requests use the share venue cap (lossy ceiling by default).
          */
-        head: operations["get_track_audio_api_v1_tracks__stable_id__audio_head"];
+        head: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
         patch?: never;
         trace?: never;
     };
@@ -6634,6 +6668,8 @@ export interface components {
             active: boolean;
             /** Error */
             error: string | null;
+            /** Head Delay Ms */
+            head_delay_ms: number;
             /** Level */
             level: number;
             /** Mix */
@@ -7706,6 +7742,40 @@ export interface components {
             position?: number | null;
             /** Stable Ids */
             stable_ids: string[];
+        };
+        /** MembershipMoveIn */
+        MembershipMoveIn: {
+            /** After Item Id */
+            after_item_id?: string | null;
+            /** Before Item Id */
+            before_item_id?: string | null;
+            /** Range End */
+            range_end?: string | null;
+            /** Range Length */
+            range_length?: number | null;
+            /** Range Start */
+            range_start: string;
+        };
+        /** MembershipMoveOut */
+        MembershipMoveOut: {
+            /** Created At */
+            created_at: string;
+            /** Items */
+            items: string[];
+            /** Name */
+            name: string;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Renumbered */
+            renumbered: boolean;
+            /** Track Count */
+            track_count: number;
+            /** Updated At */
+            updated_at: string;
+            /** Vendor */
+            vendor: string;
+            /** Vendor Pl Id */
+            vendor_pl_id: string;
         };
         /** MembershipReplaceIn */
         MembershipReplaceIn: {
@@ -15724,6 +15794,41 @@ export interface operations {
             };
         };
     };
+    post_head_delay_ms_api_v1_performance_headphones_head_delay_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadphoneStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     post_headphone_level_api_v1_performance_headphones_level_post: {
         parameters: {
             query?: never;
@@ -16326,6 +16431,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlaylistWriteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_playlist_items: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipMoveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MembershipMoveOut"];
                 };
             };
             /** @description Validation Error */
@@ -18388,7 +18530,7 @@ export interface operations {
             };
         };
     };
-    get_track_audio_api_v1_tracks__stable_id__audio_head: {
+    get_track_audio_api_v1_tracks__stable_id__audio_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -18417,7 +18559,7 @@ export interface operations {
             };
         };
     };
-    get_track_audio_api_v1_tracks__stable_id__audio_head: {
+    get_track_audio_api_v1_tracks__stable_id__audio_get: {
         parameters: {
             query?: never;
             header?: never;

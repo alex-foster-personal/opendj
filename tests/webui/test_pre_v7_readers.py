@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
+from apps.shared.state.writer import StateWriter
 from apps.webui import crate_sync
 from apps.webui.server import search_index
 from apps.webui.server.routes import ingest as ingest_mod
@@ -31,6 +32,11 @@ def pre_v7_path(tmp_path: Path) -> Path:
     try:
         for table in ("tracks", "playlists", "playlist_memberships"):
             assert_no_deleted_at_column(conn, table)
+        membership_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(playlist_memberships)")
+        }
+        assert "order_key" not in membership_columns
         version = conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
         assert version == 6
     finally:
@@ -89,13 +95,72 @@ def test_get_coverage_on_v6(pre_v7_path: Path, tmp_path: Path, monkeypatch) -> N
 def test_crate_sync_playlist_lookup_on_v6(pre_v7_path: Path) -> None:
     conn = sqlite3.connect(pre_v7_path)
     try:
+        traced_sql: list[str] = []
+
+        def _trace(sql: str) -> None:
+            traced_sql.append(sql)
+
+        conn.set_trace_callback(_trace)
         assert crate_sync._playlist_stable_ids(conn, PLAYLIST_NAME) == (
             TRACK_STABLE_ID,
         )
+        assert not any("order_key" in statement for statement in traced_sql)
         with pytest.raises(RuntimeError, match="unknown playlist"):
             crate_sync._playlist_stable_ids(conn, "Missing Set")
     finally:
         conn.close()
+
+
+def test_crate_sync_playlist_lookup_orders_by_order_key_on_v13(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "state.db"
+    conn = state_db.open_rw(path)
+    writer = StateWriter(conn, actor="crate-sync-order-key")
+    try:
+        for sid, title in (("sid-a", "A"), ("sid-b", "B")):
+            writer.upsert_track(
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=title,
+                artists=[],
+                album=None,
+                isrc=None,
+                duration_ms=None,
+                file_path=f"/music/{sid}.mp3",
+            )
+        writer.insert_playlist(
+            playlist_id="pl-keyed",
+            name="Keyed Set",
+            vendor="rekordbox",
+            vendor_pl_id="rb-keyed",
+        )
+        writer.insert_playlist_memberships(
+            "pl-keyed",
+            [
+                ("item-a", "sid-a", "zzzzzzzz"),
+                ("item-b", "sid-b", "aaaaaaaa"),
+            ],
+        )
+    finally:
+        writer.close()
+        conn.close()
+
+    ro = sqlite3.connect(path)
+    try:
+        traced_sql: list[str] = []
+
+        def _trace(sql: str) -> None:
+            traced_sql.append(sql)
+
+        ro.set_trace_callback(_trace)
+        assert crate_sync._playlist_stable_ids(ro, "Keyed Set") == (
+            "sid-b",
+            "sid-a",
+        )
+        assert any("order_key" in statement for statement in traced_sql)
+    finally:
+        ro.close()
 
 
 def test_crate_sync_collect_plan_on_v6(pre_v7_path: Path, tmp_path: Path) -> None:

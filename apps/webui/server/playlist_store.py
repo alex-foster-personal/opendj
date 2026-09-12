@@ -1,68 +1,15 @@
 """Playlist WRITE store over the shared state DB (``data/state/state.db``).
 
-CONTRACT -- playlists-router lane owner (downstream agents code against this)
+CONTRACT -- playlists-router lane owner (see also ``routes/playlist_write``)
 =============================================================================
-This module + :mod:`apps.webui.server.routes.playlist_write` define the write
-contract for playlists. Reads stay in :mod:`.routes.playlists` /
-:class:`.sqlite_backend.SqliteBackend`; every mutation goes through
-:class:`PlaylistStore`, which writes exclusively via the shared-state
-chokepoint :class:`apps.shared.state.writer.StateWriter` (durable ``events``
-rows + in-process bus fanout on every change -- never raw INSERTs).
+Mutations go through :class:`PlaylistStore` -> :class:`StateWriter` (events +
+bus fanout, never raw INSERTs). :class:`PlaylistRow` is the write read-model;
+etag = ``compute_etag(playlist_id, updated_at)``. Stale ``If-Match`` ->
+:class:`ConflictError` (409).
 
-Entity shape (also the 409 ``current`` body and the route response body):
-
-    PlaylistRow {
-        playlist_id: str      # sha1("<vendor>:<vendor_pl_id>") -- stable
-        name: str
-        vendor: str           # "webui" for rows created here
-        vendor_pl_id: str     # uuid4 hex for rows created here
-        items: list[str]      # member stable_ids in position order
-        created_at: str       # ISO-8601 UTC
-        updated_at: str       # ISO-8601 UTC; bumps on rename AND membership change
-    }
-
-ETag / optimistic concurrency (identical to the tracks PATCH semantics):
-
-  * etag = ``compute_etag(playlist_id, updated_at)`` -- quoted sha1.
-  * Mutating an existing row (rename / delete / membership replace) requires
-    ``If-Match``; a missing header is 428, a stale one raises
-    :class:`ConflictError` -> HTTP 409 with ``{current, etag}`` so the caller
-    can rebase (this is the undo/redo + write-back building block).
-  * ``updated_at`` bumps on membership-only changes too (StateWriter bumps it
-    inside the same transaction), so the etag always observes reorders.
-
-Operations (routes in ``routes/playlist_write.py`` map 1:1):
-
-  * ``create_playlist(name)``                          POST   /playlists
-  * ``rename_playlist(id, name, expected_etag=...)``   PATCH  /playlists/{id}
-  * ``delete_playlist(id, expected_etag=...)``         DELETE /playlists/{id}
-  * ``duplicate_playlist(id, name=None, expected_etag=None)``
-                                                       POST   /playlists/{id}/duplicate
-  * ``replace_memberships(id, stable_ids, expected_etag=...)``
-                                                       PUT    /playlists/{id}/tracks
-  * ``transfer_memberships(dest_id, stable_ids, dest_etag, mode, ...)``
-                                                       POST   /playlists/{id}/tracks/transfer
-
-``replace_memberships`` is the single membership primitive: add / remove /
-reorder / move / copy are all expressed as one full-list replace. It is
-idempotent -- replaying the same list is a no-op (no event, same etag).
-Duplicate stable_ids are permitted (a track may appear at several positions,
-matching Rekordbox). Unknown stable_ids fail fast with
-:class:`BackendError` -> HTTP 422; nothing is partially written.
-
-Events appended (kind -> payload keys):
-
-  * ``playlist.insert`` / ``playlist.update``  {playlist_id, vendor, vendor_pl_id, name}
-  * ``playlist.memberships.set``               {playlist_id, count}
-  * ``playlist.delete``                        {playlist_id, name, vendor, vendor_pl_id}
-
-Provenance: playlists carry no per-field provenance envelope (unlike
-track_fields); provenance is the ``events`` log itself -- every row records
-``actor`` ("webui" here) plus the vendor identity columns on the playlist.
-
-Concurrency: one store per process, one rw connection, one lock. Membership
-replacement also acquires SQLite's cross-process writer lock before loading
-the authoritative row, checking its ETag, or validating requested tracks.
+Membership primitives: ``PUT .../tracks`` full replace; ``POST .../items:add``
+O(1) insert; ``DELETE .../items/{item_id}`` O(1) remove; ``POST .../items:move``
+O(k) slice reorder (LIBM-22). One store lock + rw connection per process.
 """
 from __future__ import annotations
 
@@ -83,6 +30,7 @@ from .backend import BackendError, ConflictError, NotFoundError
 from .etag import compute_etag, strip_quotes
 from .playlist_add import add_memberships as _add_memberships
 from .playlist_add import MEMBERSHIP_ORDER_BY
+from .playlist_move import MoveResult, move_memberships as _move_memberships
 from .playlist_remove import apply_membership_snapshot, remove_membership as _remove_membership
 from .playlist_transfer import (
     apply_dest_write,
@@ -470,6 +418,32 @@ class PlaylistStore:
         with self._lock:
             return _remove_membership(
                 self, playlist_id, item_id, record_edit=record_edit,
+            )
+
+    def move_memberships(
+        self,
+        playlist_id: str,
+        *,
+        range_start: str,
+        range_length: int | None = None,
+        range_end: str | None = None,
+        before_item_id: str | None = None,
+        after_item_id: str | None = None,
+        expected_etag: str,
+        record_edit: bool = True,
+    ) -> MoveResult:
+        """O(k) slice reorder via ``:move`` (LIBM-22)."""
+        with self._lock:
+            return _move_memberships(
+                self,
+                playlist_id,
+                range_start=range_start,
+                range_length=range_length,
+                range_end=range_end,
+                before_item_id=before_item_id,
+                after_item_id=after_item_id,
+                expected_etag=expected_etag,
+                record_edit=record_edit,
             )
 
     def transfer_memberships(

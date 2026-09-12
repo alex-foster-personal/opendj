@@ -152,17 +152,33 @@ export const pitchRanges: Record<DeckId, PitchRange> = $state({
 });
 
 /** Whole mixer surface (channel order on screen: 3 1 2 4). */
-export const mixerState: MixerState = $state({
-	channels: {
-		1: _defaultChannel(1),
-		2: _defaultChannel(2),
-		3: _defaultChannel(3),
-		4: _defaultChannel(4)
-	},
-	crossfader: 0.5,
-	master: 1,
-	headphones: _defaultHeadphones()
-});
+const MIXER_STATE_SINGLETON_KEY = '__mdtMixerStateSingleton';
+
+function _createMixerState(): MixerState {
+	return $state({
+		channels: {
+			1: _defaultChannel(1),
+			2: _defaultChannel(2),
+			3: _defaultChannel(3),
+			4: _defaultChannel(4)
+		},
+		crossfader: 0.5,
+		master: 1,
+		headphones: _defaultHeadphones()
+	});
+}
+
+function _sharedMixerState(): MixerState {
+	const globalRef = globalThis as typeof globalThis & {
+		[MIXER_STATE_SINGLETON_KEY]?: MixerState;
+	};
+	if (globalRef[MIXER_STATE_SINGLETON_KEY] === undefined) {
+		globalRef[MIXER_STATE_SINGLETON_KEY] = _createMixerState();
+	}
+	return globalRef[MIXER_STATE_SINGLETON_KEY];
+}
+
+export const mixerState: MixerState = _sharedMixerState();
 
 /** Per-deck store accessor (contract: singleton engine + accessor). */
 export function getDeckState(deck: DeckId): DeckState {

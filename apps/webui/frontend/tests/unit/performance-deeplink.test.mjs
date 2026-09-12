@@ -7,6 +7,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 // [if] the user opens /performance?playlist=<id> [then] the browser panel restores that collection playlist on load
 // [if] decks are loaded and the user refreshes [then] each deck reloads its last stable_id and seeks to the last known position_ms within 1s of the pagehide snapshot
 // [if] the user adjusts EQ, fader, or stem mute/solo [then] that lv3 state survives refresh via the snapshot without a replaceState or storage write on the audio thread
+// [if] the deep-link code runs without a window/location [then] it guards the read and never throws
 
 async function _loadDeeplink() {
 	return loadTypeScriptModule('src/lib/rb/performance-deeplink.ts');
@@ -201,6 +202,57 @@ test('unknown url_playlist_id falls through to All Tracks', async () => {
 		url_playlist_id: 'pl-missing'
 	});
 	assert.deepEqual(choice, bootPane.ALL_TRACKS_CHOICE);
+});
+
+test('installPerformanceSessionRestore does not throw when window has no location', async () => {
+	const session = await _loadSession();
+	const replaceCalls = [];
+	globalThis.window = {
+		localStorage: {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {}
+		}
+	};
+	try {
+		const dispose = session.installPerformanceSessionRestore({
+			dispatch: async () => {},
+			query: () => ({
+				browser: { active_playlist: null },
+				mixer: { crossfader: 0.5, master: 1, channels: {} },
+				decks: {}
+			}),
+			replaceState: (url) => replaceCalls.push(url)
+		});
+		assert.equal(typeof dispose, 'function');
+		dispose();
+		assert.equal(replaceCalls.length, 0);
+	} finally {
+		delete globalThis.window;
+	}
+});
+
+test('installPerformanceSessionRestore with explicit undefined location does not throw', async () => {
+	const session = await _loadSession();
+	const store = new Map();
+	const replaceCalls = [];
+	const dispose = session.installPerformanceSessionRestore({
+		location: undefined,
+		storage: {
+			getItem: (key) => (store.has(key) ? store.get(key) : null),
+			setItem: (key, value) => store.set(key, value)
+		},
+		dispatch: async () => {},
+		query: () => ({
+			browser: { active_playlist: null },
+			mixer: { crossfader: 0.5, master: 1, channels: {} },
+			decks: {}
+		}),
+		replaceState: (url) => replaceCalls.push(url)
+	});
+	assert.equal(typeof dispose, 'function');
+	dispose();
+	assert.equal(replaceCalls.length, 0);
 });
 
 test('session snapshot writer throttles interval writes and flushes on pagehide', async () => {

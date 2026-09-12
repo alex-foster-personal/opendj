@@ -47,9 +47,12 @@ from .errors import (
     handle_conflict,
     handle_not_found,
     handle_rekordbox_writeback_disabled,
+    handle_slice_not_contiguous,
     handle_smartlist_immutable,
+    handle_target_inside_slice,
 )
 from .playlist_add import AlreadyExistsError, SmartlistImmutableError
+from .playlist_move import SliceNotContiguousError, TargetInsideSliceError
 from .routes import analysis as analysis_routes
 from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
@@ -317,6 +320,8 @@ def _install_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ConflictError, handle_conflict)
     app.add_exception_handler(AlreadyExistsError, handle_already_exists)
     app.add_exception_handler(SmartlistImmutableError, handle_smartlist_immutable)
+    app.add_exception_handler(SliceNotContiguousError, handle_slice_not_contiguous)
+    app.add_exception_handler(TargetInsideSliceError, handle_target_inside_slice)
     app.add_exception_handler(BackendError, handle_backend_error)
 
 

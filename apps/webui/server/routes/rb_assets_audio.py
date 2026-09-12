@@ -11,7 +11,15 @@ from ..deps import get_read_state
 from .rb_assets import _CACHE_AUDIO, router
 
 
-@router.api_route("/{stable_id}/audio", methods=["GET", "HEAD"], response_class=FileResponse)
+@router.api_route(
+    "/{stable_id}/audio",
+    methods=["GET", "HEAD"],
+    response_class=FileResponse,
+    # Pinned: FastAPI derives the default id from route.methods, a SET, so a
+    # two-method route flips between _get and _head per hash seed and reds the
+    # openapi.json contract-drift gate on the runner while matching locally.
+    operation_id="get_track_audio_api_v1_tracks__stable_id__audio_get",
+)
 def get_track_audio(
     stable_id: str,
     request: Request,

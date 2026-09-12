@@ -1,9 +1,14 @@
-"""Fractional order_key tests (LIBM-20)."""
+"""Fractional order_key tests (LIBM-20 / LIBM-22)."""
 from __future__ import annotations
 
 import pytest
 
-from apps.shared.state.order_key import between, from_index
+from apps.shared.state.order_key import (
+    PrecisionExhausted,
+    allocate_keys,
+    between,
+    from_index,
+)
 
 pytestmark = pytest.mark.requirement("LIBM-20")
 
@@ -46,3 +51,20 @@ def test_fifty_inserts_at_same_point_stay_unique_and_sorted() -> None:
     assert len(set(keys)) == 50
     assert all(keys[i] < keys[i + 1] for i in range(len(keys) - 1))
     assert all(k < right for k in keys)
+
+
+@pytest.mark.requirement("LIBM-22")
+def test_allocate_keys_three_between_neighbors() -> None:
+    keys = allocate_keys("00000000", "00000010", 3)
+    assert len(keys) == 3
+    assert len(set(keys)) == 3
+    assert "00000000" < keys[0] < keys[1] < keys[2] < "00000010"
+
+
+@pytest.mark.requirement("LIBM-22")
+def test_allocate_keys_precision_exhausted(monkeypatch: pytest.MonkeyPatch) -> None:
+    import apps.shared.state.order_key as order_key_mod
+
+    monkeypatch.setattr(order_key_mod, "MAX_ORDER_KEY_LEN", 8)
+    with pytest.raises(PrecisionExhausted):
+        allocate_keys("00000000", "00000001", 1)

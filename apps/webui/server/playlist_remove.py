@@ -65,6 +65,23 @@ def apply_membership_snapshot(
             writer.tombstone_playlist_memberships(snap.playlist_id, to_tombstone)
         if to_restore:
             writer.restore_playlist_memberships(snap.playlist_id, to_restore)
+        if snap.members is not None:
+            live_by_id = {
+                m.item_id: m
+                for m in _load_live_members(store._conn, snap.playlist_id)
+            }
+            key_updates: list[tuple[str, str]] = []
+            for member in snap.members:
+                item_id = member["item_id"]
+                desired_key = member["order_key"]
+                live = live_by_id.get(item_id)
+                if live is None or live.order_key == desired_key:
+                    continue
+                key_updates.append((item_id, desired_key))
+            if key_updates:
+                writer.update_playlist_membership_order_keys(
+                    snap.playlist_id, key_updates,
+                )
     return store._load(snap.playlist_id)
 
 

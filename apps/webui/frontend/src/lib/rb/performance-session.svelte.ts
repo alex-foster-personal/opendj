@@ -149,7 +149,7 @@ export function createSessionSnapshotWriter(opts: {
 	let lastWriteAt = 0;
 
 	const writeSnapshot = (force: boolean): void => {
-		if (opts.location.pathname !== '/performance') return;
+		if (opts.location?.pathname !== '/performance') return;
 		const now = opts.now();
 		if (!force && now - lastWriteAt < throttle_ms) return;
 		const serialized = buildPerformanceSessionSnapshot(opts.query(), now);
@@ -158,8 +158,9 @@ export function createSessionSnapshotWriter(opts: {
 		lastSerialized = serialized;
 		lastWriteAt = now;
 
+		const locationSearch = opts.location?.search ?? '';
 		const ids = _deckIdsFromState(opts.query());
-		if (!_idsMatchQuery(ids, opts.location.search)) {
+		if (opts.location && !_idsMatchQuery(ids, locationSearch)) {
 			const url = new URL(opts.location.href);
 			const params = writeLv2Ids(url.searchParams, ids);
 			url.search = params.toString();
@@ -265,8 +266,15 @@ async function _restoreSession(
 export function installPerformanceSessionRestore(
 	opts: PerformanceSessionRestoreOptions = {}
 ): () => void {
+	const location =
+		opts.location ??
+		(typeof window !== 'undefined' ? window.location : undefined);
+
+	if (location === undefined || location.pathname !== '/performance') {
+		return () => {};
+	}
+
 	const storage = opts.storage ?? window.localStorage;
-	const location = opts.location ?? window.location;
 	const replaceState =
 		opts.replaceState ??
 		((url: string) => {
@@ -277,12 +285,12 @@ export function installPerformanceSessionRestore(
 	const documentRef = opts.document ?? document;
 	const windowRef = opts.window ?? window;
 
-	if (location.pathname !== '/performance') {
+	if (location === undefined || location.pathname !== '/performance') {
 		return () => {};
 	}
 
 	const snapshot = parsePerformanceSession(storage.getItem(PERFORMANCE_SESSION_STORAGE_KEY));
-	const urlDeckIds = parseLv2Ids(location.search);
+	const urlDeckIds = parseLv2Ids(location.search ?? '');
 	let writer: SessionSnapshotWriter | null = null;
 
 	void _restoreSession(dispatch, snapshot, urlDeckIds).finally(() => {
