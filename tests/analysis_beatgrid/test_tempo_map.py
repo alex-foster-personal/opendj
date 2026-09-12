@@ -10,7 +10,11 @@ import pytest
 
 from apps.analysis_beatgrid.activations import ActivationsMissing, fit_dynamic_grid
 from apps.analysis_beatgrid.bpm import least_squares_bpm
-from apps.analysis_beatgrid.tempo_change import MIN_SEGMENT_BEATS, TempoAnalysis, detect_tempo_changes
+from apps.analysis_beatgrid.tempo_change import (
+    MIN_SEGMENT_BEATS,
+    TempoAnalysis,
+    detect_tempo_changes,
+)
 from apps.analysis_beatgrid.tempo_map import (
     TempoAnchor,
     TempoMap,

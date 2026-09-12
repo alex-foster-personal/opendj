@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.quality_rubric_model import load_rubric
 from scripts.quality_rubric_probes import (
     citation_resolves,
     schema_id_policy,
@@ -14,7 +15,6 @@ from scripts.quality_rubric_probes import (
     xref_integrity,
 )
 from scripts.quality_rubric_score import score_dimension
-from scripts.quality_rubric_model import load_rubric
 
 REPO = Path(__file__).resolve().parents[2]
 RUBRIC = load_rubric()

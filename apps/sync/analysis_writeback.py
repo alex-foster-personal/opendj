@@ -12,7 +12,7 @@ import json
 import secrets
 import sqlite3
 from collections.abc import Mapping, Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -95,7 +95,7 @@ def _resolve_key_id(conn: sqlite3.Connection, own_camelot: str) -> tuple[str, bo
             continue
 
     new_id = _new_key_id(conn)
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
         "INSERT INTO djmdKey (ID, ScaleName) VALUES (?, ?)",
         (new_id, spelled),
@@ -142,7 +142,7 @@ def write_scalar(
             stored = str(float(value))
         except (TypeError, ValueError):
             return False
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         conn.execute(
             f"""
             INSERT INTO {_SCALAR_TABLE} (ContentID, field, value, updated_at)
@@ -279,8 +279,8 @@ def live_writeback(
     flag_ok: bool,
 ) -> int:
     from apps.sync.apply_analysis import (
-        UnsupportedRbFieldError,
         _SUPPORTED_RB_WRITE_FIELDS,
+        UnsupportedRbFieldError,
     )
 
     writable_rows = [
@@ -349,6 +349,8 @@ def live_writeback(
         if fld == "pqtz":
             from apps.sync.analysis_writeback_pqtz import (
                 resolve_analysis_dat_path,
+            )
+            from apps.sync.analysis_writeback_pqtz import (
                 verify_pqtz as _verify_pqtz,
             )
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from apps.lyrics import jobs as jobs_mod
 from apps.lyrics.batch import BatchReport, StageBlocked
 from apps.lyrics.worker import work_once

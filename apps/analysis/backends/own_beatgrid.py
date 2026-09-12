@@ -71,8 +71,8 @@ from apps.analysis.pcm_fingerprint import (
     canonical_decode_fingerprint,
     require_resampler,
 )
-from apps.analysis_beatgrid.lane_payload import build_beatgrid_lane
 from apps.analysis_beatgrid import activations
+from apps.analysis_beatgrid.lane_payload import build_beatgrid_lane
 from apps.analysis_beatgrid.version import LANE, PRODUCER, PRODUCER_VERSION
 
 from ..lanes import LaneResult, own_backend

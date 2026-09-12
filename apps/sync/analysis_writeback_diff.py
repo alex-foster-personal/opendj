@@ -426,11 +426,11 @@ def dry_run(
 
 
 __all__ = [
+    "WRITEBACK_FIELDS",
+    "WRITEBACK_LANES",
     "UnpromotedLaneError",
     "WritebackPlan",
     "WritebackRow",
-    "WRITEBACK_FIELDS",
-    "WRITEBACK_LANES",
     "dry_run",
     "plan_writeback",
     "render_plan",
