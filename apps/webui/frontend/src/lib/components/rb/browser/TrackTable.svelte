@@ -268,7 +268,7 @@
 		bodyOverlay = undefined as Snippet | undefined,
 		onstemsdonext = undefined as ((stableIds: string[]) => void) | undefined,
 		onlyricsdonext = undefined as ((stableIds: string[]) => void) | undefined,
-		onopeneditmodal = undefined as ((kind: TrackEditModalKind) => void) | undefined
+		onopeneditmodal = undefined
 	}: {
 		/** Read contract: { rows, total, truncated, fetchWindow } - see
 		 * pane-contract.svelte.ts. */
