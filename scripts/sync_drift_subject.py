@@ -165,18 +165,13 @@ def _apply_state_ladder(conn: sqlite3.Connection, _path: Path) -> None:
     file, plus an assertion that the ladder reached its terminal version; the
     rest of open_rw is path resolution and pragmas this scan supplies itself.
 
-    RE-CHECKED Wed 9 Sep 2026 rather than carried over, because the Tue 1 Sep
-    2026 note here justified the bypass by saying open_rw regenerates the
-    state dir's AGENTS.md and that generator raises on a docs gap. That is
-    NOT true of open_rw on current main: it runs apply_migrations and the
-    backfill hook and nothing else, and
-    apps.database.regenerate_agents_md_if_writable is still an unwired wiring
-    ask with zero call sites. The hazard is real but PROSPECTIVE -- the day
-    that hook is wired in, a docs gap would abort the scan before any check
-    ran and D-04 would become structurally unable to report the very defect
-    it exists to name -- so the direct call stays, now for a reason that is
-    true today: this is the smallest thing that provisions the ladder, and it
-    cannot acquire a side effect later without someone editing this function.
+    RE-CHECKED Fri 11 Sep 2026: as of this date
+    apps.database.regenerate_agents_md_if_writable IS wired in open_rw (after
+    migrations + backfill). This ladder still calls apply_migrations and
+    backfill_local_machine_id directly ON PURPOSE: routing through open_rw
+    would let a docs gap abort the scan before D-04 can report the very
+    defect it exists to name. The direct call is the smallest thing that
+    provisions the ladder without that side effect.
     """
     version = state_schema.apply_migrations(conn)
     if version != state_schema.SCHEMA_VERSION:

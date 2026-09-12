@@ -122,12 +122,12 @@ const RECORD_MODE = CLI.recordMode;
  */
 const LANE_MARGIN = (() => {
 	const margin = laneMarginFrom(
-		readFileSync(path.join(FRONTEND, 'src/lib/player/decode/flac-stem-decode.ts'), 'utf8')
+		readFileSync(path.join(FRONTEND, 'src/lib/player/decode/stem-decode-lane.ts'), 'utf8')
 	);
 	if (margin === null) {
 		// Not defaulted: a margin this could not read is a comparison it cannot
 		// make, and guessing 1.25 would silently pass against a moved constant.
-		console.log('could not read LANE_MARGIN out of flac-stem-decode.ts');
+		console.log('could not read LANE_MARGIN out of stem-decode-lane.ts');
 		process.exit(1);
 	}
 	return margin;
@@ -140,7 +140,7 @@ async function bundleModule() {
 		const proc = spawn(
 			path.join(FRONTEND, 'node_modules/.bin/esbuild'),
 			[
-				path.join(FRONTEND, 'src/lib/player/decode/flac-stem-decode.ts'),
+				path.join(FRONTEND, 'tests/live/stem-decode-harness-entry.ts'),
 				'--bundle',
 				'--format=esm',
 				'--target=safari16',
