@@ -1,20 +1,12 @@
-"""NATIVE-01 beatgrid promotion gate: re-verify landed guarantees, block premature promotion.
+"""NATIVE-01 beatgrid serving contract. Launch default stays rbx; D1 persisted
+promotion is v2 NATIVE-14 (issue #2377).
 
 [if] beatgrid is promoted to own before BEATMAP-01's threshold is agreed [then] fail, [else stop].
 
-Requirement: NATIVE-01 (issue #2314). BEATMAP-01 shipped the bar-phase lock and
-agreement floors in issue #2351; D1 still does not flip the persisted beatgrid
-default to own. This file re-verifies the four landed consumer/producer/contract
-guarantees and asserts the launch state stays rbx.
-
-Acceptance lines exercised here:
-- [if] BEATMAP-01's agreed threshold is reached [then] the own static grid and downbeat,
-  served in the `/anlz` shape, are promoted per D1 (blocked here; threshold not met).
-- [if] promotion has not yet happened [then] the four already-landed guarantees continue
-  to hold and are re-verified, not assumed from the PARTIAL note.
-- [if] a `minimal` post-processor threshold change moves fixed-tempo F by more than 0.01
-  during the work on this issue [then] it is still recorded as a regression via the
-  existing guard, and closing this issue must not weaken that guard.
+Requirement: NATIVE-01 (issue #2377 close-out; gate originally #2314).
+BEATMAP-01 shipped the bar-phase lock in #2351. This file still re-verifies
+the four landed consumer/producer/contract guarantees and asserts the launch
+state stays rbx so shipping NATIVE-01 does not sneak a promotion.
 
 -Cursor
 """
