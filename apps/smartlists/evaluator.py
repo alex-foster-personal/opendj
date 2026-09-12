@@ -120,6 +120,35 @@ def _compile_paired_with(op: str, value: Any) -> tuple[str, list[Any]]:
     )
 
 
+def _compile_scalar_op(
+    field: str, op: str, col: str, value: Any, ftype: str,
+) -> tuple[str, list[Any]]:
+    if op in ("=", "!=", "<", "<=", ">", ">="):
+        return f"{col} {op} ?", [value]
+    if op == "between":
+        lo, hi = value
+        return f"{col} BETWEEN ? AND ?", [lo, hi]
+    if op == "in":
+        if not value:
+            return "0", []
+        placeholders = ", ".join("?" for _ in value)
+        return f"{col} IN ({placeholders})", list(value)
+    if op == "missing":
+        return f"({col}) IS NULL", []
+    if op == "contains":
+        if ftype == "list":
+            sql = (
+                "EXISTS (SELECT 1 FROM track_fields tf2, "
+                "json_each(tf2.value_json) je "
+                "WHERE tf2.stable_id = tracks.stable_id "
+                f"AND tf2.field_name = {_sql_literal(field)} "
+                "AND je.value = ?)"
+            )
+            return sql, [value]
+        return f"{col} LIKE ?", [f"%{value}%"]
+    raise SmartlistRuleError(f"evaluator: unsupported op {op!r}")
+
+
 def _compile_predicate(node: dict, selection: Selection) -> tuple[str, list[Any]]:
     field = node["field"]
     op = node["op"]
@@ -139,29 +168,7 @@ def _compile_predicate(node: dict, selection: Selection) -> tuple[str, list[Any]
 
     if ftype == "date":
         value = _prepare_date_value(value)
-
-    if op in ("=", "!=", "<", "<=", ">", ">="):
-        return f"{col} {op} ?", [value]
-    if op == "between":
-        lo, hi = value
-        return f"{col} BETWEEN ? AND ?", [lo, hi]
-    if op == "in":
-        if not value:
-            return "0", []
-        placeholders = ", ".join("?" for _ in value)
-        return f"{col} IN ({placeholders})", list(value)
-    if op == "contains":
-        if ftype == "list":
-            sql = (
-                "EXISTS (SELECT 1 FROM track_fields tf2, "
-                "json_each(tf2.value_json) je "
-                "WHERE tf2.stable_id = tracks.stable_id "
-                f"AND tf2.field_name = {_sql_literal(field)} "
-                "AND je.value = ?)"
-            )
-            return sql, [value]
-        return f"{col} LIKE ?", [f"%{value}%"]
-    raise SmartlistRuleError(f"evaluator: unsupported op {op!r}")
+    return _compile_scalar_op(field, op, col, value, ftype)
 
 
 def compile_rule(rule: dict, *, selection: Selection) -> tuple[str, list[Any]]:
