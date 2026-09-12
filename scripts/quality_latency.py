@@ -11,6 +11,7 @@ WIRING_FAIL_VALUE = 999.0
 
 _SOURCE_PATHS = (
     "apps/webui/frontend/src/lib/player/eq-apply.ts",
+    "apps/webui/frontend/src/lib/player/mixer-apply.ts",
     "apps/webui/frontend/src/lib/rb/audio-engine.svelte.ts",
     "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts",
     "apps/webui/frontend/src/lib/rb/perf-event-buckets.ts",
@@ -39,10 +40,10 @@ def _read_sources(repo: Path) -> dict[str, str]:
 
 def _wiring_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
-    eq_apply = sources[_SOURCE_PATHS[0]]
-    engine = sources[_SOURCE_PATHS[1]]
-    ipc = sources[_SOURCE_PATHS[2]]
-    buckets = sources[_SOURCE_PATHS[3]]
+    eq_apply = sources["apps/webui/frontend/src/lib/player/eq-apply.ts"]
+    engine = sources["apps/webui/frontend/src/lib/rb/audio-engine.svelte.ts"]
+    ipc = sources["apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts"]
+    buckets = sources["apps/webui/frontend/src/lib/rb/perf-event-buckets.ts"]
 
     if "linearRampToValueAtTime" not in eq_apply:
         failures.append("eq-apply.ts missing linearRampToValueAtTime")
@@ -64,6 +65,31 @@ def _wiring_failures(sources: dict[str, str]) -> list[str]:
 
     if "'eq-apply'" not in buckets:
         failures.append("perf-event-buckets missing eq-apply bucket")
+
+    if not re.search(r"setFilter\([^)]*pressT0Ms", engine):
+        failures.append("audio-engine setFilter does not accept pressT0Ms")
+    if not re.search(r"setFader\([^)]*pressT0Ms", engine):
+        failures.append("audio-engine setFader does not accept pressT0Ms")
+    if not re.search(r"setCrossfader\([^)]*pressT0Ms", engine):
+        failures.append("audio-engine setCrossfader does not accept pressT0Ms")
+    if not re.search(r"setStemMute\([^)]*pressT0Ms", engine):
+        failures.append("audio-engine setStemMute does not accept pressT0Ms")
+
+    if "engine.setFilter(command.deck, command.value, pressT0Ms)" not in ipc:
+        failures.append("performance-ipc does not forward pressT0Ms into setFilter")
+    if "engine.setFader(command.deck, command.value, pressT0Ms)" not in ipc:
+        failures.append("performance-ipc does not forward pressT0Ms into setFader")
+    if "engine.setCrossfader(command.value, pressT0Ms)" not in ipc:
+        failures.append("performance-ipc does not forward pressT0Ms into setCrossfader")
+    if "engine.setStemMute(command.deck, command.stem, command.muted, pressT0Ms)" not in ipc:
+        failures.append("performance-ipc does not forward pressT0Ms into setStemMute")
+    if "engine.setStemSolo(command.deck, command.stem, command.solo, pressT0Ms)" not in ipc:
+        failures.append("performance-ipc does not forward pressT0Ms into setStemSolo")
+
+    if "'mixer-apply'" not in buckets:
+        failures.append("perf-event-buckets missing mixer-apply bucket")
+    if "'filter-apply'" not in buckets and "filter-apply" not in buckets:
+        failures.append("perf-event-buckets missing filter-apply kind routing")
 
     return failures
 

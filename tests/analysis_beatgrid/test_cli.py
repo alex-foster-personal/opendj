@@ -68,16 +68,24 @@ def test_payload_carries_a_bar_number_for_every_beat_inside_1_to_4() -> None:
     assert all(1 <= n <= BAR_BEATS for n in numbers)
     assert analysis["bar_phase_unestablished"] is False
     assert analysis["bar_phase_reason"] is None
+    assert analysis["bar_phase_agreement"] == 1.0
     assert numbers[:5] == [1, 2, 3, 4, 1]
 
 
 def test_a_missed_downbeat_is_reported_rather_than_hidden_by_the_wrap() -> None:
-    """The wrap must not make a 8-beat bar indistinguishable from two real bars."""
-    analysis = analyze(_result(drop_downbeat_index=2), threshold=0.5)
+    """Diagnostic counts stay visible while the lock serves a legal cadence."""
+    beats = _grid(20)
+    downbeats = [beats[i] for i in (0, 4, 12, 16, 19)]
+    analysis = analyze(
+        {"beats": beats, "downbeats": downbeats, "activation_peak": 0.9},
+        threshold=0.5,
+    )
 
     assert set(analysis["beat_numbers"]) == {1, 2, 3, 4}
     assert analysis["n_bars_over_length"] == 1
     assert analysis["max_bar_beats"] == 8
+    assert analysis["bar_phase_agreement"] is not None
+    assert analysis["bar_phase_agreement"] < 1.0
 
 
 def test_an_analyzer_with_no_downbeat_concept_gets_no_invented_phase() -> None:

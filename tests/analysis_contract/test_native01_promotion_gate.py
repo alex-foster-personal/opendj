@@ -2,9 +2,10 @@
 
 [if] beatgrid is promoted to own before BEATMAP-01's threshold is agreed [then] fail, [else stop].
 
-Requirement: NATIVE-01 (issue #2314). BEATMAP-01's agreed threshold is still not set,
-so D1 does not flip the persisted beatgrid default to own. This file re-verifies the
-four landed consumer/producer/contract guarantees and asserts the launch state stays rbx.
+Requirement: NATIVE-01 (issue #2314). BEATMAP-01 shipped the bar-phase lock and
+agreement floors in issue #2351; D1 still does not flip the persisted beatgrid
+default to own. This file re-verifies the four landed consumer/producer/contract
+guarantees and asserts the launch state stays rbx.
 
 Acceptance lines exercised here:
 - [if] BEATMAP-01's agreed threshold is reached [then] the own static grid and downbeat,

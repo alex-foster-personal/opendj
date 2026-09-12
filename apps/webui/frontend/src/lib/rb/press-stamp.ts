@@ -17,6 +17,14 @@ import {
 	eqRampPlan
 } from '$lib/player/eq-apply';
 import {
+	FADER_APPLY_KIND,
+	FILTER_APPLY_KIND,
+	mixerApplyStages,
+	STEM_MUTE_APPLY_KIND,
+	STEM_SOLO_APPLY_KIND,
+	XFADER_APPLY_KIND
+} from '$lib/player/mixer-apply';
+import {
 	latencyFloorLabels,
 	type ScheduleRowKind,
 	scheduleRowKind,
@@ -26,6 +34,14 @@ import { claimArmedHotCuePress, claimLoadSpanningPress } from '$lib/rb/deck-slot
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 
 export { EQ_APPLY_KIND, applyEqRamp, eqApplyStages, eqRampPlan } from '$lib/player/eq-apply';
+export {
+	FADER_APPLY_KIND,
+	FILTER_APPLY_KIND,
+	mixerApplyStages,
+	STEM_MUTE_APPLY_KIND,
+	STEM_SOLO_APPLY_KIND,
+	XFADER_APPLY_KIND
+} from '$lib/player/mixer-apply';
 
 /**
  * A deck, exactly as the perf ring accepts one.
@@ -68,6 +84,21 @@ export function measurePressToScheduleMs(
 		return undefined;
 	}
 	return elapsedMs;
+}
+
+/** LATENCY-01: log input stamp vs AudioContext.currentTime at a mixer apply. */
+export function logMixerApply(
+	kind: string,
+	deck: PerfDeck,
+	pressT0Ms: number | undefined,
+	nowSec: number
+): void {
+	if (pressT0Ms === undefined) return;
+	const pressToApplyMs = measurePressToScheduleMs(pressT0Ms, deck);
+	if (pressToApplyMs === undefined) return;
+	recordPerfTiming(kind, mixerApplyStages({ pressToApplyMs }), deck, {
+		apply_context_time_s: String(nowSec)
+	});
 }
 
 /** LATENCY-03: log input stamp vs AudioContext.currentTime at the EQ apply. */
