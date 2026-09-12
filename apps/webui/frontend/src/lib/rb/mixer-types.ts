@@ -58,6 +58,8 @@ export interface HeadphoneState {
 	 * `split_cable` sends mono master on L and mono cue on R of the main output.
 	 * Selecting a monitor writes `two_outputs` and restores master-only main. */
 	output_mode: HeadphoneOutputMode;
+	/** Mixxx Head Delay, milliseconds, 0..500. Applied as a DelayNode after level on the monitor path. */
+	head_delay_ms: number;
 	outputs: HeadphoneOutputDevice[];
 	supported: boolean;
 	active: boolean;

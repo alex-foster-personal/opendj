@@ -7,8 +7,12 @@ import { queryPerformanceState } from './performance-ipc.svelte';
 import { installAgentOrderPoll } from './agent-orders';
 import { readXrunSessionCounter } from './xrun-sentinel';
 import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
-import { readPerfEvents } from './perf-event-log';
+import { readPerfEvents, recordPerfEvent } from './perf-event-log';
 import { buildAudioHealthMirror } from './audio-health-mirror';
+import {
+	classifyMirrorPublishGap,
+	mirrorStallMessage
+} from './mirror-publish-stall';
 
 const MIRROR_PATH = '/api/v1/state/ui-mirror';
 
@@ -57,6 +61,7 @@ export function buildUiMirror(): Record<string, unknown> {
 	const deviceLiveness = outputDeviceLivenessState();
 	return {
 		client_open: true,
+		published_at: new Date().toISOString(),
 		// The elected master, and so the deck a Duration times against when
 		// no clock is named. Without it an agent cannot resolve its own
 		// beat-relative order against the grid the page will use (#1739).
@@ -128,7 +133,21 @@ export function installUiMirror(): () => void {
 	// poll races its own first publish, loses, and the browser logs the 409 as a
 	// console error that no catch block can take back.
 	let registered = false;
+	let lastPublishAtMs: number | null = null;
 	const publish = (): void => {
+		const nowMs = Date.now();
+		if (
+			lastPublishAtMs !== null &&
+			classifyMirrorPublishGap(nowMs - lastPublishAtMs) === 'stall'
+		) {
+			recordPerfEvent(
+				'mirror-stall',
+				mirrorStallMessage(nowMs - lastPublishAtMs),
+				null,
+				'error'
+			);
+		}
+		lastPublishAtMs = nowMs;
 		void fetch(MIRROR_PATH, {
 			method: 'PUT',
 			headers: { 'content-type': 'application/json' },

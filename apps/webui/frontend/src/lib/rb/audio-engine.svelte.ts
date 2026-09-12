@@ -233,6 +233,7 @@ import {
 	ensureHeadphoneGraph,
 	refreshHeadphoneOutputs as refreshMonitorOutputs,
 	selectHeadphoneOutput as selectMonitorOutput,
+	setHeadDelayMs as setMonitorHeadDelay,
 	setHeadphoneOutputMode as setMonitorOutputMode,
 	wirePracticeBlendIntoMasterPath,
 	wireSplitCableIntoMasterPath
@@ -4071,6 +4072,7 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	setHeadphoneOutputMode = setMonitorOutputMode;
+	setHeadDelayMs = setMonitorHeadDelay;
 	refreshHeadphoneOutputs = refreshMonitorOutputs;
 	/** Must be called from a visible user gesture so the browser can open its
 	 * output chooser. This never requests microphone capture. */

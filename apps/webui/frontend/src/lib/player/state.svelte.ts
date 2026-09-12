@@ -101,6 +101,8 @@ export function _defaultChannel(deck_id: DeckId): MixerChannelState {
 	};
 }
 
+import { loadMixerConfig } from '$lib/player/mixer-config';
+
 /** Exported (name kept) so dispose resets headphones through one definition. */
 export function _defaultHeadphones(): HeadphoneState {
 	return {
@@ -108,6 +110,7 @@ export function _defaultHeadphones(): HeadphoneState {
 		level: 0.5,
 		selected_output_device_id: null,
 		output_mode: 'practice',
+		head_delay_ms: loadMixerConfig().head_delay_ms,
 		outputs: [],
 		supported: false,
 		active: false,

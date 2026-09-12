@@ -171,3 +171,17 @@ export const ANALYSER_FFT_SIZE = 4096;
 export const CONTEXT_WAIT_POLL_MS = 25;
 export const CONTEXT_WAIT_STALL_TIMEOUT_MS = 500;
 export const HEADPHONE_OPERATION_TIMEOUT_MS = 5_000;
+
+/** Mixxx Head Delay contract (CUEOUT-03). Inclusive. */
+export const HEAD_DELAY_MAX_MS = 500;
+
+export function assertHeadDelayMs(value: unknown): asserts value is number {
+	if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > HEAD_DELAY_MAX_MS) {
+		throw new RangeError(`head delay must be a finite number within 0..${HEAD_DELAY_MAX_MS}, got ${String(value)}`);
+	}
+}
+
+export function headDelaySeconds(ms: number): number {
+	assertHeadDelayMs(ms);
+	return ms / 1000;
+}

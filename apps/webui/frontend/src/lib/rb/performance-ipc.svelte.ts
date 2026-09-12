@@ -32,6 +32,7 @@
  *       transition to protect, and an engaged loop already owns its window
  */
 
+import { assertHeadDelayMs } from '$lib/player/constants';
 import {
 	copyToast,
 	dismissToast,
@@ -177,6 +178,7 @@ export type PerformanceCommand =
 	| { type: 'master_volume'; value: number }
 	| { type: 'headphone_mix'; value: number }
 	| { type: 'headphone_level'; value: number }
+	| { type: 'head_delay_ms'; value: number }
 	| { type: 'master_mute'; muted: boolean }
 	| { type: 'browser_select_playlist'; playlist_id: string }
 	| { type: 'headphone_outputs_refresh' }
@@ -853,6 +855,11 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		assertHeadphoneOutputMode(record.mode);
 		return { type, mode: record.mode };
 	}
+	if (type === 'head_delay_ms') {
+		_exactKeys(record, ['type', 'value']);
+		assertHeadDelayMs(record.value);
+		return { type, value: record.value };
+	}
 	if (type === 'analysis_source') {
 		_exactKeys(record, ['type', 'feature', 'source']);
 		if (record.feature !== 'beatgrid') throw new TypeError(`analysis-source feature must be beatgrid; got ${String(record.feature)}`);
@@ -1416,6 +1423,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'browser_select_playlist' ||
 		command.type === 'headphone_mix' ||
 		command.type === 'headphone_level' ||
+		command.type === 'head_delay_ms' ||
 		command.type === 'library_panels' ||
 		// View state only: no engine write to serialize, so queueing these
 		// behind a deck's command scope would stall a control that cannot
@@ -1613,6 +1621,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		engine.setHeadphoneMix(command.value);
 	} else if (command.type === 'headphone_level') {
 		engine.setHeadphoneLevel(command.value);
+	} else if (command.type === 'head_delay_ms') {
+		engine.setHeadDelayMs(command.value);
 	} else if (command.type === 'headphone_outputs_refresh') {
 		await engine.refreshHeadphoneOutputs();
 	} else if (command.type === 'headphone_output_acquire') {

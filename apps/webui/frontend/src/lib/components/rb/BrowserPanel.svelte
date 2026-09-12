@@ -2863,6 +2863,7 @@
 			onreorder={reorderRows}
 			onstemsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'stems', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
 			onlyricsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'lyrics', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
+			onopeneditmodal={(kind) => void openEditModal(kind)}
 			ongenrefilter={genreFilter}
 			{genreFilterUntil}
 			searchQuery={pane.search}
