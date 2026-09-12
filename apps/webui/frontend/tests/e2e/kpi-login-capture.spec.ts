@@ -245,6 +245,63 @@ async function waitForSignInReady(page: Page, budgetMs: () => number) {
 	return signInButton;
 }
 
+interface NavigationLog {
+	seen(): readonly string[];
+	reachedGoogle(): boolean;
+	reachedFrontend(): boolean;
+}
+
+/**
+ * Record every main-frame navigation from arming onward.
+ *
+ * Same discipline as the login POST above, one hop later: waiting for the SPA
+ * URL to come BACK cannot prove the page ever left, because the predicate is
+ * already satisfied by the URL the page is sitting on. A discarded
+ * `waitForURL(google)` left that hole open -- a login POST whose client-side
+ * redirect never fired fell straight through to the span wait and was
+ * misreported as restored-session or missing-telemetry. An empty log after a
+ * successful POST is the positive evidence that the redirect did not happen.
+ */
+function armNavigationLog(page: Page): NavigationLog {
+	const seen: string[] = [];
+	page.on('framenavigated', (frame) => {
+		if (frame !== page.mainFrame()) return;
+		seen.push(frame.url());
+	});
+	const has = (fragment: string): boolean =>
+		seen.some((url) => {
+			try {
+				return fragment === FRONTEND_ORIGIN
+					? new URL(url).origin === FRONTEND_ORIGIN
+					: new URL(url).hostname.includes(fragment);
+			} catch {
+				return false;
+			}
+		});
+	return {
+		seen: () => seen,
+		reachedGoogle: () => has(GOOGLE_HOST_FRAGMENT),
+		reachedFrontend: () => has(FRONTEND_ORIGIN)
+	};
+}
+
+/** Wait for the post-login redirect to actually leave the SPA. */
+async function waitForRedirectAway(
+	navLog: NavigationLog,
+	page: Page,
+	timeoutMs: number
+): Promise<boolean> {
+	const deadline = Date.now() + timeoutMs;
+	for (;;) {
+		// Google is the normal path; a direct return to the SPA is the shape a
+		// pre-granted consent would take, and both count as having left.
+		if (navLog.reachedGoogle() || navLog.reachedFrontend()) return true;
+		if (page.isClosed()) return false;
+		if (Date.now() >= deadline) return false;
+		await sleep(100);
+	}
+}
+
 /**
  * Click Sign in and PROVE the click started a login, retrying the bauble race.
  *
@@ -348,18 +405,29 @@ test('capture S13 login submit-to-library-usable span', async ({ page }) => {
 	await authSettled;
 
 	collector.reset();
+	const navLog = armNavigationLog(page);
 	const clickReason = await driveSignInClick(page, budgetMs);
 	if (clickReason !== null) {
 		writeResult({ ok: false, span: null, reason: clickReason });
 		return;
 	}
 
-	// Only now is a return to the SPA meaningful: we know the page left it.
-	await page
-		.waitForURL((url) => url.hostname.includes(GOOGLE_HOST_FRAGMENT), {
-			timeout: Math.min(budgetMs(), LOGIN_POST_WAIT_MS)
-		})
-		.catch(() => null);
+	// The POST proved the login STARTED. This proves the browser actually
+	// left, which is what makes a later return to the SPA mean anything.
+	const leftTheSpa = await waitForRedirectAway(
+		navLog,
+		page,
+		Math.min(budgetMs(), LOGIN_POST_WAIT_MS)
+	);
+	if (!leftTheSpa) {
+		writeResult({
+			ok: false,
+			span: null,
+			reason:
+				'cannot complete real Google login: the login started but the browser never navigated away from the SPA (no redirect to the consent URL)'
+		});
+		return;
+	}
 	const googleClickError = await driveGoogleInterstitials(page, budgetMs);
 
 	try {
