@@ -31,7 +31,10 @@ from .etag import compute_etag, strip_quotes
 from .playlist_add import add_memberships as _add_memberships
 from .playlist_add import MEMBERSHIP_ORDER_BY
 from .playlist_move import MoveResult, move_memberships as _move_memberships
-from .playlist_remove import apply_membership_snapshot, remove_membership as _remove_membership
+from .playlist_remove import (
+    apply_membership_snapshot,
+    remove_memberships as _remove_memberships,
+)
 from .playlist_transfer import (
     apply_dest_write,
     apply_source_write,
@@ -411,14 +414,26 @@ class PlaylistStore:
                 position=position, record_edit=record_edit,
             )
 
+    def remove_memberships(
+        self,
+        playlist_id: str,
+        item_ids: list[str],
+        *,
+        record_edit: bool = True,
+    ) -> PlaylistRow:
+        """O(1) remove via POST :remove or DELETE by item_id (LIBM-21)."""
+        with self._lock:
+            return _remove_memberships(
+                self, playlist_id, item_ids, record_edit=record_edit,
+            )
+
     def remove_membership(
         self, playlist_id: str, item_id: str, *, record_edit: bool = True,
     ) -> PlaylistRow:
         """O(1) remove via DELETE by item_id (LIBM-21)."""
-        with self._lock:
-            return _remove_membership(
-                self, playlist_id, item_id, record_edit=record_edit,
-            )
+        return self.remove_memberships(
+            playlist_id, [item_id], record_edit=record_edit,
+        )
 
     def move_memberships(
         self,
