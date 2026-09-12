@@ -59,6 +59,7 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_output_select', device_id: 'usb' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'practice' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'two_outputs' }), ['headphone']);
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'head_delay_ms', value: 40 }), null);
 	assert.deepEqual(
 		ipc.performanceCommandQueueScopes({ type: 'analysis_source', feature: 'beatgrid', source: 'own' }),
 		[1, 2, 3, 4, 'sync']
@@ -944,6 +945,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 			level: 0.75,
 			selected_output_device_id: null,
 			output_mode: 'practice',
+			head_delay_ms: 0,
 			outputs: [],
 			supported: false,
 			active: false,
@@ -1022,6 +1024,7 @@ test('mixer headphone controls use the typed dispatcher from every visible contr
 	assert.match(mixer, /type: 'channel_cue'/);
 	assert.match(mixer, /type: 'headphone_mix'/);
 	assert.match(mixer, /type: 'headphone_level'/);
+	assert.match(mixer, /type: 'head_delay_ms'/);
 	assert.match(mixer, /type: 'headphone_outputs_refresh'/);
 	assert.match(mixer, /type: 'headphone_output_acquire'/);
 	assert.match(mixer, /type: 'headphone_output_select'/);
@@ -1029,6 +1032,7 @@ test('mixer headphone controls use the typed dispatcher from every visible contr
 	assert.match(headphones, /Grant browser access to a second audio output/);
 	assert.match(strip, /aria-pressed=\{cueEnabled\}/);
 	assert.match(headphones, /aria-label="headphone output device"/);
+	assert.match(headphones, /ondelay/);
 });
 
 // requirement: CUEOUT-01

@@ -4,6 +4,7 @@
 	 * Real CUE/MASTER monitor mix, level, and browser-selected output device.
 	 */
 	import { knobId } from '$lib/rb/knob-control.svelte';
+	import { twoOutputsWarning } from '$lib/player/headphones';
 	import Knob from './Knob.svelte';
 	import type { HeadphoneState } from '$lib/rb/mixer-types';
 
@@ -11,12 +12,20 @@
 		state: HeadphoneState;
 		onmix: (value: number) => void;
 		onlevel: (value: number) => void;
+		ondelay: (value: number) => void;
 		onrefresh: () => void;
 		onacquire: () => void;
 		onselect: (deviceId: string) => void;
 	}
 
-	let { state, onmix, onlevel, onrefresh, onacquire, onselect }: Props = $props();
+	let { state, onmix, onlevel, ondelay, onrefresh, onacquire, onselect }: Props = $props();
+
+	const selectedLabel = $derived(
+		state.selected_output_device_id === null
+			? null
+			: (state.outputs.find((output) => output.id === state.selected_output_device_id)?.label ?? null)
+	);
+	const warningText = $derived(twoOutputsWarning({ outputMode: state.output_mode, selectedLabel }));
 </script>
 
 <div class="hp" data-performance-control="headphones">
@@ -68,6 +77,26 @@
 			<option value={output.id}>{output.label || output.id}</option>
 		{/each}
 	</select>
+	{#if state.output_mode === 'two_outputs'}
+		<label class="hp-delay">
+			<span class="hp-delay-label">HEAD DELAY</span>
+			<input
+				type="number"
+				min="0"
+				max="500"
+				step="1"
+				value={state.head_delay_ms}
+				aria-label="head delay milliseconds"
+				title="Monitor head delay in milliseconds (Mixxx Head Delay contract)"
+				data-performance-control="head-delay"
+				onchange={(event) => ondelay(Number(event.currentTarget.value))}
+			/>
+			<span class="hp-delay-unit">ms</span>
+		</label>
+		{#if warningText !== null}
+			<span class="hp-warn" role="status" data-two-outputs-warning>{warningText}</span>
+		{/if}
+	{/if}
 	{#if state.error !== null}<span class="hp-error">{state.error}</span>{/if}
 </div>
 
@@ -117,5 +146,32 @@
 		color: var(--rb-danger, #ff6b6b);
 		font-size: 7px;
 		max-width: 100px;
+	}
+	.hp-delay {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		font-size: 7px;
+		color: var(--rb-text-dim, #838990);
+	}
+	.hp-delay-label {
+		letter-spacing: 0.04em;
+	}
+	.hp-delay input {
+		font: inherit;
+		font-size: 7px;
+		width: 36px;
+		padding: 0 2px;
+		background: var(--rb-panel-raised, #1a1e25);
+		border: 1px solid var(--rb-border, #23282f);
+		color: var(--rb-text-dim, #838990);
+	}
+	.hp-delay-unit {
+		letter-spacing: 0.04em;
+	}
+	.hp-warn {
+		color: var(--rb-warn, #e6a23c);
+		font-size: 7px;
+		max-width: 140px;
 	}
 </style>

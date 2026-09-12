@@ -57,6 +57,8 @@ export interface HeadphoneState {
 	/** `practice` blends PFL into the main output when no monitor is selected.
 	 * Selecting a monitor writes `two_outputs` and restores master-only main. */
 	output_mode: HeadphoneOutputMode;
+	/** Mixxx Head Delay, milliseconds, 0..500. Applied as a DelayNode after level on the monitor path. */
+	head_delay_ms: number;
 	outputs: HeadphoneOutputDevice[];
 	supported: boolean;
 	active: boolean;

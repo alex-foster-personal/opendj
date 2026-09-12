@@ -115,6 +115,7 @@ export interface AudioEngine {
 	/** Set CUE-to-MASTER monitor mix and headphone level. */
 	setHeadphoneMix(value: number): void;
 	setHeadphoneLevel(value: number): void;
+	setHeadDelayMs(value: number): void;
 	/** Practice vs two-output routing. Unknown modes throw. */
 	setHeadphoneOutputMode(mode: HeadphoneOutputMode): void;
 	/** Enumerate browser audio-output devices for explicit sink selection. */
