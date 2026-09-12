@@ -60,9 +60,7 @@ def test_simple_labels_survive(raw: str) -> None:
     assert validate_label(raw) == raw.strip()
 
 
-@pytest.mark.parametrize(
-    "raw", ["b b", "../x", "-b", "b.", "b/c", "lane b", "b_c", "b-c", "é"]
-)
+@pytest.mark.parametrize("raw", ["b b", "../x", "-b", "b.", "b/c", "lane b", "b_c", "b-c", "é"])
 @pytest.mark.requirement("INSTALL-06")
 def test_unsafe_labels_are_refused_not_sanitised(raw: str) -> None:
     with pytest.raises(LaneLabelError):
@@ -89,9 +87,7 @@ def test_label_suffixes_identifier_lowercased() -> None:
 def test_identifier_suffix_is_case_insensitive_for_apple() -> None:
     # Apple treats identifiers case-insensitively, so 'B' and 'b' must not
     # produce two identifiers that collide on disk but differ in config.
-    assert lane_identifier(BASE_IDENTIFIER, "B") == lane_identifier(
-        BASE_IDENTIFIER, "b"
-    )
+    assert lane_identifier(BASE_IDENTIFIER, "B") == lane_identifier(BASE_IDENTIFIER, "b")
 
 
 @pytest.mark.requirement("INSTALL-06")
@@ -124,15 +120,11 @@ def test_product_slug_strips_the_space() -> None:
 
 
 def test_unlabelled_dmg_name() -> None:
-    assert dmg_filename(BASE_PRODUCT, None, "0.1.0", "aarch64") == (
-        "OpenDJ-0.1.0-aarch64.dmg"
-    )
+    assert dmg_filename(BASE_PRODUCT, None, "0.1.0", "aarch64") == ("OpenDJ-0.1.0-aarch64.dmg")
 
 
 def test_labelled_dmg_name() -> None:
-    assert dmg_filename(BASE_PRODUCT, "B", "0.1.0", "aarch64") == (
-        "OpenDJ-B-0.1.0-aarch64.dmg"
-    )
+    assert dmg_filename(BASE_PRODUCT, "B", "0.1.0", "aarch64") == ("OpenDJ-B-0.1.0-aarch64.dmg")
 
 
 @pytest.mark.parametrize("label", [None, "B"])
@@ -237,9 +229,7 @@ def test_the_recipe_clears_the_app_bundle_before_building() -> None:
         for index, line in enumerate(body)
         if "bundle/macos" in line and line.strip().startswith("rm ")
     ]
-    builds = [
-        index for index, line in enumerate(body) if "cargo tauri build" in line
-    ]
+    builds = [index for index, line in enumerate(body) if "cargo tauri build" in line]
     assert len(clears) == 1, [body[index] for index in clears]
     assert builds, "the bundler invocation vanished from the dmg recipe"
     assert clears[0] < builds[0]
@@ -287,9 +277,7 @@ def test_the_shell_bakes_no_default_engine_origin() -> None:
     answer first. The setup page keeps its own default because it is also
     openable in a plain browser, where nothing injects an origin.
     """
-    setup_js = (TAURI_CONF.parent.parent / "setup/setup.js").read_text(
-        encoding="utf-8"
-    )
+    setup_js = (TAURI_CONF.parent.parent / "setup/setup.js").read_text(encoding="utf-8")
     main_rs = (TAURI_CONF.parent / "src/main.rs").read_text(encoding="utf-8")
     assert "export const DEFAULT_ENGINE_ORIGIN = 'http://127.0.0.1:8685';" in setup_js
     assert "DEFAULT_ENGINE_ORIGIN" not in main_rs
@@ -359,9 +347,7 @@ def test_a_failed_boot_raises_a_dialog_rather_than_a_blank_window() -> None:
     assert "std::process::exit(1)" in main_rs
     # The window is only ever built after a healthy engine, so the failure
     # path cannot reach WebviewWindowBuilder.
-    assert main_rs.index("fail_visibly(&failure)") < main_rs.index(
-        "WebviewWindowBuilder::new"
-    )
+    assert main_rs.index("fail_visibly(&failure)") < main_rs.index("WebviewWindowBuilder::new")
     assert "wait_until_healthy" in engine_rs
 
 
@@ -390,6 +376,8 @@ def test_the_shell_stamps_itself_at_compile_time() -> None:
         "OPENDJ_BUILD_GIT_DIRTY",
         "OPENDJ_BUILD_AT_UTC",
         "OPENDJ_BUILD_LANE_LABEL",
+        "OPENDJ_BUILD_CHANNEL",
+        "OPENDJ_BUILD_EVIDENCE_AT_UTC",
     ]
     for name in stamped:
         assert f'option_env!("{name}")' in main_rs, name
@@ -422,9 +410,7 @@ def test_cli_emits_an_empty_overlay_without_a_label() -> None:
 
 @pytest.mark.requirement("INSTALL-06")
 def test_cli_emits_the_lane_overlay() -> None:
-    emitted = json.loads(
-        _run_cli("overlay", "--config", str(TAURI_CONF), "--label", "B")
-    )
+    emitted = json.loads(_run_cli("overlay", "--config", str(TAURI_CONF), "--label", "B"))
     assert emitted["identifier"] == "com.opendj.desktop.lane-b"
     assert emitted["productName"] == "Open DJ (B)"
 
@@ -550,11 +536,13 @@ def test_the_dmg_recipe_stamps_the_shell_from_the_payload_manifest() -> None:
         "OPENDJ_BUILD_GIT_DIRTY",
         "OPENDJ_BUILD_AT_UTC",
         "OPENDJ_BUILD_LANE_LABEL",
+        "OPENDJ_BUILD_CHANNEL",
+        "OPENDJ_BUILD_EVIDENCE_AT_UTC",
     ):
         assert f"export {name}=$(stamp " in recipe, name
     # The dmg must not be assembleable around a payload from another commit.
-    assert "rm -rf \"$payload\"" in recipe
-    assert "scripts.build_engine_payload --out \"$payload\"" in recipe
+    assert 'rm -rf "$payload"' in recipe
+    assert 'scripts.build_engine_payload --out "$payload"' in recipe
     assert '[ "$shipped_sha" = "$OPENDJ_BUILD_GIT_SHA" ]' in recipe
 
 

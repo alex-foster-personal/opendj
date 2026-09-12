@@ -36,9 +36,50 @@ require_command() {
     command -v "$1" >/dev/null 2>&1 || die "required command is unavailable: $1"
 }
 
-require_command gh
 require_command python3
+
+CHANNEL="nightly"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --)
+            shift
+            ;;
+        --channel)
+            [ $# -ge 2 ] || die "--channel needs a value (stable or nightly)"
+            CHANNEL="$2"
+            shift 2
+            ;;
+        --channel=*)
+            CHANNEL="${1#--channel=}"
+            shift
+            ;;
+        *)
+            die "unknown argument: $1"
+            ;;
+    esac
+done
+case "$CHANNEL" in
+    stable|nightly) ;;
+    *) die "unknown --channel $CHANNEL (expected stable or nightly)" ;;
+esac
+
+cd "$ROOT"
+git_sha="$(git -C "$ROOT" rev-parse HEAD)"
+
+# OPS-18: the stable gate names missing evidence BEFORE Darwin/signing spend,
+# so `just release --channel stable` on Linux (and on a Mac with no file)
+# reports the hole instead of "requires macOS".
+if [ "$CHANNEL" = "stable" ]; then
+    python3 -m scripts.stable_evidence gate --sha "$git_sha" \
+        || die "stable channel refused for $git_sha"
+    OPENDJ_EVIDENCE_WRITTEN_AT_UTC="$(python3 -m scripts.stable_evidence written-at --sha "$git_sha")"
+    export OPENDJ_EVIDENCE_WRITTEN_AT_UTC
+fi
+export OPENDJ_RELEASE_CHANNEL="$CHANNEL"
+export CHANNEL
+
 [ "$(uname -s)" = "Darwin" ] || die "just release requires macOS for Developer ID and notarization verification"
+require_command gh
 require_command xcrun
 require_command spctl
 
@@ -49,7 +90,6 @@ require_command spctl
 
 version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$CONF")"
 tag="v$version"
-git_sha="$(git -C "$ROOT" rev-parse HEAD)"
 
 git -C "$ROOT" diff --quiet || die "release requires a clean tracked working tree"
 git -C "$ROOT" diff --cached --quiet || die "release requires a clean index"
@@ -72,6 +112,12 @@ manifest = json.loads(Path(os.environ["MANIFEST"]).read_text(encoding="utf-8"))
 entry = manifest.get("platforms", {}).get("darwin-aarch64", {})
 if manifest.get("version") != os.environ["VERSION"]:
     raise SystemExit("existing latest.json has a different version")
+existing_channel = manifest.get("channel")
+if existing_channel is None:
+    if os.environ["CHANNEL"] != "nightly":
+        raise SystemExit("existing latest.json has no channel; only a nightly retry is allowed")
+elif existing_channel != os.environ["CHANNEL"]:
+    raise SystemExit("existing latest.json has a different channel")
 if os.environ["GIT_SHA"] not in str(manifest.get("notes", "")):
     raise SystemExit("existing latest.json does not name this build SHA")
 if not isinstance(entry.get("signature"), str) or not entry["signature"].strip():
@@ -122,6 +168,7 @@ manifest = {
     "version": os.environ["VERSION"],
     "notes": f"built from {os.environ['GIT_SHA']}",
     "pub_date": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    "channel": os.environ["CHANNEL"],
     "platforms": {
         "darwin-aarch64": {
             "signature": signature,

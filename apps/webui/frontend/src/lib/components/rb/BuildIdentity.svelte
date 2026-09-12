@@ -70,6 +70,12 @@
 	const drift = $derived(describeDrift(shell, engine));
 	const engineStamp = $derived(engine.kind === 'ok' ? formatStamp(engine.value.built_at_utc) : null);
 	const shellStamp = $derived(shell.kind === 'ok' ? formatStamp(shell.value.built_at_utc) : null);
+	const channel = $derived(
+		shell.kind === 'ok' && shell.value.release_channel ? shell.value.release_channel : null
+	);
+	const evidenceStamp = $derived(
+		shell.kind === 'ok' ? formatStamp(shell.value.evidence_written_at_utc) : null
+	);
 
 	/** Where this app lives. Read once at mount, for the same reason the build
 	 * identity is: it does not change while the page is open. */
@@ -206,6 +212,11 @@
 		<span class="lane" title="The bake-off lane this artifact was built as, from the payload manifest.">
 			{lane}
 		</span>
+		{#if channel !== null}
+			<span class="channel" title="Release channel conferred by the process, from the shell stamp.">
+				{channel}
+			</span>
+		{/if}
 		<!-- shortLabel composes the sha and the DIRTY marker, so there is one
 		     place that decides what the compact label says. The span goes
 		     amber as a whole when it carries DIRTY: a dirty build must not be
@@ -227,7 +238,14 @@
 		{#if updateSummary !== null && updateSummary.prominent}
 			<span class="update-badge" title={updateSummary.title}>{updateSummary.label}</span>
 		{/if}
-		{#if engineStamp !== null}
+		{#if evidenceStamp !== null}
+			<span
+				class="when"
+				title={`Stable evidence written ${evidenceStamp.local} local time, ${evidenceStamp.utc} UTC.`}
+			>
+				{evidenceStamp.local}
+			</span>
+		{:else if engineStamp !== null}
 			<span
 				class="when"
 				title={`Built ${engineStamp.local} local time, ${engineStamp.utc} UTC. Source: ${engine.kind === 'ok' && engine.value.built_at_kind === 'payload-build' ? 'when the payload was packaged' : "the HEAD commit's timestamp, because this engine runs from a source checkout"}.`}
@@ -239,6 +257,20 @@
 
 	{#if expanded}
 		<dl class="detail">
+			<dt title="Release channel conferred on this sha, plus the evidence file timestamp for a stable install.">
+				channel
+			</dt>
+			<dd>
+				{#if channel !== null}
+					<code>{channel}</code>
+					{#if evidenceStamp !== null}
+						<span class="meta">evidence {evidenceStamp.utc}</span>
+					{/if}
+				{:else}
+					<span class="meta">no release channel on this stamp</span>
+				{/if}
+			</dd>
+
 			<dt
 				title="Version identities for the engine and the surface running this page. The surface says whether feedback came from the Chrome dev loop or a packaged DMG app."
 			>
@@ -414,6 +446,9 @@
 	.lane {
 		font-weight: 700;
 		color: var(--accent, #d97757);
+	}
+	.channel {
+		font-weight: 700;
 	}
 	.sha {
 		letter-spacing: 0.02em;
