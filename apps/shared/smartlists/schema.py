@@ -89,27 +89,18 @@ def _validate_typed_list(field: str, value: list, path: str, *, op: str) -> None
                        "or {'$relative': '-Nd'} objects")
 
 
-def _validate_operand(field: str, op: str, value: Any, path: str) -> None:
+def _validate_list_op(field: str, op: str, value: Any, path: str) -> None:
     if op == "between":
         if not (isinstance(value, list) and len(value) == 2):
             raise _err(f"{path}.value", "between op expects [lo, hi] list")
         _validate_typed_list(field, value, path, op="between")
         return
-    if op == "in":
-        if not isinstance(value, list):
-            raise _err(f"{path}.value", "in op expects a list of values")
-        _validate_typed_list(field, value, path, op="in")
-        return
-    if op == "contains":
-        if not isinstance(value, str):
-            raise _err(f"{path}.value",
-                       "contains op expects a string value")
-        return
-    if op == "missing":
-        if value is not None:
-            raise _err(f"{path}.value",
-                       "missing op requires value null")
-        return
+    if not isinstance(value, list):
+        raise _err(f"{path}.value", "in op expects a list of values")
+    _validate_typed_list(field, value, path, op="in")
+
+
+def _validate_scalar_operand(field: str, value: Any, path: str) -> None:
     ftype = FIELD_TYPES[field]
     if ftype == "number" and not isinstance(value, (int, float)):
         raise _err(f"{path}.value",
@@ -123,6 +114,23 @@ def _validate_operand(field: str, op: str, value: Any, path: str) -> None:
         raise _err(f"{path}.value",
                    "date fields accept an ISO-8601 string or a "
                    "{'$relative': '-Nd'} object")
+
+
+def _validate_operand(field: str, op: str, value: Any, path: str) -> None:
+    if op in ("between", "in"):
+        _validate_list_op(field, op, value, path)
+        return
+    if op == "contains":
+        if not isinstance(value, str):
+            raise _err(f"{path}.value",
+                       "contains op expects a string value")
+        return
+    if op == "missing":
+        if value is not None:
+            raise _err(f"{path}.value",
+                       "missing op requires value null")
+        return
+    _validate_scalar_operand(field, value, path)
 
 
 def _validate_predicate(node: dict, path: str) -> None:

@@ -120,26 +120,9 @@ def _compile_paired_with(op: str, value: Any) -> tuple[str, list[Any]]:
     )
 
 
-def _compile_predicate(node: dict, selection: Selection) -> tuple[str, list[Any]]:
-    field = node["field"]
-    op = node["op"]
-    value = node["value"]
-
-    if field == "paired_with":
-        return _compile_paired_with(op, value)
-
-    # Lane-owned fields resolve through apps.analysis.selection, which is
-    # also what the track read model calls: same module, same Selection,
-    # same table-choice rule, so the two readers cannot disagree.
-    if field in PROJECTION_FIELDS:
-        col = field_column_sql(field, selection)
-    else:
-        col = _TRACKS_NATIVE.get(field) or _eav_scalar(field)
-    ftype = FIELD_TYPES[field]
-
-    if ftype == "date":
-        value = _prepare_date_value(value)
-
+def _compile_scalar_op(
+    field: str, op: str, col: str, value: Any, ftype: str,
+) -> tuple[str, list[Any]]:
     if op in ("=", "!=", "<", "<=", ">", ">="):
         return f"{col} {op} ?", [value]
     if op == "between":
@@ -164,6 +147,28 @@ def _compile_predicate(node: dict, selection: Selection) -> tuple[str, list[Any]
             return sql, [value]
         return f"{col} LIKE ?", [f"%{value}%"]
     raise SmartlistRuleError(f"evaluator: unsupported op {op!r}")
+
+
+def _compile_predicate(node: dict, selection: Selection) -> tuple[str, list[Any]]:
+    field = node["field"]
+    op = node["op"]
+    value = node["value"]
+
+    if field == "paired_with":
+        return _compile_paired_with(op, value)
+
+    # Lane-owned fields resolve through apps.analysis.selection, which is
+    # also what the track read model calls: same module, same Selection,
+    # same table-choice rule, so the two readers cannot disagree.
+    if field in PROJECTION_FIELDS:
+        col = field_column_sql(field, selection)
+    else:
+        col = _TRACKS_NATIVE.get(field) or _eav_scalar(field)
+    ftype = FIELD_TYPES[field]
+
+    if ftype == "date":
+        value = _prepare_date_value(value)
+    return _compile_scalar_op(field, op, col, value, ftype)
 
 
 def compile_rule(rule: dict, *, selection: Selection) -> tuple[str, list[Any]]:
