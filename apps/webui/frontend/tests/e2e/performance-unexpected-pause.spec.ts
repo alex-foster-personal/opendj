@@ -34,7 +34,7 @@ test('suspended AudioContext records audio-unexpected-pause fault and client err
 	await page.addInitScript(() => {
 		const Orig = window.AudioContext;
 		const seen: AudioContext[] = [];
-		const Wrapped = function (this: AudioContext, ...args: unknown[]) {
+		const Wrapped = function (this: AudioContext, ...args: ConstructorParameters<typeof AudioContext>) {
 			const ctx = new Orig(...args);
 			seen.push(ctx);
 			return ctx;

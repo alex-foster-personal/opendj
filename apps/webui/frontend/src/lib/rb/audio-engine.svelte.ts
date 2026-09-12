@@ -1837,10 +1837,11 @@ function _publishPresentedTransport(
 	}
 	if (naturalEndNeedsRevisionedStop(st.playing, observation, rt.durationSec, rt.scheduleIntentCount)) {
 		if (_ctx === null) throw new Error('natural-end cleanup requires an AudioContext');
+		const ctx = _ctx;
 		void withPauseOrigin('natural-end', () =>
 			_scheduleDeck(
 				deck,
-				safeTransportScheduleTime(_ctx.currentTime, _transportLeadSec(deck)),
+				safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck)),
 				rt.durationSec,
 				false
 			)
