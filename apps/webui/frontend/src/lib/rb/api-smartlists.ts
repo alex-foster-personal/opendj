@@ -126,3 +126,14 @@ export async function getSmartlistTracks(id: string, limit?: number): Promise<Sm
 		_throwSmartlistError(error);
 	}
 }
+
+/** DELETE /smartlists/{id} -> 204, so no unwrap: middleware throws on non-2xx. */
+export async function deleteSmartlist(id: string): Promise<void> {
+	try {
+		await api.DELETE('/api/v1/smartlists/{smartlist_id}', {
+			params: { path: { smartlist_id: id } }
+		});
+	} catch (error) {
+		_throwSmartlistError(error);
+	}
+}

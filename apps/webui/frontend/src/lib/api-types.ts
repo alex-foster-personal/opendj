@@ -3219,7 +3219,11 @@ export interface paths {
          */
         put: operations["update_smartlist_api_v1_smartlists__smartlist_id__put"];
         post?: never;
-        delete?: never;
+        /**
+         * Delete Smartlist
+         * @description Remove a smartlist row (hard delete via SmartlistsRepo.delete).
+         */
+        delete: operations["delete_smartlist_api_v1_smartlists__smartlist_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -17064,6 +17068,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SmartlistPreconditionRequiredBody"];
+                };
+            };
+        };
+    };
+    delete_smartlist_api_v1_smartlists__smartlist_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                smartlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
