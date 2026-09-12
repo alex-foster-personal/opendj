@@ -70,6 +70,11 @@ ALLOWED_CONTEXT_KEYS: frozenset[str] = frozenset(
         # host
         "platform",
         "python_version",
+        # OBS-01 identity on the one sink
+        "error_id",
+        "host",
+        "build_sha",
+        "source_site",
     }
 )
 

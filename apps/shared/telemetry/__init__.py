@@ -13,10 +13,10 @@ THREE STATES, NEVER A SILENT ONE
 ``OPENDJ_TELEMETRY`` is tri-state on purpose, because "off" and "off because
 the DSN was missing" are different faults and only one of them is acceptable.
 
-- unset      -> the build decides. A payload build (installed, shipped to a
-                tester) is ON; a repo checkout (a developer's machine) is
-                OFF. This mirrors the rule the setup wizard already follows:
-                build source is behavior, not only a readout.
+- unset      -> OFF. A payload build (installed, shipped to a tester) and a
+                repo checkout both stay off until a consent UX exists. Fleet
+                test builds set OPENDJ_TELEMETRY=1. A DSN in the environment
+                is not consent.
 - 1/true/on  -> ON, and a missing DSN is a HARD ERROR at startup. Somebody
                 asked for telemetry by name; starting without it would mean
                 the errors they were waiting on never arrive and nothing ever
@@ -56,7 +56,7 @@ Requirements:
   the variable to set. -> :func:`decide_telemetry`
 - ✔︎ ✅ 🎯 Telemetry disabled leaves ``sentry_sdk`` unimported.
   -> :func:`init_telemetry`
-- ✔︎ ✅ 🎯 A repo checkout defaults OFF, a payload build defaults ON.
+- ✔︎ ✅ 🎯 A repo checkout and a payload build both default OFF.
   -> :func:`decide_telemetry`
 - ✔︎ ✅ 🎯 Track titles and library paths never reach an event payload.
   -> :func:`scrub_event`
@@ -200,32 +200,16 @@ def decide_telemetry(
             explicit=True,
         )
 
-    # Unset: the build decides.
-    if environment == "dev":
-        return TelemetryDecision(
-            enabled=False,
-            environment=environment,
-            reason=(
-                "developer checkout defaults to off; set "
-                f"{TELEMETRY_ENV}=1 to opt in"
-            ),
-        )
-    if not dsn:
-        # Deliberately not an exception -- see the module docstring.
-        return TelemetryDecision(
-            enabled=False,
-            environment=environment,
-            reason=(
-                f"shipped build defaults to on but {DSN_ENV} was not baked "
-                "into it, so no errors will be reported from this install"
-            ),
-        )
+    # Unset: default OFF everywhere until a consent UX exists (OBS-01).
+    # Fleet test builds set OPENDJ_TELEMETRY=1. A DSN is not consent.
     return TelemetryDecision(
-        enabled=True,
+        enabled=False,
         environment=environment,
-        reason="shipped build defaults to on",
-        dsn=dsn,
-        release=release,
+        reason=(
+            "telemetry defaults to off; a "
+            f"{DSN_ENV} in the environment is not consent. set "
+            f"{TELEMETRY_ENV}=1 to opt in"
+        ),
     )
 
 
@@ -284,7 +268,7 @@ def init_telemetry(
         send_default_pii=False,
         include_local_variables=False,
         max_breadcrumbs=25,
-        before_send=scrub_event,
+        before_send=_before_send,
         integrations=[
             StarletteIntegration(failed_request_status_codes=set()),
             FastApiIntegration(failed_request_status_codes=set()),
@@ -297,6 +281,19 @@ def init_telemetry(
         decision.reason,
     )
     return True
+
+
+def _before_send(
+    event: dict[str, Any], hint: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Stamp error id / host / sha, then run the privacy scrub."""
+    try:
+        from apps.shared.telemetry.sink import enrich_sentry_event
+
+        enrich_sentry_event(event, hint)
+    except Exception:
+        log.warning("error-sink enrich failed", exc_info=True)
+    return scrub_event(event, hint)
 
 
 # ----- browser errors -----------------------------------------------------
@@ -342,6 +339,18 @@ def capture_browser_error(
     case, and not a failure). Never raises: reporting an error must not
     become one.
     """
+    from apps.shared.telemetry.sink import (
+        capture_error_event,
+        client_error_message,
+        client_source_site,
+    )
+
+    kind = str(context.get("kind") or "client")
+    record = capture_error_event(
+        message=client_error_message(name, message),
+        source_site=client_source_site(kind, url),
+        kind="client",
+    )
     client = _client()
     if client is None:
         return None
@@ -350,6 +359,12 @@ def capture_browser_error(
 
         with sentry_sdk.new_scope() as scope:
             scope.set_tag("origin", "browser")
+            scope.set_tag("error_id", record.error_id)
+            scope.set_tag("host", record.host)
+            scope.set_tag("build_sha", record.build_sha)
+            scope.set_tag("kind", "client")
+            scope.set_tag("source_site", record.source_site)
+            scope.fingerprint = [record.error_id]
             scope.set_context(
                 "browser_error",
                 {
@@ -366,7 +381,7 @@ def capture_browser_error(
                 scope.set_extra(key, value)
             # A browser stack is a string here, not a Python traceback, so it
             # travels as the message body. Sentry groups on it the same way.
-            body = f"{name or 'Error'}: {message}"
+            body = client_error_message(name, message)
             if stack:
                 body = f"{body}\n{stack}"
             return sentry_sdk.capture_message(body, level="error")

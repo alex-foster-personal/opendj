@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -30,6 +29,9 @@ def test_warning_log_writes_warning_with_boot_id(tmp_path: Path) -> None:
     record = json.loads(records[0])
     assert record["boot_id"] == "boot-test"
     assert record["level"] == "WARNING"
+    assert record["error_id"].startswith("eid-")
+    assert "host" in record
+    assert "build_sha" in record
     assert "focused JSONL" in record["message"]
     assert "recorded once" in json.loads(records[1])["message"]
 
