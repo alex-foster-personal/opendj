@@ -43,10 +43,14 @@ test('frozen getOutputTimestamp stalls output health, toasts, logs, and recovers
 		const proto = AudioContext.prototype;
 		const orig = proto.getOutputTimestamp;
 		let frozen: number | null = null;
-		proto.getOutputTimestamp = function (this: AudioContext) {
+		proto.getOutputTimestamp = function (this: AudioContext): AudioTimestamp {
 			const ts = orig.call(this);
-			if (frozen === null) frozen = ts.contextTime;
-			return { contextTime: frozen as number, performanceTime: ts.performanceTime ?? 0 };
+			if (frozen === null && ts.contextTime !== undefined) frozen = ts.contextTime;
+			const contextTime = frozen ?? ts.contextTime;
+			if (contextTime === undefined) {
+				return { performanceTime: ts.performanceTime ?? 0 };
+			}
+			return { contextTime, performanceTime: ts.performanceTime ?? 0 };
 		};
 	});
 
