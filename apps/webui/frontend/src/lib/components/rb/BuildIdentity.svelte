@@ -54,6 +54,7 @@
 		applyUpdate,
 		canApplyHere,
 		fetchUpdateCheck,
+		isUpdaterExpected,
 		summarizeUpdate,
 		type ApplyProgress,
 		type UpdateState
@@ -85,7 +86,14 @@
 	/** The outcome of the last install attempt. Success or failure, never blank. */
 	let applyNote = $state<string | null>(null);
 
-	const updateSummary = $derived(summarizeUpdate(update));
+	const updaterExpected = $derived(
+		isUpdaterExpected({
+			isDev: import.meta.env.DEV,
+			engineSource: engine.kind === 'ok' ? engine.value.source : null,
+			inTauri: canApplyHere()
+		})
+	);
+	const updateSummary = $derived(summarizeUpdate(update, { updaterExpected }));
 	/** Only the desktop shell has an installer. A browser tab is told so. */
 	const installable = $derived(
 		update.kind === 'ok' && update.value.status === 'update-available'

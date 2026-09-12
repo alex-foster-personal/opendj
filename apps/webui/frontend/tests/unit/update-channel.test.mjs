@@ -126,14 +126,87 @@ test('up to date is not prominent and does not shout', () => {
 });
 
 test('a fault is prominent and explicitly denies being up to date', () => {
-	const summary = mod.summarizeUpdate({
-		kind: 'fault',
-		reason: 'endpoint refused',
-		value: REFUSED
-	});
+	const summary = mod.summarizeUpdate(
+		{
+			kind: 'fault',
+			reason: 'endpoint refused',
+			value: REFUSED
+		},
+		{ updaterExpected: true }
+	);
+	assert.equal(summary.label, 'UPDATE CHECK FAILED');
 	assert.equal(summary.prominent, true);
 	assert.match(summary.title, /UNKNOWN/);
 	assert.match(summary.title, /not "you are up to date"/);
+});
+
+test('a checkout fault is quiet and does not claim up to date', () => {
+	const summary = mod.summarizeUpdate(
+		{
+			kind: 'fault',
+			reason: 'https://example.invalid/latest.json answered HTTP 404.',
+			value: REFUSED
+		},
+		{ updaterExpected: false }
+	);
+	assert.equal(summary.label, 'dev build, no update channel');
+	assert.equal(summary.prominent, false);
+	assert.match(summary.title, /404/);
+	assert.notEqual(summary.label, 'UPDATE CHECK FAILED');
+	assert.doesNotMatch(summary.title, /up to date/i);
+});
+
+test('an install fault still shouts with the same reason', () => {
+	const fault = {
+		kind: 'fault',
+		reason: 'https://example.invalid/latest.json answered HTTP 404.',
+		value: REFUSED
+	};
+	const summary = mod.summarizeUpdate(fault, { updaterExpected: true });
+	assert.equal(summary.label, 'UPDATE CHECK FAILED');
+	assert.equal(summary.prominent, true);
+	assert.match(summary.title, /UNKNOWN/);
+	assert.match(summary.title, /not "you are up to date"/);
+	assert.match(summary.title, /404/);
+});
+
+test('a network fault on an install survives in the title', () => {
+	const summary = mod.summarizeUpdate(
+		{
+			kind: 'fault',
+			reason: 'the engine could not be reached at /api/v1/update/check (Failed to fetch)',
+			value: null
+		},
+		{ updaterExpected: true }
+	);
+	assert.equal(summary.label, 'UPDATE CHECK FAILED');
+	assert.equal(summary.prominent, true);
+	assert.match(summary.title, /Failed to fetch/);
+});
+
+test('an answered update still shouts on a checkout', () => {
+	const summary = mod.summarizeUpdate({ kind: 'ok', value: AVAILABLE }, { updaterExpected: false });
+	assert.equal(summary.prominent, true);
+	assert.match(summary.label, /0\.2\.0/);
+});
+
+test('isUpdaterExpected discriminates dev, repo, payload, and Tauri', () => {
+	const cases = [
+		{ isDev: true, engineSource: null, inTauri: false, expected: false },
+		{ isDev: true, engineSource: 'payload', inTauri: false, expected: false },
+		{ isDev: false, engineSource: 'repo', inTauri: false, expected: false },
+		{ isDev: false, engineSource: 'payload', inTauri: false, expected: true },
+		{ isDev: false, engineSource: null, inTauri: true, expected: true },
+		{ isDev: false, engineSource: 'repo', inTauri: true, expected: true },
+		{ isDev: false, engineSource: null, inTauri: false, expected: false }
+	];
+	for (const row of cases) {
+		assert.equal(
+			mod.isUpdaterExpected(row),
+			row.expected,
+			`isUpdaterExpected(${JSON.stringify(row)})`
+		);
+	}
 });
 
 test('same version from another build is surfaced, not hidden behind up-to-date', () => {
@@ -169,6 +242,12 @@ test('no status renders as an empty badge', () => {
 		assert.ok(summary.label.length > 0, `${status} rendered an empty label`);
 		assert.ok(summary.title.length > 0, `${status} rendered an empty title`);
 	}
+	const quiet = mod.summarizeUpdate(
+		{ kind: 'fault', reason: 'channel missing', value: REFUSED },
+		{ updaterExpected: false }
+	);
+	assert.ok(quiet.label.length > 0, 'quiet fault rendered an empty label');
+	assert.ok(quiet.title.length > 0, 'quiet fault rendered an empty title');
 });
 
 test('idle renders nothing at all, which is different from up to date', () => {
