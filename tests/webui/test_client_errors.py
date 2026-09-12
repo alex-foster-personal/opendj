@@ -45,6 +45,9 @@ def test_client_error_writes_full_details_to_separate_log(tmp_path: Path) -> Non
     assert len(records) == 1
     record = json.loads(records[0])
     assert record["event_id"] == response.json()["event_id"]
+    assert record["error_id"].startswith("eid-")
+    assert "host" in record
+    assert "build_sha" in record
     assert record["secure_context"] is False
     assert record["audio_worklet_available"] is False
     assert "createProcessor" in record["stack"]

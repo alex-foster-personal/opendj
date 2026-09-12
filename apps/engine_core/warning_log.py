@@ -60,12 +60,43 @@ class _WarningJsonHandler(logging.Handler):
         self.boot_id = boot_id
 
     def emit(self, record: logging.LogRecord) -> None:
+        if getattr(self, "_opendj_sink_busy", False):
+            return
+        message = self.format(record)
+        identity: dict[str, str] = {}
+        try:
+            from apps.shared.telemetry.sink import (
+                append_sink,
+                make_event,
+                maybe_send_sentry,
+            )
+
+            event = make_event(
+                message=message,
+                source_site=f"engine:{record.name}",
+                kind="engine",
+            )
+            identity = {
+                "error_id": event.error_id,
+                "host": event.host,
+                "build_sha": event.build_sha,
+            }
+            if record.levelno >= logging.ERROR:
+                self._opendj_sink_busy = True
+                try:
+                    append_sink(event)
+                    maybe_send_sentry(event)
+                finally:
+                    self._opendj_sink_busy = False
+        except (OSError, ValueError, TypeError, ImportError):
+            identity = {}
         entry = {
             "boot_id": self.boot_id,
             "level": record.levelname,
             "logger": record.name,
-            "message": self.format(record),
+            "message": message,
             "timestamp": datetime.now(UTC).isoformat(timespec="milliseconds"),
+            **identity,
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         encoded = json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n"

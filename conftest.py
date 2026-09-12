@@ -261,6 +261,12 @@ def rb_pyrekordbox_db(tmp_rb_db: Path):
 
 
 @pytest.fixture(autouse=True)
+def _error_sink_log_is_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep OBS-01 sink writes inside the test tmp dir, never ~/jobs/logs."""
+    monkeypatch.setenv("OPENDJ_ERROR_SINK_LOG", str(tmp_path / "opendj-error-sink.jsonl"))
+
+
+@pytest.fixture(autouse=True)
 def _rekordbox_writeback_gate(request, monkeypatch):
     """Gate OFF by default; ON only for modules that opt in by marker."""
     from apps.shared.rekordbox_writeback import REKORDBOX_WRITEBACK_ENABLED_ENV

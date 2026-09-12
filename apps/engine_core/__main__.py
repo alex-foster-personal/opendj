@@ -158,6 +158,8 @@ def _telemetry_decision():
     try:
         info = resolve_build_info(dict(os.environ), platform_paths.PROJECT_ROOT)
         source, release = info.source, info.git_sha_full
+        if release:
+            os.environ.setdefault("OPENDJ_BUILD_SHA", release)
     except BuildInfoUnavailable as exc:
         print(
             f"[WARN] build identity unavailable ({exc}); telemetry treats this "

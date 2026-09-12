@@ -13,6 +13,13 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
 from apps.shared.telemetry import capture_browser_error
+from apps.shared.telemetry.error_id import stable_error_id
+from apps.shared.telemetry.sink import (
+    client_error_message,
+    client_source_site,
+    current_build_sha,
+    current_host,
+)
 
 from ..client_logs import DEFAULT_LOG_DIR, append_json_record, daily_log_path
 
@@ -123,11 +130,16 @@ def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErro
     received_at = datetime.now(UTC).isoformat(timespec="milliseconds").replace(
         "+00:00", "Z"
     )
+    source_site = client_source_site(payload.kind, payload.url)
+    error_message = client_error_message(payload.name, payload.message)
     record = {
         "event_id": event_id,
         "received_at": received_at,
         "client_ip": request.client.host if request.client else None,
         **payload.model_dump(),
+        "error_id": stable_error_id(source_site=source_site, message=error_message),
+        "host": current_host(),
+        "build_sha": current_build_sha(),
     }
     log_dir = _log_dir(request)
     path = daily_log_path(log_dir, "webui-client-errors", time.gmtime())
