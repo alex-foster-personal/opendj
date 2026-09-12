@@ -33,6 +33,12 @@ import {
 	type LyricsPrefs
 } from './lyrics-prefs';
 import {
+	APP_POSTURE_PREF_DEFAULTS,
+	bindAppPosturePrefSetters,
+	mergeAppPosturePrefsFromParsed,
+	type AppPosturePrefs
+} from './app-posture-prefs';
+import {
 	PERF_TIER_PREF_DEFAULTS,
 	bindPerfTierPrefSetters,
 	mergePerfTierPrefsFromParsed,
@@ -45,6 +51,7 @@ import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
 export { type LyricsLoadStrategy } from './lyrics-prefs';
+export type { AppPosturePref } from './app-posture-prefs';
 export type { PerfTierPref } from './perf-tier-prefs';
 export type { AutoSyncPrefs, LastPlaylistPref } from './prefs-types';
 
@@ -67,7 +74,7 @@ export type UiTheme = 'dark' | 'light';
 /** Preferred vendor writeback targets (preference only; CLI writeback today). */
 export type AutoSyncDestination = 'rekordbox' | 'djay' | 'open_dj';
 
-export interface RbUiPrefs extends PerfTierPrefs, LyricsPrefs {
+export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, LyricsPrefs {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
 	/** FR-1: hide missing-file tracks and playlists with available_count == 0. Default OFF. */
@@ -189,7 +196,8 @@ const DEFAULTS: RbUiPrefs = {
 	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false },
 	...LYRICS_PREF_DEFAULTS,
 	...LIBRARY_FILTER_PREF_DEFAULTS,
-	...PERF_TIER_PREF_DEFAULTS
+	...PERF_TIER_PREF_DEFAULTS,
+	...APP_POSTURE_PREF_DEFAULTS
 };
 
 // ----------------------------------------------------------- _helpers
@@ -398,7 +406,8 @@ function _load(): RbUiPrefs {
 		...validateLyricsPrefFields(parsed, STORAGE_KEY),
 		...LIBRARY_FILTER_PREF_DEFAULTS,
 		...validateLibraryFilterPrefFields(parsed, STORAGE_KEY),
-		...mergePerfTierPrefsFromParsed(parsed, STORAGE_KEY)
+		...mergePerfTierPrefsFromParsed(parsed, STORAGE_KEY),
+		...mergeAppPosturePrefsFromParsed(parsed, STORAGE_KEY)
 	};
 }
 
@@ -532,8 +541,6 @@ export function setShowAgentPins(next: boolean): void {
 	void _syncDiskPrefs({ show_agent_pins: next });
 }
 
-/** The MORE/LESS deck-layout setters (pin 862cd3), built against this
- * module's own uiPrefs/_persist/_syncDiskPrefs (deck-layout-prefs.ts). */
 export const {
 	setDeckLayoutMode,
 	toggleDeckLayoutMode,
@@ -541,8 +548,6 @@ export const {
 	setDeckLayoutDurationMs
 } = makeDeckLayoutSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
-/** The six karaoke lyric setters (PR-4 section C), built against this module's
- * own uiPrefs/_persist/_syncDiskPrefs (lyrics-prefs.ts). */
 export const {
 	setLyricsGlobal,
 	toggleLyricsGlobal,
@@ -553,9 +558,8 @@ export const {
 	setLyricsDeckLine
 } = makeLyricsPrefSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
-export const { setPerfTier } = bindPerfTierPrefSetters(uiPrefs, _persist, (patch) =>
-	void _syncDiskPrefs(patch)
-);
+export const { setPerfTier } = bindPerfTierPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
+export const { setAppPosture } = bindAppPosturePrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
 
 export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean): void {
 	uiPrefs.auto_sync[dest] = next;

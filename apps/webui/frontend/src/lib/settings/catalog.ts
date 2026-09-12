@@ -3,6 +3,7 @@
  * Search filters this list in-place (results ARE the settings).
  */
 
+import { APP_POSTURE_SETTING } from './app-posture-setting';
 import {
 	WHEEL_SENSITIVITY,
 	WHEEL_SENSITIVITY_MAX,
@@ -193,6 +194,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 			]
 		}
 	},
+	APP_POSTURE_SETTING,
 	{
 		id: 'auto_play_enabled',
 		label: 'AutoPlay',

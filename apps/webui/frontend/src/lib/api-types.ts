@@ -505,6 +505,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/app-posture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** App Posture */
+        get: operations["app_posture_api_v1_app_posture_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assistant/chat": {
         parameters: {
             query?: never;
@@ -4919,6 +4936,25 @@ export interface components {
              * @enum {string}
              */
             slot: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
+        };
+        /** AppPostureOut */
+        AppPostureOut: {
+            /** Label */
+            label: string;
+            /** Posture */
+            posture: string;
+            scalers: components["schemas"]["AppPostureScalersOut"];
+        };
+        /** AppPostureScalersOut */
+        AppPostureScalersOut: {
+            /** Library Poll Ms */
+            library_poll_ms: number;
+            /** Prefetch Bytes Floor */
+            prefetch_bytes_floor?: number | null;
+            /** Prefetch Tracks Floor */
+            prefetch_tracks_floor?: number | null;
+            /** Worker Divisor */
+            worker_divisor: number;
         };
         /** ApplyIn */
         ApplyIn: {
@@ -11136,6 +11172,12 @@ export interface components {
         };
         /** UiPrefsOut */
         UiPrefsOut: {
+            /**
+             * App Posture
+             * @default prep
+             * @enum {string}
+             */
+            app_posture: "prep" | "gig";
             auto_sync?: components["schemas"]["AutoSyncOut"];
             /** Confirm */
             confirm?: {
@@ -11208,6 +11250,8 @@ export interface components {
         };
         /** UiPrefsPatch */
         UiPrefsPatch: {
+            /** App Posture */
+            app_posture?: ("prep" | "gig") | null;
             auto_sync?: components["schemas"]["AutoSyncOut"] | null;
             /** Confirm */
             confirm?: {
@@ -12662,6 +12706,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    app_posture_api_v1_app_posture_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPostureOut"];
                 };
             };
         };

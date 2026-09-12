@@ -819,6 +819,68 @@
         "title": "AnlzCueOut",
         "type": "object"
       },
+      "AppPostureOut": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "posture": {
+            "title": "Posture",
+            "type": "string"
+          },
+          "scalers": {
+            "$ref": "#/components/schemas/AppPostureScalersOut"
+          }
+        },
+        "required": [
+          "posture",
+          "label",
+          "scalers"
+        ],
+        "title": "AppPostureOut",
+        "type": "object"
+      },
+      "AppPostureScalersOut": {
+        "properties": {
+          "library_poll_ms": {
+            "title": "Library Poll Ms",
+            "type": "integer"
+          },
+          "prefetch_bytes_floor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefetch Bytes Floor"
+          },
+          "prefetch_tracks_floor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefetch Tracks Floor"
+          },
+          "worker_divisor": {
+            "title": "Worker Divisor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "library_poll_ms",
+          "worker_divisor"
+        ],
+        "title": "AppPostureScalersOut",
+        "type": "object"
+      },
       "ApplyIn": {
         "additionalProperties": false,
         "properties": {
@@ -17119,6 +17181,15 @@
       },
       "UiPrefsOut": {
         "properties": {
+          "app_posture": {
+            "default": "prep",
+            "enum": [
+              "prep",
+              "gig"
+            ],
+            "title": "App Posture",
+            "type": "string"
+          },
           "auto_sync": {
             "$ref": "#/components/schemas/AutoSyncOut"
           },
@@ -17211,6 +17282,21 @@
       },
       "UiPrefsPatch": {
         "properties": {
+          "app_posture": {
+            "anyOf": [
+              {
+                "enum": [
+                  "prep",
+                  "gig"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Posture"
+          },
           "auto_sync": {
             "anyOf": [
               {
