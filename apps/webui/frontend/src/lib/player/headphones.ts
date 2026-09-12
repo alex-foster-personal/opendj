@@ -44,8 +44,36 @@ export type HeadphoneOutput = (typeof mixerState)['headphones']['outputs'][numbe
  */
 export type MonitorSource = () => { context: AudioContext; masterGain: GainNode };
 
+/** Legal `HeadphoneState.output_mode` values. `split_cable` is CUEOUT-02. */
+export const HEADPHONE_OUTPUT_MODES = ['practice', 'two_outputs'] as const;
+export type HeadphoneOutputMode = (typeof HEADPHONE_OUTPUT_MODES)[number];
+
+export function assertHeadphoneOutputMode(mode: unknown): asserts mode is HeadphoneOutputMode {
+	if (mode !== 'practice' && mode !== 'two_outputs') {
+		throw new TypeError(`headphone output_mode must be practice or two_outputs; got ${String(mode)}`);
+	}
+}
+
+/** Main-output cue/master gains. Practice with no monitor selected reuses
+ * `headphoneMixGains`; any selected monitor (or `two_outputs`) is master-only. */
+export function practiceMainGains(
+	mode: unknown,
+	selectedOutputDeviceId: string | null,
+	mix: number
+): { cue: number; master: number } {
+	assertHeadphoneOutputMode(mode);
+	if (selectedOutputDeviceId !== null && typeof selectedOutputDeviceId !== 'string') {
+		throw new TypeError('selected headphone output device id must be a string or null');
+	}
+	if (mode !== 'practice' || selectedOutputDeviceId !== null) {
+		return { cue: 0, master: 1 };
+	}
+	return headphoneMixGains(mix);
+}
+
 /** The monitor graph: channel cue sum and a master tap, blended equal-power,
- * through one level gain into a MediaStream the sink element plays. */
+ * through one level gain into a MediaStream the sink element plays. Practice
+ * mode also owns a second equal-power pair that sits in the main output path. */
 export interface HeadphoneNodes {
 	cueSum: GainNode;
 	masterMonitor: GainNode;
@@ -54,6 +82,8 @@ export interface HeadphoneNodes {
 	level: GainNode;
 	destination: MediaStreamAudioDestinationNode;
 	element: HTMLAudioElement;
+	practiceCueMix: GainNode;
+	practiceMasterMix: GainNode;
 }
 
 let _headphoneNodes: HeadphoneNodes | null = null;
@@ -216,10 +246,37 @@ export async function withHeadphoneOperationTimeout<T>(
 export function applyHeadphoneMix(): void {
 	const nodes = _headphoneNodes;
 	if (nodes === null) return;
-	const gains = headphoneMixGains(mixerState.headphones.mix);
+	const mix = mixerState.headphones.mix;
+	const gains = headphoneMixGains(mix);
 	_setMonitorParam(nodes, nodes.cueMix.gain, gains.cue);
 	_setMonitorParam(nodes, nodes.masterMix.gain, gains.master);
 	_setMonitorParam(nodes, nodes.level.gain, mixerState.headphones.level);
+	const practice = practiceMainGains(
+		mixerState.headphones.output_mode,
+		mixerState.headphones.selected_output_device_id,
+		mix
+	);
+	_setMonitorParam(nodes, nodes.practiceCueMix.gain, practice.cue);
+	_setMonitorParam(nodes, nodes.practiceMasterMix.gain, practice.master);
+}
+
+export function setHeadphoneOutputMode(mode: unknown): void {
+	assertHeadphoneOutputMode(mode);
+	mixerState.headphones.output_mode = mode;
+	applyHeadphoneMix();
+}
+
+/** Insert the practice equal-power pair between master and mute so cue and
+ * master share one destination clock. Does not create a second sink. */
+export function wirePracticeBlendIntoMasterPath(
+	masterGain: GainNode,
+	muteGain: GainNode,
+	nodes: HeadphoneNodes
+): void {
+	masterGain.connect(nodes.practiceMasterMix);
+	nodes.practiceMasterMix.connect(muteGain);
+	nodes.cueSum.connect(nodes.practiceCueMix);
+	nodes.practiceCueMix.connect(muteGain);
 }
 
 function _headphoneError(operation: string, error: unknown): Error {
@@ -274,6 +331,8 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 	const cueMix = context.createGain();
 	const masterMix = context.createGain();
 	const level = context.createGain();
+	const practiceCueMix = context.createGain();
+	const practiceMasterMix = context.createGain();
 	const destination = context.createMediaStreamDestination();
 	const element = _createDetachedHeadphoneElement();
 	cueSum.connect(cueMix);
@@ -282,7 +341,17 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 	cueMix.connect(level);
 	masterMix.connect(level);
 	level.connect(destination);
-	_headphoneNodes = { cueSum, masterMonitor, cueMix, masterMix, level, destination, element };
+	_headphoneNodes = {
+		cueSum,
+		masterMonitor,
+		cueMix,
+		masterMix,
+		level,
+		destination,
+		element,
+		practiceCueMix,
+		practiceMasterMix
+	};
 	applyHeadphoneMix();
 	return _headphoneNodes;
 }
@@ -300,7 +369,16 @@ function _disposeHeadphoneGraph(): void {
 	const nodes = _headphoneNodes;
 	_headphoneNodes = null;
 	if (nodes === null) return;
-	for (const node of [nodes.cueSum, nodes.masterMonitor, nodes.cueMix, nodes.masterMix, nodes.level, nodes.destination]) {
+	for (const node of [
+		nodes.cueSum,
+		nodes.masterMonitor,
+		nodes.cueMix,
+		nodes.masterMix,
+		nodes.level,
+		nodes.destination,
+		nodes.practiceCueMix,
+		nodes.practiceMasterMix
+	]) {
 		node.disconnect();
 	}
 	_detachHeadphoneElement(nodes.element);
@@ -340,7 +418,11 @@ export async function refreshHeadphoneOutputs(): Promise<void> {
 	}
 	mixerState.headphones.active = reconciled.active;
 	mixerState.headphones.selected_output_device_id = reconciled.selected_output_device_id;
+	if (reconciled.selected_output_device_id === null) {
+		mixerState.headphones.output_mode = 'practice';
+	}
 	mixerState.headphones.error = null;
+	applyHeadphoneMix();
 }
 
 /** Must be called from a visible user gesture so the browser can open its
@@ -389,7 +471,9 @@ export async function selectHeadphoneOutput(
 		nodes.element = candidate;
 		mixerState.headphones.selected_output_device_id = deviceId;
 		mixerState.headphones.active = true;
+		mixerState.headphones.output_mode = 'two_outputs';
 		mixerState.headphones.error = null;
+		applyHeadphoneMix();
 		_detachHeadphoneElement(previous);
 		candidate = null;
 	} catch (error) {
