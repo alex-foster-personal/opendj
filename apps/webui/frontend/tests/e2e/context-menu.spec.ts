@@ -64,3 +64,17 @@ test('track, playlist, and folder context menus are pointer and keyboard reachab
 		await expect(folderDuplicate).toBeDisabled();
 	}
 });
+
+test('Add to playlist opens the picker and Escape closes it', async ({ page }) => {
+	await page.goto('/performance');
+	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });
+
+	const track = page.locator('[data-testid="track-row"]').first();
+	await track.click({ button: 'right' });
+	const addItem = page.getByRole('menuitem', { name: 'Add to playlist...' });
+	await expect(addItem).toBeEnabled();
+	await addItem.click();
+	await expect(page.locator('[data-testid="add-to-playlist-picker"]')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(page.locator('[data-testid="add-to-playlist-picker"]')).toHaveCount(0);
+});
