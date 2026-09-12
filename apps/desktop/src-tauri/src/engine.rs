@@ -39,14 +39,14 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use crate::engine_log::{append_rotated, rotate_log_if_needed, ENGINE_LOG_MAX_BYTES};
+
 /// The payload directory inside the bundle, relative to Contents/Resources.
 pub const PAYLOAD_DIR: &str = "payload";
 
 /// The one entry point the shell knows. Everything else about the payload
 /// (interpreter, dependency layout, module names) is the payload's business.
 pub const ENGINE_LAUNCHER: &str = "bin/opendj-engine";
-const ENGINE_LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
-const ENGINE_LOG_ROTATIONS: u8 = 5;
 
 /// How long a cold engine boot may take before the shell calls it failed.
 /// Measured boots on this Mac are ~1.5s; 30s is a wide margin over a first
@@ -576,50 +576,12 @@ fn open_append(log_path: &Path) -> std::io::Result<std::fs::File> {
         .open(log_path)
 }
 
-fn append_rotated(log_path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let existing_size = match std::fs::metadata(log_path) {
-        Ok(metadata) => metadata.len(),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
-        Err(error) => return Err(error),
-    };
-    if existing_size > 0 && existing_size + bytes.len() as u64 > ENGINE_LOG_MAX_BYTES {
-        rotate_log_if_needed(log_path, 0)?;
-    }
-    open_append(log_path)?.write_all(bytes)
-}
-
 fn log_boot_id() -> String {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock is before Unix epoch")
         .as_millis();
     format!("shell-{}-{millis}", std::process::id())
-}
-
-fn rotation_path(log_path: &Path, index: u8) -> PathBuf {
-    PathBuf::from(format!("{}.{}", log_path.display(), index))
-}
-
-fn rotate_log_if_needed(log_path: &Path, max_bytes: u64) -> std::io::Result<()> {
-    let metadata = match std::fs::metadata(log_path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(error),
-    };
-    if metadata.len() < max_bytes {
-        return Ok(());
-    }
-    let oldest = rotation_path(log_path, ENGINE_LOG_ROTATIONS);
-    if oldest.exists() {
-        std::fs::remove_file(oldest)?;
-    }
-    for index in (1..ENGINE_LOG_ROTATIONS).rev() {
-        let source = rotation_path(log_path, index);
-        if source.exists() {
-            std::fs::rename(source, rotation_path(log_path, index + 1))?;
-        }
-    }
-    std::fs::rename(log_path, rotation_path(log_path, 1))
 }
 
 /// Append one shell-owned line to the shared engine log.
@@ -929,21 +891,4 @@ mod tests {
         append_shell_log("panic", "probe");
     }
 
-    #[test]
-    fn rotates_full_log_and_keeps_five_archives() {
-        let directory = std::env::temp_dir().join(format!("opendj-engine-log-{}", log_boot_id()));
-        std::fs::create_dir_all(&directory).unwrap();
-        let log_path = directory.join("engine.log");
-        for index in 1..=ENGINE_LOG_ROTATIONS {
-            std::fs::write(rotation_path(&log_path, index), format!("old-{index}")).unwrap();
-        }
-        std::fs::write(&log_path, "current").unwrap();
-
-        rotate_log_if_needed(&log_path, 1).unwrap();
-
-        assert_eq!(std::fs::read_to_string(rotation_path(&log_path, 1)).unwrap(), "current");
-        assert_eq!(std::fs::read_to_string(rotation_path(&log_path, 5)).unwrap(), "old-4");
-        assert!(!log_path.exists());
-        std::fs::remove_dir_all(directory).unwrap();
-    }
 }

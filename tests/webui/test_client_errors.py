@@ -51,6 +51,23 @@ def test_client_error_writes_full_details_to_separate_log(tmp_path: Path) -> Non
     assert record["received_at"].endswith("Z")
 
 
+def test_list_client_errors_includes_stack_and_url(tmp_path: Path) -> None:
+    app = create_app(
+        backend=InMemoryBackend(),
+        mount_frontend=False,
+        enable_cors=False,
+        client_error_log_dir=tmp_path,
+    )
+    with TestClient(app) as client:
+        created = client.post("/api/v1/client-errors", json=_payload())
+        event_id = created.json()["event_id"]
+        rows = client.get("/api/v1/client-errors").json()
+
+    row = next(record for record in rows if record["event_id"] == event_id)
+    assert "createProcessor" in row["stack"]
+    assert row["url"] == _payload()["url"]
+
+
 def test_client_error_accepts_browser_capture_kinds(tmp_path: Path) -> None:
     app = create_app(
         backend=InMemoryBackend(),

@@ -1382,6 +1382,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/errors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Errors */
+        get: operations["list_errors_api_v1_errors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/archive": {
         parameters: {
             query?: never;
@@ -2544,7 +2561,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Latest Client Performance Sample
+         * @description Return the last accepted sample for this process, or 404 when none.
+         */
+        get: operations["latest_client_performance_sample_api_v1_performance_telemetry_client_samples_get"];
         put?: never;
         /**
          * Capture Client Performance
@@ -5418,14 +5439,24 @@ export interface components {
         };
         /** ClientErrorRecord */
         ClientErrorRecord: {
+            /** Context */
+            context?: {
+                [key: string]: string | number | boolean | null;
+            } | null;
             /** Event Id */
             event_id: string;
             /** Kind */
             kind: string;
             /** Message */
             message: string;
+            /** Name */
+            name?: string | null;
             /** Received At */
             received_at: string;
+            /** Stack */
+            stack?: string | null;
+            /** Url */
+            url?: string | null;
         };
         /** ClientErrorTriageIn */
         ClientErrorTriageIn: {
@@ -6227,6 +6258,57 @@ export interface components {
             error: string;
             /** Message */
             message: string;
+        };
+        /** ErrorFeedEvent */
+        ErrorFeedEvent: {
+            /** Context */
+            context?: {
+                [key: string]: string | number | boolean | null;
+            } | null;
+            /** Event Id */
+            event_id?: string | null;
+            /** Kind */
+            kind: string;
+            /** Level */
+            level: string;
+            /** Message */
+            message: string;
+            /** Received At */
+            received_at: string;
+            /** Source */
+            source: string;
+            /** Stack */
+            stack?: string | null;
+            /** Url */
+            url?: string | null;
+        };
+        /** ErrorFeedOut */
+        ErrorFeedOut: {
+            /** Events */
+            events?: components["schemas"]["ErrorFeedEvent"][];
+            /** Since */
+            since: string;
+            /** Sinks */
+            sinks: components["schemas"]["ErrorFeedSink"][];
+            /** Truncated */
+            truncated: boolean;
+            /** Until */
+            until: string;
+        };
+        /** ErrorFeedSink */
+        ErrorFeedSink: {
+            /** Available */
+            available: boolean;
+            /** Files */
+            files?: number | null;
+            /** Id */
+            id: string;
+            /** Reason */
+            reason?: string | null;
+            /** Roots */
+            roots?: number | null;
+            /** Unreadable Lines */
+            unreadable_lines?: number | null;
         };
         /** EstimateOut */
         EstimateOut: {
@@ -14042,6 +14124,38 @@ export interface operations {
             };
         };
     };
+    list_errors_api_v1_errors_get: {
+        parameters: {
+            query?: {
+                since?: string | null;
+                until?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorFeedOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     archive_feedback_api_v1_feedback_archive_post: {
         parameters: {
             query?: never;
@@ -16138,6 +16252,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latest_client_performance_sample_api_v1_performance_telemetry_client_samples_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

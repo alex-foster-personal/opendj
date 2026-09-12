@@ -2379,6 +2379,36 @@
       },
       "ClientErrorRecord": {
         "properties": {
+          "context": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
+          },
           "event_id": {
             "title": "Event Id",
             "type": "string"
@@ -2391,9 +2421,42 @@
             "title": "Message",
             "type": "string"
           },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
           "received_at": {
             "title": "Received At",
             "type": "string"
+          },
+          "stack": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stack"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
           }
         },
         "required": [
@@ -4623,6 +4686,202 @@
           "message"
         ],
         "title": "ErrorBody",
+        "type": "object"
+      },
+      "ErrorFeedEvent": {
+        "properties": {
+          "context": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "received_at": {
+            "title": "Received At",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "stack": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stack"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "source",
+          "received_at",
+          "level",
+          "kind",
+          "message"
+        ],
+        "title": "ErrorFeedEvent",
+        "type": "object"
+      },
+      "ErrorFeedOut": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorFeedEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "since": {
+            "title": "Since",
+            "type": "string"
+          },
+          "sinks": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorFeedSink"
+            },
+            "title": "Sinks",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "until": {
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "until",
+          "truncated",
+          "sinks"
+        ],
+        "title": "ErrorFeedOut",
+        "type": "object"
+      },
+      "ErrorFeedSink": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "files": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Files"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "roots": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roots"
+          },
+          "unreadable_lines": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unreadable Lines"
+          }
+        },
+        "required": [
+          "id",
+          "available"
+        ],
+        "title": "ErrorFeedSink",
         "type": "object"
       },
       "EstimateOut": {
@@ -21439,6 +21698,71 @@
         ]
       }
     },
+    "/api/v1/errors": {
+      "get": {
+        "operationId": "list_errors_api_v1_errors_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorFeedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Errors",
+        "tags": [
+          "errors"
+        ]
+      }
+    },
     "/api/v1/feedback/archive": {
       "post": {
         "operationId": "archive_feedback_api_v1_feedback_archive_post",
@@ -24351,6 +24675,28 @@
       }
     },
     "/api/v1/performance/telemetry/client-samples": {
+      "get": {
+        "description": "Return the last accepted sample for this process, or 404 when none.",
+        "operationId": "latest_client_performance_sample_api_v1_performance_telemetry_client_samples_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Latest Client Performance Sample Api V1 Performance Telemetry Client Samples Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Latest Client Performance Sample",
+        "tags": [
+          "performance-telemetry"
+        ]
+      },
       "post": {
         "description": "Persist one compact semantic sample without blocking the audio path.",
         "operationId": "capture_client_performance_api_v1_performance_telemetry_client_samples_post",

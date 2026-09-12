@@ -109,8 +109,10 @@ test('init also starts the usage heartbeat', async () => {
 	await new Promise((resolve) => setImmediate(resolve));
 	stop();
 
-	assert.equal(posted.length, 1);
-	assert.equal(posted[0].url, `${API_BASE}/api/v1/telemetry/heartbeat`);
+	assert.ok(
+		posted.some((entry) => entry.url === `${API_BASE}/api/v1/telemetry/heartbeat`),
+		'the usage heartbeat must post after init'
+	);
 });
 
 test('init opens the boot request window and hands its teardown back', () => {
@@ -143,12 +145,20 @@ test('the heartbeat and the pressure poll go through the same window, so neither
 
 	assert.equal(posted.length, 0, 'nothing may post while the boot window is open');
 	assert.equal(fetchedUrls.length, 0, 'nothing may fetch while the boot window is open');
-	assert.equal(manual.pending(), 2, 'the heartbeat and the pressure poll are both queued, never dropped');
+	assert.equal(
+		manual.pending(),
+		3,
+		'the heartbeat, pressure poll, and client samples are all queued, never dropped'
+	);
 
 	manual.release();
 	await new Promise((resolve) => setImmediate(resolve));
 	stop();
-	assert.equal(posted.length, 1);
+	assert.equal(posted.length, 2);
+	assert.ok(
+		posted.some((entry) => entry.url.includes('/performance/telemetry/client-samples')),
+		'client samples also waited for the boot window'
+	);
 	assert.ok(
 		fetchedUrls.some((url) => url.includes('/telemetry/pressure')),
 		'the pressure poll also waited for the window, not just the heartbeat'
