@@ -33,6 +33,15 @@
 	</svg>
 	<Knob knobId={knobId('hp', 'hp-mix')} label="MIX" value={state.mix} onchange={onmix} />
 	<Knob knobId={knobId('hp', 'hp-level')} label="LEVEL" value={state.level} onchange={onlevel} />
+	<span
+		class="hp-mode"
+		data-output-mode={state.output_mode}
+		title={
+			state.output_mode === 'practice'
+				? 'Practice: MIX blends cue into the main output'
+				: 'Two outputs: MIX feeds the monitor only'
+		}>{state.output_mode === 'practice' ? 'practice' : 'two outputs'}</span
+	>
 	<button
 		type="button"
 		class="hp-btn"
@@ -97,6 +106,12 @@
 		background: var(--rb-panel-raised, #1a1e25);
 		border: 1px solid var(--rb-border, #23282f);
 		color: var(--rb-text-dim, #838990);
+	}
+	.hp-mode {
+		font-size: 7px;
+		letter-spacing: 0.04em;
+		color: var(--rb-text-dim, #838990);
+		white-space: nowrap;
 	}
 	.hp-error {
 		color: var(--rb-danger, #ff6b6b);

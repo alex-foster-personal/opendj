@@ -3296,6 +3296,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stems/push-missing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Push Missing Stems */
+        post: operations["push_missing_stems_api_v1_stems_push_missing_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stems/tiers": {
         parameters: {
             query?: never;
@@ -3307,6 +3324,23 @@ export interface paths {
         get: operations["list_tiers_api_v1_stems_tiers_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stems/{stable_id}/hydrate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hydrate Stem */
+        post: operations["hydrate_stem_api_v1_stems__stable_id__hydrate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9332,6 +9366,18 @@ export interface components {
             /** Wire Version */
             wire_version: number;
         };
+        /** StemHydrateIn */
+        StemHydrateIn: {
+            /** Data Dir */
+            data_dir?: string | null;
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
+            /** Manifest Path */
+            manifest_path: string;
+        };
         /**
          * StemManifestOut
          * @description Frontend manifest projected from a stricter durable artifact manifest.
@@ -9374,6 +9420,16 @@ export interface components {
         StemPartOut: {
             /** Media Type */
             media_type: string;
+        };
+        /** StemPushMissingIn */
+        StemPushMissingIn: {
+            /** Data Dir */
+            data_dir?: string | null;
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
         };
         /**
          * StemTierOut
@@ -16978,6 +17034,41 @@ export interface operations {
             };
         };
     };
+    push_missing_stems_api_v1_stems_push_missing_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StemPushMissingIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_tiers_api_v1_stems_tiers_get: {
         parameters: {
             query?: never;
@@ -16994,6 +17085,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TierOut"][];
+                };
+            };
+        };
+    };
+    hydrate_stem_api_v1_stems__stable_id__hydrate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StemHydrateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

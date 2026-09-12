@@ -4,5 +4,6 @@
 # GitHub does not honor .gitattributes merge strategies for PR mergeability.
 .planning/REQUIREMENTS.md merge=union
 .planning/TECH-DEBT.md merge=union
+.planning/agentic-testing/LEDGER.md merge=union
 # reqs.json is generated structured JSON. Leave it unassigned so divergent edits
 # conflict instead of silently producing invalid JSON.

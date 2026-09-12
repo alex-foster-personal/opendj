@@ -8,7 +8,7 @@
 
 import type { DeckId } from './deck-slots';
 import type { DeckAudioSnapshot, QuantizeGrid, SyncMode } from './deck-state-types';
-import type { CrossfaderAssign, EqBand } from './mixer-types';
+import type { CrossfaderAssign, EqBand, HeadphoneOutputMode } from './mixer-types';
 import type { StemControl } from './stem-types';
 
 /**
@@ -115,6 +115,8 @@ export interface AudioEngine {
 	/** Set CUE-to-MASTER monitor mix and headphone level. */
 	setHeadphoneMix(value: number): void;
 	setHeadphoneLevel(value: number): void;
+	/** Practice vs two-output routing. Unknown modes throw. */
+	setHeadphoneOutputMode(mode: HeadphoneOutputMode): void;
 	/** Enumerate browser audio-output devices for explicit sink selection. */
 	refreshHeadphoneOutputs(): Promise<void>;
 	/** Acquire an output through the browser's user-gesture permission chooser and select it. */

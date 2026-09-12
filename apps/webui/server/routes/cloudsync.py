@@ -72,7 +72,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from apps.shared.state import schema as state_schema
+from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
 from apps.shared.state.machine_identity import (
     MachineIdentityError,
@@ -166,12 +166,7 @@ def get_cloudsync_write_conn(request: Request) -> Iterator[sqlite3.Connection]:
     db_path = _db_path(request)
     if not db_path.exists():
         raise _unavailable(db_path)
-    conn = sqlite3.connect(
-        str(db_path), isolation_level=None, check_same_thread=False,
-    )
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 5000")
-    state_schema.apply_migrations(conn)
+    conn = state_db.open_rw(db_path, apply_schema=True, check_same_thread=False)
     try:
         yield conn
     finally:

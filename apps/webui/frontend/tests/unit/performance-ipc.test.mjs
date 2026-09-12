@@ -57,6 +57,8 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_outputs_refresh' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_output_acquire' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_output_select', device_id: 'usb' }), ['headphone']);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'practice' }), ['headphone']);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'two_outputs' }), ['headphone']);
 	assert.deepEqual(
 		ipc.performanceCommandQueueScopes({ type: 'analysis_source', feature: 'beatgrid', source: 'own' }),
 		[1, 2, 3, 4, 'sync']
@@ -941,6 +943,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 			mix: 0.25,
 			level: 0.75,
 			selected_output_device_id: null,
+			output_mode: 'practice',
 			outputs: [],
 			supported: false,
 			active: false,
@@ -1026,6 +1029,33 @@ test('mixer headphone controls use the typed dispatcher from every visible contr
 	assert.match(headphones, /Grant browser access to a second audio output/);
 	assert.match(strip, /aria-pressed=\{cueEnabled\}/);
 	assert.match(headphones, /aria-label="headphone output device"/);
+});
+
+// requirement: CUEOUT-01
+// [if] output_mode is set outside the enum via IPC [then] the command throws and state is unchanged
+test('output_mode IPC rejects unknown modes without changing headphone state', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		const before = ipc.queryPerformanceState().mixer.headphones;
+		assert.equal(before.output_mode, 'practice');
+		await assert.rejects(
+			ipc.dispatchPerformanceCommand({ type: 'output_mode', mode: 'split_cable' }),
+			/practice or two_outputs/i
+		);
+		await assert.rejects(
+			ipc.dispatchPerformanceCommand({ type: 'output_mode', mode: 'nope' }),
+			/practice or two_outputs/i
+		);
+		assert.deepEqual(ipc.queryPerformanceState().mixer.headphones, before);
+		await ipc.dispatchPerformanceCommand({ type: 'output_mode', mode: 'two_outputs' });
+		assert.equal(ipc.queryPerformanceState().mixer.headphones.output_mode, 'two_outputs');
+		await ipc.dispatchPerformanceCommand({ type: 'output_mode', mode: 'practice' });
+		assert.equal(ipc.queryPerformanceState().mixer.headphones.output_mode, 'practice');
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
 });
 
 test('uninstall invalidates retained IPC dispatchers and a new route session remains usable', async () => {

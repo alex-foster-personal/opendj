@@ -180,6 +180,7 @@ export type PerformanceCommand =
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
+	| { type: 'output_mode'; mode: 'practice' | 'two_outputs' }
 	| { type: 'analysis_source'; feature: AnalysisSourceFeature; source: AnalysisSource }
 	/** UI contract only: no automatic second-track selection or mixing exists yet. */
 	| { type: 'auto_play_two_track' }
@@ -845,6 +846,13 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, device_id: record.device_id };
 	}
+	if (type === 'output_mode') {
+		_exactKeys(record, ['type', 'mode']);
+		if (record.mode !== 'practice' && record.mode !== 'two_outputs') {
+			throw new TypeError(`output_mode must be practice or two_outputs; got ${String(record.mode)}`);
+		}
+		return { type, mode: record.mode };
+	}
 	if (type === 'analysis_source') {
 		_exactKeys(record, ['type', 'feature', 'source']);
 		if (record.feature !== 'beatgrid') throw new TypeError(`analysis-source feature must be beatgrid; got ${String(record.feature)}`);
@@ -1385,7 +1393,8 @@ export function performanceCommandQueueScopes(
 	if (
 		command.type === 'headphone_outputs_refresh' ||
 		command.type === 'headphone_output_acquire' ||
-		command.type === 'headphone_output_select'
+		command.type === 'headphone_output_select' ||
+		command.type === 'output_mode'
 	) {
 		return ['headphone'];
 	}
@@ -1610,6 +1619,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.acquireHeadphoneOutput();
 	} else if (command.type === 'headphone_output_select') {
 		await engine.selectHeadphoneOutput(command.device_id);
+	} else if (command.type === 'output_mode') {
+		engine.setHeadphoneOutputMode(command.mode);
 	} else if (command.type === 'analysis_source') {
 		await setAnalysisSource(command.feature, command.source);
 	} else if (command.type === 'library_panels') {
