@@ -68,7 +68,7 @@ from apps.shared.state import schema as state_schema
 from apps.sync_hub import protocol
 
 #: The sync protocol's version. See the module docstring for what bumps it.
-WIRE_VERSION: int = 2
+WIRE_VERSION: int = 3
 
 #: Row-shape fingerprint of every wire version that has shipped, oldest
 #: first. APPEND-ONLY: an entry is a fact about deployed peers, and rewriting
@@ -80,6 +80,8 @@ WIRE_FINGERPRINTS: dict[int, str] = {
     1: "a0edfa096f9682a2",
     # v2: feedback_pins (FBSYNC-01) joins the digest set. Measured Fri 12 Sep 2026.
     2: "46eb07a34e02e019",
+    # v3: playlist_memberships item_id + order_key (LIBM-20). Measured Sat 12 Sep 2026.
+    3: "00a3594073b7dc9b",
 }
 
 #: 409 codes the gate answers with. SYNC_SCHEMA_VERSION is kept verbatim for

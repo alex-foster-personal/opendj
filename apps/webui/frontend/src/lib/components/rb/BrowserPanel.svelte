@@ -1538,28 +1538,25 @@
 			if (remember) setConfirmPref('playlist_drop_mode', mode);
 		}
 		try {
-			const dest = await getPlaylistTracksEtag(playlistId);
 			let effectiveMode: 'add' | 'move' = 'add';
-			let body: {
-				stable_ids: string[];
-				mode: 'add' | 'move';
-				source_playlist_id?: string;
-				source_etag?: string;
-			} = { stable_ids: stableIds, mode: 'add' };
 			if (mode === 'move') {
 				const srcId = panes[activePane].playlist_id;
 				if (srcId !== null && srcId !== 'all' && srcId !== playlistId) {
+					const dest = await getPlaylistTracksEtag(playlistId);
 					const src = await getPlaylistTracksEtag(srcId);
-					body = {
+					await transferPlaylistTracks(playlistId, dest.etag, {
 						stable_ids: stableIds,
 						mode: 'move',
 						source_playlist_id: srcId,
 						source_etag: src.etag
-					};
+					});
 					effectiveMode = 'move';
+				} else {
+					await appendTracksToPlaylist(playlistId, stableIds);
 				}
+			} else {
+				await appendTracksToPlaylist(playlistId, stableIds);
 			}
-			await transferPlaylistTracks(playlistId, dest.etag, body);
 			if (effectiveMode === 'move') {
 				const node = _currentNode(panes[activePane]);
 				if (node !== null) await _loadPane(panes[activePane], node);

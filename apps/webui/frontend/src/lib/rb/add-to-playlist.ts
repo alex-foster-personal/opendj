@@ -1,7 +1,7 @@
 /** Compose helper for the add-to-playlist picker (LIBM-95). */
 
 import type { PlaylistNode } from '$lib/rb/library-types';
-import { getPlaylistTracksEtag, transferPlaylistTracks } from '$lib/rb/playlist-write';
+import { addPlaylistItems } from '$lib/rb/playlist-write';
 
 export const PLAYLIST_PICKER_SEARCH_THRESHOLD = 15;
 
@@ -12,11 +12,7 @@ export async function appendTracksToPlaylist(
 	if (stableIds.length === 0) {
 		throw new Error('select at least one track first');
 	}
-	const dest = await getPlaylistTracksEtag(playlistId);
-	await transferPlaylistTracks(playlistId, dest.etag, {
-		stable_ids: stableIds,
-		mode: 'add'
-	});
+	await addPlaylistItems(playlistId, stableIds);
 }
 
 export function addToPlaylistToastMessage(count: number, playlistName: string): string {

@@ -648,7 +648,9 @@ class SqliteBackend:
                 members = {}
                 for pid, sid in conn.execute(
                     "SELECT playlist_id, stable_id FROM playlist_memberships "
-                    "WHERE deleted_at IS NULL ORDER BY playlist_id, position"
+                    "WHERE deleted_at IS NULL "
+                    "ORDER BY playlist_id, "
+                    "COALESCE(order_key, printf('%08d', position)), position"
                 ):
                     members.setdefault(pid, []).append(sid)
         return [
@@ -680,7 +682,8 @@ class SqliteBackend:
                     r[0] for r in conn.execute(
                         "SELECT stable_id FROM playlist_memberships "
                         "WHERE playlist_id = ? AND deleted_at IS NULL "
-                        "ORDER BY position",
+                        "ORDER BY COALESCE(order_key, printf('%08d', position)), "
+                        "position",
                         (playlist_id,),
                     )
                 ]
