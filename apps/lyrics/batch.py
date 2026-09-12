@@ -57,7 +57,7 @@ LYRICS_EVAL_DIR: Path = STATE_DIR / "lyrics-eval"
 BENCH_DIR: Path = REPO_ROOT / "scripts" / "bench"
 # The documented air-library mirror rule (scripts/lyrics_crate_metadata.py):
 # stale /Users/dev rows resolve to the local ~/Music/air-library tree.
-AIR_PREFIX: str = "/Users/dev/Music/air-library/"
+AIR_PREFIX: str = str(Path.home() / "Music" / "air-library") + "/"
 DEV_PREFIX: str = "/Users/dev/"
 UV_PY: tuple[str, ...] = ("uv", "run", "--no-sync", "python")
 UV_MODAL_PY: tuple[str, ...] = ("uv", "run", "--with", "modal", "python")
