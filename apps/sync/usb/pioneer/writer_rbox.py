@@ -4,6 +4,11 @@ This module is CAT-06 Prototype B: prove that we can produce a valid
 Rekordbox 7 **One Library** (aka *Device Library Plus*) SQLCipher file
 that round-trips through the same reader without data loss.
 
+This writer does **not** produce a gig stick: it cannot write ``export.pdb``,
+``USBANLZ/``, or audio. It overlays OneLibrary only. Gig-stick value
+verification after a rekordbox export is
+``python -m apps.sync.usb.verify --pioneer-export``.
+
 Background
 ----------
 

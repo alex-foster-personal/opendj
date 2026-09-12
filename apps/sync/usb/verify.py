@@ -18,14 +18,25 @@ CLI usage::
     python -m apps.sync.usb.verify --profile ... --json data/usb/verify.json
     python -m apps.sync.usb.verify --profile ... --only-drift
     python -m apps.sync.usb.verify --profile ... --skip-playlists
+    python -m apps.sync.usb.verify --pioneer-export /Volumes/STICK
+    python -m apps.sync.usb.verify --pioneer-export /Volumes/STICK --expected expected.json
 
 Exit codes
 ----------
+
+Hash mode:
 
 * 0 -- everything OK.
 * 2 -- profile load error.
 * 3 -- preflight failure.
 * 5 -- drift reported.
+
+Pioneer export mode (``--pioneer-export``):
+
+* 0 -- rekordbox export; no ``--expected`` or every expected field matches.
+* 2 -- path missing / not a Pioneer tree.
+* 4 -- not a rekordbox export (overlay-only OneLibrary).
+* 5 -- expected given and at least one ABSENT or MISMATCH.
 """
 from __future__ import annotations
 
@@ -512,7 +523,18 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="python -m apps.sync.usb.verify",
         description="Verify drive contents against canonical (SHA-256).",
     )
-    p.add_argument("--profile", required=True)
+    p.add_argument("--profile", required=False, default=None)
+    p.add_argument(
+        "--pioneer-export",
+        dest="pioneer_export",
+        default=None,
+        help="Rekordbox-exported Pioneer tree (USB root or PIONEER/ dir)",
+    )
+    p.add_argument(
+        "--expected",
+        default=None,
+        help="Optional JSON of expected stick values (Pioneer export mode)",
+    )
     p.add_argument(
         "--drive-root",
         default=None,
@@ -536,8 +558,82 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _main_pioneer_export(args: argparse.Namespace) -> int:
+    from apps.sync.usb.pioneer.value_verify import (
+        load_expected_json,
+        pioneer_export_exit_code,
+        stick_values_to_jsonable,
+        verify_stick_values,
+    )
+
+    pioneer_path = Path(args.pioneer_export)
+    if not pioneer_path.exists():
+        console.print(f"[red]path not found: {pioneer_path}[/red]")
+        return 2
+
+    expected = None
+    if args.expected:
+        expected = load_expected_json(Path(args.expected))
+
+    try:
+        report = verify_stick_values(pioneer_path, expected=expected)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return 2
+
+    if not report.is_rekordbox_export:
+        console.print(f"[yellow]{report.overlay_note}[/yellow]")
+        if args.json_out:
+            Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.json_out).write_text(
+                json.dumps(stick_values_to_jsonable(report), indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+        return 4
+
+    console.print(f"tracks on stick: {report.tracks_on_stick}")
+    console.print(f"({report.denominator_label})")
+
+    table = Table(title="stick values")
+    table.add_column("field")
+    for col in ("present", "absent", "match", "mismatch", "unread"):
+        table.add_column(col, justify="right")
+    for label, counts in (
+        ("key", report.key),
+        ("loudness", report.loudness),
+        ("grid", report.grid),
+    ):
+        table.add_row(
+            label,
+            str(counts.present),
+            str(counts.absent),
+            str(counts.match),
+            str(counts.mismatch),
+            str(counts.unread),
+        )
+    console.print(table)
+
+    if report.unread_reasons:
+        for reason in report.unread_reasons:
+            console.print(f"[dim]unread: {reason}[/dim]")
+
+    if args.json_out:
+        Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.json_out).write_text(
+            json.dumps(stick_values_to_jsonable(report), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        console.print(f"[green]wrote {args.json_out}[/green]")
+
+    return pioneer_export_exit_code(report, has_expected=expected is not None)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    if args.pioneer_export:
+        return _main_pioneer_export(args)
+    if not args.profile:
+        _build_parser().error("--profile is required when --pioneer-export is not set")
     try:
         profile = profile_mod.load(args.profile)
         drive_root = Path(args.drive_root) if args.drive_root else profile.mount_point
