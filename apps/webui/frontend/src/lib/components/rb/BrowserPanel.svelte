@@ -103,6 +103,11 @@
 	} from '$lib/rb/prefs.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import {
+		removeFromLibraryConfirmMessage,
+		removeFromLibraryToastMessage
+	} from '$lib/components/rb/browser/track-library-menu';
+	import { removeFromLibrary } from '$lib/rb/track-library';
+	import {
 		isCurrentBrowserSearch,
 		reportBrowserSearchResult,
 		subscribeBrowserSearch,
@@ -2577,6 +2582,23 @@
 		void _mutateActivePane((items) => items.filter((_, i) => i !== row.order - 1));
 	}
 
+	async function removeFromLibraryUi(stableIds: string[]): Promise<void> {
+		const ids = [...new Set(stableIds)];
+		if (ids.length === 0) return;
+		if (!window.confirm(removeFromLibraryConfirmMessage(ids.length))) return;
+		let okCount = 0;
+		for (const stableId of ids) {
+			try {
+				await removeFromLibrary(stableId);
+				okCount += 1;
+			} catch (exc) {
+				pushToast(`remove from library failed: ${String(exc)}`, 'error');
+				return;
+			}
+		}
+		pushToast(removeFromLibraryToastMessage(okCount), 'info');
+	}
+
 	function reorderRows(fromOrder: number, toOrder: number): void {
 		void _mutateActivePane((items) => {
 			const next = items.slice();
@@ -2864,6 +2886,7 @@
 			onstemsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'stems', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
 			onlyricsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'lyrics', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
 			onopeneditmodal={(kind) => void openEditModal(kind)}
+			onremovefromlibrary={(ids) => void removeFromLibraryUi(ids)}
 			ongenrefilter={genreFilter}
 			{genreFilterUntil}
 			searchQuery={pane.search}

@@ -151,6 +151,7 @@ class TrackFilter:
     tag: str | None = None
     cursor: str | None = None
     limit: int = DEFAULT_LIMIT
+    show_deleted: bool = False
 
 
 @dataclass

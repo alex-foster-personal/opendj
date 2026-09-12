@@ -71,6 +71,7 @@
 	import ContextMenu, { type ContextMenuItem } from '../ContextMenu.svelte';
 	import SpinnerIcon from './SpinnerIcon.svelte';
 	import { trackEditMenuItems, type TrackEditModalKind } from './track-edit-menu';
+	import { removeFromLibraryMenuItem } from './track-library-menu';
 
 	type DeckId = (typeof DECK_IDS)[number];
 
@@ -268,7 +269,8 @@
 		bodyOverlay = undefined as Snippet | undefined,
 		onstemsdonext = undefined as ((stableIds: string[]) => void) | undefined,
 		onlyricsdonext = undefined as ((stableIds: string[]) => void) | undefined,
-		onopeneditmodal = undefined
+		onopeneditmodal = undefined,
+		onremovefromlibrary = undefined
 	}: {
 		/** Read contract: { rows, total, truncated, fetchWindow } - see
 		 * pane-contract.svelte.ts. */
@@ -342,6 +344,8 @@
 		onstemsdonext?: (stableIds: string[]) => void;
 		onlyricsdonext?: (stableIds: string[]) => void;
 		onopeneditmodal?: (kind: TrackEditModalKind) => void;
+		/** Remove selected tracks from the library (files stay on disk). */
+		onremovefromlibrary?: (stableIds: string[]) => void;
 		/** Genre chip / post-filter gestures. */
 		ongenrefilter?: (mode: 'strict' | 'loose' | 'clear' | 'undo', tag?: string) => void;
 		/** Epoch ms until which library dbl/triple remap to clear/undo. */
@@ -590,7 +594,7 @@
 			{ id: 'lyrics', label: 'Lyrics: do next', run: onlyricsdonext ? () => onlyricsdonext(selected) : undefined },
 			{ id: 'offline', label: 'Mark offline' }, { id: 'cloud-only', label: 'Cloud-only' },
 			{ id: 'remove-playlist', label: 'Remove from playlist', run: removable ? () => onremoverow?.(row) : undefined },
-			{ id: 'remove-library', label: 'Remove from library' }
+			removeFromLibraryMenuItem(selected, onremovefromlibrary)
 		];
 	}
 
