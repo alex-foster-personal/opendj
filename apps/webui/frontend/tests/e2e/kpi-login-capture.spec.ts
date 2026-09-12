@@ -48,15 +48,50 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * The capture budget is ONE deadline across every phase, not a fresh budget
- * per wait. The config's test timeout is this plus fixed headroom, so the spec
- * always reaches its own withhold path before Playwright tears the page down.
- */
-function makeBudget(totalMs: number): () => number {
-	const deadline = Date.now() + totalMs;
-	return () => Math.max(1_000, deadline - Date.now());
+// ----- budget ------------------------------------------------------------
+
+interface Budget {
+	/** Milliseconds left, floored at 0. Zero means the deadline has passed. */
+	remainingMs(): number;
+	expired(): boolean;
+	/**
+	 * A timeout to hand Playwright. Never 0, because Playwright reads 0 as
+	 * "no timeout" -- which is why callers must check `expired()` FIRST rather
+	 * than relying on a small number to fail fast for them.
+	 */
+	waitMs(): number;
 }
+
+/**
+ * ONE deadline across every phase of the capture.
+ *
+ * The config's Playwright test timeout is this budget plus fixed headroom
+ * (see kpi-capture-timeouts.mjs), so the spec always reaches its own withhold
+ * path before the context is torn down. That only holds if no phase can run
+ * PAST the deadline: an earlier version floored every remaining-time at
+ * 1000ms, so each of a dozen waits could overrun by a second and a short
+ * budget drifted well beyond what the operator asked for.
+ */
+function makeBudget(totalMs: number): Budget {
+	const deadline = Date.now() + totalMs;
+	const remainingMs = (): number => Math.max(0, deadline - Date.now());
+	return {
+		remainingMs,
+		expired: () => remainingMs() === 0,
+		waitMs: () => Math.max(1, remainingMs())
+	};
+}
+
+/** Withhold naming the phase that ran out, so a short --timeout-s is legible. */
+function withholdExpired(phase: string): void {
+	writeResult({
+		ok: false,
+		span: null,
+		reason: `capture budget of ${TIMEOUT_S}s expired before ${phase}`
+	});
+}
+
+// ----- span collection ---------------------------------------------------
 
 interface SpanCollector {
 	take(): Record<string, unknown> | null;
@@ -98,50 +133,126 @@ function armLoginSpanCollector(page: Page): SpanCollector {
 async function waitForCollectedSpan(
 	page: Page,
 	collector: SpanCollector,
-	timeoutMs: number
+	budget: Budget
 ): Promise<Record<string, unknown> | null> {
-	const deadline = Date.now() + timeoutMs;
 	for (;;) {
 		const span = collector.take();
 		if (span !== null) return span;
 		if (page.isClosed()) return null;
-		if (Date.now() >= deadline) return null;
+		if (budget.expired()) return null;
+		await sleep(Math.min(100, budget.waitMs()));
+	}
+}
+
+// ----- navigation evidence -----------------------------------------------
+
+interface NavigationLog {
+	reachedGoogle(): boolean;
+	reachedFrontend(): boolean;
+}
+
+/**
+ * Record every main-frame navigation from arming onward.
+ *
+ * Same discipline as the login POST below, one hop later: waiting for the SPA
+ * URL to come BACK cannot prove the page ever left, because the predicate is
+ * already satisfied by the URL the page is sitting on. A discarded
+ * `waitForURL(google)` left that hole open -- a login POST whose client-side
+ * redirect never fired fell straight through to the span wait and was
+ * misreported as restored-session or missing-telemetry. An empty log after a
+ * successful POST is the positive evidence that the redirect did not happen.
+ */
+function armNavigationLog(page: Page): NavigationLog {
+	const seen: string[] = [];
+	page.on('framenavigated', (frame) => {
+		if (frame !== page.mainFrame()) return;
+		seen.push(frame.url());
+	});
+	const matches = (predicate: (url: URL) => boolean): boolean =>
+		seen.some((raw) => {
+			try {
+				return predicate(new URL(raw));
+			} catch {
+				return false;
+			}
+		});
+	return {
+		reachedGoogle: () => matches((url) => url.hostname.includes(GOOGLE_HOST_FRAGMENT)),
+		reachedFrontend: () => matches((url) => url.origin === FRONTEND_ORIGIN)
+	};
+}
+
+/** Wait for the post-login redirect to actually leave the SPA. */
+async function waitForRedirectAway(
+	navLog: NavigationLog,
+	page: Page,
+	budget: Budget,
+	windowMs: number
+): Promise<boolean> {
+	const deadline = Date.now() + windowMs;
+	for (;;) {
+		// Google is the normal path; a direct return to the SPA is the shape a
+		// pre-granted consent would take, and both count as having left.
+		if (navLog.reachedGoogle() || navLog.reachedFrontend()) return true;
+		if (page.isClosed()) return false;
+		if (budget.expired() || Date.now() >= deadline) return false;
 		await sleep(100);
 	}
 }
 
+// ----- sign-in ------------------------------------------------------------
+
 /**
+ * Wait for the daemon's own answer about who is signed in.
+ *
  * The bauble renders its SIGNED-OUT face while the deferred `refreshUser` is
  * still outstanding (UserBauble.svelte defers it out of the boot burst), so
  * "Sign in with Google" being visible does not mean `auth.user` is null yet.
  * Clicking inside that window opens the account menu instead of calling
- * `startLogin`, no marks are written, and the capture withholds with
- * "restored-session" while blaming the storageState. Waiting for the daemon's
- * own answer is the settle point; the bauble's face is final afterwards.
+ * `startLogin`. Returns a withhold reason when the engine never answers,
+ * rather than proceeding into UI logic that cannot be right yet.
  */
-async function waitForAuthSettled(page: Page, timeoutMs: number): Promise<void> {
-	await page
-		.waitForResponse((response) => response.url().includes(AUTH_ME_PATH), {
-			timeout: timeoutMs
+async function waitForAuthSettled(page: Page, budget: Budget): Promise<string | null> {
+	const response = await page
+		.waitForResponse((candidate) => candidate.url().includes(AUTH_ME_PATH), {
+			timeout: budget.waitMs()
 		})
 		.catch(() => null);
+	if (response === null) {
+		return `engine did not answer ${AUTH_ME_PATH} before the capture budget expired`;
+	}
+	if (!response.ok()) {
+		return `engine answered ${AUTH_ME_PATH} with HTTP ${response.status()}`;
+	}
+	return null;
 }
 
-/**
- * Click through Google's account chooser and consent screen.
- *
- * `build_authorization_url` sends `prompt=consent` (apps/webui/server/auth.py),
- * which makes Google park on the chooser and then the consent screen on EVERY
- * sign-in, live session or not. So replaying a pre-consented storageState --
- * the only way this capture can run unattended -- stalls on a screen that
- * needs a click, and the capture withheld with "stuck on Google" while the
- * session was in fact perfectly valid.
- *
- * Driving these clicks does not touch the scored number: the KPI is
- * `pre_navigate_ms + post_navigate_ms`, which excludes Google by construction.
- * Every failure here falls through to the caller's existing "stuck on Google"
- * withhold rather than throwing.
- */
+async function waitForSignInReady(page: Page, budget: Budget) {
+	const signInButton = page.getByRole('button', { name: 'Sign in with Google' });
+	const signedInButton = page.getByRole('button', { name: /^Signed in as / });
+	await Promise.race([
+		signInButton.waitFor({ state: 'visible', timeout: budget.waitMs() }),
+		signedInButton.waitFor({ state: 'visible', timeout: budget.waitMs() })
+	]);
+	if (await signedInButton.isVisible()) {
+		await signedInButton.click();
+		await page.getByRole('menuitem', { name: 'Sign out' }).click();
+		await signInButton.waitFor({ state: 'visible', timeout: budget.waitMs() });
+	}
+	await page.waitForFunction(
+		() => {
+			const button = document.querySelector(
+				'button[aria-label="Sign in with Google"]'
+			) as HTMLButtonElement | null;
+			return button !== null && !button.disabled;
+		},
+		{ timeout: budget.waitMs() }
+	);
+	return signInButton;
+}
+
+// ----- Google interstitials ----------------------------------------------
+
 interface GoogleClickOutcome {
 	clicked: boolean;
 	/** Set when a control was FOUND but its click failed; null otherwise. */
@@ -162,6 +273,19 @@ async function clickGoogleControl(
 	}
 }
 
+/**
+ * Click through Google's account chooser and consent screen.
+ *
+ * `build_authorization_url` sends `prompt=consent` (apps/webui/server/auth.py),
+ * which makes Google park on the chooser and then the consent screen on EVERY
+ * sign-in, live session or not. So replaying a pre-consented storageState --
+ * the only way this capture can run unattended -- stalls on a screen that
+ * needs a click, and the capture withheld with "stuck on Google" while the
+ * session was in fact perfectly valid.
+ *
+ * Driving these clicks does not touch the scored number: the KPI is
+ * `pre_navigate_ms + post_navigate_ms`, which excludes Google by construction.
+ */
 async function clickOneGoogleAffordance(page: Page): Promise<GoogleClickOutcome> {
 	const proceed = page.getByRole('button', { name: GOOGLE_PROCEED });
 	const proceedCount = await proceed.count().catch(() => 0);
@@ -192,17 +316,16 @@ async function clickOneGoogleAffordance(page: Page): Promise<GoogleClickOutcome>
  * blocked or detached control would otherwise burn the round budget while
  * looking like forward motion.
  */
-async function driveGoogleInterstitials(
-	page: Page,
-	budgetMs: () => number
-): Promise<string | null> {
-	const deadline = Date.now() + Math.min(budgetMs(), GOOGLE_DRIVE_MAX_MS);
+async function driveGoogleInterstitials(page: Page, budget: Budget): Promise<string | null> {
+	const deadline = Date.now() + Math.min(budget.remainingMs(), GOOGLE_DRIVE_MAX_MS);
 	let lastError: string | null = null;
 	for (let round = 0; round < GOOGLE_DRIVE_MAX_ROUNDS; round += 1) {
 		if (page.isClosed()) return lastError;
-		if (Date.now() >= deadline) return lastError;
+		if (budget.expired() || Date.now() >= deadline) return lastError;
 		if (!page.url().includes(GOOGLE_HOST_FRAGMENT)) return null;
-		await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => null);
+		await page
+			.waitForLoadState('domcontentloaded', { timeout: Math.min(10_000, budget.waitMs()) })
+			.catch(() => null);
 		const outcome = await clickOneGoogleAffordance(page);
 		if (outcome.error !== null) lastError = outcome.error;
 		if (!outcome.clicked) {
@@ -221,86 +344,63 @@ async function driveGoogleInterstitials(
 	return lastError;
 }
 
-async function waitForSignInReady(page: Page, budgetMs: () => number) {
-	const signInButton = page.getByRole('button', { name: 'Sign in with Google' });
-	const signedInButton = page.getByRole('button', { name: /^Signed in as / });
-	await Promise.race([
-		signInButton.waitFor({ state: 'visible', timeout: budgetMs() }),
-		signedInButton.waitFor({ state: 'visible', timeout: budgetMs() })
-	]);
-	if (await signedInButton.isVisible()) {
-		await signedInButton.click();
-		await page.getByRole('menuitem', { name: 'Sign out' }).click();
-		await signInButton.waitFor({ state: 'visible', timeout: budgetMs() });
-	}
-	await page.waitForFunction(
-		() => {
-			const button = document.querySelector(
-				'button[aria-label="Sign in with Google"]'
-			) as HTMLButtonElement | null;
-			return button !== null && !button.disabled;
-		},
-		{ timeout: budgetMs() }
-	);
-	return signInButton;
-}
+// ----- submit marks -------------------------------------------------------
 
-interface NavigationLog {
-	seen(): readonly string[];
-	reachedGoogle(): boolean;
-	reachedFrontend(): boolean;
-}
+type SubmitMarks =
+	| { state: 'read'; hasSubmit: boolean; hasNavigate: boolean }
+	| { state: 'corrupt' }
+	| { state: 'unreadable' };
 
 /**
- * Record every main-frame navigation from arming onward.
+ * Read the client's login marks, tolerating the post-login navigation.
  *
- * Same discipline as the login POST above, one hop later: waiting for the SPA
- * URL to come BACK cannot prove the page ever left, because the predicate is
- * already satisfied by the URL the page is sitting on. A discarded
- * `waitForURL(google)` left that hole open -- a login POST whose client-side
- * redirect never fired fell straight through to the span wait and was
- * misreported as restored-session or missing-telemetry. An empty log after a
- * successful POST is the positive evidence that the redirect did not happen.
+ * `page.evaluate` throws "Execution context was destroyed" when the SPA
+ * navigates mid-call, which used to crash the capture instead of withholding.
+ * This runs on the DIAGNOSTIC path only -- a captured span already proves the
+ * marks existed, because `completeLibraryUsable` returns early without them.
+ *
+ * `corrupt` is deliberately NOT folded into "absent": malformed stored state
+ * means the sign-in lifecycle DID run and wrote something, so reporting
+ * restored-session there would state the opposite of what happened.
  */
-function armNavigationLog(page: Page): NavigationLog {
-	const seen: string[] = [];
-	page.on('framenavigated', (frame) => {
-		if (frame !== page.mainFrame()) return;
-		seen.push(frame.url());
-	});
-	const has = (fragment: string): boolean =>
-		seen.some((url) => {
-			try {
-				return fragment === FRONTEND_ORIGIN
-					? new URL(url).origin === FRONTEND_ORIGIN
-					: new URL(url).hostname.includes(fragment);
-			} catch {
-				return false;
-			}
-		});
-	return {
-		seen: () => seen,
-		reachedGoogle: () => has(GOOGLE_HOST_FRAGMENT),
-		reachedFrontend: () => has(FRONTEND_ORIGIN)
-	};
+async function readSubmitMarks(page: Page, attempts = 5): Promise<SubmitMarks> {
+	for (let attempt = 0; attempt < attempts; attempt += 1) {
+		if (page.isClosed()) break;
+		try {
+			return await page.evaluate((key): SubmitMarks => {
+				const raw = sessionStorage.getItem(key);
+				if (raw === null) {
+					return { state: 'read', hasSubmit: false, hasNavigate: false };
+				}
+				try {
+					const parsed = JSON.parse(raw) as { t0?: number; tNavigate?: number };
+					return {
+						state: 'read',
+						hasSubmit: typeof parsed.t0 === 'number',
+						hasNavigate: typeof parsed.tNavigate === 'number'
+					};
+				} catch {
+					return { state: 'corrupt' };
+				}
+			}, LOGIN_SUBMIT_KEY);
+		} catch {
+			await sleep(250);
+		}
+	}
+	return { state: 'unreadable' };
 }
 
-/** Wait for the post-login redirect to actually leave the SPA. */
-async function waitForRedirectAway(
-	navLog: NavigationLog,
-	page: Page,
-	timeoutMs: number
-): Promise<boolean> {
-	const deadline = Date.now() + timeoutMs;
-	for (;;) {
-		// Google is the normal path; a direct return to the SPA is the shape a
-		// pre-granted consent would take, and both count as having left.
-		if (navLog.reachedGoogle() || navLog.reachedFrontend()) return true;
-		if (page.isClosed()) return false;
-		if (Date.now() >= deadline) return false;
-		await sleep(100);
-	}
+/** Drop any mark left over from an earlier lifecycle, so the span we accept
+ * can only belong to the click this run drives. */
+async function clearSubmitMark(page: Page): Promise<void> {
+	await page
+		.evaluate((key) => {
+			sessionStorage.removeItem(key);
+		}, LOGIN_SUBMIT_KEY)
+		.catch(() => null);
 }
+
+// ----- proof of submit ----------------------------------------------------
 
 /**
  * Click Sign in and PROVE the click started a login, retrying the bauble race.
@@ -313,16 +413,17 @@ async function waitForRedirectAway(
  * The login POST is the presence-of-the-good-thing check: it exists only when
  * `startLogin` actually ran. Returns null on success, else a withhold reason.
  */
-async function driveSignInClick(page: Page, budgetMs: () => number): Promise<string | null> {
+async function driveSignInClick(page: Page, budget: Budget): Promise<string | null> {
 	for (let attempt = 1; attempt <= SIGN_IN_CLICK_ATTEMPTS; attempt += 1) {
-		const signInButton = await waitForSignInReady(page, budgetMs);
+		if (budget.expired()) return `capture budget of ${TIMEOUT_S}s expired before the sign-in click`;
+		const signInButton = await waitForSignInReady(page, budget);
 		await clearSubmitMark(page);
 		const loginPost = page
 			.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
 					response.url().includes(AUTH_LOGIN_PATH),
-				{ timeout: Math.min(budgetMs(), LOGIN_POST_WAIT_MS) }
+				{ timeout: Math.min(budget.waitMs(), LOGIN_POST_WAIT_MS) }
 			)
 			.catch(() => null);
 		await signInButton.click();
@@ -338,75 +439,32 @@ async function driveSignInClick(page: Page, budgetMs: () => number): Promise<str
 	return 'sign-in click did not start a login (the bauble stayed in its signed-in state)';
 }
 
-async function ensurePerformance(page: Page): Promise<void> {
+async function ensurePerformance(page: Page, budget: Budget): Promise<void> {
 	if (new URL(page.url()).pathname !== '/performance') {
-		await page.goto('/performance');
+		await page.goto('/performance', { timeout: budget.waitMs() });
 	}
 }
 
-type SubmitMarks =
-	| { readable: true; hasSubmit: boolean; hasNavigate: boolean }
-	| { readable: false; hasSubmit: false; hasNavigate: false };
-
-/**
- * Read the client's login marks, tolerating the post-login navigation.
- *
- * `page.evaluate` throws "Execution context was destroyed" when the SPA
- * navigates mid-call, which used to crash the capture instead of withholding.
- * This runs on the DIAGNOSTIC path only -- a captured span already proves the
- * marks existed, because `completeLibraryUsable` returns early without them.
- */
-async function readSubmitMarks(page: Page, attempts = 5): Promise<SubmitMarks> {
-	for (let attempt = 0; attempt < attempts; attempt += 1) {
-		if (page.isClosed()) break;
-		try {
-			const marks = await page.evaluate((key) => {
-				const raw = sessionStorage.getItem(key);
-				if (raw === null) {
-					return { hasSubmit: false, hasNavigate: false };
-				}
-				try {
-					const parsed = JSON.parse(raw) as { t0?: number; tNavigate?: number };
-					return {
-						hasSubmit: typeof parsed.t0 === 'number',
-						hasNavigate: typeof parsed.tNavigate === 'number'
-					};
-				} catch {
-					return { hasSubmit: false, hasNavigate: false };
-				}
-			}, LOGIN_SUBMIT_KEY);
-			return { readable: true, ...marks };
-		} catch {
-			await sleep(250);
-		}
-	}
-	return { readable: false, hasSubmit: false, hasNavigate: false };
-}
-
-/** Drop any mark left over from an earlier lifecycle, so the span we accept
- * can only belong to the click this run drives. */
-async function clearSubmitMark(page: Page): Promise<void> {
-	await page
-		.evaluate((key) => {
-			sessionStorage.removeItem(key);
-		}, LOGIN_SUBMIT_KEY)
-		.catch(() => null);
-}
+// ----- capture ------------------------------------------------------------
 
 test('capture S13 login submit-to-library-usable span', async ({ page }) => {
 	if (!RESULT_PATH) {
 		throw new Error('KPI_CAPTURE_RESULT is required');
 	}
-	const budgetMs = makeBudget(TIMEOUT_S * 1000);
+	const budget = makeBudget(TIMEOUT_S * 1000);
 	const collector = armLoginSpanCollector(page);
 
-	const authSettled = waitForAuthSettled(page, budgetMs());
-	await page.goto('/performance');
-	await authSettled;
+	const authSettled = waitForAuthSettled(page, budget);
+	await page.goto('/performance', { timeout: budget.waitMs() });
+	const authReason = await authSettled;
+	if (authReason !== null) {
+		writeResult({ ok: false, span: null, reason: `cannot drive sign-in: ${authReason}` });
+		return;
+	}
 
 	collector.reset();
 	const navLog = armNavigationLog(page);
-	const clickReason = await driveSignInClick(page, budgetMs);
+	const clickReason = await driveSignInClick(page, budget);
 	if (clickReason !== null) {
 		writeResult({ ok: false, span: null, reason: clickReason });
 		return;
@@ -417,7 +475,8 @@ test('capture S13 login submit-to-library-usable span', async ({ page }) => {
 	const leftTheSpa = await waitForRedirectAway(
 		navLog,
 		page,
-		Math.min(budgetMs(), LOGIN_POST_WAIT_MS)
+		budget,
+		Math.min(budget.remainingMs(), LOGIN_POST_WAIT_MS)
 	);
 	if (!leftTheSpa) {
 		writeResult({
@@ -428,15 +487,19 @@ test('capture S13 login submit-to-library-usable span', async ({ page }) => {
 		});
 		return;
 	}
-	const googleClickError = await driveGoogleInterstitials(page, budgetMs);
+	const googleClickError = await driveGoogleInterstitials(page, budget);
 
+	if (budget.expired()) {
+		withholdExpired('the login round trip completed');
+		return;
+	}
 	try {
 		await page.waitForURL(
 			(url) => {
 				if (url.origin !== FRONTEND_ORIGIN) return false;
 				return url.pathname === '/' || url.pathname === '/performance';
 			},
-			{ timeout: budgetMs() }
+			{ timeout: budget.waitMs() }
 		);
 	} catch {
 		if (googleClickError !== null) {
@@ -465,9 +528,9 @@ test('capture S13 login submit-to-library-usable span', async ({ page }) => {
 		return;
 	}
 
-	await ensurePerformance(page);
+	await ensurePerformance(page, budget);
 
-	const span = await waitForCollectedSpan(page, collector, budgetMs());
+	const span = await waitForCollectedSpan(page, collector, budget);
 	if (span !== null) {
 		writeResult({ ok: true, span, reason: null });
 		return;
@@ -475,12 +538,20 @@ test('capture S13 login submit-to-library-usable span', async ({ page }) => {
 
 	// No span. Only now do the marks tell us anything: read them to say WHY.
 	const marks = await readSubmitMarks(page);
-	if (!marks.readable) {
+	if (marks.state === 'unreadable') {
 		writeResult({
 			ok: false,
 			span: null,
 			reason:
 				'missing-telemetry: no perf-span POST and the page context could not be read to classify it'
+		});
+		return;
+	}
+	if (marks.state === 'corrupt') {
+		writeResult({
+			ok: false,
+			span: null,
+			reason: `missing-telemetry: no perf-span POST and ${LOGIN_SUBMIT_KEY} held unparseable state (the sign-in lifecycle ran and wrote something)`
 		});
 		return;
 	}
