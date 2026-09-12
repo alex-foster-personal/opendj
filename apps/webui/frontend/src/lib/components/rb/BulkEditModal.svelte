@@ -2,7 +2,7 @@
 	// bulk-edit (issue #178): set rating / notes / tags across every
 	// selected track in one atomic request (backend pre-checks every row's
 	// ETag before writing any of them - see routes/bulk_edit.py).
-	import { bulkEditTracks } from '$lib/rb/api-edit-suite';
+	import { bulkEditTracks, editSuiteConflictRows } from '$lib/rb/api-edit-suite';
 	import { pushToast } from '$lib/stores.svelte';
 	import EditSuiteModal from './EditSuiteModal.svelte';
 
@@ -55,8 +55,14 @@
 			pushToast(`bulk edit applied to ${res.applied_count} track(s)`, 'info');
 			onapplied();
 		} catch (exc) {
-			error = String(exc);
-			pushToast(`bulk edit failed: ${String(exc)}`, 'error');
+			// STATE-07: the 409 body names exactly which rows failed their ETag
+			// precondition - surface that instead of a bare "conflict: Conflict".
+			const conflicts = editSuiteConflictRows(exc);
+			error =
+				conflicts !== null
+					? `${conflicts.length} of ${stableIds.length} track(s) changed elsewhere since this selection was made - reload and try again`
+					: String(exc);
+			pushToast(`bulk edit failed: ${error}`, 'error');
 		} finally {
 			busy = false;
 		}

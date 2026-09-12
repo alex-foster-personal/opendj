@@ -5,6 +5,7 @@
 	// value), so the diff shown is always real.
 	import {
 		applyFindReplace,
+		editSuiteConflictRows,
 		previewFindReplace,
 		type FindReplaceRow
 	} from '$lib/rb/api-edit-suite';
@@ -75,8 +76,18 @@
 			pushToast(`find & replace applied to ${matchCount} track(s)`, 'info');
 			onapplied();
 		} catch (exc) {
-			error = String(exc);
-			pushToast(`find & replace failed: ${String(exc)}`, 'error');
+			// STATE-08: same row-level 409 detail as bulk-edit (STATE-07), plus the
+			// preview table used to keep showing the pre-conflict diff as if the
+			// apply had succeeded - clear it so a stale "would change" list can't
+			// be mistaken for what actually happened.
+			const conflicts = editSuiteConflictRows(exc);
+			error =
+				conflicts !== null
+					? `${conflicts.length} of ${matchCount} matching track(s) changed elsewhere since preview - reload and try again`
+					: String(exc);
+			previewRows = null;
+			matchCount = 0;
+			pushToast(`find & replace failed: ${error}`, 'error');
 		} finally {
 			busy = false;
 		}

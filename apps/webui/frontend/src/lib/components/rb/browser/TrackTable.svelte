@@ -82,6 +82,7 @@
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
 	import SpinnerIcon from './SpinnerIcon.svelte';
+	import RelocatePopover from './RelocatePopover.svelte';
 	import TrackContextMenu from './TrackContextMenu.svelte';
 	import TrackPlaylistsPopover from './TrackPlaylistsPopover.svelte';
 	import { trackCloudView } from './track-cloud-state';
@@ -140,6 +141,9 @@
 	});
 	let trackContextMenu = $state<TrackContextMenu | null>(null);
 	let playlistsMenu = $state<{ x: number; y: number; stableId: string } | null>(null);
+	let relocateMenu = $state<{ x: number; y: number; stableId: string; title: string | null } | null>(
+		null
+	);
 
 	function onColResizeStart(event: PointerEvent, col: ColId): void {
 		event.preventDefault();
@@ -326,6 +330,7 @@
 		onlyricsdonext = undefined as ((stableIds: string[]) => void) | undefined,
 		onopeneditmodal = undefined,
 		onremovefromlibrary = undefined,
+		onrelocated = undefined,
 		onaddtoplaylist = undefined
 	}: {
 		/** Read contract: { rows, total, truncated, fetchWindow } - see
@@ -402,6 +407,9 @@
 		onopeneditmodal?: (kind: TrackEditModalKind) => void;
 		/** Remove selected tracks from the library (files stay on disk). */
 		onremovefromlibrary?: (stableIds: string[]) => void;
+		/** FLOW-07: called after a relocate apply succeeds, so the pane can
+		 * reload and pick up the row's fresh file_exists/broken state. */
+		onrelocated?: (() => void) | undefined;
 		/** Open the add-to-playlist picker for the selected tracks. */
 		onaddtoplaylist?: (stableIds: string[]) => void;
 		/** Genre chip / post-filter gestures. */
@@ -1044,6 +1052,9 @@
 		onshowinplaylists={(row, x, y) => {
 			playlistsMenu = { x, y, stableId: row.stable_id };
 		}}
+		onrelocate={(row, x, y) => {
+			relocateMenu = { x, y, stableId: row.stable_id, title: row.title };
+		}}
 	/>
 	{#if playlistsMenu !== null}
 		<TrackPlaylistsPopover
@@ -1051,6 +1062,16 @@
 			x={playlistsMenu.x}
 			y={playlistsMenu.y}
 			onclose={() => (playlistsMenu = null)}
+		/>
+	{/if}
+	{#if relocateMenu !== null}
+		<RelocatePopover
+			stableId={relocateMenu.stableId}
+			trackTitle={relocateMenu.title}
+			x={relocateMenu.x}
+			y={relocateMenu.y}
+			onclose={() => (relocateMenu = null)}
+			onrelocated={() => onrelocated?.()}
 		/>
 	{/if}
 	{#if masterFold === 'above'}

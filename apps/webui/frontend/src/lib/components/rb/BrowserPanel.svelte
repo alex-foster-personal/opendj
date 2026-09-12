@@ -2808,6 +2808,19 @@
 			pushToast(`playlist update failed: ${String(exc)}`, 'error');
 			return;
 		}
+		// FLOW-06: every other membership mutation in this file confirms with a
+		// toast; this one silently succeeded, indistinguishable from a no-op.
+		pushToast(`Removed "${row.title ?? row.stable_id}" from playlist`, 'info');
+		const node = _currentNode(p);
+		if (node !== null) await _loadPane(p, node);
+	}
+
+	// FLOW-07: relocate rewrites the track's own path, not a playlist
+	// membership, so a plain pane reload (same call every membership
+	// mutation above already makes) is enough to pick up the fresh
+	// file_exists / mostly_broken state - no separate refetch needed.
+	async function _reloadActivePane(): Promise<void> {
+		const p = pane;
 		const node = _currentNode(p);
 		if (node !== null) await _loadPane(p, node);
 	}
@@ -2916,6 +2929,9 @@
 		}
 		try {
 			await movePlaylistItems(id, p.etag, body);
+			// FLOW-06: silent on success today, so a drag-reorder looked identical
+			// to a dropped/ignored gesture until the row visibly re-sorted.
+			pushToast(count === 1 ? 'Moved track' : `Moved ${count} tracks`, 'info');
 		} catch (exc) {
 			if (exc instanceof PlaylistConflictError) {
 				pushToast('playlist changed elsewhere - reloaded with the latest version', 'error');
@@ -3212,6 +3228,7 @@
 			onlyricsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'lyrics', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
 			onopeneditmodal={(kind) => void openEditModal(kind)}
 			onremovefromlibrary={(ids) => void removeFromLibraryUi(ids)}
+			onrelocated={() => void _reloadActivePane()}
 			onaddtoplaylist={(ids) => openAddToPlaylistPicker(ids)}
 			ongenrefilter={genreFilter}
 			{genreFilterUntil}
