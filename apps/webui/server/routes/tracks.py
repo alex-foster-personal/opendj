@@ -35,6 +35,7 @@ from ..models import (
     TrackLyricsOut,
     TrackOut,
     TrackPatch,
+    TrackPlaylistOut,
     TracksPage,
 )
 from ..rb_vendor_pkg.track_rows import _artwork_facts
@@ -320,6 +321,29 @@ def get_track_lyrics(stable_id: str, request: Request) -> TrackLyricsOut:
         source=lyrics.source,
         lines=[{"start_ms": line.start_ms, "text": line.text} for line in lyrics.lines],
     )
+
+
+@router.get("/{stable_id}/playlists", response_model=list[TrackPlaylistOut])
+def list_track_playlists(
+    stable_id: str,
+    backend: StateBackend = Depends(get_read_state),
+) -> list[TrackPlaylistOut]:
+    """Live playlists that currently hold this track (LIBM-29).
+
+    404 if the stable_id has no tracks row. 200 [] if the track exists
+    but has no live memberships. Tombstoned memberships and deleted
+    playlists are excluded.
+    """
+    backend.get_track(stable_id)
+    return [
+        TrackPlaylistOut(
+            playlist_id=hit.playlist_id,
+            name=hit.name,
+            vendor=hit.vendor,
+            positions=list(hit.positions),
+        )
+        for hit in backend.list_track_playlists(stable_id)
+    ]
 
 
 def _lifecycle_out(result: TrackLifecycleResult) -> TrackLifecycleOut:

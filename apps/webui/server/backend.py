@@ -108,6 +108,14 @@ class Track:
 
 
 @dataclass
+class TrackPlaylistHit:
+    playlist_id: str
+    name: str
+    vendor: str
+    positions: list[int]
+
+
+@dataclass
 class Playlist:
     playlist_id: str
     name: str
@@ -257,6 +265,7 @@ class StateBackend(Protocol):
     def get_file_paths_bulk(self, stable_ids: Sequence[str]) -> dict[str, str | None]: ...
     def list_playlists(self) -> list[Playlist]: ...
     def get_playlist(self, playlist_id: str) -> Playlist: ...
+    def list_track_playlists(self, stable_id: str) -> list[TrackPlaylistHit]: ...
     def list_pairings(self, *, from_stable_id: str | None = None,
                       to_stable_id: str | None = None,
                       source: str | None = None) -> list[Pairing]: ...
@@ -383,6 +392,22 @@ class InMemoryBackend:
         if pl is None:
             raise NotFoundError(f"playlist not found: {playlist_id}")
         return pl
+
+    def list_track_playlists(self, stable_id: str) -> list[TrackPlaylistHit]:
+        with self._mutex:
+            playlists = list(self._playlists.values())
+        hits: list[TrackPlaylistHit] = []
+        for pl in playlists:
+            positions = [i for i, sid in enumerate(pl.items) if sid == stable_id]
+            if positions:
+                hits.append(TrackPlaylistHit(
+                    playlist_id=pl.playlist_id,
+                    name=pl.name,
+                    vendor=pl.vendor,
+                    positions=positions,
+                ))
+        hits.sort(key=lambda h: (h.name.casefold(), h.playlist_id))
+        return hits
 
     def list_pairings(self, *, from_stable_id: str | None = None,
                       to_stable_id: str | None = None,

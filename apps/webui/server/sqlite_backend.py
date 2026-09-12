@@ -73,6 +73,7 @@ from .backend import (
     StateBackend,
     Track,
     TrackFilter,
+    TrackPlaylistHit,
     TrackUpdate,
     compute_mytag_catalog_revision,
     resolve_tempo_pref_write,
@@ -688,6 +689,39 @@ class SqliteBackend:
             vendor=row["vendor"], vendor_pl_id=row["vendor_pl_id"], items=items,
             created_at=row["created_at"], updated_at=row["updated_at"],
         )
+
+    def list_track_playlists(self, stable_id: str) -> list[TrackPlaylistHit]:
+        with self._ro() as conn:
+            if (
+                not self._table_exists(conn, "playlists")
+                or not self._table_exists(conn, "playlist_memberships")
+            ):
+                return []
+            rows = list(conn.execute(
+                "SELECT p.playlist_id, p.name, p.vendor, m.position "
+                "FROM playlist_memberships m "
+                "JOIN playlists p ON p.playlist_id = m.playlist_id "
+                "WHERE m.stable_id = ? "
+                "  AND m.deleted_at IS NULL "
+                "  AND p.deleted_at IS NULL "
+                "ORDER BY p.name COLLATE NOCASE, p.playlist_id, m.position",
+                (stable_id,),
+            ))
+        hits: list[TrackPlaylistHit] = []
+        current: TrackPlaylistHit | None = None
+        for row in rows:
+            pid = row["playlist_id"]
+            if current is not None and current.playlist_id == pid:
+                current.positions.append(row["position"])
+                continue
+            current = TrackPlaylistHit(
+                playlist_id=pid,
+                name=row["name"],
+                vendor=row["vendor"],
+                positions=[row["position"]],
+            )
+            hits.append(current)
+        return hits
 
     def list_pairings(
         self, *, from_stable_id: str | None = None,

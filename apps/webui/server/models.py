@@ -216,6 +216,13 @@ class TrackPatch(BaseModel):
         return v
 
 
+class TrackPlaylistOut(BaseModel):
+    playlist_id: str
+    name: str
+    vendor: str
+    positions: list[int]
+
+
 class PlaylistSummary(BaseModel):
     playlist_id: str
     name: str
