@@ -51,7 +51,9 @@ async function waitForSignedIn(page, deadlineMs) {
     if (page.isClosed()) {
       return false;
     }
-    const signedIn = await page.evaluate(async () => {
+    let signedIn = false;
+    try {
+      signedIn = await page.evaluate(async () => {
       const response = await fetch("/api/v1/auth/me", {
         credentials: "same-origin",
         headers: { Accept: "application/json" },
@@ -61,7 +63,15 @@ async function waitForSignedIn(page, deadlineMs) {
       }
       const payload = await response.json();
       return payload?.signed_in === true;
-    });
+      });
+    } catch (error) {
+      // The Google redirect destroys the execution context mid-poll; that is the
+      // sign-in in progress, not a failure. Only a closed page ends the wait.
+      if (page.isClosed()) {
+        return false;
+      }
+      console.error(`auth poll retry: ${error.message.split("\n")[0]}`);
+    }
     if (signedIn) {
       return true;
     }
