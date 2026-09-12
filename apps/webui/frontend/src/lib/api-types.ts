@@ -6169,11 +6169,16 @@ export interface components {
         };
         /**
          * FallbackBeatOut
-         * @description Identical field set to one ANLZ beatgrid ``beats`` entry.
+         * @description ANLZ beat fields plus ``extrapolated``.
+         *
+         *     PQTZ ``/anlz`` beats stay ``{n, bpm, t}``. This fallback endpoint always
+         *     sends ``extrapolated`` so a client never has to guess which beats are tail.
          */
         FallbackBeatOut: {
             /** Bpm */
             bpm: number;
+            /** Extrapolated */
+            extrapolated: boolean;
             /** N */
             n: number;
             /** T */

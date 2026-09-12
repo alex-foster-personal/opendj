@@ -136,7 +136,8 @@ export function effectiveQuantize(st: Pick<DeckState, 'anlz' | 'quantize_enabled
 }
 
 /** Beat Sync as the transport actually applies it: what the DJ asked for, AND
- * a trusted grid to phase-lock with. */
+ * a trusted grid to phase-lock with. BAR planning, not this gate, filters
+ * `beatIsExtrapolated` anchors at plan time. */
 export function effectiveBeatSync(st: Pick<DeckState, 'anlz' | 'beat_sync_enabled'>): boolean {
 	return st.beat_sync_enabled && deckHasTrustedBeatGrid(st);
 }

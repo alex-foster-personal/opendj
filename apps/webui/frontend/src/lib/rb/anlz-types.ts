@@ -44,6 +44,9 @@ export interface AnlzBeat {
 	bpm: number;
 	/** Beat time in SECONDS from track start. */
 	t: number;
+	/** Present on /beatgrid-fallback beats. true = synthesized past the last
+	 * detected downbeat. Omitted on rekordbox PQTZ. */
+	extrapolated?: boolean;
 }
 
 /** Which producer this beatgrid block came from. REQUIRED on every payload.

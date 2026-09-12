@@ -291,3 +291,46 @@ test('no beats at all (no downbeats measured) never invents a grid', () => {
 	const synth = beatgridFallback.toSyntheticAnlzData(fallback);
 	assert.equal(waveMath.barsToNextCueLabel(synth, 0), null);
 });
+
+test('sameBeatgrid treats extrapolated mark as part of grid identity', () => {
+	const base = {
+		source: 'own',
+		beat_count: 2,
+		beats: [
+			{ n: 1, bpm: 128, t: 0.5, extrapolated: false },
+			{ n: 2, bpm: 128, t: 0.969, extrapolated: true }
+		]
+	};
+	const flipped = {
+		...base,
+		beats: [
+			{ n: 1, bpm: 128, t: 0.5, extrapolated: false },
+			{ n: 2, bpm: 128, t: 0.969, extrapolated: false }
+		]
+	};
+	assert.equal(beatgridFallback.sameBeatgrid(base, base), true);
+	assert.equal(beatgridFallback.sameBeatgrid(base, flipped), false);
+});
+
+test('withFallbackBeatgrid preserves extrapolated flags from the server payload', () => {
+	const anlz = anlzWithBeats([]);
+	const fallback = {
+		stable_id: 'abc123',
+		source: 'apps.analysis',
+		backend: 'librosa+madmom',
+		backend_version: 'librosa==0.10.0',
+		bpm: 128,
+		bpm_confidence: 0.8,
+		anlz_available: false,
+		beatgrid: {
+			source: 'own',
+			beat_count: 2,
+			beats: [
+				{ n: 1, bpm: 128, t: 0.5, extrapolated: false },
+				{ n: 2, bpm: 128, t: 0.969, extrapolated: true }
+			]
+		}
+	};
+	const merged = beatgridFallback.withFallbackBeatgrid(anlz, fallback);
+	assert.deepEqual(merged.beatgrid.beats, fallback.beatgrid.beats);
+});
