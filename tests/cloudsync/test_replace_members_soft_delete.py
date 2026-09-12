@@ -12,10 +12,16 @@ so an incoming membership bundle naming it would have been inserted anyway.
      inserted [else broken].
 [if] a live track's membership is present in the same bundle [then] it is
      still inserted [else broken] (control: the fix must not over-refuse).
+[if] the skip is logged as "not here yet" for a soft-deleted track (the
+     genuinely-absent wording) [then] broken -- an operator reading that log
+     would look for a sync lag, not a local deletion.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+import pytest
 
 from apps.sync_hub.engine_apply import _replace_members
 from apps.sync_hub.protocol import MEMBERSHIP_TABLE, table_columns
@@ -51,7 +57,9 @@ def _member(columns: tuple[str, ...], playlist_id: str, stable_id: str, position
     return row
 
 
-def test_a_soft_deleted_tracks_row_is_skipped_not_inserted(tmp_path: Path) -> None:
+def test_a_soft_deleted_tracks_row_is_skipped_not_inserted(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+) -> None:
     conn = state_db.open_rw(tmp_path / "state.db")
     try:
         _seed_track(conn, "trk-live", deleted=False)
@@ -62,11 +70,15 @@ def test_a_soft_deleted_tracks_row_is_skipped_not_inserted(tmp_path: Path) -> No
             _member(columns, "pl1", "trk-live", 0),
             _member(columns, "pl1", "trk-gone", 1),
         ]
-        _replace_members(conn, "pl1", members)
+        with caplog.at_level(logging.WARNING, logger="apps.sync_hub.engine"):
+            _replace_members(conn, "pl1", members)
         rows = conn.execute(
             "SELECT stable_id FROM playlist_memberships WHERE playlist_id=?",
             ("pl1",),
         ).fetchall()
         assert [r[0] for r in rows] == ["trk-live"]
+        messages = [r.getMessage() for r in caplog.records]
+        assert any("trk-gone" in m and "soft-deleted" in m for m in messages)
+        assert not any("trk-gone" in m and "not here yet" in m for m in messages)
     finally:
         conn.close()

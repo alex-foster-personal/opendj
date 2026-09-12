@@ -327,12 +327,19 @@ def _replace_members(
                 f"a row belonging to {member['playlist_id']!r}"
             )
         track_id = str(member.get("stable_id") or "")
-        if conn.execute(
-            "SELECT 1 FROM tracks WHERE stable_id = ? AND deleted_at IS NULL "
-            "LIMIT 1", (track_id,)
-        ).fetchone() is None:
+        track_row = conn.execute(
+            "SELECT deleted_at FROM tracks WHERE stable_id = ? LIMIT 1",
+            (track_id,),
+        ).fetchone()
+        if track_row is None:
             log.warning(
                 "%s: playlist %s pos %r skipped; track %s is not here yet",
+                MEMBERSHIP_TABLE, playlist_id, member.get("position"), track_id,
+            )
+            continue
+        if track_row[0] is not None:
+            log.warning(
+                "%s: playlist %s pos %r skipped; track %s is soft-deleted here",
                 MEMBERSHIP_TABLE, playlist_id, member.get("position"), track_id,
             )
             continue
