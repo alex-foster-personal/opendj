@@ -171,10 +171,28 @@ print(r.render())
 """
 
 _UNLOCKED_DRIVER = """
-import sys
+import json, os, sys, time
 sys.path.insert(0, {repo!r})
-from tests.analysis.pool_probe_backends import LockProbeBackend
-print(LockProbeBackend.warm_jit_cache())
+record = os.environ["MDT_LOCK_RECORD"]
+hold_s = float(os.environ.get("MDT_LOCK_HOLD_S", "0.6"))
+ready_n = int(os.environ.get("MDT_LOCK_READY_N", "4"))
+barrier = record + ".ready"
+with open(barrier, "a", encoding="utf-8") as fh:
+    fh.write(str(os.getpid()) + "\\n")
+    fh.flush()
+deadline = time.monotonic() + 30.0
+while time.monotonic() < deadline:
+    try:
+        if len(open(barrier, encoding="utf-8").read().splitlines()) >= ready_n:
+            break
+    except OSError:
+        pass
+    time.sleep(0.01)
+entered = time.monotonic()
+time.sleep(hold_s)
+left = time.monotonic()
+with open(record, "a", encoding="utf-8") as fh:
+    fh.write(json.dumps({{"pid": os.getpid(), "entered": entered, "left": left}}) + "\\n")
 """
 
 
@@ -256,7 +274,11 @@ def test_negative_control_the_same_probe_overlaps_without_the_lock(
     if this control ever passes-as-excluded then the exclusion test above is
     proving nothing: it would mean this host never overlaps anyway"""
     record = tmp_path / "unlocked.jsonl"
-    env = {"MDT_LOCK_RECORD": str(record), "MDT_LOCK_HOLD_S": "0.6"}
+    env = {
+        "MDT_LOCK_RECORD": str(record),
+        "MDT_LOCK_HOLD_S": "0.6",
+        "MDT_LOCK_READY_N": "4",
+    }
     codes = _run_concurrently(_UNLOCKED_DRIVER.format(repo=str(REPO_ROOT)), env, 4)
 
     assert codes == [0, 0, 0, 0], codes
