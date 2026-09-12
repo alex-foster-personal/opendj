@@ -1635,7 +1635,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'trim') {
 		engine.setTrim(command.deck, command.value);
 	} else if (command.type === 'eq') {
-		engine.setEq(command.deck, command.band, command.value);
+		engine.setEq(command.deck, command.band, command.value, pressT0Ms);
 	} else if (command.type === 'filter') {
 		engine.setFilter(command.deck, command.value);
 	} else if (command.type === 'fader') {

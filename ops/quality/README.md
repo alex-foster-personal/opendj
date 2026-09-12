@@ -25,6 +25,14 @@ just quality-baseline    # rewrites baseline.json at today's numbers
 Allowances only ever shrink. Raising one by hand is a decision someone has to
 defend in a diff, which is the point.
 
+`latency.input_to_applied_ms` is a **declared ceiling** the latency evaluator
+echoes from `baseline.json`, not a live p99 measured in CI (there is no
+AudioContext on the builder). A reported 0 would be a lie and would ratchet the
+allowance to 0 on the next `--update-baseline`. If the EQ apply wiring checked
+by `scripts/quality_latency.py` is removed, the evaluator emits 999 and the gate
+fails. Do not treat a `RATCHET AVAILABLE` print on this key as an instruction
+to go measure actual latency.
+
 A run is judged against **allowance + slack**, where slack is a small declared
 band per metric. The section below says why, and what each band is worth.
 

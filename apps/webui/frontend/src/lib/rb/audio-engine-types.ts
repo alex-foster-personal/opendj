@@ -117,7 +117,7 @@ export interface AudioEngine {
 	/** TRIM knob 0..1 (0.5 = unity) -> per-channel input GainNode. */
 	setTrim(deck: DeckId, value: number): void;
 	/** One EQ band knob 0..1 (0.5 = flat) -> Biquad gain in dB. */
-	setEq(deck: DeckId, band: EqBand, value: number): void;
+	setEq(deck: DeckId, band: EqBand, value: number, pressT0Ms?: number): void;
 	/** FILTER knob 0..1 (0.5 = bypass) -> paired lowpass/highpass Biquad
 	 * corner frequencies. See player/constants.ts FILTER_*. */
 	setFilter(deck: DeckId, value: number): void;

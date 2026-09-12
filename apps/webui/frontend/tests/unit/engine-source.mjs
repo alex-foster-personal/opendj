@@ -73,6 +73,7 @@ export const ENGINE_SOURCE_PATHS = [
   "lib/rb/press-stamp.ts",
   "lib/player/beatgrid-resync-guards.ts",
   "lib/player/constants.ts",
+  "lib/player/eq-apply.ts",
   "lib/player/headphones.ts",
   "lib/player/key/camelot.ts",
   "lib/player/master-mute.svelte.ts",

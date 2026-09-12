@@ -11,13 +11,21 @@
  */
 
 import {
+	EQ_APPLY_KIND,
+	applyEqRamp,
+	eqApplyStages,
+	eqRampPlan
+} from '$lib/player/eq-apply';
+import {
 	latencyFloorLabels,
 	type ScheduleRowKind,
 	scheduleRowKind,
 	unavailableLatencyTerms
 } from '$lib/player/transport/press-audible';
 import { claimArmedHotCuePress, claimLoadSpanningPress } from '$lib/rb/deck-slots';
-import { recordPerfEvent } from '$lib/rb/perf-event-log';
+import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
+
+export { EQ_APPLY_KIND, applyEqRamp, eqApplyStages, eqRampPlan } from '$lib/player/eq-apply';
 
 /**
  * A deck, exactly as the perf ring accepts one.
@@ -60,6 +68,28 @@ export function measurePressToScheduleMs(
 		return undefined;
 	}
 	return elapsedMs;
+}
+
+/** LATENCY-03: log input stamp vs AudioContext.currentTime at the EQ apply. */
+export function logEqApply(
+	deck: PerfDeck,
+	pressT0Ms: number | undefined,
+	nowSec: number,
+	rampSec: number
+): void {
+	if (pressT0Ms === undefined) return;
+	const pressToApplyMs = measurePressToScheduleMs(pressT0Ms, deck);
+	if (pressToApplyMs === undefined) return;
+	recordPerfTiming(
+		EQ_APPLY_KIND,
+		eqApplyStages({
+			pressToApplyMs,
+			rampStartOffsetMs: 0,
+			rampDurationMs: rampSec * 1000
+		}),
+		deck,
+		{ apply_context_time_s: String(nowSec) }
+	);
 }
 
 /**
