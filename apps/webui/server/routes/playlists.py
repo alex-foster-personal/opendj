@@ -51,6 +51,7 @@ def list_playlists(
                 1 for sid in pl.items if available.get(sid, False)
             ),
             updated_at=pl.updated_at,
+            forbid_duplicates=pl.forbid_duplicates,
             seq=(
                 order.get(pl.vendor_pl_id)
                 if pl.vendor == "rekordbox" and pl.vendor_pl_id is not None
@@ -104,6 +105,7 @@ def get_playlist(
             tracks.append(out)
     return PlaylistDetail(
         playlist_id=pl.playlist_id, name=pl.name, vendor=pl.vendor,
+        forbid_duplicates=pl.forbid_duplicates,
         items=list(pl.items),
         tracks=tracks,
         # GUARD-11: the real differ (apps/sync/playlist_diff.py) only runs

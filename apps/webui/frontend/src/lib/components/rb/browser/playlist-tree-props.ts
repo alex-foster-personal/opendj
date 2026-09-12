@@ -44,6 +44,7 @@ export type PlaylistTreeProps = {
 	oncreateplaylist?: () => Promise<string | null> | string | null;
 	/** Commit in-place rename; empty/cancelled name leaves server name. */
 	onrenameplaylist?: (node: PlaylistNode, name: string) => void | Promise<void>;
+	onforbidduplicates?: (node: PlaylistNode) => void | Promise<void>;
 	ondeleteplaylist?: (node: PlaylistNode) => void;
 	onduplicateplaylist?: (node: PlaylistNode) => void;
 	/**

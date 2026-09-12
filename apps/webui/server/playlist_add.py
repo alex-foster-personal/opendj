@@ -11,6 +11,7 @@ from apps.shared.state.writer import StateWriter
 from typing import TYPE_CHECKING
 
 from .backend import BackendError, NotFoundError
+from .playlist_dupes import new_stable_ids
 
 if TYPE_CHECKING:
     from .playlist_store import PlaylistRow, PlaylistStore
@@ -145,6 +146,11 @@ def add_memberships(
 
     store._require_known_tracks(stable_ids)
     _reject_over_cap(stable_ids)
+
+    if before_row.forbid_duplicates:
+        stable_ids = new_stable_ids(before_row.items, stable_ids)
+        if not stable_ids:
+            return before_row
 
     members = _load_live_members(conn, playlist_id)
     insert_index = _insert_index(members, position)
