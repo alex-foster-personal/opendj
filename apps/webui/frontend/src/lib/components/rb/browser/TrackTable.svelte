@@ -71,6 +71,7 @@
 	import ContextMenu, { type ContextMenuItem } from '../ContextMenu.svelte';
 	import SpinnerIcon from './SpinnerIcon.svelte';
 	import { trackEditMenuItems, type TrackEditModalKind } from './track-edit-menu';
+	import { addToPlaylistMenuItem } from './add-to-playlist-menu';
 	import { removeFromLibraryMenuItem } from './track-library-menu';
 
 	type DeckId = (typeof DECK_IDS)[number];
@@ -270,7 +271,8 @@
 		onstemsdonext = undefined as ((stableIds: string[]) => void) | undefined,
 		onlyricsdonext = undefined as ((stableIds: string[]) => void) | undefined,
 		onopeneditmodal = undefined,
-		onremovefromlibrary = undefined
+		onremovefromlibrary = undefined,
+		onaddtoplaylist = undefined
 	}: {
 		/** Read contract: { rows, total, truncated, fetchWindow } - see
 		 * pane-contract.svelte.ts. */
@@ -346,6 +348,8 @@
 		onopeneditmodal?: (kind: TrackEditModalKind) => void;
 		/** Remove selected tracks from the library (files stay on disk). */
 		onremovefromlibrary?: (stableIds: string[]) => void;
+		/** Open the add-to-playlist picker for the selected tracks. */
+		onaddtoplaylist?: (stableIds: string[]) => void;
 		/** Genre chip / post-filter gestures. */
 		ongenrefilter?: (mode: 'strict' | 'loose' | 'clear' | 'undo', tag?: string) => void;
 		/** Epoch ms until which library dbl/triple remap to clear/undo. */
@@ -584,7 +588,8 @@
 		const selected = selectedOrderSet.has(row.order) ? selectedIds : [row.stable_id];
 		return [
 			...DECKS.map((deck) => ({ id: `load-${deck}`, label: `Load to deck ${deck}`, run: () => onloadrow(row, deck) })),
-			{ id: 'add-playlist', label: 'Add to playlist...' }, { id: 'edit', label: 'Edit' },
+			addToPlaylistMenuItem(selected, onaddtoplaylist),
+			{ id: 'edit', label: 'Edit' },
 			...trackEditMenuItems(selected.length, onopeneditmodal),
 			{ id: 'relocate', label: 'Relocate' },
 			{ id: 'finder', label: 'Show in Finder' }, { id: 'copy-path', label: 'Copy path' },

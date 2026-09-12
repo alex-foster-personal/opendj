@@ -102,10 +102,15 @@
 		PLAYLIST_TREE_WIDTH_MIN
 	} from '$lib/rb/prefs.svelte';
 	import { pushToast } from '$lib/stores.svelte';
+	import AddToPlaylistPicker from './browser/AddToPlaylistPicker.svelte';
 	import {
 		removeFromLibraryConfirmMessage,
 		removeFromLibraryToastMessage
 	} from '$lib/components/rb/browser/track-library-menu';
+	import {
+		addToPlaylistToastMessage,
+		appendTracksToPlaylist
+	} from '$lib/rb/add-to-playlist';
 	import { removeFromLibrary } from '$lib/rb/track-library';
 	import {
 		isCurrentBrowserSearch,
@@ -2582,6 +2587,25 @@
 		void _mutateActivePane((items) => items.filter((_, i) => i !== row.order - 1));
 	}
 
+	let addToPlaylistIds = $state<string[] | null>(null);
+
+	function openAddToPlaylistPicker(ids: string[]): void {
+		addToPlaylistIds = ids;
+	}
+
+	async function addTracksToPlaylist(node: PlaylistNode): Promise<void> {
+		const ids = addToPlaylistIds;
+		if (ids === null || ids.length === 0) return;
+		addToPlaylistIds = null;
+		try {
+			await appendTracksToPlaylist(node.playlist_id, ids);
+			await _refreshPlaylists();
+			pushToast(addToPlaylistToastMessage(ids.length, node.name), 'info');
+		} catch (exc) {
+			pushToast(`add to playlist failed: ${String(exc)}`, 'error');
+		}
+	}
+
 	async function removeFromLibraryUi(stableIds: string[]): Promise<void> {
 		const ids = [...new Set(stableIds)];
 		if (ids.length === 0) return;
@@ -2887,6 +2911,7 @@
 			onlyricsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'lyrics', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
 			onopeneditmodal={(kind) => void openEditModal(kind)}
 			onremovefromlibrary={(ids) => void removeFromLibraryUi(ids)}
+			onaddtoplaylist={(ids) => openAddToPlaylistPicker(ids)}
 			ongenrefilter={genreFilter}
 			{genreFilterUntil}
 			searchQuery={pane.search}
@@ -3004,6 +3029,13 @@
 	etags={modalEtags}
 	onclose={() => (openModal = null)}
 	onapplied={onEditApplied}
+/>
+
+<AddToPlaylistPicker
+	open={addToPlaylistIds !== null}
+	playlists={treeNodes}
+	onpick={(node) => void addTracksToPlaylist(node)}
+	onclose={() => (addToPlaylistIds = null)}
 />
 
 <style>
