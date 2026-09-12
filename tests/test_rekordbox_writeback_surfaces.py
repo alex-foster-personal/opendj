@@ -110,6 +110,15 @@ IMPORT_DIRECTION_ONLY: dict[str, str] = {
     "apps/sync/usb/pioneer/differ.py": "diffs two exportLibrary.db reads",
     "apps/sync/usb/pioneer/__init__.py": "package docstring",
     "apps/sync/usb/pioneer/writer_rbox.py": "reached only via the two mapped USB entrypoints",
+    "apps/sync/usb/pioneer/value_verify.py": (
+        "read-only USB stick value verify (key / PQTZ / loudness counts); "
+        "never writes exportLibrary.db, ANLZ, or a desktop master.db"
+    ),
+    "apps/sync/usb/pioneer/value_verify_sidecar.py": (
+        "loudness probe of a tempfile copy of exportLibrary.db; never opens "
+        "the stick in-place. If a future change writes the copy back over the "
+        "source, this entry stops being true"
+    ),
 }
 
 LIVE_TARGET_MARKERS = ("REKORDBOX_LIVE_DB", "SHARE_ROOT", "exportLibrary")
