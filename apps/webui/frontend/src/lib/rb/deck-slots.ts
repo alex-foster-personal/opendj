@@ -212,6 +212,8 @@ export interface PendingLoadPlay {
 	deck: DeckId;
 	generation: number;
 	desiredPlay: boolean;
+	/** LATENCY-02: carry Cmd+Space across a pending load-play completion. */
+	quantize?: boolean;
 	/**
 	 * Q1: the operator's press, carried ACROSS the load it is waiting on.
 	 *
@@ -251,7 +253,8 @@ export function setPendingLoadPlayIntent(
 	deck: DeckId,
 	generation: number,
 	desiredPlay: boolean,
-	pressT0Ms?: number
+	pressT0Ms?: number,
+	quantize?: boolean
 ): boolean {
 	const pending = pendingByDeck[deck];
 	if (pending === null || pending.generation !== generation) return false;
@@ -260,7 +263,8 @@ export function setPendingLoadPlayIntent(
 		[deck]: {
 			...pending,
 			desiredPlay,
-			...(pressT0Ms === undefined ? {} : { pressT0Ms })
+			...(pressT0Ms === undefined ? {} : { pressT0Ms }),
+			...(desiredPlay && quantize === true ? { quantize: true } : { quantize: undefined })
 		}
 	};
 	return true;

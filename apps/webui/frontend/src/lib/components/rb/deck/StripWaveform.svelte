@@ -41,7 +41,7 @@
 		pending: boolean;
 		onSeek: (ms: number) => Promise<void>;
 		/** Q1: carries the originating click's own `event.timeStamp`. */
-		onPlay: (pressT0Ms?: number) => Promise<void>;
+		onPlay: (pressT0Ms?: number, quantize?: boolean) => Promise<void>;
 	} = $props();
 
 	// Canvas backing resolution (CSS scales to 100% x var(--rb-strip-h)).
@@ -209,7 +209,7 @@
 	async function handlePlayHint(e: MouseEvent): Promise<void> {
 		e.stopPropagation();
 		playHintPct = null;
-		await onPlay(e.timeStamp);
+		await onPlay(e.timeStamp, e.metaKey || e.ctrlKey);
 	}
 </script>
 

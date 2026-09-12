@@ -109,6 +109,9 @@ export interface AudioEngine {
 		armAtPositionSec: number,
 		pressT0Ms?: number
 	): Promise<number>;
+	/** LATENCY-02: arm QUANTIZED LAUNCH on the follower's next shared beat 1. */
+	armQuantizedLaunch(deck: DeckId, pressT0Ms?: number): Promise<number>;
+	clearQuantizedLaunch(deck: DeckId): void;
 	/** The engine's AudioContext clock, for projecting an armed trigger's
 	 * remaining wait without exposing the context itself. */
 	contextTimeNowSec(): number;

@@ -711,6 +711,16 @@ export const BEATGRID_ISSUE_MAX_RUN = 6;
  * longer sustained drift, or the grid is too short to have an interval at
  * all - all real "nothing to flag" states, never a guessed issue.
  */
+export {
+	computeQuantizedLaunchArm,
+	planQuantizedLaunch,
+	QUANTIZED_LAUNCH,
+	type QuantizedLaunchArmFacts,
+	type QuantizedLaunchInput,
+	type QuantizedLaunchPlan
+} from '$lib/player/transport/quantized-launch';
+export { hasTrustedBeatGrid } from '$lib/player/grid-features';
+
 export function detectBeatgridIssue(beats: readonly AnlzBeat[]): BeatgridIssue | null {
 	if (!Array.isArray(beats) || beats.length < 2) return null;
 	const intervalCount = beats.length - 1;
