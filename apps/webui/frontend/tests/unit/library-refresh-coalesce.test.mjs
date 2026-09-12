@@ -222,14 +222,18 @@ test('BrowserPanel routes its bus-driven refresh through that gate', () => {
 		/subscribeResync\(\(\) => \{\s*void _refreshPlaylists\(\);\s*_libraryRefreshGate\.request\(\);\s*\}\)/,
 		'a missed playlist invalidation on reconnect must refresh tree names, not only pane rows'
 	);
+	assert.match(source, /subscribeKind\('smartlists', \(\) => _libraryRefreshGate\.request\(\)\)/);
+	assert.match(source, /onselectsmartlist=\{selectSmartlist\}/);
+	assert.match(source, /async function _fetchSmartlistRows/);
+	assert.match(source, /p\.kind === 'smartlist'/);
 	const requestCallSites = source
 		.split('\n')
 		.filter((line) => line.includes('_libraryRefreshGate.request()'))
 		.filter((line) => !/^\s*(\/\/|\*)/.test(line));
 	assert.equal(
 		requestCallSites.length,
-		4,
-		'the three bus subscriptions (tracks, playlists, resync) plus the 60s degraded-path poll, and nothing else'
+		5,
+		'the four bus subscriptions (tracks, playlists, smartlists, resync) plus the 60s degraded-path poll, and nothing else'
 	);
 });
 

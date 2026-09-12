@@ -28,6 +28,7 @@
 		parseVocals,
 		vocalsOf
 	} from '$lib/rb/api-rb';
+	import { getSmartlistTracks, type SmartlistSummary } from '$lib/rb/api-smartlists';
 	import {
 		plannedTitle,
 		anyDeckPlaying,
@@ -811,6 +812,7 @@
 			void _refreshPlaylists();
 			_libraryRefreshGate.request();
 		});
+		const unsubscribeSmartlists = subscribeKind('smartlists', () => _libraryRefreshGate.request());
 		// A resync means the bus knows it missed events but not which, so the
 		// only sound response is to refetch as if everything changed.
 		const unsubscribeResync = subscribeResync(() => {
@@ -838,6 +840,7 @@
 			clearInterval(libraryFallbackTimer);
 			unsubscribeTracks();
 			unsubscribePlaylists();
+			unsubscribeSmartlists();
 			unsubscribeResync();
 			unsubscribeSearch();
 			window.removeEventListener('keydown', onKey);
@@ -1246,6 +1249,18 @@
 		void runPerformanceCommandFromUi({ type: 'browser_select_playlist', playlist_id: node.playlist_id });
 	}
 
+	function selectSmartlist(smartlist: SmartlistSummary): void {
+		const node: PlaylistNode = {
+			playlist_id: smartlist.id,
+			name: smartlist.name,
+			track_count: smartlist.count ?? 0,
+			broken_count: 0,
+			kind: 'smartlist',
+			children: []
+		};
+		void _loadPane(panes[activePane], node);
+	}
+
 	async function _selectPlaylistFromCommand(playlistId: string): Promise<void> {
 		const node = _nodeForNav({
 			playlist_id: playlistId,
@@ -1391,7 +1406,9 @@
 						? await _fetchAllRows()
 						: isMissingTracksId(requestedPlaylistId)
 							? await fetchMissingTrackRows()
-							: await _fetchPlaylistRows(requestedPlaylistId);
+							: p.kind === 'smartlist'
+								? await _fetchSmartlistRows(requestedPlaylistId)
+								: await _fetchPlaylistRows(requestedPlaylistId);
 				if (p.playlist_id !== requestedPlaylistId) continue;
 				p.rows = result.rows;
 				p.truncated = result.truncated;
@@ -1429,8 +1446,9 @@
 	 * The only entry point for a background library refresh: WHEN it may run,
 	 * and how many times.
 	 *
-	 * Four triggers feed it (`subscribeKind('tracks')`, `subscribeKind('playlists')`,
-	 * `subscribeResync` and the 60s degraded-path poll) and a single gap-revealing
+	 * Five triggers feed it (`subscribeKind('tracks')`, `subscribeKind('playlists')`,
+	 * `subscribeKind('smartlists')`, `subscribeResync` and the 60s degraded-path poll)
+	 * and a single gap-revealing
 	 * `library.changed` frame fires two of them for ONE event. Unguarded that is
 	 * concurrent full library reads racing to write the same panes; the gate's
 	 * coalescer makes it one run plus one trailing run (`$lib/rb/coalesce`).
@@ -1615,7 +1633,8 @@
 			p === panes[0] &&
 			node.kind !== 'folder' &&
 			node.kind !== 'missing_tracks' &&
-			node.kind !== 'taglist'
+			node.kind !== 'taglist' &&
+			node.kind !== 'smartlist'
 		) {
 			setLastPlaylist({
 				playlist_id: node.playlist_id,
@@ -1628,7 +1647,7 @@
 		}
 		// beginLoad returns the stale-response token for rapid re-selection;
 		// completeLoad/failLoad no-op when a newer load superseded this one.
-		const seq = p.beginLoad(node.playlist_id, node.name);
+		const seq = p.beginLoad(node.playlist_id, node.name, node.kind);
 		try {
 			if (node.kind === 'all_tracks') {
 				await fillAllTracksPane({
@@ -1660,7 +1679,9 @@
 			const result =
 				node.kind === 'missing_tracks'
 					? await fetchMissingTrackRows()
-					: await _fetchPlaylistRows(node.playlist_id);
+					: node.kind === 'smartlist'
+						? await _fetchSmartlistRows(node.playlist_id)
+						: await _fetchPlaylistRows(node.playlist_id);
 			p.completeLoad(seq, result.rows, result.truncated, result.etag);
 		} catch (exc) {
 			if (p.failLoad(seq, String(exc))) {
@@ -1673,6 +1694,16 @@
 	 * currently-selected pane after a mutation (add-remove-reorder-tracks). */
 	function _currentNode(p: PaneStore): PlaylistNode | null {
 		if (p.playlist_id === null || p.playlist_id === 'all' || isMissingTracksId(p.playlist_id)) return null;
+		if (p.kind === 'smartlist') {
+			return {
+				playlist_id: p.playlist_id,
+				name: p.title,
+				track_count: p.rows.length,
+				broken_count: 0,
+				kind: 'smartlist',
+				children: []
+			};
+		}
 		if (p.playlist_id.startsWith('taglist:')) {
 			return {
 				playlist_id: p.playlist_id,
@@ -1823,6 +1854,19 @@
 			// All Tracks is not a single playlist row - no membership etag.
 			etag: ''
 		};
+	}
+
+	async function _fetchSmartlistRows(
+		id: string
+	): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
+		const startedAt = performance.now();
+		const detail = await getSmartlistTracks(id);
+		const rows = detail.tracks.map((wire, i) => _rowFromPlaylistWire(wire, i + 1));
+		recordLibraryLoadTiming('playlist', {
+			fetchMs: performance.now() - startedAt,
+			rows: rows.length
+		});
+		return { rows, truncated: false, etag: '' };
 	}
 
 	async function _fetchPlaylistRows(
@@ -2821,6 +2865,7 @@
 				{deckLoadedPlaylistIds}
 				multiPanePlaylistIds={multiPanePlaylistIds_}
 				onselect={selectPlaylist}
+				onselectsmartlist={selectSmartlist}
 				onselecttrack={selectRow}
 				onloadtrack={loadRow}
 				oncreateplaylist={() => createPlaylistUi()}

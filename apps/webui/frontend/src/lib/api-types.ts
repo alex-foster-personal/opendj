@@ -9739,6 +9739,8 @@ export interface components {
          * @description List/detail row for one smartlist (contract for rule-editor-ui).
          */
         SmartlistSummary: {
+            /** Count */
+            count?: number | null;
             /** Created At */
             created_at: string;
             /** Id */
@@ -17572,7 +17574,10 @@ export interface operations {
     };
     list_smartlists_api_v1_smartlists_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Live-evaluate each smartlist membership count. */
+                include_counts?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -17586,6 +17591,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SmartlistSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

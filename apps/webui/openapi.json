@@ -13714,6 +13714,17 @@
       "SmartlistSummary": {
         "description": "List/detail row for one smartlist (contract for rule-editor-ui).",
         "properties": {
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -26595,6 +26606,20 @@
     "/api/v1/smartlists": {
       "get": {
         "operationId": "list_smartlists_api_v1_smartlists_get",
+        "parameters": [
+          {
+            "description": "Live-evaluate each smartlist membership count.",
+            "in": "query",
+            "name": "include_counts",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Live-evaluate each smartlist membership count.",
+              "title": "Include Counts",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -26609,6 +26634,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Smartlists",

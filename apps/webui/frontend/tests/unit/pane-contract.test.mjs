@@ -73,6 +73,7 @@ function _row(overrides = {}) {
 test('createPaneStore defaults match the blank pane', () => {
 	const p = contract.createPaneStore();
 	assert.equal(p.playlist_id, null);
+	assert.equal(p.kind, null);
 	assert.equal(p.title, 'blank list');
 	assert.deepEqual(p.rows, []);
 	assert.equal(p.loading, false);
@@ -101,6 +102,18 @@ test('completeLoad persists the playlist etag; beginLoad resets it for the next 
 	const allTracksSeq = p.beginLoad('all', 'All Tracks');
 	assert.equal(p.completeLoad(allTracksSeq, [_row()], false), true);
 	assert.equal(p.etag, '');
+});
+
+test('beginLoad records smartlist kind while preserving normal defaults', () => {
+	const p = contract.createPaneStore();
+	p.beginLoad('sl-1', '5*', 'smartlist');
+	assert.equal(p.kind, 'smartlist');
+
+	p.beginLoad('pl-1', 'Warmup');
+	assert.equal(p.kind, 'playlist');
+
+	p.beginLoad('all', 'All Tracks');
+	assert.equal(p.kind, 'all_tracks');
 });
 
 test('canMutatePlaylist rejects blank, all-tracks, unloaded, truncated, and global-search panes', () => {

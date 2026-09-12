@@ -7,22 +7,55 @@
  * Rune class - the .svelte.ts extension is REQUIRED for $state.
  */
 import { deleteSmartlist, listSmartlists, type SmartlistSummary } from '$lib/rb/api-smartlists';
-import { RbApiError } from '$lib/rb/api-rb-error';
+import {
+	subscribeKind,
+	subscribeResync,
+	type LibraryKind,
+	type KindListener,
+	type ResyncListener,
+	type Unsubscribe
+} from '$lib/api/events-bus';
+import { coalesce } from '$lib/rb/coalesce';
+
+type ListSmartlists = typeof listSmartlists;
+type SubscribeKind = (kind: LibraryKind, listener: KindListener) => Unsubscribe;
+type SubscribeResync = (listener: ResyncListener) => Unsubscribe;
 
 export class TreeSmartlists {
 	open = $state(true);
 	rows = $state<SmartlistSummary[] | null>(null);
 	error = $state<string | null>(null);
+	readonly #requestReload: () => Promise<void>;
+	readonly #unsubscribes: Unsubscribe[];
 
-	constructor(private readonly onselect: () => ((smartlist: SmartlistSummary) => void) | undefined) {
-		listSmartlists().then(
-			(rows) => (this.rows = rows),
-			(err: unknown) => {
-				// Explicit backend error (e.g. SMARTLISTS_DB_UNAVAILABLE on an
-				// in-memory deploy) renders as a dim error row - never hidden.
-				this.error = err instanceof RbApiError ? err.code : String(err);
-			}
-		);
+	constructor(
+		private readonly onselect: () => ((smartlist: SmartlistSummary) => void) | undefined,
+		private readonly list: ListSmartlists = listSmartlists,
+		subscribeToKind: SubscribeKind = subscribeKind,
+		subscribeToResync: SubscribeResync = subscribeResync
+	) {
+		this.#requestReload = coalesce(() => this.reload());
+		this.#unsubscribes = [
+			...(['tracks', 'smartlists', 'mytags', 'pairings'] as const).map((kind) =>
+				subscribeToKind(kind, () => void this.#requestReload())
+			),
+			subscribeToResync(() => void this.#requestReload())
+		];
+		void this.#requestReload();
+	}
+
+	async reload(): Promise<void> {
+		try {
+			this.rows = await this.list({ includeCounts: true });
+			this.error = null;
+		} catch (err: unknown) {
+			// Explicit backend errors render as a dim error row, never as an
+			// empty success. Keep the backend code when one is available.
+			this.error =
+				typeof err === 'object' && err !== null && 'code' in err && typeof err.code === 'string'
+					? err.code
+					: String(err);
+		}
 	}
 
 	toggle(): void {
@@ -39,5 +72,9 @@ export class TreeSmartlists {
 		if (this.rows !== null) {
 			this.rows = this.rows.filter((row) => row.id !== id);
 		}
+	}
+
+	destroy(): void {
+		for (const unsubscribe of this.#unsubscribes) unsubscribe();
 	}
 }
