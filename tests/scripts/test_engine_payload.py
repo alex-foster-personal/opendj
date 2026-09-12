@@ -259,6 +259,21 @@ def test_an_os_library_is_classified_with_a_recorded_reason() -> None:
 
 
 @pytest.mark.requirement("INSTALL-11")
+def test_the_linux_only_libc_soname_is_classified_not_bundled() -> None:
+    """[if] parent_watch's CDLL("libc.so.6") is unclassified [then] every dmg build fails."""
+    site = RuntimeLoadSite(
+        path="app/apps/engine_core/parent_watch.py",
+        line=55,
+        call="CDLL",
+        library="libc.so.6",
+        source='CDLL("libc.so.6")',
+    )
+    classified, unclassified = classify_runtime_load_sites([site])
+    assert unclassified == []
+    assert "linux" in classified[site.describe()]
+
+
+@pytest.mark.requirement("INSTALL-11")
 def test_a_dynamic_argument_is_still_required_to_be_classified() -> None:
     """"We could not read it" and "it is fine" must not render the same."""
     unknown = RuntimeLoadSite(
