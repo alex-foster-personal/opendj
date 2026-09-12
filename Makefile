@@ -190,7 +190,11 @@ webui.prod:
 	doppler run -p general -c dev_personal -- $(PY) -m apps.webui.server --prod
 
 webui.openapi:
-	$(PY) -m apps.webui.server --dump-openapi apps/webui/openapi.json
+	# The engine dump in the justfile is the ONLY writer of openapi.json. The old
+	# apps.webui.server dump produced a 210-path contract (no /account, /flags,
+	# /setup, /jobs); PR #2326 committed it and every pytest shard on main failed
+	# at collection (test_flag_capture_parity) until #2346 restored the file.
+	just openapi-dump
 
 cloud.replicate:
 	doppler run -p general -c dev_personal -- $(PY) -m apps.cloud.replicate
