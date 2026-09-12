@@ -104,39 +104,6 @@
 	let loadConfirmEveryTime = $state(false);
 	let contextMenu = $state<{ x: number; y: number; row: BrowserRow } | null>(null);
 
-	function trackMenuItems(row: BrowserRow): ContextMenuItem[] {
-		const selected = selectedOrderSet.has(row.order) ? selectedIds : [row.stable_id];
-		return [
-			...DECKS.map((deck) => ({ id: `load-${deck}`, label: `Load to deck ${deck}`, run: () => onloadrow(row, deck) })),
-			{ id: 'add-playlist', label: 'Add to playlist...' }, { id: 'edit', label: 'Edit' },
-			...trackEditMenuItems(selected.length, onopeneditmodal),
-			{ id: 'relocate', label: 'Relocate' },
-			{ id: 'finder', label: 'Show in Finder' }, { id: 'copy-path', label: 'Copy path' },
-			{ id: 'analyze', label: 'Analyze' },
-			{ id: 'stems-generate', label: 'Stems: do next', run: onstemsdonext ? () => onstemsdonext(selected) : undefined },
-			{ id: 'stems-open', label: 'Stems - open' },
-			{ id: 'lyrics', label: 'Lyrics: do next', run: onlyricsdonext ? () => onlyricsdonext(selected) : undefined },
-			{ id: 'offline', label: 'Mark offline' }, { id: 'cloud-only', label: 'Cloud-only' },
-			{ id: 'remove-playlist', label: 'Remove from playlist', run: removable ? () => onremoverow?.(row) : undefined },
-			{ id: 'remove-library', label: 'Remove from library' }
-		];
-	}
-
-	function openTrackMenu(event: MouseEvent, row: BrowserRow): void {
-		event.preventDefault();
-		event.stopPropagation();
-		if (!selectedOrderSet.has(row.order)) onselectrow(row);
-		contextMenu = { x: event.clientX, y: event.clientY, row };
-	}
-
-	function onTrackKeydown(event: KeyboardEvent, row: BrowserRow): void {
-		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
-		event.preventDefault();
-		if (!selectedOrderSet.has(row.order)) onselectrow(row);
-		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-		contextMenu = { x: rect.left + 8, y: rect.top + 8, row };
-	}
-
 	function onColResizeStart(event: PointerEvent, col: ColId): void {
 		event.preventDefault();
 		event.stopPropagation();
@@ -608,6 +575,39 @@
 	const rowHeight = $derived(
 		uiPrefs.library_density === 'cosy' ? ROW_HEIGHT_COSY : ROW_HEIGHT_COMPACT
 	);
+
+	function trackMenuItems(row: BrowserRow): ContextMenuItem[] {
+		const selected = selectedOrderSet.has(row.order) ? selectedIds : [row.stable_id];
+		return [
+			...DECKS.map((deck) => ({ id: `load-${deck}`, label: `Load to deck ${deck}`, run: () => onloadrow(row, deck) })),
+			{ id: 'add-playlist', label: 'Add to playlist...' }, { id: 'edit', label: 'Edit' },
+			...trackEditMenuItems(selected.length, onopeneditmodal),
+			{ id: 'relocate', label: 'Relocate' },
+			{ id: 'finder', label: 'Show in Finder' }, { id: 'copy-path', label: 'Copy path' },
+			{ id: 'analyze', label: 'Analyze' },
+			{ id: 'stems-generate', label: 'Stems: do next', run: onstemsdonext ? () => onstemsdonext(selected) : undefined },
+			{ id: 'stems-open', label: 'Stems - open' },
+			{ id: 'lyrics', label: 'Lyrics: do next', run: onlyricsdonext ? () => onlyricsdonext(selected) : undefined },
+			{ id: 'offline', label: 'Mark offline' }, { id: 'cloud-only', label: 'Cloud-only' },
+			{ id: 'remove-playlist', label: 'Remove from playlist', run: removable ? () => onremoverow?.(row) : undefined },
+			{ id: 'remove-library', label: 'Remove from library' }
+		];
+	}
+
+	function openTrackMenu(event: MouseEvent, row: BrowserRow): void {
+		event.preventDefault();
+		event.stopPropagation();
+		if (!selectedOrderSet.has(row.order)) onselectrow(row);
+		contextMenu = { x: event.clientX, y: event.clientY, row };
+	}
+
+	function onTrackKeydown(event: KeyboardEvent, row: BrowserRow): void {
+		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+		event.preventDefault();
+		if (!selectedOrderSet.has(row.order)) onselectrow(row);
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		contextMenu = { x: rect.left + 8, y: rect.top + 8, row };
+	}
 
 	// ----- AUTOPLAY-COL helpers ---------------------------------------------
 	let hoveredApId = $state<string | null>(null);
