@@ -11,6 +11,7 @@
     uv run python -m apps.sync_hub enroll       --data-dir DIR --hub URL
                                                 (--grant TOKEN | --grant-file F)
                                                 [--name N]
+    uv run python -m apps.sync_hub fleet        --data-dir DIR [--json]
     uv run python -m apps.sync_hub policy <verb> --data-dir DIR ...  (see maintenance_policy)
     uv run python -m apps.sync_hub config show|set --data-dir DIR
                                                 [--enabled|--disabled]
@@ -27,11 +28,11 @@ background scheduler (:mod:`apps.sync_hub.scheduler`) reads.
 
 Eight operations, plus ``policy`` (per-machine sync policy, its own module
 :mod:`apps.sync_hub.maintenance_policy`, dry-run by default, exit 0/1/3/4),
-plus adopt, revoke and credentials, which live in
-:mod:`apps.sync_hub.fleet_admin` (plan X5) and register themselves below,
-plus ``hosted`` (JSON: whether this hub is HOSTED, its entitlement provider
-and owner count, the same checks the webui runs at startup --
-:mod:`apps.sync_hub.hosted_config`):
+plus ``fleet`` (who owns which machine on this hub), plus adopt, revoke and
+credentials, which live in :mod:`apps.sync_hub.fleet_admin` (plan X5) and
+register themselves below, plus ``hosted`` (JSON: whether this hub is HOSTED,
+its entitlement provider and owner count, the same checks the webui runs at
+startup -- :mod:`apps.sync_hub.hosted_config`):
 
 * **sync** runs one spoke round trip against ``--hub`` (round 3 finding R7).
   Nothing outside pytest called ``run_sync`` before -- the whole spoke

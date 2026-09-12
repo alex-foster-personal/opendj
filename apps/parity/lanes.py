@@ -30,6 +30,9 @@ LANE_IDS: Final[tuple[str, ...]] = (
 SCORED_THIS_ROUND: Final[tuple[str, ...]] = (
     "bpm",
     "key",
+    "waveform_preview",
+    "waveform_detail",
+    "waveform_triband",
     "phrase",
     "cues_db",
     "cues_anlz",
@@ -37,21 +40,8 @@ SCORED_THIS_ROUND: Final[tuple[str, ...]] = (
 )
 DELEGATED_THIS_ROUND: Final[tuple[str, ...]] = ("beatgrid", "downbeat")
 
-# Follow-up issue bodies start `Part k of 5 of #1520`. This PR is part 1.
-REMAINING_REASON: Final[dict[str, str]] = {
-    "waveform_preview": (
-        "Part 2 of 5 of #1520: waveform preview (ANLZ PWAV/PWV2). "
-        "No own waveform analysis exists yet."
-    ),
-    "waveform_detail": (
-        "Part 2 of 5 of #1520: waveform detail (ANLZ PWV3/PWV4/PWV5). "
-        "Unreadable .EXT siblings are ungradable, never a miss."
-    ),
-    "waveform_triband": (
-        "Part 2 of 5 of #1520: waveform tri-band (ANLZ PWV6/PWV7). "
-        "No own waveform analysis exists yet."
-    ),
-}
+# Every lane is scored or delegated this round; none remain to describe here.
+REMAINING_REASON: Final[dict[str, str]] = {}
 
 DENOMINATOR_NAME: Final[dict[str, str]] = {
     "bpm": "tracks with rekordbox BPM (djmdContent.BPM x100) in this fixture",

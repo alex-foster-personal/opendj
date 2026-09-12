@@ -54,13 +54,16 @@ def test_beatgrid_and_downbeat_delegate_to_beatmap_and_do_not_invent_a_metric() 
 
 
 def test_unscored_lanes_are_not_scored_as_agreement_or_as_a_miss() -> None:
-    """Round 1 scores BPM, Key, phrase, cues, and Vocal. Waveform lanes stay
-    `not_scored_this_round` with a named reason, never 0-of-N agreement.
+    """Round 1 scores BPM, Key, waveform preview/detail/tri-band, phrase, cues, and Vocal.
+    Only beatgrid and downbeat remain delegated to BEATMAP-01.
     """
     report = score_payload(round0_fixture())
     assert SCORED_THIS_ROUND == (
         "bpm",
         "key",
+        "waveform_preview",
+        "waveform_detail",
+        "waveform_triband",
         "phrase",
         "cues_db",
         "cues_anlz",
