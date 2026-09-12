@@ -28,11 +28,6 @@
 		parseVocals,
 		vocalsOf
 	} from '$lib/rb/api-rb';
-	import { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
-	import {
-		libraryHealthDot as _computeLibraryHealthDot,
-		type LibraryHealthDot
-	} from '$lib/rb/library-health-dots';
 	import {
 		plannedTitle,
 		anyDeckPlaying,
@@ -44,7 +39,33 @@
 		enqueueLibraryJobsBatched,
 		libraryJobsStore,
 		LibraryJobsChrome,
-		type NextOnlyRef
+		type NextOnlyRef,
+		getIngestCoverage,
+		type IngestCoverage,
+		libraryHealthDot as _computeLibraryHealthDot,
+		type LibraryHealthDot,
+		completeLibraryUsable,
+		formatReplaceStateUrl,
+		addToPlaylistToastMessage,
+		appendTracksToPlaylist,
+		removeFromLibrary,
+		isCurrentBrowserSearch,
+		reportBrowserSearchResult,
+		subscribeBrowserSearch,
+		type BrowserSearchRequest,
+		isLibraryPanelsCollapsed,
+		noteVisibleLibraryRowCount,
+		toggleLibraryPanels,
+		createAutoPlayFeedSnapshot,
+		getAutoPlayRankOf,
+		setAutoPlayTrackFeed,
+		getSpotifyPendingTracks,
+		type SpotifyPendingTrack,
+		fillAllTracksPane,
+		ensureAudioPrefetch,
+		clearSelection,
+		pruneSelection,
+		fetchAllPages
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -109,30 +130,9 @@
 		removeFromLibraryConfirmMessage,
 		removeFromLibraryToastMessage
 	} from '$lib/components/rb/browser/track-library-menu';
-	import {
-		addToPlaylistToastMessage,
-		appendTracksToPlaylist
-	} from '$lib/rb/add-to-playlist';
-	import { removeFromLibrary } from '$lib/rb/track-library';
-	import {
-		isCurrentBrowserSearch,
-		reportBrowserSearchResult,
-		subscribeBrowserSearch,
-		type BrowserSearchRequest
-	} from '$lib/rb/browser-search';
 	import BuildIdentity from './BuildIdentity.svelte';
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
-	import {
-		isLibraryPanelsCollapsed,
-		noteVisibleLibraryRowCount,
-		toggleLibraryPanels
-	} from '$lib/rb/library-panels.svelte';
-	import {
-		createAutoPlayFeedSnapshot,
-		getAutoPlayRankOf,
-		setAutoPlayTrackFeed
-	} from '$lib/rb/auto-play';
 	import {
 		beginPendingLoadPlay,
 		clearPendingLoadPlay,
@@ -146,7 +146,6 @@
 	import PerformanceRecorderRail from './browser/PerformanceRecorderRail.svelte';
 	import PaneTabs from './browser/PaneTabs.svelte';
 	import type { PaneTabInfo } from './browser/PaneTabs.svelte';
-	import { formatReplaceStateUrl } from '$lib/rb/performance-deeplink';
 	import {
 		applyDecodedStripAcrossPanes,
 		canMutatePlaylist,
@@ -177,7 +176,6 @@
 		PlaylistDragPayload,
 		SortKey
 	} from './browser/pane-contract.svelte';
-	import { clearSelection, pruneSelection } from './browser/pane-row-selection';
 	import LibraryNav from './browser/LibraryNav.svelte';
 	import {
 		fetchMissingTrackRows,
@@ -189,10 +187,6 @@
 	import LyricSearchResults from './browser/LyricSearchResults.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
-	import { completeLibraryUsable } from '$lib/client-telemetry';
-	import { fillAllTracksPane } from './browser/fill-all-tracks';
-	import { fetchAllPages } from './browser/virtual-window';
-	import { ensureAudioPrefetch } from '$lib/rb/audio-prefetch-cache.svelte';
 	import {
 		ensureAnlz,
 		getAnlzEntry,
@@ -200,7 +194,6 @@
 		registerAnlzConsumer,
 		unregisterAnlzConsumer
 	} from './wave/anlz-cache.svelte';
-	import { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
 	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
 	// track-list-virtualization: TrackTable now DOM-virtualizes its render,
 	// so panes no longer cap fetches at 500 rows - All Tracks walks every
