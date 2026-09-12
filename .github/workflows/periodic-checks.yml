@@ -23,21 +23,15 @@ name: Periodic checks
 #
 # THE MERGE WINDOW. `merges:50` is derived, never stored as a counter:
 #   last_sha <- newest ledger comment carrying <!-- periodic-checks state sha=... -->
-#   count    <- git rev-list --count --first-parent {last_sha}..{head}
-# FIRST-PARENT, not the compare API's total_commits. total_commits counts every
-# commit reachable from head and not from base, which is not the number of
-# integrations: this repo lands non-squashed merges (5 of the last 30 on main,
-# Tue 8 Sep 2026; PR #1062 brought 18 commits in for ONE merge), so a few such
-# PRs cross a 50 threshold after a few merges and the cadence stops meaning what
-# it says. main's first-parent chain is exactly one entry per integration: one
-# per merge commit, one per squash. No REST endpoint exposes a first-parent
-# count, so this is computed with git, over REAL history -- runner checkouts
-# default to depth 1 and rev-list clamps silently on a shallow clone, so the job
-# checks out with fetch-depth: 0 and FAILS if the repository is still shallow
-# rather than reporting a small wrong number.
-# A missing marker, a base no longer in history, or a base that is not an
-# ancestor of the head being measured reports `bootstrap` and RUNS rather than
-# computing a small wrong number and disabling this workflow forever.
+#   count    <- gh api repos/{repo}/compare/{last_sha}...main --jq .total_commits
+# COMPARE API, not git rev-list. A shallow runner checkout must not change the
+# count (DEVOPS-02). total_commits is a CEILING on integrations: squash merges
+# contribute one, but a merge commit brings its branch commits into the range
+# too, so the window may fire slightly early. That is the right direction to
+# be wrong in. A missing marker or a compare 404 (rewritten base) reports
+# `bootstrap` and RUNS rather than computing a small wrong number and
+# disabling this workflow forever. Each threshold has its own marker so a
+# merges:100 row cannot share the merges:50 base.
 #
 # THE WEEKLY FLOOR (policy PR #1494). The merge count alone can starve a quiet
 # window forever: a slow week with fewer than 50 merges never runs the full
@@ -102,7 +96,7 @@ jobs:
   # ---------------------------------------------------------------------------
   window:
     name: merge window
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     outputs:
       run: ${{ steps.compute.outputs.run }}
@@ -121,14 +115,63 @@ jobs:
       windows_parity_base: ${{ steps.compute.outputs.windows_parity_base }}
       windows_parity_reason: ${{ steps.compute.outputs.windows_parity_reason }}
     steps:
-      # Real history: the merge count below is a first-parent walk, and
-      # rev-list clamps silently on a shallow clone. `filter: blob:none` keeps
-      # it cheap -- this job reads commit topology only, never file content.
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      # Depth 1 is enough: the merge count comes from gh api compare, not git.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          fetch-depth: 0
-          filter: blob:none
           clean: true
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
 
       - name: Compute the window
         id: compute
@@ -140,149 +183,13 @@ jobs:
         run: |
           set -euo pipefail
           threshold="${THRESHOLD_IN:-$DEFAULT_THRESHOLD}"
-          head="$(gh api "repos/${REPO}/commits/main" --jq .sha)"
-          [ -n "$head" ] || { echo "::error::could not resolve main"; exit 1; }
-
-          # Every check below is pinned to this head and the report records it
-          # as the next state marker, so it must be present locally before
-          # anything is counted against it.
-          git fetch --no-tags --quiet origin main
-          [ "$(git rev-parse --is-shallow-repository)" = "false" ] || {
-            echo "::error::checkout is shallow; a first-parent count would clamp silently"
-            exit 1
-          }
-          git cat-file -e "${head}^{commit}" 2>/dev/null || {
-            echo "::error::main head ${head} is absent from this checkout after fetch"
-            exit 1
-          }
-
-          # The state marker lives in the newest ledger comment that carries
-          # one. `gh api --jq` renders a string result as line-based plain
-          # text (`gh help formatting`), so a multiline .body prints across
-          # several physical lines rather than one line with escaped
-          # newlines -- a shell-side `grep -F ... | tail -1` on that output
-          # keeps only the physical line the marker sits on, silently
-          # dropping the created_at prefix concatenated onto the FIRST line
-          # of the body, then hands `jq -r '.'` a bare, non-JSON
-          # HTML-comment line, which exits under `set -e` on every run after
-          # the bootstrap comment exists. Do the marker match AND the
-          # newest-wins selection inside jq instead (select() finds every
-          # comment carrying the marker, `.[-1]` takes the newest -- issue
-          # comments come back oldest-first and --paginate preserves that
-          # order), and carry the body out through the pipe as base64 so the
-          # combined created_at+body line can never contain a real newline.
-          # `--paginate` alone applies `--jq` to EACH PAGE separately, so once
-          # the ledger has more than one page of comments this prints one
-          # selected record PER PAGE -- `combined` then holds several lines
-          # and the `base64 -d` below fails under `set -e`, taking out every
-          # later periodic window. `--slurp` collects every page into one
-          # array of arrays first (`gh help api` -> "Combine "paginated
-          # results into a single array"); `.[][]` flattens it back to a
-          # single oldest-first stream before `.[-1]` picks the newest.
-          # This is `gh api` reading the REST endpoint directly, not `gh`'s
-          # own `--json` flag: the response mirrors GitHub's REST schema
-          # verbatim, which is snake_case (`created_at`), not the camelCase
-          # `createdAt` GraphQL and gh's `--json` output use.
-          # Restricted to the workflow's own bot identity: the `contains()`
-          # check alone accepts the marker from ANY account able to comment
-          # on this public issue, and `.[-1]` takes the newest match
-          # regardless of author. Without the author select, a comment
-          # posted by anyone else carrying this HTML marker is picked over
-          # the real state, letting them repeatedly reset both the merge
-          # base and created_at and suppress every periodic window
-          # indefinitely. `report` below always posts via `GH_TOKEN:
-          # secrets.GITHUB_TOKEN`, which authors as exactly this login, so
-          # this never excludes the workflow's own state.
-          combined="$(gh api --paginate --slurp "repos/${REPO}/issues/${LEDGER_ISSUE}/comments" \
-                        --jq '[.[][] | select(.user.login == "github-actions[bot]") | select(.body | contains("<!-- periodic-checks state sha="))]
-                              | if length > 0 then (.[-1].created_at + " " + (.[-1].body | @base64)) else empty end' \
-                      || true)"
-
-          base=""
-          base_at=""
-          if [ -n "$combined" ]; then
-            # created_at is a fixed-width ISO-8601 timestamp with no space in
-            # it, so splitting on the FIRST space is unambiguous regardless
-            # of what the (base64-encoded) body contains.
-            base_at="${combined%% *}"
-            base_body="$(printf '%s' "${combined#* }" | base64 -d)"
-            # NOT anchored on the trailing ` -->`: the marker now also
-            # carries `threshold=<N>` before the comment closes, and an
-            # anchor requiring "-->" right after the 40 hex chars would stop
-            # matching the instant that field was added.
-            base_hits="$(printf '%s' "$base_body" \
-                      | grep -oE '<!-- periodic-checks state sha=[0-9a-f]{40}' \
-                      | grep -oE '[0-9a-f]{40}' || true)"
-            # Exactly one hit, not zero and not more than one: a reply
-            # quoting the bot's own comment (or any other accidental repeat)
-            # makes the body contain the marker twice, and a multi-line
-            # `base` would corrupt every git command below that treats it as
-            # a single ref, rather than failing loudly into bootstrap the
-            # way a genuinely absent marker already does. `base` stays ""
-            # (set above) for anything but a single hit.
-            base_hit_count="$(printf '%s' "$base_hits" | grep -c . || true)"
-            if [ "$base_hit_count" = "1" ]; then
-              base="$base_hits"
-            fi
-          fi
-
-          # Wall-clock days since that SAME comment was posted, independent of
-          # merge count. base_at is only ever empty together with base
-          # (bootstrap), so elapsed_days=-1 there means "not applicable", the
-          # same convention `count=-1` already uses.
-          elapsed_days="-1"
-          if [ -n "$base_at" ]; then
-            base_epoch="$(date -u -d "$base_at" +%s)"
-            now_epoch="$(date -u +%s)"
-            elapsed_days=$(( (now_epoch - base_epoch) / 86400 ))
-          fi
-
-          if [ -z "$base" ]; then
-            reason="bootstrap: no state marker on issue #${LEDGER_ISSUE}"
-            count="-1"
-            run="true"
-          else
-            # An UNRESOLVABLE base is not a small count. If the recorded SHA
-            # was rewritten out of history, or is no longer an ancestor of the
-            # head being measured, reporting that as "0 merges, skip" would
-            # silently disable this workflow forever. Bootstrap instead,
-            # loudly. Both arms are negative controls: a base that is absent
-            # must report absent, never resolve to a small number.
-            if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
-              reason="state SHA ${base} is absent from history (history rewrite?); bootstrapping"
-              count="-1"
-              run="true"
-            elif ! git merge-base --is-ancestor "$base" "$head"; then
-              reason="state SHA ${base} is not an ancestor of ${head:0:9} (history rewrite?); bootstrapping"
-              count="-1"
-              run="true"
-            elif ! count="$(git rev-list --count --first-parent "${base}..${head}")"; then
-              reason="could not count integrations ${base:0:9}..${head:0:9}; bootstrapping"
-              count="-1"
-              run="true"
-            elif [ "$FORCE" = "true" ]; then
-              reason="forced by workflow_dispatch (${count} merges since ${base:0:9}, ${elapsed_days}d elapsed)"
-              run="true"
-            elif [ "$count" -ge "$threshold" ]; then
-              reason="${count} merges since ${base:0:9} (>= threshold ${threshold})"
-              run="true"
-            elif [ "$elapsed_days" -ge 7 ]; then
-              reason="${elapsed_days}d elapsed since ${base:0:9} (>= 7d weekly floor); only ${count} merges (threshold ${threshold})"
-              run="true"
-            else
-              reason="only ${count} merges since ${base:0:9} (threshold ${threshold}), ${elapsed_days}d elapsed (< 7d weekly floor)"
-              run="false"
-            fi
-          fi
-
-          # The recorded window is an INTERVAL, not a merge count: base_at is
-          # when the previous ledger comment was posted and head_at is when the
-          # head commit was made, so a report can name exactly which merges it
-          # measured. Row 11 bounds its `gh pr list` with these rather than a
-          # rolling week (issue #1605 review). `%cI` is strict ISO-8601 with the
-          # offset, which the Python side parses; never a hand-typed `Z`.
-          head_at="$(git log -1 --format=%cI "$head")"
-          [ -n "$head_at" ] || { echo "::error::could not date head ${head}"; exit 1; }
+          python3 -m scripts.periodic_window decide \
+            --repo "$REPO" \
+            --ledger-issue "$LEDGER_ISSUE" \
+            --threshold "$threshold" \
+            --force "${FORCE:-false}" \
+            --clock-days 7 \
+            --github-output "$GITHUB_OUTPUT"
 
           # Row 10 (windows parity): own marker, own threshold. A merges:100
           # row that read the merges:50 marker would skip forever: every
@@ -290,63 +197,22 @@ jobs:
           # (docs/ops/periodic-checks.md, "One marker per row"). No weekly
           # floor: the table states merges:100 only.
           WP_THRESHOLD=100
-          wp_combined="$(gh api --paginate --slurp "repos/${REPO}/issues/${LEDGER_ISSUE}/comments" \
-                        --jq '[.[][] | select(.user.login == "github-actions[bot]") | select(.body | contains("<!-- periodic-checks row=10 state sha="))]
-                              | if length > 0 then (.[-1].created_at + " " + (.[-1].body | @base64)) else empty end' \
-                      || true)"
+          python3 -m scripts.periodic_window decide \
+            --kind windows_parity \
+            --row=10 \
+            --repo "$REPO" \
+            --ledger-issue "$LEDGER_ISSUE" \
+            --threshold "$WP_THRESHOLD" \
+            --force "${FORCE:-false}" \
+            --clock-days 0 \
+            --github-output "$GITHUB_OUTPUT"
 
-          wp_base=""
-          if [ -n "$wp_combined" ]; then
-            wp_body="$(printf '%s' "${wp_combined#* }" | base64 -d)"
-            wp_hits="$(printf '%s' "$wp_body" \
-                      | grep -oE '<!-- periodic-checks row=10 state sha=[0-9a-f]{40}' \
-                      | grep -oE '[0-9a-f]{40}' || true)"
-            wp_hit_count="$(printf '%s' "$wp_hits" | grep -c . || true)"
-            if [ "$wp_hit_count" = "1" ]; then
-              wp_base="$wp_hits"
-            fi
-          fi
-
-          wp_run="false"
-          wp_count="-1"
-          if [ -z "$wp_base" ]; then
-            wp_reason="bootstrap: no row=10 state marker on issue #${LEDGER_ISSUE}"
-            wp_run="true"
-          elif ! git cat-file -e "${wp_base}^{commit}" 2>/dev/null; then
-            wp_reason="row=10 state SHA ${wp_base} is absent from history; bootstrapping"
-            wp_run="true"
-          elif ! git merge-base --is-ancestor "$wp_base" "$head"; then
-            wp_reason="row=10 state SHA ${wp_base} is not an ancestor of ${head:0:9}; bootstrapping"
-            wp_run="true"
-          elif ! wp_count="$(git rev-list --count --first-parent "${wp_base}..${head}")"; then
-            wp_reason="could not count row=10 integrations ${wp_base:0:9}..${head:0:9}; bootstrapping"
-            wp_run="true"
-          elif [ "$FORCE" = "true" ]; then
-            wp_reason="forced by workflow_dispatch (${wp_count} merges since ${wp_base:0:9}, row=10 threshold ${WP_THRESHOLD})"
-            wp_run="true"
-          elif [ "$wp_count" -ge "$WP_THRESHOLD" ]; then
-            wp_reason="${wp_count} merges since ${wp_base:0:9} (>= row=10 threshold ${WP_THRESHOLD})"
-            wp_run="true"
-          else
-            wp_reason="only ${wp_count} merges since ${wp_base:0:9} (row=10 threshold ${WP_THRESHOLD})"
-            wp_run="false"
-          fi
-
-          {
-            echo "run=${run}"
-            echo "count=${count}"
-            echo "base=${base}"
-            echo "base_at=${base_at}"
-            echo "head=${head}"
-            echo "head_at=${head_at}"
-            echo "threshold=${threshold}"
-            echo "elapsed_days=${elapsed_days}"
-            echo "reason=${reason}"
-            echo "run_windows_parity=${wp_run}"
-            echo "windows_parity_count=${wp_count}"
-            echo "windows_parity_base=${wp_base}"
-            echo "windows_parity_reason=${wp_reason}"
-          } >> "$GITHUB_OUTPUT"
+          _out() { grep "^$1=" "$GITHUB_OUTPUT" | tail -n 1 | cut -d= -f2-; }
+          run="$(_out run)"
+          reason="$(_out reason)"
+          head="$(_out head)"
+          wp_run="$(_out run_windows_parity)"
+          wp_reason="$(_out windows_parity_reason)"
 
           echo "### Periodic checks window" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
@@ -1377,7 +1243,7 @@ jobs:
     name: windows parity ledger (row 10)
     needs: [window, windows-parity]
     if: always() && needs.window.outputs.run_windows_parity == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     permissions:
       issues: write
@@ -1426,6 +1292,44 @@ jobs:
           gh issue comment "${LEDGER_ISSUE:-1492}" --repo "$REPO" --body-file comment.md
           cat comment.md >> "$GITHUB_STEP_SUMMARY"
 
+  windows-parity-skip-report:
+    name: windows parity skip (row 10)
+    needs: [window]
+    if: always() && needs.window.result == 'success' && needs.window.outputs.run_windows_parity != 'true'
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Post row 10 skip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD: ${{ needs.window.outputs.head }}
+          BASE: ${{ needs.window.outputs.windows_parity_base }}
+          COUNT: ${{ needs.window.outputs.windows_parity_count }}
+          REASON: ${{ needs.window.outputs.windows_parity_reason }}
+        run: |
+          set -euo pipefail
+          window_desc="${BASE:0:9}..${HEAD:0:9}"
+          [ -n "$BASE" ] || window_desc="bootstrap..${HEAD:0:9}"
+          merges="$COUNT"
+          [ "$COUNT" != "-1" ] || merges="unknown (bootstrap window)"
+          cat > comment.md <<EOF
+          ## Periodic check row 10 skip (Windows parity)
+
+          - window: \`${window_desc}\`
+          - merges in window: **${merges}** (threshold 100)
+          - trigger: ${REASON}
+          - result: SKIP (merge count under threshold)
+          - run: ${RUN_URL}
+
+          A skip is a report, not silence. No row=10 state SHA is recorded.
+          EOF
+          gh issue comment "${LEDGER_ISSUE:-1492}" --repo "$REPO" --body-file comment.md
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
+
 
   # ---------------------------------------------------------------------------
   # One comment per window on the ledger issue (DEVOPS-03). This is the whole
@@ -1440,9 +1344,66 @@ jobs:
     name: ledger comment
     needs: [window, full-suite, bundle-trend, perf-bench, perf-bench-stem-decode, perf-bench-waveform-render, preview-drift, reqs-drift, duplicate-writer]
     if: always() && needs.window.result == 'success' && needs.window.outputs.run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 10
     steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          clean: true
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
       - name: Post the window result
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1610,6 +1571,17 @@ jobs:
           merges="$COUNT"
           [ "$COUNT" != "-1" ] || merges="unknown (bootstrap window)"
 
+          # DEVOPS-03 P0/P1: AFTER window_desc so the e2e_line extraction
+          # tests still see the raw conclusion, not the alarm prefix.
+          alarm=""
+          if [ -z "${e2e_job_query_failed:-}" ]; then
+            printf '%s' "${e2e_candidates:-[]}" > e2e_candidates.json
+            alarm="$(python3 -m scripts.periodic_window alarm \
+                      --candidates-file e2e_candidates.json \
+                      --cadence-seconds 86400 \
+                      --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
+          fi
+
           cat > comment.md <<EOF
           ## Periodic check window \`${window_desc}\`
 
@@ -1633,9 +1605,49 @@ jobs:
           \`docs/ops/periodic-checks.md\`. Row 10 (Windows parity) posts its
           own ledger comment when its merges:100 window fires. A row absent
           from this table did not run and must not be read as passing.
+          $( [ -z "$alarm" ] || printf '\n**%s**\n' "$alarm" )
 
           <!-- periodic-checks state sha=${HEAD} threshold=${THRESHOLD} -->
           EOF
 
+          gh issue comment "$LEDGER_ISSUE" --repo "$REPO" --body-file comment.md
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
+
+  skip-report:
+    name: ledger skip comment
+    needs: [window]
+    if: always() && needs.window.result == 'success' && needs.window.outputs.run != 'true'
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Post the skip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BASE: ${{ needs.window.outputs.base }}
+          HEAD: ${{ needs.window.outputs.head }}
+          COUNT: ${{ needs.window.outputs.count }}
+          THRESHOLD: ${{ needs.window.outputs.threshold }}
+          REASON: ${{ needs.window.outputs.reason }}
+        run: |
+          set -euo pipefail
+          window_desc="${BASE:0:9}..${HEAD:0:9}"
+          [ -n "$BASE" ] || window_desc="bootstrap..${HEAD:0:9}"
+          merges="$COUNT"
+          [ "$COUNT" != "-1" ] || merges="unknown (bootstrap window)"
+          cat > comment.md <<EOF
+          ## Periodic check window skip \`${window_desc}\`
+
+          - merges in window: **${merges}** (threshold ${THRESHOLD})
+          - trigger: ${REASON}
+          - result: SKIP (merge count under threshold)
+          - run: ${RUN_URL}
+
+          A skip is a report, not silence. No state SHA is recorded, so the
+          next window re-measures from the same base.
+          EOF
           gh issue comment "$LEDGER_ISSUE" --repo "$REPO" --body-file comment.md
           cat comment.md >> "$GITHUB_STEP_SUMMARY"
