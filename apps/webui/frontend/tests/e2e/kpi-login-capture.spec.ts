@@ -33,11 +33,14 @@ interface CaptureResult {
 	reason: string | null;
 }
 
+let resultWritten = false;
+
 function writeResult(result: CaptureResult): void {
 	if (!RESULT_PATH) {
 		throw new Error('KPI_CAPTURE_RESULT is required');
 	}
 	writeFileSync(RESULT_PATH, JSON.stringify(result), 'utf-8');
+	resultWritten = true;
 }
 
 function isLoginPerfSpan(body: Record<string, unknown> | null | undefined): boolean {
@@ -147,8 +150,9 @@ async function waitForCollectedSpan(
 // ----- navigation evidence -----------------------------------------------
 
 interface NavigationLog {
-	reachedGoogle(): boolean;
-	reachedFrontend(): boolean;
+	/** A main-frame navigation to an origin OTHER than the SPA's. */
+	reachedOffOrigin(): boolean;
+	lastOffOrigin(): string | null;
 }
 
 /**
@@ -159,8 +163,9 @@ interface NavigationLog {
  * already satisfied by the URL the page is sitting on. A discarded
  * `waitForURL(google)` left that hole open -- a login POST whose client-side
  * redirect never fired fell straight through to the span wait and was
- * misreported as restored-session or missing-telemetry. An empty log after a
- * successful POST is the positive evidence that the redirect did not happen.
+ * misreported as restored-session or missing-telemetry. An OFF-ORIGIN hop is
+ * the positive evidence; "some navigation happened" is not, because a reload
+ * or an in-app navigation would satisfy it while the page never left.
  */
 function armNavigationLog(page: Page): NavigationLog {
 	const seen: string[] = [];
@@ -168,17 +173,17 @@ function armNavigationLog(page: Page): NavigationLog {
 		if (frame !== page.mainFrame()) return;
 		seen.push(frame.url());
 	});
-	const matches = (predicate: (url: URL) => boolean): boolean =>
-		seen.some((raw) => {
+	const offOrigin = (): string[] =>
+		seen.filter((raw) => {
 			try {
-				return predicate(new URL(raw));
+				return new URL(raw).origin !== FRONTEND_ORIGIN;
 			} catch {
 				return false;
 			}
 		});
 	return {
-		reachedGoogle: () => matches((url) => url.hostname.includes(GOOGLE_HOST_FRAGMENT)),
-		reachedFrontend: () => matches((url) => url.origin === FRONTEND_ORIGIN)
+		reachedOffOrigin: () => offOrigin().length > 0,
+		lastOffOrigin: () => offOrigin().at(-1) ?? null
 	};
 }
 
@@ -191,9 +196,11 @@ async function waitForRedirectAway(
 ): Promise<boolean> {
 	const deadline = Date.now() + windowMs;
 	for (;;) {
-		// Google is the normal path; a direct return to the SPA is the shape a
-		// pre-granted consent would take, and both count as having left.
-		if (navLog.reachedGoogle() || navLog.reachedFrontend()) return true;
+		// Only an off-origin hop counts. Every sign-in goes through Google's
+		// authorize endpoint even when consent is already granted and Google
+		// bounces straight back, so nothing legitimate is lost by refusing to
+		// accept a navigation that stayed on the SPA.
+		if (navLog.reachedOffOrigin()) return true;
 		if (page.isClosed()) return false;
 		if (budget.expired() || Date.now() >= deadline) return false;
 		await sleep(100);
@@ -452,122 +459,133 @@ test('capture S13 login submit-to-library-usable span', async ({ page }) => {
 		throw new Error('KPI_CAPTURE_RESULT is required');
 	}
 	const budget = makeBudget(TIMEOUT_S * 1000);
-	const collector = armLoginSpanCollector(page);
-
-	const authSettled = waitForAuthSettled(page, budget);
-	await page.goto('/performance', { timeout: budget.waitMs() });
-	const authReason = await authSettled;
-	if (authReason !== null) {
-		writeResult({ ok: false, span: null, reason: `cannot drive sign-in: ${authReason}` });
-		return;
-	}
-
-	collector.reset();
-	const navLog = armNavigationLog(page);
-	const clickReason = await driveSignInClick(page, budget);
-	if (clickReason !== null) {
-		writeResult({ ok: false, span: null, reason: clickReason });
-		return;
-	}
-
-	// The POST proved the login STARTED. This proves the browser actually
-	// left, which is what makes a later return to the SPA mean anything.
-	const leftTheSpa = await waitForRedirectAway(
-		navLog,
-		page,
-		budget,
-		Math.min(budget.remainingMs(), LOGIN_POST_WAIT_MS)
-	);
-	if (!leftTheSpa) {
-		writeResult({
-			ok: false,
-			span: null,
-			reason:
-				'cannot complete real Google login: the login started but the browser never navigated away from the SPA (no redirect to the consent URL)'
-		});
-		return;
-	}
-	const googleClickError = await driveGoogleInterstitials(page, budget);
-
-	if (budget.expired()) {
-		withholdExpired('the login round trip completed');
-		return;
-	}
 	try {
-		await page.waitForURL(
-			(url) => {
-				if (url.origin !== FRONTEND_ORIGIN) return false;
-				return url.pathname === '/' || url.pathname === '/performance';
-			},
-			{ timeout: budget.waitMs() }
+		const collector = armLoginSpanCollector(page);
+
+		const authSettled = waitForAuthSettled(page, budget);
+		await page.goto('/performance', { timeout: budget.waitMs() });
+		const authReason = await authSettled;
+		if (authReason !== null) {
+			writeResult({ ok: false, span: null, reason: `cannot drive sign-in: ${authReason}` });
+			return;
+		}
+
+		collector.reset();
+		const navLog = armNavigationLog(page);
+		const clickReason = await driveSignInClick(page, budget);
+		if (clickReason !== null) {
+			writeResult({ ok: false, span: null, reason: clickReason });
+			return;
+		}
+
+		// The POST proved the login STARTED. This proves the browser actually
+		// left, which is what makes a later return to the SPA mean anything.
+		const leftTheSpa = await waitForRedirectAway(
+			navLog,
+			page,
+			budget,
+			Math.min(budget.remainingMs(), LOGIN_POST_WAIT_MS)
 		);
-	} catch {
-		if (googleClickError !== null) {
+		if (!leftTheSpa) {
 			writeResult({
 				ok: false,
 				span: null,
-				reason: `cannot complete real Google login: a consent control refused the click (${googleClickError})`
+				reason:
+					'cannot complete real Google login: the login started but the browser never navigated away from the SPA (no redirect to the consent URL)'
 			});
 			return;
 		}
-		const host = new URL(page.url()).hostname;
-		if (host.includes('google.')) {
-			const title = await page.title().catch(() => 'title unreadable');
+		const googleClickError = await driveGoogleInterstitials(page, budget);
+
+		if (budget.expired()) {
+			withholdExpired('the login round trip completed');
+			return;
+		}
+		try {
+			await page.waitForURL(
+				(url) => {
+					if (url.origin !== FRONTEND_ORIGIN) return false;
+					return url.pathname === '/' || url.pathname === '/performance';
+				},
+				{ timeout: budget.waitMs() }
+			);
+		} catch {
+			if (googleClickError !== null) {
+				writeResult({
+					ok: false,
+					span: null,
+					reason: `cannot complete real Google login: a consent control refused the click (${googleClickError})`
+				});
+				return;
+			}
+			const host = new URL(page.url()).hostname;
+			if (host.includes('google.')) {
+				const title = await page.title().catch(() => 'title unreadable');
+				writeResult({
+					ok: false,
+					span: null,
+					reason: `cannot complete real Google login: stuck on Google (${title})`
+				});
+				return;
+			}
 			writeResult({
 				ok: false,
 				span: null,
-				reason: `cannot complete real Google login: stuck on Google (${title})`
+				reason: 'cannot complete real Google login: callback did not return to the SPA'
 			});
 			return;
 		}
-		writeResult({
-			ok: false,
-			span: null,
-			reason: 'cannot complete real Google login: callback did not return to the SPA'
-		});
-		return;
-	}
 
-	await ensurePerformance(page, budget);
+		await ensurePerformance(page, budget);
 
-	const span = await waitForCollectedSpan(page, collector, budget);
-	if (span !== null) {
-		writeResult({ ok: true, span, reason: null });
-		return;
-	}
+		const span = await waitForCollectedSpan(page, collector, budget);
+		if (span !== null) {
+			writeResult({ ok: true, span, reason: null });
+			return;
+		}
 
-	// No span. Only now do the marks tell us anything: read them to say WHY.
-	const marks = await readSubmitMarks(page);
-	if (marks.state === 'unreadable') {
+		// No span. Only now do the marks tell us anything: read them to say WHY.
+		const marks = await readSubmitMarks(page);
+		if (marks.state === 'unreadable') {
+			writeResult({
+				ok: false,
+				span: null,
+				reason:
+					'missing-telemetry: no perf-span POST and the page context could not be read to classify it'
+			});
+			return;
+		}
+		if (marks.state === 'corrupt') {
+			writeResult({
+				ok: false,
+				span: null,
+				reason: `missing-telemetry: no perf-span POST and ${LOGIN_SUBMIT_KEY} held unparseable state (the sign-in lifecycle ran and wrote something)`
+			});
+			return;
+		}
+		if (!marks.hasSubmit || !marks.hasNavigate) {
+			writeResult({
+				ok: false,
+				span: null,
+				reason:
+					'restored-session: submit or navigate mark missing after login (session was restored without driving Sign in)'
+			});
+			return;
+		}
 		writeResult({
 			ok: false,
 			span: null,
 			reason:
-				'missing-telemetry: no perf-span POST and the page context could not be read to classify it'
+				'missing-telemetry: login marks present but no perf-span POST (library-usable hooks absent or library did not reach first paint)'
 		});
-		return;
+	} catch (exc) {
+		// Every interaction above can throw -- a detached control, a timeout,
+		// a closed context -- and an unwritten KPI_CAPTURE_RESULT would leave
+		// capture_s13.py guessing from an exit code. The contract is that a
+		// capture that cannot measure still says WHY, so say why here too.
+		if (!resultWritten) {
+			const detail = exc instanceof Error ? exc.message.split('\n')[0] : String(exc);
+			writeResult({ ok: false, span: null, reason: `capture aborted before a verdict: ${detail}` });
+		}
 	}
-	if (marks.state === 'corrupt') {
-		writeResult({
-			ok: false,
-			span: null,
-			reason: `missing-telemetry: no perf-span POST and ${LOGIN_SUBMIT_KEY} held unparseable state (the sign-in lifecycle ran and wrote something)`
-		});
-		return;
-	}
-	if (!marks.hasSubmit || !marks.hasNavigate) {
-		writeResult({
-			ok: false,
-			span: null,
-			reason:
-				'restored-session: submit or navigate mark missing after login (session was restored without driving Sign in)'
-		});
-		return;
-	}
-	writeResult({
-		ok: false,
-		span: null,
-		reason:
-			'missing-telemetry: login marks present but no perf-span POST (library-usable hooks absent or library did not reach first paint)'
-	});
 });
