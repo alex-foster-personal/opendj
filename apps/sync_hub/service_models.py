@@ -152,6 +152,19 @@ class HelloResponse(BaseModel):
     #: ``valid`` ever reaches a response; anything else is a 401 first.
     #: Required, no default, for the reason ``ownership`` gives.
     credential: CredentialVerdict
+    #: How many live ``tracks`` rows this hub holds, so the caller can tell
+    #: SEEDING from MERGING (CLOUDSYNC-07,
+    #: ``engine_identity.assert_merge_safe``). ``0`` is an affirmative "this
+    #: hub holds no library"; ``None`` means a hub too old to answer, and the
+    #: spoke keeps its strict refusal for that -- absent is never yes
+    #: (:mod:`apps.sync_hub.capabilities`). Gated by ``library-size/v1`` in
+    #: ``capabilities``, which is how a spoke tells the two apart without
+    #: guessing from the value.
+    #:
+    #: A COUNT rather than the set of authoring machines: a migrated library
+    #: carries ``origin_device_id IS NULL`` on every row, so attribution
+    #: reports nothing and a hub would read its own seeded rows as foreign.
+    library_track_count: int | None = None
 
 
 class EnrollRequest(BaseModel):

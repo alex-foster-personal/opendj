@@ -102,15 +102,30 @@ class Offer:
         return len(self.rows)
 
 
+def _repair_for(reason: str) -> str:
+    """The operator next step for this hold, not always stamp repair."""
+    if sync_set.IDENTITY_HOLD_REASON in reason:
+        return (
+            "it carries identity (`python -m apps.shared.state."
+            "backfill_content_hash --live` or `/fix-links`)"
+        )
+    if sync_set.IDENTITY_DUP_REASON in reason:
+        return "the LWW survivor of this content identity is offered instead"
+    return (
+        "it is repaired with `python -m apps.shared.state."
+        "normalize_stamps --live`"
+    )
+
+
 def _quarantine(table: str, pk: object, reason: str) -> None:
     """Log one row's exclusion, naming the cause. Never silent."""
     log.error(
         "%s row %s is NOT in the sync set: %s. It will not reach any peer "
-        "until it is repaired with `python -m apps.shared.state."
-        "normalize_stamps --live`; every other row still syncs.",
+        "until %s; every other row still syncs.",
         table,
         pk,
         reason,
+        _repair_for(reason),
     )
 
 

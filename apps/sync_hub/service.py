@@ -372,6 +372,7 @@ def hello(request: Request, payload: HelloRequest) -> HelloResponse:
                 conn, payload.machine.machine_id, hub_machine_id=hub_machine_id
             ),
             credential=credential,
+            library_track_count=engine.hub_library_size(conn),
         )
 
 

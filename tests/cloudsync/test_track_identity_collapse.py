@@ -12,7 +12,8 @@ Acceptance, one test each:
   same track.
 - same ``content_hash``, disagreeing normalizable ISRC -> both quarantined.
 - first-sync while either side still has live inferred-tier rows with no
-  ``content_hash`` and no ISRC -> sync does not start.
+  ``content_hash`` and no ISRC -> those rows stay local; identity-bearing
+  rows still sync.
 - surviving row wins -> locations, fields, vendor ids, and playlist
   memberships that pointed at the loser now point at the survivor.
 
@@ -31,6 +32,8 @@ from apps.sync_hub import client, engine, protocol
 from apps.sync_hub.engine_identity import (
     SyncIdentityPreflightError,
     assert_identity_ready,
+    assert_merge_safe,
+    hub_library_size,
 )
 from tests.cloudsync.test_hub_sync import (
     _DEV_A,
@@ -445,10 +448,30 @@ def test_preflight_allows_inferred_rows_that_carry_hash_or_isrc(
         conn.close()
 
 
-def test_run_sync_does_not_start_while_inferred_rows_lack_identity(
+def _hub_app(hub_dir: Path):  # type: ignore[no-untyped-def]
+    """A hub service bound to ``hub_dir``, as the live gate tests drive it."""
+    from fastapi import FastAPI
+
+    from apps.sync_hub import service
+
+    app = FastAPI()
+    app.state.state_db_path = str(client.state_db_path(hub_dir))
+    app.state.sync_hub_data_dir = str(hub_dir)
+    app.state.sync_hub_machine_name = "hub"
+    app.include_router(service.router, prefix="/api/v1")
+    return app
+
+
+def test_run_sync_holds_unidentifiable_inferred_off_an_empty_hub(
     tmp_path: Path,
 ) -> None:
-    """The live gate: run_sync must refuse before any tracks row is applied."""
+    """Unidentifiable inferred rows stay local even when the hub is empty.
+
+    Seeding them would mint path-tier PKs the next library cannot collapse.
+    Asserts the hub does NOT hold that PK -- a silent empty push of a
+    library that also had identity-bearing rows is covered in
+    ``test_track_identity_hold``.
+    """
     spoke = tmp_path / "spoke"
     hub_dir = tmp_path / "hub"
     spoke_conn = state_db.open_rw(client.state_db_path(spoke))
@@ -464,33 +487,146 @@ def test_run_sync_does_not_start_while_inferred_rows_lack_identity(
     finally:
         spoke_conn.close()
 
-    hub_conn = state_db.open_rw(client.state_db_path(hub_dir))
-    hub_conn.close()
+    state_db.open_rw(client.state_db_path(hub_dir)).close()
 
-    from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from apps.sync_hub import service
     from tests.cloudsync.test_hub_sync import _TestClientTransport
 
-    app = FastAPI()
-    app.state.state_db_path = str(client.state_db_path(hub_dir))
-    app.state.sync_hub_data_dir = str(hub_dir)
-    app.state.sync_hub_machine_name = "hub"
-    app.include_router(service.router, prefix="/api/v1")
-    with (
-        TestClient(app) as http,
-        pytest.raises(SyncIdentityPreflightError, match="content_hash"),
-    ):
+    with TestClient(_hub_app(hub_dir)) as http:
         client.run_sync(
             spoke, "http://hub.invalid", transport=_TestClientTransport(http), name="spoke"
         )
 
     hub_after = state_db.open_rw(client.state_db_path(hub_dir))
     try:
-        assert hub_after.execute("SELECT COUNT(*) FROM tracks").fetchone()[0] == 0
+        assert _track_ids(hub_after) == set()
     finally:
         hub_after.close()
+    spoke_after = state_db.open_rw(client.state_db_path(spoke))
+    try:
+        assert _track_ids(spoke_after) == {"trk-unsyncable"}
+    finally:
+        spoke_after.close()
+
+
+def test_run_sync_second_library_does_not_push_unidentifiable_rows(
+    tmp_path: Path,
+) -> None:
+    """Once the hub holds another machine's library, a second machine's
+    unidentifiable rows stay local rather than minting a second path-tier PK."""
+    spoke = tmp_path / "spoke-b"
+    hub_dir = tmp_path / "hub"
+    spoke_conn = state_db.open_rw(client.state_db_path(spoke))
+    try:
+        _insert_identified_track(
+            spoke_conn,
+            "trk-b-unsyncable",
+            title="no identity",
+            updated_at=_T0,
+            origin=_DEV_B,
+        )
+        spoke_conn.commit()
+    finally:
+        spoke_conn.close()
+
+    hub_conn = state_db.open_rw(client.state_db_path(hub_dir))
+    try:
+        _insert_identified_track(
+            hub_conn,
+            "trk-a-seeded",
+            title="seeded by A",
+            content_hash=_HASH_A,
+            updated_at=_T0,
+            origin=_DEV_A,
+        )
+        hub_conn.commit()
+    finally:
+        hub_conn.close()
+
+    from fastapi.testclient import TestClient
+
+    from tests.cloudsync.test_hub_sync import _TestClientTransport
+
+    with TestClient(_hub_app(hub_dir)) as http:
+        client.run_sync(
+            spoke,
+            "http://hub.invalid",
+            transport=_TestClientTransport(http),
+            name="spoke-b",
+        )
+
+    hub_after = state_db.open_rw(client.state_db_path(hub_dir))
+    try:
+        assert _track_ids(hub_after) == {"trk-a-seeded"}
+    finally:
+        hub_after.close()
+
+
+# ----- (4b) the seed/merge distinction, in isolation -------------------------
+
+
+def test_merge_safe_refuses_only_a_first_sync_into_a_populated_hub(
+    tmp_path: Path,
+) -> None:
+    """The three cases, on ONE database that never changes, so each verdict is
+    the hub's answer rather than a difference in the rows."""
+    conn = _open_hub(tmp_path)
+    try:
+        _insert_identified_track(
+            conn, "trk-x", title="no identity", updated_at=_T0, origin=_DEV_A
+        )
+        conn.commit()
+        # Absent is never yes: a hub too old to report keeps the refusal,
+        # because "cannot say" is not "says empty".
+        with pytest.raises(SyncIdentityPreflightError):
+            assert_merge_safe(conn, hub_library_rows=None, first_sync=True)
+        # Seeding: the hub holds no library.
+        assert_merge_safe(conn, hub_library_rows=0, first_sync=True)
+        # Re-syncing: this spoke has been here before, so the hub's library is
+        # partly its own. Real libraries carry origin_device_id IS NULL, so
+        # this case CANNOT be decided by attribution -- which is why it is the
+        # watermark that decides it.
+        assert_merge_safe(conn, hub_library_rows=9194, first_sync=False)
+        # The case the guard exists for.
+        with pytest.raises(SyncIdentityPreflightError):
+            assert_merge_safe(conn, hub_library_rows=9194, first_sync=True)
+    finally:
+        conn.close()
+
+
+def test_hub_library_size_counts_live_rows_whatever_authored_them(
+    tmp_path: Path,
+) -> None:
+    """A tombstoned row is not a library, and an UNATTRIBUTED row still is --
+    the case that broke an origin-based check on the real library."""
+    conn = _open_hub(tmp_path)
+    try:
+        _insert_identified_track(
+            conn, "trk-a", title="a", updated_at=_T0, origin=_DEV_A
+        )
+        _insert_identified_track(
+            conn,
+            "trk-b-dead",
+            title="b",
+            updated_at=_T0,
+            origin=_DEV_B,
+            deleted_at=_T0,
+        )
+        conn.commit()
+        assert hub_library_size(conn) == 1
+        # An unattributed row is still a library: this is what every row of a
+        # migrated library looks like.
+        conn.execute("UPDATE tracks SET origin_device_id = NULL")
+        conn.commit()
+        assert hub_library_size(conn) == 1
+        # Negative control: a hub with no live tracks counts zero, which is
+        # what lets a seed through.
+        conn.execute("UPDATE tracks SET deleted_at = ?", (_T0,))
+        conn.commit()
+        assert hub_library_size(conn) == 0
+    finally:
+        conn.close()
 
 
 # ----- (5) children remap onto the survivor ---------------------------------
