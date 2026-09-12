@@ -43,18 +43,28 @@ export function describeAudioOutputHealth(snapshot: AudioOutputSnapshot | null):
 				'which only a device actually consuming audio produces.'
 		};
 	}
-	// 'dead' and 'dead-escalated' share the broken visual; the escalated case adds
-	// the reload instruction, since a re-bind was already attempted and failed.
-	const rebindNote =
-		verdict === 'dead-escalated'
-			? ' A re-bind was already attempted and did not restore it - reload the page (Cmd+R) to rebuild the audio graph.'
-			: ' Attempting an automatic re-bind now.';
-	return {
-		cssClass: 'dead',
-		title:
-			`${BASE_EXPLAINER} BROKEN - context running, a deck playing, but the output reports no device ` +
-			`latency: the browser is rendering into a dead output.${rebindNote} ` +
-			'This checks the browser’s own binding to the device, not the device itself; a device that is ' +
-			'alive but not delivering sound needs the OS-level probe tracked in issue #923.'
-	};
+	if (verdict === 'stalled') {
+		return {
+			cssClass: 'dead',
+			title:
+				`${BASE_EXPLAINER} BROKEN - the device output position stopped advancing while a deck is playing. ` +
+				'Recovery is running (re-bind, then a fresh audio graph).'
+		};
+	}
+	if (verdict === 'dead' || verdict === 'dead-escalated') {
+		const rebindNote =
+			verdict === 'dead-escalated'
+				? ' A re-bind was already attempted and did not restore it - reload the page (Cmd+R) to rebuild the audio graph.'
+				: ' Attempting an automatic re-bind now.';
+		return {
+			cssClass: 'dead',
+			title:
+				`${BASE_EXPLAINER} BROKEN - context running, a deck playing, but the output reports no device ` +
+				`latency: the browser is rendering into a dead output.${rebindNote} ` +
+				'This checks the browser’s own binding to the device, not the device itself; a device that is ' +
+				'alive but not delivering sound needs the OS-level probe tracked in issue #923.'
+		};
+	}
+	const _exhaustive: never = verdict;
+	throw new Error(`unknown output liveness verdict: ${String(_exhaustive)}`);
 }

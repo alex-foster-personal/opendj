@@ -169,6 +169,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sets/{session_id}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Get Metadata Share
+         * @description Get an existing metadata-only share link for a finalized published set.
+         */
+        get: operations["api_get_metadata_share_api_sets__session_id__share_get"];
+        put?: never;
+        /**
+         * Api Publish Metadata Share
+         * @description Publish timeline metadata after explicit acknowledgement, never MP3 audio.
+         */
+        post: operations["api_publish_metadata_share_api_sets__session_id__share_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sets/{session_id}/soundcloud-export": {
         parameters: {
             query?: never;
@@ -691,6 +715,31 @@ export interface paths {
         };
         /** Get Kpi Ledger */
         get: operations["get_kpi_ledger_api_v1_bench_kpi_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bench/lyrics-kpi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Kpi Ledger
+         * @description The lyrics KPI ledger verbatim (``scripts/bench/lyrics_kpi_ledger.json``).
+         *
+         *     Read-only here: appending a snapshot is a CLI act
+         *     (``scripts/bench/lyrics_kpi_append.py``) so the ledger keeps one writer.
+         *     A missing key raises rather than defaulting - a KPI panel drawing invented
+         *     numbers is worse than a panel that fails.
+         */
+        get: operations["get_lyrics_kpi_ledger_api_v1_bench_lyrics_kpi_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1583,6 +1632,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feedback/comments/{comment_id}/replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Append a follow-up on the same pin
+         * @description Appends a follow-up comment on the same pin without creating a second marker. This is not POST /follow-on, which opens a new pin at the same anchor only after the parent is fixed or merged. The agent_note scalar remains the latest agent lifecycle note; PATCH of agent_note also appends an agent reply unless it duplicates the last agent turn.
+         */
+        post: operations["add_reply_api_v1_feedback_comments__comment_id__replies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/general": {
         parameters: {
             query?: never;
@@ -1613,6 +1682,40 @@ export interface paths {
         put?: never;
         /** Create Performance Mark */
         post: operations["create_performance_mark_api_v1_feedback_performance_marks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feedback/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Feedback Sync */
+        post: operations["post_feedback_sync_api_v1_feedback_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feedback/sync/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Feedback Sync Status */
+        get: operations["get_feedback_sync_status_api_v1_feedback_sync_status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2048,6 +2151,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lyrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Lyric Verdicts
+         * @description The triage listing: least trustworthy first by default, with the track
+         *     names joined in so a human can act on a row without a second request.
+         */
+        get: operations["list_lyric_verdicts_api_v1_lyrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lyrics/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Config
+         * @description The source ordering the pipeline will use on its next run.
+         *
+         *     No DB connection: the order is a JSON file beside state.db, read by BOTH
+         *     this endpoint and the offline scripts, so what the admin panel shows is
+         *     what the next fetch uses.
+         */
+        get: operations["get_lyrics_config_api_v1_lyrics_config_get"];
+        /**
+         * Put Lyrics Config
+         * @description Persist a full reordering. Partial lists are rejected: an ordering that
+         *     silently omits a source is an ordering the operator never saw.
+         */
+        put: operations["put_lyrics_config_api_v1_lyrics_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lyrics/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyric Jobs
+         * @description Newest first. The queue is drained by the offline runner scripts:
+         *     stems and alignment never run in the daemon (house rule).
+         */
+        get: operations["get_lyric_jobs_api_v1_lyrics_jobs_get"];
+        put?: never;
+        /**
+         * Post Lyric Job
+         * @description Record a processing request from the UI (context menu / admin panel).
+         *
+         *     Every stable_id is checked against ``tracks`` in ONE select (the second and
+         *     last raw statement here, see :func:`_titles_by_stable_id`): a queue entry
+         *     for a track the library does not know is a job no runner can honour.
+         */
+        post: operations["post_lyric_job_api_v1_lyrics_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lyrics/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Lyrics Purge
+         * @description Remove one provider's lyrics from the row, the disk and R2 - parity for
+         *     the ``python -m apps.lyrics purge`` CLI, same function underneath.
+         *
+         *     ``writing=not dry_run`` is how the CLI asks for credentials too: a
+         *     rehearsal pushes and deletes nothing, so it must stay runnable on a
+         *     machine that has none.
+         */
+        post: operations["post_lyrics_purge_api_v1_lyrics_purge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/lyrics/search": {
         parameters: {
             query?: never;
@@ -2057,6 +2264,27 @@ export interface paths {
         };
         /** Search Lyrics */
         get: operations["search_lyrics_api_v1_lyrics_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lyrics/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Summary
+         * @description Library-wide verdict histogram plus the calibrated bands, so a client
+         *     never hardcodes the thresholds it displays.
+         */
+        get: operations["get_lyrics_summary_api_v1_lyrics_summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2199,6 +2427,145 @@ export interface paths {
         post?: never;
         /** Delete Pairing */
         delete: operations["delete_pairing_api_v1_pairings__pairing_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/headphones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Headphones
+         * @description Return the live headphone state from the attached performance page.
+         */
+        get: operations["get_headphones_api_v1_performance_headphones_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/headphones/channel-cue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Channel Cue */
+        post: operations["post_channel_cue_api_v1_performance_headphones_channel_cue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/headphones/head-delay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Head Delay Ms */
+        post: operations["post_head_delay_ms_api_v1_performance_headphones_head_delay_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/headphones/level": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Headphone Level */
+        post: operations["post_headphone_level_api_v1_performance_headphones_level_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/headphones/mix": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Headphone Mix */
+        post: operations["post_headphone_mix_api_v1_performance_headphones_mix_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/headphones/output-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Output Mode */
+        post: operations["post_output_mode_api_v1_performance_headphones_output_mode_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/headphones/outputs/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Headphone Outputs Refresh */
+        post: operations["post_headphone_outputs_refresh_api_v1_performance_headphones_outputs_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/headphones/outputs/select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Headphone Output Select */
+        post: operations["post_headphone_output_select_api_v1_performance_headphones_outputs_select_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2380,6 +2747,57 @@ export interface paths {
         put?: never;
         /** Duplicate Playlist */
         post: operations["duplicate_playlist_api_v1_playlists__playlist_id__duplicate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlists/{playlist_id}/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Playlist Item */
+        delete: operations["delete_playlist_item"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlists/{playlist_id}/items:add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Playlist Items */
+        post: operations["add_playlist_items"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlists/{playlist_id}/items:move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move Playlist Items */
+        post: operations["move_playlist_items"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2937,7 +3355,11 @@ export interface paths {
          */
         put: operations["update_smartlist_api_v1_smartlists__smartlist_id__put"];
         post?: never;
-        delete?: never;
+        /**
+         * Delete Smartlist
+         * @description Remove a smartlist row (hard delete via SmartlistsRepo.delete).
+         */
+        delete: operations["delete_smartlist_api_v1_smartlists__smartlist_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3099,6 +3521,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stems/live-capability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Live Stems Capability
+         * @description Read install-time capability and, when requested, its deck plan.
+         */
+        get: operations["get_live_stems_capability_api_v1_stems_live_capability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stems/plan": {
         parameters: {
             query?: never;
@@ -3116,6 +3558,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stems/push-missing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Push Missing Stems */
+        post: operations["push_missing_stems_api_v1_stems_push_missing_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stems/tiers": {
         parameters: {
             query?: never;
@@ -3127,6 +3586,23 @@ export interface paths {
         get: operations["list_tiers_api_v1_stems_tiers_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stems/{stable_id}/hydrate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hydrate Stem */
+        post: operations["hydrate_stem_api_v1_stems__stable_id__hydrate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3490,6 +3966,11 @@ export interface paths {
          * Get Track Audio
          * @description Stream the single best working file. FileResponse handles Range/206.
          *
+         *     HEAD is served by the same handler: FileResponse sends headers only for a
+         *     HEAD scope, and the LyricsPanel playability probe (``fetch(url,
+         *     {method: 'HEAD'})``) read a GET-only route as "HTTP 405, audio cannot be
+         *     played" on every track with aligned words (found Sat 12 Sep 2026, #2082).
+         *
          *     The backend picks among ``track_locations`` plus the legacy
          *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
          *     Share-host requests use the share venue cap (lossy ceiling by default).
@@ -3499,7 +3980,20 @@ export interface paths {
         post?: never;
         delete?: never;
         options?: never;
-        head?: never;
+        /**
+         * Get Track Audio
+         * @description Stream the single best working file. FileResponse handles Range/206.
+         *
+         *     HEAD is served by the same handler: FileResponse sends headers only for a
+         *     HEAD scope, and the LyricsPanel playability probe (``fetch(url,
+         *     {method: 'HEAD'})``) read a GET-only route as "HTTP 405, audio cannot be
+         *     played" on every track with aligned words (found Sat 12 Sep 2026, #2082).
+         *
+         *     The backend picks among ``track_locations`` plus the legacy
+         *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
+         *     Share-host requests use the share venue cap (lossy ceiling by default).
+         */
+        head: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
         patch?: never;
         trace?: never;
     };
@@ -3631,6 +4125,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/lyrics/override": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Lyric Override
+         * @description Set (or clear with null) the human verdict, which always beats the
+         *     computed one wherever it is read (``store.LyricVerdict.effective``).
+         *
+         *     The override VALUE is validated before the write so the two failures stay
+         *     distinguishable: an unknown value is the caller's mistake (422), while a
+         *     refusal from the store means there is no live row to override (404).
+         */
+        put: operations["put_lyric_override_api_v1_tracks__stable_id__lyrics_override_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/lyrics/words": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Track Karaoke Words
+         * @description This track's karaoke timeline: the verdict envelope plus every word.
+         */
+        get: operations["get_track_karaoke_words_api_v1_tracks__stable_id__lyrics_words_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/playlists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Track Playlists
+         * @description Live playlists that currently hold this track (LIBM-29).
+         *
+         *     404 if the stable_id has no tracks row. 200 [] if the track exists
+         *     but has no live memberships. Tombstoned memberships and deleted
+         *     playlists are excluded.
+         */
+        get: operations["list_track_playlists_api_v1_tracks__stable_id__playlists_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}/rb-meta": {
         parameters: {
             query?: never;
@@ -3685,6 +4248,49 @@ export interface paths {
         get: operations["get_stem_file_api_v1_tracks__stable_id__stems__part__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}:remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove Track From Library
+         * @description Soft-delete a track from the library while keeping the audio file on disk.
+         *
+         *     Uses ``POST :remove`` rather than ``DELETE /tracks/{stable_id}`` so
+         *     ``LIBM-53`` can own file deletion later as a separate, harder action.
+         */
+        post: operations["remove_track_from_library_api_v1_tracks__stable_id__remove_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}:undelete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undelete Track From Library
+         * @description Restore a tombstoned track and the memberships this remove stamped.
+         */
+        post: operations["undelete_track_from_library_api_v1_tracks__stable_id__undelete_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5069,6 +5675,49 @@ export interface components {
             /** Machine Name */
             machine_name: string | null;
         };
+        /** CloudSyncLinkOut */
+        CloudSyncLinkOut: {
+            /** Enabled */
+            enabled: boolean;
+            /** Endpoint */
+            endpoint: string | null;
+            /** Last Finished At */
+            last_finished_at: string | null;
+            /** Last Message */
+            last_message: string | null;
+            /** Last Result */
+            last_result: string | null;
+            /** Reason */
+            reason: string | null;
+        };
+        /**
+         * CloudSyncSchedulerOut
+         * @description The engine's CloudSync scheduler: is its thread alive, and what last failed.
+         *
+         *     ``not_armed``: this app never builds one (tests, non-daemon boots).
+         *     ``off``: armed, switch not on. ``misconfigured``: switched on but it could
+         *     not start (``reason`` says why); the engine booted regardless.
+         *     ``dead``: it was started and its thread is gone without ``stop()``.
+         */
+        CloudSyncSchedulerOut: {
+            /** Alive */
+            alive: boolean;
+            /** Last Error */
+            last_error: string | null;
+            /** Last Error At */
+            last_error_at: string | null;
+            /** Last Ok At */
+            last_ok_at: string | null;
+            /** Reason */
+            reason: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "not_armed" | "off" | "misconfigured" | "running" | "stopped" | "dead";
+            /** Ticks */
+            ticks: number;
+        };
         /** CloudSyncStatusOut */
         CloudSyncStatusOut: {
             /**
@@ -5216,6 +5865,8 @@ export interface components {
             issue_url?: string | null;
             /** Page */
             page: string;
+            /** Replies */
+            replies?: components["schemas"]["CommentReplyOut"][];
             /** Status */
             status?: string | null;
             /** Text */
@@ -5226,6 +5877,35 @@ export interface components {
             x_pct: number;
             /** Y Pct */
             y_pct: number;
+        };
+        /** CommentReplyIn */
+        CommentReplyIn: {
+            /** Agent Kind */
+            agent_kind?: string | null;
+            /**
+             * Author
+             * @default operator
+             * @enum {string}
+             */
+            author: "operator" | "agent";
+            /** Text */
+            text: string;
+        };
+        /** CommentReplyOut */
+        CommentReplyOut: {
+            /** Agent Kind */
+            agent_kind?: string | null;
+            /**
+             * Author
+             * @enum {string}
+             */
+            author: "operator" | "agent";
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
         };
         /** CommentUpdateIn */
         CommentUpdateIn: {
@@ -5287,6 +5967,84 @@ export interface components {
             total_tracks: number;
             /** Unreachable */
             unreachable: number;
+        };
+        /**
+         * CoverageVerdictOut
+         * @description One ``lyric_verdict`` row as the API states it.
+         */
+        CoverageVerdictOut: {
+            /** Artist */
+            artist?: string | null;
+            /**
+             * Computed At
+             * @description when the pipeline judged the track
+             */
+            computed_at: string;
+            /**
+             * Coverage Pct
+             * @description share of the track the vocal stem carries energy
+             */
+            coverage_pct?: number | null;
+            /**
+             * Effective
+             * @description same as effective_verdict; kept for clients that read .effective
+             */
+            effective: string;
+            /**
+             * Effective Verdict
+             * @description what to act on: the human override if set, else verdict
+             */
+            effective_verdict: string;
+            /**
+             * Has Words
+             * @description a words artifact exists for this track (the row records a words_content_hash); false means the words route will 404
+             */
+            has_words: boolean;
+            /** Language Iso3 */
+            language_iso3?: string | null;
+            /**
+             * N Lines
+             * @description derived lines in the artifact
+             */
+            n_lines?: number | null;
+            /**
+             * N Words
+             * @description words in the karaoke artifact
+             */
+            n_words?: number | null;
+            /** Override */
+            override?: string | null;
+            /** Override Note */
+            override_note?: string | null;
+            /**
+             * Pct Witness Red
+             * @description share of words the independent ASR witness distrusts
+             */
+            pct_witness_red?: number | null;
+            /**
+             * Pipeline Version
+             * @description the code version that produced this row's hash
+             */
+            pipeline_version: string;
+            /**
+             * Source
+             * @description lyric provider + match method
+             */
+            source?: string | null;
+            /** Stable Id */
+            stable_id: string;
+            /** Title */
+            title?: string | null;
+            /**
+             * Updated At
+             * @description sync stamp: when a machine last wrote the row
+             */
+            updated_at: string;
+            /**
+             * Verdict
+             * @description computed verdict from stem vocal coverage
+             */
+            verdict: string;
         };
         /** CredentialMachineOut */
         CredentialMachineOut: {
@@ -5464,6 +6222,8 @@ export interface components {
             contract_rev: string;
             /** Engine Version */
             engine_version: string;
+            /** Google Oauth Configured */
+            google_oauth_configured: boolean;
             state_db: components["schemas"]["HealthStateDb"];
             /**
              * Status
@@ -5579,11 +6339,16 @@ export interface components {
         };
         /**
          * FallbackBeatOut
-         * @description Identical field set to one ANLZ beatgrid ``beats`` entry.
+         * @description ANLZ beat fields plus ``extrapolated``.
+         *
+         *     PQTZ ``/anlz`` beats stay ``{n, bpm, t}``. This fallback endpoint always
+         *     sends ``extrapolated`` so a client never has to guess which beats are tail.
          */
         FallbackBeatOut: {
             /** Bpm */
             bpm: number;
+            /** Extrapolated */
+            extrapolated: boolean;
             /** N */
             n: number;
             /** T */
@@ -5626,6 +6391,49 @@ export interface components {
             quota: number | null;
             /** Server Side */
             server_side: boolean;
+        };
+        /** FeedbackStoreSyncOut */
+        FeedbackStoreSyncOut: {
+            /** Archived */
+            archived: number;
+            /** Attachments Missing */
+            attachments_missing: number;
+            /** Harvested */
+            harvested: number;
+            /** Live */
+            live: number;
+            /** Pending Push */
+            pending_push: number;
+            /** Synced */
+            synced: number;
+            /** Unreconciled */
+            unreconciled: number;
+        };
+        /** FeedbackSyncOut */
+        FeedbackSyncOut: {
+            /** Exported */
+            exported: number;
+            /** Imported */
+            imported: number;
+            /** Message */
+            message: string;
+            /** Pulled */
+            pulled: number;
+            /** Pushed */
+            pushed: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "inconclusive";
+        };
+        /** FeedbackSyncStatusOut */
+        FeedbackSyncStatusOut: {
+            cloudsync: components["schemas"]["CloudSyncLinkOut"];
+            /** Pins */
+            pins: components["schemas"]["PinSyncOut"][];
+            scheduler: components["schemas"]["CloudSyncSchedulerOut"];
+            store: components["schemas"]["FeedbackStoreSyncOut"];
         };
         /**
          * FileProbeOut
@@ -5983,6 +6791,34 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HeadphoneOutputDeviceOut */
+        HeadphoneOutputDeviceOut: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
+        /** HeadphoneStateOut */
+        HeadphoneStateOut: {
+            /** Active */
+            active: boolean;
+            /** Error */
+            error: string | null;
+            /** Head Delay Ms */
+            head_delay_ms: number;
+            /** Level */
+            level: number;
+            /** Mix */
+            mix: number;
+            /** Output Mode */
+            output_mode: string;
+            /** Outputs */
+            outputs: components["schemas"]["HeadphoneOutputDeviceOut"][];
+            /** Selected Output Device Id */
+            selected_output_device_id: string | null;
+            /** Supported */
+            supported: boolean;
+        };
         /** HealthCloud */
         HealthCloud: {
             /** Last Wal Ship At */
@@ -6248,6 +7084,136 @@ export interface components {
             worker_pid?: number | null;
             /** Worker Started At */
             worker_started_at?: number | null;
+        };
+        /**
+         * KaraokeLineOut
+         * @description One derived line (:mod:`apps.lyrics.lines`, the canonical grouping).
+         *
+         *     Served rather than client-derived so every surface agrees and an agent can
+         *     curl exactly what the deck renders.
+         */
+        KaraokeLineOut: {
+            /**
+             * Band
+             * @description good | uncertain | bad | unjudged
+             */
+            band: string;
+            /**
+             * End S
+             * @description last sung offset in the line, seconds
+             */
+            end_s: number | null;
+            /** First Idx */
+            first_idx: number;
+            /** Last Idx */
+            last_idx: number;
+            /**
+             * N Judged
+             * @description words the witness judged at all
+             */
+            n_judged: number;
+            /**
+             * N Red
+             * @description words the witness put in a red class
+             */
+            n_red: number;
+            /** N Words */
+            n_words: number;
+            /**
+             * Para Final
+             * @description gap-derived paragraph break: a blank line follows
+             */
+            para_final: boolean;
+            /**
+             * Quality
+             * @description share of witness-judged words NOT in the red classes; null when no word in the line was judged
+             */
+            quality: number | null;
+            /**
+             * Start S
+             * @description first sung onset in the line, seconds
+             */
+            start_s: number | null;
+            /** Text */
+            text: string;
+        };
+        /** KaraokeSummaryOut */
+        KaraokeSummaryOut: {
+            /**
+             * Counts
+             * @description effective-verdict histogram
+             */
+            counts: {
+                [key: string]: number;
+            };
+            /**
+             * No Lyrics Max Coverage
+             * @description calibrated band: at or below this stem vocal coverage a track is auto-stamped no-lyrics (novox round 0, pinned by test)
+             */
+            no_lyrics_max_coverage: number;
+            /**
+             * Sparse Max Coverage
+             * @description above this coverage a track is treated as vocal; between the two, other evidence decides
+             */
+            sparse_max_coverage: number;
+            /**
+             * Total
+             * @description live verdict rows, the histogram's denominator
+             */
+            total: number;
+        };
+        /**
+         * KaraokeTrackOut
+         * @description The words payload. ``verdict`` is ALWAYS set: see the 404 rule.
+         */
+        KaraokeTrackOut: {
+            /**
+             * Lines
+             * @description present only when requested with ?include=lines
+             */
+            lines?: components["schemas"]["KaraokeLineOut"][] | null;
+            verdict: components["schemas"]["CoverageVerdictOut"];
+            /** Words */
+            words: components["schemas"]["KaraokeWordOut"][];
+        };
+        /**
+         * KaraokeWordOut
+         * @description One aligned word, exactly as the artifact stores it.
+         */
+        KaraokeWordOut: {
+            /**
+             * End S
+             * @description sung offset in seconds
+             */
+            end_s?: number | null;
+            /**
+             * Idx
+             * @description position in the track's flat word list, from 0
+             */
+            idx: number;
+            /**
+             * Line Final
+             * @description this word closes its line (the grouping flag)
+             * @default false
+             */
+            line_final: boolean;
+            /**
+             * Score
+             * @description aligner confidence for this word, 0..1
+             */
+            score?: number | null;
+            /**
+             * Start S
+             * @description sung onset in seconds
+             */
+            start_s?: number | null;
+            /**
+             * Witness
+             * @description ASR-witness verdict: agree/drift/unheard/unmatchable are shown normally; contradict/lost are the suspect classes.
+             */
+            witness?: string | null;
+            /** Word */
+            word: string;
         };
         /** KindDefaultIn */
         KindDefaultIn: {
@@ -6564,6 +7530,45 @@ export interface components {
             /** Out Ms */
             out_ms: number;
         };
+        /** LyricJobIn */
+        LyricJobIn: {
+            /**
+             * Kind
+             * @description analyze | lyricsync | stems
+             */
+            kind: string;
+            /** Note */
+            note?: string | null;
+            /**
+             * Stable Ids
+             * @description tracks to process; each must exist
+             */
+            stable_ids: string[];
+        };
+        /** LyricJobOut */
+        LyricJobOut: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /**
+             * Note
+             * @description the runner's stage progress
+             */
+            note?: string | null;
+            /** Stable Ids */
+            stable_ids: string[];
+            /**
+             * Status
+             * @description queued | done | failed
+             */
+            status: string;
+            /**
+             * Ts
+             * @description when the job was queued, UTC
+             */
+            ts: string;
+        };
         /**
          * LyricLineOut
          * @description One cache-backed line timestamp in integer track milliseconds.
@@ -6581,6 +7586,171 @@ export interface components {
         LyricsCachedIdsOut: {
             /** Stable Ids */
             stable_ids?: string[];
+        };
+        /** LyricsConfigIn */
+        LyricsConfigIn: {
+            /**
+             * Source Order
+             * @description every known source, ranked; a partial list is rejected
+             */
+            source_order: string[];
+        };
+        /** LyricsConfigOut */
+        LyricsConfigOut: {
+            /**
+             * Is Default
+             * @description true while no operator has persisted a custom order
+             */
+            is_default: boolean;
+            /**
+             * Source Order
+             * @description lyric sources, strongest first; the pipeline's tie-break
+             */
+            source_order: string[];
+            /**
+             * Source Titles
+             * @description hover text per source (what the method actually does)
+             */
+            source_titles: {
+                [key: string]: string;
+            };
+        };
+        /** LyricsKpiDefOut */
+        LyricsKpiDefOut: {
+            /**
+             * Direction
+             * @description lower_better | higher_better
+             */
+            direction: string;
+            /** Label */
+            label: string;
+            /**
+             * Title
+             * @description hover text: what the number actually measures
+             */
+            title: string;
+            /** Unit */
+            unit: string;
+        };
+        /** LyricsKpiOut */
+        LyricsKpiOut: {
+            /** Kpis */
+            kpis: {
+                [key: string]: components["schemas"]["LyricsKpiDefOut"];
+            };
+            /**
+             * Snapshots
+             * @description oldest first
+             */
+            snapshots: components["schemas"]["LyricsKpiSnapshotOut"][];
+        };
+        /** LyricsKpiSnapshotOut */
+        LyricsKpiSnapshotOut: {
+            /**
+             * Label
+             * @description the experiment round or shipped milestone
+             */
+            label: string;
+            /** Notes */
+            notes: string;
+            /**
+             * Provenance
+             * @description 'measured' at append time, or 'hand' transcribed from the experiment log. House rule: never quote a value without its ts.
+             */
+            provenance: string;
+            /** Ts */
+            ts: string;
+            /**
+             * Values
+             * @description one entry per KPI; null is a gap, never a carried-forward number
+             */
+            values: {
+                [key: string]: number | null;
+            };
+        };
+        /** LyricsPurgeIn */
+        LyricsPurgeIn: {
+            /**
+             * Dry Run
+             * @description NO default on purpose: a purge deletes licensed text from disk and R2, so the caller states which one it wants
+             */
+            dry_run: boolean;
+            /**
+             * Source Prefix
+             * @description source prefix, matched LIKE prefix%
+             */
+            source_prefix: string;
+        };
+        /**
+         * LyricsPurgeOut
+         * @description :class:`apps.lyrics.purge.PurgeReport`. Every count is observed.
+         */
+        LyricsPurgeOut: {
+            /** Dry Run */
+            dry_run: boolean;
+            /**
+             * Files Absent
+             * @description matched rows with no local artifact
+             */
+            files_absent: number;
+            /**
+             * Files Removed
+             * @description local karaoke artifacts deleted
+             */
+            files_removed: number;
+            /**
+             * Objects Absent
+             * @description R2 keys already gone
+             */
+            objects_absent: number;
+            /**
+             * Objects Deleted
+             * @description R2 objects deleted
+             */
+            objects_deleted: number;
+            /**
+             * R2 Skipped Reason
+             * @description why R2 was left alone; null means it was visited
+             */
+            r2_skipped_reason?: string | null;
+            /**
+             * Rows Matched
+             * @description live verdict rows whose source matched
+             */
+            rows_matched: number;
+            /**
+             * Rows Tombstoned
+             * @description rows soft-deleted; 0 on a dry run
+             */
+            rows_tombstoned: number;
+            /** Source Prefix */
+            source_prefix: string;
+            /** Stable Ids */
+            stable_ids: string[];
+        };
+        /**
+         * LyricsRowSummaryOut
+         * @description Per-row karaoke verdict summary for library listings.
+         */
+        LyricsRowSummaryOut: {
+            /** Effective */
+            effective: string;
+            /** Has Words */
+            has_words: boolean;
+            /** Language Iso3 */
+            language_iso3?: string | null;
+            /** N Lines */
+            n_lines?: number | null;
+            /** N Words */
+            n_words?: number | null;
+            /** Override */
+            override?: string | null;
+            /** Pct Witness Red */
+            pct_witness_red?: number | null;
+            /** Source */
+            source?: string | null;
+            /** Verdict */
+            verdict: string;
         };
         /**
          * LyricsUnavailableOut
@@ -6699,6 +7869,50 @@ export interface components {
             /** Title */
             title: string | null;
         };
+        /** MembershipAddIn */
+        MembershipAddIn: {
+            /**
+             * Position
+             * @description 0-based insert index; omit to append after the last member.
+             */
+            position?: number | null;
+            /** Stable Ids */
+            stable_ids: string[];
+        };
+        /** MembershipMoveIn */
+        MembershipMoveIn: {
+            /** After Item Id */
+            after_item_id?: string | null;
+            /** Before Item Id */
+            before_item_id?: string | null;
+            /** Range End */
+            range_end?: string | null;
+            /** Range Length */
+            range_length?: number | null;
+            /** Range Start */
+            range_start: string;
+        };
+        /** MembershipMoveOut */
+        MembershipMoveOut: {
+            /** Created At */
+            created_at: string;
+            /** Items */
+            items: string[];
+            /** Name */
+            name: string;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Renumbered */
+            renumbered: boolean;
+            /** Track Count */
+            track_count: number;
+            /** Updated At */
+            updated_at: string;
+            /** Vendor */
+            vendor: string;
+            /** Vendor Pl Id */
+            vendor_pl_id: string;
+        };
         /** MembershipReplaceIn */
         MembershipReplaceIn: {
             /**
@@ -6725,6 +7939,37 @@ export interface components {
         MembershipTransferOut: {
             dest: components["schemas"]["PlaylistWriteOut"];
             source?: components["schemas"]["PlaylistWriteOut"] | null;
+        };
+        /**
+         * MetadataShareRequest
+         * @description Explicit acknowledgement that the resulting web view excludes audio.
+         */
+        MetadataShareRequest: {
+            /**
+             * Confirm Metadata Only
+             * @constant
+             */
+            confirm_metadata_only: true;
+        };
+        /**
+         * MetadataShareResponse
+         * @description A browser URL for the non-audio set history presentation.
+         */
+        MetadataShareResponse: {
+            /**
+             * Content
+             * @constant
+             */
+            content: "metadata_only";
+            /** Session Id */
+            session_id: string;
+            /**
+             * Share State
+             * @constant
+             */
+            share_state: "shared_cloud";
+            /** Share Url */
+            share_url: string;
         };
         /** MixerChannelMarkOut */
         MixerChannelMarkOut: {
@@ -6880,6 +8125,19 @@ export interface components {
          */
         OpsErrorResponse: {
             detail: components["schemas"]["OpsErrorBody"];
+        };
+        /** OverrideIn */
+        OverrideIn: {
+            /**
+             * Note
+             * @description why the human disagreed
+             */
+            note?: string | null;
+            /**
+             * Override
+             * @description vocal|sparse|no-lyrics, or null to clear
+             */
+            override?: string | null;
         };
         /** OverviewOut */
         OverviewOut: {
@@ -7184,6 +8442,31 @@ export interface components {
             machine_id: string;
             /** Playlist Id */
             playlist_id: string;
+        };
+        /**
+         * PinSyncOut
+         * @description Where one pin stands. ``attachment_bytes: missing`` is FBSYNC-05's gap:
+         *     the screenshot's metadata synced here but its bytes did not.
+         */
+        PinSyncOut: {
+            /** Archived */
+            archived: boolean;
+            /**
+             * Attachment Bytes
+             * @enum {string}
+             */
+            attachment_bytes: "none" | "present" | "missing";
+            /** Origin Device Id */
+            origin_device_id: string | null;
+            /** Pin Id */
+            pin_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "synced" | "pending_push" | "unreconciled" | "harvested";
+            /** Updated At */
+            updated_at: string;
         };
         /** PlanEntryOut */
         PlanEntryOut: {
@@ -8215,12 +9498,24 @@ export interface components {
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
              * Is Remote
              * @default false
              */
             is_remote: boolean;
             /** Is Streaming */
             is_streaming: boolean;
+            /** Item Id */
+            item_id?: string | null;
             /** Key */
             key: string | null;
             /** Key Reason */
@@ -8237,6 +9532,7 @@ export interface components {
              * @enum {string}
              */
             loudness_status: "ok" | "failed" | "missing";
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Match Context */
             match_context: string;
             /**
@@ -8564,6 +9860,18 @@ export interface components {
             /** Wire Version */
             wire_version: number;
         };
+        /** StemHydrateIn */
+        StemHydrateIn: {
+            /** Data Dir */
+            data_dir?: string | null;
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
+            /** Manifest Path */
+            manifest_path: string;
+        };
         /**
          * StemManifestOut
          * @description Frontend manifest projected from a stricter durable artifact manifest.
@@ -8606,6 +9914,16 @@ export interface components {
         StemPartOut: {
             /** Media Type */
             media_type: string;
+        };
+        /** StemPushMissingIn */
+        StemPushMissingIn: {
+            /** Data Dir */
+            data_dir?: string | null;
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
         };
         /**
          * StemTierOut
@@ -8993,6 +10311,31 @@ export interface components {
             sync_mode: "bar" | "beat";
         };
         /**
+         * TempoPrefOut
+         * @description PREF-01: a track's user-set preferred tempo plus its playable range.
+         *
+         *     Any of the three may be null (unset). Never fabricated on read - a track
+         *     with no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,
+         *     not this shape with all-null members (see sqlite_backend._row_to_track).
+         */
+        TempoPrefOut: {
+            /** Max */
+            max?: number | null;
+            /** Min */
+            min?: number | null;
+            /** Regular */
+            regular?: number | null;
+        };
+        /** TempoPrefPatch */
+        TempoPrefPatch: {
+            /** Max */
+            max?: number | null;
+            /** Min */
+            min?: number | null;
+            /** Regular */
+            regular?: number | null;
+        };
+        /**
          * TierEstimateOut
          * @description Cost of one track at one tier. ``measured`` false means we do not know.
          */
@@ -9115,6 +10458,15 @@ export interface components {
             /** Title */
             title?: string;
         };
+        /** TrackLifecycleOut */
+        TrackLifecycleOut: {
+            /** Deleted At */
+            deleted_at: string | null;
+            /** Memberships */
+            memberships: components["schemas"]["TrackMembershipRefOut"][];
+            /** Stable Id */
+            stable_id: string;
+        };
         /**
          * TrackListItemOut
          * @description TrackOut + parity row fields (shared API contract item 1).
@@ -9165,6 +10517,16 @@ export interface components {
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
              * Is Remote
              * @default false
              */
@@ -9173,6 +10535,7 @@ export interface components {
             key?: string | null;
             /** Last Played At */
             last_played_at?: string | null;
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Lyrics Available */
             lyrics_available: boolean;
             /** Notes */
@@ -9209,6 +10572,7 @@ export interface components {
              * @default []
              */
             tags: string[];
+            tempo_pref?: components["schemas"]["TempoPrefOut"] | null;
             /** Title */
             title?: string | null;
             /** Updated At */
@@ -9229,6 +10593,13 @@ export interface components {
             source: string;
             /** Stable Id */
             stable_id: string;
+        };
+        /** TrackMembershipRefOut */
+        TrackMembershipRefOut: {
+            /** Playlist Id */
+            playlist_id: string;
+            /** Position */
+            position: number;
         };
         /** TrackOut */
         TrackOut: {
@@ -9281,6 +10652,7 @@ export interface components {
              * @default []
              */
             tags: string[];
+            tempo_pref?: components["schemas"]["TempoPrefOut"] | null;
             /** Title */
             title?: string | null;
             /** Updated At */
@@ -9296,6 +10668,18 @@ export interface components {
             tags_add?: string[] | null;
             /** Tags Remove */
             tags_remove?: string[] | null;
+            tempo_pref?: components["schemas"]["TempoPrefPatch"] | null;
+        };
+        /** TrackPlaylistOut */
+        TrackPlaylistOut: {
+            /** Name */
+            name: string;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Positions */
+            positions: number[];
+            /** Vendor */
+            vendor: string;
         };
         /**
          * TrackRowOut
@@ -9339,12 +10723,24 @@ export interface components {
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
              * Is Remote
              * @default false
              */
             is_remote: boolean;
             /** Is Streaming */
             is_streaming: boolean;
+            /** Item Id */
+            item_id?: string | null;
             /** Key */
             key: string | null;
             /** Key Reason */
@@ -9361,6 +10757,7 @@ export interface components {
              * @enum {string}
              */
             loudness_status: "ok" | "failed" | "missing";
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /**
              * Play Count
              * @default 0
@@ -9432,6 +10829,37 @@ export interface components {
             jog_radial_waveform: boolean;
             level_calibration?: components["schemas"]["LevelCalibrationOut"];
             /**
+             * Lyrics Deck Line
+             * @default true
+             */
+            lyrics_deck_line: boolean;
+            /**
+             * Lyrics Global
+             * @default true
+             */
+            lyrics_global: boolean;
+            /**
+             * Lyrics Hover Scrub
+             * @default true
+             */
+            lyrics_hover_scrub: boolean;
+            /**
+             * Lyrics Library Col
+             * @default true
+             */
+            lyrics_library_col: boolean;
+            /**
+             * Lyrics Load Strategy
+             * @default hover
+             * @enum {string}
+             */
+            lyrics_load_strategy: "in-view" | "hover" | "off";
+            /**
+             * Lyrics Waveform Overlay
+             * @default true
+             */
+            lyrics_waveform_overlay: boolean;
+            /**
              * Show Agent Pins
              * @default true
              */
@@ -9460,6 +10888,18 @@ export interface components {
             /** Jog Radial Waveform */
             jog_radial_waveform?: boolean | null;
             level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
+            /** Lyrics Deck Line */
+            lyrics_deck_line?: boolean | null;
+            /** Lyrics Global */
+            lyrics_global?: boolean | null;
+            /** Lyrics Hover Scrub */
+            lyrics_hover_scrub?: boolean | null;
+            /** Lyrics Library Col */
+            lyrics_library_col?: boolean | null;
+            /** Lyrics Load Strategy */
+            lyrics_load_strategy?: ("in-view" | "hover" | "off") | null;
+            /** Lyrics Waveform Overlay */
+            lyrics_waveform_overlay?: boolean | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
             /** Technically Working Animate */
@@ -10244,6 +11684,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_get_metadata_share_api_sets__session_id__share_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataShareResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_publish_metadata_share_api_sets__session_id__share_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MetadataShareRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataShareResponse"];
                 };
             };
             /** @description Validation Error */
@@ -11121,6 +12627,26 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    get_lyrics_kpi_ledger_api_v1_bench_lyrics_kpi_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsKpiOut"];
                 };
             };
         };
@@ -12912,6 +14438,41 @@ export interface operations {
             };
         };
     };
+    add_reply_api_v1_feedback_comments__comment_id__replies_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentReplyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_general_api_v1_feedback_general_get: {
         parameters: {
             query?: never;
@@ -13005,6 +14566,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PerformanceFeedbackMarksOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_feedback_sync_api_v1_feedback_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackSyncOut"];
+                };
+            };
+        };
+    };
+    get_feedback_sync_status_api_v1_feedback_sync_status_get: {
+        parameters: {
+            query?: {
+                pin_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackSyncStatusOut"];
                 };
             };
             /** @description Validation Error */
@@ -13773,6 +15385,181 @@ export interface operations {
             };
         };
     };
+    list_lyric_verdicts_api_v1_lyrics_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                /** @description filter by effective verdict */
+                verdict?: string | null;
+                /** @description suspect|coverage|recent */
+                order?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoverageVerdictOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lyrics_config_api_v1_lyrics_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsConfigOut"];
+                };
+            };
+        };
+    };
+    put_lyrics_config_api_v1_lyrics_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LyricsConfigIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsConfigOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lyric_jobs_api_v1_lyrics_jobs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricJobOut"][];
+                };
+            };
+        };
+    };
+    post_lyric_job_api_v1_lyrics_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LyricJobIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricJobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_lyrics_purge_api_v1_lyrics_purge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LyricsPurgeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsPurgeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     search_lyrics_api_v1_lyrics_search_get: {
         parameters: {
             query?: {
@@ -13803,6 +15590,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lyrics_summary_api_v1_lyrics_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KaraokeSummaryOut"];
                 };
             };
         };
@@ -14160,6 +15967,271 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_headphones_api_v1_performance_headphones_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadphoneStateOut"];
+                };
+            };
+        };
+    };
+    post_channel_cue_api_v1_performance_headphones_channel_cue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadphoneStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_head_delay_ms_api_v1_performance_headphones_head_delay_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadphoneStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_headphone_level_api_v1_performance_headphones_level_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadphoneStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_headphone_mix_api_v1_performance_headphones_mix_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadphoneStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_output_mode_api_v1_performance_headphones_output_mode_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadphoneStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_headphone_outputs_refresh_api_v1_performance_headphones_outputs_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                } | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadphoneStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_headphone_output_select_api_v1_performance_headphones_outputs_select_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadphoneStateOut"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -14532,6 +16604,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlaylistWriteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_playlist_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistWriteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_playlist_items: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipAddIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistWriteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_playlist_items: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipMoveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MembershipMoveOut"];
                 };
             };
             /** @description Validation Error */
@@ -15510,6 +17686,35 @@ export interface operations {
             };
         };
     };
+    delete_smartlist_api_v1_smartlists__smartlist_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                smartlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_smartlist_tracks_api_v1_smartlists__smartlist_id__tracks_get: {
         parameters: {
             query?: {
@@ -15788,6 +17993,40 @@ export interface operations {
             };
         };
     };
+    get_live_stems_capability_api_v1_stems_live_capability_get: {
+        parameters: {
+            query?: {
+                deck_count?: number | null;
+                bpm?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_stems_plan_api_v1_stems_plan_get: {
         parameters: {
             query?: {
@@ -15820,6 +18059,41 @@ export interface operations {
             };
         };
     };
+    push_missing_stems_api_v1_stems_push_missing_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StemPushMissingIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_tiers_api_v1_stems_tiers_get: {
         parameters: {
             query?: never;
@@ -15836,6 +18110,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TierOut"][];
+                };
+            };
+        };
+    };
+    hydrate_stem_api_v1_stems__stable_id__hydrate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StemHydrateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -16254,6 +18565,8 @@ export interface operations {
                 tag?: string | null;
                 /** @description Filter rows on file_exists disk truth (FR-1 agent parity). Applied to the page AFTER cursor pagination, so a page may return fewer than `limit` rows while next_cursor still advances over the full track set. */
                 available?: "all" | "true" | "false";
+                /** @description When true, include rows with tracks.deleted_at set. Default hides them. */
+                show_deleted?: boolean;
                 cursor?: string | null;
                 limit?: number;
             };
@@ -16431,6 +18744,35 @@ export interface operations {
                 /** @description s=80x80 browser rows, m=240x240 deck thumbs, orig */
                 size?: "s" | "m" | "orig";
             };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_track_audio_api_v1_tracks__stable_id__audio_get: {
+        parameters: {
+            query?: never;
             header?: never;
             path: {
                 stable_id: string;
@@ -16774,6 +19116,106 @@ export interface operations {
             };
         };
     };
+    put_lyric_override_api_v1_tracks__stable_id__lyrics_override_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverrideIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoverageVerdictOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_track_karaoke_words_api_v1_tracks__stable_id__lyrics_words_get: {
+        parameters: {
+            query?: {
+                /** @description 'lines' adds the derived line objects */
+                include?: string | null;
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KaraokeTrackOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_track_playlists_api_v1_tracks__stable_id__playlists_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackPlaylistOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_track_rb_meta_api_v1_tracks__stable_id__rb_meta_get: {
         parameters: {
             query?: never;
@@ -16854,6 +19296,68 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_track_from_library_api_v1_tracks__stable_id__remove_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackLifecycleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undelete_track_from_library_api_v1_tracks__stable_id__undelete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackLifecycleOut"];
+                };
             };
             /** @description Validation Error */
             422: {

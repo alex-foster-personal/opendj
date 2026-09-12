@@ -15,6 +15,10 @@
  * grace period and still reports `outputLatency === 0` is silent, whatever the
  * graph says. That is an error state, shown as one, with an automatic re-bind
  * request and an escalation if the re-bind does not restore a device latency.
+ *
+ * Fri 11 Sep 2026 (issue #2155): a non-zero latency with a frozen
+ * `getOutputTimestamp().contextTime` is also silent. That path now promotes to
+ * `stalled` after 2 s and triggers suspend/resume plus graph recreate.
  */
 
 import { noteOutputStall } from '$lib/rb/audio-output-rebind';
@@ -24,6 +28,8 @@ export const LIVENESS_POLL_MS = 2_500;
 export const LIVENESS_DEAD_POLLS = 2;
 /** Polls after the alarm before the sticky "reload" escalation (2 more). */
 export const LIVENESS_ESCALATE_POLLS = 4;
+/** Frozen device output position while playing before the stalled verdict. */
+export const OUTPUT_STALL_MS = 2_000;
 
 export interface LivenessAudioContext {
 	readonly state: string;
@@ -38,6 +44,8 @@ export interface LivenessEffects {
 	recordPerfEvent(kind: string, message: string, severity: 'info' | 'error'): void;
 	setInterval(fn: () => void, ms: number): unknown;
 	clearInterval(handle: unknown): void;
+	now?: () => number;
+	recoverOutput?(): void;
 	/**
 	 * Fired after EVERY poll (idle included), not only on a verdict change, so a
 	 * UI indicator (pin 93c82bb36eb7: the 1px bar under master volume) can show
@@ -47,7 +55,7 @@ export interface LivenessEffects {
 	onSnapshot?(snapshot: AudioOutputSnapshot): void;
 }
 
-export type LivenessVerdict = 'idle' | 'ok' | 'dead' | 'dead-escalated';
+export type LivenessVerdict = 'idle' | 'ok' | 'stalled' | 'dead' | 'dead-escalated';
 
 export interface AudioOutputSnapshot {
 	state: string;
@@ -70,6 +78,10 @@ export function snapshotAudioOutput(ctx: LivenessAudioContext, verdict: Liveness
 	};
 }
 
+function _outputTimestampAdvancing(contextTime: number, previousContextTime: number | null): boolean {
+	return contextTime > 0 && (previousContextTime === null || contextTime > previousContextTime);
+}
+
 export function installOutputLiveness(
 	ctx: LivenessAudioContext,
 	effects: LivenessEffects,
@@ -77,27 +89,87 @@ export function installOutputLiveness(
 ): { verdict(): LivenessVerdict; snapshot(): AudioOutputSnapshot; uninstall(): void } {
 	let deadPolls = 0;
 	let verdict: LivenessVerdict = 'idle';
+	let lastContextTime: number | null = null;
+	let lastAdvanceAtMs = 0;
+	let stallEdgeReported = false;
+	const now = (): number => effects.now?.() ?? Date.now();
 
 	function tick(): void {
 		tickVerdict();
 		effects.onSnapshot?.(snapshotAudioOutput(ctx, verdict));
 	}
 
+	function _restoreFromBroken(): void {
+		if (verdict === 'dead' || verdict === 'dead-escalated' || verdict === 'stalled') {
+			effects.recordPerfEvent('audio-output-alive', 'output device latency is back; audio is reaching a device again', 'info');
+			effects.pushToast('Audio output restored', 'info');
+		}
+	}
+
 	function tickVerdict(): void {
 		if (!isAnyDeckPlaying() || ctx.state !== 'running') {
 			deadPolls = 0;
+			lastContextTime = null;
+			lastAdvanceAtMs = 0;
+			stallEdgeReported = false;
 			verdict = 'idle';
 			return;
 		}
-		if (ctx.outputLatency > 0) {
-			if (verdict === 'dead' || verdict === 'dead-escalated') {
-				effects.recordPerfEvent('audio-output-alive', 'output device latency is back; audio is reaching a device again', 'info');
-				effects.pushToast('Audio output restored', 'info');
-			}
-			deadPolls = 0;
-			verdict = 'ok';
+
+		const ts = ctx.getOutputTimestamp();
+		const contextTime = ts.contextTime;
+		if (typeof contextTime !== 'number' || !Number.isFinite(contextTime)) {
 			return;
 		}
+		if (_outputTimestampAdvancing(contextTime, lastContextTime)) {
+			if (verdict === 'stalled') _restoreFromBroken();
+			lastContextTime = contextTime;
+			lastAdvanceAtMs = now();
+			stallEdgeReported = false;
+			if (ctx.outputLatency > 0) {
+				if (verdict === 'dead' || verdict === 'dead-escalated') _restoreFromBroken();
+				deadPolls = 0;
+				verdict = 'ok';
+				return;
+			}
+		} else if (lastContextTime !== null) {
+			const stalledForMs = now() - lastAdvanceAtMs;
+			if (stalledForMs >= OUTPUT_STALL_MS) {
+				verdict = 'stalled';
+				if (!stallEdgeReported) {
+					stallEdgeReported = true;
+					effects.recordPerfEvent(
+						'audio-output-stalled',
+						`device output position frozen for ${Math.round(stalledForMs)}ms ` +
+							`(>= ${OUTPUT_STALL_MS}ms) while a deck is playing; recovering`,
+						'error'
+					);
+					effects.pushToast(
+						'NO AUDIO OUTPUT: the device output position stalled. Recovering...',
+						'error'
+					);
+					effects.recoverOutput?.();
+				}
+				return;
+			}
+			if (ctx.outputLatency > 0) {
+				if (verdict === 'dead' || verdict === 'dead-escalated') _restoreFromBroken();
+				deadPolls = 0;
+				verdict = 'ok';
+				return;
+			}
+		} else if (contextTime > 0) {
+			lastContextTime = contextTime;
+			lastAdvanceAtMs = now();
+		}
+
+		if (ctx.outputLatency > 0) {
+			if (verdict === 'dead' || verdict === 'dead-escalated') _restoreFromBroken();
+			deadPolls = 0;
+			if (verdict !== 'stalled') verdict = 'ok';
+			return;
+		}
+
 		deadPolls += 1;
 		if (deadPolls === LIVENESS_DEAD_POLLS) {
 			verdict = 'dead';

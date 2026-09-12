@@ -16,10 +16,13 @@
  *     [if] a ramped re-anchor ends off the one-step re-anchor's phase [then ⛔️]
  *   ✔︎ ✅ 🎯 BSM ON forces BAR so downbeats stay aligned over playback (DECKUX-14).
  *     [if] BSM is on and a BEAT-mode follower nearest-beat locks [then ⛔️]
+ *   ✔︎ ✅ 🎯 BAR refuses an extrapolated fallback anchor (PARITY-10, issue #1777).
+ *     [if] the chosen master or follower sync anchor has extrapolated === true
+ *     [then ⛔️]
  *
  * No DOM, Web Audio objects, nominal track BPM, or synthetic grid fallback.
- * Tempo ratios use beat INTERVALS (60/dt), never the PQTZ bpm field alone -
- * that field can disagree with .t (Proper Education: field 124.72 vs dt→125).
+ * Tempo ratios use local interval BPM at the play-position window (60/dt),
+ * never the track-mean of all intervals or the PQTZ bpm field alone.
  */
 import type { AnlzBeat, AnlzCue } from '$lib/rb/anlz-types';
 import type { LoopState } from '$lib/rb/deck-state-types';
@@ -628,6 +631,13 @@ export function playbackBpm(input: {
  * track, unsynced tempo) differs by whole BPM digits, so 0.1 stays far
  * below that while absorbing normal windowed-interval jitter without
  * flickering the UI. */
+export const BAR_SYNC_EXTRAPOLATED_ANCHOR =
+	'bar sync refuses extrapolated downbeat at the sync anchor';
+
+export function beatIsExtrapolated(beat: Pick<AnlzBeat, 'extrapolated'>): boolean {
+	return beat.extrapolated === true;
+}
+
 export const DEFAULT_TEMPO_LOCK_TOLERANCE_BPM = 0.1;
 
 /**
@@ -851,9 +861,10 @@ export function planPhaseCompensatedReanchor(
  * Plan one scheduled follower seek and playback-rate change.
  *
  * The caller projects the master through its transport and loop map to the
- * requested future context time. Both decks then use local PQTZ BPM at their
- * anchor, and the follower receives the master's fractional beat phase. Bar
- * mode additionally requires equal PQTZ beat numbers and raw cadence.
+ * requested future context time. Both decks then use local interval BPM at
+ * the play-position window, never track-mean BPM, and the follower receives
+ * the master's fractional beat phase. Bar mode additionally requires equal
+ * PQTZ beat numbers and raw cadence.
  */
 export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerSyncPlan {
 	validateBeatGrid(request.masterGrid);
@@ -910,6 +921,15 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 		request.minFollowerTempoRatio,
 		request.maxFollowerTempoRatio
 	);
+
+	if (mode === 'bar') {
+		if (beatIsExtrapolated(masterBeat)) {
+			throw new RangeError(BAR_SYNC_EXTRAPOLATED_ANCHOR);
+		}
+		if (beatIsExtrapolated(request.followerGrid[followerAnchor.index])) {
+			throw new RangeError(BAR_SYNC_EXTRAPOLATED_ANCHOR);
+		}
+	}
 
 	return {
 		mode,

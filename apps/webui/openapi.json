@@ -3004,6 +3004,159 @@
         "title": "CloudSyncEffectiveConfigOut",
         "type": "object"
       },
+      "CloudSyncLinkOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "last_finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Finished At"
+          },
+          "last_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Message"
+          },
+          "last_result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Result"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "enabled",
+          "reason",
+          "endpoint",
+          "last_result",
+          "last_message",
+          "last_finished_at"
+        ],
+        "title": "CloudSyncLinkOut",
+        "type": "object"
+      },
+      "CloudSyncSchedulerOut": {
+        "description": "The engine's CloudSync scheduler: is its thread alive, and what last failed.\n\n``not_armed``: this app never builds one (tests, non-daemon boots).\n``off``: armed, switch not on. ``misconfigured``: switched on but it could\nnot start (``reason`` says why); the engine booted regardless.\n``dead``: it was started and its thread is gone without ``stop()``.",
+        "properties": {
+          "alive": {
+            "title": "Alive",
+            "type": "boolean"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_error_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error At"
+          },
+          "last_ok_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Ok At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "state": {
+            "enum": [
+              "not_armed",
+              "off",
+              "misconfigured",
+              "running",
+              "stopped",
+              "dead"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "ticks": {
+            "title": "Ticks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "alive",
+          "reason",
+          "ticks",
+          "last_ok_at",
+          "last_error",
+          "last_error_at"
+        ],
+        "title": "CloudSyncSchedulerOut",
+        "type": "object"
+      },
       "CloudSyncStatusOut": {
         "properties": {
           "configured": {
@@ -3473,6 +3626,13 @@
             "title": "Page",
             "type": "string"
           },
+          "replies": {
+            "items": {
+              "$ref": "#/components/schemas/CommentReplyOut"
+            },
+            "title": "Replies",
+            "type": "array"
+          },
           "status": {
             "anyOf": [
               {
@@ -3519,6 +3679,83 @@
           "build"
         ],
         "title": "CommentOut",
+        "type": "object"
+      },
+      "CommentReplyIn": {
+        "properties": {
+          "agent_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Kind"
+          },
+          "author": {
+            "default": "operator",
+            "enum": [
+              "operator",
+              "agent"
+            ],
+            "title": "Author",
+            "type": "string"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "CommentReplyIn",
+        "type": "object"
+      },
+      "CommentReplyOut": {
+        "properties": {
+          "agent_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Kind"
+          },
+          "author": {
+            "enum": [
+              "operator",
+              "agent"
+            ],
+            "title": "Author",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "author",
+          "text",
+          "created_at"
+        ],
+        "title": "CommentReplyOut",
         "type": "object"
       },
       "CommentUpdateIn": {
@@ -3719,6 +3956,177 @@
           "generated_at"
         ],
         "title": "CoverageOut",
+        "type": "object"
+      },
+      "CoverageVerdictOut": {
+        "description": "One ``lyric_verdict`` row as the API states it.",
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "computed_at": {
+            "description": "when the pipeline judged the track",
+            "title": "Computed At",
+            "type": "string"
+          },
+          "coverage_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "share of the track the vocal stem carries energy",
+            "title": "Coverage Pct"
+          },
+          "effective": {
+            "description": "same as effective_verdict; kept for clients that read .effective",
+            "title": "Effective",
+            "type": "string"
+          },
+          "effective_verdict": {
+            "description": "what to act on: the human override if set, else verdict",
+            "title": "Effective Verdict",
+            "type": "string"
+          },
+          "has_words": {
+            "description": "a words artifact exists for this track (the row records a words_content_hash); false means the words route will 404",
+            "title": "Has Words",
+            "type": "boolean"
+          },
+          "language_iso3": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language Iso3"
+          },
+          "n_lines": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "derived lines in the artifact",
+            "title": "N Lines"
+          },
+          "n_words": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "words in the karaoke artifact",
+            "title": "N Words"
+          },
+          "override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override"
+          },
+          "override_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Note"
+          },
+          "pct_witness_red": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "share of words the independent ASR witness distrusts",
+            "title": "Pct Witness Red"
+          },
+          "pipeline_version": {
+            "description": "the code version that produced this row's hash",
+            "title": "Pipeline Version",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "lyric provider + match method",
+            "title": "Source"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "updated_at": {
+            "description": "sync stamp: when a machine last wrote the row",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "verdict": {
+            "description": "computed verdict from stem vocal coverage",
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "verdict",
+          "effective_verdict",
+          "effective",
+          "has_words",
+          "pipeline_version",
+          "computed_at",
+          "updated_at"
+        ],
+        "title": "CoverageVerdictOut",
         "type": "object"
       },
       "CredentialMachineOut": {
@@ -4162,6 +4570,10 @@
             "title": "Engine Version",
             "type": "string"
           },
+          "google_oauth_configured": {
+            "title": "Google Oauth Configured",
+            "type": "boolean"
+          },
           "state_db": {
             "$ref": "#/components/schemas/HealthStateDb"
           },
@@ -4194,6 +4606,7 @@
           "waveform_materialization",
           "bind_host",
           "version",
+          "google_oauth_configured",
           "contract_rev",
           "engine_version",
           "boot_id"
@@ -4434,11 +4847,15 @@
         "type": "object"
       },
       "FallbackBeatOut": {
-        "description": "Identical field set to one ANLZ beatgrid ``beats`` entry.",
+        "description": "ANLZ beat fields plus ``extrapolated``.\n\nPQTZ ``/anlz`` beats stay ``{n, bpm, t}``. This fallback endpoint always\nsends ``extrapolated`` so a client never has to guess which beats are tail.",
         "properties": {
           "bpm": {
             "title": "Bpm",
             "type": "number"
+          },
+          "extrapolated": {
+            "title": "Extrapolated",
+            "type": "boolean"
           },
           "n": {
             "title": "N",
@@ -4452,7 +4869,8 @@
         "required": [
           "n",
           "bpm",
-          "t"
+          "t",
+          "extrapolated"
         ],
         "title": "FallbackBeatOut",
         "type": "object"
@@ -4528,6 +4946,119 @@
           "note"
         ],
         "title": "FeatureEntitlementOut",
+        "type": "object"
+      },
+      "FeedbackStoreSyncOut": {
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "integer"
+          },
+          "attachments_missing": {
+            "title": "Attachments Missing",
+            "type": "integer"
+          },
+          "harvested": {
+            "title": "Harvested",
+            "type": "integer"
+          },
+          "live": {
+            "title": "Live",
+            "type": "integer"
+          },
+          "pending_push": {
+            "title": "Pending Push",
+            "type": "integer"
+          },
+          "synced": {
+            "title": "Synced",
+            "type": "integer"
+          },
+          "unreconciled": {
+            "title": "Unreconciled",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "live",
+          "archived",
+          "synced",
+          "pending_push",
+          "unreconciled",
+          "harvested",
+          "attachments_missing"
+        ],
+        "title": "FeedbackStoreSyncOut",
+        "type": "object"
+      },
+      "FeedbackSyncOut": {
+        "properties": {
+          "exported": {
+            "title": "Exported",
+            "type": "integer"
+          },
+          "imported": {
+            "title": "Imported",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "pulled": {
+            "title": "Pulled",
+            "type": "integer"
+          },
+          "pushed": {
+            "title": "Pushed",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "inconclusive"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "exported",
+          "imported",
+          "pushed",
+          "pulled",
+          "message"
+        ],
+        "title": "FeedbackSyncOut",
+        "type": "object"
+      },
+      "FeedbackSyncStatusOut": {
+        "properties": {
+          "cloudsync": {
+            "$ref": "#/components/schemas/CloudSyncLinkOut"
+          },
+          "pins": {
+            "items": {
+              "$ref": "#/components/schemas/PinSyncOut"
+            },
+            "title": "Pins",
+            "type": "array"
+          },
+          "scheduler": {
+            "$ref": "#/components/schemas/CloudSyncSchedulerOut"
+          },
+          "store": {
+            "$ref": "#/components/schemas/FeedbackStoreSyncOut"
+          }
+        },
+        "required": [
+          "store",
+          "cloudsync",
+          "scheduler",
+          "pins"
+        ],
+        "title": "FeedbackSyncStatusOut",
         "type": "object"
       },
       "FileProbeOut": {
@@ -5393,6 +5924,94 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HeadphoneOutputDeviceOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "HeadphoneOutputDeviceOut",
+        "type": "object"
+      },
+      "HeadphoneStateOut": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "head_delay_ms": {
+            "title": "Head Delay Ms",
+            "type": "number"
+          },
+          "level": {
+            "title": "Level",
+            "type": "number"
+          },
+          "mix": {
+            "title": "Mix",
+            "type": "number"
+          },
+          "output_mode": {
+            "title": "Output Mode",
+            "type": "string"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/HeadphoneOutputDeviceOut"
+            },
+            "title": "Outputs",
+            "type": "array"
+          },
+          "selected_output_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Output Device Id"
+          },
+          "supported": {
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mix",
+          "level",
+          "head_delay_ms",
+          "selected_output_device_id",
+          "output_mode",
+          "outputs",
+          "supported",
+          "active",
+          "error"
+        ],
+        "title": "HeadphoneStateOut",
+        "type": "object"
+      },
       "HealthCloud": {
         "properties": {
           "last_wal_ship_at": {
@@ -6199,6 +6818,243 @@
         "title": "JobOut",
         "type": "object"
       },
+      "KaraokeLineOut": {
+        "description": "One derived line (:mod:`apps.lyrics.lines`, the canonical grouping).\n\nServed rather than client-derived so every surface agrees and an agent can\ncurl exactly what the deck renders.",
+        "properties": {
+          "band": {
+            "description": "good | uncertain | bad | unjudged",
+            "title": "Band",
+            "type": "string"
+          },
+          "end_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "last sung offset in the line, seconds",
+            "title": "End S"
+          },
+          "first_idx": {
+            "title": "First Idx",
+            "type": "integer"
+          },
+          "last_idx": {
+            "title": "Last Idx",
+            "type": "integer"
+          },
+          "n_judged": {
+            "description": "words the witness judged at all",
+            "title": "N Judged",
+            "type": "integer"
+          },
+          "n_red": {
+            "description": "words the witness put in a red class",
+            "title": "N Red",
+            "type": "integer"
+          },
+          "n_words": {
+            "title": "N Words",
+            "type": "integer"
+          },
+          "para_final": {
+            "description": "gap-derived paragraph break: a blank line follows",
+            "title": "Para Final",
+            "type": "boolean"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "share of witness-judged words NOT in the red classes; null when no word in the line was judged",
+            "title": "Quality"
+          },
+          "start_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "first sung onset in the line, seconds",
+            "title": "Start S"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first_idx",
+          "last_idx",
+          "text",
+          "start_s",
+          "end_s",
+          "n_words",
+          "n_red",
+          "n_judged",
+          "quality",
+          "band",
+          "para_final"
+        ],
+        "title": "KaraokeLineOut",
+        "type": "object"
+      },
+      "KaraokeSummaryOut": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "effective-verdict histogram",
+            "title": "Counts",
+            "type": "object"
+          },
+          "no_lyrics_max_coverage": {
+            "description": "calibrated band: at or below this stem vocal coverage a track is auto-stamped no-lyrics (novox round 0, pinned by test)",
+            "title": "No Lyrics Max Coverage",
+            "type": "number"
+          },
+          "sparse_max_coverage": {
+            "description": "above this coverage a track is treated as vocal; between the two, other evidence decides",
+            "title": "Sparse Max Coverage",
+            "type": "number"
+          },
+          "total": {
+            "description": "live verdict rows, the histogram's denominator",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "counts",
+          "total",
+          "no_lyrics_max_coverage",
+          "sparse_max_coverage"
+        ],
+        "title": "KaraokeSummaryOut",
+        "type": "object"
+      },
+      "KaraokeTrackOut": {
+        "description": "The words payload. ``verdict`` is ALWAYS set: see the 404 rule.",
+        "properties": {
+          "lines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/KaraokeLineOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "present only when requested with ?include=lines",
+            "title": "Lines"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/CoverageVerdictOut"
+          },
+          "words": {
+            "items": {
+              "$ref": "#/components/schemas/KaraokeWordOut"
+            },
+            "title": "Words",
+            "type": "array"
+          }
+        },
+        "required": [
+          "verdict",
+          "words"
+        ],
+        "title": "KaraokeTrackOut",
+        "type": "object"
+      },
+      "KaraokeWordOut": {
+        "description": "One aligned word, exactly as the artifact stores it.",
+        "properties": {
+          "end_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sung offset in seconds",
+            "title": "End S"
+          },
+          "idx": {
+            "description": "position in the track's flat word list, from 0",
+            "title": "Idx",
+            "type": "integer"
+          },
+          "line_final": {
+            "default": false,
+            "description": "this word closes its line (the grouping flag)",
+            "title": "Line Final",
+            "type": "boolean"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "aligner confidence for this word, 0..1",
+            "title": "Score"
+          },
+          "start_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sung onset in seconds",
+            "title": "Start S"
+          },
+          "witness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ASR-witness verdict: agree/drift/unheard/unmatchable are shown normally; contradict/lost are the suspect classes.",
+            "title": "Witness"
+          },
+          "word": {
+            "title": "Word",
+            "type": "string"
+          }
+        },
+        "required": [
+          "idx",
+          "word"
+        ],
+        "title": "KaraokeWordOut",
+        "type": "object"
+      },
       "KindDefaultIn": {
         "additionalProperties": false,
         "properties": {
@@ -6955,6 +7811,90 @@
         "title": "LoopMarkOut",
         "type": "object"
       },
+      "LyricJobIn": {
+        "properties": {
+          "kind": {
+            "description": "analyze | lyricsync | stems",
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "stable_ids": {
+            "description": "tracks to process; each must exist",
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "stable_ids"
+        ],
+        "title": "LyricJobIn",
+        "type": "object"
+      },
+      "LyricJobOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "the runner's stage progress",
+            "title": "Note"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          },
+          "status": {
+            "description": "queued | done | failed",
+            "title": "Status",
+            "type": "string"
+          },
+          "ts": {
+            "description": "when the job was queued, UTC",
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ts",
+          "kind",
+          "stable_ids",
+          "status"
+        ],
+        "title": "LyricJobOut",
+        "type": "object"
+      },
       "LyricLineOut": {
         "description": "One cache-backed line timestamp in integer track milliseconds.",
         "properties": {
@@ -6988,6 +7928,341 @@
           }
         },
         "title": "LyricsCachedIdsOut",
+        "type": "object"
+      },
+      "LyricsConfigIn": {
+        "properties": {
+          "source_order": {
+            "description": "every known source, ranked; a partial list is rejected",
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Order",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_order"
+        ],
+        "title": "LyricsConfigIn",
+        "type": "object"
+      },
+      "LyricsConfigOut": {
+        "properties": {
+          "is_default": {
+            "description": "true while no operator has persisted a custom order",
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "source_order": {
+            "description": "lyric sources, strongest first; the pipeline's tie-break",
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Order",
+            "type": "array"
+          },
+          "source_titles": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "hover text per source (what the method actually does)",
+            "title": "Source Titles",
+            "type": "object"
+          }
+        },
+        "required": [
+          "source_order",
+          "source_titles",
+          "is_default"
+        ],
+        "title": "LyricsConfigOut",
+        "type": "object"
+      },
+      "LyricsKpiDefOut": {
+        "properties": {
+          "direction": {
+            "description": "lower_better | higher_better",
+            "title": "Direction",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "title": {
+            "description": "hover text: what the number actually measures",
+            "title": "Title",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "unit",
+          "direction",
+          "title"
+        ],
+        "title": "LyricsKpiDefOut",
+        "type": "object"
+      },
+      "LyricsKpiOut": {
+        "properties": {
+          "kpis": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/LyricsKpiDefOut"
+            },
+            "title": "Kpis",
+            "type": "object"
+          },
+          "snapshots": {
+            "description": "oldest first",
+            "items": {
+              "$ref": "#/components/schemas/LyricsKpiSnapshotOut"
+            },
+            "title": "Snapshots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kpis",
+          "snapshots"
+        ],
+        "title": "LyricsKpiOut",
+        "type": "object"
+      },
+      "LyricsKpiSnapshotOut": {
+        "properties": {
+          "label": {
+            "description": "the experiment round or shipped milestone",
+            "title": "Label",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "provenance": {
+            "description": "'measured' at append time, or 'hand' transcribed from the experiment log. House rule: never quote a value without its ts.",
+            "title": "Provenance",
+            "type": "string"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "one entry per KPI; null is a gap, never a carried-forward number",
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "ts",
+          "label",
+          "values",
+          "provenance",
+          "notes"
+        ],
+        "title": "LyricsKpiSnapshotOut",
+        "type": "object"
+      },
+      "LyricsPurgeIn": {
+        "properties": {
+          "dry_run": {
+            "description": "NO default on purpose: a purge deletes licensed text from disk and R2, so the caller states which one it wants",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "source_prefix": {
+            "description": "source prefix, matched LIKE prefix%",
+            "title": "Source Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_prefix",
+          "dry_run"
+        ],
+        "title": "LyricsPurgeIn",
+        "type": "object"
+      },
+      "LyricsPurgeOut": {
+        "description": ":class:`apps.lyrics.purge.PurgeReport`. Every count is observed.",
+        "properties": {
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "files_absent": {
+            "description": "matched rows with no local artifact",
+            "title": "Files Absent",
+            "type": "integer"
+          },
+          "files_removed": {
+            "description": "local karaoke artifacts deleted",
+            "title": "Files Removed",
+            "type": "integer"
+          },
+          "objects_absent": {
+            "description": "R2 keys already gone",
+            "title": "Objects Absent",
+            "type": "integer"
+          },
+          "objects_deleted": {
+            "description": "R2 objects deleted",
+            "title": "Objects Deleted",
+            "type": "integer"
+          },
+          "r2_skipped_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "why R2 was left alone; null means it was visited",
+            "title": "R2 Skipped Reason"
+          },
+          "rows_matched": {
+            "description": "live verdict rows whose source matched",
+            "title": "Rows Matched",
+            "type": "integer"
+          },
+          "rows_tombstoned": {
+            "description": "rows soft-deleted; 0 on a dry run",
+            "title": "Rows Tombstoned",
+            "type": "integer"
+          },
+          "source_prefix": {
+            "title": "Source Prefix",
+            "type": "string"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_prefix",
+          "dry_run",
+          "rows_matched",
+          "rows_tombstoned",
+          "files_removed",
+          "files_absent",
+          "objects_deleted",
+          "objects_absent",
+          "stable_ids"
+        ],
+        "title": "LyricsPurgeOut",
+        "type": "object"
+      },
+      "LyricsRowSummaryOut": {
+        "description": "Per-row karaoke verdict summary for library listings.",
+        "properties": {
+          "effective": {
+            "title": "Effective",
+            "type": "string"
+          },
+          "has_words": {
+            "title": "Has Words",
+            "type": "boolean"
+          },
+          "language_iso3": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language Iso3"
+          },
+          "n_lines": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Lines"
+          },
+          "n_words": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Words"
+          },
+          "override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override"
+          },
+          "pct_witness_red": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct Witness Red"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "effective",
+          "has_words"
+        ],
+        "title": "LyricsRowSummaryOut",
         "type": "object"
       },
       "LyricsUnavailableOut": {
@@ -7359,6 +8634,151 @@
         "title": "MemberOut",
         "type": "object"
       },
+      "MembershipAddIn": {
+        "properties": {
+          "position": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0-based insert index; omit to append after the last member.",
+            "title": "Position"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids"
+        ],
+        "title": "MembershipAddIn",
+        "type": "object"
+      },
+      "MembershipMoveIn": {
+        "properties": {
+          "after_item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Item Id"
+          },
+          "before_item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Item Id"
+          },
+          "range_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Range End"
+          },
+          "range_length": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Range Length"
+          },
+          "range_start": {
+            "minLength": 1,
+            "title": "Range Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "range_start"
+        ],
+        "title": "MembershipMoveIn",
+        "type": "object"
+      },
+      "MembershipMoveOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "renumbered": {
+            "title": "Renumbered",
+            "type": "boolean"
+          },
+          "track_count": {
+            "title": "Track Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          },
+          "vendor_pl_id": {
+            "title": "Vendor Pl Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "name",
+          "vendor",
+          "vendor_pl_id",
+          "items",
+          "track_count",
+          "created_at",
+          "updated_at",
+          "renumbered"
+        ],
+        "title": "MembershipMoveOut",
+        "type": "object"
+      },
       "MembershipReplaceIn": {
         "properties": {
           "stable_ids": {
@@ -7444,6 +8864,52 @@
           "dest"
         ],
         "title": "MembershipTransferOut",
+        "type": "object"
+      },
+      "MetadataShareRequest": {
+        "description": "Explicit acknowledgement that the resulting web view excludes audio.",
+        "properties": {
+          "confirm_metadata_only": {
+            "const": true,
+            "title": "Confirm Metadata Only",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirm_metadata_only"
+        ],
+        "title": "MetadataShareRequest",
+        "type": "object"
+      },
+      "MetadataShareResponse": {
+        "description": "A browser URL for the non-audio set history presentation.",
+        "properties": {
+          "content": {
+            "const": "metadata_only",
+            "title": "Content",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "share_state": {
+            "const": "shared_cloud",
+            "title": "Share State",
+            "type": "string"
+          },
+          "share_url": {
+            "title": "Share Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "share_state",
+          "share_url",
+          "content"
+        ],
+        "title": "MetadataShareResponse",
         "type": "object"
       },
       "MixerChannelMarkOut": {
@@ -7827,6 +9293,36 @@
           "detail"
         ],
         "title": "OpsErrorResponse",
+        "type": "object"
+      },
+      "OverrideIn": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "why the human disagreed",
+            "title": "Note"
+          },
+          "override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "vocal|sparse|no-lyrics, or null to clear",
+            "title": "Override"
+          }
+        },
+        "title": "OverrideIn",
         "type": "object"
       },
       "OverviewOut": {
@@ -8628,6 +10124,63 @@
           "playlist_id"
         ],
         "title": "PinKeyIn",
+        "type": "object"
+      },
+      "PinSyncOut": {
+        "description": "Where one pin stands. ``attachment_bytes: missing`` is FBSYNC-05's gap:\nthe screenshot's metadata synced here but its bytes did not.",
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "attachment_bytes": {
+            "enum": [
+              "none",
+              "present",
+              "missing"
+            ],
+            "title": "Attachment Bytes",
+            "type": "string"
+          },
+          "origin_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Device Id"
+          },
+          "pin_id": {
+            "title": "Pin Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "synced",
+              "pending_push",
+              "unreconciled",
+              "harvested"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pin_id",
+          "state",
+          "archived",
+          "updated_at",
+          "origin_device_id",
+          "attachment_bytes"
+        ],
+        "title": "PinSyncOut",
         "type": "object"
       },
       "PlanEntryOut": {
@@ -11422,6 +12975,16 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
           "is_remote": {
             "default": false,
             "title": "Is Remote",
@@ -11430,6 +12993,17 @@
           "is_streaming": {
             "title": "Is Streaming",
             "type": "boolean"
+          },
+          "item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Id"
           },
           "key": {
             "anyOf": [
@@ -11481,6 +13055,16 @@
             ],
             "title": "Loudness Status",
             "type": "string"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "match_context": {
             "title": "Match Context",
@@ -12303,6 +13887,35 @@
         "title": "StatusResponse",
         "type": "object"
       },
+      "StemHydrateIn": {
+        "properties": {
+          "data_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Dir"
+          },
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "manifest_path": {
+            "title": "Manifest Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "manifest_path"
+        ],
+        "title": "StemHydrateIn",
+        "type": "object"
+      },
       "StemManifestOut": {
         "description": "Frontend manifest projected from a stricter durable artifact manifest.",
         "properties": {
@@ -12372,6 +13985,28 @@
           "media_type"
         ],
         "title": "StemPartOut",
+        "type": "object"
+      },
+      "StemPushMissingIn": {
+        "properties": {
+          "data_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Dir"
+          },
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "title": "StemPushMissingIn",
         "type": "object"
       },
       "StemTierOut": {
@@ -13303,6 +14938,85 @@
         "title": "SyncSnapshotOut",
         "type": "object"
       },
+      "TempoPrefOut": {
+        "description": "PREF-01: a track's user-set preferred tempo plus its playable range.\n\nAny of the three may be null (unset). Never fabricated on read - a track\nwith no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,\nnot this shape with all-null members (see sqlite_backend._row_to_track).",
+        "properties": {
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "regular": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regular"
+          }
+        },
+        "title": "TempoPrefOut",
+        "type": "object"
+      },
+      "TempoPrefPatch": {
+        "properties": {
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "regular": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regular"
+          }
+        },
+        "title": "TempoPrefPatch",
+        "type": "object"
+      },
       "TierEstimateOut": {
         "description": "Cost of one track at one tier. ``measured`` false means we do not know.",
         "properties": {
@@ -13689,6 +15403,39 @@
         "title": "TodoPatchIn",
         "type": "object"
       },
+      "TrackLifecycleOut": {
+        "properties": {
+          "deleted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          },
+          "memberships": {
+            "items": {
+              "$ref": "#/components/schemas/TrackMembershipRefOut"
+            },
+            "title": "Memberships",
+            "type": "array"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "deleted_at",
+          "memberships"
+        ],
+        "title": "TrackLifecycleOut",
+        "type": "object"
+      },
       "TrackListItemOut": {
         "description": "TrackOut + parity row fields (shared API contract item 1).\n\npreview_b64: base64 of uint8[120][3] interleaved [low, mid, hi] per\ncolumn (null = no ANLZ analysis). preview_max: per-track max band value\nfor client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).\nfile_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).\nquality: venue rung from apps.shared.audio_quality (same stat pass, so\nno extra cost per row); venue/rank are null when it cannot be measured.\nvocals: same four-status shape as /anlz (PVDI or demucs vocal-cache).\nstems: demucs bundle summary for the browser Stems column (V/I/D), or\n``{status: none}`` when no local bundle exists.\nhas_rb_mapping: whether GET /tracks/{sid}/rb-meta can resolve this row.\nFalse for a locally imported or djay-only track, whose rb-meta 404s BY\nCONTRACT; the browser skips the per-row fetch rather than provoke it.",
         "properties": {
@@ -13811,6 +15558,16 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
           "is_remote": {
             "default": false,
             "title": "Is Remote",
@@ -13837,6 +15594,16 @@
               }
             ],
             "title": "Last Played At"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "lyrics_available": {
             "title": "Lyrics Available",
@@ -13923,6 +15690,16 @@
             "title": "Tags",
             "type": "array"
           },
+          "tempo_pref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoPrefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "title": {
             "anyOf": [
               {
@@ -13993,6 +15770,24 @@
           "lines"
         ],
         "title": "TrackLyricsOut",
+        "type": "object"
+      },
+      "TrackMembershipRefOut": {
+        "properties": {
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "position"
+        ],
+        "title": "TrackMembershipRefOut",
         "type": "object"
       },
       "TrackOut": {
@@ -14152,6 +15947,16 @@
             "title": "Tags",
             "type": "array"
           },
+          "tempo_pref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoPrefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "title": {
             "anyOf": [
               {
@@ -14232,9 +16037,50 @@
               }
             ],
             "title": "Tags Remove"
+          },
+          "tempo_pref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoPrefPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "TrackPatch",
+        "type": "object"
+      },
+      "TrackPlaylistOut": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "positions": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Positions",
+            "type": "array"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "name",
+          "vendor",
+          "positions"
+        ],
+        "title": "TrackPlaylistOut",
         "type": "object"
       },
       "TrackRowOut": {
@@ -14355,6 +16201,16 @@
             "title": "Has Rb Mapping",
             "type": "boolean"
           },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
           "is_remote": {
             "default": false,
             "title": "Is Remote",
@@ -14363,6 +16219,17 @@
           "is_streaming": {
             "title": "Is Streaming",
             "type": "boolean"
+          },
+          "item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Id"
           },
           "key": {
             "anyOf": [
@@ -14414,6 +16281,16 @@
             ],
             "title": "Loudness Status",
             "type": "string"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "play_count": {
             "default": 0,
@@ -14637,6 +16514,41 @@
           "level_calibration": {
             "$ref": "#/components/schemas/LevelCalibrationOut"
           },
+          "lyrics_deck_line": {
+            "default": true,
+            "title": "Lyrics Deck Line",
+            "type": "boolean"
+          },
+          "lyrics_global": {
+            "default": true,
+            "title": "Lyrics Global",
+            "type": "boolean"
+          },
+          "lyrics_hover_scrub": {
+            "default": true,
+            "title": "Lyrics Hover Scrub",
+            "type": "boolean"
+          },
+          "lyrics_library_col": {
+            "default": true,
+            "title": "Lyrics Library Col",
+            "type": "boolean"
+          },
+          "lyrics_load_strategy": {
+            "default": "hover",
+            "enum": [
+              "in-view",
+              "hover",
+              "off"
+            ],
+            "title": "Lyrics Load Strategy",
+            "type": "string"
+          },
+          "lyrics_waveform_overlay": {
+            "default": true,
+            "title": "Lyrics Waveform Overlay",
+            "type": "boolean"
+          },
           "show_agent_pins": {
             "default": true,
             "title": "Show Agent Pins",
@@ -14715,6 +16627,77 @@
                 "type": "null"
               }
             ]
+          },
+          "lyrics_deck_line": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Deck Line"
+          },
+          "lyrics_global": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Global"
+          },
+          "lyrics_hover_scrub": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Hover Scrub"
+          },
+          "lyrics_library_col": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Library Col"
+          },
+          "lyrics_load_strategy": {
+            "anyOf": [
+              {
+                "enum": [
+                  "in-view",
+                  "hover",
+                  "off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Load Strategy"
+          },
+          "lyrics_waveform_overlay": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics Waveform Overlay"
           },
           "show_agent_pins": {
             "anyOf": [
@@ -16435,6 +18418,100 @@
         ]
       }
     },
+    "/api/sets/{session_id}/share": {
+      "get": {
+        "description": "Get an existing metadata-only share link for a finalized published set.",
+        "operationId": "api_get_metadata_share_api_sets__session_id__share_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataShareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Metadata Share",
+        "tags": [
+          "sets"
+        ]
+      },
+      "post": {
+        "description": "Publish timeline metadata after explicit acknowledgement, never MP3 audio.",
+        "operationId": "api_publish_metadata_share_api_sets__session_id__share_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataShareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataShareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Publish Metadata Share",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
     "/api/sets/{session_id}/soundcloud-export": {
       "get": {
         "operationId": "api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get",
@@ -17576,6 +19653,28 @@
         "summary": "Get Kpi Ledger",
         "tags": [
           "bench"
+        ]
+      }
+    },
+    "/api/v1/bench/lyrics-kpi": {
+      "get": {
+        "description": "The lyrics KPI ledger verbatim (``scripts/bench/lyrics_kpi_ledger.json``).\n\nRead-only here: appending a snapshot is a CLI act\n(``scripts/bench/lyrics_kpi_append.py``) so the ledger keeps one writer.\nA missing key raises rather than defaulting - a KPI panel drawing invented\nnumbers is worse than a panel that fails.",
+        "operationId": "get_lyrics_kpi_ledger_api_v1_bench_lyrics_kpi_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsKpiOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyrics Kpi Ledger",
+        "tags": [
+          "lyrics"
         ]
       }
     },
@@ -19830,6 +21929,59 @@
         ]
       }
     },
+    "/api/v1/feedback/comments/{comment_id}/replies": {
+      "post": {
+        "description": "Appends a follow-up comment on the same pin without creating a second marker. This is not POST /follow-on, which opens a new pin at the same anchor only after the parent is fixed or merged. The agent_note scalar remains the latest agent lifecycle note; PATCH of agent_note also appends an agent reply unless it duplicates the last agent turn.",
+        "operationId": "add_reply_api_v1_feedback_comments__comment_id__replies_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "title": "Comment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentReplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Append a follow-up on the same pin",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
     "/api/v1/feedback/general": {
       "get": {
         "operationId": "get_general_api_v1_feedback_general_get",
@@ -19945,6 +22097,76 @@
           }
         },
         "summary": "Create Performance Mark",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/sync": {
+      "post": {
+        "operationId": "post_feedback_sync_api_v1_feedback_sync_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackSyncOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Feedback Sync",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/sync/status": {
+      "get": {
+        "operationId": "get_feedback_sync_status_api_v1_feedback_sync_status_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "pin_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pin Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackSyncStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Feedback Sync Status",
         "tags": [
           "feedback"
         ]
@@ -20994,6 +23216,267 @@
         ]
       }
     },
+    "/api/v1/lyrics": {
+      "get": {
+        "description": "The triage listing: least trustworthy first by default, with the track\nnames joined in so a human can act on a row without a second request.",
+        "operationId": "list_lyric_verdicts_api_v1_lyrics_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "filter by effective verdict",
+            "in": "query",
+            "name": "verdict",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "filter by effective verdict",
+              "title": "Verdict"
+            }
+          },
+          {
+            "description": "suspect|coverage|recent",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "suspect",
+              "description": "suspect|coverage|recent",
+              "title": "Order",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CoverageVerdictOut"
+                  },
+                  "title": "Response List Lyric Verdicts Api V1 Lyrics Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Lyric Verdicts",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/config": {
+      "get": {
+        "description": "The source ordering the pipeline will use on its next run.\n\nNo DB connection: the order is a JSON file beside state.db, read by BOTH\nthis endpoint and the offline scripts, so what the admin panel shows is\nwhat the next fetch uses.",
+        "operationId": "get_lyrics_config_api_v1_lyrics_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyrics Config",
+        "tags": [
+          "lyrics"
+        ]
+      },
+      "put": {
+        "description": "Persist a full reordering. Partial lists are rejected: an ordering that\nsilently omits a source is an ordering the operator never saw.",
+        "operationId": "put_lyrics_config_api_v1_lyrics_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LyricsConfigIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Lyrics Config",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/jobs": {
+      "get": {
+        "description": "Newest first. The queue is drained by the offline runner scripts:\nstems and alignment never run in the daemon (house rule).",
+        "operationId": "get_lyric_jobs_api_v1_lyrics_jobs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LyricJobOut"
+                  },
+                  "title": "Response Get Lyric Jobs Api V1 Lyrics Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyric Jobs",
+        "tags": [
+          "lyrics"
+        ]
+      },
+      "post": {
+        "description": "Record a processing request from the UI (context menu / admin panel).\n\nEvery stable_id is checked against ``tracks`` in ONE select (the second and\nlast raw statement here, see :func:`_titles_by_stable_id`): a queue entry\nfor a track the library does not know is a job no runner can honour.",
+        "operationId": "post_lyric_job_api_v1_lyrics_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LyricJobIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Lyric Job",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/purge": {
+      "post": {
+        "description": "Remove one provider's lyrics from the row, the disk and R2 - parity for\nthe ``python -m apps.lyrics purge`` CLI, same function underneath.\n\n``writing=not dry_run`` is how the CLI asks for credentials too: a\nrehearsal pushes and deletes nothing, so it must stay runnable on a\nmachine that has none.",
+        "operationId": "post_lyrics_purge_api_v1_lyrics_purge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LyricsPurgeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsPurgeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Lyrics Purge",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
     "/api/v1/lyrics/search": {
       "get": {
         "operationId": "search_lyrics_api_v1_lyrics_search_get",
@@ -21057,6 +23540,28 @@
           }
         },
         "summary": "Search Lyrics",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/summary": {
+      "get": {
+        "description": "Library-wide verdict histogram plus the calibrated bands, so a client\nnever hardcodes the thresholds it displays.",
+        "operationId": "get_lyrics_summary_api_v1_lyrics_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaraokeSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lyrics Summary",
         "tags": [
           "lyrics"
         ]
@@ -21629,6 +24134,335 @@
         ]
       }
     },
+    "/api/v1/performance/headphones": {
+      "get": {
+        "description": "Return the live headphone state from the attached performance page.",
+        "operationId": "get_headphones_api_v1_performance_headphones_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Headphones",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/channel-cue": {
+      "post": {
+        "operationId": "post_channel_cue_api_v1_performance_headphones_channel_cue_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Channel Cue",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/head-delay": {
+      "post": {
+        "operationId": "post_head_delay_ms_api_v1_performance_headphones_head_delay_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Head Delay Ms",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/level": {
+      "post": {
+        "operationId": "post_headphone_level_api_v1_performance_headphones_level_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Headphone Level",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/mix": {
+      "post": {
+        "operationId": "post_headphone_mix_api_v1_performance_headphones_mix_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Headphone Mix",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/output-mode": {
+      "post": {
+        "operationId": "post_output_mode_api_v1_performance_headphones_output_mode_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Output Mode",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/outputs/refresh": {
+      "post": {
+        "operationId": "post_headphone_outputs_refresh_api_v1_performance_headphones_outputs_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Headphone Outputs Refresh",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/outputs/select": {
+      "post": {
+        "operationId": "post_headphone_output_select_api_v1_performance_headphones_outputs_select_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Headphone Output Select",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
     "/api/v1/performance/telemetry/client-samples": {
       "post": {
         "description": "Persist one compact semantic sample without blocking the audio path.",
@@ -22152,6 +24986,177 @@
           }
         },
         "summary": "Duplicate Playlist",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/items/{item_id}": {
+      "delete": {
+        "operationId": "delete_playlist_item",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistWriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Playlist Item",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/items:add": {
+      "post": {
+        "operationId": "add_playlist_items",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MembershipAddIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistWriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Playlist Items",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/items:move": {
+      "post": {
+        "operationId": "move_playlist_items",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MembershipMoveIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MembershipMoveOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Move Playlist Items",
         "tags": [
           "playlists-write"
         ]
@@ -23439,6 +26444,40 @@
       }
     },
     "/api/v1/smartlists/{smartlist_id}": {
+      "delete": {
+        "description": "Remove a smartlist row (hard delete via SmartlistsRepo.delete).",
+        "operationId": "delete_smartlist_api_v1_smartlists__smartlist_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "smartlist_id",
+            "required": true,
+            "schema": {
+              "title": "Smartlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Smartlist",
+        "tags": [
+          "smartlists"
+        ]
+      },
       "get": {
         "operationId": "get_smartlist_api_v1_smartlists__smartlist_id__get",
         "parameters": [
@@ -24001,6 +27040,68 @@
         ]
       }
     },
+    "/api/v1/stems/live-capability": {
+      "get": {
+        "description": "Read install-time capability and, when requested, its deck plan.",
+        "operationId": "get_live_stems_capability_api_v1_stems_live_capability_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "deck_count",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Deck Count"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bpm",
+            "required": false,
+            "schema": {
+              "default": 120.0,
+              "title": "Bpm",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Live Stems Capability Api V1 Stems Live Capability Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Live Stems Capability",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
     "/api/v1/stems/plan": {
       "get": {
         "operationId": "get_stems_plan_api_v1_stems_plan_get",
@@ -24046,6 +27147,51 @@
         ]
       }
     },
+    "/api/v1/stems/push-missing": {
+      "post": {
+        "operationId": "push_missing_stems_api_v1_stems_push_missing_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemPushMissingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Push Missing Stems Api V1 Stems Push Missing Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Push Missing Stems",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
     "/api/v1/stems/tiers": {
       "get": {
         "operationId": "list_tiers_api_v1_stems_tiers_get",
@@ -24068,6 +27214,62 @@
         "summary": "List Tiers",
         "tags": [
           "stem-tiers"
+        ]
+      }
+    },
+    "/api/v1/stems/{stable_id}/hydrate": {
+      "post": {
+        "operationId": "hydrate_stem_api_v1_stems__stable_id__hydrate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemHydrateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Hydrate Stem Api V1 Stems  Stable Id  Hydrate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Hydrate Stem",
+        "tags": [
+          "stems"
         ]
       }
     },
@@ -24698,6 +27900,18 @@
             }
           },
           {
+            "description": "When true, include rows with tracks.deleted_at set. Default hides them.",
+            "in": "query",
+            "name": "show_deleted",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "When true, include rows with tracks.deleted_at set. Default hides them.",
+              "title": "Show Deleted",
+              "type": "boolean"
+            }
+          },
+          {
             "in": "query",
             "name": "cursor",
             "required": false,
@@ -25020,7 +28234,41 @@
     },
     "/api/v1/tracks/{stable_id}/audio": {
       "get": {
-        "description": "Stream the single best working file. FileResponse handles Range/206.\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).",
+        "description": "Stream the single best working file. FileResponse handles Range/206.\n\nHEAD is served by the same handler: FileResponse sends headers only for a\nHEAD scope, and the LyricsPanel playability probe (``fetch(url,\n{method: 'HEAD'})``) read a GET-only route as \"HTTP 405, audio cannot be\nplayed\" on every track with aligned words (found Sat 12 Sep 2026, #2082).\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).",
+        "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Audio",
+        "tags": [
+          "rb-assets"
+        ]
+      },
+      "head": {
+        "description": "Stream the single best working file. FileResponse handles Range/206.\n\nHEAD is served by the same handler: FileResponse sends headers only for a\nHEAD scope, and the LyricsPanel playability probe (``fetch(url,\n{method: 'HEAD'})``) read a GET-only route as \"HTTP 405, audio cannot be\nplayed\" on every track with aligned words (found Sat 12 Sep 2026, #2082).\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).",
         "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_get",
         "parameters": [
           {
@@ -25500,6 +28748,167 @@
         ]
       }
     },
+    "/api/v1/tracks/{stable_id}/lyrics/override": {
+      "put": {
+        "description": "Set (or clear with null) the human verdict, which always beats the\ncomputed one wherever it is read (``store.LyricVerdict.effective``).\n\nThe override VALUE is validated before the write so the two failures stay\ndistinguishable: an unknown value is the caller's mistake (422), while a\nrefusal from the store means there is no live row to override (404).",
+        "operationId": "put_lyric_override_api_v1_tracks__stable_id__lyrics_override_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageVerdictOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Lyric Override",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/lyrics/words": {
+      "get": {
+        "description": "This track's karaoke timeline: the verdict envelope plus every word.",
+        "operationId": "get_track_karaoke_words_api_v1_tracks__stable_id__lyrics_words_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "'lines' adds the derived line objects",
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "'lines' adds the derived line objects",
+              "title": "Include"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaraokeTrackOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Karaoke Words",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/playlists": {
+      "get": {
+        "description": "Live playlists that currently hold this track (LIBM-29).\n\n404 if the stable_id has no tracks row. 200 [] if the track exists\nbut has no live memberships. Tombstoned memberships and deleted\nplaylists are excluded.",
+        "operationId": "list_track_playlists_api_v1_tracks__stable_id__playlists_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TrackPlaylistOut"
+                  },
+                  "title": "Response List Track Playlists Api V1 Tracks  Stable Id  Playlists Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Track Playlists",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}/rb-meta": {
       "get": {
         "description": "Rekordbox vendor fields + file-existence flags for browser rows.",
@@ -25636,6 +29045,92 @@
         "summary": "Get Stem File",
         "tags": [
           "stems"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}:remove": {
+      "post": {
+        "description": "Soft-delete a track from the library while keeping the audio file on disk.\n\nUses ``POST :remove`` rather than ``DELETE /tracks/{stable_id}`` so\n``LIBM-53`` can own file deletion later as a separate, harder action.",
+        "operationId": "remove_track_from_library_api_v1_tracks__stable_id__remove_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackLifecycleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Track From Library",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}:undelete": {
+      "post": {
+        "description": "Restore a tombstoned track and the memberships this remove stamped.",
+        "operationId": "undelete_track_from_library_api_v1_tracks__stable_id__undelete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackLifecycleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undelete Track From Library",
+        "tags": [
+          "tracks"
         ]
       }
     },

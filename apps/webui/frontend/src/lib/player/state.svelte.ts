@@ -101,12 +101,16 @@ export function _defaultChannel(deck_id: DeckId): MixerChannelState {
 	};
 }
 
+import { loadMixerConfig } from '$lib/player/mixer-config';
+
 /** Exported (name kept) so dispose resets headphones through one definition. */
 export function _defaultHeadphones(): HeadphoneState {
 	return {
 		mix: 0.5,
 		level: 0.5,
 		selected_output_device_id: null,
+		output_mode: 'practice',
+		head_delay_ms: loadMixerConfig().head_delay_ms,
 		outputs: [],
 		supported: false,
 		active: false,
@@ -148,17 +152,33 @@ export const pitchRanges: Record<DeckId, PitchRange> = $state({
 });
 
 /** Whole mixer surface (channel order on screen: 3 1 2 4). */
-export const mixerState: MixerState = $state({
-	channels: {
-		1: _defaultChannel(1),
-		2: _defaultChannel(2),
-		3: _defaultChannel(3),
-		4: _defaultChannel(4)
-	},
-	crossfader: 0.5,
-	master: 1,
-	headphones: _defaultHeadphones()
-});
+const MIXER_STATE_SINGLETON_KEY = '__mdtMixerStateSingleton';
+
+function _createMixerState(): MixerState {
+	return $state({
+		channels: {
+			1: _defaultChannel(1),
+			2: _defaultChannel(2),
+			3: _defaultChannel(3),
+			4: _defaultChannel(4)
+		},
+		crossfader: 0.5,
+		master: 1,
+		headphones: _defaultHeadphones()
+	});
+}
+
+function _sharedMixerState(): MixerState {
+	const globalRef = globalThis as typeof globalThis & {
+		[MIXER_STATE_SINGLETON_KEY]?: MixerState;
+	};
+	if (globalRef[MIXER_STATE_SINGLETON_KEY] === undefined) {
+		globalRef[MIXER_STATE_SINGLETON_KEY] = _createMixerState();
+	}
+	return globalRef[MIXER_STATE_SINGLETON_KEY];
+}
+
+export const mixerState: MixerState = _sharedMixerState();
 
 /** Per-deck store accessor (contract: singleton engine + accessor). */
 export function getDeckState(deck: DeckId): DeckState {

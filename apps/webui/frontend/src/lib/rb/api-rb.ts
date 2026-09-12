@@ -23,6 +23,7 @@ import { optionalResources } from './optional-resource-availability';
 import type { AnlzCue, AnlzData } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
+import type { LyricsRowSummary } from './lyrics/types';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
 export {
@@ -346,6 +347,8 @@ export function parseStemSummary(raw: unknown): StemSummary {
 
 export interface PlaylistTrackRowWire {
 	stable_id: string;
+	/** v13 membership row id; playlist detail only (LIBM-21). */
+	item_id?: string | null;
 	title: string | null;
 	artist: string | null;
 	key: string | null;
@@ -383,6 +386,9 @@ export interface PlaylistTrackRowWire {
 	has_rb_mapping: boolean;
 	artwork_available: boolean | null;
 	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
+	lyrics?: LyricsRowSummary | null;
+	is_remix?: boolean | null;
+	is_radio_edit?: boolean | null;
 }
 
 /** `tracks` is Omit-ed off `PlaylistDetail` rather than narrowed, because the
@@ -527,6 +533,9 @@ export type TrackListItemWire = Track & {
 	has_rb_mapping: boolean;
 	artwork_available: boolean | null;
 	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
+	lyrics?: LyricsRowSummary | null;
+	is_remix?: boolean | null;
+	is_radio_edit?: boolean | null;
 };
 
 export interface TracksPageHydrated {
@@ -540,6 +549,7 @@ export async function listTracksHydrated(params: {
 	limit?: number;
 	cursor?: string | undefined;
 	available?: 'all' | 'true' | 'false';
+	tag?: string;
 }): Promise<TracksPageHydrated> {
 	const qs = Object.entries(params)
 		.filter(([, v]) => v !== undefined && v !== null && v !== '')

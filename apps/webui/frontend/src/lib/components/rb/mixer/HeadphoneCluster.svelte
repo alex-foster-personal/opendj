@@ -4,19 +4,45 @@
 	 * Real CUE/MASTER monitor mix, level, and browser-selected output device.
 	 */
 	import { knobId } from '$lib/rb/knob-control.svelte';
+	import { twoOutputsWarning } from '$lib/player/headphones';
 	import Knob from './Knob.svelte';
-	import type { HeadphoneState } from '$lib/rb/mixer-types';
+	import type { HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
 
 	interface Props {
 		state: HeadphoneState;
 		onmix: (value: number) => void;
 		onlevel: (value: number) => void;
+		ondelay: (value: number) => void;
 		onrefresh: () => void;
 		onacquire: () => void;
 		onselect: (deviceId: string) => void;
+		onmode: (mode: HeadphoneOutputMode) => void;
 	}
 
-	let { state, onmix, onlevel, onrefresh, onacquire, onselect }: Props = $props();
+	let { state, onmix, onlevel, ondelay, onrefresh, onacquire, onselect, onmode }: Props = $props();
+
+	const modeLabel = $derived(
+		state.output_mode === 'practice'
+			? 'practice'
+			: state.output_mode === 'two_outputs'
+				? 'two outputs'
+				: 'split cable'
+	);
+
+	const selectedLabel = $derived(
+		state.selected_output_device_id === null
+			? null
+			: (state.outputs.find((output) => output.id === state.selected_output_device_id)?.label ?? null)
+	);
+	const warningText = $derived(twoOutputsWarning({ outputMode: state.output_mode, selectedLabel }));
+
+	function toggleSplit(): void {
+		if (state.output_mode === 'split_cable') {
+			onmode(state.selected_output_device_id !== null ? 'two_outputs' : 'practice');
+		} else {
+			onmode('split_cable');
+		}
+	}
 </script>
 
 <div class="hp" data-performance-control="headphones">
@@ -33,6 +59,25 @@
 	</svg>
 	<Knob knobId={knobId('hp', 'hp-mix')} label="MIX" value={state.mix} onchange={onmix} />
 	<Knob knobId={knobId('hp', 'hp-level')} label="LEVEL" value={state.level} onchange={onlevel} />
+	<span
+		class="hp-mode"
+		data-output-mode={state.output_mode}
+		title={
+			state.output_mode === 'practice'
+				? 'Practice: MIX blends cue into the main output'
+				: state.output_mode === 'two_outputs'
+					? 'Two outputs: MIX feeds the monitor only'
+					: 'Split cable: mono master on LEFT, mono cue on RIGHT'
+		}>{modeLabel}</span
+	>
+	<button
+		type="button"
+		class="hp-btn"
+		aria-pressed={state.output_mode === 'split_cable'}
+		aria-label="Split cable output mode"
+		title="Room feed is mono on LEFT, cue is mono on RIGHT. Use a DJ splitter cable, not a Y cable."
+		onclick={toggleSplit}>SPLIT</button
+	>
 	<button
 		type="button"
 		class="hp-btn"
@@ -59,6 +104,31 @@
 			<option value={output.id}>{output.label || output.id}</option>
 		{/each}
 	</select>
+	{#if state.output_mode === 'split_cable'}
+		<span class="hp-split-warn" title="Split-cable mode requires a true DJ splitter cable, not a Y cable">
+			Room feed is mono. Use a DJ splitter cable, not a Y cable.
+		</span>
+	{/if}
+	{#if state.output_mode === 'two_outputs'}
+		<label class="hp-delay">
+			<span class="hp-delay-label">HEAD DELAY</span>
+			<input
+				type="number"
+				min="0"
+				max="500"
+				step="1"
+				value={state.head_delay_ms}
+				aria-label="head delay milliseconds"
+				title="Monitor head delay in milliseconds (Mixxx Head Delay contract)"
+				data-performance-control="head-delay"
+				onchange={(event) => ondelay(Number(event.currentTarget.value))}
+			/>
+			<span class="hp-delay-unit">ms</span>
+		</label>
+		{#if warningText !== null}
+			<span class="hp-warn" role="status" data-two-outputs-warning>{warningText}</span>
+		{/if}
+	{/if}
 	{#if state.error !== null}<span class="hp-error">{state.error}</span>{/if}
 </div>
 
@@ -98,9 +168,48 @@
 		border: 1px solid var(--rb-border, #23282f);
 		color: var(--rb-text-dim, #838990);
 	}
+	.hp-mode {
+		font-size: 7px;
+		letter-spacing: 0.04em;
+		color: var(--rb-text-dim, #838990);
+		white-space: nowrap;
+	}
+	.hp-split-warn {
+		font-size: 7px;
+		color: var(--rb-warn, #e6a23c);
+		max-width: 120px;
+		line-height: 1.2;
+	}
 	.hp-error {
 		color: var(--rb-danger, #ff6b6b);
 		font-size: 7px;
 		max-width: 100px;
+	}
+	.hp-delay {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		font-size: 7px;
+		color: var(--rb-text-dim, #838990);
+	}
+	.hp-delay-label {
+		letter-spacing: 0.04em;
+	}
+	.hp-delay input {
+		font: inherit;
+		font-size: 7px;
+		width: 36px;
+		padding: 0 2px;
+		background: var(--rb-panel-raised, #1a1e25);
+		border: 1px solid var(--rb-border, #23282f);
+		color: var(--rb-text-dim, #838990);
+	}
+	.hp-delay-unit {
+		letter-spacing: 0.04em;
+	}
+	.hp-warn {
+		color: var(--rb-warn, #e6a23c);
+		font-size: 7px;
+		max-width: 140px;
 	}
 </style>

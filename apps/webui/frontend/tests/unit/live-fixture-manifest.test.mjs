@@ -8,6 +8,7 @@ import {
 	manifestGate,
 	manifestMismatches
 } from '../live/fixture-manifest.mjs';
+import { missingFixtureMessage } from '../live/stem-decode-kpis.mjs';
 
 /**
  * Provenance for the live decode rung's inputs.
@@ -219,7 +220,7 @@ test('only an ordinary run against a matching pinned manifest may continue', () 
 test('the margin is read from the implementation, and unreadable means unreadable', async () => {
 	const { laneMarginFrom, stopwatchLane } = await import('../live/lane-oracle.mjs');
 	const real = readFileSync(
-		new URL('../../src/lib/player/decode/flac-stem-decode.ts', import.meta.url),
+		new URL('../../src/lib/player/decode/stem-decode-lane.ts', import.meta.url),
 		'utf8'
 	);
 	// POSITIVE CONTROL against the LIVE source, not a fixture: the point of
@@ -242,4 +243,9 @@ test('the margin is read from the implementation, and unreadable means unreadabl
 	assert.equal(stopwatchLane(margin, margin), 'main-thread', 'exactly the margin is not a win');
 	assert.equal(stopwatchLane(1.71, margin), 'workers');
 	assert.equal(stopwatchLane(0.38, margin), 'main-thread');
+});
+
+test('a missing-fixture refusal names Q18_FLAC_DIR', () => {
+	const lines = missingFixtureMessage({ found: 1, required: 4, fixtureDir: '/tmp/no-flacs' });
+	assert.ok(lines.some((line) => line.includes('Q18_FLAC_DIR')));
 });

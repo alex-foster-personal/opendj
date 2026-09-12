@@ -130,9 +130,9 @@ interface PlayingGateOptions {
 	/** Ring kind for the single row a deferral episode writes. */
 	kind: string;
 	/** Injected by tests; production takes the real scheduler, clock and ring. */
-	schedule?: IdleScheduler;
-	now?: () => number;
-	record?: typeof recordPerfTiming;
+	schedule?: IdleScheduler | undefined;
+	now?: (() => number) | undefined;
+	record?: typeof recordPerfTiming | undefined;
 }
 
 interface PlayingGate {
@@ -227,10 +227,10 @@ interface BackgroundDemandShedOptions {
 	pressureElevated: () => boolean;
 	readXruns: () => number;
 	jobs: ReadonlyArray<BackgroundDemandShedJob>;
-	notify?: (suggestion: { action: string; message: string }) => void;
-	schedule?: IdleScheduler;
-	now?: () => number;
-	record?: typeof recordPerfTiming;
+	notify?: ((suggestion: { action: string; message: string }) => void) | undefined;
+	schedule?: IdleScheduler | undefined;
+	now?: (() => number) | undefined;
+	record?: typeof recordPerfTiming | undefined;
 }
 
 interface BackgroundDemandShed {
@@ -331,14 +331,14 @@ export function createBackgroundDemandShed(
 }
 
 export interface StartBackgroundDemandShedOptions {
-	isPlaying?: () => boolean;
-	pressureElevated?: () => boolean;
-	readXruns?: () => number;
-	notify?: (suggestion: { action: string; message: string }) => void;
-	jobs?: ReadonlyArray<BackgroundDemandShedJob>;
-	schedule?: IdleScheduler;
-	now?: () => number;
-	record?: typeof recordPerfTiming;
+	isPlaying?: (() => boolean) | undefined;
+	pressureElevated?: (() => boolean) | undefined;
+	readXruns?: (() => number) | undefined;
+	notify?: ((suggestion: { action: string; message: string }) => void) | undefined;
+	jobs?: ReadonlyArray<BackgroundDemandShedJob> | undefined;
+	schedule?: IdleScheduler | undefined;
+	now?: (() => number) | undefined;
+	record?: typeof recordPerfTiming | undefined;
 }
 
 /** Arm the pressure shed for the page lifetime. Returns teardown. */

@@ -126,6 +126,9 @@ function fakeEffects() {
 			sleep: async (ms) => {
 				nowMs += ms;
 				await Promise.resolve();
+			},
+			noteUnexpectedPause: (state) => {
+				perf.push({ kind: 'audio-unexpected-pause', state });
 			}
 		}
 	};
@@ -151,6 +154,24 @@ async function driveDrop(state, { playing = true, resumeSucceeds = false } = {})
 //-----------------------------------------------------------------------------
 // (i) the operator is told
 //-----------------------------------------------------------------------------
+
+test('every non-running context state records an unexpected pause while a deck is playing', async () => {
+	for (const state of NON_RUNNING_STATES) {
+		const run = await driveDrop(state);
+		const rows = run.perf.filter((row) => row.kind === 'audio-unexpected-pause');
+		assert.ok(
+			rows.length >= 1,
+			`if entering '${state}' while playing records no audio-unexpected-pause row then broken`
+		);
+		assert.equal(rows[0].state, state);
+	}
+});
+
+test('CONTROL: non-running context with nothing playing does not record unexpected pause', async () => {
+	const run = await driveDrop('suspended', { playing: false });
+	const rows = run.perf.filter((row) => row.kind === 'audio-unexpected-pause');
+	assert.equal(rows.length, 0);
+});
 
 test('every non-running context state raises an error toast while a deck is playing', async () => {
 	for (const state of NON_RUNNING_STATES) {
@@ -764,6 +785,46 @@ test('CONTROL: an opportunity that was never accepted while playing is still dro
 //   DOMException
 //-----------------------------------------------------------------------------
 
+test('a hanging resume through resumeAudioContextOrReportDead records dead, toasts, and rethrows', async () => {
+	const resumeHarness = await loadTypeScriptModule(
+		'tests/unit/fixtures/resume-or-report-dead-entry.ts'
+	);
+	resumeHarness.resetPerfEventLog();
+	const toastBefore = resumeHarness.toasts.length;
+	const ctx = { resume: () => new Promise(() => {}) };
+	await assert.rejects(
+		resumeHarness.resumeAudioContextOrReportDead(ctx),
+		(err) => {
+			assert.equal(err?.name, 'AudioContextIoTimeoutError');
+			return true;
+		}
+	);
+	const dead = resumeHarness.readPerfEvents().find((row) => row.kind === 'audio-output-dead');
+	assert.ok(dead, 'if resume times out then audio-output-dead must be recorded - broken');
+	assert.equal(dead.severity, 'error');
+	const toasts = resumeHarness.toasts.slice(toastBefore);
+	assert.ok(
+		toasts.some((toast) => toast.kind === 'error' && toast.message.includes('watchdog window')),
+		'if resume times out then the watchdog-window error toast must fire - broken'
+	);
+});
+
+test('the gesture resume path uses resumeAudioContextOrReportDead, not a bare ctx.resume()', () => {
+	const body = engineBlockAfter('async function _resumeContext(): Promise<AudioContext> {');
+	const gate = body
+		.split('\n')
+		.filter((line) => !line.trim().startsWith('//'))
+		.join('\n');
+	assert.ok(
+		gate.includes('resumeAudioContextOrReportDead'),
+		'if _resumeContext does not call resumeAudioContextOrReportDead then a clockless output can hang play forever - broken'
+	);
+	assert.ok(
+		!/await\s+ctx\.resume\(\)/.test(gate),
+		'if _resumeContext still awaits ctx.resume() directly then the IO timeout is bypassed - broken'
+	);
+});
+
 test('the gesture resume path attempts an INTERRUPTED context, not only a suspended one', () => {
 	const body = engineBlockAfter('async function _resumeContext(): Promise<AudioContext> {');
 	const gate = body
@@ -815,6 +876,45 @@ test('the gesture resume path attempts an INTERRUPTED context, not only a suspen
 //-----------------------------------------------------------------------------
 
 const INSTRUMENTATION_MODULE = 'src/lib/rb/audio-context-instrumentation.ts';
+
+test('a hanging resume during watchdog recover continues the backoff and still give-up-toasts', async () => {
+	const mod = _watchdog();
+	const harness = fakeEffects();
+	const perf = [];
+	harness.effects.recordPerfEvent = (kind, message, severity) => {
+		perf.push({ kind, message, severity });
+	};
+	const listeners = [];
+	const ctx = fakeAudioContext();
+	ctx.__nowMs = harness.nowMs;
+	ctx.addEventListener = (type, handler) => {
+		if (type === 'statechange') listeners.push(handler);
+	};
+	ctx.removeEventListener = () => {};
+	ctx.resume = () => {
+		ctx.resumeAtMs.push(ctx.__nowMs());
+		return new Promise(() => {});
+	};
+	const detach = mod.installAudioContextWatchdog(ctx, harness.effects, () => true, 30);
+	ctx.state = 'interrupted';
+	for (const handler of listeners) handler();
+	await settle();
+	await new Promise((r) => setTimeout(r, 250));
+	assert.ok(
+		ctx.resumeAtMs.length >= 2,
+		'if a hanging resume blocks the recover loop then broken - the backoff must continue'
+	);
+	const errors = harness.toasts.filter((toast) => toast.kind === 'error');
+	assert.ok(
+		errors.some((toast) => toast.message.includes('did not come back')),
+		'if every attempt times out then the existing give-up toast must still fire - broken'
+	);
+	assert.ok(
+		perf.some((row) => row.kind === 'audio-output-dead' && row.severity === 'error'),
+		'if the schedule exhausts on hung resumes then audio-output-dead must be recorded - broken'
+	);
+	detach();
+});
 
 test('both recovery edges are wired to noteRecoveryOpportunity, and armed', () => {
 	const source = readFrontendSource(INSTRUMENTATION_MODULE);

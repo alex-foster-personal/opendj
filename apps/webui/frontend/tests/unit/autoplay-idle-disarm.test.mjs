@@ -23,7 +23,7 @@ const ENTRY = [
 	"export { setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';",
 	"export { deckStates } from '$lib/rb/audio-engine.svelte';",
 	"export { readAutoPlayStall, noteAutoPlayExhaustion } from '$lib/rb/autoplay-stall.svelte';",
-	"export { AUTO_PLAY_IDLE_DISARM_MS, resetAutoPlayIdleClock } from '$lib/rb/autoplay-idle';"
+	"export { AUTO_PLAY_IDLE_DISARM_MS, AUTO_PLAY_SILENT_STALL_MS, resetAutoPlayIdleClock } from '$lib/rb/autoplay-idle';"
 ].join('\n');
 
 function settle() {
@@ -42,6 +42,30 @@ test.before(async () => {
 	autoPlay = await loadTypeScriptModule('src/lib/rb/autoplay-idle.ts');
 });
 
+test('shouldRaiseAutoPlaySilentStall waits for five seconds of idle', () => {
+	const { shouldRaiseAutoPlaySilentStall, AUTO_PLAY_SILENT_STALL_MS } = autoPlay;
+	const base = {
+		enabled: true,
+		any_playing: false,
+		pending_master: false,
+		stall_active: false,
+		idle_since_ms: 1_000,
+		now_ms: 1_000 + AUTO_PLAY_SILENT_STALL_MS - 1,
+		source_stable_id: 'src-1'
+	};
+	assert.equal(shouldRaiseAutoPlaySilentStall(base), false);
+	assert.equal(
+		shouldRaiseAutoPlaySilentStall({ ...base, now_ms: 1_000 + AUTO_PLAY_SILENT_STALL_MS }),
+		true
+	);
+	assert.equal(shouldRaiseAutoPlaySilentStall({ ...base, any_playing: true }), false);
+	assert.equal(shouldRaiseAutoPlaySilentStall({ ...base, pending_master: true }), false);
+	assert.equal(shouldRaiseAutoPlaySilentStall({ ...base, silence_recovering: true }), false);
+	assert.equal(shouldRaiseAutoPlaySilentStall({ ...base, stall_active: true }), false);
+	assert.equal(shouldRaiseAutoPlaySilentStall({ ...base, source_stable_id: '' }), false);
+	assert.equal(shouldRaiseAutoPlaySilentStall({ ...base, enabled: false }), false);
+});
+
 test('shouldDisarmAutoPlayIdle waits for the hunt threshold', () => {
 	const { shouldDisarmAutoPlayIdle, AUTO_PLAY_IDLE_DISARM_MS } = autoPlay;
 	const base = {
@@ -58,7 +82,21 @@ test('shouldDisarmAutoPlayIdle waits for the hunt threshold', () => {
 	);
 	assert.equal(shouldDisarmAutoPlayIdle({ ...base, any_playing: true }), false);
 	assert.equal(shouldDisarmAutoPlayIdle({ ...base, pending_master: true }), false);
+	assert.equal(shouldDisarmAutoPlayIdle({ ...base, silence_recovering: true }), false);
 	assert.equal(shouldDisarmAutoPlayIdle({ ...base, enabled: false }), false);
+});
+
+test('planAutoPlayIdleDisarm continues while silence_recovering is true', () => {
+	const { planAutoPlayIdleDisarm, AUTO_PLAY_IDLE_DISARM_MS } = autoPlay;
+	const plan = planAutoPlayIdleDisarm({
+		enabled: true,
+		snaps: [{ playing: false }, { playing: false }],
+		pending_master: false,
+		silence_recovering: true,
+		now_ms: AUTO_PLAY_IDLE_DISARM_MS + 5_000,
+		stall_active: false
+	});
+	assert.equal(plan.action, 'continue');
 });
 
 test('RUNNING it: idle disarm drops the pref after every deck stops', async () => {
@@ -80,6 +118,75 @@ test('RUNNING it: idle disarm drops the pref after every deck stops', async () =
 			false,
 			'armed AutoPlay with nothing playing must not outlive the idle threshold'
 		);
+	} finally {
+		if (uninstall !== null) uninstall();
+		mod?.resetAutoPlayIdleClock();
+		probe.restore();
+		mock.timers.reset();
+	}
+});
+
+test('RUNNING it: no-deck-playing stall retires when the same source is audible again', async () => {
+	mock.timers.enable({ apis: ['Date'] });
+	const probe = installTimerProbe();
+	let uninstall = null;
+	let mod = null;
+	try {
+		mod = await loadRuneModule(ENTRY);
+		uninstall = mod.installAutoPlay();
+		await probe.flush();
+		mod.deckStates[1].stable_id = 'src-1';
+		mod.deckStates[1].playing = true;
+		mod.deckStates[1].is_master = true;
+		mod.deckStates[1].duration_ms = 300_000;
+		mod.deckStates[1].position_ms = 167_090;
+		stopEveryDeck(mod);
+		await settle();
+		mock.timers.tick(mod.AUTO_PLAY_SILENT_STALL_MS + 1);
+		await settle();
+		assert.equal(mod.readAutoPlayStall()?.reason, 'no-deck-playing');
+		assert.equal(mod.readAutoPlayStall()?.source_stable_id, 'src-1');
+
+		mod.deckStates[1].stable_id = 'src-1';
+		mod.deckStates[1].playing = true;
+		mod.deckStates[1].audible = true;
+		mod.deckStates[1].is_master = true;
+		await settle();
+
+		assert.equal(
+			mod.readAutoPlayStall(),
+			null,
+			'the same source becoming audible again must retire a no-deck-playing stall'
+		);
+	} finally {
+		if (uninstall !== null) uninstall();
+		mod?.resetAutoPlayIdleClock();
+		probe.restore();
+		mock.timers.reset();
+	}
+});
+
+test('RUNNING it: five seconds idle raises no-deck-playing before disarm', async () => {
+	mock.timers.enable({ apis: ['Date'] });
+	const probe = installTimerProbe();
+	let uninstall = null;
+	let mod = null;
+	try {
+		mod = await loadRuneModule(ENTRY);
+		uninstall = mod.installAutoPlay();
+		await probe.flush();
+		mod.deckStates[1].stable_id = 'src-1';
+		mod.deckStates[1].playing = true;
+		mod.deckStates[1].is_master = true;
+		stopEveryDeck(mod);
+		await settle();
+		mock.timers.tick(mod.AUTO_PLAY_SILENT_STALL_MS + 1);
+		await settle();
+		assert.equal(mod.readAutoPlayStall()?.reason, 'no-deck-playing');
+		mock.timers.tick(mod.AUTO_PLAY_IDLE_DISARM_MS);
+		await settle();
+		assert.equal(mod.uiPrefs.auto_play_enabled, false);
+		assert.equal(mod.readAutoPlayStall()?.reason, 'no-deck-playing');
 	} finally {
 		if (uninstall !== null) uninstall();
 		mod?.resetAutoPlayIdleClock();
@@ -132,7 +239,7 @@ test('SHAPE GUARD: idle disarm calls setAutoPlayEnabled from the poll', () => {
 		'utf8'
 	);
 	assert.match(controller, /planAutoPlayIdleDisarm\(/);
-	assert.match(controller, /idlePlan\.action === 'disarm'/);
+	assert.match(controller, /applyAutoPlayIdleDisarmAction\(/);
 	assert.match(controller, /setAutoPlayEnabled\(false\)/);
 	assert.match(idle, /shouldDisarmAutoPlayIdle\(/);
 });

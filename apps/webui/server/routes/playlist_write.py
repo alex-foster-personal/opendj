@@ -22,9 +22,13 @@ ETag / error semantics copied from the tracks PATCH:
   * Unknown playlist / stable_id -> 404 ``not_found`` / 422 ``invalid_patch``.
   * Every 2xx (except 204) returns ``PlaylistWriteOut`` + an ``ETag`` header.
 
-``PUT .../tracks`` is the single membership primitive: the request body is the
-complete desired ordering, so add / remove / reorder / move / copy are one
-idempotent full-replace call (replaying the same list returns the same etag).
+``PUT .../tracks`` is the full-replace membership primitive for import/restore.
+``POST .../items:add`` is the O(1) append/insert primitive (LIBM-20): one or
+more tracks are inserted without rewriting existing membership rows.
+``DELETE .../items/{item_id}`` is the O(1) remove primitive (LIBM-21): one
+membership row is tombstoned without rewriting neighbors.
+``POST .../items:move`` is the O(k) slice reorder primitive (LIBM-22): a
+contiguous block moves by updating order_keys only.
 
 Every successful non-noop write also appends a ``playlist.edit`` event with
 before/after snapshots. Downstream undo/redo lives at
@@ -93,11 +97,27 @@ class MembershipReplaceIn(BaseModel):
     )
 
 
+class MembershipAddIn(BaseModel):
+    stable_ids: list[str] = Field(min_length=1)
+    position: int | None = Field(
+        None, ge=0,
+        description="0-based insert index; omit to append after the last member.",
+    )
+
+
 class MembershipTransferIn(BaseModel):
     stable_ids: list[str] = Field(min_length=1)
     mode: Literal["add", "move"]
     source_playlist_id: str | None = None
     source_etag: str | None = None
+
+
+class MembershipMoveIn(BaseModel):
+    range_start: str = Field(min_length=1)
+    range_length: int | None = Field(None, ge=1)
+    range_end: str | None = None
+    before_item_id: str | None = None
+    after_item_id: str | None = None
 
 
 class MembershipTransferOut(BaseModel):
@@ -114,6 +134,10 @@ class PlaylistWriteOut(BaseModel):
     track_count: int
     created_at: str
     updated_at: str
+
+
+class MembershipMoveOut(PlaylistWriteOut):
+    renumbered: bool
 
 
 # --- store dependency ------------------------------------------------------
@@ -160,6 +184,18 @@ def _out(row: PlaylistRow, response: Response) -> PlaylistWriteOut:
         vendor_pl_id=row.vendor_pl_id, items=list(row.items),
         track_count=len(row.items), created_at=row.created_at,
         updated_at=row.updated_at,
+    )
+
+
+def _move_out(
+    row: PlaylistRow, response: Response, *, renumbered: bool,
+) -> MembershipMoveOut:
+    response.headers["ETag"] = row.etag
+    return MembershipMoveOut(
+        playlist_id=row.playlist_id, name=row.name, vendor=row.vendor,
+        vendor_pl_id=row.vendor_pl_id, items=list(row.items),
+        track_count=len(row.items), created_at=row.created_at,
+        updated_at=row.updated_at, renumbered=renumbered,
     )
 
 
@@ -233,6 +269,73 @@ def duplicate_playlist(
     )
     publish("library.changed", {"kind": "playlists", "ids": [row.playlist_id]})
     return _out(row, response)
+
+
+@router.post(
+    "/{playlist_id}/items:add",
+    response_model=PlaylistWriteOut,
+    operation_id="add_playlist_items",
+)
+def add_playlist_items(
+    playlist_id: str,
+    body: MembershipAddIn,
+    response: Response,
+    _backend: StateBackend = Depends(get_write_state),
+    store: PlaylistStore = Depends(get_playlist_store),
+) -> PlaylistWriteOut:
+    row = store.add_memberships(
+        playlist_id, body.stable_ids, position=body.position,
+    )
+    publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
+    return _out(row, response)
+
+
+@router.delete(
+    "/{playlist_id}/items/{item_id}",
+    response_model=PlaylistWriteOut,
+    operation_id="delete_playlist_item",
+)
+def delete_playlist_item(
+    playlist_id: str,
+    item_id: str,
+    response: Response,
+    _backend: StateBackend = Depends(get_write_state),
+    store: PlaylistStore = Depends(get_playlist_store),
+) -> PlaylistWriteOut:
+    row = store.remove_membership(playlist_id, item_id)
+    publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
+    return _out(row, response)
+
+
+@router.post(
+    "/{playlist_id}/items:move",
+    response_model=MembershipMoveOut,
+    operation_id="move_playlist_items",
+)
+def move_playlist_items(
+    playlist_id: str,
+    body: MembershipMoveIn,
+    response: Response,
+    if_match: Optional[str] = Header(None, alias="If-Match"),
+    _backend: StateBackend = Depends(get_write_state),
+    store: PlaylistStore = Depends(get_playlist_store),
+) -> MembershipMoveOut:
+    if not if_match:
+        return precondition_required(
+            "POST /playlists/{playlist_id}/items:move requires If-Match header"
+        )
+    result = store.move_memberships(
+        playlist_id,
+        range_start=body.range_start,
+        range_length=body.range_length,
+        range_end=body.range_end,
+        before_item_id=body.before_item_id,
+        after_item_id=body.after_item_id,
+        expected_etag=if_match,
+    )
+    if not result.no_op:
+        publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
+    return _move_out(result.row, response, renumbered=result.renumbered)
 
 
 @router.put("/{playlist_id}/tracks", response_model=PlaylistWriteOut)

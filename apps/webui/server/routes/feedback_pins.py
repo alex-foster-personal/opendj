@@ -35,7 +35,10 @@ from .feedback import (
     _load,
     _now,
     _save,
+    keep_unknown_fields,
+    write_atomic,
 )
+from .feedback_replies import append_agent_note_to_replies
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
@@ -103,8 +106,7 @@ def _append_to_archive(root: Path, comment: dict[str, Any]) -> Path:
             "comments": [comment],
             "general": None,
         }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    write_atomic(path, json.dumps(payload, indent=2) + "\n")
     return path
 
 
@@ -147,9 +149,15 @@ def update_comment(comment_id: str, body: CommentUpdateIn, request: Request) -> 
             # must leave the store exactly as it was: comments.json is read
             # back through CommentOut on every list, so one unvalidated write
             # would make GET /comments fail for every pin, not just this one.
-            merged = {**item, **changes, "updated_at": _now()}
+            now = _now()
+            merged = {**item, **changes, "updated_at": now}
+            agent_note = changes.get("agent_note")
+            if isinstance(agent_note, str) and agent_note.strip() != "":
+                append_agent_note_to_replies(merged, agent_note, now)
             validated = CommentOut.model_validate(merged)
-            items[i] = validated.model_dump()
+            # A synced pin may carry fields a newer build added (ADR-0013):
+            # an edit here must not strip them from every machine.
+            items[i] = keep_unknown_fields(merged, validated.model_dump())
             _save(path, "comments", items)
             return validated
     raise HTTPException(

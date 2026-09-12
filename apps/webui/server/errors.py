@@ -17,6 +17,8 @@ from pydantic import BaseModel
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
 
 from .backend import BackendError, ConflictError, NotFoundError
+from .playlist_add import AlreadyExistsError, SmartlistImmutableError
+from .playlist_move import SliceNotContiguousError, TargetInsideSliceError
 
 
 class ErrorBody(BaseModel):
@@ -46,6 +48,48 @@ async def handle_conflict(_request: Request, exc: ConflictError) -> JSONResponse
         content=ConflictBody(
             message="If-Match does not match the current row etag",
             current=exc.current, etag=exc.etag,
+        ).model_dump(),
+    )
+
+
+async def handle_already_exists(
+    _request: Request, exc: AlreadyExistsError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content=ErrorBody(error="already_exists", message=str(exc)).model_dump(),
+    )
+
+
+async def handle_smartlist_immutable(
+    _request: Request, exc: SmartlistImmutableError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content=ErrorBody(
+            error="smartlist_immutable", message=str(exc),
+        ).model_dump(),
+    )
+
+
+async def handle_slice_not_contiguous(
+    _request: Request, exc: SliceNotContiguousError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content=ErrorBody(
+            error="slice_not_contiguous", message=str(exc),
+        ).model_dump(),
+    )
+
+
+async def handle_target_inside_slice(
+    _request: Request, exc: TargetInsideSliceError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content=ErrorBody(
+            error="target_inside_slice", message=str(exc),
         ).model_dump(),
     )
 
@@ -81,6 +125,16 @@ def precondition_required(message: str) -> JSONResponse:
     )
 
 
-__all__ = ["ConflictBody", "ErrorBody", "handle_backend_error",
-           "handle_conflict", "handle_not_found",
-           "handle_rekordbox_writeback_disabled", "precondition_required"]
+__all__ = [
+    "ConflictBody",
+    "ErrorBody",
+    "handle_already_exists",
+    "handle_backend_error",
+    "handle_conflict",
+    "handle_not_found",
+    "handle_rekordbox_writeback_disabled",
+    "handle_slice_not_contiguous",
+    "handle_smartlist_immutable",
+    "handle_target_inside_slice",
+    "precondition_required",
+]

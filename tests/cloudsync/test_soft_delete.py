@@ -374,6 +374,9 @@ _SYNCED_TABLES: frozenset[str] = frozenset({
     # and it is a tombstone: a hard DELETE would leave every peer still
     # holding the licensed text this repo just promised to drop.
     "lyric_verdict",
+    # Schema v12 (FBSYNC-03). Archiving a pin is a tombstone that syncs; a
+    # hard DELETE would let a peer's live copy resurrect it on the next pull.
+    "feedback_pins",
 })
 
 # Captures the DELETE target either as an f-string interpolation
@@ -442,6 +445,11 @@ _ALLOWED_HARD_DELETES: frozenset[tuple[str, str]] = frozenset({
     # row -- a vendor database this module owns outright, not our synced
     # state.db. Same {tbl} target on two lines (ContentID and ID cascades).
     ("apps/reconcile/remove_track.py", "dynamic:tbl"),
+    # apps/adapters/rekordbox/writer.py restores odjAnalysisScalar, a sidecar
+    # table inside rekordbox's OWN master.plain.db (this module's docstring
+    # says so explicitly), never data/state/state.db. Same reasoning as the
+    # remove_track.py entry above: the DELETE never touches a synced table.
+    ("apps/adapters/rekordbox/writer.py", "dynamic:_SCALAR_TABLE"),
     # apps/shared/state/normalize_locations.py collapses an NFD/NFC duplicate
     # pair (round 3 finding R3) exactly the way engine_apply._drop_superseded
     # collapses a natural-key duplicate: the loser is hard-deleted because the
@@ -452,6 +460,20 @@ _ALLOWED_HARD_DELETES: frozenset[tuple[str, str]] = frozenset({
     # two (non-synced) changelog tables.
     ("apps/shared/state/normalize_locations.py", "dynamic:LOCATIONS_TABLE"),
     ("apps/shared/state/normalize_locations.py", "dynamic:changelog"),
+    # CLOUDSYNC-07 identity collapse: same vacuum path as
+    # engine_apply._drop_superseded. Two independently ingested libraries
+    # minted different tracks PKs for the same audio. Children REFERENCES
+    # tracks(stable_id) with ON DELETE CASCADE, so they have to be remapped
+    # onto the survivor and the loser hard-deleted -- a tombstone at the
+    # losing PK would keep a second tracks row for the same recording.
+    # Changelog prune is the same dangling-entry fix _drop_superseded does.
+    # Location and membership DELETEs are the UNIQUE-collision branch of
+    # that remap (the survivor already holds that location or that playlist
+    # already contains the survivor).
+    ("apps/sync_hub/engine_identity.py", "dynamic:changelog"),
+    ("apps/sync_hub/engine_identity.py", "dynamic:_ident(table)"),
+    ("apps/sync_hub/engine_identity.py", "track_locations"),
+    ("apps/sync_hub/engine_identity.py", "playlist_memberships"),
 })
 
 

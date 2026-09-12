@@ -30,6 +30,7 @@
 	import { persistParkedPinDraft } from '$lib/rb/feedback-pin-draft-persist';
 	import { pushToast } from '$lib/stores.svelte';
 	import {
+		addReply,
 		archivePin,
 		armPinPlacement,
 		disarmPinPlacement,
@@ -446,6 +447,7 @@
 		onclose={closePin}
 		onarchive={() => archiveOpenPin(bodyPin)}
 		onfollowon={() => startFollowOn(bodyPin)}
+		onreply={(text) => addReply(bodyPin.id, text)}
 	/>
 {/if}
 

@@ -17,7 +17,7 @@
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
-	import type { CrossfaderAssign, EqBand } from '$lib/rb/mixer-types';
+	import type { CrossfaderAssign, EqBand, HeadphoneOutputMode } from '$lib/rb/mixer-types';
 	import type { StemControl } from '$lib/rb/stem-types';
 	import { setDeckLayoutMode, uiPrefs } from '$lib/rb/prefs.svelte';
 	import AssignMatrix from './mixer/AssignMatrix.svelte';
@@ -102,6 +102,14 @@
 		void runPerformanceCommandFromUi({ type: 'headphone_level', value });
 	}
 
+	function handleHeadphoneOutputMode(mode: HeadphoneOutputMode): void {
+		void runPerformanceCommandFromUi({ type: 'output_mode', mode });
+	}
+
+	function handleHeadDelay(value: number): void {
+		void runPerformanceCommandFromUi({ type: 'head_delay_ms', value });
+	}
+
 	function refreshHeadphoneOutputs(): void {
 		void runPerformanceCommandFromUi({ type: 'headphone_outputs_refresh' });
 	}
@@ -184,9 +192,11 @@
 				state={mixerState.headphones}
 				onmix={handleHeadphoneMix}
 				onlevel={handleHeadphoneLevel}
+				ondelay={handleHeadDelay}
 				onrefresh={refreshHeadphoneOutputs}
 				onacquire={acquireHeadphoneOutput}
 				onselect={selectHeadphoneOutput}
+				onmode={handleHeadphoneOutputMode}
 			/>
 		</div>
 		<div class="xfade-row">

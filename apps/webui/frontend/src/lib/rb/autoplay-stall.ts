@@ -29,7 +29,8 @@ export type AutoPlayStallReason =
 	| 'candidates-failed-to-load'
 	| 'handoff-attempts-exhausted'
 	| 'handoff-incomplete'
-	| 'master-handover-refused';
+	| 'master-handover-refused'
+	| 'no-deck-playing';
 
 export interface AutoPlayStallTrack {
 	stable_id: string;
@@ -124,6 +125,8 @@ function _headline(reason: AutoPlayStallReason, blockedTotal: number): string {
 			// pickSourceDeck only ever arms off the master, so AutoPlay will
 			// queue nothing after this track and the set ends when it does.
 			return 'AutoPlay stopped: the next track is playing but could not be made master';
+		case 'no-deck-playing':
+			return 'AutoPlay stopped: no deck has been playing for 5 seconds';
 		default: {
 			const _exhaustive: never = reason;
 			throw new Error(`unhandled AutoPlay stall reason: ${String(_exhaustive)}`);
@@ -150,6 +153,8 @@ function _resume(reason: AutoPlayStallReason): string {
 			return 'Press play on the deck that was loaded, or load a track by hand.';
 		case 'master-handover-refused':
 			return 'Press MASTER on the deck that is playing: AutoPlay follows the master deck and will queue nothing until one is set.';
+		case 'no-deck-playing':
+			return 'Press play on a loaded deck. AutoPlay will queue the next track from there.';
 		default: {
 			const _exhaustive: never = reason;
 			throw new Error(`unhandled AutoPlay stall reason: ${String(_exhaustive)}`);
@@ -244,6 +249,7 @@ export function autoPlayExhaustionToast(reason: AutoPlayStallReason): string {
 		case 'handoff-attempts-exhausted':
 		case 'handoff-incomplete':
 		case 'master-handover-refused':
+		case 'no-deck-playing':
 			throw new Error(`${reason} is a handoff failure, not an exhaustion toast`);
 		default: {
 			const _exhaustive: never = reason;

@@ -12,10 +12,12 @@ from ``writer`` itself -- see that module's docstring for why.
 from __future__ import annotations
 
 import sqlite3
+import uuid
 from contextlib import AbstractContextManager
 from typing import Any, Protocol
 
 from .events import EventBus, FakeEventBus
+from .order_key import from_index
 from .sync_stamp import Stamp
 from .types import Event
 from .writer_common import (
@@ -147,12 +149,14 @@ class _PlaylistWriterMixin:
                 )
                 conn.execute(
                     "INSERT INTO playlist_memberships(playlist_id, stable_id, "
-                    "position, updated_at, origin_device_id) "
-                    "VALUES (?, ?, ?, ?, ?)",
+                    "position, item_id, order_key, updated_at, origin_device_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
                         playlist_id,
                         sid,
                         position,
+                        uuid.uuid4().hex,
+                        from_index(position),
                         member_stamp.updated_at,
                         member_stamp.origin_device_id,
                     ),
@@ -170,6 +174,154 @@ class _PlaylistWriterMixin:
                     "playlist_id": playlist_id,
                     "count": len(stable_ids),
                 },
+                ts=now,
+            )
+            self.bus.publish(ev)
+
+    def insert_playlist_memberships(
+        self: _WriterHost,
+        playlist_id: str,
+        rows: list[tuple[str, str, str]],
+    ) -> None:
+        """O(1) insert of new membership rows (item_id, stable_id, order_key)."""
+        transaction = (
+            self._tx() if self._conn.in_transaction
+            else immediate_transaction(self._conn)
+        )
+        with transaction as conn:
+            now = next_playlist_revision(conn, playlist_id, self._now_iso())
+            for item_id, stable_id, order_key in rows:
+                max_pos = conn.execute(
+                    "SELECT COALESCE(MAX(position), -1) FROM playlist_memberships "
+                    "WHERE playlist_id = ?",
+                    (playlist_id,),
+                ).fetchone()[0]
+                slot = int(max_pos) + 1
+                member_stamp = self._stamp(
+                    MEMBERSHIPS_TABLE, (playlist_id, slot), now,
+                )
+                conn.execute(
+                    "INSERT INTO playlist_memberships(playlist_id, stable_id, "
+                    "position, item_id, order_key, updated_at, origin_device_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        playlist_id,
+                        stable_id,
+                        slot,
+                        item_id,
+                        order_key,
+                        member_stamp.updated_at,
+                        member_stamp.origin_device_id,
+                    ),
+                )
+            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
+            conn.execute(
+                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
+                "WHERE playlist_id = ?",
+                (stamp.updated_at, stamp.origin_device_id, playlist_id),
+            )
+            ev = self._append_event(
+                kind="playlist.memberships.add",
+                stable_id=None,
+                payload={"playlist_id": playlist_id, "count": len(rows)},
+                ts=now,
+            )
+            self.bus.publish(ev)
+
+    def tombstone_playlist_memberships(
+        self: _WriterHost, playlist_id: str, item_ids: list[str],
+    ) -> None:
+        """Soft-delete membership rows by item_id without touching neighbors."""
+        if not item_ids:
+            return
+        transaction = (
+            self._tx() if self._conn.in_transaction
+            else immediate_transaction(self._conn)
+        )
+        with transaction as conn:
+            now = next_playlist_revision(conn, playlist_id, self._now_iso())
+            for item_id in item_ids:
+                row = conn.execute(
+                    "SELECT position FROM playlist_memberships "
+                    "WHERE playlist_id = ? AND item_id = ? AND deleted_at IS NULL",
+                    (playlist_id, item_id),
+                ).fetchone()
+                if row is None:
+                    continue
+                position = row[0]
+                member_stamp = self._stamp(
+                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
+                )
+                conn.execute(
+                    "UPDATE playlist_memberships SET deleted_at=?, updated_at=?, "
+                    "origin_device_id=? WHERE playlist_id=? AND position=?",
+                    (
+                        member_stamp.updated_at,
+                        member_stamp.updated_at,
+                        member_stamp.origin_device_id,
+                        playlist_id,
+                        position,
+                    ),
+                )
+            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
+            conn.execute(
+                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
+                "WHERE playlist_id = ?",
+                (stamp.updated_at, stamp.origin_device_id, playlist_id),
+            )
+            ev = self._append_event(
+                kind="playlist.memberships.remove",
+                stable_id=None,
+                payload={"playlist_id": playlist_id, "count": len(item_ids)},
+                ts=now,
+            )
+            self.bus.publish(ev)
+
+    def restore_playlist_memberships(
+        self: _WriterHost, playlist_id: str, item_ids: list[str],
+    ) -> None:
+        """Undelete tombstoned membership rows, preserving item_id/order_key."""
+        if not item_ids:
+            return
+        transaction = (
+            self._tx() if self._conn.in_transaction
+            else immediate_transaction(self._conn)
+        )
+        with transaction as conn:
+            now = next_playlist_revision(conn, playlist_id, self._now_iso())
+            for item_id in item_ids:
+                row = conn.execute(
+                    "SELECT position FROM playlist_memberships "
+                    "WHERE playlist_id = ? AND item_id = ? AND deleted_at IS NOT NULL",
+                    (playlist_id, item_id),
+                ).fetchone()
+                if row is None:
+                    continue
+                position = row[0]
+                member_stamp = self._stamp(
+                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
+                )
+                conn.execute(
+                    "UPDATE playlist_memberships SET deleted_at=NULL, "
+                    "updated_at=?, origin_device_id=? "
+                    "WHERE playlist_id=? AND item_id=?",
+                    (
+                        member_stamp.updated_at,
+                        member_stamp.origin_device_id,
+                        playlist_id,
+                        item_id,
+                    ),
+                )
+            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
+            conn.execute(
+                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
+                "WHERE playlist_id = ?",
+                (stamp.updated_at, stamp.origin_device_id, playlist_id),
+            )
+            ev = self._append_event(
+                kind="playlist.memberships.add",
+                stable_id=None,
+                payload={"playlist_id": playlist_id, "count": len(item_ids)},
                 ts=now,
             )
             self.bus.publish(ev)
@@ -253,6 +405,67 @@ class _PlaylistWriterMixin:
             )
             self.bus.publish(ev)
         return True
+
+    def update_playlist_membership_order_keys(
+        self: _WriterHost,
+        playlist_id: str,
+        rows: list[tuple[str, str]],
+        *,
+        renumbered: bool = False,
+    ) -> None:
+        """UPDATE order_key for named live membership rows only."""
+        if not rows:
+            return
+        transaction = (
+            self._tx() if self._conn.in_transaction
+            else immediate_transaction(self._conn)
+        )
+        with transaction as conn:
+            now = next_playlist_revision(conn, playlist_id, self._now_iso())
+            changed = 0
+            for item_id, new_key in rows:
+                row = conn.execute(
+                    "SELECT position, order_key FROM playlist_memberships "
+                    "WHERE playlist_id = ? AND item_id = ? AND deleted_at IS NULL",
+                    (playlist_id, item_id),
+                ).fetchone()
+                if row is None or row[1] == new_key:
+                    continue
+                position = row[0]
+                member_stamp = self._stamp(
+                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
+                )
+                conn.execute(
+                    "UPDATE playlist_memberships SET order_key=?, updated_at=?, "
+                    "origin_device_id=? WHERE playlist_id=? AND item_id=?",
+                    (
+                        new_key,
+                        member_stamp.updated_at,
+                        member_stamp.origin_device_id,
+                        playlist_id,
+                        item_id,
+                    ),
+                )
+                changed += 1
+            if changed == 0:
+                return
+            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
+            conn.execute(
+                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
+                "WHERE playlist_id = ?",
+                (stamp.updated_at, stamp.origin_device_id, playlist_id),
+            )
+            ev = self._append_event(
+                kind="playlist.memberships.move",
+                stable_id=None,
+                payload={
+                    "playlist_id": playlist_id,
+                    "count": changed,
+                    "renumbered": renumbered,
+                },
+                ts=now,
+            )
+            self.bus.publish(ev)
 
     def append_playlist_history(
         self: _WriterHost, kind: str, payload: dict[str, Any]

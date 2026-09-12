@@ -22,15 +22,33 @@
  * structurally unable to fire on the same sample silence does.
  */
 
-import { recordPerfEvent } from '$lib/rb/perf-event-log';
+import { recordPerfEvent, readPerfEvents } from '$lib/rb/perf-event-log';
 import {
 	SILENT_WHILE_PLAYING_MS,
 	foldSilenceSample,
-	type SilenceState
+	type SilenceState,
+	type SilenceVerdict
 } from '$lib/rb/silence-watchdog';
 import { foldDeviceLivenessSample, type DeviceLivenessState } from '$lib/rb/output-device-watchdog';
 import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
+import {
+	diagnoseSilenceCause,
+	formatAudioCutToast,
+	lastPerfError,
+	planSilenceDropout,
+	type SilenceDropoutDeckSnap,
+	type SilenceDropoutPlan
+} from '$lib/rb/silence-dropout';
 import { pushToast } from '$lib/stores.svelte';
+import type { DeckId } from '$lib/rb/deck-slots';
+
+export interface SilenceDropoutContext {
+	decks: readonly SilenceDropoutDeckSnap[];
+	autoplay_enabled: boolean;
+	has_playable_next: boolean;
+	xruns: number;
+	xruns_at_previous: number;
+}
 
 let _state: SilenceState | undefined;
 let _deviceLivenessState: DeviceLivenessState | undefined;
@@ -38,6 +56,17 @@ let _scratch: Float32Array | null = null;
 let _lastMasterRms: number | null = null;
 /** Wall-clock ms when `_lastMasterRms` was written; null when never written. */
 let _lastMasterRmsAtMs: number | null = null;
+let _xrunsAtPreviousSample = 0;
+let _dropoutHandler: ((plan: SilenceDropoutPlan) => void) | null = null;
+let _readDropoutContext: (() => SilenceDropoutContext) | null = null;
+
+export function setSilenceDropoutHandler(handler: ((plan: SilenceDropoutPlan) => void) | null): void {
+	_dropoutHandler = handler;
+}
+
+export function setSilenceDropoutContextReader(reader: (() => SilenceDropoutContext) | null): void {
+	_readDropoutContext = reader;
+}
 
 /** Instantaneous RMS 0..1 of whatever is leaving the master gain. */
 function _masterRms(analyser: AnalyserNode): number {
@@ -61,6 +90,62 @@ function _masterRms(analyser: AnalyserNode): number {
  */
 const NO_METER_RMS_SENTINEL = 1;
 
+function _anyDeckAudible(ctx: SilenceDropoutContext | null): boolean {
+	if (ctx === null) return false;
+	return ctx.decks.some((deck) => deck.audible);
+}
+
+function _reportSilenceDropout(kind: 'silent-while-playing' | 'output-device-unreachable'): void {
+	const ctx = _readDropoutContext?.() ?? null;
+	const events = readPerfEvents();
+	const xruns = ctx?.xruns ?? 0;
+	const cause = diagnoseSilenceCause({
+		decks: ctx?.decks ?? [],
+		events,
+		xruns,
+		xruns_at_previous: ctx?.xruns_at_previous ?? _xrunsAtPreviousSample
+	});
+	const last = lastPerfError(events);
+	const toast = formatAudioCutToast({
+		decks: ctx?.decks ?? [],
+		cause,
+		last_error: last
+	});
+	if (kind === 'silent-while-playing') {
+		const plan =
+			ctx === null
+				? {
+						stop_decks: [] as DeckId[],
+						toast,
+						perf_kind: 'silent-while-playing' as const,
+						cause,
+						cause_message: `silent while claimed live cause=${cause} ${last === null ? 'last=none' : `last=${last.kind}: ${last.message}`}`,
+						autoplay_recover: false
+					}
+				: planSilenceDropout({
+						decks: ctx.decks,
+						events,
+						xruns: ctx.xruns,
+						xruns_at_previous: ctx.xruns_at_previous,
+						autoplay_enabled: ctx.autoplay_enabled,
+						has_playable_next: ctx.has_playable_next
+					});
+		recordPerfEvent(plan.perf_kind, plan.cause_message, plan.stop_decks[0] ?? null, 'error');
+		pushToast(plan.toast, 'error');
+		_dropoutHandler?.(plan);
+		return;
+	}
+	recordPerfEvent(
+		'output-device-unreachable',
+		'a deck is playing and the master bus is producing signal, but the output device reads ' +
+			'dead (outputLatency stuck at 0): the graph is fine and the ROOM is hearing nothing - ' +
+			`cause=${cause} ${last === null ? 'last=none' : `last=${last.kind}: ${last.message}`}`,
+		null,
+		'error'
+	);
+	pushToast(toast, 'error');
+}
+
 /**
  * Sample the master bus once and report a dropout on the sample that crosses
  * the window.
@@ -81,14 +166,9 @@ export function noteMasterSilence(
 	anyDeckPlaying: boolean,
 	tMs: number
 ): void {
+	const ctx = _readDropoutContext?.() ?? null;
 	const playing = anyDeckPlaying && analyser !== null;
 	const masterRms = analyser === null ? NO_METER_RMS_SENTINEL : _masterRms(analyser);
-	// ONLY A REAL SAMPLE IS PUBLISHED (Codex, Thu 10 Sep 2026). Stamping the
-	// no-meter sentinel made the mirror read `rms: 1, fresh: true` during graph
-	// initialization and teardown - a synthetic full-scale value wearing the
-	// costume of a fresh measurement, which is the exact misleading
-	// healthy-signal diagnosis this whole change exists to remove. No analyser
-	// means no reading, and the mirror is told so.
 	if (analyser === null) {
 		_lastMasterRms = null;
 		_lastMasterRmsAtMs = null;
@@ -96,19 +176,18 @@ export function noteMasterSilence(
 		_lastMasterRms = masterRms;
 		_lastMasterRmsAtMs = Date.now();
 	}
-	_state = foldSilenceSample(_state, { playing, masterRms, tMs });
+	_state = foldSilenceSample(_state, {
+		playing,
+		audible: _anyDeckAudible(ctx),
+		masterRms,
+		tMs
+	});
 	if (_state.verdict === 'silent-while-playing') {
-		recordPerfEvent(
-			'silent-while-playing',
-			`a deck has reported playing for ${SILENT_WHILE_PLAYING_MS}ms with nothing leaving ` +
-				'the master bus - the transport is running and the room is hearing silence',
-			null,
-			'error'
-		);
-		pushToast('A deck says it is playing but no audio is leaving the mixer', 'error');
+		_reportSilenceDropout('silent-while-playing');
 	}
 	const routedRms = externalRouteAnalyser === null ? 0 : _masterRms(externalRouteAnalyser);
 	_noteOutputDeviceLiveness(playing, Math.max(masterRms, routedRms), tMs);
+	if (ctx !== null) _xrunsAtPreviousSample = ctx.xruns;
 }
 
 /**
@@ -133,15 +212,7 @@ function _noteOutputDeviceLiveness(playing: boolean, masterRms: number, tMs: num
 		tMs
 	});
 	if (_deviceLivenessState.verdict !== 'device-unreachable') return;
-	recordPerfEvent(
-		'output-device-unreachable',
-		'a deck is playing and the master bus is producing signal, but the output device reads ' +
-			'dead (outputLatency stuck at 0): the graph is fine and the ROOM is hearing nothing - ' +
-			'distinct from the mixer being quiet',
-		null,
-		'error'
-	);
-	pushToast('NO AUDIO REACHING THE ROOM: the output device appears gone, not the mixer', 'error');
+	_reportSilenceDropout('output-device-unreachable');
 }
 
 /** Drop both runs across a graph rebuild, so a teardown is not a dropout. */
@@ -150,6 +221,7 @@ export function resetMasterSilenceWatch(): void {
 	_deviceLivenessState = undefined;
 	_lastMasterRms = null;
 	_lastMasterRmsAtMs = null;
+	_xrunsAtPreviousSample = 0;
 }
 
 /**
@@ -163,11 +235,23 @@ export function resetMasterSilenceWatch(): void {
  * the fold's `tMs`, so the mirror can compute an age against `Date.now()`
  * without knowing which clock base the caller used.
  */
+/** Mixer is rendering loudly while the device output position is frozen (issue #2155). */
+export const RENDERING_RMS_FLOOR = 0.05;
+
 export function masterSilenceState(): {
 	rms: number | null;
-	verdict: SilenceState['verdict'];
+	verdict: SilenceVerdict;
 	at_ms: number | null;
 } {
+	const outputStalled = audioOutputHealth.snapshot?.verdict === 'stalled';
+	if (
+		outputStalled &&
+		_lastMasterRms !== null &&
+		_lastMasterRms > RENDERING_RMS_FLOOR &&
+		(_state?.verdict ?? 'ok') === 'ok'
+	) {
+		return { rms: _lastMasterRms, verdict: 'output-stalled-while-rendering', at_ms: _lastMasterRmsAtMs };
+	}
 	return { rms: _lastMasterRms, verdict: _state?.verdict ?? 'ok', at_ms: _lastMasterRmsAtMs };
 }
 

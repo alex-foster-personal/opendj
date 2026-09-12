@@ -4,18 +4,24 @@ from __future__ import annotations
 from apps.analysis.record import AnalysisRecord
 
 from .analysis import (
+    _MIN_BEAT_INTERVAL_S,
     BEATS_PER_BAR,
     FallbackBeatOut,
-    _MIN_BEAT_INTERVAL_S,
     _invalid_record,
 )
 
 
 def fallback_emit(
-    beats: list[FallbackBeatOut], t: float, n: int, bar_s: float
+    beats: list[FallbackBeatOut],
+    t: float,
+    n: int,
+    bar_s: float,
+    *,
+    extrapolated: bool = False,
 ) -> None:
     beats.append(FallbackBeatOut(
         n=n, bpm=round(240.0 / bar_s, 2), t=round(t, 3),
+        extrapolated=extrapolated,
     ))
 
 
@@ -37,8 +43,10 @@ def fallback_tail_beats(
         )
     t = downbeats[-1]
     n = 1
+    first_tail = True
     while t < record.duration_s:
-        fallback_emit(beats, t, n, tail_bar_s)
+        fallback_emit(beats, t, n, tail_bar_s, extrapolated=not first_tail)
+        first_tail = False
         t += tail_bar_s / BEATS_PER_BAR
         n = n % BEATS_PER_BAR + 1
     return beats

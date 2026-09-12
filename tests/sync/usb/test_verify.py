@@ -1,7 +1,9 @@
 """Tests for apps.sync.usb.verify engine + CLI."""
 from __future__ import annotations
 
+import ast
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,18 @@ from apps.sync.usb import apply as apply_mod
 from apps.sync.usb import verify as verify_mod
 from apps.sync.usb.profile import load_from_string
 from apps.sync.usb.verify import FileStatus, plan_from_verify, verify_drive
+from apps.sync.usb.pioneer.value_verify import (
+    DENOMINATOR_LABEL,
+    ExpectedGrid,
+    ExpectedTrack,
+    FieldStatus,
+    load_expected_json,
+    probe_odj_analysis_scalar,
+    stick_values_to_jsonable,
+    verify_stick_values,
+)
+from apps.sync.usb.pioneer.reader import read_usb_export, read_anlz_dir, grid_summary_from_anlz
+from tests.fixtures.conftest import resolve_required_fixture
 
 # Live-write MECHANICS against tmp fixtures: runs with the one-way rekordbox
 # import gate ON (root conftest reads the marker). Never a real rb target.
@@ -347,3 +361,225 @@ def test_verify_catches_corrupted_playlist(fixture_canonical, drive_root) -> Non
     assert "Empty.m3u8" in report.playlists_broken
     assert "HeaderOnly.m3u8" in report.playlists_broken
     assert "NoHeader.m3u8" in report.playlists_broken
+
+
+def _rb_export_pioneer() -> Path:
+    return resolve_required_fixture("rb-usb-export") / "PIONEER"
+
+
+@pytest.mark.requirement("CAT-06")
+def test_pioneer_fixture_is_rekordbox_export() -> None:
+    report = verify_stick_values(_rb_export_pioneer())
+    assert report.is_rekordbox_export is True
+    assert report.tracks_on_stick == 199
+
+
+@pytest.mark.requirement("CAT-06")
+def test_pioneer_denominator_is_stick_not_expected(tmp_path: Path) -> None:
+    pioneer = _rb_export_pioneer()
+    stick_count = len(read_usb_export(pioneer)["tracks"])
+    expected = {
+        "a": ExpectedTrack(filename="Flawless.mp3", key="8A"),
+        "b": ExpectedTrack(filename="missing.mp3", key="1A"),
+        "c": ExpectedTrack(filename="also-missing.mp3", key="2A"),
+    }
+    report = verify_stick_values(pioneer, expected=expected)
+    assert report.tracks_on_stick == stick_count == 199
+    assert report.denominator_label == DENOMINATOR_LABEL
+    payload = stick_values_to_jsonable(report)
+    assert payload["tracks_on_stick"] == 199
+    assert payload["denominator_label"] == DENOMINATOR_LABEL
+    assert len(payload["not_on_stick"]) == 2
+
+
+@pytest.mark.requirement("CAT-06")
+def test_pioneer_key_and_grid_counts_from_stick() -> None:
+    pioneer = _rb_export_pioneer()
+    data = read_usb_export(pioneer)
+    report = verify_stick_values(pioneer)
+    assert report.key.present + report.key.absent + report.key.unread == 199
+    assert report.grid.present == 199
+    assert any(t["key"] for t in data["tracks"])
+
+
+@pytest.mark.requirement("CAT-06")
+def test_pioneer_grid_stick_value_matches_anlz() -> None:
+    pioneer = _rb_export_pioneer()
+    anlz_dir = pioneer / "USBANLZ" / "P03D" / "000222D3"
+    summary = grid_summary_from_anlz(anlz_dir)
+    assert summary is not None
+    report = verify_stick_values(pioneer)
+    flawless = next(t for t in report.tracks if t.title == "Flawless")
+    assert flawless.grid.stick_value is not None
+    assert str(summary["beat_count"]) in flawless.grid.stick_value
+    assert summary["beat_count"] == len(read_anlz_dir(anlz_dir)["beat_grid"])
+
+
+@pytest.mark.requirement("CAT-06")
+def test_pioneer_loudness_absent_on_rekordbox_dump() -> None:
+    pioneer = _rb_export_pioneer()
+    data = read_usb_export(pioneer)
+    report = verify_stick_values(pioneer)
+    assert report.loudness.present == 0
+    assert report.loudness.absent + report.loudness.unread == 199
+    commented = [t for t in data["tracks"] if t.get("comment")]
+    if commented:
+        row = next(t for t in report.tracks if t.track_id == commented[0]["id"])
+        assert row.loudness_lufs.status is FieldStatus.ABSENT
+        assert row.loudness_lufs.stick_value is None
+
+
+@pytest.mark.requirement("CAT-06")
+def test_pioneer_verified_means_stick_not_plan() -> None:
+    pioneer = _rb_export_pioneer()
+    data = read_usb_export(pioneer)
+    track = next(t for t in data["tracks"] if t.get("filename") == "Flawless.mp3")
+    wrong_key = ExpectedTrack(filename="Flawless.mp3", key="8A")
+    report = verify_stick_values(pioneer, expected={"x": wrong_key})
+    row = next(t for t in report.tracks if t.filename == "Flawless.mp3")
+    assert row.key.stick_value == track.get("key")
+    if track.get("key"):
+        assert row.key.stick_value != "8A" or row.key.status is FieldStatus.MATCH
+    assert row.key.status in (FieldStatus.MISMATCH, FieldStatus.ABSENT, FieldStatus.MATCH)
+
+    anlz_dir = pioneer / "USBANLZ" / "P03D" / "000222D3"
+    summary = grid_summary_from_anlz(anlz_dir)
+    assert summary is not None
+    bad_grid = ExpectedTrack(
+        filename="Flawless.mp3",
+        grid=ExpectedGrid(
+            beat_count=summary["beat_count"] + 1,
+            first_bpm=summary["first_bpm"],
+            first_time_ms=summary["first_time_ms"],
+        ),
+    )
+    report2 = verify_stick_values(pioneer, expected={"x": bad_grid})
+    row2 = next(t for t in report2.tracks if t.filename == "Flawless.mp3")
+    assert row2.grid.status is FieldStatus.MISMATCH
+    assert str(summary["beat_count"]) in (row2.grid.stick_value or "")
+
+
+@pytest.mark.requirement("CAT-06")
+def test_pioneer_match_when_expected_agrees_with_reader() -> None:
+    pioneer = _rb_export_pioneer()
+    data = read_usb_export(pioneer)
+    track = data["tracks"][0]
+    summary = None
+    if track.get("anlz_path"):
+        anlz_path = Path(track["anlz_path"])
+        anlz_dir = anlz_path if anlz_path.is_absolute() else pioneer / anlz_path
+        summary = grid_summary_from_anlz(anlz_dir)
+    expected = ExpectedTrack(
+        filename=track.get("filename"),
+        key=track.get("key"),
+        grid=(
+            ExpectedGrid(
+                beat_count=summary["beat_count"],
+                first_bpm=summary["first_bpm"],
+                first_time_ms=summary["first_time_ms"],
+            )
+            if summary
+            else None
+        ),
+    )
+    report = verify_stick_values(pioneer, expected={"x": expected})
+    row = next(t for t in report.tracks if t.track_id == track["id"])
+    if track.get("key"):
+        assert row.key.status is FieldStatus.MATCH
+    if summary:
+        assert row.grid.status is FieldStatus.MATCH
+
+
+@pytest.mark.requirement("CAT-06")
+def test_pioneer_overlay_only_tree_rejected(tmp_path: Path) -> None:
+    overlay = tmp_path / "PIONEER" / "rekordbox"
+    overlay.mkdir(parents=True)
+    (overlay / "exportLibrary.db").write_bytes(b"")
+    report = verify_stick_values(tmp_path)
+    assert report.is_rekordbox_export is False
+    assert report.tracks_on_stick == 0
+    assert report.key.match == 0
+    rc = verify_mod.main(["--pioneer-export", str(tmp_path)])
+    assert rc == 4
+
+
+def test_value_verify_ast_guard_no_overlay_imports() -> None:
+    src = Path("apps/sync/usb/pioneer/value_verify.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    blocked = ("writer_rbox", "export_" + "workflow")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                assert blocked[0] not in alias.name
+                assert blocked[1] not in alias.name
+        if isinstance(node, ast.ImportFrom):
+            assert node.module is not None
+            assert blocked[0] not in node.module
+            assert blocked[1] not in node.module
+
+
+def test_verify_py_ast_guard_no_overlay_writer_usage() -> None:
+    src = Path(__file__).read_text(encoding="utf-8")
+    forbidden = ("write_one" + "library", "export_" + "workflow")
+    for name in forbidden:
+        assert name not in src
+
+
+def test_probe_odj_analysis_scalar_unencrypted_sqlite(tmp_path: Path) -> None:
+    db_path = tmp_path / "sidecar.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """
+        CREATE TABLE odjAnalysisScalar (
+            ContentID TEXT NOT NULL,
+            field TEXT NOT NULL,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (ContentID, field)
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO odjAnalysisScalar VALUES (?, ?, ?, ?)",
+        ("1", "loudness_lufs", "-8.2", "2026-01-01T00:00:00Z"),
+    )
+    conn.execute(
+        "INSERT INTO odjAnalysisScalar VALUES (?, ?, ?, ?)",
+        ("1", "loudness_dbtp", "-0.1", "2026-01-01T00:00:00Z"),
+    )
+    conn.commit()
+    conn.close()
+
+    rows = probe_odj_analysis_scalar(db_path)
+    assert rows[1]["loudness_lufs"] == "-8.2"
+    assert rows[1]["loudness_dbtp"] == "-0.1"
+
+    empty_db = tmp_path / "empty.db"
+    sqlite3.connect(str(empty_db)).close()
+    assert probe_odj_analysis_scalar(empty_db) == {}
+
+
+@pytest.mark.requirement("CAT-06")
+def test_pioneer_expected_json_round_trip(tmp_path: Path) -> None:
+    path = tmp_path / "expected.json"
+    path.write_text(
+        json.dumps(
+            {
+                "tracks": [
+                    {
+                        "filename": "Flawless.mp3",
+                        "key": "8A",
+                        "grid": {
+                            "beat_count": 1,
+                            "first_bpm": 128.0,
+                            "first_time_ms": 0,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    loaded = load_expected_json(path)
+    assert "Flawless.mp3" in loaded
+    assert loaded["Flawless.mp3"].key == "8A"

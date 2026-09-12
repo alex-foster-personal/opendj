@@ -84,6 +84,21 @@ test('startup is unmuted with no window, so SSR never mutes anything', () => {
 	assert.equal(mute.startupMasterMuted(), false);
 });
 
+// [if] the unit runner installs a fake window without location [then] startupMasterMuted
+// does not throw and the page stays audible
+test('startup is unmuted when window exists but location.search is missing', async () => {
+	globalThis.window = {
+		localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} }
+	};
+	try {
+		const fresh = await loadTypeScriptModule('src/lib/player/master-mute.svelte.ts');
+		assert.equal(fresh.startupMasterMuted(), false);
+		assert.equal(fresh.isMasterMuted(), false);
+	} finally {
+		delete globalThis.window;
+	}
+});
+
 //-----------------------------------------------------------------------------
 // gain endpoints
 //-----------------------------------------------------------------------------
@@ -236,8 +251,12 @@ test('the mute gain is the final node before the destination on both output path
 		'if the mute gain does not feed _ctx.destination then muting silences nothing'
 	);
 	assert.ok(
-		body.includes('_masterGain.connect(_masterMuteGain)'),
+		body.includes('wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones)'),
 		'if the master bus does not feed the mute gain then the mute is out of the chain'
+	);
+	assert.ok(
+		body.includes('wireSplitCableIntoMasterPath(_masterGain, _masterMuteGain, headphones)'),
+		'if the split-cable path does not feed the mute gain then split_cable is out of the chain'
 	);
 
 	// External-mixer path (?extroute=): merger -> mute -> speakers.

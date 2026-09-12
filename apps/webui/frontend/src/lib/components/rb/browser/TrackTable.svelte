@@ -45,6 +45,7 @@
 	import AutoPlayRankCell from './AutoPlayRankCell.svelte';
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
 	import { columnExplainer } from './column-explainer-placement';
+	import LyricColumn from './LyricColumn.svelte';
 	import PreviewStrip from './PreviewStrip.svelte';
 	import QualityBadge from '../QualityBadge.svelte';
 	import RatingStars from './RatingStars.svelte';
@@ -53,11 +54,11 @@
 	import VocalAnalyzeButton from './VocalAnalyzeButton.svelte';
 	import {
 		computeVirtualWindow,
+		createRowVisibilityObserver,
 		TRACK_TABLE_THEAD_PX,
 		masterFoldVisibility,
 		scrollTopForRowIndex
 	} from './virtual-window';
-	import { createRowVisibilityObserver } from './observe-row';
 	import {
 		ANALYSIS_COLORS,
 		jobProgress,
@@ -69,6 +70,11 @@
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
 	import ContextMenu, { type ContextMenuItem } from '../ContextMenu.svelte';
 	import SpinnerIcon from './SpinnerIcon.svelte';
+	import { trackEditMenuItems, type TrackEditModalKind } from './track-edit-menu';
+	import { addToPlaylistMenuItem } from './add-to-playlist-menu';
+	import { removeFromLibraryMenuItem } from './track-library-menu';
+	import { showInPlaylistsMenuItem } from './track-playlists-menu';
+	import TrackPlaylistsPopover from './TrackPlaylistsPopover.svelte';
 
 	type DeckId = (typeof DECK_IDS)[number];
 
@@ -101,39 +107,7 @@
 	} | null>(null);
 	let loadConfirmEveryTime = $state(false);
 	let contextMenu = $state<{ x: number; y: number; row: BrowserRow } | null>(null);
-
-	function trackMenuItems(row: BrowserRow): ContextMenuItem[] {
-		const selected = selectedOrderSet.has(row.order) ? selectedIds : [row.stable_id];
-		return [
-			...DECKS.map((deck) => ({ id: `load-${deck}`, label: `Load to deck ${deck}`, run: () => onloadrow(row, deck) })),
-			{ id: 'add-playlist', label: 'Add to playlist...' }, { id: 'edit', label: 'Edit' },
-			{ id: 'bulk-edit', label: `Bulk edit (${selected.length})` }, { id: 'find-replace', label: 'Find/replace' },
-			{ id: 'mytag', label: 'My Tag editor' }, { id: 'relocate', label: 'Relocate' },
-			{ id: 'finder', label: 'Show in Finder' }, { id: 'copy-path', label: 'Copy path' },
-			{ id: 'analyze', label: 'Analyze' },
-			{ id: 'stems-generate', label: 'Stems: do next', run: onstemsdonext ? () => onstemsdonext(selected) : undefined },
-			{ id: 'stems-open', label: 'Stems - open' },
-			{ id: 'lyrics', label: 'Lyrics: do next', run: onlyricsdonext ? () => onlyricsdonext(selected) : undefined },
-			{ id: 'offline', label: 'Mark offline' }, { id: 'cloud-only', label: 'Cloud-only' },
-			{ id: 'remove-playlist', label: 'Remove from playlist', run: removable ? () => onremoverow?.(row) : undefined },
-			{ id: 'remove-library', label: 'Remove from library' }
-		];
-	}
-
-	function openTrackMenu(event: MouseEvent, row: BrowserRow): void {
-		event.preventDefault();
-		event.stopPropagation();
-		if (!selectedOrderSet.has(row.order)) onselectrow(row);
-		contextMenu = { x: event.clientX, y: event.clientY, row };
-	}
-
-	function onTrackKeydown(event: KeyboardEvent, row: BrowserRow): void {
-		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
-		event.preventDefault();
-		if (!selectedOrderSet.has(row.order)) onselectrow(row);
-		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-		contextMenu = { x: rect.left + 8, y: rect.top + 8, row };
-	}
+	let playlistsMenu = $state<{ x: number; y: number; stableId: string } | null>(null);
 
 	function onColResizeStart(event: PointerEvent, col: ColId): void {
 		event.preventDefault();
@@ -271,6 +245,7 @@
 		removable = false,
 		reorderable = false,
 		onscrollcursor,
+		onrenderedrowcapacity,
 		onsort,
 		onselectrow,
 		onloadrow,
@@ -297,7 +272,10 @@
 		 * it can measure. */
 		bodyOverlay = undefined as Snippet | undefined,
 		onstemsdonext = undefined as ((stableIds: string[]) => void) | undefined,
-		onlyricsdonext = undefined as ((stableIds: string[]) => void) | undefined
+		onlyricsdonext = undefined as ((stableIds: string[]) => void) | undefined,
+		onopeneditmodal = undefined,
+		onremovefromlibrary = undefined,
+		onaddtoplaylist = undefined
 	}: {
 		/** Read contract: { rows, total, truncated, fetchWindow } - see
 		 * pane-contract.svelte.ts. */
@@ -327,6 +305,9 @@
 		reorderable?: boolean;
 		/** Reports the live table-wrap scrollTop back to the pane store. */
 		onscrollcursor: (top: number) => void;
+		/** Reports the number of actual rows the viewport can show after its
+		 * header and current density are accounted for. */
+		onrenderedrowcapacity?: (count: number) => void;
 		onsort: (key: SortKey) => void;
 		onselectrow: (row: BrowserRow, event?: MouseEvent) => void;
 		/** deck null = legacy free-deck load; prefer onpickdoubledeck for dblclick.
@@ -360,13 +341,18 @@
 		/** Remove this row's membership position from the playlist. */
 		onremoverow?: (row: BrowserRow) => void;
 		/** Move the track at `fromOrder` (1-based) to `toOrder`'s slot. */
-		onreorder?: (fromOrder: number, toOrder: number) => void;
+		onreorder?: (fromOrder: number, toOrder: number, count?: number) => void;
 		/** A drag the table refused, with the reason. The table does not own a
 		 * toast channel, so the panel says it (pins 8ba0b15d975b /
 		 * 72be3e505510: a silent refusal reads as a broken feature). */
 		onrefused?: (reason: string) => void;
 		onstemsdonext?: (stableIds: string[]) => void;
 		onlyricsdonext?: (stableIds: string[]) => void;
+		onopeneditmodal?: (kind: TrackEditModalKind) => void;
+		/** Remove selected tracks from the library (files stay on disk). */
+		onremovefromlibrary?: (stableIds: string[]) => void;
+		/** Open the add-to-playlist picker for the selected tracks. */
+		onaddtoplaylist?: (stableIds: string[]) => void;
 		/** Genre chip / post-filter gestures. */
 		ongenrefilter?: (mode: 'strict' | 'loose' | 'clear' | 'undo', tag?: string) => void;
 		/** Epoch ms until which library dbl/triple remap to clear/undo. */
@@ -601,9 +587,77 @@
 		uiPrefs.library_density === 'cosy' ? ROW_HEIGHT_COSY : ROW_HEIGHT_COMPACT
 	);
 
+	function trackMenuItems(row: BrowserRow, menuX: number, menuY: number): ContextMenuItem[] {
+		const selected = selectedOrderSet.has(row.order) ? selectedIds : [row.stable_id];
+		return [
+			...DECKS.map((deck) => ({ id: `load-${deck}`, label: `Load to deck ${deck}`, run: () => onloadrow(row, deck) })),
+			addToPlaylistMenuItem(selected, onaddtoplaylist),
+			{ id: 'edit', label: 'Edit' },
+			...trackEditMenuItems(selected.length, onopeneditmodal),
+			{ id: 'relocate', label: 'Relocate' },
+			{ id: 'finder', label: 'Show in Finder' },
+			showInPlaylistsMenuItem(() => {
+				playlistsMenu = { x: menuX, y: menuY, stableId: row.stable_id };
+			}),
+			{ id: 'copy-path', label: 'Copy path' },
+			{ id: 'analyze', label: 'Analyze' },
+			{ id: 'stems-generate', label: 'Stems: do next', run: onstemsdonext ? () => onstemsdonext(selected) : undefined },
+			{ id: 'stems-open', label: 'Stems - open' },
+			{ id: 'lyrics', label: 'Lyrics: do next', run: onlyricsdonext ? () => onlyricsdonext(selected) : undefined },
+			{ id: 'offline', label: 'Mark offline' }, { id: 'cloud-only', label: 'Cloud-only' },
+			{ id: 'remove-playlist', label: 'Remove from playlist', run: removable ? () => onremoverow?.(row) : undefined },
+			removeFromLibraryMenuItem(selected, onremovefromlibrary)
+		];
+	}
+
+	function openTrackMenu(event: MouseEvent, row: BrowserRow): void {
+		event.preventDefault();
+		event.stopPropagation();
+		if (!selectedOrderSet.has(row.order)) onselectrow(row);
+		contextMenu = { x: event.clientX, y: event.clientY, row };
+	}
+
+	function onTrackKeydown(event: KeyboardEvent, row: BrowserRow): void {
+		const target = event.target;
+		if (
+			target instanceof HTMLInputElement ||
+			target instanceof HTMLTextAreaElement ||
+			(target instanceof HTMLElement && target.isContentEditable)
+		) {
+			return;
+		}
+		if (
+			removable &&
+			(event.key === 'Delete' || event.key === 'Backspace') &&
+			onremoverow
+		) {
+			event.preventDefault();
+			event.stopPropagation();
+			if (selectedOrderSet.has(row.order)) {
+				for (const visible of rows) {
+					if (selectedOrderSet.has(visible.order)) {
+						onremoverow(visible);
+					}
+				}
+			} else {
+				onremoverow(row);
+			}
+			return;
+		}
+		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+		event.preventDefault();
+		if (!selectedOrderSet.has(row.order)) onselectrow(row);
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		contextMenu = { x: rect.left + 8, y: rect.top + 8, row };
+	}
+
 	// ----- AUTOPLAY-COL helpers ---------------------------------------------
 	let hoveredApId = $state<string | null>(null);
 	const autoPlayMode = $derived(describeAutoPlayMode(uiPrefs).mode);
+	const showLyricsCol = $derived(uiPrefs.lyrics_library_col && uiPrefs.lyrics_global);
+	const colCount = $derived(
+		(autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT) + (showLyricsCol ? 1 : 0)
+	);
 
 	function _autoPlayRank(stableId: string): number | null {
 		return autoPlayOrder.rankOf.get(stableId) ?? null;
@@ -640,7 +694,10 @@
 	 * to redistribute - narrower than the wrap just leaves blank space to the
 	 * right, same as any wrap wider than its content. */
 	const tableWidthPx = $derived(
-		Object.values(colWidths).reduce((sum, w) => sum + w, 0)
+		Object.entries(colWidths).reduce(
+			(sum, [id, w]) => sum + (id === 'lyrics' && !showLyricsCol ? 0 : w),
+			0
+		)
 	);
 
 	// ------------------------------------------- per-pane scroll cursor
@@ -707,6 +764,16 @@
 		})
 	);
 	const visibleRows = $derived(rows.slice(windowInfo.startIndex, windowInfo.endIndex));
+	const renderedRowCapacity = $derived(
+		Math.min(
+			rows.length,
+			Math.max(0, Math.floor((viewportHeight - TRACK_TABLE_THEAD_PX) / rowHeight))
+		)
+	);
+
+	$effect(() => {
+		onrenderedrowcapacity?.(renderedRowCapacity);
+	});
 
 	/** Jump to first in-place find match when the query becomes active. */
 	$effect(() => {
@@ -831,7 +898,7 @@
 	// Grip-initiated only (not the whole row): the row's own click/dblclick
 	// keep selecting/loading a deck. _dragSourceOrder is plain state, not a
 	// rune - it only matters for the lifetime of one drag gesture.
-	let _dragSourceOrder: number | null = null;
+	let _dragSourceOrder: { start: number; count: number } | null = null;
 
 	function onRowDragStart(event: DragEvent, row: BrowserRow): void {
 		// A refused drag used to just preventDefault and return: no cursor
@@ -876,7 +943,17 @@
 
 	function onGripDragStart(event: DragEvent, row: BrowserRow): void {
 		event.stopPropagation();
-		_dragSourceOrder = row.order;
+		const selected = [...new Set(selectedOrders)].sort((a, b) => a - b);
+		if (
+			selectedOrderSet.has(row.order) &&
+			selected.length > 0 &&
+			selected[selected.length - 1] - selected[0] + 1 === selected.length &&
+			selected.includes(row.order)
+		) {
+			_dragSourceOrder = { start: selected[0], count: selected.length };
+		} else {
+			_dragSourceOrder = { start: row.order, count: 1 };
+		}
 		event.dataTransfer?.setData('text/plain', String(row.order));
 		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
 	}
@@ -889,10 +966,13 @@
 
 	function onRowDrop(event: DragEvent, row: BrowserRow): void {
 		event.preventDefault();
-		const from = _dragSourceOrder;
+		const source = _dragSourceOrder;
 		_dragSourceOrder = null;
-		if (from === null || from === row.order) return;
-		onreorder?.(from, row.order);
+		if (source === null) return;
+		const { start, count } = source;
+		if (row.order >= start && row.order < start + count) return;
+		if (start === row.order) return;
+		onreorder?.(start, row.order, count);
 	}
 </script>
 
@@ -931,7 +1011,20 @@
 	data-truncated={provider.truncated ? 'true' : 'false'}
 >
 	{#if contextMenu !== null}
-		<ContextMenu items={trackMenuItems(contextMenu.row)} x={contextMenu.x} y={contextMenu.y} onclose={() => (contextMenu = null)} />
+		<ContextMenu
+			items={trackMenuItems(contextMenu.row, contextMenu.x, contextMenu.y)}
+			x={contextMenu.x}
+			y={contextMenu.y}
+			onclose={() => (contextMenu = null)}
+		/>
+	{/if}
+	{#if playlistsMenu !== null}
+		<TrackPlaylistsPopover
+			stableId={playlistsMenu.stableId}
+			x={playlistsMenu.x}
+			y={playlistsMenu.y}
+			onclose={() => (playlistsMenu = null)}
+		/>
 	{/if}
 	{#if masterFold === 'above'}
 		<button
@@ -1002,6 +1095,9 @@
 				<col style={`width:${colWidths.energy}px`} />
 				<col style={`width:${colWidths.genre}px`} />
 				<col style={`width:${colWidths.stems}px`} />
+				{#if showLyricsCol}
+					<col style={`width:${colWidths.lyrics}px`} />
+				{/if}
 			</colgroup>
 			<thead bind:clientHeight={theadHeightPx}>
 				<tr>
@@ -1271,12 +1367,15 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
+					{#if showLyricsCol}
+						{@render sortableTh('lyrics', 'Lyrics', 'lyrics')}
+					{/if}
 				</tr>
 			</thead>
 			<tbody>
 				{#if windowInfo.topPad > 0}
 					<tr class="tt-spacer" style={`height:${windowInfo.topPad}px`} aria-hidden="true">
-						<td colspan={autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT}></td>
+						<td colspan={colCount}></td>
 					</tr>
 				{/if}
 				{#each visibleRows as row, i (`${row.stable_id}:${row.order}`)}
@@ -1446,6 +1545,8 @@
 								duration_ms={row.duration_ms}
 								revealed={row.revealed}
 								nowRatio={_nowRatioFor(row.stable_id)}
+								stable_id={row.stable_id}
+								enabled={row.lyrics?.has_words === true}
 								onseek={(ratio) => onpreviewseek?.(row, ratio)}
 							/>
 						</td>
@@ -1607,11 +1708,14 @@
 							<StemTags stems={row.stems} />
 							<VocalAnalyzeButton stableId={row.stable_id} stems={row.stems} />
 						</td>
+						{#if showLyricsCol}
+							<LyricColumn {row} />
+						{/if}
 					</tr>
 				{/each}
 				{#if windowInfo.bottomPad > 0}
 					<tr class="tt-spacer" style={`height:${windowInfo.bottomPad}px`} aria-hidden="true">
-						<td colspan={autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT}></td>
+						<td colspan={colCount}></td>
 					</tr>
 				{/if}
 			</tbody>

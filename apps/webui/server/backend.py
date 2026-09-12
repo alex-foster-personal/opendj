@@ -88,6 +88,9 @@ class Track:
     tags: list[str] = field(default_factory=list)
     notes: str | None = None
     last_played_at: str | None = None
+    # PREF-01: {"regular": float|None, "min": float|None, "max": float|None},
+    # or None when never set for this track. Never fabricated.
+    tempo_pref: dict[str, float | None] | None = None
     file_path: str | None = None
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
@@ -105,6 +108,14 @@ class Track:
 
 
 @dataclass
+class TrackPlaylistHit:
+    playlist_id: str
+    name: str
+    vendor: str
+    positions: list[int]
+
+
+@dataclass
 class Playlist:
     playlist_id: str
     name: str
@@ -113,6 +124,7 @@ class Playlist:
     # backing store predates the column or the vendor has no such id.
     vendor_pl_id: str | None = None
     items: list[str] = field(default_factory=list)
+    item_ids: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
 
@@ -148,6 +160,7 @@ class TrackFilter:
     tag: str | None = None
     cursor: str | None = None
     limit: int = DEFAULT_LIMIT
+    show_deleted: bool = False
 
 
 @dataclass
@@ -179,6 +192,33 @@ class BatchConflictError(BackendError):
     def __init__(self, conflicts: list[dict[str, str]]) -> None:
         self.conflicts = conflicts
         super().__init__("one or more If-Match values do not match")
+
+
+def resolve_tempo_pref_write(patch_value: Any) -> dict[str, float | None] | None:
+    """Validate + clamp a ``tempo_pref`` patch value (PREF-01).
+
+    Shared by both backends so SqliteBackend and InMemoryBackend enforce the
+    identical rule set. ``None`` clears the preference. Otherwise:
+
+      * ``min >= max`` is rejected (a track must have a non-empty range).
+      * ``regular`` is clamped into ``[min, max]`` rather than left out of
+        bounds - the caller may be resubmitting an existing ``regular``
+        alongside a newly narrowed range, and this is the one place both
+        paths (a fresh edit and a range-only edit) go through.
+    """
+    if patch_value is None:
+        return None
+    regular = patch_value.get("regular")
+    tmin = patch_value.get("min")
+    tmax = patch_value.get("max")
+    if tmin is not None and tmax is not None and tmin >= tmax:
+        raise BackendError("tempo_pref.min must be less than tempo_pref.max")
+    if regular is not None:
+        if tmin is not None and regular < tmin:
+            regular = tmin
+        if tmax is not None and regular > tmax:
+            regular = tmax
+    return {"regular": regular, "min": tmin, "max": tmax}
 
 
 class MyTagScopeConflictError(BackendError):
@@ -226,6 +266,7 @@ class StateBackend(Protocol):
     def get_file_paths_bulk(self, stable_ids: Sequence[str]) -> dict[str, str | None]: ...
     def list_playlists(self) -> list[Playlist]: ...
     def get_playlist(self, playlist_id: str) -> Playlist: ...
+    def list_track_playlists(self, stable_id: str) -> list[TrackPlaylistHit]: ...
     def list_pairings(self, *, from_stable_id: str | None = None,
                       to_stable_id: str | None = None,
                       source: str | None = None) -> list[Pairing]: ...
@@ -353,6 +394,22 @@ class InMemoryBackend:
             raise NotFoundError(f"playlist not found: {playlist_id}")
         return pl
 
+    def list_track_playlists(self, stable_id: str) -> list[TrackPlaylistHit]:
+        with self._mutex:
+            playlists = list(self._playlists.values())
+        hits: list[TrackPlaylistHit] = []
+        for pl in playlists:
+            positions = [i for i, sid in enumerate(pl.items) if sid == stable_id]
+            if positions:
+                hits.append(TrackPlaylistHit(
+                    playlist_id=pl.playlist_id,
+                    name=pl.name,
+                    vendor=pl.vendor,
+                    positions=positions,
+                ))
+        hits.sort(key=lambda h: (h.name.casefold(), h.playlist_id))
+        return hits
+
     def list_pairings(self, *, from_stable_id: str | None = None,
                       to_stable_id: str | None = None,
                       source: str | None = None) -> list[Pairing]:
@@ -428,6 +485,11 @@ class InMemoryBackend:
                     prov["notes"] = Provenance(value=updated.notes, source=source,
                                                confidence=1.0, modified_at=now,
                                                status="ok")
+                if "tempo_pref" in update.patch:
+                    updated.tempo_pref = resolve_tempo_pref_write(update.patch["tempo_pref"])
+                    prov["tempo_pref"] = Provenance(value=updated.tempo_pref, source=source,
+                                                    confidence=1.0, modified_at=now,
+                                                    status="ok")
                 if "file_path" in update.patch:
                     file_path = update.patch["file_path"]
                     if not isinstance(file_path, str) or not file_path:

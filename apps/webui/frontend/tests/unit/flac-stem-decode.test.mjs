@@ -36,7 +36,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 let decode;
 
 before(async () => {
-	decode = await loadTypeScriptModule('src/lib/player/decode/flac-stem-decode.ts');
+	decode = await loadTypeScriptModule('tests/live/stem-decode-harness-entry.ts');
 });
 
 // The pool is module state by design (it holds real workers across loads), so
@@ -326,8 +326,8 @@ test('an empty decode is refused instead of becoming a zero-length stem', async 
 
 test('a mixed bundle reports mixed, so a half-won load cannot read as a whole one', () => {
 	const labels = decode.stemDecodeLabels([
-		{ part: 'vocals', viaWorker: true, refusal: null, ms: 10 },
-		{ part: 'drums', viaWorker: false, refusal: 'decode-failed', ms: 40 }
+		{ part: 'vocals', viaWorker: true, refusal: null, ms: 10, codec: 'flac' },
+		{ part: 'drums', viaWorker: false, refusal: 'decode-failed', ms: 40, codec: 'flac' }
 	]);
 	assert.equal(labels.stem_decode, 'mixed');
 	assert.equal(labels.stem_decode_workers, '1/2');
@@ -1231,3 +1231,100 @@ test('the worker trial times steady state, not the wasm compile it pays once', a
 	assert.equal(inner.state.made, PARTS.length, 'the warmed decoders are the ones used');
 	assert.equal(decode.stemDecodeSession.pooled(), PARTS.length, 'and all four are parked after');
 });
+
+//-----------------------------------------------------------------------------
+// MPEG eligibility (PERF-STEMDEC-03)
+
+import { readFile as readFileAsync } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+function withMpegRung(testFn) {
+	return async (t) => {
+		decode.stemDecodeSession.setMpegRungShipped(true);
+		try {
+			await testFn(t);
+		} finally {
+			decode.stemDecodeSession.setMpegRungShipped(false);
+		}
+	};
+}
+
+const MPEG_FIXTURE = path.join(
+	path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..'),
+	'tests/fixtures/phase7-dedup/src-320.mp3'
+);
+
+let mpegBytes;
+
+test('MPEG bytes take the worker path when the mpeg lane is forced', withMpegRung(async () => {
+	mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
+	const ctx = fakeContext(22050);
+	const { factory, state } = fakeDecoderFactory({ sampleRate: 22050 });
+	const allMpeg = () => Object.fromEntries(PARTS.map((part) => [part, mpegBytes.buffer.slice(0)]));
+	const result = await decode.decodeStemParts(ctx, allMpeg(), PARTS, {
+		makeDecoder: factory,
+		decodeFallback: countingFallback().fn
+	});
+	assert.equal(state.made, 4);
+	assert.ok(result.reports.every((r) => r.viaWorker && r.refusal === null));
+	assert.equal(decode.stemDecodeLabels(result.reports).stem_decode_codec, 'mpeg');
+}));
+
+test('OGG is still not-flac and never claims an MPEG trial', withMpegRung(async () => {
+	decode.stemDecodeSession.resetLane();
+	const ctx = fakeContext();
+	const oggBundle = Object.fromEntries(PARTS.map((part) => [part, OGG()]));
+	const result = await decode.decodeStemParts(ctx, oggBundle, PARTS, {
+		makeDecoder: fakeDecoderFactory().factory,
+		decodeFallback: countingFallback().fn,
+		now: stepClock(9999)
+	});
+	assert.ok(result.reports.every((r) => r.refusal === 'not-flac'));
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length, 'mpeg'), null);
+}));
+
+test('a FLAC 4-part verdict does not pin an MPEG 4-part load', withMpegRung(async () => {
+	mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
+	decode.stemDecodeSession.resetLane();
+	const ctx = fakeContext();
+	const first = fakeDecoderFactory();
+	await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: first.factory,
+		decodeFallback: countingFallback().fn,
+		now: stepClock(400)
+	});
+	decode.stemDecodeSession.resetPool();
+	const second = fakeDecoderFactory();
+	await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: second.factory,
+		decodeFallback: countingFallback().fn,
+		now: stepClock(100)
+	});
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length, 'flac'), 'workers');
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length, 'mpeg'), null);
+
+	decode.stemDecodeSession.resetPool();
+	const mpegCtx = fakeContext(22050);
+	const mpegRun = fakeDecoderFactory({ sampleRate: 22050 });
+	const allMpeg = () => Object.fromEntries(PARTS.map((part) => [part, mpegBytes.buffer.slice(0)]));
+	await decode.decodeStemParts(mpegCtx, allMpeg(), PARTS, {
+		makeDecoder: mpegRun.factory,
+		decodeFallback: countingFallback().fn,
+		now: stepClock(400)
+	});
+	assert.equal(mpegRun.state.made, 0, 'MPEG main-thread trial is independent of FLAC verdict');
+}));
+
+test('MPEG at the wrong rate is sample-rate-mismatch without taking a decoder', withMpegRung(async () => {
+	mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
+	const ctx = fakeContext(44100);
+	const { factory, state } = fakeDecoderFactory({ sampleRate: 22050 });
+	const allMpeg = () => Object.fromEntries(PARTS.map((part) => [part, mpegBytes.buffer.slice(0)]));
+	const result = await decode.decodeStemParts(ctx, allMpeg(), PARTS, {
+		makeDecoder: factory,
+		decodeFallback: countingFallback().fn
+	});
+	assert.equal(state.made, 0);
+	assert.ok(result.reports.every((r) => r.refusal === 'sample-rate-mismatch'));
+}));

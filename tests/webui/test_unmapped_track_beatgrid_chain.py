@@ -32,8 +32,10 @@ Regression one-liners:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import os
 import struct
 import wave
 from collections.abc import Iterator
@@ -245,7 +247,7 @@ def test_fallback_serves_an_anlz_shaped_grid_for_the_analyzed_track(
     assert beats, "an analyzed track must yield beats, not an empty grid"
     assert body["beatgrid"]["beat_count"] == len(beats)
     for beat in beats:
-        assert set(beat) == {"n", "bpm", "t"}
+        assert set(beat) == {"n", "bpm", "t", "extrapolated"}
 
 
 def test_fallback_grid_passes_the_decks_own_beatgrid_rules(
@@ -274,6 +276,8 @@ _FRONTEND_FIXTURE = (
     Path(__file__).resolve().parents[2]
     / "apps/webui/frontend/tests/unit/fixtures/beatgrid-fallback-unmapped-captured.json"
 )
+_FRONTEND_FIXTURE_MANIFEST = _FRONTEND_FIXTURE.with_suffix(".manifest.json")
+FIXTURE_REWRITE_ENV = "MDT_BEATGRID_CHAIN_FIXTURE_REWRITE"
 
 
 def test_frontend_fixture_capture_matches_the_live_route(client: TestClient) -> None:
@@ -290,7 +294,12 @@ def test_frontend_fixture_capture_matches_the_live_route(client: TestClient) -> 
     file with no embedded art, but degrades to None ("could not check") when
     mutagen is missing. A capture taken in a venv without it records that None
     and then fails here on any complete install, CI included - which is exactly
-    how this assertion first went red."""
+    how this assertion first went red.
+
+    Re-capture command (always fails after writing; read the diff, then re-run
+    without the switch):
+
+    MDT_BEATGRID_CHAIN_FIXTURE_REWRITE=1 pytest tests/webui/test_unmapped_track_beatgrid_chain.py::test_frontend_fixture_capture_matches_the_live_route"""
     captured = json.loads(_FRONTEND_FIXTURE.read_text())
 
     rb_meta = client.get(f"/api/v1/tracks/{ANALYZED_SID}/rb-meta")
@@ -300,15 +309,66 @@ def test_frontend_fixture_capture_matches_the_live_route(client: TestClient) -> 
     # twice; every other field is asserted against the literal capture.
     assert rb_meta_body["folder_path"], "expected a real resolved path, not empty"
     rb_meta_body["folder_path"] = "<audio-file-path>"
-    assert rb_meta_body == captured["rb_meta_ok"]["body"]
+    if rb_meta_body.get("artwork_available") is not False:
+        pytest.fail(
+            "rb_meta artwork_available must be False before capture; install the "
+            "project `tags` extra so mutagen is available (uv sync --extra tags)"
+        )
 
     fallback_ok = client.get(f"/api/v1/tracks/{ANALYZED_SID}/beatgrid-fallback")
     assert fallback_ok.status_code == captured["beatgrid_fallback_ok"]["status"]
-    assert fallback_ok.json() == captured["beatgrid_fallback_ok"]["body"]
+    fallback_ok_body = fallback_ok.json()
 
     fallback_404 = client.get(f"/api/v1/tracks/{UNANALYZED_SID}/beatgrid-fallback")
     assert fallback_404.status_code == captured["beatgrid_fallback_not_found"]["status"]
-    assert fallback_404.json() == captured["beatgrid_fallback_not_found"]["body"]
+    fallback_404_body = fallback_404.json()
+
+    if os.environ.get(FIXTURE_REWRITE_ENV) == "1":
+        provenance = (
+            captured["_provenance"]
+            + " Re-captured Sat 12 Sep 2026 (issue #2246, after PR #2237 / #1777); "
+            "each fallback beat now carries required `extrapolated` (false through "
+            "last detected downbeat t=58.0, true for the three tail beats past it)."
+        )
+        fresh = {
+            "_provenance": provenance,
+            "beatgrid_fallback_not_found": {
+                "body": fallback_404_body,
+                "status": fallback_404.status_code,
+            },
+            "beatgrid_fallback_ok": {
+                "body": fallback_ok_body,
+                "status": fallback_ok.status_code,
+            },
+            "rb_meta_ok": {
+                "body": rb_meta_body,
+                "status": rb_meta.status_code,
+            },
+        }
+        json_bytes = (json.dumps(fresh, indent=2, sort_keys=True) + "\n").encode("utf-8")
+        _FRONTEND_FIXTURE.write_bytes(json_bytes)
+        manifest = {
+            "schema_version": 1,
+            "capture_version": "2026-09-12",
+            "files": {
+                "beatgrid-fallback-unmapped-captured.json": {
+                    "bytes": len(json_bytes),
+                    "sha256": hashlib.sha256(json_bytes).hexdigest(),
+                }
+            },
+        }
+        _FRONTEND_FIXTURE_MANIFEST.write_text(
+            json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+        )
+        pytest.fail(
+            f"re-captured {_FRONTEND_FIXTURE} and {_FRONTEND_FIXTURE_MANIFEST} "
+            f"because {FIXTURE_REWRITE_ENV}=1 was set. This always fails: read the "
+            "diff, then re-run without the switch."
+        )
+
+    assert rb_meta_body == captured["rb_meta_ok"]["body"]
+    assert fallback_ok_body == captured["beatgrid_fallback_ok"]["body"]
+    assert fallback_404_body == captured["beatgrid_fallback_not_found"]["body"]
 
 
 def test_no_analysis_row_is_a_settled_404_not_an_invented_grid(

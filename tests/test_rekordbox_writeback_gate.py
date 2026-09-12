@@ -369,6 +369,8 @@ MODULE_PROBES: dict[str, Callable[[Path], None]] = {
     "module.sync.apply_ratings": lambda _tmp: __import__(
         "apps.sync.apply_ratings", fromlist=["_live_rb_db_path"]
     )._live_rb_db_path(True),
+    # Write-back live (no --diff-csv) uses the same opener as CSV --live;
+    # fixed-tempo PQTZ writes run inside that session too.
     "module.sync.apply_analysis": lambda _tmp: __import__(
         "apps.sync.apply_analysis", fromlist=["_live_rb_db_path"]
     )._live_rb_db_path(True),

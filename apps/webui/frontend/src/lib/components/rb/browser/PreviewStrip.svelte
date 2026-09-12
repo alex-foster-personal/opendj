@@ -6,7 +6,20 @@
 	// view (revealed flips true via the table's IntersectionObserver);
 	// redraw only on DPR change or vocal-region arrival.
 	// Interactive: hover = thin red scrub line; click = onseek(ratio) if wired.
+	// Scrub-hover lyrics: when lyric words are cached, hovering shows the word
+	// under the pointer above the strip.
+	import ScrubLyricStrip from '$lib/components/lyrics/ScrubLyricStrip.svelte';
+	import { cancelHoverLoad, hoverLoadLyrics, lyricEntry } from '$lib/lyrics/lyrics-cache.svelte';
+	import {
+		indexLyricWords,
+		nearSecondsForScale,
+		resolvePointerWord,
+		timeForPointer,
+		type PointerWord,
+		type WordIndex
+	} from '$lib/lyrics/pointer-word';
 	import type { PreviewStripData, Vocals } from '$lib/rb/api-rb';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { VOCAL_BLUE, vocalAlpha } from '../wave/render';
 
 	const COL_LOW = '#3d7dd9';
@@ -23,7 +36,9 @@
 		duration_ms,
 		revealed,
 		nowRatio = null,
-		onseek
+		onseek,
+		stable_id = null,
+		enabled = true
 	}: {
 		strip: PreviewStripData | null;
 		vocals: Vocals | null;
@@ -38,7 +53,20 @@
 		 */
 		nowRatio?: number | null;
 		onseek?: (ratio: number) => void;
+		stable_id?: string | null;
+		enabled?: boolean;
 	} = $props();
+
+	const scrubOn: boolean = $derived(
+		enabled && uiPrefs.lyrics_global && uiPrefs.lyrics_hover_scrub && stable_id !== null
+	);
+	const wordIndex: WordIndex | null = $derived.by(() => {
+		if (!scrubOn || stable_id === null) return null;
+		const entry = lyricEntry(stable_id);
+		if (entry === null || entry.state !== 'loaded' || entry.track === null) return null;
+		if (entry.track.words.length === 0) return null;
+		return indexLyricWords(entry.track.words);
+	});
 
 	/** Clamped playhead offset in CSS px, or null when off-deck / unusable. */
 	const nowX: number | null = $derived(
@@ -141,17 +169,52 @@
 		return Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
 	}
 
-	function onMove(event: MouseEvent): void {
-		hoverX = _ratioFromEvent(event) * W;
+	let pointer: PointerWord | null = $state(null);
+
+	function _resolveAtRatio(ratio: number): PointerWord | null {
+		if (wordIndex === null || duration_ms === null || duration_ms <= 0) return null;
+		const durationS = duration_ms / 1000;
+		return resolvePointerWord(wordIndex, timeForPointer(ratio * W, W, durationS), {
+			nearS: nearSecondsForScale(durationS / W)
+		});
 	}
+
+	function onMove(event: MouseEvent): void {
+		const ratio = _ratioFromEvent(event);
+		hoverX = ratio * W;
+		if (scrubOn && stable_id !== null && uiPrefs.lyrics_load_strategy === 'hover') {
+			hoverLoadLyrics(stable_id);
+		}
+		pointer = _resolveAtRatio(ratio);
+	}
+
+	$effect(() => {
+		if (wordIndex !== null && hoverX !== null && pointer === null) {
+			pointer = _resolveAtRatio(hoverX / W);
+		}
+	});
 
 	function onLeave(): void {
 		hoverX = null;
+		pointer = null;
+		if (stable_id !== null) cancelHoverLoad(stable_id);
 	}
 
 	function onClick(event: MouseEvent): void {
 		event.stopPropagation();
-		onseek?.(_ratioFromEvent(event));
+		const ratio = _ratioFromEvent(event);
+		const state = _resolveAtRatio(ratio);
+		if (
+			state !== null &&
+			state.kind === 'inside' &&
+			state.focusStartS !== null &&
+			duration_ms !== null &&
+			duration_ms > 0
+		) {
+			onseek?.(Math.min(1, Math.max(0, (state.focusStartS * 1000) / duration_ms)));
+			return;
+		}
+		onseek?.(ratio);
 	}
 </script>
 
@@ -173,6 +236,9 @@
 		{/if}
 		{#if hoverX !== null}
 			<span class="scrub" style={`left:${hoverX}px`} aria-hidden="true"></span>
+		{/if}
+		{#if wordIndex !== null && pointer !== null && hoverX !== null}
+			<ScrubLyricStrip index={wordIndex} state={pointer} xPx={hoverX} widthPx={W} />
 		{/if}
 	</div>
 {/if}

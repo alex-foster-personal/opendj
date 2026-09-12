@@ -103,6 +103,10 @@ BPM_LOOSE_TOL = 1.0
 # Float slack so a value sitting exactly on a boundary does not fail by 1 ulp.
 _EPS = 1e-9
 
+# A minimal post-processor threshold change should only move the dynamic partition;
+# fixed-tempo F moving more than this is a regression, not a ship.
+FIXED_TEMPO_F_REGRESSION_TOL = 0.01
+
 # A straight-line tempo fit needs at least this many beats to mean anything.
 MIN_BEATS_FOR_FIT = 4
 
@@ -503,3 +507,73 @@ def score_downbeats(
                 matched += 1
                 break
     return DownbeatScore(True, len(ref), len(cand), matched, matched / len(ref))
+
+
+# ----- Fixed-tempo F regression guard ------------------------------------
+
+
+class FixedTempoFRegression(ValueError):
+    """Fixed-tempo F moved beyond tolerance; promotion figure must not update."""
+
+
+@dataclass(frozen=True)
+class FixedTempoFShift:
+    baseline_f: float
+    candidate_f: float
+    delta: float
+    is_regression: bool
+
+
+def evaluate_fixed_tempo_f_shift(baseline_f: float, candidate_f: float) -> FixedTempoFShift:
+    """Pure verdict: did fixed-tempo F move more than the regression tolerance?"""
+    baseline = float(baseline_f)
+    candidate = float(candidate_f)
+    delta = abs(candidate - baseline)
+    is_regression = delta > FIXED_TEMPO_F_REGRESSION_TOL + _EPS
+    return FixedTempoFShift(
+        baseline_f=baseline,
+        candidate_f=candidate,
+        delta=delta,
+        is_regression=is_regression,
+    )
+
+
+def _candidate_fixed_f(report: dict[str, Any]) -> float | None:
+    for arm in (report.get("arms") or {}).values():
+        if arm.get("role") != "candidate":
+            continue
+        fixed = arm.get("fixed") or {}
+        f_mean = fixed.get("f_measure_mean")
+        if f_mean is None:
+            continue
+        return float(f_mean)
+    return None
+
+
+def apply_fixed_tempo_f_guard(report: dict[str, Any]) -> dict[str, Any]:
+    """Stamp promotion metadata and refuse when fixed-tempo F regressed."""
+    baseline = report.get("promotion_figure")
+    if baseline is None:
+        return report
+    candidate_f = _candidate_fixed_f(report)
+    if candidate_f is None:
+        return report
+    shift = evaluate_fixed_tempo_f_shift(float(baseline), candidate_f)
+    if shift.is_regression:
+        report["promotion"] = {
+            "fixed_tempo_f": shift.baseline_f,
+            "updated": False,
+            "regression": True,
+            "delta": shift.delta,
+        }
+        raise FixedTempoFRegression(
+            f"fixed-tempo F regression: delta {shift.delta:.4f} exceeds tolerance "
+            f"{FIXED_TEMPO_F_REGRESSION_TOL}; promotion figure not updated"
+        )
+    report["promotion"] = {
+        "fixed_tempo_f": shift.candidate_f,
+        "updated": True,
+        "regression": False,
+        "delta": shift.delta,
+    }
+    return report

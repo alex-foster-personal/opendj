@@ -3,7 +3,8 @@
 Requires a running engine with Google OAuth configured
 (OPENDJ_GOOGLE_OAUTH_CLIENT_ID / OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET).
 For unattended capture, set OPENDJ_KPI_GOOGLE_STORAGE_STATE to a Playwright
-storageState JSON path with a pre-consented Google session.
+storageState JSON path with a pre-consented Google session. Create that file
+with ``python -m scripts.perf.s13_signin`` (``just perf-s13-signin``).
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import os
 import socket
 import subprocess
 import tempfile
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -42,7 +43,7 @@ def _machine_name() -> str:
 
 
 def _utc_today() -> date:
-    return datetime.now(timezone.utc).date()
+    return datetime.now(UTC).date()
 
 
 def _http_json(method: str, url: str, body: dict[str, Any] | None = None) -> tuple[int, Any]:

@@ -102,6 +102,16 @@ def append_round(
     text = log_path.read_text(encoding="utf-8")
     number = next_round_number(text, lane, floor=floor)
     block = render_round(lane, number, report, host=host)
+    if lane == "beatgrid":
+        from apps.analysis_bench.scorers.beatgrid import (
+            FixedTempoFRegression,
+            apply_fixed_tempo_f_guard,
+        )
+
+        try:
+            apply_fixed_tempo_f_guard(report)
+        except FixedTempoFRegression as exc:
+            raise RoundError(str(exc)) from exc
     separator = "" if text.endswith("\n\n") else ("\n" if text.endswith("\n") else "\n\n")
     log_path.write_text(text + separator + block, encoding="utf-8")
     return number

@@ -123,6 +123,36 @@ test('getSmartlistTracks omits the query string when limit is not given', async 
 	assert.equal(seen.url, `${API_BASE}/api/v1/smartlists/sl-1/tracks`);
 });
 
+test('deleteSmartlist sends DELETE and accepts the bodyless 204', async () => {
+	let seen;
+	globalThis.fetch = async (request) => {
+		seen = request;
+		return new Response(null, { status: 204 });
+	};
+
+	await smartlists.deleteSmartlist('sl / one');
+
+	assert.equal(seen.url, `${API_BASE}/api/v1/smartlists/sl%20%2F%20one`);
+	assert.equal(seen.method, 'DELETE');
+});
+
+test('deleteSmartlist maps SMARTLIST_NOT_FOUND to RbApiError', async () => {
+	globalThis.fetch = async () =>
+		jsonResponse(
+			{ detail: { code: 'SMARTLIST_NOT_FOUND', message: 'smartlist not found: nope' } },
+			{ status: 404, statusText: 'Not Found' }
+		);
+
+	const caught = await smartlists.deleteSmartlist('nope').then(
+		() => null,
+		(error) => error
+	);
+
+	assert.equal(caught.name, 'RbApiError');
+	assert.equal(caught.status, 404);
+	assert.equal(caught.code, 'SMARTLIST_NOT_FOUND');
+});
+
 test('a daemon error keeps the RbApiError contract with the route code and message', async () => {
 	globalThis.fetch = async () =>
 		jsonResponse(

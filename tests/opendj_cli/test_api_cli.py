@@ -1,0 +1,152 @@
+"""``opendj api METHOD PATH``: raw HTTP escape hatch (LIBM-11).
+
+Runs against a real in-process app (no mocks).
+
+[if] GET /health on a live backend [then] stdout is JSON and exit 0
+[if] GET a missing route [then] body is on stderr and exit 1
+[if] the daemon is not reachable [then] stderr names the port and exit 1
+"""
+
+from __future__ import annotations
+
+import json
+import socket
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+
+from apps.opendj_cli import api_cli
+from apps.opendj_cli.__main__ import main
+from apps.webui.server.app import create_app
+from apps.webui.server.backend import InMemoryBackend
+from tests.waits import start_uvicorn_in_thread
+
+
+@pytest.fixture
+def library_daemon(tmp_path: Path) -> Iterator[tuple[str, int]]:
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(5)
+    port = int(listener.getsockname()[1])
+    app = create_app(
+        backend=InMemoryBackend(),
+        mount_frontend=False,
+        enable_cors=False,
+        client_error_log_dir=tmp_path / "client-errors",
+        client_event_log_dir=tmp_path / "client-events",
+    )
+    server, thread = start_uvicorn_in_thread(
+        __import__("uvicorn").Config(app, log_level="warning"),
+        what="the library daemon",
+        sockets=[listener],
+    )
+    base_url = f"http://127.0.0.1:{port}"
+    try:
+        yield base_url, port
+    finally:
+        server.should_exit = True
+        thread.join(timeout=0.5)
+        if thread.is_alive():
+            server.force_exit = True
+            thread.join(timeout=10)
+
+
+def _patch_backend(
+    monkeypatch: pytest.MonkeyPatch, base_url: str
+) -> None:
+    monkeypatch.setattr(
+        api_cli,
+        "resolve_backend_base_url",
+        lambda environ=None: base_url,
+    )
+
+
+def test_api_get_prints_json_and_exits_0(
+    library_daemon: tuple[str, int],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    base_url, _port = library_daemon
+    _patch_backend(monkeypatch, base_url)
+
+    assert main(["api", "GET", "/api/v1/health"]) == api_cli.EXIT_OK
+
+    captured = capsys.readouterr()
+    body = json.loads(captured.out)
+    assert body["status"] == "ok"
+    assert captured.err == ""
+
+
+def test_api_get_404_prints_body_to_stderr_and_exits_1(
+    library_daemon: tuple[str, int],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    base_url, _port = library_daemon
+    _patch_backend(monkeypatch, base_url)
+
+    assert main(["api", "GET", "/api/v1/no-such-route-for-libm-11"]) == api_cli.EXIT_FAILED
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err != ""
+
+
+def test_api_unreachable_names_the_port(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        dead_port = int(probe.getsockname()[1])
+
+    monkeypatch.setattr(
+        api_cli,
+        "resolve_backend_base_url",
+        lambda environ=None: f"http://127.0.0.1:{dead_port}",
+    )
+
+    assert main(["api", "GET", "/api/v1/health"]) == api_cli.EXIT_FAILED
+
+    captured = capsys.readouterr()
+    assert str(dead_port) in captured.err
+    assert "not reachable" in captured.err
+
+
+def test_exit_for_status_maps_412_and_409() -> None:
+    assert api_cli.exit_for_status(200) == api_cli.EXIT_OK
+    assert api_cli.exit_for_status(404) == api_cli.EXIT_FAILED
+    assert api_cli.exit_for_status(412) == api_cli.EXIT_PRECONDITION
+    assert api_cli.exit_for_status(409) == api_cli.EXIT_CONFLICT
+
+
+def test_parse_request_accepts_repeatable_headers() -> None:
+    parsed = api_cli._parse_request([
+        "PUT", "/api/v1/playlists/pl-1/tracks",
+        "-H", 'If-Match: "etag-1"',
+        "--json", '{"stable_ids":[]}',
+    ])
+    assert parsed.extra_headers == (("If-Match", '"etag-1"'),)
+
+
+def test_api_patch_with_json_body(
+    library_daemon: tuple[str, int],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    base_url, _port = library_daemon
+    _patch_backend(monkeypatch, base_url)
+
+    code = main(
+        [
+            "api",
+            "PATCH",
+            "/api/v1/settings/ai-search",
+            "--json",
+            '{"query":"test","limit":1}',
+        ]
+    )
+    assert code in {api_cli.EXIT_OK, api_cli.EXIT_FAILED}
+    captured = capsys.readouterr()
+    assert captured.out or captured.err

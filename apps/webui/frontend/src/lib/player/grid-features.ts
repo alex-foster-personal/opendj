@@ -67,7 +67,10 @@ function _beatgridSource(anlz: Pick<AnlzData, 'beatgrid'> | null | undefined): u
  *
  * Identifies the selected source ONLY from `anlz.beatgrid.source`, never from
  * the presence or absence of any other field. Any value other than the two
- * named literals is its own explicit untrusted branch.
+ * named literals is its own explicit untrusted branch. An own `status: ok` grid
+ * with several tempo anchors is trusted when `static_grid_untrusted` is not
+ * `true` (omitted on the multi-anchor `/anlz` wire, `false` on the record).
+ * Do not treat `tempo_changes.length > 0` as no grid.
  */
 export function hasTrustedBeatGrid(anlz: Pick<AnlzData, 'beatgrid'> | null | undefined): boolean {
 	if (anlz === null || anlz === undefined) return false;
@@ -79,7 +82,7 @@ export function hasTrustedBeatGrid(anlz: Pick<AnlzData, 'beatgrid'> | null | und
 	if (source === 'rekordbox') return true;
 	const bg = anlz.beatgrid;
 	if (bg.status !== 'ok') return false;
-	if (bg.static_grid_untrusted !== false) return false;
+	if (bg.static_grid_untrusted === true) return false;
 	return true;
 }
 
@@ -133,7 +136,8 @@ export function effectiveQuantize(st: Pick<DeckState, 'anlz' | 'quantize_enabled
 }
 
 /** Beat Sync as the transport actually applies it: what the DJ asked for, AND
- * a trusted grid to phase-lock with. */
+ * a trusted grid to phase-lock with. BAR planning, not this gate, filters
+ * `beatIsExtrapolated` anchors at plan time. */
 export function effectiveBeatSync(st: Pick<DeckState, 'anlz' | 'beat_sync_enabled'>): boolean {
 	return st.beat_sync_enabled && deckHasTrustedBeatGrid(st);
 }

@@ -7,8 +7,12 @@ import { queryPerformanceState } from './performance-ipc.svelte';
 import { installAgentOrderPoll } from './agent-orders';
 import { readXrunSessionCounter } from './xrun-sentinel';
 import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
-import { readPerfEvents } from './perf-event-log';
+import { readPerfEvents, recordPerfEvent } from './perf-event-log';
 import { buildAudioHealthMirror } from './audio-health-mirror';
+import {
+	classifyMirrorPublishGap,
+	mirrorStallMessage
+} from './mirror-publish-stall';
 
 const MIRROR_PATH = '/api/v1/state/ui-mirror';
 
@@ -57,6 +61,7 @@ export function buildUiMirror(): Record<string, unknown> {
 	const deviceLiveness = outputDeviceLivenessState();
 	return {
 		client_open: true,
+		published_at: new Date().toISOString(),
 		// The elected master, and so the deck a Duration times against when
 		// no clock is named. Without it an agent cannot resolve its own
 		// beat-relative order against the grid the page will use (#1739).
@@ -75,7 +80,11 @@ export function buildUiMirror(): Record<string, unknown> {
 				stable_id: deck.stable_id,
 				title: deck.title, artist: deck.artist, key: deck.key, bpm: deck.bpm,
 				effective_bpm: deck.effective_bpm, position: _position(deck), playing: deck.playing,
-				audible: deck.audible && silence.verdict !== 'silent-while-playing' && deviceLiveness.verdict !== 'device-unreachable',
+				audible:
+					deck.audible &&
+					silence.verdict !== 'silent-while-playing' &&
+					silence.verdict !== 'output-stalled-while-rendering' &&
+					deviceLiveness.verdict !== 'device-unreachable',
 				presentation_clock: { trust: deck.transport_clock.source === 'audio_output' && deck.transport_clock.desired_revision === deck.transport_clock.presented_revision ? 'trusted' : 'untrusted', ...deck.transport_clock },
 				loop: deck.loop, hot_cues: deck.hot_cue_slots, pitch: deck.pitch,
 				sync: { mode: deck.sync_mode, enabled: deck.beat_sync_enabled }, stems: deck.stems,
@@ -86,6 +95,9 @@ export function buildUiMirror(): Record<string, unknown> {
 		toasts: [
 			...toasts.map((toast) => ({ id: toast.logId, kind: toast.kind, message: toast.message })),
 			...(silence.verdict === 'silent-while-playing' ? [{ id: 'silent-while-playing' }] : []),
+			...(silence.verdict === 'output-stalled-while-rendering'
+				? [{ id: 'output-stalled-while-rendering' }]
+				: []),
 			...(deviceLiveness.verdict === 'device-unreachable' ? [{ id: 'output-device-unreachable' }] : [])
 		],
 		// AGENT-02 parity for audio health, and the durable half of the toast
@@ -121,7 +133,21 @@ export function installUiMirror(): () => void {
 	// poll races its own first publish, loses, and the browser logs the 409 as a
 	// console error that no catch block can take back.
 	let registered = false;
+	let lastPublishAtMs: number | null = null;
 	const publish = (): void => {
+		const nowMs = Date.now();
+		if (
+			lastPublishAtMs !== null &&
+			classifyMirrorPublishGap(nowMs - lastPublishAtMs) === 'stall'
+		) {
+			recordPerfEvent(
+				'mirror-stall',
+				mirrorStallMessage(nowMs - lastPublishAtMs),
+				null,
+				'error'
+			);
+		}
+		lastPublishAtMs = nowMs;
 		void fetch(MIRROR_PATH, {
 			method: 'PUT',
 			headers: { 'content-type': 'application/json' },

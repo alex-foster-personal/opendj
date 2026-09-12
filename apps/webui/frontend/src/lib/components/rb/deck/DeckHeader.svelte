@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Deck header row (SCREENSHOT-SPEC 3, COMPONENT-MAP 1.3): artwork thumb,
 	// deck number, title/artist, BPM+KEY readout, remaining/elapsed clocks,
-	// KEY SYNC, key badge + semitone nudge arrows,
+	// key badge + semitone nudge arrows, KEY SYNC,
 	// BEAT SYNC and exclusive MASTER stacked at the right.
 	import { artworkUrl } from '$lib/rb/api-rb';
 	import {
@@ -11,6 +11,7 @@
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 	import {
 		DECK_IDS,
+		deckEffectiveBpm,
 		deckStates,
 		keySyncPreview,
 		pitchRanges,
@@ -22,6 +23,7 @@
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import ControlExplainer from './ControlExplainer.svelte';
+	import TempoEditModal from './TempoEditModal.svelte';
 	import RatingStars from '../browser/RatingStars.svelte';
 
 	let {
@@ -51,6 +53,7 @@
 	} = $props();
 
 	let artworkFailed: boolean = $state(false);
+	let tempoEditAt: { x: number; y: number } | null = $state(null);
 	const artworkCap = $derived(
 		deck.stable_id === null ? 'unknown' : optionalResources(deck.stable_id).artwork
 	);
@@ -67,9 +70,9 @@
 
 	const bpmText: string = $derived(deck.bpm === null ? '--.--' : deck.bpm.toFixed(2));
 	const syncBounds = $derived(tempoBoundsFromPitchRange(pitchRanges[deckId]));
-	// A loaded track with no real PQTZ grid has nothing to phase-lock with, so
-	// BEAT SYNC is inert rather than lit-but-dead. Transport is deliberately
-	// NOT gated the same way - play, pause and cue always run.
+	// Beat Sync is inert when gridFeaturesInert is true (missing / failed /
+	// static_grid_untrusted: true). A trusted multi-anchor own map is not
+	// gridless; Q and Beat Sync stay live. Transport is still not gated.
 	const gridless: boolean = $derived(gridFeaturesInert(deck));
 	const gridInertTip: string = $derived(gridFeatureInertTip(deck));
 	const beatSyncTitle: string = $derived(
@@ -204,6 +207,13 @@
 		}
 	}
 
+	function onTempoReadoutDblClick(event: MouseEvent): void {
+		if (deck.stable_id === null || deckEffectiveBpm(deckId) === null) return;
+		event.preventDefault();
+		event.stopPropagation();
+		tempoEditAt = { x: event.clientX, y: event.clientY };
+	}
+
 	// ----------------------------------------------------------- _helpers
 
 	function _fmtClock(ms: number): string {
@@ -320,7 +330,13 @@
 						</span>
 					</span>
 				{/if}
-				<span class="bpm">{bpmText}</span>
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<span
+					class="bpm"
+					data-testid={`tempo-readout-deck-${deckId}`}
+					aria-label={`tempo readout deck ${deckId}`}
+					ondblclick={onTempoReadoutDblClick}
+				>{bpmText}</span>
 				{#if tempoChanged}
 					<span class="readout-tempo-line">
 						{tempoPctText}% <span class="from"> (from {deck.bpm?.toFixed(0) ?? '--'}bpm)</span>
@@ -347,28 +363,6 @@
 					Enable MT
 				</button>
 			{/snippet}
-			<ControlExplainer
-				title={keySyncTitle}
-				bullets={keySyncBullets}
-				warning={keySyncWarning}
-				action={keySyncWarning === null ? null : masterTempoAction}
-			>
-				<button
-					class="rb-lit-button keysync"
-					class:lit={deck.key_sync_enabled}
-					disabled={pending || !keySyncAvailable}
-					aria-pressed={deck.key_sync_enabled}
-					data-performance-control="key-sync"
-					data-testid={`key-sync-deck-${deckId}`}
-					aria-label={`key sync deck ${deckId}`}
-					data-state={deck.key_sync_enabled ? 'on' : 'off'}
-					title={keySyncTitle}
-					onclick={async () => await onKeySync()}
-				>
-					KEY SYNC
-				</button>
-			</ControlExplainer>
-
 			<div class="key-badge">
 				<button
 					class="nudge"
@@ -399,6 +393,28 @@
 					&gt;
 				</button>
 			</div>
+
+			<ControlExplainer
+				title={keySyncTitle}
+				bullets={keySyncBullets}
+				warning={keySyncWarning}
+				action={keySyncWarning === null ? null : masterTempoAction}
+			>
+				<button
+					class="rb-lit-button keysync"
+					class:lit={deck.key_sync_enabled}
+					disabled={pending || !keySyncAvailable}
+					aria-pressed={deck.key_sync_enabled}
+					data-performance-control="key-sync"
+					data-testid={`key-sync-deck-${deckId}`}
+					aria-label={`key sync deck ${deckId}`}
+					data-state={deck.key_sync_enabled ? 'on' : 'off'}
+					title={keySyncTitle}
+					onclick={async () => await onKeySync()}
+				>
+					KEY SYNC
+				</button>
+			</ControlExplainer>
 
 			<div class="sync-col">
 				<ControlExplainer title={beatSyncTitle} bullets={beatSyncBullets}>
@@ -437,6 +453,15 @@
 		</div>
 	</div>
 </div>
+
+{#if tempoEditAt !== null}
+	<TempoEditModal
+		deckId={deckId}
+		x={tempoEditAt.x}
+		y={tempoEditAt.y}
+		onclose={() => (tempoEditAt = null)}
+	/>
+{/if}
 
 <style>
 	.deck-header {

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from scripts.perf.kpi_ceiling import ceiling_exceeded, trailing_median_ms
+from scripts.perf.kpi_ceiling import ceiling_exceeded, ceiling_verdict, trailing_median_ms
 
 
 def _entry(date: str, kpi: str, value: float) -> dict:
@@ -57,6 +57,7 @@ def test_ceiling_fails_above_three_times() -> None:
     assert ceiling_exceeded(warm_median_ms=301.0, trailing_median_ms=100.0, factor=3.0) is True
 
 
-def test_ceiling_fails_when_trailing_median_missing() -> None:
-    """If no trailing median exists then the ceiling cannot be scored and fails closed."""
-    assert ceiling_exceeded(warm_median_ms=50.0, trailing_median_ms=None, factor=3.0) is True
+def test_ceiling_unknown_when_trailing_median_missing() -> None:
+    """If no trailing median exists then the ceiling is unknown, not a breach."""
+    assert ceiling_verdict(warm_median_ms=50.0, trailing_median_ms=None, factor=3.0) == "unknown"
+    assert ceiling_exceeded(warm_median_ms=50.0, trailing_median_ms=None, factor=3.0) is False

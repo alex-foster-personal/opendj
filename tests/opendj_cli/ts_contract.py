@@ -22,6 +22,7 @@ _MIRROR_DECK_OPEN = "Object.entries(state.decks).map(([id, deck]) => [id, {"
 _MIRROR_OPEN = "export function buildUiMirror()"
 
 _COMMAND_UNION = "export type PerformanceCommand ="
+_HEADPHONE_COMMAND_UNION = "export type HeadphoneCommand ="
 _QUICK_DRAW_UNION = "export type QuickDrawActionId ="
 _FIELD = re.compile(r"^\| \{ (?P<body>.*?) \}$")
 _TYPE_FIELD = re.compile(r"^type: '(?P<type>[a-z_]+)'$")
@@ -84,6 +85,13 @@ def _top_level_parts(body: str) -> list[str]:
             current += character
     parts.append(current)
     return parts
+
+
+def headphone_command_fields() -> frozenset[str]:
+    """Every ``HeadphoneCommand`` type name (CUEOUT-04 HTTP-mirrored controls)."""
+    return frozenset(
+        _command_member(line) for line in _union_lines(IPC_SOURCE, _HEADPHONE_COMMAND_UNION)
+    )
 
 
 def command_fields() -> dict[str, dict[str, bool]]:

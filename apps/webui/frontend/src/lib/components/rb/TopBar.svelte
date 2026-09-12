@@ -26,6 +26,7 @@
 		setAutoPlayEnforceOrder,
 		setAutoPlayMaximizeReach,
 		setBeatSyncMax,
+		toggleLyricsGlobal,
 		toggleTheme,
 		uiPrefs
 	} from '$lib/rb/prefs.svelte';
@@ -56,7 +57,15 @@
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 	import MasterLevelMeter from './mixer/MasterLevelMeter.svelte';
-	import { APP_MODES } from '$lib/rb/app-mode';
+	import { buildFlags } from '$lib/api/store-build.svelte';
+	import {
+		APP_MODES,
+		LOCAL_STEMS_EXECUTOR_FLAG_ID,
+		SHOW_UNBUILDABLE_APP_MODES_FLAG_ID,
+		chooserAppModes,
+		modeFeatureEnabled,
+		showUnbuildableAppModes
+	} from '$lib/rb/app-mode';
 
 	interface MasterCapableEngine extends AudioEngine {
 		setMaster(value: number): void;
@@ -80,6 +89,17 @@
 	if (liveAppMode === undefined) {
 		throw new Error('APP_MODES is missing the live /performance route');
 	}
+
+	const showUnbuildableModes = $derived(
+		showUnbuildableAppModes(
+			buildFlags.loaded,
+			buildFlags.flag(SHOW_UNBUILDABLE_APP_MODES_FLAG_ID)
+		)
+	);
+	const chooserModes = $derived(chooserAppModes(showUnbuildableModes));
+	const stemsProgressLive = $derived(
+		modeFeatureEnabled(liveAppMode.id, LOCAL_STEMS_EXECUTOR_FLAG_ID)
+	);
 
 	const autoPlayTitle: string = $derived.by(() => {
 		const d = describeAutoPlayMode(uiPrefs);
@@ -120,6 +140,7 @@
 
 	function _placeModeMenu(): void {
 		if (!modePickerEl?.open) return;
+		void buildFlags.load();
 		const rect = modePickerEl.getBoundingClientRect();
 		modeMenuStyle = `left:${Math.round(rect.left)}px;top:${Math.round(rect.bottom + 5)}px`;
 	}
@@ -133,6 +154,20 @@
 	function _dismissModeMenuOnEscape(e: KeyboardEvent): void {
 		if (e.key !== 'Escape' || !modePickerEl?.open) return;
 		modePickerEl.open = false;
+	}
+
+	/** Native `toggle` on `<details>` is wired with a `use:` action; Svelte 5
+	 * does not accept `ontoggle` as a template handler on this element. */
+	function modePickerToggle(node: HTMLDetailsElement): { destroy: () => void } {
+		const onToggle = (): void => {
+			_placeModeMenu();
+		};
+		node.addEventListener('toggle', onToggle);
+		return {
+			destroy: () => {
+				node.removeEventListener('toggle', onToggle);
+			}
+		};
 	}
 
 	/** 4-waveform view icon geometry: 4 stacked jagged polylines (one per
@@ -259,9 +294,11 @@
 	<!-- Stems separation, aggregate and live off jobs.updated. Renders nothing
 	     while no stems job is active, so it costs no space the rest of the
 	     time; clicking it opens the JOBS drawer for the per-job detail. -->
-	<StemsProgress />
+	{#if stemsProgressLive}
+		<StemsProgress />
+	{/if}
 
-	<details class="mode-picker" bind:this={modePickerEl} ontoggle={_placeModeMenu}>
+	<details class="mode-picker" bind:this={modePickerEl} use:modePickerToggle>
 		<summary class="mode-dd" aria-label="Choose app mode" title="App mode picker - Gig is the current mode">
 			{liveAppMode.label.toUpperCase()}
 			<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
@@ -270,7 +307,7 @@
 		</summary>
 		<div class="mode-menu" style={modeMenuStyle} aria-label="App modes">
 			<p class="mode-menu-heading">Choose app mode</p>
-			{#each APP_MODES as mode (mode.id)}
+			{#each chooserModes as mode (mode.id)}
 				{#if mode.available}
 					<a class="mode-card" href={mode.href} aria-current={mode.id === 'performance' ? 'page' : undefined}>
 						<span class={`mode-thumbnail ${mode.thumbnail}`} aria-hidden="true"></span>
@@ -406,6 +443,19 @@
 		onclick={() => setBeatSyncMax(!uiPrefs.beat_sync_max)}
 	>
 		BeatSyncMax
+	</button>
+
+	<button
+		type="button"
+		class="bsm-toggle topbar-slot-lyr"
+		class:on={uiPrefs.lyrics_global}
+		aria-pressed={uiPrefs.lyrics_global}
+		title={uiPrefs.lyrics_global
+			? 'Lyric overlays ON - click to hide waveform word lanes, deck lyric lines and scrub-hover words everywhere (per-surface toggles keep their state)'
+			: 'Lyric overlays OFF globally - click to restore them (library Lyrics column is unaffected; it has its own setting)'}
+		onclick={toggleLyricsGlobal}
+	>
+		LYR
 	</button>
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->

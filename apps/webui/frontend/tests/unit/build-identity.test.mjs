@@ -386,6 +386,18 @@ test('the app shell mounts the chip inside a bottom tray', async () => {
 	assert.match(layout, /grid-column:\s*1\s*\/\s*-1/);
 });
 
+test('the update badge stays wired for packaged installs while hiding in dev', async () => {
+	const { readFileSync } = await import('node:fs');
+	const source = readFileSync(
+		new URL('../../src/lib/components/rb/BuildIdentity.svelte', import.meta.url),
+		'utf8'
+	);
+	assert.match(source, /isUpdaterExpected\(/);
+	assert.match(source, /summarizeUpdate\(update,\s*\{\s*updaterExpected\s*\}\)/);
+	assert.match(source, /class="update-badge"/);
+	assert.match(source, /\{#if updateSummary !== null && updateSummary\.prominent\}/);
+});
+
 test('the performance route mounts the chip in the browser bottom bar', async () => {
 	const { readFileSync } = await import('node:fs');
 	const panel = readFileSync(

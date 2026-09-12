@@ -32,11 +32,16 @@
  * promise's settlement to mean "all" or "none".
  */
 import type { DeckState } from '$lib/rb/deck-state-types';
+import { recordPerfEvent } from '$lib/rb/perf-event-log';
 
 type DeckId = DeckState['deck_id'];
 
 /** The engine surface this module needs, injected so it never depends on
- * audio-engine.svelte.ts's private module state directly. */
+ * audio-engine.svelte.ts's private module state directly.
+ *
+ * `hasRealBeatGrid` treats any grid that passes `validateBeatGrid` as real,
+ * including trusted multi-anchor own maps with varying per-beat bpm. This
+ * module must not filter on `static_grid_untrusted` or `tempo_changes`. */
 export interface BeatgridResyncPorts {
 	deckIds: readonly DeckId[];
 	syncMaster(): DeckId | null;
@@ -189,6 +194,12 @@ export function resyncSettlementNeedsFullBarrier(
 function _disableForGridlessMaster(ports: BeatgridResyncPorts, follower: DeckId, master: DeckId): void {
 	ports.setSyncError(follower, `deck ${master} settled without a beatgrid - Beat Sync cannot phase-lock`);
 	ports.setBeatSyncEnabled(follower, false);
+	recordPerfEvent(
+		'stranded-follower',
+		`deck ${follower} abandoned after master ${master} settled without a beatgrid`,
+		follower,
+		'error'
+	);
 }
 
 /** `stranded` is captured synchronously by the caller, well before this

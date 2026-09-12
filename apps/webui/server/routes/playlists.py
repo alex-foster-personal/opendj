@@ -95,13 +95,17 @@ def get_playlist(
             ),
         })
     rows = rb_vendor.build_track_rows([tracks_map[sid] for sid in pl.items])
+    item_ids = list(pl.item_ids or [])
+    tracks: list[TrackRowOut] = []
+    for i, row in enumerate(rows):
+        iid = item_ids[i] if i < len(item_ids) else None
+        out = TrackRowOut(**row, item_id=iid or None)
+        if keep_by_availability(available, row["file_exists"]):
+            tracks.append(out)
     return PlaylistDetail(
         playlist_id=pl.playlist_id, name=pl.name, vendor=pl.vendor,
         items=list(pl.items),
-        tracks=[
-            TrackRowOut(**row) for row in rows
-            if keep_by_availability(available, row["file_exists"])
-        ],
+        tracks=tracks,
         # GUARD-11: the real differ (apps/sync/playlist_diff.py) only runs
         # offline against copied vendor DBs + a Phase 2 match-set CSV; it is
         # not wired to this read path and has no stable_id-keyed output to

@@ -31,6 +31,7 @@ from apps.engine_core.config import (
     prepare_layout,
 )
 from apps.engine_core.lock import EngineLock, EngineLockError
+from apps.engine_core.parent_watch import start as start_parent_watch
 from apps.feature_flags.profiles import (
     BUILD_PROFILE_ENV,
     UnknownProfileError,
@@ -174,6 +175,7 @@ def _serve(cfg: EngineConfig, *, log_level: str) -> int:
     except EngineLockError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return EXIT_LOCKED
+    start_parent_watch(cfg.data_dir)
     try:
         from apps.shared.process_identity import set_process_identity
 

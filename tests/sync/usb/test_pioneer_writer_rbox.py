@@ -346,3 +346,24 @@ def test_track_update_to_overlay_dropping_none_fields() -> None:
     assert overlay == {"title": "x", "bpmx100": 12000}
     assert "id" not in overlay
     assert "rating" not in overlay
+
+
+def test_write_onelibrary_is_not_a_gig_stick(
+    fixture_onelibrary: Path, scratch_onelibrary: Path, tmp_path: Path
+) -> None:
+    """Overlay writer output must not pass rekordbox gig-stick verification."""
+    from apps.sync.usb.pioneer.value_verify import verify_stick_values
+
+    write_onelibrary(
+        template_path=fixture_onelibrary,
+        output_path=scratch_onelibrary,
+        track_updates=[TrackUpdate(id=1, title="Overlay only")],
+    )
+    pioneer_root = scratch_onelibrary.parent.parent
+    assert not (pioneer_root / "rekordbox" / "export.pdb").exists()
+    assert not (pioneer_root / "USBANLZ").exists()
+
+    report = verify_stick_values(tmp_path / pioneer_root.name)
+    assert report.is_rekordbox_export is False
+    assert report.key.match == 0
+    assert report.grid.match == 0

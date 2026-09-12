@@ -19,9 +19,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod engine;
+mod launch;
 
-use std::path::PathBuf;
-use std::sync::Mutex;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
@@ -47,6 +50,10 @@ const STARTING_WINDOW_H_PT: f64 = 1449.0;
 /// The engine's log, inside the app's own data directory so a tester can be
 /// asked for one path rather than talked through Console.app.
 const ENGINE_LOG: &str = "logs/engine.log";
+const PARENT_FILE: &str = ".engine.parent";
+
+static SIGNAL_RECEIVED: AtomicBool = AtomicBool::new(false);
+static ON_SHUTDOWN: OnceLock<Mutex<Option<Box<dyn Fn() + Send + Sync>>>> = OnceLock::new();
 
 // ----- build identity -----------------------------------------------------
 // Baked at COMPILE time by the `dmg` recipe. `option_env!` returns None for a
@@ -141,8 +148,39 @@ fn starting_window_size(usable_pt: Option<(f64, f64)>) -> (f64, f64) {
 }
 
 // ----- supervisor ---------------------------------------------------------
-/// The engine handle, so `RunEvent::Exit` can stop what `setup` started.
-struct Supervisor(Mutex<Option<engine::Engine>>);
+enum Supervised {
+    Spawned(engine::Engine),
+    Adopted {
+        pid: u32,
+        host: String,
+        port: u16,
+    },
+}
+
+impl Supervised {
+    fn origin(&self) -> String {
+        match self {
+            Self::Spawned(running) => running.origin(),
+            Self::Adopted { host, port, .. } => launch::origin_for_adopt(host, *port),
+        }
+    }
+
+    fn shutdown(&mut self) {
+        match self {
+            Self::Spawned(running) => running.shutdown(),
+            Self::Adopted { pid, .. } => launch::stop_holder_pid(*pid),
+        }
+    }
+}
+
+impl Drop for Supervised {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
+/// The engine handle, so exit paths can stop what `setup` started.
+struct Supervisor(Mutex<Option<Supervised>>);
 
 impl Supervisor {
     fn shutdown(&self) {
@@ -176,29 +214,156 @@ fn payload_dir(app: &AppHandle) -> Result<PathBuf, engine::EngineError> {
     Ok(resources.join(engine::PAYLOAD_DIR))
 }
 
-/// Start the bundled engine and wait for it to be healthy.
+fn write_parent_file(data_dir: &Path) -> Result<(), engine::EngineError> {
+    let path = data_dir.join(PARENT_FILE);
+    std::fs::write(&path, format!("{}\n", std::process::id())).map_err(|err| {
+        engine::EngineError::new(
+            "Open DJ could not record its shell parent.",
+            format!("{}: {err}", path.display()),
+        )
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(|err| {
+            engine::EngineError::new(
+                "Open DJ could not secure its shell parent file.",
+                format!("{}: {err}", path.display()),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn show_stop_or_quit_dialog(pid: u32, detail: &str, lock_path: &Path) -> bool {
+    let body = format!(
+        "Another Open DJ engine (pid {pid}) already holds the lock at \
+         {lock_path}.\n\n{detail}\n\nStop that engine and start a new one, \
+         or quit.",
+        lock_path = lock_path.display()
+    );
+    rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Error)
+        .set_title("Open DJ cannot start")
+        .set_description(body)
+        .set_buttons(rfd::MessageButtons::OkCancelCustom(
+            "Stop engine".to_string(),
+            "Quit".to_string(),
+        ))
+        .show()
+        == rfd::MessageDialogResult::Ok
+}
+
+fn spawn_fresh_engine(
+    payload: &Path,
+    data_dir: &Path,
+    log_path: &Path,
+) -> Result<Supervised, engine::EngineError> {
+    write_parent_file(data_dir)?;
+    let port = engine::free_loopback_port()?;
+    let mut running = engine::spawn(payload, data_dir, log_path, port)?;
+    match running.wait_until_healthy(engine::BOOT_TIMEOUT) {
+        Ok(()) => Ok(Supervised::Spawned(running)),
+        Err(mut failure) => {
+            let lock_path = launch::lock_path(data_dir);
+            match launch::inspect_lock(&lock_path, engine::health_ok) {
+                LaunchPlan::Adopt { pid, host, port } => {
+                    running.shutdown();
+                    write_parent_file(data_dir)?;
+                    if !engine::health_ok(port) {
+                        return Err(engine::EngineError::new(
+                            "Open DJ could not adopt the running engine.",
+                            format!(
+                                "pid {pid} answered the lock file but stopped \
+                                 answering health at port {port}"
+                            ),
+                        ));
+                    }
+                    return Ok(Supervised::Adopted { pid, host, port });
+                }
+                LaunchPlan::StopOrQuit { pid, detail } => {
+                    running.shutdown();
+                    if show_stop_or_quit_dialog(pid, &detail, &lock_path) {
+                        launch::stop_holder_pid(pid);
+                        return spawn_fresh_engine(payload, data_dir, log_path);
+                    }
+                    return Err(engine::EngineError::new(
+                        "Open DJ could not start.",
+                        detail,
+                    ));
+                }
+                LaunchPlan::Spawn => {
+                    let tail = engine::log_tail(log_path, 20);
+                    if !tail.is_empty() {
+                        failure.detail = format!("{}\n\nLast engine output:\n{tail}", failure.detail);
+                    }
+                    running.shutdown();
+                    Err(failure)
+                }
+            }
+        }
+    }
+}
+
+/// Start or adopt the engine and wait for a healthy origin.
 ///
 /// Synchronous, before the window exists, on purpose. A native modal on
 /// macOS must run on the main thread, and the failure path here MUST raise
 /// one: the alternative is the blank window this whole design exists to
 /// eliminate. Waiting costs the measured ~1.5s of a cold boot.
-fn start_engine(app: &AppHandle) -> Result<engine::Engine, engine::EngineError> {
+fn start_engine(app: &AppHandle) -> Result<Supervised, engine::EngineError> {
     let payload = payload_dir(app)?;
     let data_dir = app_data_dir(app)?;
     let log_path = data_dir.join(ENGINE_LOG);
-    let port = engine::free_loopback_port()?;
-    let mut running = engine::spawn(&payload, &data_dir, &log_path, port)?;
-    match running.wait_until_healthy(engine::BOOT_TIMEOUT) {
-        Ok(()) => Ok(running),
-        Err(mut failure) => {
-            let tail = engine::log_tail(&log_path, 20);
-            if !tail.is_empty() {
-                failure.detail = format!("{}\n\nLast engine output:\n{tail}", failure.detail);
+    let lock_path = launch::lock_path(&data_dir);
+    match launch::inspect_lock(&lock_path, engine::health_ok) {
+        LaunchPlan::Adopt { pid, host, port } => {
+            write_parent_file(&data_dir)?;
+            if !engine::health_ok(port) {
+                return Err(engine::EngineError::new(
+                    "Open DJ could not adopt the running engine.",
+                    format!(
+                        "pid {pid} holds the lock but is not answering health \
+                         at port {port}"
+                    ),
+                ));
             }
-            running.shutdown();
-            Err(failure)
+            Ok(Supervised::Adopted { pid, host, port })
         }
+        LaunchPlan::StopOrQuit { pid, detail } => {
+            if show_stop_or_quit_dialog(pid, &detail, &lock_path) {
+                launch::stop_holder_pid(pid);
+                spawn_fresh_engine(&payload, &data_dir, &log_path)
+            } else {
+                Err(engine::EngineError::new("Open DJ could not start.", detail))
+            }
+        }
+        LaunchPlan::Spawn => spawn_fresh_engine(&payload, &data_dir, &log_path),
     }
+}
+
+use launch::LaunchPlan;
+
+fn install_signal_handlers() {
+    let _ = ON_SHUTDOWN.set(Mutex::new(None));
+    extern "C" fn signal_handler(_: i32) {
+        SIGNAL_RECEIVED.store(true, Ordering::SeqCst);
+    }
+    unsafe {
+        libc::signal(libc::SIGTERM, signal_handler as *const () as usize);
+        libc::signal(libc::SIGINT, signal_handler as *const () as usize);
+    }
+    std::thread::spawn(|| {
+        while !SIGNAL_RECEIVED.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        if let Some(slot) = ON_SHUTDOWN.get() {
+            if let Some(shutdown) = slot.lock().expect("shutdown mutex").as_ref() {
+                shutdown();
+            }
+        }
+        std::process::exit(0);
+    });
 }
 
 /// The only place this shell ever gives up, and it does so loudly.
@@ -214,6 +379,8 @@ fn fail_visibly(error: &engine::EngineError) -> ! {
 }
 
 fn main() {
+    install_signal_handlers();
+
     // THE AUTO-UPDATE CHANNEL. Registered unconditionally, in release and in
     // debug, so a developer build cannot silently lack the surface a shipped
     // one has. The plugin owns the whole apply path -- fetch, minisign verify
@@ -258,6 +425,15 @@ fn main() {
                     Err(failure) => fail_visibly(&failure),
                 },
             };
+            let supervisor = Supervisor(Mutex::new(running));
+            if let Some(slot) = ON_SHUTDOWN.get() {
+                let handle_for_shutdown = handle.clone();
+                *slot.lock().expect("shutdown mutex") = Some(Box::new(move || {
+                    if let Some(state) = handle_for_shutdown.try_state::<Supervisor>() {
+                        state.shutdown();
+                    }
+                }));
+            }
 
             let package = app.package_info();
             let identity = shell_build_identity(&package.version.to_string());
@@ -298,21 +474,23 @@ fn main() {
                 })
                 .build()?;
 
-            app.manage(Supervisor(Mutex::new(running)));
+            app.manage(supervisor);
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while building Open DJ desktop shell");
 
     app.run(|handle, event| {
-        // Exit, not ExitRequested: the engine must outlive a closed window
-        // only until the process itself is going away, and the kill is a
-        // process-group kill so no job the engine spawned is left holding
-        // the data directory's lock.
-        if let RunEvent::Exit = event {
-            if let Some(supervisor) = handle.try_state::<Supervisor>() {
-                supervisor.shutdown();
+        // ExitRequested covers Apple Event quit; Exit covers the final teardown.
+        // The kill is a process-group kill so no job the engine spawned is left
+        // holding the data directory's lock.
+        match event {
+            RunEvent::ExitRequested { .. } | RunEvent::Exit => {
+                if let Some(supervisor) = handle.try_state::<Supervisor>() {
+                    supervisor.shutdown();
+                }
             }
+            _ => {}
         }
     });
 }

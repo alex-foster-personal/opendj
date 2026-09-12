@@ -122,6 +122,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         5320,
     ),
     (
+        "apps/webui/frontend/tests/e2e/vite.lyrics-words.config.ts",
+        "export const LYRICS_WORDS_FRONTEND_PORT = 5328;",
+        5328,
+    ),
+    (
         "apps/webui/frontend/tests/e2e/vite.comment-hotkey-gate.config.ts",
         "export const COMMENT_HOTKEY_GATE_FRONTEND_PORT = 5321;",
         5321,
@@ -145,6 +150,21 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         "apps/webui/frontend/tests/e2e/vite.autoplay-error-hunt.config.ts",
         "export const AUTOPLAY_HUNT_FRONTEND_PORT = 5326;",
         5326,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/playwright.cloudsync-ui.config.ts",
+        "export const CLOUDSYNC_UI_HUB_PORT = 8711;",
+        8711,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/playwright.cloudsync-ui.config.ts",
+        "export const CLOUDSYNC_UI_SPOKE_PORT = 8712;",
+        8712,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/playwright.cloudsync-ui.config.ts",
+        "export const CLOUDSYNC_UI_FRONTEND_PORT = 5331;",
+        5331,
     ),
     (
         "apps/webui/frontend/tests/e2e/vite.rekordbox-gate.config.ts",
@@ -171,6 +191,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         "apps/webui/frontend/tests/e2e/playwright.boot-burst.config.ts",
         "process.env.BOOT_BURST_PORT ?? 8692",
         8692,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/playwright.stem-decode-bench.config.ts",
+        "process.env.STEM_DECODE_BENCH_PORT ?? 8700",
+        8700,
     ),
     (
         "apps/webui/frontend/tests/e2e/vite.hotcue-mapping-gate.config.ts",
@@ -202,6 +227,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         "apps/webui/frontend/tests/e2e/library-jobs-e2e-endpoints.ts",
         "export const LIBRARY_JOBS_E2E_BACKEND_PORT = 8704;",
         8704,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/vite.lyrics-words.config.ts",
+        "export const LYRICS_WORDS_API_PORT = 8706;",
+        8706,
     ),
     (
         "apps/webui/frontend/tests/e2e/stems-e2e-endpoints.ts",

@@ -26,6 +26,10 @@
 	import { RUN_SETUP_TITLE, runSetup, runSetupBlocked } from '$lib/setup/run-setup';
 	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
 	import KpiTile from './KpiTile.svelte';
+	import LyricJobs from './LyricJobs.svelte';
+	import LyricSourceOrder from './LyricSourceOrder.svelte';
+	import LyricTriage from './LyricTriage.svelte';
+	import LyricsKpiPanel from './LyricsKpiPanel.svelte';
 	import QualityRatchet from './QualityRatchet.svelte';
 	import RunNotes from './RunNotes.svelte';
 	import TipLayer from './TipLayer.svelte';
@@ -107,6 +111,31 @@
 	{/if}
 </div>
 
+<section class="panel" id="lyrics-generator">
+	<h3>Lyrics generator</h3>
+	<p class="sub">
+		The generator pipeline runs offline: stems (vocal separation) -&gt; alignment (word timings)
+		-&gt; witness (independent ASR cross-check) -&gt; ingest into state.db. Order the lyric sources
+		below to steer where the text comes from, and queue per-track generation here or from the
+		library right-click menu.
+	</p>
+	<LyricSourceOrder />
+	<hr />
+	<LyricJobs />
+</section>
+
+<section class="panel">
+	<h3>Lyric triage</h3>
+	<p class="sub">
+		Review and repair: the tracks whose lyrics deserve human eyes first, ranked most suspect
+		first. Click a row to open the track page with the full lyric panel; use the override buttons
+		to record your verdict - an override beats the computed one everywhere.
+	</p>
+	<LyricTriage />
+</section>
+
+<LyricsKpiPanel />
+
 <section class="panel">
 	<h3>Demucs farm KPI ledger</h3>
 	<p class="sub">
@@ -172,8 +201,9 @@
 		<p class="sub">
 			The openDJ latency and RAM program, tracked since <strong>{perf.sinceLabel}</strong>, the first
 			perf measurement. Same cards as above: the big number is the latest reading, the arrow is the
-			move since the previous one, and the sparkline is every reading since then, one step per
-			measurement round. Cards that have moved come first.
+			move since the previous one, and the sparkline places each reading by calendar date from the
+			first measurement to today so gaps match the time between them. A card whose latest reading is
+			old shows how many days old. Cards that have moved come first.
 		</p>
 		<p class="note">
 			Withheld and superseded readings are gaps, not numbers. Whether each UX scenario meets its
@@ -188,7 +218,7 @@
 		{/if}
 		<div class="grid">
 			{#each perfMetrics as [metric, kpi] (metric)}
-				<KpiTile {metric} {kpi} snapshots={perf.snapshots} />
+				<KpiTile {metric} {kpi} snapshots={perf.snapshots} timeAxis />
 			{/each}
 		</div>
 

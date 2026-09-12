@@ -73,8 +73,10 @@ from .backend import (
     StateBackend,
     Track,
     TrackFilter,
+    TrackPlaylistHit,
     TrackUpdate,
     compute_mytag_catalog_revision,
+    resolve_tempo_pref_write,
 )
 from .etag import compute_etag, strip_quotes
 
@@ -187,13 +189,20 @@ def _reset_warnings_for_tests() -> None:
 # Fields the webui Track exposes that live in track_fields (EAV). Any field
 # name listed here is JSON-decoded on the way out.
 _EAV_FIELDS: tuple[str, ...] = (
-    "bpm", "key", "rating", "tags", "notes", "last_played_at", "genre", "comments", "energy",
+    "bpm", "key", "rating", "tags", "notes", "last_played_at", "genre", "comments",
+    "energy", "tempo_pref",
 )
 
 _TRACKS_PROJECTION = (
     "SELECT stable_id, title, artists_json, album, "
     "       duration_ms, file_path, created_at, updated_at "
     "FROM tracks WHERE deleted_at IS NULL"
+)
+
+_TRACKS_PROJECTION_INCLUDE_DELETED = (
+    "SELECT stable_id, title, artists_json, album, "
+    "       duration_ms, file_path, created_at, updated_at "
+    "FROM tracks"
 )
 
 
@@ -268,6 +277,7 @@ def _row_to_track(
     tags_val = _val("tags")
     notes = _val("notes")
     last_played_at = _val("last_played_at")
+    tempo_pref_val = _val("tempo_pref")
 
     if isinstance(bpm, (int, float)):
         bpm = float(bpm)
@@ -288,6 +298,14 @@ def _row_to_track(
         last_played_at = str(last_played_at)
     if key is not None and not isinstance(key, str):
         key = str(key)
+    if isinstance(tempo_pref_val, dict):
+        tempo_pref: dict[str, float | None] | None = {
+            "regular": tempo_pref_val.get("regular"),
+            "min": tempo_pref_val.get("min"),
+            "max": tempo_pref_val.get("max"),
+        }
+    else:
+        tempo_pref = None
 
     provenance: dict[str, Provenance] = {}
     for fname, view in fields.items():
@@ -308,6 +326,7 @@ def _row_to_track(
         tags=tags,
         notes=notes,
         last_played_at=last_played_at,
+        tempo_pref=tempo_pref,
         file_path=row["file_path"],
         created_at=row["created_at"],
         updated_at=_effective_updated_at(row["updated_at"], fields),
@@ -406,6 +425,8 @@ def _field_writes(current: Track, patch: dict[str, Any]) -> dict[str, Any]:
         writes["rating"] = rating
     if "notes" in patch:
         writes["notes"] = patch["notes"]
+    if "tempo_pref" in patch:
+        writes["tempo_pref"] = resolve_tempo_pref_write(patch["tempo_pref"])
     if "tags_add" in patch or "tags_remove" in patch:
         tags = list(current.tags or [])
         for tag in patch.get("tags_add") or []:
@@ -515,6 +536,11 @@ class SqliteBackend:
                 _warn_fallback_once("list_tracks", "no tracks table")
                 return self._fallback.list_tracks(flt)
             limit = max(1, min(flt.limit, MAX_LIMIT))
+            projection = (
+                _TRACKS_PROJECTION_INCLUDE_DELETED
+                if flt.show_deleted
+                else _TRACKS_PROJECTION
+            )
             page: list[Track] = []
             scan_cursor = flt.cursor
             while len(page) < limit:
@@ -524,7 +550,7 @@ class SqliteBackend:
                     cursor_predicate = " AND stable_id > ?"
                     params = (scan_cursor, limit)
                 rows = list(conn.execute(
-                    _TRACKS_PROJECTION + cursor_predicate
+                    projection + cursor_predicate
                     + " ORDER BY stable_id LIMIT ?",
                     params,
                 ))
@@ -622,7 +648,9 @@ class SqliteBackend:
                 members = {}
                 for pid, sid in conn.execute(
                     "SELECT playlist_id, stable_id FROM playlist_memberships "
-                    "WHERE deleted_at IS NULL ORDER BY playlist_id, position"
+                    "WHERE deleted_at IS NULL "
+                    "ORDER BY playlist_id, "
+                    "COALESCE(order_key, printf('%08d', position)), position"
                 ):
                     members.setdefault(pid, []).append(sid)
         return [
@@ -649,20 +677,56 @@ class SqliteBackend:
             if row is None:
                 raise NotFoundError(f"playlist not found: {playlist_id}")
             items: list[str] = []
+            item_ids: list[str] = []
             if self._table_exists(conn, "playlist_memberships"):
-                items = [
-                    r[0] for r in conn.execute(
-                        "SELECT stable_id FROM playlist_memberships "
-                        "WHERE playlist_id = ? AND deleted_at IS NULL "
-                        "ORDER BY position",
-                        (playlist_id,),
-                    )
-                ]
+                member_rows = conn.execute(
+                    "SELECT stable_id, item_id FROM playlist_memberships "
+                    "WHERE playlist_id = ? AND deleted_at IS NULL "
+                    "ORDER BY COALESCE(order_key, printf('%08d', position)), "
+                    "position",
+                    (playlist_id,),
+                ).fetchall()
+                items = [r[0] for r in member_rows]
+                item_ids = [r[1] or "" for r in member_rows]
         return Playlist(
             playlist_id=row["playlist_id"], name=row["name"],
             vendor=row["vendor"], vendor_pl_id=row["vendor_pl_id"], items=items,
+            item_ids=item_ids,
             created_at=row["created_at"], updated_at=row["updated_at"],
         )
+
+    def list_track_playlists(self, stable_id: str) -> list[TrackPlaylistHit]:
+        with self._ro() as conn:
+            if (
+                not self._table_exists(conn, "playlists")
+                or not self._table_exists(conn, "playlist_memberships")
+            ):
+                return []
+            rows = list(conn.execute(
+                "SELECT p.playlist_id, p.name, p.vendor, m.position "
+                "FROM playlist_memberships m "
+                "JOIN playlists p ON p.playlist_id = m.playlist_id "
+                "WHERE m.stable_id = ? "
+                "  AND m.deleted_at IS NULL "
+                "  AND p.deleted_at IS NULL "
+                "ORDER BY p.name COLLATE NOCASE, p.playlist_id, m.position",
+                (stable_id,),
+            ))
+        hits: list[TrackPlaylistHit] = []
+        current: TrackPlaylistHit | None = None
+        for row in rows:
+            pid = row["playlist_id"]
+            if current is not None and current.playlist_id == pid:
+                current.positions.append(row["position"])
+                continue
+            current = TrackPlaylistHit(
+                playlist_id=pid,
+                name=row["name"],
+                vendor=row["vendor"],
+                positions=[row["position"]],
+            )
+            hits.append(current)
+        return hits
 
     def list_pairings(
         self, *, from_stable_id: str | None = None,

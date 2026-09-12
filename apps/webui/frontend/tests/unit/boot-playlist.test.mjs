@@ -54,6 +54,13 @@ async function _loadContract() {
 	return loadTypeScriptModule('src/lib/components/rb/browser/pane-contract.svelte.ts');
 }
 
+// The boot decision lives in its own runeless module; pane-contract re-exports
+// only the two functions BrowserPanel calls, so the All Tracks identity is read
+// from the source module here.
+async function _loadBootPane() {
+	return loadTypeScriptModule('src/lib/components/rb/browser/boot-pane-selection.ts');
+}
+
 async function _loadPrefs() {
 	return loadTypeScriptModule('src/lib/rb/prefs.svelte.ts');
 }
@@ -114,6 +121,7 @@ test('a remembered playlist that still exists is restored by identity', async ()
 
 test('a remembered playlist that no longer exists falls back to All Tracks', async () => {
 	const contract = await _loadContract();
+	const bootPane = await _loadBootPane();
 
 	const choice = contract.resolveBootPlaylist({
 		remembered: { playlist_id: 'pl-deleted', name: 'Gone', kind: 'playlist' },
@@ -121,11 +129,12 @@ test('a remembered playlist that no longer exists falls back to All Tracks', asy
 		all_tracks_count: 120
 	});
 
-	assert.deepEqual(choice, contract.ALL_TRACKS_CHOICE);
+	assert.deepEqual(choice, bootPane.ALL_TRACKS_CHOICE);
 });
 
 test('a remembered All Tracks resolves to All Tracks without consulting the tree', async () => {
 	const contract = await _loadContract();
+	const bootPane = await _loadBootPane();
 
 	const choice = contract.resolveBootPlaylist({
 		remembered: { playlist_id: 'all', name: 'All Tracks', kind: 'all_tracks' },
@@ -133,7 +142,34 @@ test('a remembered All Tracks resolves to All Tracks without consulting the tree
 		all_tracks_count: 3
 	});
 
-	assert.deepEqual(choice, contract.ALL_TRACKS_CHOICE);
+	assert.deepEqual(choice, bootPane.ALL_TRACKS_CHOICE);
+});
+
+test('url_playlist_id=all boots on All Tracks ahead of remembered playlists', async () => {
+	const contract = await _loadContract();
+	const bootPane = await _loadBootPane();
+
+	const choice = contract.resolveBootPlaylist({
+		remembered: { playlist_id: 'pl-2', name: 'Peak', kind: 'playlist' },
+		known_playlist_ids: ['pl-1', 'pl-2'],
+		all_tracks_count: 120,
+		url_playlist_id: 'all'
+	});
+
+	assert.deepEqual(choice, bootPane.ALL_TRACKS_CHOICE);
+});
+
+test('url_playlist_id unknown falls back to remembered playlist', async () => {
+	const contract = await _loadContract();
+
+	const choice = contract.resolveBootPlaylist({
+		remembered: { playlist_id: 'pl-2', name: 'Peak', kind: 'playlist' },
+		known_playlist_ids: ['pl-1', 'pl-2'],
+		all_tracks_count: 120,
+		url_playlist_id: 'pl-deleted'
+	});
+
+	assert.deepEqual(choice, { playlist_id: 'pl-2', name: 'Peak', kind: 'playlist' });
 });
 
 // -------------------------------------------------------- last_playlist pref

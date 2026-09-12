@@ -99,7 +99,12 @@ export function sameBeatgrid(left: AnlzBeatgrid, right: AnlzBeatgrid): boolean {
 	if (left.beats.length !== right.beats.length) return false;
 	return left.beats.every((beat, index) => {
 		const other = right.beats[index];
-		return beat.n === other.n && beat.t === other.t && beat.bpm === other.bpm;
+		return (
+			beat.n === other.n &&
+			beat.t === other.t &&
+			beat.bpm === other.bpm &&
+			(beat.extrapolated === true) === (other.extrapolated === true)
+		);
 	});
 }
 

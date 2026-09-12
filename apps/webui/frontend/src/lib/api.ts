@@ -20,7 +20,7 @@
  * shape stops matching, the compiler says so instead of a cast hiding it.
  */
 import type { components, paths } from './api-types';
-import { ApiError, api, requireBody, unwrap } from './api/client';
+import { ApiError, api, API_BASE, requireBody, unwrap } from './api/client';
 import { subscribeKind, subscribeResync } from './api/events-bus';
 import { BOOT_COALESCE_TTL_MS, requestCoalescer } from './api/request-coalescer';
 import { rememberOptionalResources } from './rb/optional-resource-availability';
@@ -144,10 +144,18 @@ export async function getTrack(stable_id: string): Promise<{ track: Track; etag:
 	return { track: data, etag: response.headers.get('etag') ?? '' };
 }
 
+export type TempoPrefPatch = components['schemas']['TempoPrefPatch'];
+
 export async function patchTrack(
 	stable_id: string,
 	etag: string,
-	patch: { rating?: number; tags_add?: string[]; tags_remove?: string[]; notes?: string }
+	patch: {
+		rating?: number;
+		tags_add?: string[];
+		tags_remove?: string[];
+		notes?: string;
+		tempo_pref?: TempoPrefPatch | null;
+	}
 ): Promise<{ track: Track; etag: string }> {
 	let call: { data?: Track; response: Response };
 	try {
@@ -498,4 +506,120 @@ export type PreflightCheck = components['schemas']['PreflightCheckOut'];
 
 export async function getPreflight(): Promise<PreflightResult> {
 	return unwrap(api.GET('/api/v1/preflight'));
+}
+
+// ------------------------------------------------------------------ karaoke words (LYR-03 / #2079)
+// lyrics-cache.svelte.ts is the sole caller of getTrackLyricsWords.
+
+export type LyricWord = components['schemas']['KaraokeWordOut'];
+export type LyricLine = components['schemas']['KaraokeLineOut'];
+export type LyricVerdict = components['schemas']['CoverageVerdictOut'];
+export type LyricTrack = components['schemas']['KaraokeTrackOut'];
+export type LyricSummary = components['schemas']['KaraokeSummaryOut'];
+export type LyricsConfig = components['schemas']['LyricsConfigOut'];
+export type LyricJob = components['schemas']['LyricJobOut'];
+export type LyricPurgeResult = components['schemas']['LyricsPurgeOut'];
+
+export type LyricVerdictValue = 'vocal' | 'sparse' | 'no-lyrics' | 'unknown';
+export type LyricWitness = NonNullable<LyricWord['witness']>;
+export type LyricJobKind = 'analyze' | 'lyricsync' | 'stems';
+export type LyricJobStatus = 'queued' | 'done' | 'failed';
+
+export interface ListLyricVerdictsParams {
+	limit?: number;
+	offset?: number;
+	verdict?: string;
+	order?: 'suspect' | 'coverage' | 'recent';
+}
+
+/** Karaoke words for one track. Returns null on 404 (no verdict, tombstone, or artifact). */
+export async function getTrackLyricsWords(
+	stable_id: string,
+	opts: { includeLines?: boolean } = {}
+): Promise<LyricTrack | null> {
+	try {
+		return await unwrap(
+			api.GET('/api/v1/tracks/{stable_id}/lyrics/words', {
+				params: {
+					path: { stable_id },
+					...(opts.includeLines ? { query: { include: 'lines' as const } } : {})
+				}
+			})
+		);
+	} catch (error) {
+		if (
+			typeof error === 'object' &&
+			error !== null &&
+			(error as { status?: number }).status === 404
+		) {
+			return null;
+		}
+		throw error;
+	}
+}
+
+export async function putLyricOverride(
+	stable_id: string,
+	override: LyricVerdictValue | null,
+	note?: string
+): Promise<LyricVerdict> {
+	return unwrap(
+		api.PUT('/api/v1/tracks/{stable_id}/lyrics/override', {
+			params: { path: { stable_id } },
+			body: { override, note: note ?? null }
+		})
+	);
+}
+
+export async function listLyricVerdicts(
+	params: ListLyricVerdictsParams = {}
+): Promise<LyricVerdict[]> {
+	return unwrap(api.GET('/api/v1/lyrics', { params: { query: params } }));
+}
+
+export async function getLyricSummary(): Promise<LyricSummary> {
+	return unwrap(api.GET('/api/v1/lyrics/summary'));
+}
+
+export async function getLyricsConfig(): Promise<LyricsConfig> {
+	return unwrap(api.GET('/api/v1/lyrics/config'));
+}
+
+export async function putLyricsConfig(source_order: string[]): Promise<LyricsConfig> {
+	return unwrap(
+		api.PUT('/api/v1/lyrics/config', {
+			body: { source_order }
+		})
+	);
+}
+
+export async function listLyricJobs(): Promise<LyricJob[]> {
+	return unwrap(api.GET('/api/v1/lyrics/jobs'));
+}
+
+export async function postLyricJob(
+	kind: LyricJobKind,
+	stable_ids: string[],
+	note?: string
+): Promise<LyricJob> {
+	return unwrap(
+		api.POST('/api/v1/lyrics/jobs', {
+			body: { kind, stable_ids, note: note ?? null }
+		})
+	);
+}
+
+export async function postLyricsPurge(
+	source_prefix: string,
+	dry_run = false
+): Promise<LyricPurgeResult> {
+	return unwrap(
+		api.POST('/api/v1/lyrics/purge', {
+			body: { source_prefix, dry_run }
+		})
+	);
+}
+
+export async function getLyricsKpiLedger(): Promise<Record<string, unknown>> {
+	return unwrap(api.GET('/api/v1/bench/lyrics-kpi'));
 }

@@ -38,9 +38,8 @@
  *
  * OUT OF CONTRACT (numbers preserved as hints, NOT bound): jog dials
  * ([PDF] p.1 D3 - no scratch/jog action in the P0 union), BEAT SYNC (D5),
- * LOOP IN / LOOP OUT (D6/D7), CUE/LOOP CALL (D9/D10), CH CUE (M7),
- * HEADPHONES MIXING/LEVEL (M10/M11), MASTER CUE (M9), FILTER (F1),
- * BEAT FX (F2-F7).
+ * LOOP IN / LOOP OUT (D6/D7), CUE/LOOP CALL (D9/D10), CH CUE +SHIFT (M7),
+ * MASTER CUE +SHIFT (M9), FILTER (F1), BEAT FX (F2-F7).
  *
  * Requirements (mini-PRD):
  *   ✔︎ Transport play/cue per deck ([PDF] p.1 D1/D2).
@@ -53,6 +52,11 @@
  *     [if] note 0x4D ch 2 arrives [then] deck_loop_exit deck 2
  *   ✔︎ Mixer per channel (trim/EQ/fader) + crossfader + master on MSB CCs
  *     ([PDF] p.2 M1-M8); browse encoder relative + LOAD 1-2 ([PDF] p.1 B1/B2).
+ *   ✔︎ CH CUE / headphone mix+level / MASTER CUE on cited M7/M9/M10/M11 rows
+ *     ([PDF] p.2); CH CUE LED follows cue_enabled.
+ *     [if] note 0x54 ch 1 arrives [then] channel_cue deck 1 toggles cue_enabled
+ *     [if] ch 7 CC 0x0C arrives [then] headphone_mix tracks 0..1
+ *     [if] ch 7 note 0x63 arrives [then] master_cue latch forces mix to 1
  *   ✔︎ Tempo fader as true 14-bit MSB/LSB pair via deck_pitch lsbOffset 32
  *     ([PDF] p.1 D4: CC 0 MSB / CC 32 LSB).
  *     [if] MSB then LSB arrive on ch 2 CC 0/32 [then ⛔️] anything but ONE
@@ -156,7 +160,9 @@ function _mixerBindings(deck: DeckId): MidiBinding[] {
 		{ source: _cc(ch, 0x0f), action: { type: 'mixer_channel', deck, target: 'eq', band: 'low' } },
 		// [PDF] p.2 M2 CH FADER: CC 19 (0x13) MSB (LSB 51 unbound), "Min at
 		// bottom end, Max at top end" - matches setFader 0..1, no invert.
-		{ source: _cc(ch, 0x13), action: { type: 'mixer_channel', deck, target: 'fader' } }
+		{ source: _cc(ch, 0x13), action: { type: 'mixer_channel', deck, target: 'fader' } },
+		// [PDF] p.2 M7 CH CUE: 9n note 84 (0x54). Press-to-toggle.
+		{ source: _note(ch, 0x54), action: { type: 'channel_cue', deck } }
 	];
 }
 
@@ -203,7 +209,14 @@ function _browserAndGlobalBindings(): MidiBinding[] {
 		// (left), no invert.
 		{ source: _cc(ch, 0x1f), action: { type: 'mixer_global', target: 'crossfader' } },
 		// [PDF] p.2 M8 MASTER LEVEL: CC 8 (0x08) MSB (LSB 40 unbound).
-		{ source: _cc(ch, 0x08), action: { type: 'mixer_global', target: 'master' } }
+		{ source: _cc(ch, 0x08), action: { type: 'mixer_global', target: 'master' } },
+		// [PDF] p.2 M10 HEADPHONES MIXING: CC 12 (0x0C) MSB (LSB 44 unbound).
+		{ source: _cc(ch, 0x0c), action: { type: 'headphone_mix' } },
+		// [PDF] p.2 M11 HEADPHONES LEVEL: CC 13 (0x0D) MSB (LSB 45 unbound).
+		{ source: _cc(ch, 0x0d), action: { type: 'headphone_level' } },
+		// [PDF] p.2 M9 MASTER CUE: note 99 (0x63). Pioneer press/release on one
+		// note -> latch (restore previous MIX on second press).
+		{ source: _note(ch, 0x63), action: { type: 'master_cue', mode: 'latch' } }
 	];
 }
 
@@ -245,9 +258,7 @@ function _deckHints(deck: DeckId): ControlHint[] {
 		// [PDF] p.1 D10 CUE/LOOP CALL right: note 83 (0x53), +SHIFT note 61 (0x3D).
 		{ source: _note(ch, 0x53), label: `CUE/LOOP CALL forward (deck ${deck})` },
 		{ source: _note(ch, 0x3d), label: `CUE/LOOP CALL forward + SHIFT (deck ${deck})` },
-		// [PDF] p.2 M7 CH CUE (headphone PFL): note 84 (0x54), +SHIFT note
-		// 104 (0x68). Unbound: the P0 union has no channel-cue action.
-		{ source: _note(ch, 0x54), label: `CH CUE / headphone (deck ${deck})` },
+		// [PDF] p.2 M7 CH CUE +SHIFT: note 104 (0x68). Unshifted IS bound.
 		{ source: _note(ch, 0x68), label: `CH CUE + SHIFT (deck ${deck})` }
 	];
 }
@@ -263,13 +274,8 @@ function _globalHints(): ControlHint[] {
 		// [PDF] p.1 B2-L / B2-R LOAD +SHIFT: note 104 (0x68) / note 122 (0x7A).
 		{ source: _note(ch, 0x68), label: 'LOAD deck 1 + SHIFT' },
 		{ source: _note(ch, 0x7a), label: 'LOAD deck 2 + SHIFT' },
-		// [PDF] p.2 M9 MASTER CUE: note 99 (0x63), +SHIFT note 120 (0x78).
-		{ source: _note(ch, 0x63), label: 'MASTER CUE' },
+		// [PDF] p.2 M9 MASTER CUE +SHIFT: note 120 (0x78). Unshifted IS bound.
 		{ source: _note(ch, 0x78), label: 'MASTER CUE + SHIFT' },
-		// [PDF] p.2 M10 HEADPHONES MIXING: CC 12 (0x0C) MSB / 44 LSB.
-		{ source: _cc(ch, 0x0c), label: 'HEADPHONES MIXING' },
-		// [PDF] p.2 M11 HEADPHONES LEVEL: CC 13 (0x0D) MSB / 45 LSB.
-		{ source: _cc(ch, 0x0d), label: 'HEADPHONES LEVEL' },
 		// [PDF] p.2 F1-1 / F1-2 FILTER: CC 23 (0x17) / CC 24 (0x18) MSB.
 		{ source: _cc(ch, 0x17), label: 'FILTER (deck 1)' },
 		{ source: _cc(ch, 0x18), label: 'FILTER (deck 2)' },
@@ -312,6 +318,12 @@ function _ledRules(deck: DeckId): LedRule[] {
 		{
 			trigger: { kind: 'loop_engaged', deck },
 			out: { ch, note: 0x4d, velocityOn: 0x7f, velocityOff: 0x00 }
+		},
+		// [PDF] p.2 M7 CH CUE MIDI-OUT: 9n note 84 (0x54), OFF=0x00 ON=0x7F.
+		// Lit while the channel's cue bus is enabled.
+		{
+			trigger: { kind: 'channel_cue_enabled', deck },
+			out: { ch, note: 0x54, velocityOn: 0x7f, velocityOff: 0x00 }
 		}
 	];
 	for (let pad = 0; pad < 8; pad++) {

@@ -13,12 +13,44 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any
 
 from . import locations as _locations
 from . import provenance as _prov
 from .types import Event, Source
-from .writer_common import TRACKS_TABLE, VENDOR_IDS_TABLE
+from .writer_common import (
+    MEMBERSHIPS_TABLE,
+    PLAYLISTS_TABLE,
+    TRACKS_TABLE,
+    VENDOR_IDS_TABLE,
+    next_playlist_revision,
+)
+
+
+class TrackNotFoundError(LookupError):
+    """Raised when ``stable_id`` has no ``tracks`` row."""
+
+
+class TrackAlreadyRemovedError(RuntimeError):
+    """Raised when ``remove_from_library`` targets an already-tombstoned row."""
+
+
+class TrackNotRemovedError(RuntimeError):
+    """Raised when ``undelete_track`` targets a live row."""
+
+
+@dataclass(frozen=True)
+class TrackMembershipRef:
+    playlist_id: str
+    position: int
+
+
+@dataclass(frozen=True)
+class TrackLifecycleResult:
+    stable_id: str
+    deleted_at: str | None
+    memberships: list[TrackMembershipRef]
 
 
 class _TrackWriterMixin:
@@ -256,5 +288,154 @@ class _TrackWriterMixin:
                 )
         return changed
 
+    def remove_from_library(self, stable_id: str) -> TrackLifecycleResult:
+        """Soft-delete a track and its live playlist memberships.
 
-__all__ = ["_TrackWriterMixin"]
+        The audio file on disk is never touched. Membership tombstones use the
+        track stamp's ``updated_at`` as ``deleted_at`` so ``undelete_track``
+        can restore exactly this remove's rows.
+        """
+        with self._tx() as conn:
+            row = conn.execute(
+                "SELECT deleted_at FROM tracks WHERE stable_id = ?",
+                (stable_id,),
+            ).fetchone()
+            if row is None:
+                raise TrackNotFoundError(stable_id)
+            if row[0] is not None:
+                raise TrackAlreadyRemovedError(stable_id)
+            now = self._now_iso()
+            track_stamp = self._stamp(TRACKS_TABLE, (stable_id,), now)
+            tombstone_ts = track_stamp.updated_at
+            live_memberships = conn.execute(
+                "SELECT playlist_id, position FROM playlist_memberships "
+                "WHERE stable_id = ? AND deleted_at IS NULL",
+                (stable_id,),
+            ).fetchall()
+            memberships: list[TrackMembershipRef] = []
+            playlist_ids: set[str] = set()
+            for playlist_id, position in live_memberships:
+                member_stamp = self._stamp(
+                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
+                )
+                conn.execute(
+                    "UPDATE playlist_memberships SET deleted_at=?, updated_at=?, "
+                    "origin_device_id=? WHERE playlist_id=? AND position=?",
+                    (
+                        tombstone_ts,
+                        member_stamp.updated_at,
+                        member_stamp.origin_device_id,
+                        playlist_id,
+                        position,
+                    ),
+                )
+                memberships.append(TrackMembershipRef(playlist_id, position))
+                playlist_ids.add(playlist_id)
+            for playlist_id in sorted(playlist_ids):
+                revision = next_playlist_revision(conn, playlist_id, now)
+                stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), revision)
+                conn.execute(
+                    "UPDATE playlists SET updated_at=?, origin_device_id=? "
+                    "WHERE playlist_id=?",
+                    (stamp.updated_at, stamp.origin_device_id, playlist_id),
+                )
+            conn.execute(
+                "UPDATE tracks SET deleted_at=?, updated_at=?, origin_device_id=? "
+                "WHERE stable_id=?",
+                (
+                    tombstone_ts,
+                    track_stamp.updated_at,
+                    track_stamp.origin_device_id,
+                    stable_id,
+                ),
+            )
+            ev = self._append_event(
+                kind="track.delete",
+                stable_id=stable_id,
+                payload={
+                    "memberships": [
+                        {"playlist_id": m.playlist_id, "position": m.position}
+                        for m in memberships
+                    ],
+                },
+                ts=now,
+            )
+            self.bus.publish(ev)
+        return TrackLifecycleResult(stable_id, tombstone_ts, memberships)
+
+    def undelete_track(self, stable_id: str) -> TrackLifecycleResult:
+        """Clear a track tombstone and restore memberships from this remove."""
+        with self._tx() as conn:
+            row = conn.execute(
+                "SELECT deleted_at FROM tracks WHERE stable_id = ?",
+                (stable_id,),
+            ).fetchone()
+            if row is None:
+                raise TrackNotFoundError(stable_id)
+            tombstone_ts = row[0]
+            if tombstone_ts is None:
+                raise TrackNotRemovedError(stable_id)
+            now = self._now_iso()
+            track_stamp = self._stamp(TRACKS_TABLE, (stable_id,), now)
+            conn.execute(
+                "UPDATE tracks SET deleted_at=NULL, updated_at=?, origin_device_id=? "
+                "WHERE stable_id=?",
+                (track_stamp.updated_at, track_stamp.origin_device_id, stable_id),
+            )
+            restored_rows = conn.execute(
+                "SELECT playlist_id, position FROM playlist_memberships "
+                "WHERE stable_id = ? AND deleted_at = ?",
+                (stable_id, tombstone_ts),
+            ).fetchall()
+            memberships: list[TrackMembershipRef] = []
+            playlist_ids: set[str] = set()
+            for playlist_id, position in restored_rows:
+                member_stamp = self._stamp(
+                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
+                )
+                conn.execute(
+                    "UPDATE playlist_memberships SET deleted_at=NULL, updated_at=?, "
+                    "origin_device_id=? WHERE playlist_id=? AND position=? "
+                    "AND stable_id=? AND deleted_at=?",
+                    (
+                        member_stamp.updated_at,
+                        member_stamp.origin_device_id,
+                        playlist_id,
+                        position,
+                        stable_id,
+                        tombstone_ts,
+                    ),
+                )
+                memberships.append(TrackMembershipRef(playlist_id, position))
+                playlist_ids.add(playlist_id)
+            for playlist_id in sorted(playlist_ids):
+                revision = next_playlist_revision(conn, playlist_id, now)
+                stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), revision)
+                conn.execute(
+                    "UPDATE playlists SET updated_at=?, origin_device_id=? "
+                    "WHERE playlist_id=?",
+                    (stamp.updated_at, stamp.origin_device_id, playlist_id),
+                )
+            ev = self._append_event(
+                kind="track.undelete",
+                stable_id=stable_id,
+                payload={
+                    "memberships": [
+                        {"playlist_id": m.playlist_id, "position": m.position}
+                        for m in memberships
+                    ],
+                },
+                ts=now,
+            )
+            self.bus.publish(ev)
+        return TrackLifecycleResult(stable_id, None, memberships)
+
+
+__all__ = [
+    "_TrackWriterMixin",
+    "TrackAlreadyRemovedError",
+    "TrackLifecycleResult",
+    "TrackMembershipRef",
+    "TrackNotFoundError",
+    "TrackNotRemovedError",
+]

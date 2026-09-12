@@ -30,10 +30,11 @@ export const SILENT_WHILE_PLAYING_MS = 2_000;
  */
 export const SILENCE_RMS_FLOOR = 0.001;
 
-export type SilenceVerdict = 'ok' | 'silent-while-playing';
+export type SilenceVerdict = 'ok' | 'silent-while-playing' | 'output-stalled-while-rendering';
 
 export interface SilenceSample {
 	playing: boolean;
+	audible?: boolean;
 	masterRms: number;
 	tMs: number;
 }
@@ -58,7 +59,8 @@ export function foldSilenceSample(
 	state: Readonly<SilenceState> = EMPTY,
 	sample: SilenceSample
 ): SilenceState {
-	const { playing, masterRms, tMs } = sample;
+	const { playing, masterRms, tMs, audible } = sample;
+	const claimedLive = playing || audible === true;
 	// A broken meter must not read as silence: it would raise a dropout alarm
 	// through perfectly good audio, which is worse than having no watchdog.
 	if (!Number.isFinite(masterRms) || masterRms < 0) {
@@ -73,7 +75,7 @@ export function foldSilenceSample(
 				'arithmetic would go negative and the window would never elapse'
 		);
 	}
-	const silent = playing && masterRms < SILENCE_RMS_FLOOR;
+	const silent = claimedLive && masterRms < SILENCE_RMS_FLOOR;
 	if (!silent) {
 		return { silentSinceMs: null, reported: false, lastTMs: tMs, verdict: 'ok' };
 	}

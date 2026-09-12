@@ -80,7 +80,7 @@ pub struct EngineError {
 }
 
 impl EngineError {
-    fn new(headline: impl Into<String>, detail: impl Into<String>) -> Self {
+    pub(crate) fn new(headline: impl Into<String>, detail: impl Into<String>) -> Self {
         Self {
             headline: headline.into(),
             detail: detail.into(),
@@ -182,6 +182,9 @@ impl Engine {
     /// fails for no visible reason. The child was placed in its own process
     /// group at spawn precisely so one signal can reach all of it.
     pub fn shutdown(&mut self) {
+        if self.child.try_wait().ok().flatten().is_some() {
+            return;
+        }
         let pid = self.child.id() as i32;
         // SAFETY: killpg on a pgid this process created. A negative or zero
         // pid is impossible here because Child::id() is the spawned pid.
@@ -200,6 +203,12 @@ impl Engine {
             libc::killpg(pid, libc::SIGKILL);
         }
         let _ = self.child.wait();
+    }
+}
+
+impl Drop for Engine {
+    fn drop(&mut self) {
+        self.shutdown();
     }
 }
 
@@ -240,14 +249,16 @@ pub fn free_loopback_port() -> Result<u16, EngineError> {
 /// response. Pulling in a full client (and, with it, a TLS stack) to do that
 /// would add a network-capable dependency to a binary whose entire security
 /// story is that it never talks to the network.
-fn health_ok(port: u16) -> bool {
+pub fn health_ok(port: u16) -> bool {
     let address = SocketAddr::from(([127, 0, 0, 1], port));
     let Ok(mut stream) = TcpStream::connect_timeout(&address, SOCKET_TIMEOUT) else {
         return false;
     };
+    let _ = stream.set_nodelay(true);
     if stream.set_read_timeout(Some(SOCKET_TIMEOUT)).is_err() {
         return false;
     }
+    let _ = stream.set_write_timeout(Some(SOCKET_TIMEOUT));
     let request = format!(
         "GET {HEALTH_PATH} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\
          Connection: close\r\nAccept: application/json\r\n\r\n"
@@ -256,8 +267,21 @@ fn health_ok(port: u16) -> bool {
         return false;
     }
     let mut response = Vec::new();
-    if stream.take(4096).read_to_end(&mut response).is_err() {
-        return false;
+    let mut byte = [0_u8; 1];
+    loop {
+        if response.len() >= 4096 {
+            break;
+        }
+        match stream.read(&mut byte) {
+            Ok(0) => break,
+            Ok(_) => {
+                response.push(byte[0]);
+                if byte[0] == b'\n' {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
     }
     String::from_utf8_lossy(&response).starts_with("HTTP/1.1 200")
 }
@@ -391,6 +415,7 @@ pub fn spawn(
         .stderr(Stdio::piped())
         .env("OPENDJ_ENGINE_WARN_LOG", log_path.with_file_name("engine-warn.log"))
         .env("OPENDJ_ENGINE_LOG_BOOT_ID", log_boot_id())
+        .env("OPENDJ_PARENT_PID", std::process::id().to_string())
         .process_group(0);
     // A sandboxed shell means an App Store build, and the engine must run the
     // profile that turns off what the sandbox forbids. Passed as an argument
@@ -605,6 +630,10 @@ pub fn append_shell_log(level: &str, message: &str) {
     };
     let line = format!("[shell {level}] {message}\n");
     if let Err(err) = append_rotated(path, line.as_bytes()) {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            eprintln!("[{level}] {message}");
+            return;
+        }
         eprintln!("[shell log failed] {err}: [{level}] {message}");
     }
 }
@@ -897,6 +926,7 @@ mod tests {
             "[shell WARN] monitor scale factor 0\n"
         );
         std::fs::remove_dir_all(directory).unwrap();
+        append_shell_log("panic", "probe");
     }
 
     #[test]

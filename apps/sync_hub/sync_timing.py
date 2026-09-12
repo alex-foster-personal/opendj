@@ -7,9 +7,10 @@ Split out of :mod:`apps.sync_hub.client` so the client module stays under the
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Iterator, Literal
+from typing import Literal
 
 from apps.sync_hub.client_result import SyncResult
 

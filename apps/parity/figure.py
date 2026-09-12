@@ -46,6 +46,9 @@ class LaneFigure:
     within_1_0_n: int | None = None
     related_n: int | None = None
     mirex_mean: float | None = None
+    iou_mean: float | None = None
+    precision_mean: float | None = None
+    recall_mean: float | None = None
     boundary_f_0_5: float | None = None
     boundary_f_3_0: float | None = None
     label_acc: float | None = None
@@ -60,6 +63,11 @@ class LaneFigure:
     no_own_ids: tuple[str, ...] = ()
     ungradable_ids: tuple[str, ...] = ()
     ungradable: Mapping[str, int] = field(default_factory=dict)
+    median_r: float | None = None
+    mean_r: float | None = None
+    min_r: float | None = None
+    band_median_r: Mapping[str, float] | None = None
+    median_r_secondary: float | None = None
     details: Mapping[str, int | float | None] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -98,6 +106,9 @@ class LaneFigure:
             "within_1_0_n": self.within_1_0_n,
             "related_n": self.related_n,
             "mirex_mean": self.mirex_mean,
+            "iou_mean": self.iou_mean,
+            "precision_mean": self.precision_mean,
+            "recall_mean": self.recall_mean,
             "boundary_f_0_5": self.boundary_f_0_5,
             "boundary_f_3_0": self.boundary_f_3_0,
             "label_acc": self.label_acc,
@@ -112,5 +123,10 @@ class LaneFigure:
             "no_own_ids": list(self.no_own_ids),
             "ungradable_ids": list(self.ungradable_ids),
             "ungradable": dict(self.ungradable),
+            "median_r": self.median_r,
+            "mean_r": self.mean_r,
+            "min_r": self.min_r,
+            "band_median_r": dict(self.band_median_r) if self.band_median_r else None,
+            "median_r_secondary": self.median_r_secondary,
             "details": dict(self.details),
         }

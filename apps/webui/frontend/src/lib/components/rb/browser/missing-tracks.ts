@@ -32,6 +32,7 @@ export function missingTracksNode(brokenCount: number): PlaylistNode {
 export function brokenTrackToBrowserRow(track: BrokenTrack, order: number): BrowserRow {
 	return {
 		stable_id: track.stable_id,
+		item_id: null,
 		order,
 		title: track.title ?? null,
 		artist: track.artist ?? null,
@@ -57,7 +58,10 @@ export function brokenTrackToBrowserRow(track: BrokenTrack, order: number): Brow
 		artwork_status: 'file_missing',
 		rb_meta: null,
 		revealed: false,
-		match_context: null
+		match_context: null,
+		lyrics: null,
+		is_remix: null,
+		is_radio_edit: null
 	};
 }
 

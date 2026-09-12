@@ -2,7 +2,9 @@
 
 This issue #205 slice intentionally writes only the existing Prototype B
 OneLibrary overlay at ``PIONEER/rekordbox/exportLibrary.db``. It does not claim
-to generate a complete classic ``export.pdb``/ANLZ/audio export.
+to generate a complete classic ``export.pdb``/ANLZ/audio export. This workflow
+does not produce a gig stick; overlay-only output is rejected by
+``python -m apps.sync.usb.verify --pioneer-export``.
 
 Live target discovery is macOS-only. A target is accepted only when ``diskutil``
 identifies the exact ``/Volumes/<label>`` mount as external USB media and an

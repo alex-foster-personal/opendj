@@ -12,7 +12,7 @@ Regression one-liners:
   - if /auto-cues doesn't 404 ANALYSIS_NOT_FOUND for an unknown stable_id then broken
   - if /auto-cues ?backend=<unknown> doesn't 404 ANALYSIS_NOT_FOUND then broken
   - if /auto-cues 404s for a library track with no analysis row then unanalyzed loads break
-  - if /beatgrid-fallback beats aren't exactly ANLZ-shaped {n,bpm,t} then broken
+  - if /beatgrid-fallback beats aren't exactly fallback-shaped {n,bpm,t,extrapolated} then broken
   - if /beatgrid-fallback n doesn't read 1 on every analysis downbeat then broken
   - if /beatgrid-fallback beat times aren't strictly increasing within duration then broken
   - if /beatgrid-fallback doesn't 404 BEATGRID_FALLBACK_NOT_FOUND when neither source exists then broken
@@ -23,6 +23,7 @@ Regression one-liners:
 from __future__ import annotations
 
 from datetime import datetime, timezone, UTC
+from dataclasses import replace
 from pathlib import Path
 from typing import Iterator
 
@@ -56,6 +57,7 @@ SID_UNANALYZED = "sid-unanalyzed"  # library row, no analysis
 # settled a beatgrid determination for this track, so the endpoint must not
 # fall through to the superseded legacy row (discussion_r3975326241).
 SID_OWN_SETTLED_FAILED = "sid-own-settled-failed"
+SID_ISSUE_1777 = "sid-issue-1777"
 # sha256 shape required by AnalysisRecord's own-record contract; content is
 # arbitrary, only the shape is checked.
 _DECODE_FINGERPRINT = "sha256:" + "ab" * 32
@@ -73,9 +75,10 @@ def _record(
     analyzed_at: datetime = datetime(2026, 4, 17, tzinfo=UTC),
     downbeats: list[float] | None = None,
     bpm: float = BPM,
+    duration_s: float = DURATION_S,
 ) -> AnalysisRecord:
     if downbeats is None:
-        downbeats = [i * BAR_S for i in range(int(DURATION_S / BAR_S))]
+        downbeats = [i * BAR_S for i in range(int(duration_s / BAR_S))]
     onsets = [round(0.25 + i * 1.9, 3) for i in range(30)]
     # rms envelope: quiet, loud spike mid-track (a "drop"), quiet again.
     rms = [0.1] * 200 + [0.9] * 40 + [0.1] * 200
@@ -84,7 +87,7 @@ def _record(
         backend=backend,
         backend_version=backend_version,
         analyzed_at=analyzed_at,
-        duration_s=DURATION_S,
+        duration_s=duration_s,
         sample_rate=44100,
         bpm=bpm, bpm_confidence=0.9,
         key_camelot="8A", key_openkey="8m", key_confidence=0.9,
@@ -124,6 +127,15 @@ def _own_beatgrid_record(
 def client(tmp_path_factory: pytest.TempPathFactory) -> Iterator[TestClient]:
     db = tmp_path_factory.mktemp("analysis_route") / "state.db"
     upsert_record(_record(SID_FULL), db_path=db)
+    upsert_record(
+        _record(
+            SID_ISSUE_1777,
+            downbeats=[0.5, 2.375, 4.25, 6.125],
+            bpm=128.0,
+            duration_s=360.0,
+        ),
+        db_path=db,
+    )
     upsert_record(_record(SID_NO_DOWNBEATS, downbeats=[]), db_path=db)
     # A pre-v1 legacy row that predates the own_beatgrid canonical pointer,
     # PLUS a v1 own_beatgrid row that ran and FAILED - the fallback endpoint
@@ -273,8 +285,8 @@ def test_beatgrid_fallback_matches_anlz_shape(client: TestClient) -> None:
     assert grid["source"] == "own"
     assert grid["beat_count"] == len(grid["beats"]) > 0
     for beat in grid["beats"]:
-        # EXACT ANLZ beats entry shape (rb_vendor._beatgrid_payload).
-        assert set(beat) == {"n", "bpm", "t"}
+        # Fallback beats carry extrapolated; PQTZ /anlz stays {n,bpm,t} only.
+        assert set(beat) == {"n", "bpm", "t", "extrapolated"}
         assert beat["n"] in (1, 2, 3, 4)
         assert 0.0 <= beat["t"] <= DURATION_S
         assert beat["bpm"] == pytest.approx(BPM, abs=0.01)
@@ -348,17 +360,56 @@ def test_beatgrid_fallback_never_invented_without_downbeats(client: TestClient) 
 
 # ----- synthesize_fallback_beats unit edges -----------------------------------
 
+def test_synthesize_fallback_beats_returns_none_without_downbeats() -> None:
+    """[if] synthesize_fallback_beats has no downbeats [then] it returns None."""
+    rec = _record("empty", downbeats=[])
+    assert synthesize_fallback_beats(rec) is None
+
+
 @pytest.mark.requirement("META-02")
 def test_synthesize_single_downbeat_extends_at_record_bpm() -> None:
     rec = _record("solo", downbeats=[1.0])
     beats = synthesize_fallback_beats(rec)
     assert beats is not None
-    assert beats[0].t == 1.0 and beats[0].n == 1
+    assert beats[0].t == 1.0 and beats[0].n == 1 and beats[0].extrapolated is False
     # 120 BPM -> 0.5 s beats from t=1.0 to duration.
     assert beats[1].t == pytest.approx(1.5)
+    assert beats[1].extrapolated is True
     assert all(b.t < DURATION_S for b in beats)
+    assert all(b.extrapolated for b in beats[1:])
     ns = [b.n for b in beats[:8]]
     assert ns == [1, 2, 3, 4, 1, 2, 3, 4]
+
+
+@pytest.mark.requirement("PARITY-10")
+def test_synthesize_fallback_marks_extrapolated_tail() -> None:
+    """Issue #1777: tail beats past the last detected downbeat are marked."""
+    downbeats = [0.5, 2.375, 4.25, 6.125]
+    rec = replace(_record("issue-1777", downbeats=downbeats, bpm=128.0), duration_s=360.0)
+    beats = synthesize_fallback_beats(rec)
+    assert beats is not None
+    assert len(beats) == 767
+    last_measured = [b for b in beats if b.t == pytest.approx(6.125)]
+    assert len(last_measured) == 1
+    assert last_measured[0].n == 1
+    assert last_measured[0].extrapolated is False
+    assert all(b.extrapolated for b in beats if b.t > 6.125)
+    assert all(not b.extrapolated for b in beats if b.t <= 6.125)
+    assert sum(1 for b in beats if b.extrapolated) == 754
+    assert sum(1 for b in beats if b.n == 1 and not b.extrapolated) == 4
+
+
+@pytest.mark.requirement("PARITY-10")
+def test_beatgrid_fallback_http_marks_extrapolated_tail(client: TestClient) -> None:
+    r = client.get(f"/api/v1/tracks/{SID_ISSUE_1777}/beatgrid-fallback")
+    assert r.status_code == 200, r.text
+    beats = r.json()["beatgrid"]["beats"]
+    assert len(beats) == 767
+    for beat in beats:
+        assert set(beat) == {"n", "bpm", "t", "extrapolated"}
+    assert all(b["extrapolated"] for b in beats if b["t"] > 6.125)
+    assert all(not b["extrapolated"] for b in beats if b["t"] <= 6.125)
+    assert sum(1 for b in beats if b["extrapolated"]) == 754
 
 
 @pytest.mark.requirement("META-02")

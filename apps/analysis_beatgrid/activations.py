@@ -1,7 +1,8 @@
 """Retained Beat This! framewise logits for the v2 dynamic-grid fitter.
 
-This module loads activations and refuses when they are missing. It does not
-fit a grid or synthesize tempo from beat times.
+This module loads activations and refuses when they are missing. The piecewise-
+constant tempo map fit lives in ``tempo_map.py``; this module does not fit a
+grid or synthesize tempo from beat times alone.
 """
 from __future__ import annotations
 
@@ -9,7 +10,7 @@ import base64
 import hashlib
 import io
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -138,15 +139,17 @@ def require_activations_for_fit(record_or_ref: Any) -> dict[str, Any]:
     )
 
 
-def fit_dynamic_grid(record_or_ref: Any) -> dict[str, Any]:
-    """Entry for the v2 fitter; this issue only loads and refuses."""
-    return require_activations_for_fit(record_or_ref)
+def fit_dynamic_grid(record_or_ref: Any, beat_times: Sequence[float] | None = None):
+    """Entry for the v2 fitter; lazy re-export from ``tempo_map``."""
+    from apps.analysis_beatgrid.tempo_map import fit_dynamic_grid as _fit
+
+    return _fit(record_or_ref, beat_times=beat_times)
 
 
 __all__ = [
     "ACTIVATIONS_DIR_ENV",
-    "ActivationsMissing",
     "FPS",
+    "ActivationsMissing",
     "activation_npz_name",
     "activations_ref",
     "default_activations_dir",

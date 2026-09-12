@@ -77,6 +77,7 @@ _REFUSALS = (NoPerformancePage, OrderTimedOut, OrderRejected, MalformedResult)
 _STATE_COMMAND = "state"
 _SCRIPT_COMMAND = "do"
 _TRACK_COMMAND = "track"
+_API_COMMAND = "api"
 
 
 class _Parser(argparse.ArgumentParser):
@@ -612,8 +613,32 @@ def _head(tokens: Sequence[str]) -> tuple[str, list[str]]:
     return head, rest
 
 
+def _split_api_tokens(tokens: Sequence[str]) -> tuple[list[str], list[str]] | None:
+    """Return global argv and api argv when ``api`` is the subcommand.
+
+    Everything after ``api`` is handed to :mod:`api_cli`, including a
+    request-body ``--json`` that would collide with this module's output flag.
+    """
+    if _API_COMMAND not in tokens:
+        return None
+    index = tokens.index(_API_COMMAND)
+    return list(tokens[:index]), list(tokens[index + 1 :])
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     tokens = sys.argv[1:] if argv is None else list(argv)
+    api_split = _split_api_tokens(tokens)
+    if api_split is not None:
+        global_tokens, api_tokens = api_split
+        args = _parser(as_json="--json" in global_tokens).parse_args(
+            [*global_tokens, _API_COMMAND]
+        )
+        if args.list_verbs:
+            _print_verbs(args.json)
+            return EXIT_CONFIRMED
+        from apps.opendj_cli import api_cli
+
+        return api_cli.run(api_tokens, as_json=args.json)
     args = _parser(as_json="--json" in tokens).parse_args(tokens)
     if args.list_verbs:
         _print_verbs(args.json)

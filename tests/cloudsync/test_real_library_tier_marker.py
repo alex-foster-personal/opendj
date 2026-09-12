@@ -9,6 +9,8 @@ requests; this checks the result through a real ``--collect-only`` run.
 Single-line intent:
   - if a real-library test escapes the real_library marker then broken
   - if the marker lands on a test that does not need the library then broken
+
+[if] a real-library test is collected [then] only it carries the real_library marker, [else stop].
 """
 
 from __future__ import annotations

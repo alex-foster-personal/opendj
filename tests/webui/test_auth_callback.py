@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from http.cookies import SimpleCookie
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import parse_qs, unquote, urlparse
@@ -12,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
 from apps.webui.server.app import create_app
-from apps.webui.server.auth import SESSION_COOKIE_NAME
+from apps.webui.server.auth import SESSION_COOKIE_NAME, SESSION_TTL, SessionStore
 from tests.webui.test_auth import FAKE_CONFIG, _identity
 
 _ORIGIN = "http://127.0.0.1:9418"
@@ -99,6 +100,77 @@ def test_callback_success_redirects_to_performance_and_sets_cookie(
     assert location == f"{_ORIGIN}/performance"
     assert "opendj_auth_error" not in parsed.query
     assert SESSION_COOKIE_NAME in response.headers.get("set-cookie", "")
+
+
+def test_session_cookie_attributes_are_host_only_lax_path_root(
+    client: TestClient,
+) -> None:
+    """[if] the OAuth callback plants opendj_session [then] Set-Cookie is Path=/ SameSite=Lax HttpOnly host-only and not Secure, [else stop]."""
+    login = _start_login(client, return_to="/performance")
+    with patch(
+        "apps.webui.server.routes.auth.exchange_code",
+        return_value=_identity(),
+    ):
+        response = client.get(
+            "/api/v1/auth/callback",
+            params={"state": login["state"], "code": "fake"},
+            follow_redirects=False,
+        )
+    assert response.status_code == 303
+    raw = response.headers.get("set-cookie", "")
+    assert f"{SESSION_COOKIE_NAME}=" in raw
+
+    cookie = SimpleCookie()
+    cookie.load(raw)
+    morsel = cookie[SESSION_COOKIE_NAME]
+    assert morsel["path"] == "/"
+    assert morsel["samesite"].lower() == "lax"
+    assert morsel["httponly"]
+    assert not morsel["secure"]
+    assert morsel["domain"] == ""
+    assert int(morsel["max-age"]) == int(SESSION_TTL.total_seconds())
+
+
+def test_auth_me_same_cookie_same_identity_on_shared_backend(
+    state_db_path: Path,
+) -> None:
+    """[if] two clients present the same opendj_session to /auth/me [then] both receive the same google_sub, and a third client with no cookie is signed out, [else stop]."""
+    store = SessionStore(state_db_path)
+    token = store.sign_in(_identity())
+    assert store.resolve(token) is not None
+
+    app = create_app(
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        port=18697,
+        frontend_port=19411,
+        state_db_path=str(state_db_path),
+        lock_status_fn=lambda: None,
+        syncthing_status_fn=lambda: None,
+        mount_frontend=False,
+    )
+
+    with TestClient(app) as client_a:
+        client_a.cookies.set(SESSION_COOKIE_NAME, token)
+        response_a = client_a.get("/api/v1/auth/me")
+        assert response_a.status_code == 200
+        body_a = response_a.json()
+        assert body_a["signed_in"] is True
+
+    with TestClient(app) as client_b:
+        client_b.cookies.set(SESSION_COOKIE_NAME, token)
+        response_b = client_b.get("/api/v1/auth/me")
+        assert response_b.status_code == 200
+        body_b = response_b.json()
+        assert body_b["signed_in"] is True
+        assert body_a["user"]["google_sub"] == body_b["user"]["google_sub"]
+        assert body_a["user"]["email"] == body_b["user"]["email"]
+
+    with TestClient(app) as client_c:
+        response_c = client_c.get("/api/v1/auth/me")
+        assert response_c.status_code == 200
+        assert response_c.json() == {"signed_in": False, "user": None}
+        assert store.resolve(token) is not None
 
 
 @pytest.mark.parametrize(

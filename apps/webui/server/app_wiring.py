@@ -40,12 +40,19 @@ from .backend import (
     NotFoundError,
     StateBackend,
 )
+from .cloudsync_scheduler import CloudSyncScheduler
 from .errors import (
+    handle_already_exists,
     handle_backend_error,
     handle_conflict,
     handle_not_found,
     handle_rekordbox_writeback_disabled,
+    handle_slice_not_contiguous,
+    handle_smartlist_immutable,
+    handle_target_inside_slice,
 )
+from .playlist_add import AlreadyExistsError, SmartlistImmutableError
+from .playlist_move import SliceNotContiguousError, TargetInsideSliceError
 from .routes import analysis as analysis_routes
 from .routes import autolists as autolists_routes
 from .routes import analysis_backfill as analysis_backfill_routes
@@ -69,6 +76,8 @@ from .routes import feedback as feedback_routes
 from .routes import feedback_attachments as feedback_attachments_routes
 from .routes import feedback_performance_marks as feedback_performance_marks_routes
 from .routes import feedback_pins as feedback_pins_routes
+from .routes import feedback_replies as feedback_replies_routes
+from .routes import feedback_sync as feedback_sync_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
@@ -76,9 +85,11 @@ from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
 from .routes import library_jobs as library_jobs_routes
 from .routes import lyrics_search as lyrics_search_routes
+from .routes import lyrics_words as lyrics_words_routes
 from .routes import mytag as mytag_routes
 from .routes import pairing_capture as pairing_capture_routes
 from .routes import pairings as pairings_routes
+from .routes import performance_headphones as performance_headphones_routes
 from .routes import performance_telemetry as performance_telemetry_routes
 from .routes import play_it as play_it_routes
 from .routes import playlist_history as playlist_history_routes
@@ -103,6 +114,7 @@ from .routes import spotify as spotify_routes
 from .routes import state as state_routes
 from .routes import stem_tiers as stem_tiers_routes
 from .routes import stems as stems_routes
+from .routes import stems_assets as stems_assets_routes
 from .routes import telemetry as telemetry_routes
 from .routes import tracks as tracks_routes
 from .routes import ui_prefs as ui_prefs_routes
@@ -186,16 +198,24 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
     # and start live INSIDE this try: a raise here must still stop the
     # auto-analyze watcher above via the finally, not leak its thread.
     lyric_watcher: lyric_index_autostart.LyricIndexWatcher | None = None
+    cloudsync_scheduler: CloudSyncScheduler | None = None
     try:
         lyric_watcher = getattr(app.state, "lyric_index_watcher", None)
         if lyric_watcher is None:
             lyric_watcher = build_lyric_index_watcher(app)
             app.state.lyric_index_watcher = lyric_watcher
         lyric_watcher.start()
+        # FBSYNC-01: built only on an app the daemon entry point ARMED, and
+        # even then inert unless MDT_CLOUDSYNC_SCHEDULER=1 and a hub URL are
+        # set; retained on the app for the reason the watchers above are.
+        if app.state.cloudsync_scheduler_armed:
+            cloudsync_scheduler = getattr(app.state, "cloudsync_scheduler", None)
+            if cloudsync_scheduler is None:
+                cloudsync_scheduler = CloudSyncScheduler(app)
+                app.state.cloudsync_scheduler = cloudsync_scheduler
+            cloudsync_scheduler.start()
         jobs_watcher = getattr(app.state, "library_jobs_watcher", None)
         if jobs_watcher is None:
-            from pathlib import Path
-
             db = Path(app.state.state_db_path)
             data_dir = db.parent.parent if db.parent.name == "state" else db.parent
             roots = getattr(app.state, "stem_roots", None)
@@ -212,6 +232,8 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         jobs_watcher.start()
         yield
     finally:
+        if cloudsync_scheduler is not None:
+            cloudsync_scheduler.stop()
         jobs_w = getattr(app.state, "library_jobs_watcher", None)
         if jobs_w is not None:
             jobs_w.stop()
@@ -297,6 +319,10 @@ def _install_exception_handlers(app: FastAPI) -> None:
         RekordboxWritebackDisabled, handle_rekordbox_writeback_disabled
     )
     app.add_exception_handler(ConflictError, handle_conflict)
+    app.add_exception_handler(AlreadyExistsError, handle_already_exists)
+    app.add_exception_handler(SmartlistImmutableError, handle_smartlist_immutable)
+    app.add_exception_handler(SliceNotContiguousError, handle_slice_not_contiguous)
+    app.add_exception_handler(TargetInsideSliceError, handle_target_inside_slice)
     app.add_exception_handler(BackendError, handle_backend_error)
 
 
@@ -382,6 +408,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         client_errors_routes.router,
         client_events_routes.router,
         performance_telemetry_routes.router,
+        performance_headphones_routes.router,
         bench_routes.router,
         bulk_edit_routes.router,
         find_replace_routes.router,
@@ -399,6 +426,8 @@ def _mount_api_routers(app: FastAPI) -> None:
         feedback_attachments_routes.router,
         feedback_performance_marks_routes.router,
         feedback_pins_routes.router,
+        feedback_replies_routes.router,
+        feedback_sync_routes.router,
         share_routes.router,
         rb_assets_routes.router,
         search_routes.router,
@@ -408,6 +437,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         smartlists_routes.router,
         autolists_routes.router,
         stems_routes.router,
+        stems_assets_routes.router,
         stem_tiers_routes.router,
         reconcile_routes.router,
         rekordbox_gate_routes.router,
@@ -423,6 +453,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         ingest_upload_routes.router,
         library_routes.router,
         lyrics_search_routes.router,
+        lyrics_words_routes.router,
         health_routes.router,
         preflight_routes.router,
         settings_routes.router,

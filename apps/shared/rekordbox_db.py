@@ -385,7 +385,10 @@ def iter_analysis(db: Rekordbox6Database) -> "Iterator":
 
     BPM is read from ``DjmdContent.BPM`` (stored as BPM×100). Key is
     resolved through the harmonic module's Camelot mapping. Energy uses
-    ``ColorID`` as the one-to-one proxy (see 04-RESEARCH §1).
+    ``ColorID`` as the one-to-one proxy (see 04-RESEARCH §1). Write-back
+    converts BPM only at ``djmdContent.BPM``; PQTZ tempo is a separate x100
+    at the ANLZ tag (``analysis_writeback_pqtz``). Key is a ``KeyID`` foreign
+    key, never a scale name on ``djmdContent``; loudness has no rekordbox column.
     """
     from .harmonic import key_to_camelot
     from .normalised import NormalisedAnalysis

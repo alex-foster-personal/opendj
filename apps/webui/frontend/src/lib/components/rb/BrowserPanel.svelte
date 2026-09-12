@@ -77,11 +77,13 @@
 		collectBlankPlaylistDeletes,
 		createPlaylist,
 		deletePlaylist,
+		deletePlaylistItem,
 		duplicatePlaylist,
 		getPlaylistTracksEtag,
 		transferPlaylistTracks,
 		isWithinCreateGrace,
 		markPlaylistCreateGrace,
+		movePlaylistItems,
 		PlaylistConflictError,
 		renamePlaylist,
 		replacePlaylistTracks
@@ -95,11 +97,23 @@
 		setLibraryDensity,
 		setPlaylistTreeWidth,
 		setNextOnlyFilter,
+		setRemixesFilter,
+		setVocalsFilter,
 		uiPrefs,
 		PLAYLIST_TREE_WIDTH_MAX,
 		PLAYLIST_TREE_WIDTH_MIN
 	} from '$lib/rb/prefs.svelte';
 	import { pushToast } from '$lib/stores.svelte';
+	import AddToPlaylistPicker from './browser/AddToPlaylistPicker.svelte';
+	import {
+		removeFromLibraryConfirmMessage,
+		removeFromLibraryToastMessage
+	} from '$lib/components/rb/browser/track-library-menu';
+	import {
+		addToPlaylistToastMessage,
+		appendTracksToPlaylist
+	} from '$lib/rb/add-to-playlist';
+	import { removeFromLibrary } from '$lib/rb/track-library';
 	import {
 		isCurrentBrowserSearch,
 		reportBrowserSearchResult,
@@ -109,6 +123,11 @@
 	import BuildIdentity from './BuildIdentity.svelte';
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
+	import {
+		isLibraryPanelsCollapsed,
+		noteVisibleLibraryRowCount,
+		toggleLibraryPanels
+	} from '$lib/rb/library-panels.svelte';
 	import {
 		createAutoPlayFeedSnapshot,
 		getAutoPlayRankOf,
@@ -127,6 +146,7 @@
 	import PerformanceRecorderRail from './browser/PerformanceRecorderRail.svelte';
 	import PaneTabs from './browser/PaneTabs.svelte';
 	import type { PaneTabInfo } from './browser/PaneTabs.svelte';
+	import { formatReplaceStateUrl } from '$lib/rb/performance-deeplink';
 	import {
 		applyDecodedStripAcrossPanes,
 		canMutatePlaylist,
@@ -141,9 +161,13 @@
 		multiPanePlaylistIds,
 		reconcileBootSnapshot,
 		reorderPanesInPlace,
+		parseLv1,
 		resolveBootPlaylist,
 		resolveNewTabIndex,
 		shouldRetryBootPane,
+		writeLv1,
+		rowHasVocalLyrics,
+		rowIsRemix,
 		sortRows,
 		visibleRowsOf
 	} from './browser/pane-contract.svelte';
@@ -154,19 +178,7 @@
 		SortKey
 	} from './browser/pane-contract.svelte';
 	import { clearSelection, pruneSelection } from './browser/pane-row-selection';
-	import LibraryBrowseViews from './browser/LibraryBrowseViews.svelte';
-	import {
-		autolistNode,
-		isAutolistId,
-		AUTOLIST_ID
-	} from './browser/autolist-ids';
-	import { fillAutolistPane } from './browser/fill-autolist';
-	import { queryAutolists } from '$lib/rb/api-autolists';
-	import {
-		emptyAutolistSelection,
-		hasAutolistSelection,
-		type AutolistSelection
-	} from '$lib/smartlists/autolist-rule';
+	import LibraryNav from './browser/LibraryNav.svelte';
 	import {
 		fetchMissingTrackRows,
 		isMissingTracksId,
@@ -245,6 +257,7 @@
 	let playlistsError = $state<string | null>(null);
 	let source = $state<'collection' | 'spotify'>('collection');
 	let spotifySelectedId = $state<string | null>(null);
+	let urlPlaylistId: string | null = null;
 	let spotifyPendingTracks = $state<SpotifyPendingTrack[] | null>(null);
 	let spotifyPendingLoading = $state(false);
 	let spotifyPendingError = $state<string | null>(null);
@@ -332,8 +345,6 @@
 		search: string;
 	};
 	let navHistory = $state<NavSnap[]>([]);
-	let autolistSelection = $state<AutolistSelection>(emptyAutolistSelection());
-	let autolistTitle = $state('Autolists');
 	let navEpoch = $state(0);
 	let _navRestoring = false;
 	/** Genre filter undo + 20s library gesture window. */
@@ -523,11 +534,22 @@
 		return null;
 	});
 
+	function _applyLibraryFilters(rows: BrowserRow[]): BrowserRow[] {
+		let out = rows;
+		if (uiPrefs.remixes_filter) out = out.filter(rowIsRemix);
+		if (uiPrefs.vocals_filter) out = out.filter(rowHasVocalLyrics);
+		return out;
+	}
+
 	function _applyNextOnly(rows: BrowserRow[]): BrowserRow[] {
 		if (!uiPrefs.next_only_filter) return rows;
 		const ref = nextOnlyRef;
 		if (ref === null) return rows;
 		return rows.filter((r) => isAppropriateNext(r, ref));
+	}
+
+	function _applyPaneFilters(rows: BrowserRow[]): BrowserRow[] {
+		return _applyNextOnly(_applyLibraryFilters(rows));
 	}
 
 	interface VisibleSearchResult {
@@ -551,7 +573,7 @@
 		// Find mode: keep full list (no filter); TrackTable highlights matches.
 		if (searchMode === 'find') {
 			return {
-				rows: _applyNextOnly(
+				rows: _applyPaneFilters(
 					sortRows(
 						filterRows(pane.rows, '', hideBrokenForActivePane),
 						pane.sort_key,
@@ -570,7 +592,7 @@
 				autoPlayRankOf
 			);
 			const fallback = resolveSearchFilterFallback(
-				_applyNextOnly(unfilteredRows),
+				_applyPaneFilters(unfilteredRows),
 				unfilteredRows,
 				_searchFilterNames(false)
 			);
@@ -578,7 +600,7 @@
 		}
 		const unfilteredRows = visibleRowsOf(pane, false, autoPlayRankOf);
 		const fallback = resolveSearchFilterFallback(
-			_applyNextOnly(visibleRowsOf(pane, hideBrokenForActivePane, autoPlayRankOf)),
+			_applyPaneFilters(visibleRowsOf(pane, hideBrokenForActivePane, autoPlayRankOf)),
 			unfilteredRows,
 			pane.search.trim() === '' ? [] : _searchFilterNames(true)
 		);
@@ -600,6 +622,17 @@
 		const result = _computeVisibleSearchResult();
 		_lastVisibleComputeMs = performance.now() - startedAt;
 		return result;
+	});
+	function noteRenderedLibraryRowCapacity(count: number): void {
+		// PaneStore starts with an intentional empty array before onMount begins
+		// its first fetch. That is not a settled library result and must not
+		// collapse the panels for a normal relaunch.
+		if (!pane.has_settled_result || pane.loading) return;
+		noteVisibleLibraryRowCount(count);
+	}
+
+	$effect(() => {
+		if (isLibraryPanelsCollapsed()) suggestHoverId = null;
 	});
 	const visibleRows = $derived(visibleSearchResult.rows);
 	const ignoredSearchFilters = $derived(visibleSearchResult.ignoredFilters);
@@ -671,10 +704,6 @@
 			if (pane.error !== null) return `load failed: ${pane.error}`;
 			else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 			else if (isMissingTracksId(pane.playlist_id) && visibleRows.length === 0) return 'no missing tracks';
-			else if (isAutolistId(pane.playlist_id) && !hasAutolistSelection(autolistSelection))
-				return 'select an autolist';
-			else if (isAutolistId(pane.playlist_id) && visibleRows.length === 0)
-				return 'no tracks in stacked autolists';
 			else if (visibleRows.length === 0) return 'empty playlist';
 			else return null;
 		}
@@ -685,10 +714,6 @@
 		else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 		else if (visibleRows.length === 0 && pane.search.trim() !== '') return 'no tracks match the search';
 		else if (isMissingTracksId(pane.playlist_id) && visibleRows.length === 0) return 'no missing tracks';
-		else if (isAutolistId(pane.playlist_id) && !hasAutolistSelection(autolistSelection))
-			return 'select an autolist';
-		else if (isAutolistId(pane.playlist_id) && visibleRows.length === 0)
-			return 'no tracks in stacked autolists';
 		else if (visibleRows.length === 0 && pane.rows.length > 0 && hideBrokenForActivePane)
 			return 'all tracks in this list are broken links (hidden by Broken filter)';
 		else if (
@@ -699,6 +724,10 @@
 			return nextOnlyRef === null
 				? 'next-only: load a track with key+BPM (master preferred) to filter'
 				: 'no appropriate next tracks in this list (Camelot + BPM ±6% or half/double ≤15)';
+		} else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.remixes_filter) {
+			return 'no remixes in this list (title markers: remix/bootleg/rework/VIP/edit)';
+		} else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.vocals_filter) {
+			return 'no tracks here with >5 lines of lyrics (Vocals filter)';
 		} else if (visibleRows.length === 0) return 'empty playlist';
 		else return null;
 	});
@@ -716,9 +745,12 @@
 			selectPlaylist: _selectPlaylistFromCommand
 		});
 		const url = new URL(window.location.href);
-		if (url.searchParams.get('source') === 'spotify') {
+		const lv1 = parseLv1(url.searchParams);
+		if (lv1.source === 'spotify') {
 			source = 'spotify';
-			spotifySelectedId = url.searchParams.get('playlist');
+			spotifySelectedId = lv1.playlist_id;
+		} else {
+			urlPlaylistId = lv1.playlist_id;
 		}
 		const unsubscribeSearch = subscribeBrowserSearch((request) => {
 			// Programmatic, so it must beat (and cancel) any keystroke burst
@@ -1020,18 +1052,27 @@
 		const choice = resolveBootPlaylist({
 			remembered: uiPrefs.last_playlist,
 			known_playlist_ids: treeNodes.map((n) => n.playlist_id),
-			all_tracks_count: allTracksCount ?? 0
+			all_tracks_count: allTracksCount ?? 0,
+			url_playlist_id: urlPlaylistId
 		});
 		if (choice === null) return; // empty library - keep the explicit empty state
+		const node = _nodeForNav({
+			playlist_id: choice.playlist_id,
+			playlist_name: choice.name,
+			selected_id: null,
+			scroll_top: 0,
+			search: ''
+		});
+		if (node === null) return;
 		_navRestoring = true;
 		try {
 			await _loadPane(target, {
-				playlist_id: choice.playlist_id,
-				name: choice.name,
-				track_count: choice.kind === 'all_tracks' ? (allTracksCount ?? 0) : 0,
-				broken_count: choice.kind === 'all_tracks' ? (allTracksBrokenCount ?? 0) : 0,
-				kind: choice.kind,
-				children: []
+				playlist_id: node.playlist_id,
+				name: node.name,
+				track_count: choice.kind === 'all_tracks' ? (allTracksCount ?? 0) : node.track_count,
+				broken_count: choice.kind === 'all_tracks' ? (allTracksBrokenCount ?? 0) : node.broken_count,
+				kind: node.kind,
+				children: node.children
 			});
 		} finally {
 			_navRestoring = false;
@@ -1047,7 +1088,7 @@
 
 	function selectCollectionSource(): void {
 		source = 'collection';
-		_writeCollectionQuery();
+		_syncCollectionPlaylistQuery();
 	}
 
 	function selectSpotifyPlaylist(playlist: PlaylistSummaryHydrated): void {
@@ -1087,19 +1128,33 @@
 		}
 	}
 
-	function _writeSpotifyQuery(playlistId: string | null): void {
+	function _replaceQueryParams(params: URLSearchParams): void {
 		const url = new URL(window.location.href);
-		url.searchParams.set('source', 'spotify');
-		if (playlistId === null) url.searchParams.delete('playlist');
-		else url.searchParams.set('playlist', playlistId);
-		window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+		url.search = params.toString();
+		window.history.replaceState(null, '', formatReplaceStateUrl(url));
 	}
 
-	function _writeCollectionQuery(): void {
+	function _writeSpotifyQuery(playlistId: string | null): void {
 		const url = new URL(window.location.href);
-		url.searchParams.delete('source');
-		url.searchParams.delete('playlist');
-		window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+		_replaceQueryParams(
+			writeLv1(url.searchParams, { source: 'spotify', playlist_id: playlistId })
+		);
+	}
+
+	function _writeCollectionQuery(playlistId: string | null): void {
+		const url = new URL(window.location.href);
+		_replaceQueryParams(
+			writeLv1(url.searchParams, { source: 'collection', playlist_id: playlistId })
+		);
+	}
+
+	function _syncCollectionPlaylistQuery(): void {
+		const pane = panes[0];
+		if (pane.playlist_id === null || isMissingTracksId(pane.playlist_id)) {
+			_writeCollectionQuery(null);
+			return;
+		}
+		_writeCollectionQuery(pane.playlist_id);
 	}
 
 	// ------------------------------------------------- pane playlist loading
@@ -1146,8 +1201,15 @@
 		if (snap.playlist_id === MISSING_TRACKS_ID) {
 			return missingTracksNode(allTracksBrokenCount ?? 0);
 		}
-		if (isAutolistId(snap.playlist_id)) {
-			return autolistNode(autolistTitle, 0);
+		if (snap.playlist_id.startsWith('taglist:')) {
+			return {
+				playlist_id: snap.playlist_id,
+				name: snap.playlist_name,
+				track_count: 0,
+				broken_count: 0,
+				kind: 'taglist',
+				children: []
+			};
 		}
 		const found = treeNodes.find((n) => n.playlist_id === snap.playlist_id);
 		if (found !== undefined) return found;
@@ -1336,9 +1398,7 @@
 						? await _fetchAllRows()
 						: isMissingTracksId(requestedPlaylistId)
 							? await fetchMissingTrackRows()
-							: isAutolistId(requestedPlaylistId)
-								? await _fetchAutolistRows(autolistSelection)
-								: await _fetchPlaylistRows(requestedPlaylistId);
+							: await _fetchPlaylistRows(requestedPlaylistId);
 				if (p.playlist_id !== requestedPlaylistId) continue;
 				p.rows = result.rows;
 				p.truncated = result.truncated;
@@ -1463,7 +1523,7 @@
 	}
 
 	async function renamePlaylistUi(node: PlaylistNode, name: string): Promise<void> {
-		if (node.kind === 'all_tracks' || node.playlist_id === 'all' || isMissingTracksId(node.playlist_id) || isAutolistId(node.playlist_id)) return;
+		if (node.kind === 'all_tracks' || node.playlist_id === 'all' || isMissingTracksId(node.playlist_id)) return;
 		const next = name.trim();
 		if (next === '' || next === node.name) return;
 		try {
@@ -1478,7 +1538,7 @@
 	}
 
 	async function deletePlaylistUi(node: PlaylistNode): Promise<void> {
-		if (node.kind === 'all_tracks' || node.playlist_id === 'all' || isMissingTracksId(node.playlist_id) || isAutolistId(node.playlist_id)) return;
+		if (node.kind === 'all_tracks' || node.playlist_id === 'all' || isMissingTracksId(node.playlist_id)) return;
 		const skip = uiPrefs.confirm.delete_playlist === false;
 		if (!skip) {
 			const every = window.confirm(`Delete playlist "${node.name}"?`);
@@ -1520,28 +1580,25 @@
 			if (remember) setConfirmPref('playlist_drop_mode', mode);
 		}
 		try {
-			const dest = await getPlaylistTracksEtag(playlistId);
 			let effectiveMode: 'add' | 'move' = 'add';
-			let body: {
-				stable_ids: string[];
-				mode: 'add' | 'move';
-				source_playlist_id?: string;
-				source_etag?: string;
-			} = { stable_ids: stableIds, mode: 'add' };
 			if (mode === 'move') {
 				const srcId = panes[activePane].playlist_id;
 				if (srcId !== null && srcId !== 'all' && srcId !== playlistId) {
+					const dest = await getPlaylistTracksEtag(playlistId);
 					const src = await getPlaylistTracksEtag(srcId);
-					body = {
+					await transferPlaylistTracks(playlistId, dest.etag, {
 						stable_ids: stableIds,
 						mode: 'move',
 						source_playlist_id: srcId,
 						source_etag: src.etag
-					};
+					});
 					effectiveMode = 'move';
+				} else {
+					await appendTracksToPlaylist(playlistId, stableIds);
 				}
+			} else {
+				await appendTracksToPlaylist(playlistId, stableIds);
 			}
-			await transferPlaylistTracks(playlistId, dest.etag, body);
 			if (effectiveMode === 'move') {
 				const node = _currentNode(panes[activePane]);
 				if (node !== null) await _loadPane(panes[activePane], node);
@@ -1556,56 +1613,30 @@
 		}
 	}
 
-	function loadAutolistUi(selection: AutolistSelection, title: string): void {
-		autolistSelection = selection;
-		autolistTitle = title;
-		const node = autolistNode(title, 0);
-		if (pane.playlist_id !== AUTOLIST_ID) _pushNav();
-		void _loadPane(panes[activePane], node);
-	}
-
-	async function _fetchAutolistRows(
-		selection: AutolistSelection
-	): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
-		if (!hasAutolistSelection(selection)) {
-			return { rows: [], truncated: false, etag: '' };
-		}
-		const page = await queryAutolists(selection, 0, PAGE_SIZE);
-		const rows = page.tracks.map((wire, i) =>
-			_rowFromPlaylistWire(wire as PlaylistTrackRowWire, i + 1)
-		);
-		return { rows, truncated: page.total > rows.length, etag: '' };
-	}
-
 	async function _loadPane(p: PaneStore, node: PlaylistNode): Promise<void> {
 		// Every route into a pane funnels through here (tree click, new tab,
 		// back-stack, post-mutation refresh), so this is the one place that
 		// needs to remember the selection for the next boot. Folders are not
 		// loadable panes, so only the two real kinds are recorded.
-		if (p === panes[0] && node.kind !== 'folder' && node.kind !== 'missing_tracks' && node.kind !== 'autolist') {
+		if (
+			p === panes[0] &&
+			node.kind !== 'folder' &&
+			node.kind !== 'missing_tracks' &&
+			node.kind !== 'taglist'
+		) {
 			setLastPlaylist({
 				playlist_id: node.playlist_id,
 				name: node.name,
 				kind: node.kind
 			});
+			if (source === 'collection' && (node.kind === 'playlist' || node.kind === 'all_tracks')) {
+				_writeCollectionQuery(node.playlist_id);
+			}
 		}
 		// beginLoad returns the stale-response token for rapid re-selection;
 		// completeLoad/failLoad no-op when a newer load superseded this one.
 		const seq = p.beginLoad(node.playlist_id, node.name);
 		try {
-			if (node.kind === 'autolist') {
-				await fillAutolistPane({
-					pane: p,
-					seq,
-					selection: autolistSelection,
-					pageSize: PAGE_SIZE,
-					fetchPage: (offset, limit) => queryAutolists(autolistSelection, offset, limit),
-					mapRow: (wire, order) =>
-						_rowFromPlaylistWire(wire as PlaylistTrackRowWire, order),
-					onFillError: (error) => pushToast(`autolist load failed: ${error}`, 'error')
-				});
-				return;
-			}
 			if (node.kind === 'all_tracks') {
 				await fillAllTracksPane({
 					pane: p,
@@ -1616,6 +1647,20 @@
 					onFirstPaint: () => completeLibraryUsable({ source: 'all-tracks' }),
 					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
 					onFillError: (error) => pushToast(`playlist load failed: ${error}`, 'error')
+				});
+				return;
+			}
+			if (node.kind === 'taglist') {
+				await fillAllTracksPane({
+					pane: p,
+					seq,
+					fetchPage: (cursor) =>
+						listTracksHydrated({ limit: PAGE_SIZE, cursor, tag: node.name }),
+					mapRow: (t, order) => _rowFromListWire(t, order),
+					progressTotal: node.track_count,
+					onFirstPaint: () => completeLibraryUsable({ source: 'all-tracks' }),
+					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
+					onFillError: (error) => pushToast(`taglist load failed: ${error}`, 'error')
 				});
 				return;
 			}
@@ -1635,6 +1680,16 @@
 	 * currently-selected pane after a mutation (add-remove-reorder-tracks). */
 	function _currentNode(p: PaneStore): PlaylistNode | null {
 		if (p.playlist_id === null || p.playlist_id === 'all' || isMissingTracksId(p.playlist_id)) return null;
+		if (p.playlist_id.startsWith('taglist:')) {
+			return {
+				playlist_id: p.playlist_id,
+				name: p.title,
+				track_count: p.rows.length,
+				broken_count: 0,
+				kind: 'taglist',
+				children: []
+			};
+		}
 		return {
 			playlist_id: p.playlist_id,
 			name: p.title,
@@ -1657,6 +1712,7 @@
 		}
 		return {
 			stable_id: wire.stable_id,
+			item_id: wire.item_id ?? null,
 			order,
 			title: wire.title,
 			artist: wire.artist,
@@ -1689,7 +1745,10 @@
 			artwork_status: wire.artwork_status,
 			rb_meta: null,
 			revealed: false,
-			match_context: null
+			match_context: null,
+			lyrics: wire.lyrics ?? null,
+			is_remix: wire.is_remix ?? null,
+			is_radio_edit: wire.is_radio_edit ?? null
 		};
 	}
 
@@ -1703,6 +1762,7 @@
 		}
 		return {
 			stable_id: track.stable_id,
+			item_id: null,
 			order,
 			// TrackOut spells its nullable fields optional; a BrowserRow wants one
 			// spelling of "unknown", so absent collapses onto null here.
@@ -1735,7 +1795,10 @@
 			artwork_status: track.artwork_status,
 			rb_meta: null,
 			revealed: false,
-			match_context: null
+			match_context: null,
+			lyrics: track.lyrics ?? null,
+			is_remix: track.is_remix ?? null,
+			is_radio_edit: track.is_radio_edit ?? null
 		};
 	}
 
@@ -2484,9 +2547,7 @@
 			? { playlist_id: 'all', name: 'All Tracks', track_count: 0, broken_count: 0, kind: 'all_tracks' as const, children: [] }
 			: isMissingTracksId(pane.playlist_id)
 				? missingTracksNode(allTracksBrokenCount ?? 0)
-				: isAutolistId(pane.playlist_id)
-					? autolistNode(autolistTitle, 0)
-					: treeNodes.find((candidate) => candidate.playlist_id === pane.playlist_id);
+				: treeNodes.find((candidate) => candidate.playlist_id === pane.playlist_id);
 		if (node !== undefined) void _loadPane(pane, node);
 	}
 
@@ -2557,7 +2618,7 @@
 	async function _mutateActivePane(computeNext: (items: string[]) => string[]): Promise<void> {
 		const p = pane;
 		const id = p.playlist_id;
-		if (id === null || id === 'all' || isMissingTracksId(id) || isAutolistId(id)) return;
+		if (id === null || id === 'all' || isMissingTracksId(id)) return;
 		if (source !== 'collection' || p.whole_collection) {
 			pushToast('membership editing is disabled outside the complete playlist view', 'error');
 			return;
@@ -2593,19 +2654,145 @@
 	}
 
 	function removeRow(row: BrowserRow): void {
-		// Positional removal: duplicate stable_ids are allowed in a
-		// playlist, so this must drop the SLOT the row represents, not
-		// every occurrence of that stable_id.
-		void _mutateActivePane((items) => items.filter((_, i) => i !== row.order - 1));
+		void _removeMembership(row);
 	}
 
-	function reorderRows(fromOrder: number, toOrder: number): void {
-		void _mutateActivePane((items) => {
-			const next = items.slice();
-			const [moved] = next.splice(fromOrder - 1, 1);
-			next.splice(toOrder - 1, 0, moved);
-			return next;
-		});
+	async function _removeMembership(row: BrowserRow): Promise<void> {
+		const p = pane;
+		const id = p.playlist_id;
+		if (id === null || id === 'all' || isMissingTracksId(id)) return;
+		if (source !== 'collection' || p.whole_collection) {
+			pushToast('membership editing is disabled outside the complete playlist view', 'error');
+			return;
+		}
+		if (!row.item_id) {
+			pushToast('playlist row has no membership id - reload and try again', 'error');
+			return;
+		}
+		try {
+			await deletePlaylistItem(id, row.item_id);
+		} catch (exc) {
+			pushToast(`playlist update failed: ${String(exc)}`, 'error');
+			return;
+		}
+		const node = _currentNode(p);
+		if (node !== null) await _loadPane(p, node);
+	}
+
+	let addToPlaylistIds = $state<string[] | null>(null);
+
+	function openAddToPlaylistPicker(ids: string[]): void {
+		addToPlaylistIds = ids;
+	}
+
+	async function addTracksToPlaylist(node: PlaylistNode): Promise<void> {
+		const ids = addToPlaylistIds;
+		if (ids === null || ids.length === 0) return;
+		addToPlaylistIds = null;
+		try {
+			await appendTracksToPlaylist(node.playlist_id, ids);
+			await _refreshPlaylists();
+			pushToast(addToPlaylistToastMessage(ids.length, node.name), 'info');
+		} catch (exc) {
+			pushToast(`add to playlist failed: ${String(exc)}`, 'error');
+		}
+	}
+
+	async function removeFromLibraryUi(stableIds: string[]): Promise<void> {
+		const ids = [...new Set(stableIds)];
+		if (ids.length === 0) return;
+		if (!window.confirm(removeFromLibraryConfirmMessage(ids.length))) return;
+		let okCount = 0;
+		for (const stableId of ids) {
+			try {
+				await removeFromLibrary(stableId);
+				okCount += 1;
+			} catch (exc) {
+				pushToast(`remove from library failed: ${String(exc)}`, 'error');
+				return;
+			}
+		}
+		pushToast(removeFromLibraryToastMessage(okCount), 'info');
+	}
+
+	function reorderRows(fromOrder: number, toOrder: number, count = 1): void {
+		void _moveMembershipSlice(fromOrder, toOrder, count);
+	}
+
+	async function _moveMembershipSlice(
+		fromOrder: number,
+		toOrder: number,
+		count: number
+	): Promise<void> {
+		const p = pane;
+		const id = p.playlist_id;
+		if (id === null || id === 'all' || isMissingTracksId(id)) return;
+		if (source !== 'collection' || p.whole_collection) {
+			pushToast('membership editing is disabled outside the complete playlist view', 'error');
+			return;
+		}
+		if (p.truncated) {
+			pushToast('playlist is truncated - membership editing is disabled to preserve unrendered tracks', 'error');
+			return;
+		}
+		if (p.etag === '') {
+			pushToast('playlist still loading - try again in a moment', 'error');
+			return;
+		}
+		const rowsByOrder = new Map(p.rows.map((row) => [row.order, row]));
+		const slice: BrowserRow[] = [];
+		for (let order = fromOrder; order < fromOrder + count; order += 1) {
+			const row = rowsByOrder.get(order);
+			if (row === undefined) {
+				pushToast('playlist row has no membership id - reload and try again', 'error');
+				return;
+			}
+			slice.push(row);
+		}
+		const target = rowsByOrder.get(toOrder);
+		if (target === undefined) {
+			pushToast('playlist row has no membership id - reload and try again', 'error');
+			return;
+		}
+		for (const row of [...slice, target]) {
+			if (!row.item_id) {
+				pushToast('playlist row has no membership id - reload and try again', 'error');
+				return;
+			}
+		}
+		if (toOrder >= fromOrder && toOrder < fromOrder + count) {
+			return;
+		}
+		const body: {
+			range_start: string;
+			range_length: number;
+			range_end: string;
+			before_item_id?: string;
+			after_item_id?: string;
+		} = {
+			range_start: slice[0].item_id!,
+			range_length: count,
+			range_end: slice[count - 1].item_id!
+		};
+		if (toOrder > fromOrder + count - 1) {
+			body.after_item_id = target.item_id!;
+		} else if (toOrder < fromOrder) {
+			body.before_item_id = target.item_id!;
+		} else {
+			return;
+		}
+		try {
+			await movePlaylistItems(id, p.etag, body);
+		} catch (exc) {
+			if (exc instanceof PlaylistConflictError) {
+				pushToast('playlist changed elsewhere - reloaded with the latest version', 'error');
+			} else {
+				pushToast(`playlist update failed: ${String(exc)}`, 'error');
+				return;
+			}
+		}
+		const node = _currentNode(p);
+		if (node !== null) await _loadPane(p, node);
 	}
 </script>
 
@@ -2629,7 +2816,7 @@
 				onselect={selectSpotifyPlaylist}
 			/>
 		{:else}
-			<LibraryBrowseViews
+			<LibraryNav
 				nodes={treeNodes}
 				playlistsLoading={playlistsLoading}
 				playlistsError={playlistsError}
@@ -2648,7 +2835,6 @@
 				ondeleteplaylist={(n) => void deletePlaylistUi(n)}
 				onduplicateplaylist={(n) => void duplicatePlaylistUi(n)}
 				ondroptracks={(id, ids) => void dropTracksOnPlaylist(id, ids)}
-				onautolistchange={(sel, title) => loadAutolistUi(sel, title)}
 			/>
 		{/if}
 	</div>
@@ -2756,6 +2942,28 @@
 					</svg>
 					<span>Broken</span>
 				</label>
+				<label
+					class="remixes-filter"
+					title="Keep only remixes: title version markers (remix / bootleg / rework / VIP / non-radio edit). The lyric repair signal joins this once the full-library alignment run lands"
+				>
+					<input
+						type="checkbox"
+						checked={uiPrefs.remixes_filter}
+						onchange={(e) => setRemixesFilter(e.currentTarget.checked)}
+					/>
+					<span>Remixes</span>
+				</label>
+				<label
+					class="vocals-filter"
+					title="Keep only tracks with real word-level lyrics spanning more than 5 lines; tracks not yet run through the lyric pipeline are excluded"
+				>
+					<input
+						type="checkbox"
+						checked={uiPrefs.vocals_filter}
+						onchange={(e) => setVocalsFilter(e.currentTarget.checked)}
+					/>
+					<span>Vocals</span>
+				</label>
 				<!--
 					pin 5e3ed689ad3a: this control used to live in `.search-options`,
 					which only renders while the search box is focused or non-empty, so
@@ -2850,6 +3058,7 @@
 				_noteLibraryInteraction();
 				panes[activePane].rememberScroll(top);
 			}}
+			onrenderedrowcapacity={noteRenderedLibraryRowCapacity}
 			onsort={sortBy}
 			onselectrow={selectRow}
 			onloadrow={loadRow}
@@ -2863,6 +3072,9 @@
 			onreorder={reorderRows}
 			onstemsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'stems', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
 			onlyricsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'lyrics', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
+			onopeneditmodal={(kind) => void openEditModal(kind)}
+			onremovefromlibrary={(ids) => void removeFromLibraryUi(ids)}
+			onaddtoplaylist={(ids) => openAddToPlaylistPicker(ids)}
 			ongenrefilter={genreFilter}
 			{genreFilterUntil}
 			searchQuery={pane.search}
@@ -2878,63 +3090,52 @@
 			primarySettled={!pane.searching}
 			onerror={(message) => pushToast(message, 'error')}
 		/>
-		<div class="suggestion-panels" data-testid="suggestion-panels">
-			<div class="suggestion-panel-content">
-				<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
-				<div class:collapsed-panel={uiPrefs.next_panel_collapsed}>
-					<SuggestNextStrip
-						stableId={decks[1].stable_id}
-						targetLabel={suggestTargetDeck === null ? null : `CH ${suggestTargetDeck}`}
-						playTargetLabel={suggestPlayTargetDeck === null ? null : `CH ${suggestPlayTargetDeck}`}
-						onload={(sid) => loadSuggest(sid)}
-						onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
-						onhover={(sid) => (suggestHoverId = sid)}
-						oncandidates={(cands) => (suggestCandidates = cands)}
-					/>
-				</div>
-				{#if !uiPrefs.recommended_panel_collapsed}
-					<RecommendedSection
-						candidates={suggestCandidates}
-						currentPlaylistId={pane.playlist_id}
-						currentPlaylistMemberIds={playlistMemberIds}
-						referenceBpm={masterRef?.bpm ?? null}
-						referenceKey={masterRef?.key ?? null}
-						stableId={decks[1].stable_id}
-						onload={(sid) => loadSuggest(sid)}
-						onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
-						onhover={(sid) => (suggestHoverId = sid)}
-					/>
-				{/if}
-			</div>
-			<div class="suggestion-panel-rail" aria-label="collapsed suggestion panels">
-				{#if uiPrefs.next_panel_collapsed}
-					<button type="button" class="suggestion-rail-label" aria-label="Expand NEXT panel" onclick={() => void runPerformanceCommandFromUi({ type: 'library_panels', panel: 'next', collapsed: false })}>NEXT</button>
-				{:else}
-					<button type="button" class="suggestion-collapse" aria-label="Collapse NEXT panel" onclick={() => void runPerformanceCommandFromUi({ type: 'library_panels', panel: 'next', collapsed: true })}>›</button>
-				{/if}
-				{#if uiPrefs.recommended_panel_collapsed}
-					<button type="button" class="suggestion-rail-label" aria-label="Expand RECC panel" onclick={() => void runPerformanceCommandFromUi({ type: 'library_panels', panel: 'recommended', collapsed: false })}>RECC</button>
-				{:else}
-					<button type="button" class="suggestion-collapse" aria-label="Collapse RECC panel" onclick={() => void runPerformanceCommandFromUi({ type: 'library_panels', panel: 'recommended', collapsed: true })}>›</button>
-				{/if}
-			</div>
-		</div>
-	</div>
-	<div class="library-health" aria-label="library processing health">
-		{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
+		<!-- LIBUX-02: one chevron collapses/restores both panels together, so
+		     TrackTable (flex: 1 in this column) reclaims their vertical space
+		     the instant they stop rendering. -->
+		<div
+			class="library-panels-collapse-bar"
+			class:collapsed={isLibraryPanelsCollapsed()}
+			data-testid="library-panels-collapse-bar"
+		>
 			<button
 				type="button"
-				class:complete={dot.state === 'complete'}
-				class:incomplete={dot.state === 'incomplete'}
-				class:unavailable={dot.state === 'unavailable'}
-				class:error={dot.state === 'error'}
-				class="health-dot"
-				aria-label={`${dot.label}: ${dot.detail}`}
+				class="panels-chevron"
+				title={isLibraryPanelsCollapsed()
+					? 'Show Next / Recommended panels'
+					: 'Hide Next / Recommended panels'}
+				aria-label={isLibraryPanelsCollapsed()
+					? 'Show Next / Recommended panels'
+					: 'Hide Next / Recommended panels'}
+				aria-pressed={isLibraryPanelsCollapsed()}
+				onclick={() => toggleLibraryPanels()}
 			>
-				<span aria-hidden="true"></span>
-				<span class="health-popover" role="tooltip"><strong>{dot.label}</strong><br />{dot.detail}</span>
+				{isLibraryPanelsCollapsed() ? '‹' : '›'}
 			</button>
-		{/each}
+		</div>
+		{#if !isLibraryPanelsCollapsed()}
+			<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
+			<SuggestNextStrip
+				stableId={decks[1].stable_id}
+				targetLabel={suggestTargetDeck === null ? null : `CH ${suggestTargetDeck}`}
+				playTargetLabel={suggestPlayTargetDeck === null ? null : `CH ${suggestPlayTargetDeck}`}
+				onload={(sid) => loadSuggest(sid)}
+				onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
+				onhover={(sid) => (suggestHoverId = sid)}
+				oncandidates={(cands) => (suggestCandidates = cands)}
+			/>
+			<RecommendedSection
+				candidates={suggestCandidates}
+				currentPlaylistId={pane.playlist_id}
+				currentPlaylistMemberIds={playlistMemberIds}
+				referenceBpm={masterRef?.bpm ?? null}
+				referenceKey={masterRef?.key ?? null}
+				stableId={decks[1].stable_id}
+				onload={(sid) => loadSuggest(sid)}
+				onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
+				onhover={(sid) => (suggestHoverId = sid)}
+			/>
+		{/if}
 	</div>
 	<div class="bottom-bar">
 		<button
@@ -2951,6 +3152,26 @@
 		     (pin 571f4281ecea, the maintainer, Wed 2 Sep 2026). -->
 		<span class="wordmark">open dj</span>
 		<LibraryJobsChrome />
+		<div class="library-health" aria-label="library processing health">
+			{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
+				<button
+					type="button"
+					class:complete={dot.state === 'complete'}
+					class:incomplete={dot.state === 'incomplete'}
+					class:unavailable={dot.state === 'unavailable'}
+					class:error={dot.state === 'error'}
+					class="health-dot"
+					aria-label={`${dot.label}: ${dot.detail}`}
+				>
+					<span aria-hidden="true"></span>
+				</button>
+			{/each}
+			<div class="health-popover" role="tooltip">
+				{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
+					<p><strong>{dot.label}</strong><br />{dot.detail}</p>
+				{/each}
+			</div>
+		</div>
 		<!-- The build identity lives at the RIGHT end of this tray on
 		     /performance. It used to be position:fixed bottom-left, sitting on
 		     top of the connectivity dots. The root layout mounts it in the app
@@ -2971,6 +3192,13 @@
 	etags={modalEtags}
 	onclose={() => (openModal = null)}
 	onapplied={onEditApplied}
+/>
+
+<AddToPlaylistPicker
+	open={addToPlaylistIds !== null}
+	playlists={treeNodes}
+	onpick={(node) => void addTracksToPlaylist(node)}
+	onclose={() => (addToPlaylistIds = null)}
 />
 
 <style>
@@ -3119,7 +3347,9 @@
 		font-size: var(--rb-fs-label);
 	}
 	.hide-broken,
-	.next-only {
+	.next-only,
+	.remixes-filter,
+	.vocals-filter {
 		display: inline-flex;
 		align-items: center;
 		gap: 3px;
@@ -3129,11 +3359,15 @@
 		cursor: pointer;
 	}
 	.hide-broken:hover,
-	.next-only:hover {
+	.next-only:hover,
+	.remixes-filter:hover,
+	.vocals-filter:hover {
 		color: var(--rb-text);
 	}
 	.hide-broken input,
-	.next-only input {
+	.next-only input,
+	.remixes-filter input,
+	.vocals-filter input {
 		width: 10px;
 		height: 10px;
 		margin: 0;
@@ -3180,94 +3414,33 @@
 	.icon-btn.active {
 		color: var(--rb-accent);
 	}
-	.suggestion-panels {
-		display: flex;
-		align-items: flex-start;
-		min-height: 0;
-	}
-	.suggestion-panel-content {
-		min-width: 0;
-		flex: 1;
-	}
-	.collapsed-panel {
-		height: 0;
-		overflow: hidden;
-		pointer-events: none;
-		visibility: hidden;
-	}
-	/* Pin 9036adcedf4f: the rail is what decides how much the library gets
-	 * back, because `.suggestion-panels` is a flex ROW and the library's
-	 * `.tt-root` is `flex: 1` in the column above it -- so this box's height
-	 * is `max(content, rail)` and every pixel it releases lands in the
-	 * table automatically. Measured on e82773161 at 1680x1003, collapsing
-	 * both panels moved `.suggestion-panels` 34px -> 52px and the table
-	 * 226px -> 208px: collapsing COST the library 18px.
-	 *
-	 * The cause was `writing-mode: vertical-rl` on the collapsed labels.
-	 * Set down an 18px column, "NEXT" and "RECC" run ~26px each, against
-	 * ~17px for the `›` chevron each one replaces, so the act of collapsing
-	 * grew the chrome. Horizontal labels in a slightly wider rail cost 12px
-	 * apiece in the block direction whichever control is showing, which
-	 * makes the rail's height CONSTANT across the toggle and leaves
-	 * `max(content, rail)` free to fall to the rail's own floor.
-	 *
-	 * `align-items: flex-start` on the container is the other half: a
-	 * stretched rail would report the content's height rather than its own
-	 * and put the floor back. */
-	.suggestion-panel-rail {
-		display: flex;
+	.library-panels-collapse-bar {
 		flex: none;
-		flex-direction: column;
-		align-items: stretch;
+		display: flex;
+		align-items: center;
 		justify-content: flex-start;
-		/* Constant in BOTH directions across the toggle. Height is the pin
-		 * itself; width is the same trap one axis over -- a rail sized to its
-		 * content is 12px holding a chevron and ~27px holding the word
-		 * "RECC", so an auto width would buy the vertical reclaim by taking
-		 * 15px of library WIDTH on every collapse. This fix did exactly that
-		 * before the e2e assertion below caught it. Declared once, wide
-		 * enough for the longest label at the size set below WITH margin:
-		 * "RECC" at 7px needs 20px of content box, and a 26px rail left only
-		 * 19px, so the label was clipped by 1px in every state that showed
-		 * one. That was invisible until `overflow: hidden` below made the
-		 * real content width observable as scrollWidth -- an earlier reading
-		 * of "25 == 25" was taken while the overflow was still painting
-		 * outside the box. 32px leaves 25px of content for a 20px label, so
-		 * the wider metrics of Segoe UI or Roboto have somewhere to go. */
-		width: 32px;
-		border-left: 1px solid var(--rb-border);
+		min-height: 12px;
+		background: var(--rb-panel);
 	}
-	.suggestion-collapse,
-	.suggestion-rail-label {
-		display: block;
-		width: 100%;
+	.library-panels-collapse-bar.collapsed {
+		justify-content: flex-end;
+	}
+	.panels-chevron {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 16px;
 		height: 12px;
-		padding: 0 3px;
-		border: 0;
+		padding: 0;
 		background: transparent;
+		border: none;
 		color: var(--rb-text-dim);
-		font-family: var(--rb-font);
-		line-height: 12px;
-		text-align: center;
-		/* Defensive floor, not tuning. The 26px above was measured once, on
-		 * macOS Chromium, and the system-UI stack resolves to different
-		 * metrics on Windows (Segoe UI) and Linux (Roboto). The e2e
-		 * assertion fails loudly if a label ever outgrows its box, but in
-		 * PRODUCTION an unclipped overflow would paint the label over the
-		 * panel border beside it, so clip rather than bleed. */
-		overflow: hidden;
+		font-size: 10px;
+		line-height: 1;
 		cursor: pointer;
 	}
-	.suggestion-collapse:hover,
-	.suggestion-rail-label:hover {
+	.panels-chevron:hover {
 		color: var(--rb-accent);
-	}
-	.suggestion-collapse {
-		font-size: 11px;
-	}
-	.suggestion-rail-label {
-		font-size: 7px;
-		letter-spacing: 0.02em;
 	}
 	.bottom-bar {
 		grid-area: bottom;
@@ -3306,11 +3479,11 @@
 		text-overflow: ellipsis;
 	}
 	.library-health {
-		position: absolute;
-		right: 28px;
-		bottom: 22px;
+		position: relative;
 		display: flex;
+		align-items: center;
 		gap: 3px;
+		flex-shrink: 0;
 		z-index: 6;
 	}
 	.health-dot {
@@ -3341,7 +3514,7 @@
 		display: none;
 		position: absolute;
 		right: 0;
-		bottom: 16px;
+		bottom: calc(100% + 4px);
 		min-width: 180px;
 		max-width: 320px;
 		padding: 6px 8px;
@@ -3354,8 +3527,14 @@
 		white-space: normal;
 		box-shadow: 0 3px 10px rgb(0 0 0 / 40%);
 	}
-	.health-dot:hover .health-popover,
-	.health-dot:focus-visible .health-popover { display: block; }
+	.health-popover p {
+		margin: 0 0 4px;
+	}
+	.health-popover p:last-child {
+		margin-bottom: 0;
+	}
+	.library-health:hover .health-popover,
+	.library-health:focus-within .health-popover { display: block; }
 	.wordmark {
 		color: var(--rb-text-dim);
 		font-size: var(--rb-fs-label);

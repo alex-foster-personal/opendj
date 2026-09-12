@@ -44,6 +44,9 @@ export interface AnlzBeat {
 	bpm: number;
 	/** Beat time in SECONDS from track start. */
 	t: number;
+	/** Present on /beatgrid-fallback beats. true = synthesized past the last
+	 * detected downbeat. Omitted on rekordbox PQTZ. */
+	extrapolated?: boolean;
 }
 
 /** Which producer this beatgrid block came from. REQUIRED on every payload.
@@ -81,9 +84,10 @@ export interface AnlzBeatgrid {
 	 * this grid's beats project from, so the deck's public BPM cannot disagree
 	 * with the grid it plays against. */
 	bpm?: number;
-	/** Own payloads with `status: ok` only. True when the analyzer detected a
-	 * tempo change, so a single static grid is not trustworthy. ABSENT on a
-	 * rekordbox payload, where absence means trusted. */
+	/** Own payloads with `status: ok` only. One-anchor grids set `false`.
+	 * Multi-anchor maps omit this field (the beats already carry local bpm;
+	 * the grid is trusted). Rekordbox omits it. `true` means a static grid
+	 * the analyzer distrusts (legacy / defensive). */
 	static_grid_untrusted?: boolean;
 }
 
@@ -138,7 +142,8 @@ export interface AnlzPhrase {
 export interface AnlzPerformanceHints {
 	/** Key changes detected across the track; absent until a real analyzer emits them. */
 	dynamic_key?: boolean;
-	/** Tempo shifts detected across the track; absent until a real analyzer emits them. */
+	/** Set `true` on an own payload whose tempo map has more than one anchor
+	 * (`tempo_changes` non-empty). Absent when static or not analyzed. */
 	dynamic_tempo?: boolean;
 	/** Detected musical mode, e.g. major or minor; absent until truly analyzed. */
 	musical_mode?: 'major' | 'minor';
@@ -202,8 +207,7 @@ export interface AnlzData {
 	/** Phrases; empty array when PSSI absent. */
 	phrases: AnlzPhrase[];
 	/** Own beatgrid payloads only: time-stamped tempo-change markers, empty
-	 * when the analyzer found none. A rekordbox-sourced payload has no such
-	 * key at all. */
+	 * `[]` when static. A rekordbox-sourced payload has no such key at all. */
 	tempo_changes?: AnlzTempoChange[];
 	/** Own key lane only: bar-indexed key segments with their own status. */
 	key_segments?: AnlzKeySegments;

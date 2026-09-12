@@ -38,6 +38,7 @@ let vite;
 let webmidi; // $lib/rb/midi/webmidi.svelte.ts
 let flx10; // $lib/rb/midi/maps/ddj-flx10.ts
 let mixtour; // $lib/rb/midi/maps/reloop-mixtour.ts
+let ddj400; // $lib/rb/midi/maps/ddj-400.ts
 
 // ------------------------------------------------------- fake WebMIDI ports
 
@@ -60,13 +61,19 @@ function _fakeOutput(id, name) {
 const flxIn = _fakeInput('flx-in', 'DDJ-FLX10', 'AlphaTheta');
 const flxOut = _fakeOutput('flx-out', 'DDJ-FLX10');
 const mixIn = _fakeInput('mix-in', 'Mixtour', 'Reloop');
+const ddjIn = _fakeInput('ddj-in', 'DDJ-400', 'Pioneer DJ');
+const ddjOut = _fakeOutput('ddj-out', 'DDJ-400');
 
 const fakeAccess = {
 	inputs: new Map([
 		[flxIn.id, flxIn],
-		[mixIn.id, mixIn]
+		[mixIn.id, mixIn],
+		[ddjIn.id, ddjIn]
 	]),
-	outputs: new Map([[flxOut.id, flxOut]]),
+	outputs: new Map([
+		[flxOut.id, flxOut],
+		[ddjOut.id, ddjOut]
+	]),
 	onstatechange: null
 };
 
@@ -98,6 +105,7 @@ before(async () => {
 	webmidi = await vite.ssrLoadModule('/src/lib/rb/midi/webmidi.svelte.ts');
 	flx10 = await vite.ssrLoadModule('/src/lib/rb/midi/maps/ddj-flx10.ts');
 	mixtour = await vite.ssrLoadModule('/src/lib/rb/midi/maps/reloop-mixtour.ts');
+	ddj400 = await vite.ssrLoadModule('/src/lib/rb/midi/maps/ddj-400.ts');
 
 	// Patch navigator.requestMIDIAccess (Node 22 ships a navigator object;
 	// fall back to redefining the global if it rejects new properties).
@@ -117,6 +125,7 @@ before(async () => {
 	webmidi._resetMidiForTests();
 	webmidi.registerDeviceMap(flx10.FLX10_MAP);
 	webmidi.registerDeviceMap(mixtour.RELOOP_MIXTOUR_MAP);
+	webmidi.registerDeviceMap(ddj400.DDJ400_MAP);
 	webmidi.registerActionHandler((action, value, deviceId) => {
 		actions.push({ action, value, deviceId });
 	});
@@ -143,6 +152,8 @@ test('initMidi requested sysex:false and resolved both fake devices to maps', ()
 	assert.equal(byId.get('flx-in').hasOutput, true);
 	assert.equal(byId.get('mix-in').mapVendor, 'Reloop');
 	assert.equal(byId.get('mix-in').hasOutput, false);
+	assert.equal(byId.get('ddj-in').mapVendor, 'Pioneer DJ');
+	assert.equal(byId.get('ddj-in').hasOutput, true);
 });
 
 // ------------------------------------------------------------ FLX10 inbound
@@ -234,6 +245,50 @@ test('Mixtour pitch bend -> single-message 14-bit deck_pitch', () => {
 	assert.equal(actions[n].action.deck, 1);
 	assert.equal(actions[n].value.kind, 'continuous14');
 	assert.equal(actions[n].value.raw, 8192);
+});
+
+test('FLX10 cue-surface wire numbers stay unmapped (per-map, never global)', () => {
+	const n = actions.length;
+	wire(flxIn, 0xb6, 0x0c, 64); // ch 7 CC 12 MIXING
+	wire(flxIn, 0xb6, 0x0d, 64); // ch 7 CC 13 LEVEL
+	wire(flxIn, 0x90, 0x54, 0x7f); // ch 1 note 0x54 CH CUE
+	wire(flxIn, 0x96, 0x63, 0x7f); // ch 7 note 0x63 MASTER CUE
+	assert.equal(actions.length, n);
+	for (const entry of webmidi.learnLog.slice(0, 4)) {
+		assert.equal(entry.mapped, false);
+	}
+});
+
+test('Mixtour PFL note 0x03 -> channel_cue deck 1', () => {
+	const n = actions.length;
+	wire(mixIn, 0x90, 0x03, 0x7f);
+	assert.equal(actions.length, n + 1);
+	assert.deepEqual(actions[n].action, { type: 'channel_cue', deck: 1 });
+});
+
+test('DDJ-400 cue-surface bindings dispatch on the DDJ-400 map only', () => {
+	const n = actions.length;
+	wire(ddjIn, 0x90, 0x54, 0x7f);
+	assert.equal(actions.length, n + 1);
+	assert.deepEqual(actions[n].action, { type: 'channel_cue', deck: 1 });
+	wire(ddjIn, 0xb6, 0x0c, 64);
+	assert.equal(actions.length, n + 2);
+	assert.equal(actions[n + 1].action.type, 'headphone_mix');
+	assert.ok(Math.abs(actions[n + 1].value.value01 - 64 / 127) < 1e-9);
+	wire(ddjIn, 0x96, 0x63, 0x7f);
+	assert.equal(actions.length, n + 3);
+	assert.deepEqual(actions[n + 2].action, { type: 'master_cue', mode: 'latch' });
+});
+
+test('DDJ-400 CH CUE LED -> outbound Note On bytes', async () => {
+	const rule = ddj400.DDJ400_MAP.leds.find(
+		(r) => r.trigger.kind === 'channel_cue_enabled' && r.trigger.deck === 1
+	);
+	assert.notEqual(rule, undefined);
+	ddjOut.sent.length = 0;
+	webmidi.sendLed('ddj-in', rule.out.ch, rule.out.note, rule.out.velocityOn);
+	await sleep(webmidi.LED_THROTTLE_MS * 3);
+	assert.deepEqual(ddjOut.sent, [[0x90, 0x54, 0x7f]]);
 });
 
 // -------------------------------------------------------------- LED outbound

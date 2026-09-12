@@ -19,19 +19,19 @@ verbatim founding brief. This module produces the copy that travels with a
 specific machine's live DB file and is regenerated whenever migrations run,
 so it can never go stale the way a hand-maintained doc can.
 
-No module-level dependency on :mod:`apps.shared.state.db` on purpose: that
-module is a layer BELOW ``apps.database`` (``apps/shared/state/db.py`` is
-meant to import ``apps.database`` to invoke the post-migration hook, per the
-wiring ask in the D3 AGENTS.md lane's report -- see ``apps/database/
-__init__.py``). A module-level import here in the other direction would be
-a circular import; :func:`main` -- the only place this module actually needs
-a live connection opener -- imports it locally instead.
+``open_rw`` locally imports :func:`apps.database.regenerate_agents_md_if_writable`
+after migrations (see ``apps/database/__init__.py``). This module must not
+import :mod:`apps.shared.state.db` in return -- even inside :func:`main` --
+because that pair is a package cycle the quality gate counts
+(``python.package_cycles``). The CLI opens sqlite read-only itself.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sqlite3
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -114,6 +114,25 @@ class MissingColumnDocsError(RuntimeError):
     """
 
 
+class ForeignAgentsMdError(RuntimeError):
+    """``out_path`` exists and is not a generated state.db sidecar.
+
+    ``write_agents_md`` overwrites the traveling generated file on purpose.
+    It must not replace a hand-authored AGENTS.md (``apps/database/AGENTS.md``,
+    a repo-root Agents.md on a case-insensitive volume, a leftover note)
+    sitting in the same directory as a DB opened at a non-standard path.
+    """
+
+
+def _existing_is_generated_sidecar(path: Path) -> bool:
+    """True when ``path`` is missing or already a generated sidecar."""
+    if not path.exists():
+        return True
+    with path.open("r", encoding="utf-8") as handle:
+        first = handle.readline()
+    return first.startswith(_HEADER.splitlines()[0])
+
+
 # ----- introspection --------------------------------------------------------
 
 
@@ -140,12 +159,23 @@ def _is_fts5_shadow_table(name: str, virtual_tables: set[str]) -> bool:
     )
 
 
-def introspect(conn: sqlite3.Connection) -> list[TableInfo]:
+def introspect(
+    conn: sqlite3.Connection,
+    *,
+    owned_tables: frozenset[str] | None = None,
+) -> list[TableInfo]:
     """Return every live, documentable table in ``conn``, name-sorted.
 
     Excludes sqlite-internal tables (``sqlite_%``) and fts5 shadow tables.
     Everything else -- including infrastructure tables like ``schema_meta``
     -- is documentable and therefore subject to the drift guard.
+
+    When ``owned_tables`` is set, live tables outside that set are omitted
+    rather than becoming a coverage failure. ``open_rw`` passes
+    ``schema.ALL_KNOWN_TABLES`` so a leftover one-shot table
+    (``lyric_verdict_legacy``, ``lyric_word_legacy``) cannot abort opening
+    the app, while foreign-authority tables stay in the sidecar. The CLI
+    leaves this unset, so extras still fail there.
     """
     virtual_tables = _virtual_table_names(conn)
     names = [
@@ -153,6 +183,8 @@ def introspect(conn: sqlite3.Connection) -> list[TableInfo]:
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
         if not row[0].startswith("sqlite_") and not _is_fts5_shadow_table(row[0], virtual_tables)
     ]
+    if owned_tables is not None:
+        names = [name for name in names if name in owned_tables]
 
     tables: list[TableInfo] = []
     for name in names:
@@ -270,17 +302,37 @@ def render(tables: list[TableInfo]) -> str:
     return "\n".join(sections).rstrip() + "\n"
 
 
-def write_agents_md(conn: sqlite3.Connection, out_path: Path) -> str:
+def write_agents_md(
+    conn: sqlite3.Connection,
+    out_path: Path,
+    *,
+    owned_tables: frozenset[str] | None = None,
+) -> str:
     """Introspect ``conn``, render, and write to ``out_path``.
 
     Returns the text written. Raises :class:`MissingColumnDocsError` before
     writing anything if coverage is incomplete -- no partial file is ever
-    left behind.
+    left behind. Raises :class:`ForeignAgentsMdError` before writing if
+    ``out_path`` already exists and does not start with the generated
+    header. ``owned_tables`` is forwarded to :func:`introspect`.
     """
-    tables = introspect(conn)
+    if not _existing_is_generated_sidecar(out_path):
+        raise ForeignAgentsMdError(
+            f"{out_path} exists and is not a generated state.db sidecar; "
+            "refusing to overwrite"
+        )
+    tables = introspect(conn, owned_tables=owned_tables)
     text = render(tables)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(text, encoding="utf-8")
+    tmp_path = out_path.with_name(
+        f".{out_path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+    )
+    try:
+        tmp_path.write_text(text, encoding="utf-8")
+        os.replace(tmp_path, out_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
     return text
 
 
@@ -307,14 +359,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> None:
-    # Local import: see the module docstring -- avoids a circular import
-    # with apps.shared.state.db, which is meant to import THIS package.
-    from apps.shared.state import db as state_db
-
     args = _parse_args(argv)
     db_path = Path(args.data_dir) / "state" / "state.db"
-    conn = state_db.open_ro(db_path)
+    if not db_path.exists():
+        raise FileNotFoundError(
+            f"state DB not found at {db_path}; pass the data root that "
+            "contains state/state.db (the parent of state/, not the db file)."
+        )
+    # Open sqlite here, not via apps.shared.state.db.open_ro: open_rw now
+    # imports this package, so importing db from here would close a
+    # database <-> shared package cycle. This CLI only introspects.
+    uri = db_path.resolve().as_uri() + "?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, isolation_level=None)
     try:
+        conn.execute("PRAGMA query_only = ON")
         out_path = Path(args.data_dir) / "state" / "AGENTS.md"
         write_agents_md(conn, out_path)
         print(f"wrote {out_path}")
