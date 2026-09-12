@@ -29,5 +29,10 @@ test('tree-smartlists removes deleted rows locally', () => {
 test('PlaylistTree no longer inlines the smartlists each loop', () => {
 	const src = source('src/lib/components/rb/browser/PlaylistTree.svelte');
 	assert.doesNotMatch(src, /\{#each smartlists\.rows/);
+	assert.doesNotMatch(src, /TreeSmartlistSection/);
+});
+
+test('LibraryNav mounts TreeSmartlistSection on the Autolists tab', () => {
+	const src = source('src/lib/components/rb/browser/LibraryNav.svelte');
 	assert.match(src, /TreeSmartlistSection/);
 });
