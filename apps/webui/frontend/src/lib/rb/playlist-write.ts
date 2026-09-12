@@ -175,6 +175,36 @@ export async function addPlaylistItems(
 	return { items: out.items, etag: fresh };
 }
 
+/** DELETE /playlists/{id}/items/{item_id} - O(1) remove without rewriting
+ * existing membership rows (LIBM-21). No If-Match required. */
+export async function deletePlaylistItem(
+	playlistId: string,
+	itemId: string
+): Promise<PlaylistWriteResult> {
+	let data: unknown;
+	let response: Response;
+	try {
+		({ data, response } = await api.DELETE('/api/v1/playlists/{playlist_id}/items/{item_id}', {
+			params: { path: { playlist_id: playlistId, item_id: itemId } }
+		}));
+	} catch (error) {
+		if (error instanceof ApiError) {
+			throw new Error(
+				`remove from playlist ${playlistId} failed (${error.status}): ${_messageOf(error)}`
+			);
+		}
+		throw error;
+	}
+	const fresh = response.headers.get('etag');
+	if (!fresh) {
+		throw new Error(
+			`playlist ${playlistId}: DELETE item response carries no ETag header`
+		);
+	}
+	const out = data as PlaylistRowWire;
+	return { items: out.items, etag: fresh };
+}
+
 /** POST /playlists/{id}/tracks/transfer - atomic cross-playlist add (copy)
  * or move. Throws PlaylistConflictError on a stale If-Match (409). */
 export async function transferPlaylistTracks(

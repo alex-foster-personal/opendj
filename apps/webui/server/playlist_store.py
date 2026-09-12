@@ -83,6 +83,7 @@ from .backend import BackendError, ConflictError, NotFoundError
 from .etag import compute_etag, strip_quotes
 from .playlist_add import add_memberships as _add_memberships
 from .playlist_add import MEMBERSHIP_ORDER_BY
+from .playlist_remove import apply_membership_snapshot, remove_membership as _remove_membership
 from .playlist_transfer import (
     apply_dest_write,
     apply_source_write,
@@ -297,10 +298,7 @@ class PlaylistStore:
                 expected_etag=live.etag, record_edit=False,
             )
         if op == "memberships":
-            return self.replace_memberships(
-                live.playlist_id, list(snap.items),
-                expected_etag=live.etag, record_edit=False,
-            )
+            return apply_membership_snapshot(self, snap, live)
         raise BackendError(f"unknown playlist history op: {op}")
 
     def _forward_op(self, command: PlaylistEditCommand) -> str:
@@ -463,6 +461,15 @@ class PlaylistStore:
             return _add_memberships(
                 self, playlist_id, stable_ids,
                 position=position, record_edit=record_edit,
+            )
+
+    def remove_membership(
+        self, playlist_id: str, item_id: str, *, record_edit: bool = True,
+    ) -> PlaylistRow:
+        """O(1) remove via DELETE by item_id (LIBM-21)."""
+        with self._lock:
+            return _remove_membership(
+                self, playlist_id, item_id, record_edit=record_edit,
             )
 
     def transfer_memberships(

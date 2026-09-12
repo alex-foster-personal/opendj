@@ -25,6 +25,8 @@ ETag / error semantics copied from the tracks PATCH:
 ``PUT .../tracks`` is the full-replace membership primitive for import/restore.
 ``POST .../items:add`` is the O(1) append/insert primitive (LIBM-20): one or
 more tracks are inserted without rewriting existing membership rows.
+``DELETE .../items/{item_id}`` is the O(1) remove primitive (LIBM-21): one
+membership row is tombstoned without rewriting neighbors.
 
 Every successful non-noop write also appends a ``playlist.edit`` event with
 before/after snapshots. Downstream undo/redo lives at
@@ -258,6 +260,23 @@ def add_playlist_items(
     row = store.add_memberships(
         playlist_id, body.stable_ids, position=body.position,
     )
+    publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
+    return _out(row, response)
+
+
+@router.delete(
+    "/{playlist_id}/items/{item_id}",
+    response_model=PlaylistWriteOut,
+    operation_id="delete_playlist_item",
+)
+def delete_playlist_item(
+    playlist_id: str,
+    item_id: str,
+    response: Response,
+    _backend: StateBackend = Depends(get_write_state),
+    store: PlaylistStore = Depends(get_playlist_store),
+) -> PlaylistWriteOut:
+    row = store.remove_membership(playlist_id, item_id)
     publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
     return _out(row, response)
 

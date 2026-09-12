@@ -347,6 +347,8 @@ export function parseStemSummary(raw: unknown): StemSummary {
 
 export interface PlaylistTrackRowWire {
 	stable_id: string;
+	/** v13 membership row id; playlist detail only (LIBM-21). */
+	item_id?: string | null;
 	title: string | null;
 	artist: string | null;
 	key: string | null;

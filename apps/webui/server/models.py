@@ -257,6 +257,7 @@ class TrackRowOut(BaseModel):
     """
 
     stable_id: str
+    item_id: str | None = None
     title: str | None
     artist: str | None
     key: str | None

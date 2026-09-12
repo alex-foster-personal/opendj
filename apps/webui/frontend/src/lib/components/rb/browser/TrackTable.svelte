@@ -618,6 +618,32 @@
 	}
 
 	function onTrackKeydown(event: KeyboardEvent, row: BrowserRow): void {
+		const target = event.target;
+		if (
+			target instanceof HTMLInputElement ||
+			target instanceof HTMLTextAreaElement ||
+			(target instanceof HTMLElement && target.isContentEditable)
+		) {
+			return;
+		}
+		if (
+			removable &&
+			(event.key === 'Delete' || event.key === 'Backspace') &&
+			onremoverow
+		) {
+			event.preventDefault();
+			event.stopPropagation();
+			if (selectedOrderSet.has(row.order)) {
+				for (const visible of rows) {
+					if (selectedOrderSet.has(visible.order)) {
+						onremoverow(visible);
+					}
+				}
+			} else {
+				onremoverow(row);
+			}
+			return;
+		}
 		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
 		event.preventDefault();
 		if (!selectedOrderSet.has(row.order)) onselectrow(row);
