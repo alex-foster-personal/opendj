@@ -132,6 +132,15 @@ def test_a_control_value_outside_the_bus_domain_is_refused_before_dispatch() -> 
         parse_invocation(["eq", "2", "low", "-0.3"])
 
 
+def test_head_delay_ms_uses_the_0_to_500_ms_domain_not_unit() -> None:
+    assert parse_invocation(["head_delay_ms", "40"]).command == {
+        "type": "head_delay_ms",
+        "value": 40.0,
+    }
+    with pytest.raises(InvocationError, match=r"0\.\.500"):
+        parse_invocation(["head_delay_ms", "501"])
+
+
 def test_leftover_tokens_are_refused_rather_than_dropped() -> None:
     with pytest.raises(InvocationError, match="does not take"):
         parse_invocation(["cue", "1", "extra"])

@@ -28,6 +28,7 @@ from apps.opendj_cli.kinds import (
     bool_value,
     deck_value,
     enum_value,
+    head_delay_ms_value,
     int_enum_value,
     int_value,
     loop_value,
@@ -211,6 +212,9 @@ _VERBS: tuple[Verb, ...] = (
          observes=(Observe(("master", "muted"), "muted"),)),
     Verb("headphone_mix", "headphone_mix", (_UNIT,)),
     Verb("headphone_level", "headphone_level", (_UNIT,)),
+    Verb("head_delay_ms", "head_delay_ms", (
+        arg("value", "number", head_delay_ms_value, "0..500"),
+    ), note="CUEOUT-03: cue-monitor delay in milliseconds."),
     # ----- browser, library and headphone outputs -----------------------
     Verb("browser_select_playlist", "browser_select_playlist",
          (arg("playlist_id", "text", text_value),)),
