@@ -92,6 +92,21 @@ test('a stamped shell yields its identity verbatim', () => {
 	assert.equal(state.kind, 'ok');
 	assert.equal(state.value.git_sha, '81eebe75');
 	assert.equal(state.value.lane_label, 'B');
+	assert.equal(state.value.release_channel, null);
+	assert.equal(state.value.evidence_written_at_utc, null);
+});
+
+test('a stamped shell yields channel and evidence timestamp', () => {
+	const state = mod.readShellBuild({
+		OPENDJ_SHELL_BUILD: {
+			...SHELL_OK,
+			release_channel: 'stable',
+			evidence_written_at_utc: '2026-09-12T12:00:00Z'
+		}
+	});
+	assert.equal(state.kind, 'ok');
+	assert.equal(state.value.release_channel, 'stable');
+	assert.equal(state.value.evidence_written_at_utc, '2026-09-12T12:00:00Z');
 });
 
 // ----- engine side --------------------------------------------------------
@@ -244,6 +259,9 @@ test('the component carries no build-time literal of its own', async () => {
 	// moment the next commit lands, which is the whole bug.
 	assert.equal(/\b[0-9a-f]{7,40}\b/.test(source.replace(/#[0-9a-f]{3,8}\b/g, '')), false);
 	assert.equal(/\d{4}-\d{2}-\d{2}T/.test(source), false);
+	assert.match(source, /release_channel/);
+	assert.match(source, /evidence_written_at_utc/);
+	assert.match(source, /evidenceStamp/);
 });
 
 // ----- where this app is --------------------------------------------------

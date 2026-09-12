@@ -67,6 +67,8 @@ const BUILD_GIT_BRANCH: Option<&str> = option_env!("OPENDJ_BUILD_GIT_BRANCH");
 const BUILD_GIT_DIRTY: Option<&str> = option_env!("OPENDJ_BUILD_GIT_DIRTY");
 const BUILD_AT_UTC: Option<&str> = option_env!("OPENDJ_BUILD_AT_UTC");
 const BUILD_LANE_LABEL: Option<&str> = option_env!("OPENDJ_BUILD_LANE_LABEL");
+const BUILD_CHANNEL: Option<&str> = option_env!("OPENDJ_BUILD_CHANNEL");
+const BUILD_EVIDENCE_AT_UTC: Option<&str> = option_env!("OPENDJ_BUILD_EVIDENCE_AT_UTC");
 
 /// The shell's own identity, injected for the UI to render beside the
 /// engine's. The two can drift -- a shell pointed at a dev engine is exactly
@@ -81,6 +83,8 @@ fn shell_build_identity(app_version: &str) -> serde_json::Value {
         "git_dirty": BUILD_GIT_DIRTY.map(|value| value == "1" || value == "true"),
         "built_at_utc": BUILD_AT_UTC,
         "lane_label": BUILD_LANE_LABEL,
+        "release_channel": BUILD_CHANNEL,
+        "evidence_written_at_utc": BUILD_EVIDENCE_AT_UTC,
     })
 }
 

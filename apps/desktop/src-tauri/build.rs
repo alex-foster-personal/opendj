@@ -16,6 +16,8 @@ fn main() {
         "OPENDJ_BUILD_GIT_DIRTY",
         "OPENDJ_BUILD_AT_UTC",
         "OPENDJ_BUILD_LANE_LABEL",
+        "OPENDJ_BUILD_CHANNEL",
+        "OPENDJ_BUILD_EVIDENCE_AT_UTC",
     ] {
         println!("cargo:rerun-if-env-changed={variable}");
     }

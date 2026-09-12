@@ -71,6 +71,8 @@ export interface ShellStamp {
 	git_dirty: boolean | null;
 	built_at_utc: string | null;
 	lane_label: string | null;
+	release_channel: string | null;
+	evidence_written_at_utc: string | null;
 }
 
 /** The engine's answer, mirroring `BuildInfoOut` in apps/engine_core/build_info.py. */
@@ -138,7 +140,16 @@ export function readShellBuild(scope: Record<string, unknown> = globalThis): Sid
 			git_branch: stamp.git_branch ?? null,
 			git_dirty: typeof stamp.git_dirty === 'boolean' ? stamp.git_dirty : null,
 			built_at_utc: stamp.built_at_utc ?? null,
-			lane_label: stamp.lane_label ?? null
+			lane_label: stamp.lane_label ?? null,
+			release_channel:
+				typeof stamp.release_channel === 'string' && stamp.release_channel !== ''
+					? stamp.release_channel
+					: null,
+			evidence_written_at_utc:
+				typeof stamp.evidence_written_at_utc === 'string' &&
+				stamp.evidence_written_at_utc !== ''
+					? stamp.evidence_written_at_utc
+					: null
 		}
 	};
 }
@@ -383,6 +394,12 @@ export function explainSide(
 				? 'DIRTY: uncommitted changes were present when this was built, so the commit above does not fully describe it.'
 				: 'clean tree at build time'
 		];
+		if ('release_channel' in value) {
+			parts.push(`channel ${value.release_channel ?? '(none)'}`);
+			if (value.evidence_written_at_utc) {
+				parts.push(`evidence ${value.evidence_written_at_utc}`);
+			}
+		}
 		if ('source' in value) {
 			parts.push(
 				value.source === 'payload'

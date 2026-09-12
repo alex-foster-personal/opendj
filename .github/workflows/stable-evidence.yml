@@ -1,0 +1,111 @@
+name: Stable evidence
+
+# OPS-18. After CI / Full CI / E2E / macOS Packaging complete, merge-append
+# that run's conclusion onto ops/stable/<head_sha>.json on the runner.
+# workflow_run uses the default-branch definition; never execute the
+# triggering SHA (it may be an untrusted PR). The recorded sha is
+# github.event.workflow_run.head_sha, not github.sha.
+
+on:
+  workflow_run:
+    workflows: [CI, Full CI (on-demand), E2E, macOS Packaging]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: stable-evidence-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+env:
+  # Keep .pyc out of the workspace: root-owned bytecode under .venv is what
+  # made actions/checkout fail with EACCES and skip every test step (#1338).
+  # This covers interpreters these workflows start directly. It does NOT reach
+  # anything run through `sudo`, which resets the environment with no env_keep
+  # for this name, so the pre-checkout hygiene step below is the repair path
+  # for a root-run interpreter.
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  append:
+    name: Append suite result
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    steps:
+      # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      # SHA-pinned to the v4 tag commit (matches ci.yml).
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Append suite result for the triggering head_sha
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+        run: |
+          set -euo pipefail
+          export OPENDJ_STABLE_EVIDENCE_DIR="${OPENDJ_STABLE_EVIDENCE_DIR:-$HOME/jobs/state/stable-evidence}"
+          mkdir -p "$OPENDJ_STABLE_EVIDENCE_DIR"
+          python3 -m scripts.stable_evidence append-suite \
+            --sha "$HEAD_SHA" \
+            --workflow-name "$WORKFLOW_NAME" \
+            --run-id "$RUN_ID" \
+            --conclusion "$CONCLUSION" \
+            --written-by "github-actions:${WORKFLOW_NAME}"
