@@ -49,6 +49,18 @@ test('own ok with static_grid_untrusted false is trusted', () => {
 	);
 });
 
+test('own ok dynamic grid with omitted static_grid_untrusted is trusted', () => {
+	const payload = anlz({
+		beatgrid: { source: 'own', status: 'ok' },
+		tempo_changes: [{ at_s: 32.5, bpm_before: 120, bpm_after: 128, confidence: 0.9 }]
+	});
+	assert.equal(grid.hasTrustedBeatGrid(payload), true);
+	assert.equal(grid.shouldPaintBeatGrid(payload), true);
+	const st = { quantize_enabled: true, beat_sync_enabled: true, stable_id: 'x', anlz: payload };
+	assert.equal(grid.effectiveQuantize(st), true);
+	assert.equal(grid.effectiveBeatSync(st), true);
+});
+
 test('own failed with beats is not trusted and does not paint', () => {
 	const payload = anlz({
 		beatgrid: { source: 'own', status: 'failed', reason: 'no_trackable_pulse' }
