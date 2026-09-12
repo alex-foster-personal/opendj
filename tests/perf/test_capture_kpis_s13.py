@@ -10,8 +10,9 @@ from pathlib import Path
 
 import pytest
 
+from scripts.perf import capture_s13
 from scripts.perf.capture_kpis import main as capture_kpis_main
-from scripts.perf.capture_ledger import span_to_ledger_rows
+from scripts.perf.capture_ledger import classify_s13_withhold_reason, span_to_ledger_rows
 from scripts.perf.kpi_scorecard import UNKNOWN, score_scenarios
 
 _REPO = Path(__file__).resolve().parents[2]
@@ -197,3 +198,91 @@ def test_scorecard_unknown_on_withheld_rows() -> None:
     rendered = str(score)
     assert "UNKNOWN" in rendered
     assert "login_submit_to_library_usable_s = " not in rendered
+
+
+@pytest.mark.requirement("PERF-KPI-S13")
+def test_classify_s13_withhold_reason_restored_session() -> None:
+    """[if] submit marks are absent [then] reason is restored-session, [else stop]."""
+    reason = classify_s13_withhold_reason(
+        "restored-session: submit or navigate mark missing after login"
+    )
+    assert reason.startswith("restored-session:")
+
+
+@pytest.mark.requirement("PERF-KPI-S13")
+def test_classify_s13_withhold_reason_missing_telemetry() -> None:
+    """[if] marks exist but no span POST [then] the reason is missing-telemetry, [else stop]."""
+    reason = classify_s13_withhold_reason("missing library-usable mark: no perf-span POST")
+    assert reason.startswith("missing-telemetry:")
+
+
+@pytest.mark.requirement("PERF-KPI-S13")
+def test_withheld_capture_prints_stderr_and_names_ledger_row(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] S13 capture is withheld [then] stderr names the note and ledger row, [else stop]."""
+    ledger = tmp_path / "kpi-ledger.json"
+    ledger.write_text(
+        json.dumps({"schema_version": 1, "entries": []}, indent=1) + "\n",
+        encoding="utf-8",
+    )
+
+    def _fake_playwright(**_kwargs: object) -> dict[str, object]:
+        return {
+            "ok": False,
+            "span": None,
+            "reason": (
+                "missing-telemetry: login marks present but no perf-span POST "
+                "(library-usable hooks absent or library did not reach first paint)"
+            ),
+        }
+
+    monkeypatch.setattr(capture_s13, "_probe_engine", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(capture_s13, "_run_playwright_capture", _fake_playwright)
+
+    exit_code = capture_s13.capture_s13(
+        engine="http://127.0.0.1:8686",
+        frontend="http://127.0.0.1:8686",
+        ledger_path=ledger,
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "missing-telemetry:" in captured.err
+    assert "login_submit_to_library_usable_s" in captured.err
+    assert "WITHHELD" in captured.err
+    assert str(ledger) in captured.err
+    payload = json.loads(ledger.read_text(encoding="utf-8"))
+    assert payload["entries"][0]["kpi"] == "login_submit_to_library_usable_s"
+    assert payload["entries"][0]["status"] == "withheld"
+
+
+@pytest.mark.requirement("PERF-KPI-S13")
+def test_unreachable_engine_prints_withheld_stderr(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] engine probe fails [then] stderr names the withheld ledger row, [else stop]."""
+    ledger = tmp_path / "kpi-ledger.json"
+    ledger.write_text(
+        json.dumps({"schema_version": 1, "entries": []}, indent=1) + "\n",
+        encoding="utf-8",
+    )
+    exit_code = capture_kpis_main(
+        [
+            "--engine",
+            "http://127.0.0.1:1",
+            "--scenario",
+            "S13",
+            "--ledger",
+            str(ledger),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code != 0
+    assert "login_submit_to_library_usable_s" in captured.err
+    assert "WITHHELD" in captured.err
+    assert str(ledger) in captured.err
