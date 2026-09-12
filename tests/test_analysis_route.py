@@ -348,6 +348,12 @@ def test_beatgrid_fallback_never_invented_without_downbeats(client: TestClient) 
 
 # ----- synthesize_fallback_beats unit edges -----------------------------------
 
+def test_synthesize_fallback_beats_returns_none_without_downbeats() -> None:
+    """[if] synthesize_fallback_beats has no downbeats [then] it returns None."""
+    rec = _record("empty", downbeats=[])
+    assert synthesize_fallback_beats(rec) is None
+
+
 @pytest.mark.requirement("META-02")
 def test_synthesize_single_downbeat_extends_at_record_bpm() -> None:
     rec = _record("solo", downbeats=[1.0])

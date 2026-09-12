@@ -79,7 +79,7 @@ export function hasTrustedBeatGrid(anlz: Pick<AnlzData, 'beatgrid'> | null | und
 	if (source === 'rekordbox') return true;
 	const bg = anlz.beatgrid;
 	if (bg.status !== 'ok') return false;
-	if (bg.static_grid_untrusted !== false) return false;
+	if (bg.static_grid_untrusted === true) return false;
 	return true;
 }
 

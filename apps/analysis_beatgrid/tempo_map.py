@@ -3,7 +3,8 @@
 This is not the v1 IBI tagger in ``tempo_change.py``. That module answers
 whether one global BPM is a lie and where; this module emits rekordbox-style
 multi-anchor tempo maps ``{at_s, beat_index, bpm}`` that a later consumer can
-apply to rebuild beat times. The map is not on the record or ``/anlz`` yet.
+apply to rebuild beat times. Served on ``/anlz`` as per-beat local bpm on
+existing beats, not as a new field.
 """
 from __future__ import annotations
 
