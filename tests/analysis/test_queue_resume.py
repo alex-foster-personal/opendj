@@ -69,6 +69,8 @@ from .queue_probe_backends import (
     UnavailableBeatgridProbe,
 )
 
+pytestmark = pytest.mark.requirement("NATIVE-10")
+
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
 

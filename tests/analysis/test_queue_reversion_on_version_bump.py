@@ -51,6 +51,8 @@ from .queue_probe_backends import (
     KeyProbeV1,
 )
 
+pytestmark = pytest.mark.requirement("NATIVE-10")
+
 
 @pytest.fixture()
 def probe_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
