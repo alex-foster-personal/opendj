@@ -87,6 +87,17 @@ test('transport: play/cue per deck on notes 0x0C/0x0B ch1/ch2 ([S4])', () => {
 	}
 });
 
+test('PFL per deck on note 0x03 ch1/ch2 ([S4])', () => {
+	for (const [ch, deck] of [
+		[1, 1],
+		[2, 2]
+	]) {
+		const pfl = findBindings((b) => b.action.type === 'channel_cue' && b.action.deck === deck);
+		assert.equal(pfl.length, 1);
+		assert.deepEqual(pfl[0].source, { ch, kind: 'note', id: 0x03 });
+	}
+});
+
 test('hot cues: 4 per deck, notes 0x0D..0x10, slots A..D ([S4])', () => {
 	for (const [ch, deck] of [
 		[1, 1],

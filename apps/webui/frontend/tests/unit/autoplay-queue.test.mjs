@@ -26,6 +26,10 @@ const QUEUE_SOURCE = readFileSync(
 	fileURLToPath(new URL('../../src/lib/rb/autoplay-queue.svelte.ts', import.meta.url)),
 	'utf8'
 );
+const CHART_ORDER_SOURCE = readFileSync(
+	fileURLToPath(new URL('../../src/lib/rb/auto-play-chart-order.ts', import.meta.url)),
+	'utf8'
+);
 const TABLE_SOURCE = readFileSync(
 	fileURLToPath(new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url)),
 	'utf8'
@@ -80,11 +84,21 @@ describe('PLAY-05 AutoPlay queue entries', () => {
 			CONTROLLER_SOURCE.includes('activateAutoPlayQueue();'),
 			'if AutoPlay activation does not create queue state then the queue starts too late - broken'
 		);
-		// The controller hands its simulated chain (minus the already-playing
-		// source) to the queue module, which is the only writer of queue rows.
+		// The chart/publish step was extracted to auto-play-chart-order.ts on
+		// Sat 12 Sep 2026 (commit 8e897c648, issue #2069 silence-dropout work),
+		// so the controller now wires the extraction in rather than publishing
+		// inline. Both halves of that wiring are checked here: the controller
+		// calls into the extracted module, and the extracted module is the one
+		// still handing the queue module its exact planned chain.
 		assert.ok(
-			CONTROLLER_SOURCE.includes('publishAutoPlayOrder(full.slice(1));'),
-			'if the controller does not publish its exact planned chain then queue and playback can disagree - broken'
+			CONTROLLER_SOURCE.includes(
+				"import { clearChartedAutoPlayOrder, refreshChartedAutoPlayOrder } from '$lib/rb/auto-play-chart-order';"
+			) && CONTROLLER_SOURCE.includes('refreshChartedAutoPlayOrder({'),
+			'if the controller does not wire in the charted-order refresh then queue and playback can disagree - broken'
+		);
+		assert.ok(
+			CHART_ORDER_SOURCE.includes('publishAutoPlayOrder(full.slice(1));'),
+			'if the chart-order module does not publish its exact planned chain then queue and playback can disagree - broken'
 		);
 		assert.ok(
 			QUEUE_SOURCE.includes('queueEntriesForChain(chain, getAutoPlayPlaylist())'),

@@ -2668,6 +2668,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playlists/{playlist_id}/items:add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Playlist Items */
+        post: operations["add_playlist_items"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playlists/{playlist_id}/tracks": {
         parameters: {
             query?: never;
@@ -4008,6 +4025,30 @@ export interface paths {
          * @description This track's karaoke timeline: the verdict envelope plus every word.
          */
         get: operations["get_track_karaoke_words_api_v1_tracks__stable_id__lyrics_words_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/playlists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Track Playlists
+         * @description Live playlists that currently hold this track (LIBM-29).
+         *
+         *     404 if the stable_id has no tracks row. 200 [] if the track exists
+         *     but has no live memberships. Tombstoned memberships and deleted
+         *     playlists are excluded.
+         */
+        get: operations["list_track_playlists_api_v1_tracks__stable_id__playlists_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -7616,6 +7657,16 @@ export interface components {
             /** Title */
             title: string | null;
         };
+        /** MembershipAddIn */
+        MembershipAddIn: {
+            /**
+             * Position
+             * @description 0-based insert index; omit to append after the last member.
+             */
+            position?: number | null;
+            /** Stable Ids */
+            stable_ids: string[];
+        };
         /** MembershipReplaceIn */
         MembershipReplaceIn: {
             /**
@@ -10370,6 +10421,17 @@ export interface components {
             /** Tags Remove */
             tags_remove?: string[] | null;
             tempo_pref?: components["schemas"]["TempoPrefPatch"] | null;
+        };
+        /** TrackPlaylistOut */
+        TrackPlaylistOut: {
+            /** Name */
+            name: string;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Positions */
+            positions: number[];
+            /** Vendor */
+            vendor: string;
         };
         /**
          * TrackRowOut
@@ -16166,6 +16228,41 @@ export interface operations {
             };
         };
     };
+    add_playlist_items: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipAddIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistWriteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     replace_playlist_tracks_api_v1_playlists__playlist_id__tracks_put: {
         parameters: {
             query?: never;
@@ -18588,6 +18685,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KaraokeTrackOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_track_playlists_api_v1_tracks__stable_id__playlists_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackPlaylistOut"][];
                 };
             };
             /** @description Validation Error */

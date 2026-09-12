@@ -301,3 +301,111 @@ test('registerBrowseAdapter wires encoder + load and rejects doubles', () => {
 	]);
 	assert.throws(() => glue.registerBrowseAdapter({ moveSelection: () => {}, loadSelected: () => {} }), /already registered/);
 });
+
+function _restoreCueGlueState() {
+	audioEngine.mixerState.channels[2].cue_enabled = false;
+	audioEngine.mixerState.headphones.mix = 0.5;
+	audioEngine.mixerState.headphones.level = 0.5;
+	glue._resetMasterCueForTests();
+}
+
+test('channel_cue press toggles cue_enabled; release is ignored', async () => {
+	_restoreCueGlueState();
+	assert.equal(audioEngine.mixerState.channels[2].cue_enabled, false);
+	glue.handleMidiAction(
+		{ type: 'channel_cue', deck: 2 },
+		{ kind: 'button', pressed: true, velocity: 127 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.channels[2].cue_enabled, true);
+	glue.handleMidiAction(
+		{ type: 'channel_cue', deck: 2 },
+		{ kind: 'button', pressed: false, velocity: 0 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.channels[2].cue_enabled, true);
+	assert.equal(glue.ledTriggerActive({ kind: 'channel_cue_enabled', deck: 2 }), true);
+	_restoreCueGlueState();
+});
+
+test('headphone_mix and headphone_level dispatch through the performance command bus', async () => {
+	_restoreCueGlueState();
+	glue.handleMidiAction(
+		{ type: 'headphone_mix' },
+		{ kind: 'continuous', value01: 0.25, raw: 32 }
+	);
+	glue.handleMidiAction(
+		{ type: 'headphone_level' },
+		{ kind: 'continuous', value01: 0.75, raw: 95 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 0.25);
+	assert.equal(audioEngine.mixerState.headphones.level, 0.75);
+	_restoreCueGlueState();
+});
+
+test('master_cue latch forces mix to 1 then restores on second press', async () => {
+	_restoreCueGlueState();
+	audioEngine.mixerState.headphones.mix = 0.3;
+	glue.handleMidiAction(
+		{ type: 'master_cue', mode: 'latch' },
+		{ kind: 'button', pressed: true, velocity: 127 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 1);
+	glue.handleMidiAction(
+		{ type: 'master_cue', mode: 'latch' },
+		{ kind: 'button', pressed: false, velocity: 0 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 1);
+	glue.handleMidiAction(
+		{ type: 'master_cue', mode: 'latch' },
+		{ kind: 'button', pressed: true, velocity: 127 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 0.3);
+	_restoreCueGlueState();
+});
+
+test('master_cue hold engages on press and restores on release', async () => {
+	_restoreCueGlueState();
+	audioEngine.mixerState.headphones.mix = 0.4;
+	glue.handleMidiAction(
+		{ type: 'master_cue', mode: 'hold' },
+		{ kind: 'button', pressed: true, velocity: 127 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 1);
+	glue.handleMidiAction(
+		{ type: 'master_cue', mode: 'hold' },
+		{ kind: 'button', pressed: false, velocity: 0 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 0.4);
+	_restoreCueGlueState();
+});
+
+test('headphone_mix while master_cue latched updates saved restore mix only', async () => {
+	_restoreCueGlueState();
+	audioEngine.mixerState.headphones.mix = 0.2;
+	glue.handleMidiAction(
+		{ type: 'master_cue', mode: 'latch' },
+		{ kind: 'button', pressed: true, velocity: 127 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 1);
+	glue.handleMidiAction(
+		{ type: 'headphone_mix' },
+		{ kind: 'continuous', value01: 0.8, raw: 102 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 1);
+	glue.handleMidiAction(
+		{ type: 'master_cue', mode: 'latch' },
+		{ kind: 'button', pressed: true, velocity: 127 }
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.headphones.mix, 0.8);
+	_restoreCueGlueState();
+});

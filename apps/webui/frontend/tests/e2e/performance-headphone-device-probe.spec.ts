@@ -17,7 +17,9 @@ test('browser headphone output acquisition starts from the visible + OUT gesture
 				.selectAudioOutput === 'function' &&
 			typeof HTMLMediaElement.prototype.setSinkId === 'function'
 	);
-	await page.getByRole('button', { name: '+ OUT', exact: true }).click();
+	// Accessible name is aria-label="ADD OUTPUT" (AGENT-09), not the "+ OUT" glyph.
+	const addOutput = page.getByRole('button', { name: 'ADD OUTPUT' });
+	await addOutput.click({ timeout: 5_000 });
 	await page.waitForFunction(() => {
 		const state = window.musicDjToolsPerformance?.query();
 		return (

@@ -277,10 +277,17 @@ describe('anyDeckPlaying is the single shared "is this session live" predicate',
 		// arm predicate is a separate concern from the meter's visibility gate
 		// and this PR must not change its semantics as a side effect of fixing
 		// the meter gate - reverted back to the pre-PR inline check.
+		//
+		// #2155 (Sat 12 Sep 2026, commit 1db624ef7) added a third
+		// `recreateGraph` argument to armAudioContextWatchdog for output-stall
+		// recovery, so the call site now carries a trailing argument after the
+		// predicate. The predicate itself is unchanged, which is what this
+		// guard pins - the regex now tolerates that trailing argument instead
+		// of requiring the call to end immediately after the predicate.
 		const engineSource = readSrc('lib/rb/audio-engine.svelte.ts');
 		assert.match(
 			engineSource,
-			/armAudioContextWatchdog\(_ctx,\s*\(\)\s*=>\s*DECK_IDS\.some\(\(deck\)\s*=>\s*deckStates\[deck\]\.playing\)\)/,
+			/armAudioContextWatchdog\(\s*_ctx,\s*\(\)\s*=>\s*DECK_IDS\.some\(\(deck\)\s*=>\s*deckStates\[deck\]\.playing\)(?:,[^)]*)?\)/,
 			'the watchdog arm predicate must be the original inline playing-only check, not the shared gate'
 		);
 	});

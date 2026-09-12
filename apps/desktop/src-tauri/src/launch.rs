@@ -1,0 +1,319 @@
+//! Inspect `.engine.lock` before spawn and decide adopt vs spawn vs dialog.
+
+use std::fs::OpenOptions;
+use std::io::{Read, Seek, SeekFrom};
+use std::os::unix::io::AsRawFd;
+use std::path::Path;
+
+use crate::engine;
+
+const LOCK_FILE_NAME: &str = ".engine.lock";
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum LaunchPlan {
+    Spawn,
+    Adopt {
+        pid: u32,
+        host: String,
+        port: u16,
+    },
+    StopOrQuit {
+        pid: u32,
+        detail: String,
+    },
+}
+
+#[derive(Debug, Default)]
+struct LockJson {
+    pid: Option<u32>,
+    host: Option<String>,
+    port: Option<u16>,
+}
+
+pub fn lock_path(data_dir: &Path) -> std::path::PathBuf {
+    data_dir.join(LOCK_FILE_NAME)
+}
+
+fn flock_exclusive_nonblocking(fd: i32) -> bool {
+    unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) == 0 }
+}
+
+fn flock_unlock(fd: i32) {
+    unsafe {
+        libc::flock(fd, libc::LOCK_UN);
+    }
+}
+
+pub fn pid_alive(pid: u32) -> bool {
+    unsafe { libc::kill(pid as i32, 0) == 0 }
+}
+
+fn parse_lock_json(raw: &[u8]) -> LockJson {
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(raw) else {
+        return LockJson::default();
+    };
+    let obj = value.as_object();
+    if obj.is_none() {
+        return LockJson::default();
+    }
+    let obj = obj.expect("checked");
+    LockJson {
+        pid: obj.get("pid").and_then(|v| v.as_u64()).map(|v| v as u32),
+        host: obj
+            .get("host")
+            .and_then(|v| v.as_str())
+            .map(|v| v.to_string()),
+        port: obj.get("port").and_then(|v| v.as_u64()).map(|v| v as u16),
+    }
+}
+
+pub fn inspect_lock(lock_path: &Path, health_check: fn(u16) -> bool) -> LaunchPlan {
+    if !lock_path.is_file() {
+        return LaunchPlan::Spawn;
+    }
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(lock_path);
+    let mut file = match file {
+        Ok(opened) => opened,
+        Err(_) => return LaunchPlan::Spawn,
+    };
+    let fd = file.as_raw_fd();
+    if flock_exclusive_nonblocking(fd) {
+        flock_unlock(fd);
+        return LaunchPlan::Spawn;
+    }
+    let mut buffer = [0_u8; 4096];
+    let _ = file.seek(SeekFrom::Start(0));
+    let read = file.read(&mut buffer).unwrap_or(0);
+    let holder = parse_lock_json(&buffer[..read]);
+    let pid = holder.pid.unwrap_or(0);
+    if pid == 0 {
+        return LaunchPlan::StopOrQuit {
+            pid: 0,
+            detail: format!(
+                "engine lock {} is held but does not name a pid",
+                lock_path.display()
+            ),
+        };
+    }
+    if !pid_alive(pid) {
+        return LaunchPlan::StopOrQuit {
+            pid,
+            detail: format!(
+                "engine lock {} is held by dead pid {}",
+                lock_path.display(),
+                pid
+            ),
+        };
+    }
+    let port = holder.port.unwrap_or(0);
+    if port == 0 || !health_check(port) {
+        return LaunchPlan::StopOrQuit {
+            pid,
+            detail: format!(
+                "engine lock {} is held by pid {} but is not answering health",
+                lock_path.display(),
+                pid
+            ),
+        };
+    }
+    let host = holder
+        .host
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "127.0.0.1".to_string());
+    LaunchPlan::Adopt { pid, host, port }
+}
+
+pub fn origin_for_adopt(host: &str, port: u16) -> String {
+    format!("http://{host}:{port}")
+}
+
+/// SIGTERM then SIGKILL a holder pid, using killpg when it is a group leader.
+pub fn stop_holder_pid(pid: u32) {
+    let pgid = pid as i32;
+    unsafe {
+        if libc::killpg(pgid, libc::SIGTERM) != 0 {
+            libc::kill(pgid, libc::SIGTERM);
+        }
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        if !pid_alive(pid) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    unsafe {
+        if libc::killpg(pgid, libc::SIGKILL) != 0 {
+            libc::kill(pgid, libc::SIGKILL);
+        }
+    }
+    while pid_alive(pid) {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::io::Write;
+    use std::net::TcpListener;
+    use std::thread;
+    use std::time::Duration;
+
+    fn health_always_true(_port: u16) -> bool {
+        true
+    }
+
+    fn health_always_false(_port: u16) -> bool {
+        false
+    }
+
+    fn spawn_health_server() -> u16 {
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind health server");
+            let port = listener.local_addr().expect("local addr").port();
+            ready_tx.send(port).expect("report health server port");
+            let response =
+                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok";
+            for _ in 0..20 {
+                if let Ok((mut stream, _)) = listener.accept() {
+                    let _ = stream.write_all(response.as_bytes());
+                    let _ = stream.shutdown(std::net::Shutdown::Write);
+                }
+            }
+        });
+        ready_rx.recv().expect("health server port")
+    }
+
+    #[test]
+    fn missing_lock_file_means_spawn() {
+        let dir = std::env::temp_dir().join(format!("launch-missing-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        assert_eq!(
+            inspect_lock(&dir.join(".engine.lock"), health_always_true),
+            LaunchPlan::Spawn
+        );
+    }
+
+    #[test]
+    fn free_lock_file_means_spawn() {
+        let dir = std::env::temp_dir().join(format!("launch-free-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("mkdir");
+        let lock_path = dir.join(".engine.lock");
+        fs::write(&lock_path, b"{}").expect("write lock");
+        assert_eq!(inspect_lock(&lock_path, health_always_true), LaunchPlan::Spawn);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn held_live_healthy_lock_means_adopt() {
+        let dir = std::env::temp_dir().join(format!("launch-adopt-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("mkdir");
+        let lock_path = dir.join(".engine.lock");
+        let port = spawn_health_server();
+        let pid = std::process::id();
+        let blob = format!(
+            r#"{{"pid":{pid},"host":"127.0.0.1","port":{port},"heartbeat_at":"2099-01-01T00:00:00.000+00:00"}}"#
+        );
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&lock_path)
+            .expect("open lock");
+        let fd = file.as_raw_fd();
+        assert_eq!(
+            unsafe { libc::flock(fd, libc::LOCK_EX) },
+            0,
+            "hold lock for test"
+        );
+        file.write_all(blob.as_bytes()).expect("write holder json");
+        thread::sleep(Duration::from_millis(20));
+        assert_eq!(
+            inspect_lock(&lock_path, engine::health_ok),
+            LaunchPlan::Adopt {
+                pid,
+                host: "127.0.0.1".to_string(),
+                port,
+            }
+        );
+        unsafe {
+            libc::flock(fd, libc::LOCK_UN);
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn held_live_unhealthy_lock_means_stop_or_quit() {
+        let dir = std::env::temp_dir().join(format!("launch-stop-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("mkdir");
+        let lock_path = dir.join(".engine.lock");
+        let pid = std::process::id();
+        let blob = format!(r#"{{"pid":{pid},"host":"127.0.0.1","port":9,"heartbeat_at":"2099"}}"#);
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&lock_path)
+            .expect("open lock");
+        let fd = file.as_raw_fd();
+        assert_eq!(unsafe { libc::flock(fd, libc::LOCK_EX) }, 0);
+        file.write_all(blob.as_bytes()).expect("write holder json");
+        let plan = inspect_lock(&lock_path, health_always_false);
+        assert!(matches!(plan, LaunchPlan::StopOrQuit { .. }));
+        unsafe {
+            libc::flock(fd, libc::LOCK_UN);
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn held_dead_pid_is_not_adopt() {
+        let dir = std::env::temp_dir().join(format!("launch-dead-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("mkdir");
+        let lock_path = dir.join(".engine.lock");
+        let blob = r#"{"pid":1,"host":"127.0.0.1","port":9}"#;
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&lock_path)
+            .expect("open lock");
+        let fd = file.as_raw_fd();
+        assert_eq!(unsafe { libc::flock(fd, libc::LOCK_EX) }, 0);
+        file.write_all(blob.as_bytes()).expect("write holder json");
+        let plan = inspect_lock(&lock_path, health_always_true);
+        assert!(matches!(plan, LaunchPlan::StopOrQuit { .. }));
+        assert_ne!(plan, LaunchPlan::Spawn);
+        unsafe {
+            libc::flock(fd, libc::LOCK_UN);
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn health_ok_true_for_local_200_server() {
+        let port = spawn_health_server();
+        let mut ok = false;
+        for _ in 0..30 {
+            if engine::health_ok(port) {
+                ok = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(ok, "health_ok should accept a local 200 response");
+    }
+}

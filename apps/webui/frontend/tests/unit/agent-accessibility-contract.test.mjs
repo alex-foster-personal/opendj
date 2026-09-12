@@ -74,6 +74,18 @@ test('headphone "+ OUT" button is queryable by its accessible name', () => {
 	);
 });
 
+test('headphone SPLIT button exposes aria-pressed for split_cable mode', () => {
+	const headphones = source('src/lib/components/rb/mixer/HeadphoneCluster.svelte');
+	assert.ok(
+		headphones.includes('aria-pressed={state.output_mode === \'split_cable\'}'),
+		'if the SPLIT button omits aria-pressed then split_cable toggle state is invisible to MCP clients'
+	);
+	assert.ok(
+		headphones.includes('aria-label="Split cable output mode"'),
+		'if the SPLIT button loses its aria-label then it has no accessible name distinct from its SPLIT glyph text'
+	);
+});
+
 test('deck unload control stays reachable when artwork is missing or fails to load', () => {
 	const deckHeader = source('src/lib/components/rb/deck/DeckHeader.svelte');
 

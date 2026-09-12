@@ -118,7 +118,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
             return 0
         return 0 if report.ingested >= 0 else 1
 
-    elif args.command == "jobs":
+    if args.command == "jobs":
         if args.jobs_command != "work":
             raise AssertionError(f"unhandled jobs subcommand {args.jobs_command!r}")
         if args.once:
@@ -127,7 +127,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         worker.work_loop(args.state_dir)
         return 0
 
-    elif args.command == "register-stems":
+    if args.command == "register-stems":
         corpora = register_stems.REGISTRABLE_CORPORA
         targets = list(corpora) if args.corpus == "all" else [args.corpus]
         exit_code = 0
@@ -138,7 +138,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
                 exit_code = 1
         return exit_code
 
-    elif args.command == "stems":
+    if args.command == "stems":
         if args.stems_command == "push":
             if not args.missing:
                 raise SystemExit(
@@ -149,7 +149,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
                 data_dir=args.data_dir,
                 dry_run=args.dry_run,
             )
-        elif args.stems_command == "hydrate":
+        if args.stems_command == "hydrate":
             try:
                 return stems_sync.hydrate(
                     args.stable_id,
@@ -165,7 +165,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
                     return 1
                 raise
         else:
-            raise AssertionError(f"unhandled stems subcommand")
+            raise AssertionError("unhandled stems subcommand")
     else:
         raise AssertionError(f"unhandled pipeline command {args.command!r}")
 

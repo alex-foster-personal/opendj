@@ -146,7 +146,7 @@ class AsrWorker:
                             "end_s": w.end,
                             "prob": w.probability,
                         })
-        except Exception as exc:  # noqa: BLE001 -- per-track isolation is the whole point
+        except Exception as exc:
             return {"name": name, "error": f"{type(exc).__name__}: {exc}",
                     "gpu_s": time.perf_counter() - t0}
         return {

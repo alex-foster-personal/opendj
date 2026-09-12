@@ -38,9 +38,9 @@
  *     (contract is P0), so these are typed constants, not LedRules.
  *     [if] a P1 VU loop needs addresses/levels [then] it imports
  *       MIXTOUR_VU_OUTPUTS / MIXTOUR_VU_VELOCITY_STEPS, no re-research
- *   → Sync (note 0x0A), filter/super1 (CC 0x04), PFL (note 0x03), kill
- *     switches, jog-helper script rows: outside the P0 MidiAction union
- *     (spike section 5 P0 scope). Unbound on purpose; they learn-log.
+ *   → Sync (note 0x0A), filter/super1 (CC 0x04), kill switches, jog-helper
+ *     script rows: outside the P0 MidiAction union (spike section 5 P0
+ *     scope). Unbound on purpose; they learn-log. PFL (note 0x03) IS bound.
  */
 
 import type { ControlHint, DeviceMap, LedRule, MidiBinding } from '$lib/rb/midi/midi-types';
@@ -55,6 +55,8 @@ function _deckBindings(ch: number, deck: 1 | 2): MidiBinding[] {
 		{ source: { ch, kind: 'note', id: 0x0c }, action: { type: 'deck_play_toggle', deck } },
 		// [S4] 0x90/0x91 0x0B -> cue_default
 		{ source: { ch, kind: 'note', id: 0x0b }, action: { type: 'deck_cue', deck } },
+		// [S4] 0x90/0x91 0x03 -> PFL (channel cue / headphone pre-fader listen)
+		{ source: { ch, kind: 'note', id: 0x03 }, action: { type: 'channel_cue', deck } },
 		// [S4] 0x90/0x91 0x09 -> reloop_exit
 		{ source: { ch, kind: 'note', id: 0x09 }, action: { type: 'deck_loop_exit', deck } },
 		// [S4] 0x90/0x91 0x0D..0x10 -> hotcue_1..4_activate (Mixtour Hot Cue
@@ -136,8 +138,6 @@ function _deckHints(ch: number, deck: 1 | 2): ControlHint[] {
 	return [
 		// [S4] 0x90/0x91 0x0A -> Sync (no sync action in P0 - spike 4/§5).
 		{ source: { ch, kind: 'note', id: 0x0a }, label: `Sync (deck ${deck})` },
-		// [S4] 0x90/0x91 0x03 -> PFL (headphone cue - P0 has no PFL action).
-		{ source: { ch, kind: 'note', id: 0x03 }, label: `PFL / headphone cue (deck ${deck})` },
 		// [S4] 0xB0/0xB1 0x04 -> filter / super1 (no filter action in P0).
 		{ source: { ch, kind: 'cc', id: 0x04 }, label: `Filter / colour (deck ${deck})` }
 	];

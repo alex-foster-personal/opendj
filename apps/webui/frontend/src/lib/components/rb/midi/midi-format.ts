@@ -148,6 +148,14 @@ export function friendlyLabel(action: MidiAction): string {
 			return `Load (deck ${action.deck})`;
 		case 'shift_modifier':
 			return 'Shift';
+		case 'channel_cue':
+			return `Cue / PFL (deck ${action.deck})`;
+		case 'headphone_mix':
+			return 'Headphones mix';
+		case 'headphone_level':
+			return 'Headphones level';
+		case 'master_cue':
+			return 'Master cue';
 		default: {
 			const _exhaustive: never = action;
 			throw new Error(`Unhandled MidiAction: ${JSON.stringify(_exhaustive)}`);

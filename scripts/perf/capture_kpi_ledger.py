@@ -6,7 +6,6 @@ Append-only: never edit or delete an existing entry. A failed probe writes
 
 from __future__ import annotations
 
-import json
 import socket
 import subprocess
 import urllib.error

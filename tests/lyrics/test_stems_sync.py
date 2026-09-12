@@ -11,15 +11,19 @@ from pathlib import Path
 import pytest
 
 from apps.cloud import asset_store
-from apps.cloud.eviction import HydrationError
 from apps.cloud.config import CloudConfig
-from apps.lyrics import register_stems
-from apps.lyrics import stems_sync
+from apps.cloud.eviction import HydrationError
+from apps.lyrics import register_stems, stems_sync
 from apps.shared.state import db as state_db
-from apps.shared.state import sync_stamp
 from apps.webui.server.stem_artifacts import load_stem_bundle
 
-from .conftest import InMemoryAssetS3, seed_stamped_policy, seed_track, use_local_mode, use_cloud_mode
+from .conftest import (
+    InMemoryAssetS3,
+    seed_stamped_policy,
+    seed_track,
+    use_cloud_mode,
+    use_local_mode,
+)
 
 
 def _test_cfg() -> CloudConfig:

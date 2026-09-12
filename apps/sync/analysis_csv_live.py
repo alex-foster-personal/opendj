@@ -103,8 +103,8 @@ def live_run(
     open_rb_db: Callable[[Path], Any],
 ) -> int:
     from apps.sync.apply_analysis import (
-        UnsupportedRbFieldError,
         _SUPPORTED_RB_WRITE_FIELDS,
+        UnsupportedRbFieldError,
         _verify_rb_field,
         _write_rb_field,
     )

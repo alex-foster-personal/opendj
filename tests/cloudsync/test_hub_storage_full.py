@@ -13,8 +13,8 @@ from pathlib import Path
 import pytest
 
 from apps.shared.state import db as state_db
-from apps.sync_hub import client, engine, generation, protocol, service as sync_service
-from apps.sync_hub import service_storage
+from apps.sync_hub import client, engine, generation, protocol, service_storage
+from apps.sync_hub import service as sync_service
 from tests.cloudsync.enrollment_transport import TestClientTransport
 from tests.cloudsync.test_hub_sync import (
     _DEV_A,

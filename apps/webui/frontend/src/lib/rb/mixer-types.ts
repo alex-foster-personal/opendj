@@ -46,7 +46,7 @@ export interface HeadphoneOutputDevice {
 }
 
 /** Headphone output routing. Unknown modes fail fast. */
-export type HeadphoneOutputMode = 'practice' | 'two_outputs';
+export type HeadphoneOutputMode = 'practice' | 'two_outputs' | 'split_cable';
 
 /** Serializable headphone cue-bus read model. `active` means the monitor
  * stream is attached to the element and the selected sink accepted playback. */
@@ -55,6 +55,7 @@ export interface HeadphoneState {
 	level: number;
 	selected_output_device_id: string | null;
 	/** `practice` blends PFL into the main output when no monitor is selected.
+	 * `split_cable` sends mono master on L and mono cue on R of the main output.
 	 * Selecting a monitor writes `two_outputs` and restores master-only main. */
 	output_mode: HeadphoneOutputMode;
 	/** Mixxx Head Delay, milliseconds, 0..500. Applied as a DelayNode after level on the monitor path. */

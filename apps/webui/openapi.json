@@ -8424,6 +8424,36 @@
         "title": "MemberOut",
         "type": "object"
       },
+      "MembershipAddIn": {
+        "properties": {
+          "position": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0-based insert index; omit to append after the last member.",
+            "title": "Position"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids"
+        ],
+        "title": "MembershipAddIn",
+        "type": "object"
+      },
       "MembershipReplaceIn": {
         "properties": {
           "stable_ids": {
@@ -15684,6 +15714,37 @@
           }
         },
         "title": "TrackPatch",
+        "type": "object"
+      },
+      "TrackPlaylistOut": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "positions": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Positions",
+            "type": "array"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "name",
+          "vendor",
+          "positions"
+        ],
+        "title": "TrackPlaylistOut",
         "type": "object"
       },
       "TrackRowOut": {
@@ -24402,6 +24463,58 @@
         ]
       }
     },
+    "/api/v1/playlists/{playlist_id}/items:add": {
+      "post": {
+        "operationId": "add_playlist_items",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MembershipAddIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistWriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Playlist Items",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
     "/api/v1/playlists/{playlist_id}/tracks": {
       "put": {
         "operationId": "replace_playlist_tracks_api_v1_playlists__playlist_id__tracks_put",
@@ -28065,6 +28178,53 @@
         "summary": "Get Track Karaoke Words",
         "tags": [
           "lyrics"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/playlists": {
+      "get": {
+        "description": "Live playlists that currently hold this track (LIBM-29).\n\n404 if the stable_id has no tracks row. 200 [] if the track exists\nbut has no live memberships. Tombstoned memberships and deleted\nplaylists are excluded.",
+        "operationId": "list_track_playlists_api_v1_tracks__stable_id__playlists_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TrackPlaylistOut"
+                  },
+                  "title": "Response List Track Playlists Api V1 Tracks  Stable Id  Playlists Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Track Playlists",
+        "tags": [
+          "tracks"
         ]
       }
     },

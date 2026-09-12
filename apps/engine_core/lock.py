@@ -15,7 +15,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 # A holder whose heartbeat is younger than this is live. An older heartbeat
 # under a still-held flock means the process is alive but wedged -- also a
@@ -56,6 +56,9 @@ class LockHolder:
     started_at: str | None
     heartbeat_at: str | None
     heartbeat_age_s: float | None
+    host: str | None = None
+    port: int | None = None
+    parent_pid: int | None = None
 
     @property
     def is_live(self) -> bool:
@@ -152,11 +155,40 @@ class EngineLock:
             data["host"] = self.host
         if self.port is not None:
             data["port"] = self.port
+        parent_pid = _parent_pid_from_env()
+        if parent_pid is not None:
+            data["parent_pid"] = parent_pid
         blob = json.dumps(data, sort_keys=True).encode("utf-8")
         os.lseek(fd, 0, os.SEEK_SET)
         os.ftruncate(fd, 0)
         os.write(fd, blob)
         os.fsync(fd)
+
+
+def _parent_pid_from_env() -> int | None:
+    raw = os.environ.get("OPENDJ_PARENT_PID")
+    if raw is None or not raw.strip():
+        return None
+    try:
+        pid = int(raw.strip())
+    except ValueError:
+        return None
+    return pid if pid > 0 else None
+
+
+def _holder_from_data(data: dict[str, Any]) -> LockHolder:
+    heartbeat_at = data.get("heartbeat_at")
+    port = data.get("port")
+    return LockHolder(
+        pid=data.get("pid"),
+        boot_id=data.get("boot_id"),
+        started_at=data.get("started_at"),
+        heartbeat_at=heartbeat_at,
+        heartbeat_age_s=_age_s(heartbeat_at),
+        host=data.get("host"),
+        port=port if isinstance(port, int) else None,
+        parent_pid=data.get("parent_pid"),
+    )
 
 
 def _read_holder(fd: int) -> LockHolder:
@@ -170,14 +202,44 @@ def _read_holder(fd: int) -> LockHolder:
             loaded = None
         if isinstance(loaded, dict):
             data = loaded
-    heartbeat_at = data.get("heartbeat_at")
-    return LockHolder(
-        pid=data.get("pid"),
-        boot_id=data.get("boot_id"),
-        started_at=data.get("started_at"),
-        heartbeat_at=heartbeat_at,
-        heartbeat_age_s=_age_s(heartbeat_at),
-    )
+    return _holder_from_data(data)
+
+
+def read_holder(path: Path) -> LockHolder | None:
+    """Read lock JSON without taking the exclusive flock."""
+    lock_path = Path(path)
+    if not lock_path.is_file():
+        return None
+    try:
+        raw = lock_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if not raw.strip():
+        return None
+    try:
+        loaded = json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(loaded, dict):
+        return None
+    return _holder_from_data(loaded)
+
+
+def inspect_lock(path: Path) -> Literal["free"] | LockHolder:
+    """Probe whether the lock file is free or held by another process."""
+    lock_path = Path(path)
+    if not lock_path.is_file():
+        return "free"
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            return "free"
+        except OSError:
+            return _read_holder(fd)
+    finally:
+        os.close(fd)
 
 
 def _swap_reason(fd: int, path: Path) -> str | None:
@@ -236,4 +298,6 @@ __all__ = [
     "EngineLock",
     "EngineLockError",
     "LockHolder",
+    "inspect_lock",
+    "read_holder",
 ]

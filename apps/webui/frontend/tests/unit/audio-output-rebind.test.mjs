@@ -275,6 +275,92 @@ describe('installOutputRebind', () => {
 			'if a held cycle survives uninstall then a closed context is suspended and the user sees a spurious error toast - broken');
 	});
 
+	it('a resume that never settles records audio-output-dead and rebind-failed, then clears rebinding', async () => {
+		const calls = [];
+		const perf = [];
+		const ctx = {
+			state: 'running',
+			async suspend() {
+				calls.push('suspend');
+				this.state = 'suspended';
+			},
+			resume() {
+				calls.push('resume');
+				return new Promise(() => {});
+			}
+		};
+		let now = 0;
+		const timers = [];
+		const effects = {
+			pushToast: (m, k) => {
+				calls.push(`toast:${k}`);
+				calls.push(`toast-msg:${m}`);
+			},
+			recordPerfEvent: (kind, message, severity) => {
+				calls.push(`perf:${kind}`);
+				perf.push({ kind, message, severity });
+			},
+			now: () => now,
+			setTimeout: (fn, ms) => {
+				const h = { fn, at: now + ms };
+				timers.push(h);
+				return h;
+			},
+			clearTimeout: (h) => {
+				const i = timers.indexOf(h);
+				if (i >= 0) timers.splice(i, 1);
+			}
+		};
+		const listeners = [];
+		const mediaDevices = {
+			addEventListener: (_t, h) => listeners.push(h),
+			removeEventListener: (_t, h) => {
+				const i = listeners.indexOf(h);
+				if (i >= 0) listeners.splice(i, 1);
+			}
+		};
+		async function advance(ms) {
+			now += ms;
+			const due = timers.filter((t) => t.at <= now);
+			for (const t of due) timers.splice(timers.indexOf(t), 1);
+			for (const t of due) t.fn();
+			await new Promise((r) => setImmediate(r));
+			await new Promise((r) => setImmediate(r));
+		}
+		const handle = mod.installOutputRebind(
+			ctx,
+			effects,
+			() => true,
+			mediaDevices,
+			30
+		);
+		listeners.forEach((h) => h());
+		await advance(mod.REBIND_DEBOUNCE_MS);
+		await new Promise((r) => setTimeout(r, 50));
+		const dead = perf.find((row) => row.kind === 'audio-output-dead');
+		const failed = perf.find((row) => row.kind === 'audio-output-rebind-failed');
+		assert.ok(dead, 'a hanging resume must record audio-output-dead');
+		assert.equal(dead.severity, 'error');
+		assert.ok(failed, 'a hanging resume must record audio-output-rebind-failed');
+		assert.equal(failed.severity, 'error');
+		assert.ok(
+			calls.some((c) => typeof c === 'string' && c.includes('watchdog window')),
+			'a hanging rebind must toast the watchdog-window error in addition to rebind-failed - broken'
+		);
+		ctx.resume = async function () {
+			calls.push('resume');
+			this.state = 'running';
+		};
+		listeners.forEach((h) => h());
+		await advance(mod.REBIND_DEBOUNCE_MS);
+		await advance(mod.REBIND_COOLDOWN_MS);
+		assert.ok(
+			calls.includes('perf:audio-output-rebound'),
+			'if rebinding stays true after a timeout then a later request cannot start a new cycle - broken'
+		);
+		handle.uninstall();
+	});
+
 	it('a failed rebind is recorded at ERROR severity so it leaves the browser', async () => {
 		const h = harness({ resumeThrows: true });
 		mod.installOutputRebind(h.ctx, h.effects, h.isPlaying, h.mediaDevices);

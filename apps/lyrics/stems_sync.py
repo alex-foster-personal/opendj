@@ -17,7 +17,7 @@ from pathlib import Path
 from apps.cloud import asset_store, policy
 from apps.cloud.eviction import HydrationError
 from apps.lyrics.artifacts import asset_clients_for_mode
-from apps.shared.paths import DATA_DIR, PROJECT_ROOT, STATE_DIR
+from apps.shared.paths import DATA_DIR
 from apps.webui.server.stem_artifacts import ROFORMER_STEMS_DIR, load_stem_bundle
 
 STEM_ASSET_KIND = "stem_bundle"
@@ -150,4 +150,4 @@ def main_hydrate(stable_id: str, argv: list[str]) -> int:
         return 1
 
 
-__all__ = ["hydrate", "push_missing", "main_hydrate", "main_push"]
+__all__ = ["hydrate", "main_hydrate", "main_push", "push_missing"]

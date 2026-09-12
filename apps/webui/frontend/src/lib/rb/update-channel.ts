@@ -28,8 +28,11 @@
  *     dead socket or a non-JSON body each yield a fault carrying the reason.
  *     [if] an unreachable endpoint renders as "up to date" [then ⛔️] broken
  *   ✔︎ 🎯 summarizeUpdate: every status maps to a short label; an unknown
- *     status is a fault, never blank.
+ *     status is a fault, never blank. A checkout or dev server must not shout
+ *     UPDATE CHECK FAILED when the channel is missing; an installed app still
+ *     must.
  *     [if] a status renders as an empty badge [then ⛔️] broken
+ *     [if] a checkout renders UPDATE CHECK FAILED [then ⛔️] broken
  *   ✔︎ 🎯 canApplyHere: true only inside a Tauri shell, false in a browser.
  *     [if] a browser tab reports it can install [then ⛔️] broken
  *   ✔︎ 🎯 applyUpdate: refuses with a stated reason when there is no shell.
@@ -142,6 +145,19 @@ export async function fetchUpdateCheck(
 	};
 }
 
+/** Whether this build expects a working auto-update channel. */
+export function isUpdaterExpected(opts: {
+	isDev: boolean;
+	engineSource: 'payload' | 'repo' | null;
+	inTauri: boolean;
+}): boolean {
+	if (opts.isDev) return false;
+	if (opts.inTauri) return true;
+	if (opts.engineSource === 'repo') return false;
+	if (opts.engineSource === 'payload') return true;
+	return false;
+}
+
 // ----- rendering ----------------------------------------------------------
 export interface UpdateSummary {
 	/** The compact badge text. Never empty. */
@@ -157,12 +173,26 @@ export interface UpdateSummary {
  * rather than a lookup with a default, so a status added to the engine and
  * forgotten here fails the exhaustiveness check instead of rendering blank.
  */
-export function summarizeUpdate(state: UpdateState): UpdateSummary | null {
+export function summarizeUpdate(
+	state: UpdateState,
+	opts: { updaterExpected?: boolean } = {}
+): UpdateSummary | null {
+	const updaterExpected = opts.updaterExpected ?? true;
 	if (state.kind === 'idle') {
 		return null;
 	} else if (state.kind === 'checking') {
 		return { label: 'checking...', prominent: false, title: 'Asking the update channel.' };
 	} else if (state.kind === 'fault') {
+		if (!updaterExpected) {
+			return {
+				label: 'dev build, no update channel',
+				prominent: false,
+				title:
+					`This is a checkout or dev server, not an installed app, so a missing update channel is not a failure.\n\n` +
+					`${state.reason}` +
+					(state.value === null ? '' : `\n\nEndpoint: ${state.value.endpoint}`)
+			};
+		}
 		return {
 			label: 'UPDATE CHECK FAILED',
 			prominent: true,

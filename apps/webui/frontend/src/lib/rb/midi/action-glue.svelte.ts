@@ -37,7 +37,7 @@
  */
 
 import { pushToast } from '$lib/stores.svelte';
-import { deckStates, engine, pitchRanges } from '$lib/rb/audio-engine.svelte';
+import { deckStates, engine, mixerState, pitchRanges } from '$lib/rb/audio-engine.svelte';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import {
 	getDeviceMap,
@@ -101,6 +101,35 @@ function _continuous01(value: MidiInputValue): number {
 		throw new Error(`continuous action received non-continuous input ${value.kind}`);
 	}
 	return value.value01;
+}
+
+/** Glue-local overlay while MASTER CUE is engaged (no IPC command). */
+let _masterCue: { savedMix: number } | null = null;
+
+/** Test-only reset for master_cue latch/hold state. */
+export function _resetMasterCueForTests(): void {
+	_masterCue = null;
+}
+
+function _engageMasterCue(): void {
+	if (_masterCue !== null) return;
+	_masterCue = { savedMix: mixerState.headphones.mix };
+	void dispatchPerformanceCommand({ type: 'headphone_mix', value: 1 });
+}
+
+function _disengageMasterCue(): void {
+	if (_masterCue === null) return;
+	const savedMix = _masterCue.savedMix;
+	_masterCue = null;
+	void dispatchPerformanceCommand({ type: 'headphone_mix', value: savedMix });
+}
+
+function _dispatchHeadphoneMix(value: number): void {
+	if (_masterCue !== null) {
+		_masterCue.savedMix = value;
+		return;
+	}
+	void dispatchPerformanceCommand({ type: 'headphone_mix', value });
 }
 
 // ----------------------------------------------------------- REBASE ADAPTERS
@@ -215,6 +244,40 @@ export function handleMidiAction(
 			}
 			return;
 		}
+		case 'channel_cue': {
+			if (!_pressed(value)) return;
+			void dispatchPerformanceCommand({
+				type: 'channel_cue',
+				deck: action.deck,
+				enabled: !mixerState.channels[action.deck].cue_enabled
+			});
+			return;
+		}
+		case 'headphone_mix': {
+			_dispatchHeadphoneMix(_continuous01(value));
+			return;
+		}
+		case 'headphone_level': {
+			void dispatchPerformanceCommand({
+				type: 'headphone_level',
+				value: _continuous01(value)
+			});
+			return;
+		}
+		case 'master_cue': {
+			if (action.mode === 'latch') {
+				if (!_pressed(value)) return;
+				if (_masterCue === null) _engageMasterCue();
+				else _disengageMasterCue();
+			} else if (action.mode === 'hold') {
+				if (_pressed(value)) _engageMasterCue();
+				else _disengageMasterCue();
+			} else {
+				const _exhaustive: never = action.mode;
+				throw new Error(`Unhandled master_cue mode: ${_exhaustive}`);
+			}
+			return;
+		}
 		case 'deck_pitch': {
 			const v = _continuous01(value);
 			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'pitching');
@@ -277,6 +340,8 @@ export function ledTriggerActive(trigger: LedTrigger): boolean {
 		return loop !== null && loop.engaged;
 	} else if (trigger.kind === 'hot_cue_present') {
 		return deckStates[trigger.deck].hot_cues.some((c) => c.slot === trigger.slot);
+	} else if (trigger.kind === 'channel_cue_enabled') {
+		return mixerState.channels[trigger.deck].cue_enabled;
 	}
 	const _exhaustive: never = trigger;
 	throw new Error(`Unhandled LedTrigger: ${JSON.stringify(_exhaustive)}`);

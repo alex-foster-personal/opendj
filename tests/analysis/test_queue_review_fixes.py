@@ -15,8 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from apps.analysis import admission, queue_store
-from apps.analysis import queue_batch_lease
+from apps.analysis import admission, queue_batch_lease, queue_store
 from apps.analysis import queue as queue_api
 from apps.analysis.backends.base import TrackVanished
 from apps.analysis.queue_runner import RunSummary, _RunContext, _settle_one, run_batch

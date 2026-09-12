@@ -411,7 +411,14 @@ test('a deck whose processor block differs from a loaded deck fails its load', (
 		'if the check is never called from the load path then it protects nothing'
 	);
 	const assertAt = text.indexOf('_assertUniformProcessorBlock(deck, latencySec, ctx.sampleRate);');
-	const publishAt = text.indexOf('rt.latencySec = latencySec;');
+	// #2155 (Sat 12 Sep 2026, commit 1db624ef7) added attachProcessor(), an
+	// unrelated AudioEngine method with its own unguarded
+	// `rt.latencySec = latencySec;` line earlier in the file. An unanchored
+	// indexOf now finds THAT occurrence first, which is the exact "matches
+	// more than once" ambiguity this test suite's own convention warns about -
+	// search from assertAt so the guard pins the assignment this check
+	// actually gates, not an unrelated same-text line.
+	const publishAt = text.indexOf('rt.latencySec = latencySec;', assertAt);
 	assert.ok(assertAt !== -1 && publishAt !== -1);
 	assert.ok(
 		assertAt < publishAt,

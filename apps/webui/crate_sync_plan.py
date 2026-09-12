@@ -9,13 +9,12 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional
 
 from apps.shared import fs_residency
 from apps.webui import crate_sync as cs
 from apps.webui.soft_deletes import has_soft_deletes
 
-RbAsset = tuple[Optional[str], Optional[str], Optional[str]]
+RbAsset = tuple[str | None, str | None, str | None]
 
 
 def selected_track_rows(

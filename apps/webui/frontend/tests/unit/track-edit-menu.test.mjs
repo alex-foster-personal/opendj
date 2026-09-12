@@ -54,5 +54,5 @@ test('TrackTable spreads the helper and BrowserPanel passes the toolbar opener',
 	const menu = readFileSync(`${SRC}/lib/components/rb/ContextMenu.svelte`, 'utf8');
 	assert.match(table, /trackEditMenuItems\(selected\.length, onopeneditmodal\)/);
 	assert.match(panel, /onopeneditmodal=\{\(kind\) => void openEditModal\(kind\)\}/);
-	assert.match(menu, /item\.title \?\? \(item\.run === undefined \? 'not implemented - see PARITY-TODO' : item\.label\)/);
+	assert.match(menu, /item\.title \?\? \(unavailable \? 'not implemented - see PARITY-TODO' : item\.label\)/);
 });

@@ -11,7 +11,12 @@ import jsonschema
 import pytest
 import yaml
 
-from scripts.quality_rubric_model import DEFAULT_RUBRIC, DEFAULT_SCHEMA, load_rubric, validate_rubric_data
+from scripts.quality_rubric_model import (
+    DEFAULT_RUBRIC,
+    DEFAULT_SCHEMA,
+    load_rubric,
+    validate_rubric_data,
+)
 
 REPO = Path(__file__).resolve().parents[2]
 

@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.sync_hub import client, service
-from tests.cloudsync.test_hub_sync import _TestClientTransport, _seed_common_track, _sync
+from tests.cloudsync.test_hub_sync import _seed_common_track, _sync, _TestClientTransport
 
 
 @pytest.fixture(autouse=True)
