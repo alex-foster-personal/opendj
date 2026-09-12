@@ -53,7 +53,14 @@ export default defineConfig({
 	projects: [
 		{
 			name: 'kpi-capture-chromium',
-			use: { ...devices['Desktop Chrome'] }
+			use: {
+				...devices['Desktop Chrome'],
+				channel: 'chrome',
+				launchOptions: {
+					ignoreDefaultArgs: ['--enable-automation'],
+					args: ['--disable-blink-features=AutomationControlled']
+				}
+			}
 		}
 	]
 });

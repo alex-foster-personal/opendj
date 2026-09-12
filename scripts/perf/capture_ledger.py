@@ -19,6 +19,28 @@ METHOD = (
     "(in-app, Google excluded)"
 )
 SPAN_NAME = "login-submit-to-library-usable"
+RESTORED_SESSION_PREFIX = "restored-session:"
+MISSING_TELEMETRY_PREFIX = "missing-telemetry:"
+
+
+def classify_s13_withhold_reason(reason: str | None) -> str:
+    """Classify withheld S13 capture failures for operator-visible stderr."""
+    if reason is None:
+        return (
+            f"{MISSING_TELEMETRY_PREFIX} no perf-span POST "
+            "(library-usable telemetry hooks absent or library did not reach first paint)"
+        )
+    if reason.startswith((RESTORED_SESSION_PREFIX, MISSING_TELEMETRY_PREFIX)):
+        return reason
+    if reason == "missing library-usable mark: no perf-span POST":
+        return (
+            f"{MISSING_TELEMETRY_PREFIX} login completed but no perf-span POST "
+            "(library-usable telemetry hooks absent or library did not reach first paint)"
+        )
+    lowered = reason.lower()
+    if "submit" in lowered and "mark" in lowered:
+        return f"{RESTORED_SESSION_PREFIX} {reason}"
+    return reason
 
 
 def _is_finite_number(value: Any) -> bool:

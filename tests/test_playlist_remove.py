@@ -255,6 +255,14 @@ def test_openapi_documents_delete(client: TestClient) -> None:
     assert "delete" in paths["/api/v1/playlists/{playlist_id}/items/{item_id}"]
 
 
+def test_openapi_documents_remove_post(client: TestClient) -> None:
+    spec = client.get("/openapi.json")
+    assert spec.status_code == 200
+    paths = spec.json()["paths"]
+    assert "/api/v1/playlists/{playlist_id}/items:remove" in paths
+    assert "post" in paths["/api/v1/playlists/{playlist_id}/items:remove"]
+
+
 def test_get_detail_carries_item_id(client: TestClient, db_path: Path) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]

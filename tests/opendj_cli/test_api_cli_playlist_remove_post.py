@@ -1,4 +1,4 @@
-"""``opendj api POST .../items:add`` agent-native parity (LIBM-20)."""
+"""``opendj api POST .../items:remove`` agent-native parity (LIBM-21)."""
 from __future__ import annotations
 
 import json
@@ -68,7 +68,7 @@ def library_daemon(seeded_db: Path) -> Iterator[tuple[str, Path]]:
         playlist_write.close_store(app)
 
 
-def test_api_post_items_add_duplicate_allowed(
+def test_api_post_items_remove_and_missing_second_call(
     library_daemon: tuple[str, Path],
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -80,23 +80,33 @@ def test_api_post_items_add_duplicate_allowed(
     import httpx
 
     create = httpx.post(
-        f"{base_url}/api/v1/playlists", json={"name": "CLI Set"}, timeout=30,
+        f"{base_url}/api/v1/playlists", json={"name": "CLI Remove Post"}, timeout=30,
     )
     assert create.status_code == 201
     pid = create.json()["playlist_id"]
+    etag = create.headers["etag"]
+    put = httpx.put(
+        f"{base_url}/api/v1/playlists/{pid}/tracks",
+        json={"stable_ids": ["t-001", "t-002"]},
+        headers={"If-Match": etag},
+        timeout=30,
+    )
+    assert put.status_code == 200
+    detail = httpx.get(f"{base_url}/api/v1/playlists/{pid}", timeout=30)
+    item_id = detail.json()["tracks"][0]["item_id"]
 
     code = main([
-        "api", "POST", f"/api/v1/playlists/{pid}/items:add",
-        "--json", '{"stable_ids":["t-004"]}',
+        "api", "POST", f"/api/v1/playlists/{pid}/items:remove",
+        "--json", json.dumps({"item_ids": [item_id]}),
     ])
     assert code == api_cli.EXIT_OK
     out = json.loads(capsys.readouterr().out)
-    assert out["items"][-1] == "t-004"
+    assert item_id not in [t for t in out.get("items", [])]
 
     code2 = main([
-        "api", "POST", f"/api/v1/playlists/{pid}/items:add",
-        "--json", '{"stable_ids":["t-004"]}',
+        "api", "POST", f"/api/v1/playlists/{pid}/items:remove",
+        "--json", json.dumps({"item_ids": [item_id]}),
     ])
-    assert code2 == api_cli.EXIT_OK
-    out2 = json.loads(capsys.readouterr().out)
-    assert out2["items"].count("t-004") == 2
+    assert code2 == api_cli.EXIT_FAILED
+    err = json.loads(capsys.readouterr().err)
+    assert err["error"] == "not_found"
