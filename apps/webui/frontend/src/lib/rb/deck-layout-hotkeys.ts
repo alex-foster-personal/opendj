@@ -20,6 +20,10 @@
  * see (this harness bundles each test's entry point in isolation - see
  * tests/unit/load-typescript.mjs).
  */
+import {
+	DECK_LAYOUT_LESS_KEY,
+	DECK_LAYOUT_MORE_KEY
+} from '$lib/components/rb/hotkeys/hotkeys-registry';
 import { setDeckLayoutMode, type DeckLayoutMode } from '$lib/rb/prefs.svelte';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 
@@ -51,8 +55,8 @@ export function resolveDeckLayoutHotkeyMode(
 	opts: { settingsOpen: boolean }
 ): DeckLayoutMode | null {
 	if (opts.settingsOpen || _typingTarget(e.target)) return null;
-	if (_isModChord(e, '2')) return 'less';
-	if (_isModChord(e, '4')) return 'more';
+	if (_isModChord(e, DECK_LAYOUT_LESS_KEY)) return 'less';
+	if (_isModChord(e, DECK_LAYOUT_MORE_KEY)) return 'more';
 	return null;
 }
 

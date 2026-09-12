@@ -219,7 +219,12 @@ test('Cmd+, is a real accelerator, not a label', () => {
 	// The sidebar button says "Settings (Cmd+,)". The chord has to exist.
 	const hotkeys = read('src/lib/settings/hotkeys.ts');
 	assert.match(hotkeys, /metaKey \|\| e\.ctrlKey/);
-	assert.match(hotkeys, /e\.key === ',' \|\| e\.code === 'Comma'/);
+	assert.match(hotkeys, /SETTINGS_CHORD_KEY/);
+	assert.match(hotkeys, /SETTINGS_CHORD_CODE/);
+	assert.match(
+		hotkeys,
+		/e\.key === SETTINGS_CHORD_KEY \|\| e\.code === SETTINGS_CHORD_CODE/
+	);
 	assert.match(hotkeys, /addEventListener\('keydown'/);
 	// Installed from the ROOT layout, so it fires on /performance and inside
 	// the packaged shell's webview, not only on the app-shell routes.
