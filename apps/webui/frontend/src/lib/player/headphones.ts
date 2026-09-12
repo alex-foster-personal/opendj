@@ -26,7 +26,8 @@
  * transport.
  */
 
-import { HEADPHONE_OPERATION_TIMEOUT_MS, PARAM_SMOOTH_S } from '$lib/player/constants';
+import { HEAD_DELAY_MAX_MS, HEADPHONE_OPERATION_TIMEOUT_MS, PARAM_SMOOTH_S, assertHeadDelayMs, headDelaySeconds } from '$lib/player/constants';
+import { persistMixerConfig } from '$lib/player/mixer-config';
 import { mixerState } from '$lib/player/state.svelte';
 
 /**
@@ -80,6 +81,7 @@ export interface HeadphoneNodes {
 	cueMix: GainNode;
 	masterMix: GainNode;
 	level: GainNode;
+	delay: DelayNode;
 	destination: MediaStreamAudioDestinationNode;
 	element: HTMLAudioElement;
 	practiceCueMix: GainNode;
@@ -258,6 +260,77 @@ export function applyHeadphoneMix(): void {
 	);
 	_setMonitorParam(nodes, nodes.practiceCueMix.gain, practice.cue);
 	_setMonitorParam(nodes, nodes.practiceMasterMix.gain, practice.master);
+	nodes.delay.delayTime.setValueAtTime(
+		headDelaySeconds(mixerState.headphones.head_delay_ms),
+		nodes.level.context.currentTime
+	);
+}
+
+export function setHeadDelayMs(value: unknown): void {
+	assertHeadDelayMs(value);
+	mixerState.headphones.head_delay_ms = value;
+	persistMixerConfig({ head_delay_ms: value });
+	applyHeadphoneMix();
+}
+
+/** Case-insensitive label match for Bluetooth-class monitor devices. */
+export function monitorLabelIsBluetooth(label: string): boolean {
+	if (label === '') return false;
+	const lower = label.toLowerCase();
+	if (lower.includes('bluetooth')) return true;
+	if (lower.includes('airpods')) return true;
+	if (lower.includes('a2dp')) return true;
+	if (/\bhfp\b/i.test(label)) return true;
+	return false;
+}
+
+/** Standing two_outputs warning copy, or null outside that mode. */
+export function twoOutputsWarning(args: {
+	outputMode: unknown;
+	selectedLabel: string | null;
+}): string | null {
+	assertHeadphoneOutputMode(args.outputMode);
+	if (args.outputMode !== 'two_outputs') return null;
+	const parts = [
+		'Two independently clocked devices drift (about 6 ms/min at 100 ppm).',
+		'Bluetooth as the monitor leg is for auditioning, not beatmatching.'
+	];
+	if (args.selectedLabel !== null && monitorLabelIsBluetooth(args.selectedLabel)) {
+		parts.push('Selected monitor looks like Bluetooth.');
+	}
+	return parts.join(' ');
+}
+
+/** Sample-accurate monitor lag for a static DelayNode delayTime (loopback acceptance helper). */
+export function clickTrainLagMs(opts: {
+	delayMs: number;
+	sampleRate: number;
+	bufferSize: number;
+	clickPeriodMs: number;
+	clickCount: number;
+}): number {
+	const { delayMs, sampleRate, clickPeriodMs, clickCount } = opts;
+	const delaySamples = Math.round(headDelaySeconds(delayMs) * sampleRate);
+	const periodSamples = Math.round((clickPeriodMs / 1000) * sampleRate);
+	const totalSamples = delaySamples + periodSamples * (clickCount - 1) + 1;
+	const undelayed = new Float32Array(totalSamples);
+	const delayed = new Float32Array(totalSamples + delaySamples);
+	for (let i = 0; i < clickCount; i += 1) {
+		undelayed[i * periodSamples] = 1;
+		delayed[i * periodSamples + delaySamples] = 1;
+	}
+	let undelayedPeak = -1;
+	let delayedPeak = -1;
+	for (let i = 0; i < undelayed.length; i += 1) {
+		if (undelayed[i] > 0 && undelayedPeak === -1) undelayedPeak = i;
+	}
+	for (let i = 0; i < delayed.length; i += 1) {
+		if (delayed[i] > 0 && delayedPeak === -1) delayedPeak = i;
+	}
+	if (undelayedPeak === -1 || delayedPeak === -1) {
+		throw new Error('click train did not produce detectable peaks');
+	}
+	return ((delayedPeak - undelayedPeak) / sampleRate) * 1000;
 }
 
 export function setHeadphoneOutputMode(mode: unknown): void {
@@ -331,6 +404,7 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 	const cueMix = context.createGain();
 	const masterMix = context.createGain();
 	const level = context.createGain();
+	const delay = context.createDelay(HEAD_DELAY_MAX_MS / 1000);
 	const practiceCueMix = context.createGain();
 	const practiceMasterMix = context.createGain();
 	const destination = context.createMediaStreamDestination();
@@ -340,13 +414,15 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 	masterMonitor.connect(masterMix);
 	cueMix.connect(level);
 	masterMix.connect(level);
-	level.connect(destination);
+	level.connect(delay);
+	delay.connect(destination);
 	_headphoneNodes = {
 		cueSum,
 		masterMonitor,
 		cueMix,
 		masterMix,
 		level,
+		delay,
 		destination,
 		element,
 		practiceCueMix,
@@ -375,6 +451,7 @@ function _disposeHeadphoneGraph(): void {
 		nodes.cueMix,
 		nodes.masterMix,
 		nodes.level,
+		nodes.delay,
 		nodes.destination,
 		nodes.practiceCueMix,
 		nodes.practiceMasterMix
