@@ -4016,6 +4016,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/playlists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Track Playlists
+         * @description Live playlists that currently hold this track (LIBM-29).
+         *
+         *     404 if the stable_id has no tracks row. 200 [] if the track exists
+         *     but has no live memberships. Tombstoned memberships and deleted
+         *     playlists are excluded.
+         */
+        get: operations["list_track_playlists_api_v1_tracks__stable_id__playlists_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}/rb-meta": {
         parameters: {
             query?: never;
@@ -10370,6 +10394,17 @@ export interface components {
             /** Tags Remove */
             tags_remove?: string[] | null;
             tempo_pref?: components["schemas"]["TempoPrefPatch"] | null;
+        };
+        /** TrackPlaylistOut */
+        TrackPlaylistOut: {
+            /** Name */
+            name: string;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Positions */
+            positions: number[];
+            /** Vendor */
+            vendor: string;
         };
         /**
          * TrackRowOut
@@ -18588,6 +18623,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KaraokeTrackOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_track_playlists_api_v1_tracks__stable_id__playlists_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackPlaylistOut"][];
                 };
             };
             /** @description Validation Error */

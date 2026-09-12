@@ -73,6 +73,8 @@
 	import { trackEditMenuItems, type TrackEditModalKind } from './track-edit-menu';
 	import { addToPlaylistMenuItem } from './add-to-playlist-menu';
 	import { removeFromLibraryMenuItem } from './track-library-menu';
+	import { showInPlaylistsMenuItem } from './track-playlists-menu';
+	import TrackPlaylistsPopover from './TrackPlaylistsPopover.svelte';
 
 	type DeckId = (typeof DECK_IDS)[number];
 
@@ -105,6 +107,7 @@
 	} | null>(null);
 	let loadConfirmEveryTime = $state(false);
 	let contextMenu = $state<{ x: number; y: number; row: BrowserRow } | null>(null);
+	let playlistsMenu = $state<{ x: number; y: number; stableId: string } | null>(null);
 
 	function onColResizeStart(event: PointerEvent, col: ColId): void {
 		event.preventDefault();
@@ -584,7 +587,7 @@
 		uiPrefs.library_density === 'cosy' ? ROW_HEIGHT_COSY : ROW_HEIGHT_COMPACT
 	);
 
-	function trackMenuItems(row: BrowserRow): ContextMenuItem[] {
+	function trackMenuItems(row: BrowserRow, menuX: number, menuY: number): ContextMenuItem[] {
 		const selected = selectedOrderSet.has(row.order) ? selectedIds : [row.stable_id];
 		return [
 			...DECKS.map((deck) => ({ id: `load-${deck}`, label: `Load to deck ${deck}`, run: () => onloadrow(row, deck) })),
@@ -592,7 +595,11 @@
 			{ id: 'edit', label: 'Edit' },
 			...trackEditMenuItems(selected.length, onopeneditmodal),
 			{ id: 'relocate', label: 'Relocate' },
-			{ id: 'finder', label: 'Show in Finder' }, { id: 'copy-path', label: 'Copy path' },
+			{ id: 'finder', label: 'Show in Finder' },
+			showInPlaylistsMenuItem(() => {
+				playlistsMenu = { x: menuX, y: menuY, stableId: row.stable_id };
+			}),
+			{ id: 'copy-path', label: 'Copy path' },
 			{ id: 'analyze', label: 'Analyze' },
 			{ id: 'stems-generate', label: 'Stems: do next', run: onstemsdonext ? () => onstemsdonext(selected) : undefined },
 			{ id: 'stems-open', label: 'Stems - open' },
@@ -965,7 +972,20 @@
 	data-truncated={provider.truncated ? 'true' : 'false'}
 >
 	{#if contextMenu !== null}
-		<ContextMenu items={trackMenuItems(contextMenu.row)} x={contextMenu.x} y={contextMenu.y} onclose={() => (contextMenu = null)} />
+		<ContextMenu
+			items={trackMenuItems(contextMenu.row, contextMenu.x, contextMenu.y)}
+			x={contextMenu.x}
+			y={contextMenu.y}
+			onclose={() => (contextMenu = null)}
+		/>
+	{/if}
+	{#if playlistsMenu !== null}
+		<TrackPlaylistsPopover
+			stableId={playlistsMenu.stableId}
+			x={playlistsMenu.x}
+			y={playlistsMenu.y}
+			onclose={() => (playlistsMenu = null)}
+		/>
 	{/if}
 	{#if masterFold === 'above'}
 		<button

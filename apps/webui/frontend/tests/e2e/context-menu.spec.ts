@@ -35,6 +35,11 @@ test('track, playlist, and folder context menus are pointer and keyboard reachab
 	await track.click({ button: 'right' });
 	await expect(page.locator(MENU)).toContainText('Load to deck 1');
 	await expect(page.locator('.qd')).toHaveCount(0);
+	await expect(page.getByRole('menuitem', { name: 'Show in playlists' })).toBeEnabled();
+	await expect(page.getByRole('menuitem', { name: 'Show in playlists' })).not.toHaveAttribute(
+		'title',
+		'not implemented - see PARITY-TODO'
+	);
 	await expect(page.getByRole('menuitem', { name: 'Mark offline' })).toHaveAttribute('title', 'not implemented - see PARITY-TODO');
 	await page.mouse.click(1, 1);
 	await expect(page.locator(MENU)).toHaveCount(0);
