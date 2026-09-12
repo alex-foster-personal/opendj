@@ -198,6 +198,12 @@ _TRACKS_PROJECTION = (
     "FROM tracks WHERE deleted_at IS NULL"
 )
 
+_TRACKS_PROJECTION_INCLUDE_DELETED = (
+    "SELECT stable_id, title, artists_json, album, "
+    "       duration_ms, file_path, created_at, updated_at "
+    "FROM tracks"
+)
+
 
 def _parse_rfc3339(ts: str) -> datetime:
     """Parse an RFC 3339 timestamp (``Z`` or ``+00:00`` form). Fail fast.
@@ -529,6 +535,11 @@ class SqliteBackend:
                 _warn_fallback_once("list_tracks", "no tracks table")
                 return self._fallback.list_tracks(flt)
             limit = max(1, min(flt.limit, MAX_LIMIT))
+            projection = (
+                _TRACKS_PROJECTION_INCLUDE_DELETED
+                if flt.show_deleted
+                else _TRACKS_PROJECTION
+            )
             page: list[Track] = []
             scan_cursor = flt.cursor
             while len(page) < limit:
@@ -538,7 +549,7 @@ class SqliteBackend:
                     cursor_predicate = " AND stable_id > ?"
                     params = (scan_cursor, limit)
                 rows = list(conn.execute(
-                    _TRACKS_PROJECTION + cursor_predicate
+                    projection + cursor_predicate
                     + " ORDER BY stable_id LIMIT ?",
                     params,
                 ))
