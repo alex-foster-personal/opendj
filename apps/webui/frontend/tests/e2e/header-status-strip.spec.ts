@@ -6,10 +6,8 @@ test('at 1280px the header status strip separates every readout with middle dots
 
 	const strip = page.getByTestId('header-status-strip');
 	await expect(strip).toBeVisible();
-	await expect(strip).toHaveText(/\d+ tracks · \d+ playlists · lock: .+ · sync: .+ · bind: .+/);
+	await expect(strip).toHaveText(/\d+ tracks · \d+ playlists · lock: .+ · bind: .+/);
 	await expect(strip).not.toHaveText(/playlistslock/i);
-	await expect(strip).not.toHaveText(/lock:[^·]+sync:/);
-	await expect(strip).not.toHaveText(/sync:[^·]+bind:/);
 
 	const tracks = strip.locator('.readout-numeric').nth(0);
 	const playlists = strip.locator('.readout-numeric').nth(1);
@@ -30,7 +28,7 @@ test('at narrow width the status strip never concatenates readouts', async ({ pa
 
 	const strip = page.getByTestId('header-status-strip');
 	await expect(strip).toBeVisible();
-	await expect(strip).toHaveText(/\d+ tracks · \d+ playlists · lock: .+ · sync: .+ · bind: .+/);
+	await expect(strip).toHaveText(/\d+ tracks · \d+ playlists · lock: .+ · bind: .+/);
 
 	const noRunOn = await strip.evaluate((el) => {
 		const text = (el as HTMLElement).innerText.replace(/\s+/g, ' ');
@@ -51,4 +49,23 @@ test('at narrow width the status strip never concatenates readouts', async ({ pa
 		return wrapped || ellipsized;
 	});
 	expect(overflowHandled).toBe(true);
+});
+
+test('only the CloudSync chip uses sync: in the app-shell header', async ({ page }) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/');
+
+	const strip = page.getByTestId('header-status-strip');
+	const chip = page.getByRole('link', { name: 'CloudSync status' });
+
+	await expect(strip).toBeVisible();
+	await expect(chip).toBeVisible();
+	await expect(strip).not.toHaveText(/sync:/);
+	await expect(strip).not.toHaveText(/sync: n\/a/);
+	await expect(strip).not.toHaveText(/syncthing: n\/a/);
+	await expect(chip).toHaveAttribute('href', '/cloudsync');
+	await expect(chip.locator('.chip-label-full')).toHaveText(/sync:/);
+
+	await chip.click();
+	await expect(page).toHaveURL(/\/cloudsync/);
 });

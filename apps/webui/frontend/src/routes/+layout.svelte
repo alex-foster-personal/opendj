@@ -168,11 +168,9 @@
 					{:else}
 						<span class="readout">lock: free</span>
 					{/if}
-					<span class="sep" aria-hidden="true"> · </span>
 					{#if health.data.syncthing}
-						<span class="readout">sync: {health.data.syncthing.peers_connected} peers - {health.data.syncthing.folder_state}</span>
-					{:else}
-						<span class="readout" title="not implemented - see PARITY-TODO (syncthing not configured)">sync: n/a</span>
+						<span class="sep" aria-hidden="true"> · </span>
+						<span class="readout">syncthing: {health.data.syncthing.peers_connected} peers - {health.data.syncthing.folder_state}</span>
 					{/if}
 					<span class="sep" aria-hidden="true"> · </span>
 					<span class="readout">bind: {health.data.bind_host}</span>
