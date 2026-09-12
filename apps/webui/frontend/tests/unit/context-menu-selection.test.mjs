@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 const SRC = fileURLToPath(new URL('../../src', import.meta.url));
+const menu = readFileSync(`${SRC}/lib/components/rb/browser/TrackContextMenu.svelte`, 'utf8');
 const table = readFileSync(`${SRC}/lib/components/rb/browser/TrackTable.svelte`, 'utf8');
 
 function readFunctionBody(source, name) {
@@ -22,9 +23,10 @@ function readFunctionBody(source, name) {
 }
 
 test('context-menu selection ignores pointer modifiers and selects keyboard targets', () => {
-	const pointer = readFunctionBody(table, 'openTrackMenu');
+	const pointer = readFunctionBody(menu, 'openMenu');
 	assert.match(pointer, /onselectrow\(row\);/, 'context-click must not extend selection from Control or Command');
 
-	const keyboard = readFunctionBody(table, 'onTrackKeydown');
-	assert.match(keyboard, /onselectrow\(row\);/, 'keyboard context menu must select its focused row');
+	const keyboard = readFunctionBody(menu, 'openFromKeyboard');
+	assert.match(keyboard, /openMenu\(/, 'keyboard context menu must reuse the same open path');
+	assert.match(table, /trackContextMenu\?\.openFromKeyboard\(event, row\)/);
 });

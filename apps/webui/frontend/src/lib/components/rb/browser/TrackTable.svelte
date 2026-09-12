@@ -44,11 +44,7 @@
 		classifyBpmHeat,
 		genreHoverColor,
 		columnExplainer,
-		trackEditMenuItems,
-		type TrackEditModalKind,
-		addToPlaylistMenuItem,
-		removeFromLibraryMenuItem,
-		showInPlaylistsMenuItem
+		type TrackEditModalKind
 	} from './track-table-support';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
 	import { autoPlayOrder } from '$lib/rb/auto-play.svelte';
@@ -83,8 +79,8 @@
 	} from '$lib/rb/job-progress.svelte';
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
-	import ContextMenu, { type ContextMenuItem } from '../ContextMenu.svelte';
 	import SpinnerIcon from './SpinnerIcon.svelte';
+	import TrackContextMenu from './TrackContextMenu.svelte';
 	import TrackPlaylistsPopover from './TrackPlaylistsPopover.svelte';
 
 	type DeckId = (typeof DECK_IDS)[number];
@@ -117,7 +113,7 @@
 		y: number;
 	} | null>(null);
 	let loadConfirmEveryTime = $state(false);
-	let contextMenu = $state<{ x: number; y: number; row: BrowserRow } | null>(null);
+	let trackContextMenu = $state<TrackContextMenu | null>(null);
 	let playlistsMenu = $state<{ x: number; y: number; stableId: string } | null>(null);
 
 	function onColResizeStart(event: PointerEvent, col: ColId): void {
@@ -598,36 +594,6 @@
 		uiPrefs.library_density === 'cosy' ? ROW_HEIGHT_COSY : ROW_HEIGHT_COMPACT
 	);
 
-	function trackMenuItems(row: BrowserRow, menuX: number, menuY: number): ContextMenuItem[] {
-		const selected = selectedOrderSet.has(row.order) ? selectedIds : [row.stable_id];
-		return [
-			...DECKS.map((deck) => ({ id: `load-${deck}`, label: `Load to deck ${deck}`, run: () => onloadrow(row, deck) })),
-			addToPlaylistMenuItem(selected, onaddtoplaylist),
-			{ id: 'edit', label: 'Edit' },
-			...trackEditMenuItems(selected.length, onopeneditmodal),
-			{ id: 'relocate', label: 'Relocate' },
-			{ id: 'finder', label: 'Show in Finder' },
-			showInPlaylistsMenuItem(() => {
-				playlistsMenu = { x: menuX, y: menuY, stableId: row.stable_id };
-			}),
-			{ id: 'copy-path', label: 'Copy path' },
-			{ id: 'analyze', label: 'Analyze' },
-			{ id: 'stems-generate', label: 'Stems: do next', run: onstemsdonext ? () => onstemsdonext(selected) : undefined },
-			{ id: 'stems-open', label: 'Stems - open' },
-			{ id: 'lyrics', label: 'Lyrics: do next', run: onlyricsdonext ? () => onlyricsdonext(selected) : undefined },
-			{ id: 'offline', label: 'Mark offline' }, { id: 'cloud-only', label: 'Cloud-only' },
-			{ id: 'remove-playlist', label: 'Remove from playlist', run: removable ? () => onremoverow?.(row) : undefined },
-			removeFromLibraryMenuItem(selected, onremovefromlibrary)
-		];
-	}
-
-	function openTrackMenu(event: MouseEvent, row: BrowserRow): void {
-		event.preventDefault();
-		event.stopPropagation();
-		if (!selectedOrderSet.has(row.order)) onselectrow(row);
-		contextMenu = { x: event.clientX, y: event.clientY, row };
-	}
-
 	function onTrackKeydown(event: KeyboardEvent, row: BrowserRow): void {
 		const target = event.target;
 		if (
@@ -656,10 +622,7 @@
 			return;
 		}
 		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
-		event.preventDefault();
-		if (!selectedOrderSet.has(row.order)) onselectrow(row);
-		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-		contextMenu = { x: rect.left + 8, y: rect.top + 8, row };
+		trackContextMenu?.openFromKeyboard(event, row);
 	}
 
 	// ----- AUTOPLAY-COL helpers ---------------------------------------------
@@ -1021,14 +984,23 @@
 	data-density={uiPrefs.library_density}
 	data-truncated={provider.truncated ? 'true' : 'false'}
 >
-	{#if contextMenu !== null}
-		<ContextMenu
-			items={trackMenuItems(contextMenu.row, contextMenu.x, contextMenu.y)}
-			x={contextMenu.x}
-			y={contextMenu.y}
-			onclose={() => (contextMenu = null)}
-		/>
-	{/if}
+	<TrackContextMenu
+		bind:this={trackContextMenu}
+		{selectedIds}
+		{selectedOrders}
+		{onselectrow}
+		{onloadrow}
+		{onaddtoplaylist}
+		{onstemsdonext}
+		{onlyricsdonext}
+		{onopeneditmodal}
+		{onremovefromlibrary}
+		{onremoverow}
+		{removable}
+		onshowinplaylists={(row, x, y) => {
+			playlistsMenu = { x, y, stableId: row.stable_id };
+		}}
+	/>
 	{#if playlistsMenu !== null}
 		<TrackPlaylistsPopover
 			stableId={playlistsMenu.stableId}
@@ -1425,7 +1397,7 @@
 						style={_jobRowStyle(row.stable_id)}
 						onclick={(event) => onRowPointer(event, row)}
 						ondblclick={(e) => onRowDblClick(e, row)}
-						oncontextmenu={(e) => openTrackMenu(e, row)}
+						oncontextmenu={(e) => trackContextMenu?.open(e, row)}
 						onkeydown={(e) => onTrackKeydown(e, row)}
 						ondragstart={(e) => onRowDragStart(e, row)}
 						ondragend={onRowDragEnd}

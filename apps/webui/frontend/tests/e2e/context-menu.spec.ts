@@ -41,6 +41,25 @@ test('track, playlist, and folder context menus are pointer and keyboard reachab
 		'not implemented - see PARITY-TODO'
 	);
 	await expect(page.getByRole('menuitem', { name: 'Mark offline' })).toHaveAttribute('title', 'not implemented - see PARITY-TODO');
+	await expect(page.getByRole('menuitem', { name: 'Show in Finder' })).toBeEnabled();
+	await expect(page.getByRole('menuitem', { name: 'Show in Finder' })).toHaveAttribute(
+		'title',
+		'POST /api/v1/tracks/{stable_id}:reveal'
+	);
+	await expect(page.getByRole('menuitem', { name: 'Copy path' })).toBeEnabled();
+	await expect(page.getByRole('menuitem', { name: 'Copy path' })).toHaveAttribute(
+		'title',
+		'GET /api/v1/tracks/{stable_id}'
+	);
+	await expect(page.getByRole('menuitem', { name: 'Re-analyze' })).toBeEnabled();
+	await expect(page.getByRole('menuitem', { name: 'Re-analyze' })).toHaveAttribute(
+		'title',
+		'POST /api/v1/analysis/backfill/enqueue (`python -m apps.analysis.queue_cli enqueue --lane beatgrid --backend own_beatgrid.backfill`)'
+	);
+	await expect(page.getByRole('menuitem', { name: 'Load to deck 1' })).toHaveAttribute(
+		'title',
+		/^opendj load 1 /
+	);
 	await page.mouse.click(1, 1);
 	await expect(page.locator(MENU)).toHaveCount(0);
 
@@ -82,4 +101,16 @@ test('Add to playlist opens the picker and Escape closes it', async ({ page }) =
 	await expect(page.locator('[data-testid="add-to-playlist-picker"]')).toBeVisible();
 	await page.keyboard.press('Escape');
 	await expect(page.locator('[data-testid="add-to-playlist-picker"]')).toHaveCount(0);
+});
+
+test('multi-select context menu keeps the full selection count', async ({ page }) => {
+	await page.goto('/performance');
+	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });
+
+	const rows = page.locator('[data-testid="track-row"]');
+	await rows.nth(0).click();
+	await rows.nth(1).click({ modifiers: ['Shift'] });
+	await rows.nth(1).click({ button: 'right' });
+	await expect(page.locator(MENU)).toContainText('Bulk edit (2)');
+	await page.keyboard.press('Escape');
 });

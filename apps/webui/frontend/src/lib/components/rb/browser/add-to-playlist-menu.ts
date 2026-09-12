@@ -1,9 +1,13 @@
 /** Track context-menu add-to-playlist entry (LIBM-95). */
 
+export const ADD_TO_PLAYLIST_TITLE = 'POST /api/v1/playlists/{playlist_id}/items:add';
+export const ADD_TO_PLAYLIST_EMPTY_TITLE = 'select at least one track first';
+
 export type AddToPlaylistMenuItem = {
 	id: 'add-playlist';
 	label: 'Add to playlist...';
 	run?: () => void;
+	title?: string;
 };
 
 export function addToPlaylistMenuItem(
@@ -14,11 +18,13 @@ export function addToPlaylistMenuItem(
 		return {
 			id: 'add-playlist',
 			label: 'Add to playlist...',
-			run: () => openPicker(selectedIds)
+			run: () => openPicker(selectedIds),
+			title: ADD_TO_PLAYLIST_TITLE
 		};
 	}
 	return {
 		id: 'add-playlist',
-		label: 'Add to playlist...'
+		label: 'Add to playlist...',
+		title: ADD_TO_PLAYLIST_EMPTY_TITLE
 	};
 }
