@@ -153,22 +153,29 @@
 	</aside>
 	<main>
 		<div class="topbar">
-			{#if health.data}
-				<span>{health.data.state_db.tracks} tracks · {health.data.state_db.playlists} playlists</span>
-				{#if health.data.cloud.lock_holder}
-					<span>lock: {health.data.cloud.lock_holder.holder}</span>
+			<div class="status-strip" data-testid="header-status-strip">
+				{#if health.data}
+					<span class="readout readout-numeric" title={String(health.data.state_db.tracks)}>{health.data.state_db.tracks} tracks</span>
+					<span class="sep" aria-hidden="true"> · </span>
+					<span class="readout readout-numeric" title={String(health.data.state_db.playlists)}>{health.data.state_db.playlists} playlists</span>
+					<span class="sep" aria-hidden="true"> · </span>
+					{#if health.data.cloud.lock_holder}
+						<span class="readout">lock: {health.data.cloud.lock_holder.holder}</span>
+					{:else}
+						<span class="readout">lock: free</span>
+					{/if}
+					<span class="sep" aria-hidden="true"> · </span>
+					{#if health.data.syncthing}
+						<span class="readout">sync: {health.data.syncthing.peers_connected} peers - {health.data.syncthing.folder_state}</span>
+					{:else}
+						<span class="readout" title="not implemented - see PARITY-TODO (syncthing not configured)">sync: n/a</span>
+					{/if}
+					<span class="sep" aria-hidden="true"> · </span>
+					<span class="readout">bind: {health.data.bind_host}</span>
 				{:else}
-					<span>lock: free</span>
+					<span class="readout">Connecting to configured worktree daemon...</span>
 				{/if}
-				{#if health.data.syncthing}
-					<span>sync: {health.data.syncthing.peers_connected} peers - {health.data.syncthing.folder_state}</span>
-				{:else}
-					<span title="not implemented - see PARITY-TODO (syncthing not configured)">sync: n/a</span>
-				{/if}
-				<span>bind: {health.data.bind_host}</span>
-			{:else}
-				<span>Connecting to configured worktree daemon...</span>
-			{/if}
+			</div>
 			<CloudSyncStatusChip />
 			<UserBauble />
 		</div>
@@ -242,5 +249,22 @@
 	/* Still navigable (the page explains itself), just visibly not on offer. */
 	.nav-unavailable {
 		opacity: 0.45;
+	}
+	.status-strip {
+		flex: 1 1 auto;
+		min-width: 0;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+	}
+	.status-strip .readout {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 100%;
+	}
+	.status-strip .sep {
+		flex: none;
+		white-space: pre;
 	}
 </style>

@@ -1,0 +1,54 @@
+import { expect, test } from '@playwright/test';
+
+test('at 1280px the header status strip separates every readout with middle dots', async ({ page }) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/');
+
+	const strip = page.getByTestId('header-status-strip');
+	await expect(strip).toBeVisible();
+	await expect(strip).toHaveText(/\d+ tracks · \d+ playlists · lock: .+ · sync: .+ · bind: .+/);
+	await expect(strip).not.toHaveText(/playlistslock/i);
+	await expect(strip).not.toHaveText(/lock:[^·]+sync:/);
+	await expect(strip).not.toHaveText(/sync:[^·]+bind:/);
+
+	const tracks = strip.locator('.readout-numeric').nth(0);
+	const playlists = strip.locator('.readout-numeric').nth(1);
+	await expect(tracks).toHaveAttribute('title', /^\d+$/);
+	await expect(playlists).toHaveAttribute('title', /^\d+$/);
+
+	const tracksText = await tracks.innerText();
+	const playlistsText = await playlists.innerText();
+	const tracksTitle = await tracks.getAttribute('title');
+	const playlistsTitle = await playlists.getAttribute('title');
+	expect(tracksText.match(/^(\d+)/)?.[1]).toBe(tracksTitle);
+	expect(playlistsText.match(/^(\d+)/)?.[1]).toBe(playlistsTitle);
+});
+
+test('at narrow width the status strip never concatenates readouts', async ({ page }) => {
+	await page.setViewportSize({ width: 720, height: 800 });
+	await page.goto('/');
+
+	const strip = page.getByTestId('header-status-strip');
+	await expect(strip).toBeVisible();
+	await expect(strip).toHaveText(/\d+ tracks · \d+ playlists · lock: .+ · sync: .+ · bind: .+/);
+
+	const noRunOn = await strip.evaluate((el) => {
+		const text = (el as HTMLElement).innerText.replace(/\s+/g, ' ');
+		return !/playlistslock|freesync|n\/abind/i.test(text);
+	});
+	expect(noRunOn).toBe(true);
+
+	const overflowHandled = await strip.evaluate((el) => {
+		const contentWider = el.scrollWidth > el.clientWidth + 1;
+		if (!contentWider) return true;
+		const wrapped = el.clientHeight > 22;
+		const ellipsized = Array.from(el.querySelectorAll('.readout')).some((node) => {
+			const style = getComputedStyle(node);
+			return (
+				node.scrollWidth > node.clientWidth + 1 && style.textOverflow === 'ellipsis'
+			);
+		});
+		return wrapped || ellipsized;
+	});
+	expect(overflowHandled).toBe(true);
+});
