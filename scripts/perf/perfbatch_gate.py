@@ -64,6 +64,8 @@ MEASUREMENT_ONLY_PREFIXES: tuple[str, ...] = (
     "ops/agentic-testing/",
     "ops/agentic_testing/",
     "tests/agentic_testing/",
+    "docs/decisions/",
+    "specs/",
 )
 
 # Horizontal whitespace only. Never `\\s`: a newline as the "reason" must fail.
@@ -86,6 +88,10 @@ def pipeline_mutation_paths(paths: list[str]) -> list[str]:
         if _matches_prefix(path, PIPELINE_PREFIXES)
         and not _matches_prefix(path, PIPELINE_EXEMPT)
     ]
+
+
+def measurement_only_paths(paths: list[str]) -> list[str]:
+    return [path for path in paths if _matches_prefix(path, MEASUREMENT_ONLY_PREFIXES)]
 
 
 def idle_marker(body: str) -> bool:
@@ -148,6 +154,8 @@ def local_diff_names(repo_root: Path = REPO_ROOT, base: str = DEFAULT_BASE) -> l
 def verdict(paths: list[str], body: str) -> tuple[int, str]:
     mutations = pipeline_mutation_paths(paths)
     if not mutations:
+        if paths and len(measurement_only_paths(paths)) == len(paths):
+            return 0, "[perfbatch-gate] OK -- measurement-only (declared prefix)"
         return 0, "[perfbatch-gate] OK -- measurement-only"
     missing: list[str] = []
     if not idle_marker(body):
