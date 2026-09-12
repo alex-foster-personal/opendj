@@ -15,6 +15,8 @@
     "test:live:stem-decode-workers": "node tests/live/stem-decode-workers.mjs",
     "test:live:stem-decode-workers-mpeg": "node tests/live/stem-decode-workers-mpeg.mjs",
     "test:e2e:performance": "playwright test --config tests/e2e/playwright.performance.config.ts",
+    "test:e2e:performance:smoke": "PERFORMANCE_E2E_FIXTURE=0 PERFORMANCE_E2E_SMOKE=1 playwright test --config tests/e2e/playwright.performance.config.ts --grep @performance-smoke --max-failures=1 --reporter=list",
+    "test:e2e:performance:headed": "playwright test --config tests/e2e/playwright.performance.config.ts --headed",
     "api:gen": "openapi-typescript ../openapi.json -o src/lib/api-types.ts",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
