@@ -27,18 +27,15 @@
 	import CloudSyncFleetTab from '$lib/components/cloudsync/CloudSyncFleetTab.svelte';
 	import CloudSyncPolicyCell from '$lib/components/cloudsync/CloudSyncPolicyCell.svelte';
 	import CloudSyncStatusTab from '$lib/components/cloudsync/CloudSyncStatusTab.svelte';
-	import { inertKindTitle } from '$lib/components/cloudsync/cloudsync-view';
+	import {
+		CLOUDSYNC_TABS,
+		cloudSyncTabFromUrl,
+		inertKindTitle
+	} from '$lib/components/cloudsync/cloudsync-view';
 	import { listPlaylistsHydrated, type PlaylistSummaryHydrated } from '$lib/rb/api-rb';
 	import { pushToast } from '$lib/stores.svelte';
 
-	type Tab = 'status' | 'policies' | 'pins' | 'overview' | 'fleet';
-	const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
-		{ id: 'status', label: 'Status & config' },
-		{ id: 'policies', label: 'Machines & policies' },
-		{ id: 'pins', label: 'Playlist pins' },
-		{ id: 'overview', label: 'Hydration overview' },
-		{ id: 'fleet', label: 'Fleet' }
-	];
+	const TABS = CLOUDSYNC_TABS;
 
 	const ASSET_KIND_LABEL: Record<AssetKind, string> = {
 		audio: 'Audio',
@@ -49,12 +46,7 @@
 		karaoke_words: 'Karaoke word timings'
 	};
 
-	function tabFromUrl(url: URL): Tab {
-		const raw = url.searchParams.get('tab');
-		return TABS.find((t) => t.id === raw)?.id ?? 'status';
-	}
-
-	let tab = $state<Tab>(tabFromUrl($page.url));
+	const tab = $derived(cloudSyncTabFromUrl($page.url));
 	let loading = $state(true);
 	let loadError = $state<string | null>(null);
 
@@ -69,8 +61,7 @@
 	let newPinMode = $state<SyncMode>('pinned');
 	let pinBusy = $state(false);
 
-	function selectTab(next: Tab): void {
-		tab = next;
+	function selectTab(next: (typeof TABS)[number]['id']): void {
 		const url = new URL($page.url);
 		url.searchParams.set('tab', next);
 		void goto(url, { replaceState: true, keepFocus: true, noScroll: true });
