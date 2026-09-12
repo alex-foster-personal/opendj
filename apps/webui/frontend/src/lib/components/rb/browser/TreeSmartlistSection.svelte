@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import type { SmartlistSummary } from '$lib/rb/api-smartlists';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { pushToast } from '$lib/stores.svelte';
@@ -18,6 +19,7 @@
 	} = $props();
 
 	const smartlists = new TreeSmartlists(() => onselectsmartlist);
+	onDestroy(() => smartlists.destroy());
 
 	async function deleteSmartlistUi(sl: { id: string; name: string }): Promise<void> {
 		const skip = uiPrefs.confirm.delete_playlist === false;
@@ -37,6 +39,7 @@
 
 <div
 	class="row folder"
+	data-testid="smartlists-folder"
 	role="button"
 	tabindex="0"
 	onclick={() => smartlists.toggle()}
@@ -59,6 +62,10 @@
 		<div class="row child rb-inert">
 			<span class="name dim">...</span>
 		</div>
+	{:else if smartlists.rows.length === 0}
+		<div class="row child rb-inert" data-testid="smartlists-empty">
+			<span class="name dim">no smartlists</span>
+		</div>
 	{:else}
 		{#each smartlists.rows as sl (sl.id)}
 			<div
@@ -68,9 +75,8 @@
 				role="button"
 				tabindex="0"
 				data-testid="smartlist-row"
-				title={onselectsmartlist
-					? sl.rule_summary
-					: 'not implemented - see PARITY-TODO'}
+				data-smartlist-id={sl.id}
+				title={sl.rule_summary}
 				onclick={() => smartlists.click(sl)}
 				onkeydown={(e) => {
 					if (e.key === 'Enter') smartlists.click(sl);
@@ -85,6 +91,7 @@
 					/>
 				</svg>
 				<span class="name" title={sl.rule_summary}>{sl.name}</span>
+				<span class="count">{sl.count ?? '--'}</span>
 			</div>
 		{/each}
 	{/if}
@@ -143,5 +150,15 @@
 	}
 	.gear {
 		flex: none;
+	}
+	.count {
+		flex: none;
+		min-width: 4ch;
+		align-self: stretch;
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		font-variant-numeric: tabular-nums;
+		color: var(--rb-text-dim);
 	}
 </style>
