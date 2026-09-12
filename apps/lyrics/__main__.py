@@ -40,6 +40,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from apps.lyrics.annotations import load_annotations, validate_against_songs
+from apps.lyrics.cli_pipeline import PIPELINE_COMMANDS, add_pipeline_commands, cmd_pipeline
 from apps.lyrics.cli_storage import STORAGE_COMMANDS, add_storage_commands, cmd_storage
 from apps.lyrics.crosscheck import (
     WITNESS_LOCAL_WINDOW_S,
@@ -74,6 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m apps.lyrics")
     subcommands = parser.add_subparsers(dest="command", required=True)
     add_storage_commands(subcommands)
+    add_pipeline_commands(subcommands)
 
     fetch = subcommands.add_parser("fetch", help="fetch and cache line-synced lyrics")
     fetch.add_argument("track", help="stable track id")
@@ -555,6 +557,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     elif args.command in STORAGE_COMMANDS:
         return cmd_storage(args)
+    elif args.command in PIPELINE_COMMANDS:
+        return cmd_pipeline(args)
     else:
         raise AssertionError(f"unhandled command {args.command!r}")
 
