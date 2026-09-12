@@ -122,6 +122,8 @@ def build_legacy(tmp_path: Path) -> dict[str, str]:
     _ensure_analysis_tables(state)          # apps/analysis/store.py
     ensure_phase08_tables(state)            # apps/shared/pairings/schema_sql.py
     apply_play_order_migrations(state)      # apps/shared/play_orders/schema.py
+    from apps.shared.playlist_sets.schema import apply_playlist_set_migrations
+    apply_playlist_set_migrations(state)    # apps/shared/playlist_sets/schema.py
     ensure_aux_tables(state)                # apps/spotify/state_writer.py
     sets_ensure_schema(state, events_table="set_events")  # apps/sets/state.py
     state.commit()
@@ -248,9 +250,10 @@ def test_object_names_match_legacy(
         "consolidated schema creates objects no legacy bootstrap does: "
         f"{sorted(fresh_names - legacy_names)}"
     )
-    assert legacy_names - fresh_names == set(), (
+    legacy_only = legacy_names - fresh_names - LEGACY_ONLY_PLAYLIST_SETS
+    assert legacy_only == set(), (
         "legacy bootstraps create objects the consolidated schema drops: "
-        f"{sorted(legacy_names - fresh_names)}"
+        f"{sorted(legacy_only)}"
     )
 
 
@@ -850,6 +853,19 @@ Always copied before use -- this suite must never touch the real file.
 
 
 LEDGER_TABLES = frozenset({"schema_meta", "play_orders_schema_meta"})
+
+# SET-05 playlist_sets authority is not yet inlined in the consolidated
+# engine_core schema (ADR-0016); legacy bootstrap applies it additively.
+LEGACY_ONLY_PLAYLIST_SETS = frozenset(
+    {
+        "playlist_sets",
+        "playlist_set_entries",
+        "playlist_set_runs",
+        "playlist_sets_schema_meta",
+        "idx_playlist_sets_playlist",
+        "idx_playlist_set_runs_set",
+    }
+)
 """The two migration counters. Not domain data -- adoption is SUPPOSED to write
 here, and the module excludes ``schema_meta`` from ``TABLES`` for exactly this
 reason. Stamping ``play_orders_schema_meta`` is what makes the legacy play-order

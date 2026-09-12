@@ -74,7 +74,8 @@
 		ensureAudioPrefetch,
 		clearSelection,
 		pruneSelection,
-		fetchAllPages
+		fetchAllPages,
+		PlaylistSetTabs
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -3153,6 +3154,9 @@
 				searching={pane.searching}
 			/>
 		{/snippet}
+		{#if pane.kind === 'playlist' && pane.playlist_id !== null}
+			<PlaylistSetTabs playlistId={pane.playlist_id} />
+		{/if}
 		<TrackTable
 			bodyOverlay={libraryLoadOverlay}
 			{provider}

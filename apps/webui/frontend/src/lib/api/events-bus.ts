@@ -53,7 +53,8 @@ export const LIBRARY_KINDS = [
 	'reconcile',
 	'ui_prefs',
 	'pairings',
-	'library_jobs'
+	'library_jobs',
+	'playlist_sets'
 ] as const;
 
 export type LibraryKind = (typeof LIBRARY_KINDS)[number];

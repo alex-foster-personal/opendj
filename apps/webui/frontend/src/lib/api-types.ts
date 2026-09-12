@@ -2859,6 +2859,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playlists/{playlist_id}/sets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sets */
+        get: operations["list_playlist_sets"];
+        put?: never;
+        /** Create Set */
+        post: operations["create_playlist_set"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlists/{playlist_id}/sets/{set_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Set */
+        get: operations["get_playlist_set"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlists/{playlist_id}/sets/{set_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Run */
+        post: operations["create_playlist_set_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playlists/{playlist_id}/tracks": {
         parameters: {
             query?: never;
@@ -8922,6 +8974,76 @@ export interface components {
             name: string;
             /** Playlist Id */
             playlist_id: string;
+        };
+        /** PlaylistSetCreateIn */
+        PlaylistSetCreateIn: {
+            /** From Play Order */
+            from_play_order?: string | null;
+            /** Name */
+            name: string;
+        };
+        /** PlaylistSetEntryOut */
+        PlaylistSetEntryOut: {
+            /** Position */
+            position: number;
+            /** Stable Id */
+            stable_id: string;
+        };
+        /** PlaylistSetListOut */
+        PlaylistSetListOut: {
+            /** Sets */
+            sets: components["schemas"]["PlaylistSetOut"][];
+        };
+        /** PlaylistSetOut */
+        PlaylistSetOut: {
+            /** Created At */
+            created_at: string;
+            /** Entries */
+            entries: components["schemas"]["PlaylistSetEntryOut"][];
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Play Count */
+            play_count: number;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Runs */
+            runs?: components["schemas"]["PlaylistSetRunOut"][] | null;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** PlaylistSetRunIn */
+        PlaylistSetRunIn: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "practice" | "performance";
+        };
+        /** PlaylistSetRunOut */
+        PlaylistSetRunOut: {
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "practice" | "performance";
+        };
+        /** PlaylistSetRunResultOut */
+        PlaylistSetRunResultOut: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "practice" | "performance";
+            /** Play Count */
+            play_count: number;
+            /** Set Id */
+            set_id: number;
         };
         /** PlaylistSummary */
         PlaylistSummary: {
@@ -17002,6 +17124,140 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MembershipMoveOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_playlist_sets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistSetListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_playlist_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistSetCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistSetOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_playlist_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+                set_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistSetOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_playlist_set_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+                set_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistSetRunIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistSetRunResultOut"];
                 };
             };
             /** @description Validation Error */

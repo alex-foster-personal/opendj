@@ -49,3 +49,5 @@ export {
 export { ensureAudioPrefetch } from '$lib/rb/audio-prefetch-cache.svelte';
 export { clearSelection, pruneSelection } from './pane-row-selection';
 export { fetchAllPages } from './virtual-window';
+export { default as PlaylistSetTabs } from './PlaylistSetTabs.svelte';
+export { setTabLabel } from './playlist-set-tabs';

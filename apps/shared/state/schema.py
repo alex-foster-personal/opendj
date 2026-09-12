@@ -192,6 +192,11 @@ FOREIGN_AUTHORITY_TABLES: tuple[str, ...] = (
     "play_orders",
     "play_order_entries",
     "play_orders_schema_meta",
+    # apps/shared/playlist_sets/schema.py (SET-05 private version counter)
+    "playlist_sets",
+    "playlist_set_entries",
+    "playlist_set_runs",
+    "playlist_sets_schema_meta",
     # apps/launcher/scripts/bootstrap_db.py
     "tracks_fts",
     "tracks_fts_config",

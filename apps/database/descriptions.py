@@ -250,6 +250,16 @@ TABLES: dict[str, str] = {
         "Migration bookkeeping for the play-order tables, which arrived with "
         "their own ladder before the consolidated schema existed."
     ),
+    "playlist_sets": (
+        "SET-05 named performance set for a playlist, with its own play count."
+    ),
+    "playlist_set_entries": "One track slot in a playlist_sets snapshot.",
+    "playlist_set_runs": (
+        "Practice or performance run for a playlist set; performance increments play_count."
+    ),
+    "playlist_sets_schema_meta": (
+        "Migration bookkeeping for the playlist_sets tables (SET-05)."
+    ),
     # ----- spotify -------------------------------------------------------
     "spotify_playlist_links": "One mapping between a local playlist and a Spotify playlist.",
     "spotify_playlist_meta": "One Spotify playlist's cached metadata (name, owner, snapshot id).",
