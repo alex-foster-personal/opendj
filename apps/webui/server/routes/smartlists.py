@@ -12,8 +12,9 @@ The rule editor and agents share this router's contract:
   * ``GET  /api/v1/smartlists/{id}``           -- one summary.
   * ``PUT  /api/v1/smartlists/{id}``           -- complete rule replacement,
     requiring the detail response ETag through ``If-Match``.
-  * ``DELETE /api/v1/smartlists/{id}``         -- remove a smartlist (hard
-    delete; no ``deleted_at`` column on this table yet).
+  * ``DELETE /api/v1/smartlists/{id}``         -- tombstone a smartlist
+    (``deleted_at`` set; row retained for recovery in principle).
+  * ``POST /api/v1/smartlists/{id}/duplicate`` -- clone rule under a new id.
   * ``GET  /api/v1/smartlists/{id}/tracks``    -- live evaluation:
     ordered ``items`` (stable_ids) + hydrated ``tracks`` rows shaped
     exactly like playlist detail (:class:`..models.TrackRowOut`).
@@ -44,12 +45,12 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Any, Iterator, Literal
+from typing import Annotated, Any, Iterator
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel, Field
 
 from apps.shared.events import publish
+from apps.shared.pairings.schema_sql import migrate_smartlists_deleted_at
 from apps.shared.smartlists import SmartlistRow, SmartlistRuleError
 from apps.smartlists.evaluator import EvaluatorError, evaluate
 from apps.smartlists.repo import (
@@ -58,18 +59,25 @@ from apps.smartlists.repo import (
     SmartlistsRepoError,
     smartlist_revision,
 )
+from apps.webui.soft_deletes import has_soft_deletes
 
 from .. import rb_vendor
 from ..backend import ConflictError, StateBackend
 from ..deps import get_read_state, get_write_state
 from ..errors import precondition_required
 from ..models import TrackRowOut
+from .smartlists_models import (
+    SmartlistConflictBody,
+    SmartlistCreateIn,
+    SmartlistDuplicateIn,
+    SmartlistPreconditionRequiredBody,
+    SmartlistSummary,
+    SmartlistTracks,
+    SmartlistUpdateIn,
+)
 
 router = APIRouter(prefix="/smartlists", tags=["smartlists"])
 
-# Columns mirror apps/smartlists/repo.py _COLS -- kept local so this
-# router never constructs the repo in write mode (ensure_schema would
-# CREATE TABLE, which a query_only connection rightly refuses).
 _COLS: str = (
     "id, name, rule, rule_schema_version, referenced_fields, order_by, "
     "last_evaluated_at, last_materialized_track_ids, created_at, modified_at"
@@ -91,87 +99,9 @@ _IF_MATCH_OPENAPI_PARAMETER: dict[str, Any] = {
     "description": "Smartlist ETag returned by GET /api/v1/smartlists/{smartlist_id}",
     "schema": {"type": "string"},
 }
-
-
-# ----------------------------------------------------------- schemas
-
-
-class SmartlistSummary(BaseModel):
-    """List/detail row for one smartlist (contract for rule-editor-ui)."""
-
-    id: str
-    name: str
-    # Full rule AST (predicate {field, op, value} / logical {op, children}).
-    rule: dict[str, Any]
-    # One-line human-readable rendering of the AST, e.g.
-    # "(bpm between [120, 130] AND genre contains \"techno\")".
-    rule_summary: str
-    order_by: str
-    referenced_fields: list[str]
-    rule_schema_version: int
-    last_evaluated_at: str | None
-    created_at: str
-    modified_at: str
-    count: int | None = None
-
-
-class SmartlistCreateIn(BaseModel):
-    """Create payload matching ``opendj api POST /api/v1/smartlists``."""
-
-    name: str = Field(min_length=1, description="Display name (non-empty)")
-    rule: dict[str, Any]
-    order_by: str | None = Field(
-        None,
-        description="Sort key; defaults to 'added_date desc' like the CLI",
-    )
-
-
-class SmartlistUpdateIn(BaseModel):
-    """Complete desired rule plus optional replacement ordering."""
-
-    rule: dict[str, Any]
-    order_by: str | None = None
-
-
-class SmartlistConflictBody(BaseModel):
-    """Structured stale-write response with current state and fresh ETag."""
-
-    error: Literal["conflict"] = "conflict"
-    message: str
-    current: SmartlistSummary
-    etag: str
-
-
-class SmartlistPreconditionRequiredBody(BaseModel):
-    """Structured response when an update omits its CAS precondition."""
-
-    error: Literal["precondition_required"] = "precondition_required"
-    message: str
-    details: None = None
-
-
-class SmartlistTracks(BaseModel):
-    """Live evaluation result, shaped like playlist detail.
-
-    ``items`` is the full ordered membership (stable_ids, evaluator
-    order); ``tracks`` are hydrated rows in the SAME order, field-for-
-    field identical to the playlist-detail ``tracks`` rows so browser
-    table components render either without branching.
-    """
-
-    smartlist_id: str
-    name: str
-    rule_summary: str
-    order_by: str
-    items: list[str]
-    tracks: list[TrackRowOut]
-
-
 _POST_RESPONSES: dict[int | str, dict[str, Any]] = {
     201: {"headers": _ETAG_RESPONSE_HEADER},
 }
-
-
 _PUT_RESPONSES: dict[int | str, dict[str, Any]] = {
     200: {"headers": _ETAG_RESPONSE_HEADER},
     409: {
@@ -186,20 +116,15 @@ _PUT_RESPONSES: dict[int | str, dict[str, Any]] = {
 }
 
 
-# ----------------------------------------------------------- _helpers
-
-
 def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt is not None else None
 
 
 def _etag(revision: str) -> str:
-    """Project a domain revision as one strong, opaque HTTP entity tag."""
     return f'"{revision}"'
 
 
 def _revision_from_if_match(if_match: str) -> str:
-    """Decode exactly one strong quoted validator; malformed tags go stale."""
     if (
         len(if_match) >= 2
         and if_match.startswith('"')
@@ -209,8 +134,15 @@ def _revision_from_if_match(if_match: str) -> str:
     return f"invalid-if-match:{if_match}"
 
 
+def _live_filter(conn: sqlite3.Connection) -> str:
+    if not _table_exists(conn, "smartlists"):
+        return ""
+    if has_soft_deletes(conn, "smartlists"):
+        return " AND (deleted_at IS NULL OR deleted_at = '')"
+    return ""
+
+
 def summarize_rule(rule: dict[str, Any]) -> str:
-    """One-line human rendering of a rule AST (tree tooltips / list rows)."""
     if "field" in rule:
         return (
             f"{rule['field']} {rule['op']} "
@@ -252,8 +184,6 @@ def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
 
 
 def _row_to_model(row: tuple) -> SmartlistRow:
-    """Project a ``smartlists`` row (repo.py column order) read-only."""
-
     def _parse(value: str | None) -> datetime | None:
         return datetime.fromisoformat(value) if value else None
 
@@ -273,17 +203,6 @@ def _row_to_model(row: tuple) -> SmartlistRow:
 
 
 def get_smartlists_conn(request: Request) -> Iterator[sqlite3.Connection]:
-    """Read-only sqlite conn on the daemon's state.db (query_only guard).
-
-    503s explicitly when state.db is absent -- an InMemoryBackend deploy
-    has no smartlists store and we never mock one.
-
-    check_same_thread=False (unlike state_db.open_ro): FastAPI runs sync
-    dependencies and sync endpoints on DIFFERENT threadpool threads, so a
-    conn created here with the sqlite default raises ProgrammingError in
-    the endpoint under load. Read-only + query_only + per-request scope
-    makes cross-thread use safe (found live in the e2e-gating round).
-    """
     db_path = Path(
         getattr(request.app.state, "state_db_path", "data/state/state.db")
     )
@@ -308,7 +227,6 @@ def get_smartlists_conn(request: Request) -> Iterator[sqlite3.Connection]:
 
 
 def get_smartlists_write_conn(request: Request) -> Iterator[sqlite3.Connection]:
-    """Writable, autocommit connection for explicit smartlist updates."""
     db_path = Path(
         getattr(request.app.state, "state_db_path", "data/state/state.db")
     )
@@ -331,9 +249,11 @@ def get_smartlists_write_conn(request: Request) -> Iterator[sqlite3.Connection]:
 def _fetch_smartlist(
     conn: sqlite3.Connection, smartlist_id: str,
 ) -> SmartlistRow:
+    live = _live_filter(conn)
     if _table_exists(conn, "smartlists"):
         raw = conn.execute(
-            f"SELECT {_COLS} FROM smartlists WHERE id=?", (smartlist_id,),
+            f"SELECT {_COLS} FROM smartlists WHERE id=?{live}",
+            (smartlist_id,),
         ).fetchone()
     else:
         raw = None
@@ -345,7 +265,16 @@ def _fetch_smartlist(
     return _row_to_model(raw)
 
 
-# ----------------------------------------------------------- endpoints
+def _repo_error_to_http(exc: SmartlistsRepoError) -> HTTPException:
+    if "already exists" in str(exc):
+        return HTTPException(status_code=409, detail={
+            "code": "SMARTLIST_NAME_CONFLICT",
+            "message": str(exc),
+        })
+    return HTTPException(status_code=422, detail={
+        "code": "SMARTLIST_RULE_INVALID",
+        "message": str(exc),
+    })
 
 
 @router.get("", response_model=list[SmartlistSummary])
@@ -356,14 +285,11 @@ def list_smartlists(
     ),
     conn: sqlite3.Connection = Depends(get_smartlists_conn),
 ) -> list[SmartlistSummary]:
-    # The smartlists table is created lazily by the first CRUD write
-    # (ensure_phase08_tables). On a state.db that predates Phase 08 its
-    # absence IS the true state -- zero smartlists defined -- not a
-    # failure to mask, so an empty list is the honest answer.
     if not _table_exists(conn, "smartlists"):
         return []
+    live = _live_filter(conn)
     raw_rows = conn.execute(
-        f"SELECT {_COLS} FROM smartlists ORDER BY name"
+        f"SELECT {_COLS} FROM smartlists WHERE 1=1{live} ORDER BY name"
     ).fetchall()
     rows = [_row_to_model(raw) for raw in raw_rows]
     if not include_counts:
@@ -391,7 +317,6 @@ def create_smartlist(
     _backend: Annotated[StateBackend, Depends(get_write_state)],
     conn: Annotated[sqlite3.Connection, Depends(get_smartlists_write_conn)],
 ) -> SmartlistSummary:
-    """Persist a new smartlist and return the created summary plus ETag."""
     try:
         row = SmartlistsRepo(conn).create(
             body.name,
@@ -404,15 +329,7 @@ def create_smartlist(
             "message": str(exc),
         }) from exc
     except SmartlistsRepoError as exc:
-        if "already exists" in str(exc):
-            raise HTTPException(status_code=409, detail={
-                "code": "SMARTLIST_NAME_CONFLICT",
-                "message": str(exc),
-            }) from exc
-        raise HTTPException(status_code=422, detail={
-            "code": "SMARTLIST_RULE_INVALID",
-            "message": str(exc),
-        }) from exc
+        raise _repo_error_to_http(exc) from exc
     response.headers["ETag"] = _etag(smartlist_revision(row))
     publish("library.changed", {"kind": "smartlists", "ids": [row.id]})
     return _to_summary(row)
@@ -447,19 +364,20 @@ def update_smartlist(
     _backend: StateBackend = Depends(get_write_state),
     conn: sqlite3.Connection = Depends(get_smartlists_write_conn),
 ) -> SmartlistSummary | Response:
-    """CAS-apply a complete rule replacement and return persisted readback."""
     if_match = request.headers.get("If-Match")
     if if_match is None:
         return precondition_required(
             "PUT /smartlists/{smartlist_id} requires If-Match header"
         )
     _fetch_smartlist(conn, smartlist_id)
+    migrate_smartlists_deleted_at(conn)
     try:
         row = SmartlistsRepo(conn, ensure_schema=False).update_rule(
             smartlist_id,
             body.rule,
             expected_revision=_revision_from_if_match(if_match),
             order_by=body.order_by,
+            name=body.name,
         )
     except SmartlistRevisionConflict as exc:
         current_etag = _etag(exc.current_revision)
@@ -467,11 +385,13 @@ def update_smartlist(
             _to_summary(exc.current).model_dump(mode="json"),
             current_etag,
         ) from exc
-    except (SmartlistRuleError, SmartlistsRepoError) as exc:
+    except SmartlistRuleError as exc:
         raise HTTPException(status_code=422, detail={
             "code": "SMARTLIST_RULE_INVALID",
             "message": str(exc),
         }) from exc
+    except SmartlistsRepoError as exc:
+        raise _repo_error_to_http(exc) from exc
     response.headers["ETag"] = _etag(smartlist_revision(row))
     publish("library.changed", {"kind": "smartlists", "ids": [smartlist_id]})
     return _to_summary(row)
@@ -486,12 +406,13 @@ def delete_smartlist(
     _backend: Annotated[StateBackend, Depends(get_write_state)],
     conn: Annotated[sqlite3.Connection, Depends(get_smartlists_write_conn)],
 ) -> Response:
-    """Remove a smartlist row (hard delete via SmartlistsRepo.delete)."""
+    """Tombstone a smartlist row (soft delete via SmartlistsRepo.delete)."""
     if not _table_exists(conn, "smartlists"):
         raise HTTPException(status_code=404, detail={
             "code": "SMARTLIST_NOT_FOUND",
             "message": f"smartlist not found: {smartlist_id}",
         })
+    migrate_smartlists_deleted_at(conn)
     removed = SmartlistsRepo(conn, ensure_schema=False).delete(smartlist_id)
     if not removed:
         raise HTTPException(status_code=404, detail={
@@ -500,6 +421,38 @@ def delete_smartlist(
         })
     publish("library.changed", {"kind": "smartlists", "ids": [smartlist_id]})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{smartlist_id}/duplicate",
+    response_model=SmartlistSummary,
+    status_code=status.HTTP_201_CREATED,
+    responses=_POST_RESPONSES,
+)
+def duplicate_smartlist(
+    smartlist_id: str,
+    response: Response,
+    _backend: Annotated[StateBackend, Depends(get_write_state)],
+    conn: Annotated[sqlite3.Connection, Depends(get_smartlists_write_conn)],
+    body: SmartlistDuplicateIn | None = None,
+) -> SmartlistSummary:
+    _fetch_smartlist(conn, smartlist_id)
+    migrate_smartlists_deleted_at(conn)
+    try:
+        row = SmartlistsRepo(conn, ensure_schema=False).duplicate(
+            smartlist_id,
+            name=body.name if body is not None else None,
+        )
+    except SmartlistsRepoError as exc:
+        if "not found" in str(exc):
+            raise HTTPException(status_code=404, detail={
+                "code": "SMARTLIST_NOT_FOUND",
+                "message": str(exc),
+            }) from exc
+        raise _repo_error_to_http(exc) from exc
+    response.headers["ETag"] = _etag(smartlist_revision(row))
+    publish("library.changed", {"kind": "smartlists", "ids": [row.id]})
+    return _to_summary(row)
 
 
 @router.get("/{smartlist_id}/tracks", response_model=SmartlistTracks)
@@ -518,14 +471,11 @@ def get_smartlist_tracks(
             row.rule, conn, order_by=row.order_by, limit=limit,
         )
     except SmartlistRuleError as exc:
-        # Stored rule no longer validates = corrupt row. Fail loudly;
-        # never evaluate a partial rule.
         raise HTTPException(status_code=500, detail={
             "code": "SMARTLIST_RULE_INVALID",
             "message": f"smartlist {smartlist_id}: {exc}",
         }) from exc
     except EvaluatorError as exc:
-        # Phase 5 tracks/track_fields tables missing (pre-ingest DB).
         raise HTTPException(status_code=503, detail={
             "code": "SMARTLIST_EVAL_UNAVAILABLE",
             "message": str(exc),
@@ -534,8 +484,6 @@ def get_smartlist_tracks(
     tracks_map = backend.get_tracks_bulk(stable_ids)
     missing = [sid for sid in stable_ids if sid not in tracks_map]
     if missing:
-        # Evaluator ids the backend cannot hydrate = state/backend
-        # divergence; fail loudly, never render invented rows.
         raise HTTPException(status_code=500, detail={
             "code": "SMARTLIST_MEMBER_MISSING",
             "message": (
@@ -556,6 +504,7 @@ def get_smartlist_tracks(
 
 __all__ = [
     "SmartlistCreateIn",
+    "SmartlistDuplicateIn",
     "SmartlistSummary",
     "SmartlistTracks",
     "SmartlistUpdateIn",

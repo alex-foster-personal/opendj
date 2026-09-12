@@ -14454,6 +14454,25 @@
         "title": "SmartlistCreateIn",
         "type": "object"
       },
+      "SmartlistDuplicateIn": {
+        "description": "Optional name override for a duplicated smartlist.",
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "SmartlistDuplicateIn",
+        "type": "object"
+      },
       "SmartlistPreconditionRequiredBody": {
         "description": "Structured response when an update omits its CAS precondition.",
         "properties": {
@@ -14560,7 +14579,7 @@
         "type": "object"
       },
       "SmartlistTracks": {
-        "description": "Live evaluation result, shaped like playlist detail.\n\n``items`` is the full ordered membership (stable_ids, evaluator\norder); ``tracks`` are hydrated rows in the SAME order, field-for-\nfield identical to the playlist-detail ``tracks`` rows so browser\ntable components render either without branching.",
+        "description": "Live evaluation result, shaped like playlist detail.",
         "properties": {
           "items": {
             "items": {
@@ -14605,8 +14624,20 @@
         "type": "object"
       },
       "SmartlistUpdateIn": {
-        "description": "Complete desired rule plus optional replacement ordering.",
+        "description": "Complete desired rule plus optional replacement ordering and name.",
         "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
           "order_by": {
             "anyOf": [
               {
@@ -28310,7 +28341,6 @@
         ]
       },
       "post": {
-        "description": "Persist a new smartlist and return the created summary plus ETag.",
         "operationId": "create_smartlist_api_v1_smartlists_post",
         "requestBody": {
           "content": {
@@ -28360,7 +28390,7 @@
     },
     "/api/v1/smartlists/{smartlist_id}": {
       "delete": {
-        "description": "Remove a smartlist row (hard delete via SmartlistsRepo.delete).",
+        "description": "Tombstone a smartlist row (soft delete via SmartlistsRepo.delete).",
         "operationId": "delete_smartlist_api_v1_smartlists__smartlist_id__delete",
         "parameters": [
           {
@@ -28442,7 +28472,6 @@
         ]
       },
       "put": {
-        "description": "CAS-apply a complete rule replacement and return persisted readback.",
         "operationId": "update_smartlist_api_v1_smartlists__smartlist_id__put",
         "parameters": [
           {
@@ -28533,6 +28562,73 @@
           }
         },
         "summary": "Update Smartlist",
+        "tags": [
+          "smartlists"
+        ]
+      }
+    },
+    "/api/v1/smartlists/{smartlist_id}/duplicate": {
+      "post": {
+        "operationId": "duplicate_smartlist_api_v1_smartlists__smartlist_id__duplicate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "smartlist_id",
+            "required": true,
+            "schema": {
+              "title": "Smartlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SmartlistDuplicateIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartlistSummary"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the complete persisted smartlist row",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Duplicate Smartlist",
         "tags": [
           "smartlists"
         ]
