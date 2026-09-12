@@ -6,9 +6,11 @@ row-7 comment. Headed attach stays UNOBSERVED / needs:mac until that comment
 exists. This observer never writes a ``row=7 sha=`` marker: that marker is
 owned by ``ops/dmg-smoke/run.sh`` on the Air.
 
-Exit codes: 0 instrument ok (mac may be UNOBSERVED), 1 instrument broken,
-2 UNKNOWN (ledger unreadable). A failed read is never rendered as
-UNOBSERVED.
+Exit codes: 0 instrument ok (mac may be UNOBSERVED), 1 instrument broken
+or headed evidence is not a fresh PASS with positive counts, 2 UNKNOWN
+(ledger unreadable). A failed read is never rendered as UNOBSERVED. A
+parseable headed FAIL, a purported PASS with zero tracks or playlists, or
+evidence older than the 7-day clock is a failing verdict, never EXIT_OK.
 
     python -m scripts.dmg_smoke_cadence_observe
     python -m scripts.dmg_smoke_cadence_observe --root /path --ledger-issue 1492
@@ -24,6 +26,7 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -54,6 +57,7 @@ COUNTS_RE = re.compile(r"- tracks: (\d+) playlists: (\d+)")
 HOST_RE = re.compile(r"^- host: (\S+)", re.M)
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 SUMMARY_PREFIX = "[dmg-smoke-cadence]"
+CLOCK_DAYS = 7
 
 
 def _gh_env() -> dict[str, str]:
@@ -136,11 +140,56 @@ def parse_headed_run(comment: dict) -> HeadedRun | None:
     )
 
 
+def parse_created_at(value: str) -> datetime | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    try:
+        then = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=UTC)
+    return then.astimezone(UTC)
+
+
+def _parse_now_arg(value: str) -> datetime:
+    parsed = parse_created_at(value)
+    if parsed is None:
+        raise argparse.ArgumentTypeError(f"unparseable --now {value!r}")
+    return parsed
+
+
+def elapsed_days_since(created_at: str, now: datetime) -> int | None:
+    then = parse_created_at(created_at)
+    if then is None:
+        return None
+    current = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    return int((current - then).total_seconds() // 86400)
+
+
+def headed_is_pass(headed: HeadedRun) -> bool:
+    return headed.result == "PASS" and headed.tracks > 0 and headed.playlists > 0
+
+
+def headed_is_fresh(headed: HeadedRun, now: datetime, clock_days: int) -> bool:
+    age = elapsed_days_since(headed.created_at, now)
+    if age is None:
+        return False
+    return age < clock_days
+
+
 def latest_headed(comments: Sequence[dict]) -> HeadedRun | None:
     found = [run for run in (parse_headed_run(c) for c in comments) if run is not None]
     if not found:
         return None
-    return found[-1]
+
+    def sort_key(run: HeadedRun) -> tuple[int, str]:
+        parsed = parse_created_at(run.created_at)
+        stamp = parsed.isoformat() if parsed is not None else ""
+        return (1 if parsed is not None else 0, stamp)
+
+    return max(found, key=sort_key)
 
 
 def fetch_comments(repo: str, issue: int) -> list[dict]:
@@ -168,7 +217,13 @@ def fetch_comments(repo: str, issue: int) -> list[dict]:
     return comments
 
 
-def summary_line(*, findings: Sequence[str], headed: HeadedRun | None) -> str:
+def summary_line(
+    *,
+    findings: Sequence[str],
+    headed: HeadedRun | None,
+    now: datetime | None = None,
+    clock_days: int = CLOCK_DAYS,
+) -> str:
     if findings:
         return f"{SUMMARY_PREFIX} instrument=FAIL " + "; ".join(findings)
     if headed is None:
@@ -176,11 +231,23 @@ def summary_line(*, findings: Sequence[str], headed: HeadedRun | None) -> str:
             f"{SUMMARY_PREFIX} instrument=ok mac=UNOBSERVED needs:mac "
             "headed_comments=0"
         )
-    return (
-        f"{SUMMARY_PREFIX} instrument=ok mac=OBSERVED result={headed.result} "
+    age = elapsed_days_since(headed.created_at, now) if now is not None else None
+    stale = now is None or not headed_is_fresh(headed, now, clock_days)
+    if not headed_is_pass(headed):
+        mac = "FAIL"
+    elif stale:
+        mac = "STALE"
+    else:
+        mac = "OBSERVED"
+    line = (
+        f"{SUMMARY_PREFIX} instrument=ok mac={mac} result={headed.result} "
         f"tracks={headed.tracks} playlists={headed.playlists} "
         f"at={headed.created_at} host={headed.host}"
     )
+    if stale:
+        age_token = str(age) if age is not None else "unknown"
+        line += f" age_days={age_token} clock_days={clock_days}"
+    return line
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -188,11 +255,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
     parser.add_argument("--repo", default=DEFAULT_REPO)
     parser.add_argument("--ledger-issue", type=int, default=DEFAULT_LEDGER_ISSUE)
+    parser.add_argument(
+        "--now",
+        type=_parse_now_arg,
+        default=None,
+        help="UTC ISO timestamp for the 7-day clock (tests). Default: now.",
+    )
+    parser.add_argument(
+        "--clock-days",
+        type=int,
+        default=CLOCK_DAYS,
+        help="Maximum age in whole days for headed evidence (default: 7).",
+    )
     args = parser.parse_args(argv)
+    now = args.now if args.now is not None else datetime.now(UTC)
 
     findings = instrument_findings(args.root)
     if findings:
-        print(summary_line(findings=findings, headed=None))
+        print(
+            summary_line(
+                findings=findings, headed=None, now=now, clock_days=args.clock_days
+            )
+        )
         return EXIT_FINDINGS
 
     try:
@@ -203,8 +287,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_UNKNOWN
 
     headed = latest_headed(comments)
-    print(summary_line(findings=(), headed=headed))
-    return EXIT_OK
+    print(
+        summary_line(
+            findings=(), headed=headed, now=now, clock_days=args.clock_days
+        )
+    )
+    if headed is None:
+        return EXIT_OK
+    if headed_is_pass(headed) and headed_is_fresh(headed, now, args.clock_days):
+        return EXIT_OK
+    return EXIT_FINDINGS
 
 
 if __name__ == "__main__":
