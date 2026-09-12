@@ -11,6 +11,7 @@
 	import { onMount, tick, untrack } from 'svelte';
 	import { viewportFloatingPopover } from '$lib/ui/clamp-to-viewport';
 	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
+	import { shouldRunLibraryFallbackPoll } from '$lib/rb/app-posture';
 	import {
 		ConflictError,
 		RbApiError,
@@ -854,16 +855,15 @@
 			_libraryRefreshGate.request();
 		});
 		// DEGRADED PATH: the poll is deliberately kept, not deleted. When the
-		// WS is down (daemon restarting, engine built without the hub) it is
-		// the only thing keeping this pane honest. It is 60s rather than
-		// aggressive because it is a fallback, and it stands down entirely
-		// while the bus is open, where it would only duplicate work the
-		// subscriptions above already do on demand.
-		const LIBRARY_FALLBACK_POLL_MS = 60_000;
+		// WS is down it is the only thing keeping this pane honest. Poll follows
+		// Gig/Prep posture and stands down while the bus is open.
+		let lastLibraryFallbackAt = 0;
 		const libraryFallbackTimer = setInterval(() => {
-			if (getConnectionState() === 'open') return;
+			const now = Date.now();
+			if (!shouldRunLibraryFallbackPoll(now, lastLibraryFallbackAt, getConnectionState() === 'open')) return;
+			lastLibraryFallbackAt = now;
 			_libraryRefreshGate.request();
-		}, LIBRARY_FALLBACK_POLL_MS);
+		}, 60_000);
 
 		return () => {
 			uninstallBrowserSortIpc();

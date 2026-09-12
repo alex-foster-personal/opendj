@@ -24,6 +24,7 @@ import {
 	setLyricsLoadStrategy,
 	setLyricsWaveformOverlay,
 	setNextOnlyFilter,
+	setAppPosture,
 	setPerfTier,
 	setRemixesFilter,
 	setTechnicallyWorkingAnimate,
@@ -35,6 +36,7 @@ import {
 	type DeckLayoutMode,
 	type LibraryDensity,
 	type LyricsLoadStrategy,
+	type AppPosturePref,
 	type PerfTierPref,
 	type UiTheme
 } from '$lib/rb/prefs.svelte';
@@ -74,7 +76,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'confirm.dblclick_load_play',
 	'wheel_sensitivity.mouse',
 	'wheel_sensitivity.trackpad',
-	'perf_tier'
+	'perf_tier',
+	'app_posture'
 ] as const;
 
 export type AllowedSettingKey = (typeof ALLOWED_SETTING_KEYS)[number];
@@ -147,6 +150,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return String(wheelSensitivity().trackpad);
 		case 'perf_tier':
 			return uiPrefs.perf_tier;
+		case 'app_posture':
+			return uiPrefs.app_posture;
 		default: {
 			const _exhaustive: never = key;
 			throw new Error(`Unhandled setting key: ${_exhaustive}`);
@@ -280,6 +285,13 @@ export function applySettingChange(key: string, value: SettingValue): void {
 				throw new Error(`perf_tier must be auto|low|standard|high, got ${String(value)}`);
 			}
 			setPerfTier(value as PerfTierPref);
+			return;
+		}
+		case 'app_posture': {
+			if (value !== 'prep' && value !== 'gig') {
+				throw new Error(`app_posture must be prep|gig, got ${String(value)}`);
+			}
+			setAppPosture(value as AppPosturePref);
 			return;
 		}
 		default: {

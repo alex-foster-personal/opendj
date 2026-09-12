@@ -23,15 +23,18 @@
  */
 import { audioUrl } from '$lib/rb/api-rb';
 import { recordAudioPrefetchSampled } from '$lib/rb/library-perf';
+import { prefetchByteCapForPosture, prefetchTrackCapForPosture, setResolvedPosture } from '$lib/rb/app-posture';
 import { prefetchByteCap, prefetchTrackCap } from '$lib/rb/perf-tier';
+
+export { setResolvedPosture };
 
 /** Soft cap on how many full files stay warm. Tier-driven via perf-tier. */
 export function MAX_AUDIO_PREFETCH_TRACKS(): number {
-	return prefetchTrackCap();
+	return prefetchTrackCapForPosture(prefetchTrackCap());
 }
 /** Hard byte budget. Tier-driven via perf-tier. */
 export function MAX_AUDIO_PREFETCH_BYTES(): number {
-	return prefetchByteCap();
+	return prefetchByteCapForPosture(prefetchByteCap());
 }
 
 export type AudioPrefetchStatus = 'loading' | 'ready' | 'error';

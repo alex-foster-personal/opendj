@@ -77,6 +77,14 @@ test('perf_tier is searchable under tier and performance', async () => {
 	assert.ok(perf.keyword.some((s) => s.id === 'perf_tier'));
 });
 
+test('app_posture is searchable under gig and prep', async () => {
+	const mod = await loadTypeScriptModule('src/lib/settings/search.ts');
+	const gig = mod.filterSettings('gig', { hideTodo: true, group: null });
+	assert.ok(gig.keyword.some((s) => s.id === 'app_posture'));
+	const prep = mod.filterSettings('prep', { hideTodo: true, group: null });
+	assert.ok(prep.keyword.some((s) => s.id === 'app_posture'));
+});
+
 test('keyboard helpers move and toggle booleans', async () => {
 	const mod = await loadTypeScriptModule('src/lib/settings/keyboard.ts');
 	assert.equal(mod.moveSelection(0, 1, 3), 1);

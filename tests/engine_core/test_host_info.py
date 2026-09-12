@@ -133,3 +133,4 @@ def test_engine_registers_host_and_perf_tier_before_spa_mount() -> None:
     spa = source.index("_mount_spa(app)")
     assert source.index("add_host_info_route(") < spa
     assert source.index("add_perf_tier_route(") < spa
+    assert source.index("add_app_posture_route(") < spa
