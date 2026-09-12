@@ -30,7 +30,17 @@ export const KNOB_CFG = {
 
 // ----- types -----
 
-export type KnobRole = 'trim' | 'high' | 'mid' | 'low' | 'filter' | 'hp-mix' | 'hp-level';
+export type KnobRole =
+	| 'trim'
+	| 'high'
+	| 'mid'
+	| 'low'
+	| 'filter'
+	| 'hp-mix'
+	| 'hp-level'
+	| 'stem-vocal'
+	| 'stem-instrumental'
+	| 'stem-drums';
 
 export interface KnobRef {
 	id: string;

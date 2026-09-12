@@ -153,7 +153,7 @@ export function masterPathGain(
  *  Calls the PRODUCTION law, `stemPartGains` in `rb/stem-graph.ts`, which is
  *  the same function `AlignedStemDeckProcessor.setControls` writes to the gain
  *  nodes. Reusing it rather than mirroring it is what makes this exact: it
- *  already returns 0 or 1 per part with no threshold, and it already knows the
+ *  already returns a per-part gain with no threshold, and it already knows the
  *  two rules a re-implementation here would have had to rediscover.
  *
  *  Mute alone is NOT the test, which is where the first attempt at this was

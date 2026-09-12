@@ -56,7 +56,7 @@ ANALYSIS_SOURCE_VALUES: tuple[str, ...] = ("rekordbox", "own")
 # The command types AGENT-03 will ramp. An ordering that carries a target must
 # be one of these, mirroring the guard in the page's own ramp executor
 # (apps/webui/frontend/src/lib/rb/agent-orders.ts).
-RAMPABLE_TYPES: frozenset[str] = frozenset({"eq", "fader", "trim", "filter"})
+RAMPABLE_TYPES: frozenset[str] = frozenset({"eq", "fader", "trim", "filter", "stem_gain"})
 
 _DECK = arg("deck", "deck", deck_value, "1-4")
 _ENABLED = arg("enabled", "bool", bool_value, "true|false")
@@ -189,6 +189,10 @@ _VERBS: tuple[Verb, ...] = (
     Verb("master_tempo", "master_tempo", (_DECK, _ENABLED), quick_draws=("master_tempo.toggle",)),
     Verb("stem_mute", "stem_mute", (_DECK, _STEM, arg("muted", "bool", bool_value, "true|false"))),
     Verb("stem_solo", "stem_solo", (_DECK, _STEM, arg("solo", "bool", bool_value, "true|false"))),
+    Verb("stem_eq_mode", "stem_eq_mode", (_DECK, _ENABLED),
+         observes=(Observe(("mixer", "channels", "{deck}", "stem_eq_mode"), "enabled"),)),
+    Verb("stem_gain", "stem_gain", (_DECK, _STEM, _UNIT),
+         observes=(Observe(("decks", "{deck}", "stems", "controls", "{stem}", "gain"), "value", 1e-6),)),
     Verb("slip", "slip", (_DECK, _ENABLED), quick_draws=("slip.toggle",)),
     Verb("key_sync", "key_sync", (_DECK, _ENABLED), quick_draws=("key_sync.toggle",)),
     Verb("key_nudge", "key_nudge", (

@@ -70,9 +70,31 @@ test('solo matrix gates every non-solo group and explicit mute wins over solo', 
 	});
 });
 
+test('stem gain defaults to unity and mute still wins', () => {
+	const controls = stems.createDefaultStemControls();
+	assert.deepEqual(stems.stemPartGains(controls), {
+		vocals: 1,
+		drums: 1,
+		bass: 1,
+		other: 1
+	});
+	controls.vocal.gain = 0;
+	assert.deepEqual(stems.stemPartGains(controls).vocals, 0);
+	controls.vocal.gain = 0.5;
+	controls.vocal.muted = true;
+	assert.deepEqual(stems.stemPartGains(controls).vocals, 0);
+});
+
+test('roformer2 instrumental gain drives the instrumental part', () => {
+	const controls = stems.createDefaultStemControls();
+	controls.instrumental.gain = 0.25;
+	const gains = stems.stemPartGains(controls, 'roformer2');
+	assert.equal(gains.instrumental, 0.5);
+});
+
 test('stem controls and part maps reject incomplete keys instead of defaulting', () => {
 	assert.throws(
-		() => stems.stemPartGains({ vocal: { muted: false, solo: false } }),
+		() => stems.stemPartGains({ vocal: { muted: false, solo: false, gain: 0.5 } }),
 		/stem controls/i
 	);
 	assert.throws(

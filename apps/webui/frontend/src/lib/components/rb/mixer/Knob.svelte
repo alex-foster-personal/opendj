@@ -45,10 +45,21 @@
 		tone?: 'accent' | 'white' | 'rainbow';
 		/** Rendered dial diameter in px. The caption-inclusive wrapper is the hit area. */
 		size?: number;
+		/** When set, indicator and label use this color and EQ warn overlays are suppressed. */
+		accentColor?: string;
 	}
 
-	let { knobId, label, accessibleLabel, value, onchange, inert = false, tone = 'accent', size = 30 }: Props =
-		$props();
+	let {
+		knobId,
+		label,
+		accessibleLabel,
+		value,
+		onchange,
+		inert = false,
+		tone = 'accent',
+		size = 30,
+		accentColor
+	}: Props = $props();
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 	const SWEEP_DEG = 270; // -135deg .. +135deg like rekordbox knobs
@@ -61,6 +72,7 @@
 			`--knob-dial-size: ${size}px; ` +
 			`--knob-caption-size: 8px; ` +
 			`--knob-caption-gap: 1px; ` +
+			(accentColor ? `--knob-accent-color: ${accentColor}; ` : '') +
 			`--knob-rainbow-0: ${RAINBOW_STOPS[0]}; ` +
 			`--knob-rainbow-1: ${RAINBOW_STOPS[1]}; ` +
 			`--knob-rainbow-2: ${RAINBOW_STOPS[2]}; ` +
@@ -89,6 +101,7 @@
 	const angleDeg = $derived((value - 0.5) * SWEEP_DEG);
 	/** |offset| from center: >0.15 (~30% of half-throw) orange, >0.25 (~50%) red. */
 	const warn = $derived.by((): 'none' | 'orange' | 'red' => {
+		if (accentColor) return 'none';
 		const d = Math.abs(value - 0.5);
 		if (d > 0.25) return 'red';
 		if (d > 0.15) return 'orange';
@@ -162,6 +175,7 @@
 	class:knob-linked={linked}
 	class:warn-orange={warn === 'orange'}
 	class:warn-red={warn === 'red'}
+	class:knob-stem-accent={accentColor !== undefined}
 	data-knob-id={knobId}
 	data-testid={`knob-${knobId}`}
 	role="slider"
@@ -299,5 +313,15 @@
 		letter-spacing: 0.04em;
 		color: var(--rb-text-dim);
 		line-height: 1;
+	}
+	.knob.knob-stem-accent .indicator:not(.white):not(.rainbow) {
+		stroke: var(--knob-accent-color);
+	}
+	.knob.knob-stem-accent .label {
+		color: var(--knob-accent-color);
+	}
+	.knob.knob-stem-accent .cap {
+		stroke: color-mix(in srgb, var(--knob-accent-color) 70%, #101318);
+		fill: color-mix(in srgb, var(--knob-accent-color) 18%, #23272f);
 	}
 </style>

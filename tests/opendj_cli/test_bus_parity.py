@@ -178,7 +178,7 @@ def test_a_duration_without_a_unit_is_refused() -> None:
 def test_the_rampable_types_match_the_pages_own_ramp_guard() -> None:
     """agent-orders.ts refuses a ramp over anything but these four."""
 
-    assert {"eq", "fader", "trim", "filter"} == RAMPABLE_TYPES
+    assert {"eq", "fader", "trim", "filter", "stem_gain"} == RAMPABLE_TYPES
 
 
 def test_anchors_are_the_three_the_duration_type_declares() -> None:

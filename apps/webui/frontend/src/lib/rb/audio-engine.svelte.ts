@@ -196,6 +196,7 @@ import {
 	unavailableStemDeckState,
 	type StemBuffers
 } from '$lib/rb/stem-graph';
+import { applyStemControl, applyStemEqMode } from '$lib/rb/stem-engine-controls';
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { AudioEngine, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
@@ -4037,49 +4038,30 @@ class RbAudioEngine implements AudioEngine {
 
 	setStemMute(deck: DeckId, stem: StemControl, muted: boolean): void {
 		if (typeof muted !== 'boolean') throw new TypeError('setStemMute: muted must be boolean');
-		this._setStemControl(deck, stem, 'muted', muted);
+		applyStemControl(deck, stem, 'muted', muted, {
+			requireLoaded: _requireLoaded,
+			getChannel: (d) => mixerState.channels[d]
+		});
 	}
 
 	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean): void {
 		if (typeof solo !== 'boolean') throw new TypeError('setStemSolo: solo must be boolean');
-		this._setStemControl(deck, stem, 'solo', solo);
+		applyStemControl(deck, stem, 'solo', solo, {
+			requireLoaded: _requireLoaded,
+			getChannel: (d) => mixerState.channels[d]
+		});
 	}
 
-	private _setStemControl(
-		deck: DeckId,
-		stem: StemControl,
-		field: 'muted' | 'solo',
-		value: boolean
-	): void {
-		if (!STEM_CONTROLS.includes(stem)) {
-			throw new TypeError(`stem must be vocal, instrumental, or drums; got ${String(stem)}`);
-		}
-		const { st, rt } = _requireLoaded(deck, `setStem${field === 'muted' ? 'Mute' : 'Solo'}`);
-		if (
-			st.stems.status === 'ready' &&
-			!st.stems.available_controls.includes(stem)
-		) {
-			// e.g. DRUMS on a roformer2 bundle: the signal is inside
-			// `instrumental`, so there is nothing to gain to zero. Refuse loudly
-			// rather than accept a control change that can never be heard.
-			throw new Error(
-				`deck ${deck} stem layout ${String(st.stems.layout)} has no ${stem} control; ` +
-					`available: ${st.stems.available_controls.join(', ')}`
-			);
-		}
-		if (st.stems.status !== 'ready' || !(rt.processor instanceof AlignedStemDeckProcessor)) {
-			throw new Error(
-				`deck ${deck} stems are ${st.stems.status}: ${st.stems.error ?? 'no aligned artifact'}`
-			);
-		}
-		const controls = {
-			vocal: { ...st.stems.controls.vocal },
-			instrumental: { ...st.stems.controls.instrumental },
-			drums: { ...st.stems.controls.drums }
-		};
-		controls[stem][field] = value;
-		rt.processor.setControls(controls);
-		st.stems.controls = controls;
+	setStemGain(deck: DeckId, stem: StemControl, value: number): void {
+		assertUnitRange('setStemGain', value);
+		applyStemControl(deck, stem, 'gain', value, {
+			requireLoaded: _requireLoaded,
+			getChannel: (d) => mixerState.channels[d]
+		});
+	}
+
+	setStemEqMode(deck: DeckId, enabled: boolean): void {
+		applyStemEqMode(deck, enabled, (d) => mixerState.channels[d]);
 	}
 
 	captureDeckAudio(deck: DeckId): DeckAudioSnapshot {

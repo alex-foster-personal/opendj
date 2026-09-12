@@ -53,9 +53,9 @@ function _defaultDeck(overrides = {}) {
 
 function _defaultStems() {
 	return {
-		vocal: { muted: false, solo: false },
-		instrumental: { muted: false, solo: false },
-		drums: { muted: false, solo: false }
+		vocal: { muted: false, solo: false, gain: 0.5 },
+		instrumental: { muted: false, solo: false, gain: 0.5 },
+		drums: { muted: false, solo: false, gain: 0.5 }
 	};
 }
 
@@ -287,9 +287,9 @@ test('session snapshot writer throttles interval writes and flushes on pagehide'
 				key_sync_enabled: false,
 				stems: {
 					controls: {
-						vocal: { muted: false, solo: false },
-						instrumental: { muted: false, solo: false },
-						drums: { muted: false, solo: false }
+						vocal: { muted: false, solo: false, gain: 0.5 },
+						instrumental: { muted: false, solo: false, gain: 0.5 },
+						drums: { muted: false, solo: false, gain: 0.5 }
 					}
 				}
 			},
@@ -304,9 +304,9 @@ test('session snapshot writer throttles interval writes and flushes on pagehide'
 				key_sync_enabled: false,
 				stems: {
 					controls: {
-						vocal: { muted: false, solo: false },
-						instrumental: { muted: false, solo: false },
-						drums: { muted: false, solo: false }
+						vocal: { muted: false, solo: false, gain: 0.5 },
+						instrumental: { muted: false, solo: false, gain: 0.5 },
+						drums: { muted: false, solo: false, gain: 0.5 }
 					}
 				}
 			},
@@ -321,9 +321,9 @@ test('session snapshot writer throttles interval writes and flushes on pagehide'
 				key_sync_enabled: false,
 				stems: {
 					controls: {
-						vocal: { muted: false, solo: false },
-						instrumental: { muted: false, solo: false },
-						drums: { muted: false, solo: false }
+						vocal: { muted: false, solo: false, gain: 0.5 },
+						instrumental: { muted: false, solo: false, gain: 0.5 },
+						drums: { muted: false, solo: false, gain: 0.5 }
 					}
 				}
 			},
@@ -338,9 +338,9 @@ test('session snapshot writer throttles interval writes and flushes on pagehide'
 				key_sync_enabled: false,
 				stems: {
 					controls: {
-						vocal: { muted: false, solo: false },
-						instrumental: { muted: false, solo: false },
-						drums: { muted: false, solo: false }
+						vocal: { muted: false, solo: false, gain: 0.5 },
+						instrumental: { muted: false, solo: false, gain: 0.5 },
+						drums: { muted: false, solo: false, gain: 0.5 }
 					}
 				}
 			}

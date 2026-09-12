@@ -61,9 +61,10 @@ async function _ramp(payload: unknown): Promise<AgentStepResult> {
 		command.type !== 'eq' &&
 		command.type !== 'fader' &&
 		command.type !== 'trim' &&
-		command.type !== 'filter'
+		command.type !== 'filter' &&
+		command.type !== 'stem_gain'
 	) {
-		throw new TypeError('ramp command must be eq, fader, trim, or filter');
+		throw new TypeError('ramp command must be eq, fader, trim, filter, or stem_gain');
 	}
 	if (typeof ramp.to !== 'number' || !Number.isFinite(ramp.to) || ramp.to < 0 || ramp.to > 1) {
 		throw new RangeError('ramp to must be a finite 0..1 control value');
@@ -82,7 +83,12 @@ async function _ramp(payload: unknown): Promise<AgentStepResult> {
 		phrases: clock.phrases
 	});
 	if (over.unit !== 'ms' && !clock.playing) throw new Error('clock_not_playing');
-	const start = command.type === 'eq' ? before.mixer.channels[command.deck][`eq_${command.band}`] : before.mixer.channels[command.deck][command.type];
+	const start =
+		command.type === 'eq'
+			? before.mixer.channels[command.deck][`eq_${command.band}`]
+			: command.type === 'stem_gain'
+				? before.decks[command.deck].stems.controls[command.stem].gain
+				: before.mixer.channels[command.deck][command.type];
 	const startedAt = performance.now();
 	while (true) {
 		const progress = over.unit === 'ms'

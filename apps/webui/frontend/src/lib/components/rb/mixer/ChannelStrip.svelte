@@ -10,13 +10,19 @@
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import { METER_FLOOR_DBFS } from '$lib/rb/meter-math';
 	import type { EqBand } from '$lib/rb/mixer-types';
-	import { knobId } from '$lib/rb/knob-control.svelte';
+	import { knobId, type KnobRole } from '$lib/rb/knob-control.svelte';
 	import {
 		setLevelCalibrationCapture,
 		setLevelCalibrationDisabled,
 		uiPrefs
 	} from '$lib/rb/prefs.svelte';
 	import type { StemControl } from '$lib/rb/stem-types';
+	import { STEM_COLORS } from '$lib/rb/stem-colors';
+	import {
+		STEM_DIAL_LABELS,
+		stemDialAssignment,
+		type EqDial
+	} from '$lib/rb/stem-dial-map';
 	import StemRow from '../deck/StemRow.svelte';
 	import Knob from './Knob.svelte';
 	import VFader from './VFader.svelte';
@@ -50,12 +56,15 @@
 		/** Channel fader 0..1; 1 = full. */
 		fader: number;
 		cueEnabled: boolean;
+		stemEqMode: boolean;
 		stemPending: boolean;
 		ontrim: (value: number) => void;
 		oneq: (band: EqBand, value: number) => void;
 		onfilter: (value: number) => void;
 		onfader: (value: number) => void;
 		oncue: (enabled: boolean) => void;
+		onStemEqMode: (enabled: boolean) => void;
+		onStemGain: (stem: StemControl, value: number) => void;
 		onStemMute: (stem: StemControl) => Promise<void>;
 		onStemSolo: (stem: StemControl) => Promise<void>;
 	}
@@ -70,12 +79,15 @@
 		filter,
 		fader,
 		cueEnabled,
+		stemEqMode,
 		stemPending,
 		ontrim,
 		oneq,
 		onfilter,
 		onfader,
 		oncue,
+		onStemEqMode,
+		onStemGain,
 		onStemMute,
 		onStemSolo
 	}: Props = $props();
@@ -182,6 +194,61 @@
 	const trimSize = $derived(less ? LESS_TRIM_SIZE : TRIM_SIZE);
 	const eqSize = $derived(less ? LESS_EQ_SIZE : EQ_SIZE);
 	const filterSize = $derived(less ? LESS_FILTER_SIZE : FILTER_SLOT_SIZE);
+
+	const assignment = $derived(
+		stemEqMode && deck.stems.status === 'ready'
+			? stemDialAssignment(deck.stems.available_controls)
+			: { high: null, mid: null, low: null }
+	);
+
+	function stemKnobRole(stem: StemControl): KnobRole {
+		if (stem === 'vocal') return 'stem-vocal';
+		if (stem === 'instrumental') return 'stem-instrumental';
+		return 'stem-drums';
+	}
+
+	interface DialView {
+		label: string;
+		value: number;
+		onchange: (value: number) => void;
+		knobRole: KnobRole;
+		accentColor?: string;
+		accessibleLabel: string;
+		stemControl: string;
+	}
+
+	function dialView(band: EqDial, eqValue: number, eqLabel: string, eqAccessible: string): DialView {
+		const stem = assignment[band];
+		if (stem !== null) {
+			return {
+				label: STEM_DIAL_LABELS[stem],
+				value: deck.stems.controls[stem].gain,
+				onchange: (value) => onStemGain(stem, value),
+				knobRole: stemKnobRole(stem),
+				accentColor: STEM_COLORS[stem],
+				accessibleLabel: `${STEM_DIAL_LABELS[stem].toLowerCase()} stem level deck ${deckId}`,
+				stemControl: stem
+			};
+		}
+		return {
+			label: eqLabel,
+			value: eqValue,
+			onchange: (value) => oneq(band, value),
+			knobRole: band,
+			accessibleLabel: eqAccessible,
+			stemControl: ''
+		};
+	}
+
+	const hiDial = $derived.by(() => dialView('high', eqHigh, 'HI', `high EQ deck ${deckId}`));
+	const midDial = $derived.by(() => dialView('mid', eqMid, 'MID', `mid EQ deck ${deckId}`));
+	const lowDial = $derived.by(() => dialView('low', eqLow, 'LOW', `low EQ deck ${deckId}`));
+
+	const stemModeTitle = $derived(
+		stemEqMode
+			? 'STEM ON - click to restore EQ on HI/MID/LOW'
+			: 'STEM - click to turn HI/MID/LOW into stem levels for this channel'
+	);
 </script>
 
 <div
@@ -190,6 +257,7 @@
 	class:less
 	class:deck-focus={focused}
 	data-mixer-channel={deckId}
+	data-stem-eq-mode={stemEqMode}
 	role="group"
 	aria-label={`channel ${deckId}`}
 	onpointerenter={() => setHoveredDeck(deckId)}
@@ -232,9 +300,33 @@
 		/>
 	</div>
 	<div class="eq-stack">
-		<Knob knobId={knobId(deckId, 'high')} label="HI" accessibleLabel={`high EQ deck ${deckId}`} value={eqHigh} size={eqSize} onchange={(v) => oneq('high', v)} />
-		<Knob knobId={knobId(deckId, 'mid')} label="MID" accessibleLabel={`mid EQ deck ${deckId}`} value={eqMid} size={eqSize} onchange={(v) => oneq('mid', v)} />
-		<Knob knobId={knobId(deckId, 'low')} label="LOW" accessibleLabel={`low EQ deck ${deckId}`} value={eqLow} size={eqSize} onchange={(v) => oneq('low', v)} />
+		<Knob
+			knobId={knobId(deckId, hiDial.knobRole)}
+			label={hiDial.label}
+			accessibleLabel={hiDial.accessibleLabel}
+			value={hiDial.value}
+			size={eqSize}
+			{...(hiDial.accentColor ? { accentColor: hiDial.accentColor } : {})}
+			onchange={hiDial.onchange}
+		/>
+		<Knob
+			knobId={knobId(deckId, midDial.knobRole)}
+			label={midDial.label}
+			accessibleLabel={midDial.accessibleLabel}
+			value={midDial.value}
+			size={eqSize}
+			{...(midDial.accentColor ? { accentColor: midDial.accentColor } : {})}
+			onchange={midDial.onchange}
+		/>
+		<Knob
+			knobId={knobId(deckId, lowDial.knobRole)}
+			label={lowDial.label}
+			accessibleLabel={lowDial.accessibleLabel}
+			value={lowDial.value}
+			size={eqSize}
+			{...(lowDial.accentColor ? { accentColor: lowDial.accentColor } : {})}
+			onchange={lowDial.onchange}
+		/>
 	</div>
 	<div class="filter-slot">
 		<Knob
@@ -265,7 +357,16 @@
 			label={`channel fader deck ${deckId}`}
 		/>
 	</div>
-	<span class="stem-label" title="Stem mute/solo chips for this channel, same controls as the deck stem row">STEM</span>
+	<button
+		type="button"
+		class="stem-label"
+		class:enabled={stemEqMode}
+		aria-pressed={stemEqMode}
+		aria-label={`stem EQ mode channel ${deckId}`}
+		title={stemModeTitle}
+		data-testid={`stem-mode-channel-${deckId}`}
+		onclick={() => onStemEqMode(!stemEqMode)}>STEM</button
+	>
 	<div class="stem-slot">
 		<StemRow deck={deck} pending={stemPending} onMute={onStemMute} onSolo={onStemSolo} />
 	</div>
@@ -467,8 +568,16 @@
 		color: var(--rb-text-dim);
 		line-height: 1;
 		flex: none;
+		background: transparent;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+		font-family: var(--rb-font);
 		/* 2px read as STEM touching the fader above it (pin 8cd32a28c36d). */
 		margin-top: 2px;
+	}
+	.stem-label.enabled {
+		color: var(--rb-accent);
 	}
 	.strip.less .stem-label {
 		grid-area: stemlabel;

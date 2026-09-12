@@ -179,6 +179,8 @@ export type PerformanceCommand =
 	| { type: 'master_tempo'; deck: DeckId; enabled: boolean }
 	| { type: 'stem_mute'; deck: DeckId; stem: StemControl; muted: boolean }
 	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean }
+	| { type: 'stem_eq_mode'; deck: DeckId; enabled: boolean }
+	| { type: 'stem_gain'; deck: DeckId; stem: StemControl; value: number }
 	| { type: 'slip'; deck: DeckId; enabled: boolean }
 	| { type: 'key_sync'; deck: DeckId; enabled: boolean }
 	| { type: 'key_nudge'; deck: DeckId; semitones: -1 | 1 }
@@ -1053,6 +1055,12 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	} else if (type === 'stem_solo') {
 		_exactKeys(record, ['type', 'deck', 'stem', 'solo']);
 		return { type, deck, stem: _stem(record.stem), solo: _boolean('solo', record.solo) };
+	} else if (type === 'stem_eq_mode') {
+		_exactKeys(record, ['type', 'deck', 'enabled']);
+		return { type, deck, enabled: _boolean('enabled', record.enabled) };
+	} else if (type === 'stem_gain') {
+		_exactKeys(record, ['type', 'deck', 'stem', 'value']);
+		return { type, deck, stem: _stem(record.stem), value: _unit('value', record.value) };
 	} else if (type === 'key_nudge') {
 		_exactKeys(record, ['type', 'deck', 'semitones']);
 		if (record.semitones !== -1 && record.semitones !== 1) {
@@ -1614,6 +1622,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		engine.setStemMute(command.deck, command.stem, command.muted);
 	} else if (command.type === 'stem_solo') {
 		engine.setStemSolo(command.deck, command.stem, command.solo);
+	} else if (command.type === 'stem_eq_mode') {
+		engine.setStemEqMode(command.deck, command.enabled);
+	} else if (command.type === 'stem_gain') {
+		engine.setStemGain(command.deck, command.stem, command.value);
 	} else if (command.type === 'slip') {
 		await engine.setSlip(command.deck, command.enabled);
 	} else if (command.type === 'key_sync') {

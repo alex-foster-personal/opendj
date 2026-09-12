@@ -874,9 +874,9 @@ test('stem commands are strict typed IPC and default state never claims artifact
 		const state = ipc.queryPerformanceState();
 		assert.equal(state.decks[1].stems.status, 'unavailable');
 		assert.deepEqual(state.decks[1].stems.controls, {
-			vocal: { muted: false, solo: false },
-			instrumental: { muted: false, solo: false },
-			drums: { muted: false, solo: false }
+			vocal: { muted: false, solo: false, gain: 0.5 },
+			instrumental: { muted: false, solo: false, gain: 0.5 },
+			drums: { muted: false, solo: false, gain: 0.5 }
 		});
 
 		await assert.rejects(
@@ -896,6 +896,32 @@ test('stem commands are strict typed IPC and default state never claims artifact
 				solo: 'yes'
 			}),
 			/solo must be boolean/i
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({
+				type: 'stem_eq_mode',
+				deck: 1,
+				enabled: 'yes'
+			}),
+			/enabled must be boolean/i
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({
+				type: 'stem_gain',
+				deck: 1,
+				stem: 'vocal',
+				value: 1.5
+			}),
+			/value must be within 0..1/i
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({
+				type: 'stem_gain',
+				deck: 1,
+				stem: 'mix',
+				value: 0.5
+			}),
+			/stem must be vocal, instrumental, or drums/i
 		);
 	} finally {
 		uninstall();
@@ -924,6 +950,21 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 	globalThis.window = {};
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
+		for (const deckId of [1, 2, 3, 4]) {
+			const channel = pairing.mixerState.channels[deckId];
+			channel.trim = 0.5;
+			channel.eq_high = 0.5;
+			channel.eq_mid = 0.5;
+			channel.eq_low = 0.5;
+			channel.filter = 0.5;
+			channel.fader = 1;
+			channel.assign = deckId % 2 === 1 ? 'A' : 'B';
+			channel.cue_enabled = false;
+			channel.stem_eq_mode = false;
+		}
+		pairing.mixerState.crossfader = 0.5;
+		pairing.mixerState.master = 1;
+
 		await ipc.dispatchPerformanceCommand({ type: 'trim', deck: 2, value: 0.7 });
 		await ipc.dispatchPerformanceCommand({ type: 'eq', deck: 2, band: 'mid', value: 0.25 });
 		await ipc.dispatchPerformanceCommand({ type: 'filter', deck: 2, value: 0.9 });
@@ -962,7 +1003,8 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				filter: 0.5,
 				fader: 1,
 				assign: 'A',
-				cue_enabled: false
+				cue_enabled: false,
+				stem_eq_mode: false
 			},
 			2: {
 				deck_id: 2,
@@ -973,7 +1015,8 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				filter: 0.9,
 				fader: 0.8,
 				assign: 'THRU',
-				cue_enabled: true
+				cue_enabled: true,
+				stem_eq_mode: false
 			},
 			3: {
 				deck_id: 3,
@@ -984,7 +1027,8 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				filter: 0.5,
 				fader: 1,
 				assign: 'A',
-				cue_enabled: false
+				cue_enabled: false,
+				stem_eq_mode: false
 			},
 			4: {
 				deck_id: 4,
@@ -995,7 +1039,8 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				filter: 0.5,
 				fader: 1,
 				assign: 'B',
-				cue_enabled: false
+				cue_enabled: false,
+				stem_eq_mode: false
 			}
 		}
 		});
@@ -1065,6 +1110,7 @@ test('output_mode IPC accepts split_cable and rejects unknown modes', async () =
 
 test('uninstall invalidates retained IPC dispatchers and a new route session remains usable', async () => {
 	globalThis.window = {};
+	pairing.mixerState.master = 1;
 	try {
 		const uninstallOldSession = ipc.installPerformanceBrowserIpc();
 		const staleDispatch = window.musicDjToolsPerformance.dispatch;

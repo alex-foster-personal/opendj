@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
 	import type { StemSummary } from '$lib/rb/api-rb';
+	import { STEM_COLORS } from '$lib/rb/stem-colors';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
 
 	interface Props {
@@ -81,6 +82,11 @@
 			? ''
 			: `${_modelShort(ready.model)}${_params(ready) ? ' ' + _params(ready) : ''} ${ready.format} ${_fmtBytes(ready.total_bytes)}`
 	);
+
+	const colorStyle =
+		`--stem-vocal: ${STEM_COLORS.vocal}; ` +
+		`--stem-instrumental: ${STEM_COLORS.instrumental}; ` +
+		`--stem-drums: ${STEM_COLORS.drums};`;
 </script>
 
 {#if ready === null}
@@ -89,7 +95,7 @@
 	</ControlExplainer>
 {:else}
 	<ControlExplainer title={_heading(ready)} bullets={_bullets(ready)}>
-		<span class="stem-tags" tabindex="0" title={_title(ready)} aria-label={_title(ready)}>
+		<span class="stem-tags" style={colorStyle} tabindex="0" title={_title(ready)} aria-label={_title(ready)}>
 			{#each GROUPS as g (g)}
 				<span
 					class="tag"
@@ -131,18 +137,18 @@
 		letter-spacing: 0;
 	}
 	.tag.on[data-g='V'] {
-		background: color-mix(in srgb, #6ec8ff 35%, transparent);
-		border-color: color-mix(in srgb, #6ec8ff 70%, transparent);
+		background: color-mix(in srgb, var(--stem-vocal) 35%, transparent);
+		border-color: color-mix(in srgb, var(--stem-vocal) 70%, transparent);
 		color: #cfefff;
 	}
 	.tag.on[data-g='I'] {
-		background: color-mix(in srgb, #9ad67a 35%, transparent);
-		border-color: color-mix(in srgb, #9ad67a 70%, transparent);
+		background: color-mix(in srgb, var(--stem-instrumental) 35%, transparent);
+		border-color: color-mix(in srgb, var(--stem-instrumental) 70%, transparent);
 		color: #e4f5d8;
 	}
 	.tag.on[data-g='D'] {
-		background: color-mix(in srgb, #e0a35c 35%, transparent);
-		border-color: color-mix(in srgb, #e0a35c 70%, transparent);
+		background: color-mix(in srgb, var(--stem-drums) 35%, transparent);
+		border-color: color-mix(in srgb, var(--stem-drums) 70%, transparent);
 		color: #ffe7c8;
 	}
 	.meta {
