@@ -20,6 +20,7 @@
 	import { TreeFoldTracker } from './tree-fold-tracker.svelte';
 	import { TreePlaylistRename } from './tree-playlist-rename.svelte';
 	import TreeContextMenu from './TreeContextMenu.svelte';
+	import RecentlyDeletedFolder from './RecentlyDeletedFolder.svelte';
 	import MissingTracksFolder from './MissingTracksFolder.svelte';
 	import { MISSING_TRACKS_ID, missingTracksNode } from './missing-tracks';
 	import PlaylistHistoryPanel from './PlaylistHistoryPanel.svelte';
@@ -317,6 +318,7 @@
 				</div>
 			{/each}
 		{/if}
+		<RecentlyDeletedFolder />
 		<!-- data-testid="playlist-missing-tracks" is on MissingTracksFolder -->
 		<MissingTracksFolder
 			brokenCount={allTracksBrokenCount}

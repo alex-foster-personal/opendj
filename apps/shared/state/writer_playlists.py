@@ -50,6 +50,14 @@ class _WriterHost(Protocol):
     ) -> Event: ...
 
 
+class PlaylistNotFoundError(LookupError):
+    """Raised when playlist_id has no playlists row."""
+
+
+class PlaylistNotDeletedError(RuntimeError):
+    """Raised when undelete_playlist targets a live row."""
+
+
 class _PlaylistWriterMixin:
     """Playlist mutation methods, mixed into ``StateWriter``."""
 
@@ -363,6 +371,8 @@ class _PlaylistWriterMixin:
             # stored, which the strict LWW "<=" comparison would then never
             # let this delete overwrite on its own hub.
             now = next_playlist_revision(conn, playlist_id, self._now_iso())
+            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
+            tombstone_ts = stamp.updated_at
             member_positions = [
                 row[0]
                 for row in conn.execute(
@@ -379,18 +389,17 @@ class _PlaylistWriterMixin:
                     "UPDATE playlist_memberships SET deleted_at=?, updated_at=?, "
                     "origin_device_id=? WHERE playlist_id=? AND position=?",
                     (
-                        member_stamp.updated_at,
+                        tombstone_ts,
                         member_stamp.updated_at,
                         member_stamp.origin_device_id,
                         playlist_id,
                         position,
                     ),
                 )
-            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
             conn.execute(
                 "UPDATE playlists SET updated_at=?, origin_device_id=?, "
                 "deleted_at=? WHERE playlist_id=?",
-                (stamp.updated_at, stamp.origin_device_id, stamp.updated_at, playlist_id),
+                (stamp.updated_at, stamp.origin_device_id, tombstone_ts, playlist_id),
             )
             ev = self._append_event(
                 kind="playlist.delete",
@@ -400,6 +409,62 @@ class _PlaylistWriterMixin:
                     "name": existing[0],
                     "vendor": existing[1],
                     "vendor_pl_id": existing[2],
+                },
+                ts=now,
+            )
+            self.bus.publish(ev)
+        return True
+
+    def undelete_playlist(self: _WriterHost, playlist_id: str) -> bool:
+        """Clear a playlist tombstone and restore memberships from this delete."""
+        with self._tx() as conn:
+            row = conn.execute(
+                "SELECT name, vendor, vendor_pl_id, deleted_at FROM playlists "
+                "WHERE playlist_id = ?",
+                (playlist_id,),
+            ).fetchone()
+            if row is None:
+                raise PlaylistNotFoundError(playlist_id)
+            if row[3] is None:
+                raise PlaylistNotDeletedError(playlist_id)
+            tombstone_ts = row[3]
+            name, vendor, vendor_pl_id = row[0], row[1], row[2]
+            now = next_playlist_revision(conn, playlist_id, self._now_iso())
+            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
+            conn.execute(
+                "UPDATE playlists SET deleted_at=NULL, updated_at=?, origin_device_id=? "
+                "WHERE playlist_id=?",
+                (stamp.updated_at, stamp.origin_device_id, playlist_id),
+            )
+            restored = conn.execute(
+                "SELECT position FROM playlist_memberships "
+                "WHERE playlist_id = ? AND deleted_at = ?",
+                (playlist_id, tombstone_ts),
+            ).fetchall()
+            for (position,) in restored:
+                member_stamp = self._stamp(
+                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
+                )
+                conn.execute(
+                    "UPDATE playlist_memberships SET deleted_at=NULL, updated_at=?, "
+                    "origin_device_id=? WHERE playlist_id=? AND position=? "
+                    "AND deleted_at=?",
+                    (
+                        member_stamp.updated_at,
+                        member_stamp.origin_device_id,
+                        playlist_id,
+                        position,
+                        tombstone_ts,
+                    ),
+                )
+            ev = self._append_event(
+                kind="playlist.undelete",
+                stable_id=None,
+                payload={
+                    "playlist_id": playlist_id,
+                    "vendor": vendor,
+                    "vendor_pl_id": vendor_pl_id,
+                    "name": name,
                 },
                 ts=now,
             )
@@ -524,4 +589,8 @@ class _PlaylistWriterMixin:
         return ev
 
 
-__all__ = ["_PlaylistWriterMixin"]
+__all__ = [
+    "_PlaylistWriterMixin",
+    "PlaylistNotDeletedError",
+    "PlaylistNotFoundError",
+]

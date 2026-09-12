@@ -4676,6 +4676,49 @@
         "title": "DeckPerformanceSample",
         "type": "object"
       },
+      "DeletedPlaylistOut": {
+        "properties": {
+          "deleted_at": {
+            "title": "Deleted At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "track_count": {
+            "title": "Track Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          },
+          "vendor_pl_id": {
+            "title": "Vendor Pl Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "name",
+          "vendor",
+          "vendor_pl_id",
+          "deleted_at",
+          "updated_at",
+          "track_count"
+        ],
+        "title": "DeletedPlaylistOut",
+        "type": "object"
+      },
       "DigestResponse": {
         "properties": {
           "overall": {
@@ -25795,6 +25838,31 @@
         ]
       }
     },
+    "/api/v1/playlists/deleted": {
+      "get": {
+        "operationId": "list_deleted_playlists",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeletedPlaylistOut"
+                  },
+                  "title": "Response List Deleted Playlists",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Deleted Playlists",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
     "/api/v1/playlists/{playlist_id}": {
       "delete": {
         "operationId": "delete_playlist_api_v1_playlists__playlist_id__delete",
@@ -26907,6 +26975,48 @@
         "summary": "Get Writeback Targets",
         "tags": [
           "playlist-writeback"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}:undelete": {
+      "post": {
+        "operationId": "undelete_playlist",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistWriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undelete Playlist",
+        "tags": [
+          "playlists-write"
         ]
       }
     },
