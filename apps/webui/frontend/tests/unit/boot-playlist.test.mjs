@@ -145,6 +145,33 @@ test('a remembered All Tracks resolves to All Tracks without consulting the tree
 	assert.deepEqual(choice, bootPane.ALL_TRACKS_CHOICE);
 });
 
+test('url_playlist_id=all boots on All Tracks ahead of remembered playlists', async () => {
+	const contract = await _loadContract();
+	const bootPane = await _loadBootPane();
+
+	const choice = contract.resolveBootPlaylist({
+		remembered: { playlist_id: 'pl-2', name: 'Peak', kind: 'playlist' },
+		known_playlist_ids: ['pl-1', 'pl-2'],
+		all_tracks_count: 120,
+		url_playlist_id: 'all'
+	});
+
+	assert.deepEqual(choice, bootPane.ALL_TRACKS_CHOICE);
+});
+
+test('url_playlist_id unknown falls back to remembered playlist', async () => {
+	const contract = await _loadContract();
+
+	const choice = contract.resolveBootPlaylist({
+		remembered: { playlist_id: 'pl-2', name: 'Peak', kind: 'playlist' },
+		known_playlist_ids: ['pl-1', 'pl-2'],
+		all_tracks_count: 120,
+		url_playlist_id: 'pl-deleted'
+	});
+
+	assert.deepEqual(choice, { playlist_id: 'pl-2', name: 'Peak', kind: 'playlist' });
+});
+
 // -------------------------------------------------------- last_playlist pref
 
 test('first run remembers no playlist', async () => {

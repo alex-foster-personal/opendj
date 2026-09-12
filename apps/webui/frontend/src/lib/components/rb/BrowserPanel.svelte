@@ -145,6 +145,7 @@
 	import PerformanceRecorderRail from './browser/PerformanceRecorderRail.svelte';
 	import PaneTabs from './browser/PaneTabs.svelte';
 	import type { PaneTabInfo } from './browser/PaneTabs.svelte';
+	import { formatReplaceStateUrl } from '$lib/rb/performance-deeplink';
 	import {
 		applyDecodedStripAcrossPanes,
 		canMutatePlaylist,
@@ -159,9 +160,11 @@
 		multiPanePlaylistIds,
 		reconcileBootSnapshot,
 		reorderPanesInPlace,
+		parseLv1,
 		resolveBootPlaylist,
 		resolveNewTabIndex,
 		shouldRetryBootPane,
+		writeLv1,
 		rowHasVocalLyrics,
 		rowIsRemix,
 		sortRows,
@@ -253,6 +256,7 @@
 	let playlistsError = $state<string | null>(null);
 	let source = $state<'collection' | 'spotify'>('collection');
 	let spotifySelectedId = $state<string | null>(null);
+	let urlPlaylistId: string | null = null;
 	let spotifyPendingTracks = $state<SpotifyPendingTrack[] | null>(null);
 	let spotifyPendingLoading = $state(false);
 	let spotifyPendingError = $state<string | null>(null);
@@ -740,9 +744,12 @@
 			selectPlaylist: _selectPlaylistFromCommand
 		});
 		const url = new URL(window.location.href);
-		if (url.searchParams.get('source') === 'spotify') {
+		const lv1 = parseLv1(url.searchParams);
+		if (lv1.source === 'spotify') {
 			source = 'spotify';
-			spotifySelectedId = url.searchParams.get('playlist');
+			spotifySelectedId = lv1.playlist_id;
+		} else {
+			urlPlaylistId = lv1.playlist_id;
 		}
 		const unsubscribeSearch = subscribeBrowserSearch((request) => {
 			// Programmatic, so it must beat (and cancel) any keystroke burst
@@ -1044,18 +1051,27 @@
 		const choice = resolveBootPlaylist({
 			remembered: uiPrefs.last_playlist,
 			known_playlist_ids: treeNodes.map((n) => n.playlist_id),
-			all_tracks_count: allTracksCount ?? 0
+			all_tracks_count: allTracksCount ?? 0,
+			url_playlist_id: urlPlaylistId
 		});
 		if (choice === null) return; // empty library - keep the explicit empty state
+		const node = _nodeForNav({
+			playlist_id: choice.playlist_id,
+			playlist_name: choice.name,
+			selected_id: null,
+			scroll_top: 0,
+			search: ''
+		});
+		if (node === null) return;
 		_navRestoring = true;
 		try {
 			await _loadPane(target, {
-				playlist_id: choice.playlist_id,
-				name: choice.name,
-				track_count: choice.kind === 'all_tracks' ? (allTracksCount ?? 0) : 0,
-				broken_count: choice.kind === 'all_tracks' ? (allTracksBrokenCount ?? 0) : 0,
-				kind: choice.kind,
-				children: []
+				playlist_id: node.playlist_id,
+				name: node.name,
+				track_count: choice.kind === 'all_tracks' ? (allTracksCount ?? 0) : node.track_count,
+				broken_count: choice.kind === 'all_tracks' ? (allTracksBrokenCount ?? 0) : node.broken_count,
+				kind: node.kind,
+				children: node.children
 			});
 		} finally {
 			_navRestoring = false;
@@ -1071,7 +1087,7 @@
 
 	function selectCollectionSource(): void {
 		source = 'collection';
-		_writeCollectionQuery();
+		_syncCollectionPlaylistQuery();
 	}
 
 	function selectSpotifyPlaylist(playlist: PlaylistSummaryHydrated): void {
@@ -1111,19 +1127,33 @@
 		}
 	}
 
-	function _writeSpotifyQuery(playlistId: string | null): void {
+	function _replaceQueryParams(params: URLSearchParams): void {
 		const url = new URL(window.location.href);
-		url.searchParams.set('source', 'spotify');
-		if (playlistId === null) url.searchParams.delete('playlist');
-		else url.searchParams.set('playlist', playlistId);
-		window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+		url.search = params.toString();
+		window.history.replaceState(null, '', formatReplaceStateUrl(url));
 	}
 
-	function _writeCollectionQuery(): void {
+	function _writeSpotifyQuery(playlistId: string | null): void {
 		const url = new URL(window.location.href);
-		url.searchParams.delete('source');
-		url.searchParams.delete('playlist');
-		window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+		_replaceQueryParams(
+			writeLv1(url.searchParams, { source: 'spotify', playlist_id: playlistId })
+		);
+	}
+
+	function _writeCollectionQuery(playlistId: string | null): void {
+		const url = new URL(window.location.href);
+		_replaceQueryParams(
+			writeLv1(url.searchParams, { source: 'collection', playlist_id: playlistId })
+		);
+	}
+
+	function _syncCollectionPlaylistQuery(): void {
+		const pane = panes[0];
+		if (pane.playlist_id === null || isMissingTracksId(pane.playlist_id)) {
+			_writeCollectionQuery(null);
+			return;
+		}
+		_writeCollectionQuery(pane.playlist_id);
 	}
 
 	// ------------------------------------------------- pane playlist loading
@@ -1583,6 +1613,9 @@
 				name: node.name,
 				kind: node.kind
 			});
+			if (source === 'collection' && (node.kind === 'playlist' || node.kind === 'all_tracks')) {
+				_writeCollectionQuery(node.playlist_id);
+			}
 		}
 		// beginLoad returns the stale-response token for rapid re-selection;
 		// completeLoad/failLoad no-op when a newer load superseded this one.

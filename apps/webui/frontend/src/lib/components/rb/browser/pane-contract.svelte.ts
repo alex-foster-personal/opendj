@@ -416,7 +416,7 @@ export function rowHasVocalLyrics(row: BrowserRow): boolean {
 // Only the two decisions BrowserPanel calls are re-exported: the All Tracks
 // identity and its type are read straight from ./boot-pane-selection by the
 // one suite that asserts on them, so no unreferenced export lands here.
-export { resolveBootPlaylist, shouldRetryBootPane } from './boot-pane-selection';
+export { resolveBootPlaylist, shouldRetryBootPane, parseLv1, writeLv1 } from './boot-pane-selection';
 
 // ------------------------------------------------ boot health-read retries
 
