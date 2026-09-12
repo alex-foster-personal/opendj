@@ -102,6 +102,7 @@ import {
 	armDeckMeters,
 	armXrunSentinel,
 	disarmContextInstrumentation,
+	resumeAudioContextOrReportDead,
 	stampContextDeviceFloors
 } from '$lib/rb/audio-context-instrumentation';
 import {
@@ -1950,8 +1951,7 @@ function _tempoBounds(deck: DeckId): { min: number; max: number } {
 
 async function _resumeContext(): Promise<AudioContext> {
 	const ctx = _ensureGraph();
-	// `interrupted` too, not only `suspended`: AUDIOLIVE-06 (P1 3973882771).
-	if (ctx.state === 'suspended' || (ctx.state as string) === 'interrupted') await ctx.resume();
+	if (ctx.state === 'suspended' || (ctx.state as string) === 'interrupted') await resumeAudioContextOrReportDead(ctx);
 	if (ctx.state !== 'running') {
 		throw new Error(`AudioContext did not enter running state; current state is ${ctx.state}`);
 	}

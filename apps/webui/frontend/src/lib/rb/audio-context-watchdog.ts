@@ -48,6 +48,12 @@
  * than once.
  */
 
+import {
+	AUDIO_CONTEXT_IO_TIMEOUT_MS,
+	AudioContextIoTimeoutError,
+	withAudioContextIoTimeout
+} from '$lib/rb/audio-context-io-timeout';
+
 /** Delays before each resume attempt, in order. The first is immediate. */
 export const CONTEXT_RESUME_BACKOFF_MS: readonly number[] = [0, 150, 400, 1_000, 2_500, 5_000];
 
@@ -70,6 +76,7 @@ const NON_RUNNING = new Set(['suspended', 'interrupted', 'closed']);
 export interface ContextWatchdogEffects {
 	pushToast(message: string, kind: 'info' | 'error'): void;
 	recordPerfTiming(kind: string, stages: Record<string, number>): void;
+	recordPerfEvent?(kind: string, message: string, severity?: 'info' | 'warn' | 'error'): void;
 	sleep(ms: number): Promise<void>;
 	noteUnexpectedPause(state: string): void;
 }
@@ -104,7 +111,8 @@ function _describe(state: string): string {
 export function installAudioContextWatchdog(
 	ctx: WatchableAudioContext,
 	effects: ContextWatchdogEffects,
-	isAnyDeckPlaying: () => boolean
+	isAnyDeckPlaying: () => boolean,
+	ioTimeoutMs: number = AUDIO_CONTEXT_IO_TIMEOUT_MS
 ): () => void {
 	let recovering = false;
 	let heldOpportunity = false;
@@ -132,13 +140,21 @@ export function installAudioContextWatchdog(
 				await effects.sleep(delayMs);
 				if (ctx.state === 'running') return;
 				try {
-					await ctx.resume();
-				} catch {
-					// Expected on a closed context and on a device that is still
-					// gone. The loop is the retry; a throw here is not the end of it.
+					await withAudioContextIoTimeout('resume', ctx.resume(), ioTimeoutMs);
+				} catch (error: unknown) {
+					// Expected on a closed context, a device that is still gone, or a
+					// hung resume on a clockless output. The loop is the retry.
+					if (error instanceof AudioContextIoTimeoutError) {
+						// Continue to the next backoff attempt rather than hanging here.
+					}
 				}
 			}
 			if (ctx.state !== 'running') {
+				effects.recordPerfEvent?.(
+					'audio-output-dead',
+					`AudioContext resume timed out after ${ioTimeoutMs}ms (watchdog)`,
+					'error'
+				);
 				effects.pushToast(
 					`Audio did not come back after ${CONTEXT_RESUME_BACKOFF_MS.length} attempts ` +
 						`(${_describe(state)}). Check the system output device.`,
