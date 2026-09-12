@@ -1,3 +1,4 @@
+// requirement: LATENCY-03
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 

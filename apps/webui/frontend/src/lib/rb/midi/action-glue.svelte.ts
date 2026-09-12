@@ -223,7 +223,10 @@ export function handleMidiAction(
 				if (action.band === undefined) {
 					throw new Error('mixer_channel eq action requires band (device map bug)');
 				}
-				void dispatchPerformanceCommand({ type: 'eq', deck: action.deck, band: action.band, value: v });
+				void dispatchPerformanceCommand(
+					{ type: 'eq', deck: action.deck, band: action.band, value: v },
+					pressT0Ms
+				);
 			} else if (action.target === 'fader') {
 				void dispatchPerformanceCommand({ type: 'fader', deck: action.deck, value: v });
 			} else if (action.target === 'filter') {

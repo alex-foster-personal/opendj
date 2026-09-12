@@ -159,6 +159,7 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from scripts import quality_latency
     from scripts import shell_construct_lint
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
@@ -1280,6 +1281,13 @@ def _hotspots() -> list[tuple[str, int, int, int]]:
     return rows[: CFG.HOTSPOT_COUNT]
 
 
+def _eval_latency() -> list[Metric]:
+    return [
+        Metric(m["key"], float(m["value"]), str(m["unit"]), str(m.get("detail", "")))
+        for m in quality_latency.evaluate(REPO)
+    ]
+
+
 # ----- registry ------------------------------------------------------------
 
 EVALUATORS: tuple[Evaluator, ...] = (
@@ -1292,6 +1300,7 @@ EVALUATORS: tuple[Evaluator, ...] = (
     Evaluator("size", "File bloat and duplication", _eval_size, needs_node=True),
     Evaluator("shell", "Shell constructs that fail silently", _eval_shell),
     Evaluator("sync-drift", "Sync-schema omissions that never raise", _eval_sync_drift),
+    Evaluator("latency", "Declared input-to-applied latency floor", _eval_latency),
 )
 
 

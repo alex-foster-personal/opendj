@@ -113,7 +113,7 @@ import {
 	withPauseOrigin
 } from '$lib/rb/unexpected-pause-report';
 import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes } from '$lib/rb/deck-channel-graph';
-import { measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
+import { applyEqRamp, logEqApply, measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
 import {
 	ConflictError,
 	fetchAnlz,
@@ -4129,24 +4129,18 @@ class RbAudioEngine implements AudioEngine {
 		_maybeHandoffOnAir();
 	}
 
-	setEq(deck: DeckId, band: EqBand, value: number): void {
+	setEq(deck: DeckId, band: EqBand, value: number, pressT0Ms?: number): void {
 		assertUnitRange('setEq value', value);
-		const ch = mixerState.channels[deck];
-		const nodes = _rt[deck].nodes;
-		const db = eqDbFromKnob(value);
-		if (band === 'low') {
-			ch.eq_low = value;
-			if (nodes !== null) _setParam(nodes.low.gain, db);
-		} else if (band === 'mid') {
-			ch.eq_mid = value;
-			if (nodes !== null) _setParam(nodes.mid.gain, db);
-		} else if (band === 'high') {
-			ch.eq_high = value;
-			if (nodes !== null) _setParam(nodes.high.gain, db);
-		} else {
-			const _exhaustive: never = band;
-			throw new Error(`Unhandled EQ band: ${_exhaustive}`);
-		}
+		const ch = mixerState.channels[deck], nodes = _rt[deck].nodes, db = eqDbFromKnob(value);
+		if (band === 'low') ch.eq_low = value;
+		else if (band === 'mid') ch.eq_mid = value;
+		else if (band === 'high') ch.eq_high = value;
+		else { const _exhaustive: never = band; throw new Error(`Unhandled EQ band: ${_exhaustive}`); }
+		if (nodes === null) return;
+		if (_ctx === null) throw new Error('audio graph not initialised');
+		const now = _ctx.currentTime;
+		const gain = band === 'low' ? nodes.low.gain : band === 'mid' ? nodes.mid.gain : nodes.high.gain;
+		applyEqRamp(gain, db, now, PARAM_SMOOTH_S); logEqApply(deck, pressT0Ms, now, PARAM_SMOOTH_S);
 	}
 
 	setFilter(deck: DeckId, value: number): void {
