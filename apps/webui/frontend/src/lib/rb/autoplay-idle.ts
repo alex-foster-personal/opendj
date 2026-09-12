@@ -9,6 +9,9 @@
  */
 export const AUTO_PLAY_IDLE_DISARM_MS = 10_000;
 
+/** PLAY-08: raise a stall when AutoPlay is armed but nothing is playing (issue #2153). */
+export const AUTO_PLAY_SILENT_STALL_MS = 5_000;
+
 export type AutoPlayIdleDisarmPlan =
 	| { action: 'continue'; idle_since_ms: number | null }
 	| { action: 'disarm'; retain_stall: boolean };
@@ -78,6 +81,26 @@ export function planAutoPlayIdleDisarm(input: {
 	}
 	_idleSinceMs = null;
 	return { action: 'disarm', retain_stall: input.stall_active };
+}
+
+export function shouldRaiseAutoPlaySilentStall(input: {
+	enabled: boolean;
+	any_playing: boolean;
+	pending_master: boolean;
+	silence_recovering?: boolean | undefined;
+	stall_active: boolean;
+	idle_since_ms: number | null;
+	now_ms: number;
+	source_stable_id: string | null;
+}): boolean {
+	if (!input.enabled) return false;
+	if (input.any_playing) return false;
+	if (input.pending_master) return false;
+	if (input.silence_recovering === true) return false;
+	if (input.stall_active) return false;
+	if (input.idle_since_ms === null) return false;
+	if (input.source_stable_id === null || input.source_stable_id === '') return false;
+	return input.now_ms - input.idle_since_ms >= AUTO_PLAY_SILENT_STALL_MS;
 }
 
 export function applyAutoPlayIdleDisarmAction(

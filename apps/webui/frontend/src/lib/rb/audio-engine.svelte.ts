@@ -104,6 +104,13 @@ import {
 	disarmContextInstrumentation,
 	stampContextDeviceFloors
 } from '$lib/rb/audio-context-instrumentation';
+import {
+	notePlayingFallingEdge,
+	readPauseOrigin,
+	recordUnexpectedPause,
+	setPlayingPositionReader,
+	withPauseOrigin
+} from '$lib/rb/unexpected-pause-report';
 import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes } from '$lib/rb/deck-channel-graph';
 import { measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
 import {
@@ -717,6 +724,12 @@ function _ensureGraph(): AudioContext {
 		() => DECK_IDS.some((deck) => deckStates[deck].playing),
 		rebuildAudioGraphKeepingDecks
 	);
+	setPlayingPositionReader(() =>
+		DECK_IDS.filter((d) => deckStates[d].playing).map((d) => ({
+			deck: d,
+			position_ms: deckStates[d].position_ms
+		}))
+	);
 	_masterGain = _ctx.createGain();
 	_masterGain.gain.value = mixerState.master * _ceilingGainMultiplier();
 	// Silence watchdog tap: an AnalyserNode with nothing downstream is a pure
@@ -1090,6 +1103,7 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	const st = deckStates[deck];
 	const rt = _rt[deck];
 	const message = error instanceof Error ? error.message : String(error);
+	const positionMs = st.position_ms;
 	const failedProcessor = rt.processor;
 	rt.processor = null;
 	if (failedProcessor !== null) _retireProcessor(failedProcessor);
@@ -1105,9 +1119,17 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	rt.presentation = createPresentedTransportTimeline(0);
 	rt.nextScheduleRevision = 0;
 	rt.desiredActive = false;
-	_clearLoadedTrackState(st);
-	st.processor_error = message;
-	st.sync_error = message;
+	recordUnexpectedPause({
+		cause: 'worklet-error',
+		deck,
+		position_ms: positionMs,
+		context_state: _ctx?.state ?? 'uninitialized'
+	});
+	withPauseOrigin('worklet', () => {
+		_clearLoadedTrackState(st);
+		st.processor_error = message;
+		st.sync_error = message;
+	});
 	pushToast(`Deck ${deck} processor failed - ${message}`, 'error');
 }
 
@@ -1173,6 +1195,17 @@ async function _scheduleDeck(
 	// synchronous turn as the input, before any await. The post-ack write in
 	// _scheduleDeckSerial stays as the reconcile-to-truth.
 	deckStates[deck].playing = active;
+	if (!active) {
+		const st = deckStates[deck];
+		notePlayingFallingEdge({
+			origin: readPauseOrigin(),
+			deck,
+			position_ms: st.position_ms,
+			duration_ms: st.duration_ms,
+			processor_error: st.processor_error,
+			context_state: _ctx?.state ?? 'uninitialized'
+		});
+	}
 	rt.scheduleIntentCount += 1;
 	rt.scheduleTail = new Promise<void>((resolve) => {
 		release = resolve;
@@ -1803,11 +1836,13 @@ function _publishPresentedTransport(
 	}
 	if (naturalEndNeedsRevisionedStop(st.playing, observation, rt.durationSec, rt.scheduleIntentCount)) {
 		if (_ctx === null) throw new Error('natural-end cleanup requires an AudioContext');
-		void _scheduleDeck(
-			deck,
-			safeTransportScheduleTime(_ctx.currentTime, _transportLeadSec(deck)),
-			rt.durationSec,
-			false
+		void withPauseOrigin('natural-end', () =>
+			_scheduleDeck(
+				deck,
+				safeTransportScheduleTime(_ctx.currentTime, _transportLeadSec(deck)),
+				rt.durationSec,
+				false
+			)
 		)
 			.then(() => {
 				if (_masterDeck === deck && !st.audible) _electPlayingMaster();
@@ -3141,29 +3176,31 @@ class RbAudioEngine implements AudioEngine {
 
 	/** Q1: see `play` for the `pressT0Ms` contract. */
 	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {
-		const { st, rt } = _requireLoaded(deck, 'pause');
-		if (!rt.desiredActive) return; // already paused is a valid state
-		if (_ctx === null) throw new Error('pause: audio graph not initialised');
-		// Unrefusable by construction: with no grid the memory cue lands on the
-		// exact pause point instead of a snapped one. A deck that cannot be
-		// stopped is the worst failure this transport has.
-		const pauseBeats = _quantizeGrid(st);
-		const when = _futureScheduleTime(deck);
-		const positionSec = await _schedulePress(
-			deck,
-			when,
-			(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
-			false,
-			pressT0Ms
-		);
-		const cueMs = pauseBeats !== null
-			? quantizedPositionMs(pauseBeats, positionSec * 1000, true, _quantizeGridBeats(st))
-			: positionSec * 1000;
-		st.cue_ms = cueMs;
-		if (st.slip_active) _clearSlip(deck);
-		// LAZY-STEMS: the deck has just come to rest, so a stem bundle that
-		// finished decoding mid-play can land now without touching live audio.
-		_drainPendingStemUpgrade(deck);
+		return withPauseOrigin('command', async () => {
+			const { st, rt } = _requireLoaded(deck, 'pause');
+			if (!rt.desiredActive) return; // already paused is a valid state
+			if (_ctx === null) throw new Error('pause: audio graph not initialised');
+			// Unrefusable by construction: with no grid the memory cue lands on the
+			// exact pause point instead of a snapped one. A deck that cannot be
+			// stopped is the worst failure this transport has.
+			const pauseBeats = _quantizeGrid(st);
+			const when = _futureScheduleTime(deck);
+			const positionSec = await _schedulePress(
+				deck,
+				when,
+				(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
+				false,
+				pressT0Ms
+			);
+			const cueMs = pauseBeats !== null
+				? quantizedPositionMs(pauseBeats, positionSec * 1000, true, _quantizeGridBeats(st))
+				: positionSec * 1000;
+			st.cue_ms = cueMs;
+			if (st.slip_active) _clearSlip(deck);
+			// LAZY-STEMS: the deck has just come to rest, so a stem bundle that
+			// finished decoding mid-play can land now without touching live audio.
+			_drainPendingStemUpgrade(deck);
+		});
 	}
 
 	async cueJump(deck: DeckId, ms: number): Promise<void> {

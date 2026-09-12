@@ -71,6 +71,7 @@ export interface ContextWatchdogEffects {
 	pushToast(message: string, kind: 'info' | 'error'): void;
 	recordPerfTiming(kind: string, stages: Record<string, number>): void;
 	sleep(ms: number): Promise<void>;
+	noteUnexpectedPause(state: string): void;
 }
 
 /** Only what this module reads, so a test needs no real AudioContext. */
@@ -192,6 +193,7 @@ export function installAudioContextWatchdog(
 			`Audio stopped: ${_describe(state)} [${state}]. Trying to recover...`,
 			'error'
 		);
+		effects.noteUnexpectedPause(state);
 		void recover(state);
 	}
 

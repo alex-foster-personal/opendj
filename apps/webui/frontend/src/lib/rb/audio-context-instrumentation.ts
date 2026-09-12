@@ -39,6 +39,11 @@ import {
 	teardownMeterTaps,
 	type MeterTapSource
 } from '$lib/rb/meter-tap';
+import {
+	readPlayingPositions,
+	recordUnexpectedPause,
+	setPlayingPositionReader
+} from '$lib/rb/unexpected-pause-report';
 
 /**
  * The context whose authoritative (running) device-floor row has been emitted.
@@ -191,6 +196,7 @@ function installRecoveryOpportunities(): void {
 }
 
 export function disarmContextInstrumentation(): void {
+	setPlayingPositionReader(null);
 	detachXrunSentinel();
 	// The meter taps and their zero-gain sink belong to the context being
 	// closed, exactly like the sentinel above.
@@ -265,7 +271,18 @@ export function armAudioContextWatchdog(
 		{
 			pushToast,
 			recordPerfTiming: (kind, stages) => recordPerfTiming(kind, stages),
-			sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+			sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+			noteUnexpectedPause: (state) => {
+				const positions = readPlayingPositions();
+				const first = positions[0];
+				if (first === undefined) return;
+				recordUnexpectedPause({
+					cause: 'context-suspended',
+					deck: first.deck,
+					position_ms: first.position_ms,
+					context_state: state
+				});
+			}
 		},
 		isAnyDeckPlaying
 	);
