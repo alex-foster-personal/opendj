@@ -1,8 +1,12 @@
-"""HTTP tests for playlist sets (SET-05)."""
+"""HTTP tests for playlist sets (SET-05).
+
+[if] a playlist set is created, run, or listed [then] play_count and items react, [else stop].
+"""
+
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient

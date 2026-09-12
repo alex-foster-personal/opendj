@@ -1,4 +1,7 @@
-"""Lane registry: beatgrid is delegated; remaining lanes are not scored as misses."""
+"""Lane registry: beatgrid is delegated; remaining lanes are not scored as misses.
+
+[if] the parity report renders [then] every lane appears and none is claimed at parity, [else stop].
+"""
 
 from __future__ import annotations
 

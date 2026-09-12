@@ -1,4 +1,7 @@
-"""LATENCY-03 quality ratchet evaluator tests."""
+"""LATENCY-03 quality ratchet evaluator tests.
+
+[if] eq-apply wiring breaks or the floor is missing [then] evaluate fails loudly, [else stop].
+"""
 
 from __future__ import annotations
 
@@ -31,7 +34,9 @@ def test_broken_wiring_emits_999() -> None:
     sources = {
         quality_latency._SOURCE_PATHS[0]: "export const EQ_APPLY_KIND = 'eq-apply';",
         quality_latency._SOURCE_PATHS[1]: "function setEq(deck, band, value, pressT0Ms) {}",
-        quality_latency._SOURCE_PATHS[2]: "engine.setEq(command.deck, command.band, command.value, pressT0Ms)",
+        quality_latency._SOURCE_PATHS[
+            2
+        ]: "engine.setEq(command.deck, command.band, command.value, pressT0Ms)",
         quality_latency._SOURCE_PATHS[3]: "'eq-apply'",
     }
     failures = quality_latency._wiring_failures(sources)

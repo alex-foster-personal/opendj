@@ -70,7 +70,9 @@ _CHILD_REBIND = textwrap.dedent(
 )
 
 
-def _popen_child(script: str, *args: str, env: dict[str, str] | None = None) -> subprocess.Popen[str]:
+def _popen_child(
+    script: str, *args: str, env: dict[str, str] | None = None
+) -> subprocess.Popen[str]:
     merged = os.environ.copy()
     if env:
         merged.update(env)
@@ -85,6 +87,9 @@ def _popen_child(script: str, *args: str, env: dict[str, str] | None = None) -> 
 
 @pytest.mark.requirement("INSTALL-14")
 def test_watch_exits_the_child_when_the_parent_pid_disappears(tmp_path: Path) -> None:
+    """
+    [if] the watched parent pid disappears [then] parent_watch exits the child process, [else stop].
+    """
     dummy = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     child = _popen_child(
         _CHILD_SLEEP,
@@ -102,6 +107,9 @@ def test_watch_exits_the_child_when_the_parent_pid_disappears(tmp_path: Path) ->
 
 @pytest.mark.requirement("INSTALL-14")
 def test_watch_does_not_start_when_parent_env_is_unset(tmp_path: Path) -> None:
+    """
+    [if] OPENDJ_PARENT_PID is unset [then] the child is left running, unwatched, [else stop].
+    """
     child = _popen_child(_CHILD_NO_ENV, str(tmp_path))
     time.sleep(0.8)
     assert child.poll() is None, "child without OPENDJ_PARENT_PID should stay alive"
@@ -111,6 +119,9 @@ def test_watch_does_not_start_when_parent_env_is_unset(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("INSTALL-14")
 def test_parent_file_rebinds_the_watched_pid(tmp_path: Path) -> None:
+    """
+    [if] .engine.parent rebinds the watched pid [then] only its death exits the child, [else stop].
+    """
     parent_a = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     parent_b = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     child = _popen_child(
@@ -134,6 +145,9 @@ def test_parent_file_rebinds_the_watched_pid(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("INSTALL-14")
 def test_watch_signals_sigterm_not_hard_exit(tmp_path: Path) -> None:
+    """
+    [if] the watched parent dies [then] parent_watch sends SIGTERM, not a hard kill, [else stop].
+    """
     dummy = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     marker = tmp_path / "got-term"
     child = _popen_child(

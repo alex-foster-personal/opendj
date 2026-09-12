@@ -7,7 +7,10 @@
 [if] no webview is attached [then ⛔] GET and POST return 503 naming the page.
 [if] a new headphone IPC command lacks an HTTP mirror [then ⛔] the parity
      test goes red.
+
+[if] a headphone control posts over HTTP [then] it reaches the page and mirrors back, [else stop].
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -22,6 +25,8 @@ from apps.webui.server.app import create_app
 from apps.webui.server.routes.commands import router as commands_router
 from apps.webui.server.routes.performance_headphones import (
     HEADPHONE_IPC_ROUTES,
+)
+from apps.webui.server.routes.performance_headphones import (
     router as headphones_router,
 )
 from apps.webui.server.routes.state import router as state_router
@@ -97,9 +102,7 @@ async def _open_page(
     assert published.status_code == 202
 
 
-def _apply_command(
-    mirror: dict[str, Any], command: dict[str, Any]
-) -> dict[str, Any]:
+def _apply_command(mirror: dict[str, Any], command: dict[str, Any]) -> dict[str, Any]:
     """Mutate mirror the way a real page would after executing a command."""
     changed: dict[str, Any] = {}
     command_type = command["type"]
@@ -135,9 +138,7 @@ def _apply_command(
             },
         }
     elif command_type == "headphone_output_select":
-        mirror["mixer"]["headphones"]["selected_output_device_id"] = command[
-            "device_id"
-        ]
+        mirror["mixer"]["headphones"]["selected_output_device_id"] = command["device_id"]
         changed = {
             "mixer": {
                 "headphones": {
@@ -150,8 +151,7 @@ def _apply_command(
 
 async def _fake_page(
     client: AsyncClient,
-    apply: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any] | None]
-    | None = None,
+    apply: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any] | None] | None = None,
 ) -> dict[str, Any]:
     """Claim the next order, apply it to the mirror, and complete it."""
     mirror: dict[str, Any] = {
@@ -193,17 +193,17 @@ def test_headphone_command_union_matches_route_table() -> None:
 
 
 def test_performance_headphone_predicate_matches_headphone_command_union() -> None:
-    assert _HEADPHONE_IPC_PREDICATE - _ACQUIRE_EXEMPTION == set(headphone_command_fields())
+    assert set(headphone_command_fields()) == _HEADPHONE_IPC_PREDICATE - _ACQUIRE_EXEMPTION
 
 
 def test_ipc_error_strings_appear_in_performance_ipc_source() -> None:
     root = __import__("pathlib").Path(__file__).resolve().parents[2]
-    ipc_source = (
-        root / "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts"
-    ).read_text(encoding="utf-8")
-    headphones_source = (
-        root / "apps/webui/frontend/src/lib/player/headphones.ts"
-    ).read_text(encoding="utf-8")
+    ipc_source = (root / "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts").read_text(
+        encoding="utf-8"
+    )
+    headphones_source = (root / "apps/webui/frontend/src/lib/player/headphones.ts").read_text(
+        encoding="utf-8"
+    )
     combined = ipc_source + headphones_source
     assert "assertHeadphoneOutputMode" in ipc_source
     for fragment in _IPC_ERROR_FRAGMENTS:
@@ -217,9 +217,7 @@ def test_mix_happy_path() -> None:
         ) as client:
             await _open_page(client)
             fake = asyncio.create_task(_fake_page(client))
-            response = await client.post(
-                "/api/v1/performance/headphones/mix", json={"value": 0.25}
-            )
+            response = await client.post("/api/v1/performance/headphones/mix", json={"value": 0.25})
             command = await fake
             assert command == {"type": "headphone_mix", "value": 0.25}
             assert response.status_code == 200
@@ -237,12 +235,8 @@ def test_mix_out_of_range_is_rejected_without_submitting() -> None:
             transport=ASGITransport(app=_app()), base_url="http://test"
         ) as client:
             await _open_page(client)
-            too_high = await client.post(
-                "/api/v1/performance/headphones/mix", json={"value": 1.5}
-            )
-            too_low = await client.post(
-                "/api/v1/performance/headphones/mix", json={"value": -0.1}
-            )
+            too_high = await client.post("/api/v1/performance/headphones/mix", json={"value": 1.5})
+            too_low = await client.post("/api/v1/performance/headphones/mix", json={"value": -0.1})
             not_finite = await client.post(
                 "/api/v1/performance/headphones/mix", json={"value": None}
             )
@@ -287,9 +281,7 @@ def test_no_page_returns_503() -> None:
             transport=ASGITransport(app=_app()), base_url="http://test"
         ) as client:
             got = await client.get("/api/v1/performance/headphones")
-            posted = await client.post(
-                "/api/v1/performance/headphones/mix", json={"value": 0.25}
-            )
+            posted = await client.post("/api/v1/performance/headphones/mix", json={"value": 0.25})
         assert got.status_code == 503
         assert "performance page" in got.json()["detail"]
         assert posted.status_code == 503
@@ -387,8 +379,7 @@ def test_failed_page_step_returns_400_and_leaves_selection_unchanged() -> None:
                             {
                                 "status": "failed",
                                 "error": (
-                                    "headphone output usb-x is not an enumerated "
-                                    "headphone output"
+                                    "headphone output usb-x is not an enumerated headphone output"
                                 ),
                             }
                         ],

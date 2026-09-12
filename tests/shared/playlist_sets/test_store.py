@@ -1,4 +1,8 @@
-"""Store-layer tests for playlist sets (SET-05)."""
+"""Store-layer tests for playlist sets (SET-05).
+
+[if] a set is performed or practiced [then] play_count and runs update correctly, [else stop].
+"""
+
 from __future__ import annotations
 
 import sqlite3
@@ -32,8 +36,7 @@ def test_performance_increments_without_mutating_membership(
     """[if] a set is performed [then] play_count is 1 and memberships unchanged."""
     conn = ps_conn_with_memberships
     conn.executemany(
-        "INSERT INTO playlist_memberships(playlist_id, stable_id, position) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO playlist_memberships(playlist_id, stable_id, position) VALUES (?, ?, ?)",
         [("pl1", "t-a", 0), ("pl1", "t-b", 1)],
     )
     before = conn.execute(
@@ -77,23 +80,16 @@ def test_create_from_play_order_snapshot_is_independent(
 ) -> None:
     conn = ps_conn_with_memberships
     conn.executemany(
-        "INSERT INTO playlist_memberships(playlist_id, stable_id, position) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO playlist_memberships(playlist_id, stable_id, position) VALUES (?, ?, ?)",
         [("pl1", "t-a", 0), ("pl1", "t-b", 1)],
     )
     po_id = create_play_order(conn, "pl1", "peak")
     add_entry(conn, po_id, "t-a", 0)
     add_entry(conn, po_id, "t-b", 1)
     set_id = create_playlist_set(conn, "pl1", "FromOrder", from_play_order="peak")
-    before = [
-        e.stable_id
-        for e in load_playlist_set(conn, set_id).entries
-    ]
+    before = [e.stable_id for e in load_playlist_set(conn, set_id).entries]
     add_entry(conn, po_id, "t-c", 2)
-    after = [
-        e.stable_id
-        for e in load_playlist_set(conn, set_id).entries
-    ]
+    after = [e.stable_id for e in load_playlist_set(conn, set_id).entries]
     assert before == ["t-a", "t-b"]
     assert after == before
 
@@ -103,9 +99,7 @@ def test_migrations_idempotent(ps_conn: sqlite3.Connection) -> None:
     assert apply_playlist_set_migrations(ps_conn) == 1
     tables = {
         r[0]
-        for r in ps_conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()
+        for r in ps_conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     }
     assert "playlist_sets" in tables
     assert "play_orders" in tables
