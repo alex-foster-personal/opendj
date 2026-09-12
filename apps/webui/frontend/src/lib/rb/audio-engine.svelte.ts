@@ -197,7 +197,7 @@ import {
 	type StemBuffers
 } from '$lib/rb/stem-graph';
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
-import type { AudioEngine } from '$lib/rb/audio-engine-types';
+import type { AudioEngine, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
 import { buildDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
@@ -539,6 +539,8 @@ let _masterMuteGain: GainNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null, _externalRouteAnalyser: AnalyserNode | null = null; // #1642: taps _externalMerger, which bypasses _masterGain
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
+let _masterMode: MasterMode = 'auto';
+let _masterReason: MasterReason = null;
 /**
  * #1475 M enforcement: a static gain ceiling, not a limiter. `_ceilingDbfs` is
  * the level captured by the M control at some tap; enabling it attenuates
@@ -978,6 +980,12 @@ import {
 	type TransportMutationActivity,
 	filterParamsFromKnob
 } from './audio-engine-guards';
+import {
+	electMaster,
+	onAirGain,
+	SILENCE_GAIN_EPSILON,
+	type MasterElectionInput
+} from './master-election';
 export {
 	nextPlayingMaster,
 	assertDeckLoadConsistency,
@@ -1066,17 +1074,95 @@ function _quantizeGridBeats(st: DeckState): 1 | 4 | 8 {
 	return beats;
 }
 
-function _assignMaster(deck: DeckId | null): void {
+function _assignMaster(deck: DeckId | null, reason?: MasterReason): void {
 	_masterDeck = deck;
+	if (reason !== undefined) _masterReason = reason;
 	for (const candidate of DECK_IDS) deckStates[candidate].is_master = candidate === deck;
 }
 
-function _playingMaster(): DeckId | null {
-	return _masterDeck !== null && deckStates[_masterDeck].audible ? _masterDeck : null;
+function _ownedMaster(): DeckId | null {
+	return _masterDeck;
+}
+
+/** Master that can actually drive Beat Sync phase. */
+function _syncClockMaster(): DeckId | null {
+	return _masterDeck !== null && deckStates[_masterDeck].playing ? _masterDeck : null;
 }
 
 function _syncMaster(): DeckId | null {
-	return _masterDeck !== null && deckStates[_masterDeck].playing ? _masterDeck : null;
+	return _syncClockMaster();
+}
+
+function _electionInput(): MasterElectionInput {
+	return {
+		crossfader: mixerState.crossfader,
+		master: mixerState.master,
+		decks: DECK_IDS.map((id) => {
+			const st = deckStates[id];
+			const ch = mixerState.channels[id];
+			return {
+				id,
+				loaded: st.stable_id !== null,
+				playing: st.playing,
+				beat_sync_enabled: effectiveBeatSync(st),
+				fader: ch.fader,
+				trim: ch.trim,
+				assign: ch.assign
+			};
+		})
+	};
+}
+
+function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason }): DeckId | null {
+	if (_masterMode === 'locked' && !options?.force) return _masterDeck;
+	const next = electMaster(_electionInput());
+	_assignMaster(next, options?.reason ?? 'master-left');
+	return next;
+}
+
+function _maybeHandoffOnAir(): void {
+	if (_masterMode !== 'auto' || _masterDeck === null) return;
+	const masterDeck = _masterDeck;
+	const st = deckStates[masterDeck];
+	if (!st.playing) return;
+	const ch = mixerState.channels[masterDeck];
+	const masterGain = onAirGain(
+		{
+			id: masterDeck,
+			loaded: st.stable_id !== null,
+			playing: st.playing,
+			beat_sync_enabled: effectiveBeatSync(st),
+			fader: ch.fader,
+			trim: ch.trim,
+			assign: ch.assign
+		},
+		mixerState.crossfader,
+		mixerState.master
+	);
+	if (masterGain >= SILENCE_GAIN_EPSILON) return;
+	const hasOtherOnAir = DECK_IDS.some((candidate) => {
+		if (candidate === masterDeck) return false;
+		const other = deckStates[candidate];
+		if (other.stable_id === null || !other.playing) return false;
+		const otherCh = mixerState.channels[candidate];
+		return (
+			onAirGain(
+				{
+					id: candidate,
+					loaded: true,
+					playing: true,
+					beat_sync_enabled: effectiveBeatSync(other),
+					fader: otherCh.fader,
+					trim: otherCh.trim,
+					assign: otherCh.assign
+				},
+				mixerState.crossfader,
+				mixerState.master
+			) >= SILENCE_GAIN_EPSILON
+		);
+	});
+	if (!hasOtherOnAir) return;
+	_electPlayingMaster({ reason: 'master-left' });
 }
 
 /** `syncMayWriteTempo` against LIVE state, for the writes that outlive the
@@ -1088,17 +1174,15 @@ function _syncOwnsFollowerTempo(deck: DeckId): boolean {
 	return syncMayWriteTempo(deck, effectiveBeatSync(deckStates[deck]), _masterDeck);
 }
 
-function _electPlayingMaster(): DeckId | null {
-	const next = nextPlayingMaster(DECK_IDS.filter((deck) => deckStates[deck].audible));
-	_assignMaster(next);
-	return next;
-}
-
 function _handleAudibleTransition(deck: DeckId, wasAudible: boolean, audible: boolean): void {
-	if (audible && !wasAudible && _playingMaster() === null) {
-		_assignMaster(deck);
-	} else if (!audible && wasAudible && _masterDeck === deck) {
-		_electPlayingMaster();
+	void wasAudible;
+	void audible;
+	if (_masterMode !== 'auto') return;
+	const st = deckStates[deck];
+	if (_masterDeck === null && st.playing) {
+		_electPlayingMaster({ reason: 'first-claim' });
+	} else if (_masterDeck === deck && !st.playing) {
+		_electPlayingMaster({ reason: 'master-left' });
 	}
 }
 
@@ -1862,7 +1946,9 @@ function _publishPresentedTransport(
 			)
 		)
 			.then(() => {
-				if (_masterDeck === deck && !st.audible) _electPlayingMaster();
+				if (_masterDeck === deck && !st.playing) {
+					_electPlayingMaster({ reason: 'natural-end' });
+				}
 			})
 			.catch((error: unknown) => {
 				if (rt.processor !== null) _recordProcessorFailure(deck, error);
@@ -1913,7 +1999,10 @@ function _clearLoadedTrackState(st: DeckState): void {
 	const deck = st.deck_id, wasMaster = _masterDeck === deck;
 	// audible flips BEFORE re-election (excludes this deck as its own replacement) and election runs BEFORE reconciling (r3912339497); stranded is captured NOW, before clearForDeck wipes it and before the scoped continuation below starts (r3912339491, second pass).
 	st.playing = false; st.audible = false;
-	if (wasMaster) _electPlayingMaster();
+	if (wasMaster) {
+		if (_masterMode === 'locked') _masterMode = 'auto';
+		_electPlayingMaster({ force: true, reason: 'unload' });
+	}
 	const stranded = _beatgridResyncPorts.takePending(deck); _resyncTracking.clearForDeck(deck);
 	_beatgridGuards.beforeClear(deck, stranded, 'reload');
 	st.stable_id = null;
@@ -2834,6 +2923,8 @@ class RbAudioEngine implements AudioEngine {
 		_externalMerger = _externalRouteAnalyser = null;
 		_ctx = null;
 		_masterDeck = null;
+		_masterMode = 'auto';
+		_masterReason = 'dispose';
 		for (const deck of DECK_IDS) {
 			_rt[deck] = _emptyRuntime();
 			deckStates[deck] = _emptyDeckState(deck);
@@ -3048,7 +3139,10 @@ class RbAudioEngine implements AudioEngine {
 			st.hot_cue_revisions = _hotCueRevisionsFrom(hotCueSlots);
 			st.has_rb_mapping = candidateTrack.has_rb_mapping;
 			st.loop = displayLoopFrom(publishedAnlz.cues, publishedAnlz.beatgrid.beats);
-			if (replacingMaster) _electPlayingMaster();
+			if (replacingMaster) {
+				if (_masterMode === 'locked') _masterMode = 'auto';
+				_electPlayingMaster({ force: true, reason: 'unload' });
+			}
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
 			if (incumbentProcessor !== null) {
 				incumbentProcessor.disconnect();
@@ -3157,34 +3251,36 @@ class RbAudioEngine implements AudioEngine {
 						st.loop
 					)
 			: resumeSec;
-		const activeMaster = _syncMaster();
-		if (activeMaster === null) {
-			// Nothing is playing, so this deck is about to BECOME master: there is
-			// no other transport to align with and no reason to pay the beat-sync
-			// margin. Immediate-transport safety (LATENCY-01), led by the onset
-			// ramp rather than the processor's self-report (LATENCY round 2).
-			const when = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
-			try {
-				await _schedulePress(deck, when, startSec, true, pressT0Ms);
-				_assignMaster(deck);
-				st.sync_error = null;
-			} catch (error) {
-				st.sync_error = String(error);
-				throw error;
-			}
-		} else if (activeMaster === deck || !syncActive) {
-			// Either this deck IS the master, or Beat Sync is not in effect on
-			// it (switched off, or lit but with no grid to lock to). Sync is not
-			// in play, so this is plain transport (LATENCY-01), led by the onset
-			// ramp (LATENCY round 2).
+		const syncClock = _syncClockMaster();
+		const owned = _ownedMaster();
+		const schedulePlainTransport = async (): Promise<void> => {
 			const when = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
 			await _schedulePress(deck, when, startSec, true, pressT0Ms);
 			st.sync_error = null;
-		} else {
-			// This deck is joining from silence (guarded by the desiredActive
-			// check above) - no audible tempo to protect yet, so no
-			// reanchorDecks here; the initial lock applies immediately.
-			await _synchronizeFollowers(activeMaster, [deck], {
+		};
+		if (_masterMode === 'locked' && owned !== null && owned !== deck) {
+			if (syncClock !== null && syncActive) {
+				await _synchronizeFollowers(syncClock, [deck], {
+					...(pressT0Ms === undefined ? {} : { pressT0Ms })
+				});
+			} else {
+				await schedulePlainTransport();
+			}
+		} else if (_masterMode === 'auto' && syncClock === null) {
+			await schedulePlainTransport();
+			_electPlayingMaster({ reason: 'play-claim' });
+			const elected = _masterDeck;
+			if (elected !== null && elected !== deck && syncActive) {
+				await _synchronizeFollowers(elected, [deck], {
+					...(pressT0Ms === undefined ? {} : { pressT0Ms })
+				});
+			}
+		} else if (_masterMode === 'locked' && owned === deck && syncClock === null) {
+			await schedulePlainTransport();
+		} else if (syncClock === deck || !syncActive) {
+			await schedulePlainTransport();
+		} else if (syncClock !== null) {
+			await _synchronizeFollowers(syncClock, [deck], {
 				...(pressT0Ms === undefined ? {} : { pressT0Ms })
 			});
 		}
@@ -3678,9 +3774,24 @@ class RbAudioEngine implements AudioEngine {
 			return Promise.resolve();
 		}
 		if (!_rt[deck].desiredActive) return Promise.resolve();
-		const master = _syncMaster();
+		const master = _syncClockMaster();
 		if (master === null) {
-			_assignMaster(deck);
+			if (_masterMode === 'locked' && _ownedMaster() !== null) {
+				return Promise.resolve();
+			}
+			_electPlayingMaster({ reason: 'beat-sync-enable' });
+			const elected = _syncClockMaster();
+			if (elected !== null && elected !== deck) {
+				return _synchronizeFollowers(elected, [deck]).catch((error: unknown) => {
+					st.beat_sync_enabled = false;
+					const bounds = _tempoBounds(deck);
+					const detail = error instanceof Error ? error.message : String(error);
+					throw new Error(
+						`cannot phase-lock within pitch [${bounds.min}, ${bounds.max}] (BAR): ${detail}`,
+						{ cause: error instanceof Error ? error : undefined }
+					);
+				});
+			}
 			return Promise.resolve();
 		}
 		if (!syncChangeRequiresReschedule(deck, true, enabled, master)) {
@@ -3829,7 +3940,10 @@ class RbAudioEngine implements AudioEngine {
 		const wasMaster = _masterDeck === deck; // elect BEFORE reconciling below, same shape as _clearLoadedTrackState (r3912339497)
 		// audible/playing flip BEFORE election, same shape again: the 2s replacement wait above BREAKS on its deadline, so a pause that never reached presentation leaves st.audible true on a deck whose processor is already detached and stopped. nextPlayingMaster picks the lowest audible id, so deck 1 would re-elect ITSELF here and _reconcileStrandedFollowers' master === deck branch would then drop every stranded follower instead of handing them to the deck that is actually audible (PR #765 'Exclude the unloading deck before master election').
 		st.playing = false; st.audible = false;
-		if (wasMaster) _electPlayingMaster();
+		if (wasMaster) {
+			if (_masterMode === 'locked') _masterMode = 'auto';
+			_electPlayingMaster({ force: true, reason: 'unload' });
+		}
 		const stranded = _beatgridResyncPorts.takePending(deck); _resyncTracking.clearForDeck(deck); // stranded captured before clearForDeck, same race as r3912339491
 		_beatgridGuards.beforeClear(deck, stranded, 'unload'); // scoped, not fire-unscoped (r3912960726)
 		_rt[deck] = {
@@ -3882,37 +3996,42 @@ class RbAudioEngine implements AudioEngine {
 		return _synchronizeFollowers(master, [deck], { reanchorDecks: new Set([deck]) });
 	}
 
-	async setDeckMaster(deck: DeckId): Promise<void> {
+	async setDeckMaster(deck: DeckId, options?: { lock?: boolean }): Promise<void> {
 		const { st } = _requireLoaded(deck, 'setDeckMaster');
+		const previousMaster = _masterDeck;
+		const previousMode = _masterMode;
 		if (!st.audible) {
+			if (options?.lock === false && _masterDeck === deck) {
+				_masterMode = 'auto';
+				if (!st.playing) _electPlayingMaster({ reason: 'unlock-reelect' });
+				return;
+			}
 			const blockers = pausedMasterSelectionBlockers(deck, deckStates);
 			assertPausedMasterSelectionAllowed(deck, st.audible, blockers);
-			_assignMaster(deck);
+			_assignMaster(deck, 'manual');
+			if (options?.lock === true) _masterMode = 'locked';
+			else if (options?.lock === false) {
+				_masterMode = 'auto';
+				if (!st.playing) _electPlayingMaster({ reason: 'unlock-reelect' });
+			}
 			return;
 		}
-		// masterSwitchFollowers only returns already playing, already
-		// beat-synced decks - re-anchoring them to the new master. A deck whose
-		// BEAT SYNC is lit but inert (no real grid) is not one of them: it never
-		// locked, so there is nothing to re-anchor and requireBeatGrid would
-		// turn one operator's MASTER press into that deck's sync error.
 		const followers = masterSwitchFollowers(deck, deckStates).filter((candidate) =>
 			effectiveBeatSync(deckStates[candidate])
 		);
-		// Roles move FIRST, then the re-anchor runs under them. The outgoing
-		// master is one of these followers, and every tempo write sync makes -
-		// including the tail of a re-anchor ramp that outlives this call - asks
-		// `_syncOwnsFollowerTempo` who the master is at that instant. Assigning
-		// afterwards would make the outgoing deck look like the master for the
-		// whole operation and withdraw the very deck being re-anchored (#1134).
-		const previousMaster = _masterDeck;
-		_assignMaster(deck);
+		_assignMaster(deck, 'manual');
 		try {
 			await _synchronizeFollowers(deck, followers, { reanchorDecks: new Set(followers) });
 		} catch (error) {
-			// A refused phase lock must not silently leave MASTER somewhere the
-			// DJ did not put it; restore the roles the press tried to change.
 			_assignMaster(previousMaster);
+			_masterMode = previousMode;
 			throw error;
+		}
+		if (options?.lock === true) {
+			_masterMode = 'locked';
+		} else if (options?.lock === false) {
+			_masterMode = 'auto';
+			if (!st.playing) _electPlayingMaster({ reason: 'unlock-reelect' });
 		}
 	}
 
@@ -4007,6 +4126,7 @@ class RbAudioEngine implements AudioEngine {
 		mixerState.channels[deck].trim = value;
 		const nodes = _rt[deck].nodes;
 		if (nodes !== null) _setParam(nodes.trim.gain, value * TRIM_MAX_GAIN);
+		_maybeHandoffOnAir();
 	}
 
 	setEq(deck: DeckId, band: EqBand, value: number): void {
@@ -4046,12 +4166,14 @@ class RbAudioEngine implements AudioEngine {
 		mixerState.channels[deck].fader = value;
 		const nodes = _rt[deck].nodes;
 		if (nodes !== null) _setParam(nodes.fader.gain, value);
+		_maybeHandoffOnAir();
 	}
 
 	setCrossfader(value: number): void {
 		assertUnitRange('setCrossfader value', value);
 		mixerState.crossfader = value;
 		if (_ctx !== null) _applyCrossfader();
+		_maybeHandoffOnAir();
 	}
 
 	assignChannel(deck: DeckId, assign: CrossfaderAssign): void {
@@ -4061,6 +4183,7 @@ class RbAudioEngine implements AudioEngine {
 		}
 		mixerState.channels[deck].assign = assign;
 		if (_ctx !== null) _applyCrossfader();
+		_maybeHandoffOnAir();
 	}
 
 	setChannelCue(deck: DeckId, enabled: boolean): void {
@@ -4117,3 +4240,13 @@ class RbAudioEngine implements AudioEngine {
 
 /** The singleton engine every /performance unit imports. */
 export const engine: RbAudioEngine = new RbAudioEngine();
+
+export function getMasterMode(): MasterMode {
+	return _masterMode;
+}
+
+export function getMasterReason(): MasterReason {
+	return _masterReason;
+}
+
+export type { MasterMode, MasterReason };

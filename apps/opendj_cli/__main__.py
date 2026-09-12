@@ -545,6 +545,10 @@ def _state_text(mirror: dict[str, Any]) -> str:
         lines.append(f"transition: {transition['state']}")
     else:
         lines.append("transition: absent")
+    master_deck = mirror.get("master_deck")
+    master_mode = mirror.get("master_mode", "absent")
+    deck_label = master_deck if master_deck is not None else "none"
+    lines.append(f"master_deck: {deck_label} mode={master_mode}")
     decks = mirror.get("decks")
     if isinstance(decks, dict):
         for deck_id in sorted(decks, key=str):

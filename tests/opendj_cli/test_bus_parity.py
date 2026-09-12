@@ -262,6 +262,8 @@ def test_the_mirror_publishes_the_clock_the_cli_sizes_a_ramp_from() -> None:
     published = ts_contract.mirror_top_level_keys()
 
     assert "master_deck" in published
+    assert "master_mode" in published
+    assert "master_reason" in published
     assert "decks" in published
 
 

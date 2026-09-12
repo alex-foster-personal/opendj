@@ -26,6 +26,7 @@
 		performanceCommandStatus,
 		dismissPerformanceDeckError,
 		dispatchPerformanceCommand,
+		queryPerformanceState,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import { pushToast } from '$lib/stores.svelte';
@@ -240,7 +241,12 @@
 	}
 
 	async function selectMaster(): Promise<void> {
-		await runPerformanceCommandFromUi({ type: 'master', deck: deckId });
+		const state = queryPerformanceState();
+		if (state.master_deck === deckId && state.master_mode === 'locked') {
+			await runPerformanceCommandFromUi({ type: 'master', deck: deckId, lock: false });
+			return;
+		}
+		await runPerformanceCommandFromUi({ type: 'master', deck: deckId, lock: true });
 	}
 
 	async function toggleMasterTempo(): Promise<void> {
