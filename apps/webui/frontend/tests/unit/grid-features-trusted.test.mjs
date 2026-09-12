@@ -1,3 +1,4 @@
+// requirement: NATIVE-03
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
@@ -103,6 +104,10 @@ test('own ok with static_grid_untrusted true is not trusted but still paints bea
 	});
 	assert.equal(grid.hasTrustedBeatGrid(payload), false);
 	assert.equal(grid.shouldPaintBeatGrid(payload), true);
+	const st = { quantize_enabled: true, beat_sync_enabled: true, stable_id: 'x', anlz: payload };
+	assert.equal(grid.effectiveQuantize(st), false);
+	assert.equal(grid.effectiveBeatSync(st), false);
+	assert.equal(grid.gridFeaturesInert(st), true);
 	assert.match(grid.gridFeatureInertTip({ stable_id: 'x', anlz: payload }), /32\.500s/);
 });
 
@@ -166,6 +171,7 @@ test('own ok static_grid_untrusted true with varying bpm multi-anchor map stays 
 	assert.equal(grid.hasTrustedBeatGrid(payload), false);
 	assert.equal(grid.shouldPaintBeatGrid(payload), true);
 	const st = { quantize_enabled: true, beat_sync_enabled: true, stable_id: 'x', anlz: payload };
+	assert.equal(grid.effectiveQuantize(st), false);
 	assert.equal(grid.effectiveBeatSync(st), false);
 	assert.equal(grid.gridFeaturesInert(st), true);
 });
