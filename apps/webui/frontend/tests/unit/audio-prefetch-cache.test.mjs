@@ -74,6 +74,20 @@ async function prefetchAndSettle(cache, stable_id, timeoutMs = 20_000) {
 	}
 }
 
+// --------------------------------------------------------------- posture cap
+
+test('Gig posture floors MAX_AUDIO_PREFETCH_TRACKS at 2', async () => {
+	const cache = await loadTypeScriptModule('src/lib/rb/audio-prefetch-cache.svelte.ts', {
+		viteApiBase: origin
+	});
+	try {
+		cache.setResolvedPosture('gig');
+		assert.equal(cache.MAX_AUDIO_PREFETCH_TRACKS(), 2);
+	} finally {
+		cache.setResolvedPosture('prep');
+	}
+});
+
 // --------------------------------------------------------------- track cap
 
 test('a 5th prefetched track evicts the least-recently-used one, capping ready at 4', async () => {

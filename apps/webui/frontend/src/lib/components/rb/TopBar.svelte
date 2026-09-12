@@ -38,6 +38,7 @@
 	import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
 	import { describeAudioOutputHealth } from '$lib/rb/audio-output-health-display';
 	import UserBauble from '$lib/components/UserBauble.svelte';
+	import AppPostureChip from './AppPostureChip.svelte';
 	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import CommandEntry from './CommandEntry.svelte';
@@ -348,6 +349,7 @@
 			{/each}
 		</div>
 	</details>
+	<AppPostureChip />
 
 	<div class="icon-cluster">
 		<!-- list-view icon with dropdown caret -->

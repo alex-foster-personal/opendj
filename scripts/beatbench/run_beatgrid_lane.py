@@ -29,7 +29,7 @@ import sys
 import time
 from typing import Any
 
-from apps.analysis_beatgrid.bar_phase import assign_bar_phase
+from apps.analysis_beatgrid.bar_phase import assign_bar_phase, lock_bar_phase
 from scripts.beatbench._harness import resolve_fixture_paths
 
 RUNNER = os.path.join("apps", "analysis_beatgrid", "beat_this_runner.py")
@@ -90,20 +90,30 @@ def _reshape(raw: dict, fixtures: list, label: str) -> dict[str, Any]:
         # Bar numbering is POLICY, applied here from the pure module rather
         # than inside the torch environment, so what the table scores is the
         # same 1..4 assignment the deck will read. See bar_phase.py.
-        phase = assign_bar_phase(row.get("beats") or [], row.get("downbeats") or [])
+        phase_diag = assign_bar_phase(row.get("beats") or [], row.get("downbeats") or [])
+        lock = lock_bar_phase(row.get("beats") or [], row.get("downbeats") or [])
+        beats = row.get("beats") or []
+        if lock.bar_phase_unestablished:
+            served_numbers: list[int] = []
+            served_downbeats = row.get("downbeats")
+        else:
+            served_numbers = lock.beat_numbers
+            served_downbeats = [
+                beats[i] for i, n in enumerate(served_numbers) if n == 1
+            ]
         results[fixture["stable_id"]] = {
             # Both sides are excerpt-relative, because the producer reads the
             # excerpt WAV, so no offset is applied here. window_start_s rides
             # along so a reader can see it was considered, not forgotten.
-            "beats": row.get("beats", []),
-            "downbeats": row.get("downbeats"),
-            "beat_numbers": phase.beat_numbers,
-            "bar_phase_unestablished": phase.bar_phase_unestablished,
-            "bar_phase_reason": phase.reason,
-            "n_backprojected_beats": phase.n_backprojected_beats,
-            "n_bars_over_length": phase.n_bars_over_length,
-            "n_bars_under_length": phase.n_bars_under_length,
-            "max_bar_beats": phase.max_bar_beats,
+            "beats": beats,
+            "downbeats": served_downbeats,
+            "beat_numbers": served_numbers,
+            "bar_phase_unestablished": lock.bar_phase_unestablished,
+            "bar_phase_reason": lock.reason,
+            "n_backprojected_beats": lock.n_backprojected_beats,
+            "n_bars_over_length": phase_diag.n_bars_over_length,
+            "n_bars_under_length": phase_diag.n_bars_under_length,
+            "max_bar_beats": phase_diag.max_bar_beats,
             "activation_peak": row.get("activation_peak"),
             "native_bpm": None,
             "runtime_s": row.get("runtime_s"),

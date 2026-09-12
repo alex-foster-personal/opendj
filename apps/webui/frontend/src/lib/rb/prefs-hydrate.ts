@@ -10,6 +10,9 @@ import {
 } from './deck-layout-prefs';
 import { makeDiskWriteChain } from './disk-write-chain';
 import { LYRICS_BOOLEAN_KEYS, LYRICS_LOAD_STRATEGIES, type LyricsLoadStrategy } from './lyrics-prefs';
+import { APP_POSTURE_PREFS, type AppPosturePref } from './app-posture-prefs';
+import { applyPrefetchCaps } from '$lib/rb/audio-prefetch-cache.svelte';
+import { setResolvedPosture } from './app-posture';
 import { PERF_TIER_PREFS, type PerfTierPref } from './perf-tier-prefs';
 import { parseAutoSync, parseLevelCalibration } from './prefs-fields';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
@@ -39,6 +42,7 @@ export type DiskPrefsPatch = {
 	lyrics_waveform_overlay?: boolean;
 	lyrics_deck_line?: boolean;
 	perf_tier?: PerfTierPref;
+	app_posture?: AppPosturePref;
 };
 
 async function _putDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
@@ -73,6 +77,7 @@ export interface PrefsHydrateTarget {
 	lyrics_waveform_overlay: boolean;
 	lyrics_deck_line: boolean;
 	perf_tier: PerfTierPref;
+	app_posture: AppPosturePref;
 }
 
 /** The five boolean lyric prefs hydrate in one loop rather than five ifs. */
@@ -148,6 +153,14 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 				(PERF_TIER_PREFS as readonly string[]).includes(body.perf_tier)
 			) {
 				uiPrefs.perf_tier = body.perf_tier;
+			}
+			if (
+				body.app_posture !== undefined &&
+				(APP_POSTURE_PREFS as readonly string[]).includes(body.app_posture)
+			) {
+				uiPrefs.app_posture = body.app_posture;
+				setResolvedPosture(body.app_posture);
+				applyPrefetchCaps();
 			}
 			persist();
 		} catch {

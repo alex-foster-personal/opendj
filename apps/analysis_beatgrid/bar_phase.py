@@ -62,13 +62,27 @@ DOWNBEAT_MATCH_TOLERANCE_S = 1e-6
 
 REASON_NO_BEATS = "no_beats"
 
+# A kept-to-next gap of 1 or 2 is a detector double (round 2: 249 gap-1 + 325
+# gap-2). Gap 3 is a short bar, not a double.
+DOUBLE_MIN_GAP_BEATS = 3
+
+# Fail a track whose thinned-downbeat agreement with the chosen phase is below
+# this. Locked from the round-3 90-track measure (ops/beatbench/round-3/).
+BAR_PHASE_AGREEMENT_FLOOR = 0.50
+
+REASON_BAR_PHASE_BELOW_FLOOR = "bar_phase_below_floor"
+
 __all__ = [
     "BAR_BEATS",
+    "BAR_PHASE_AGREEMENT_FLOOR",
+    "DOUBLE_MIN_GAP_BEATS",
     "DOWNBEAT_MATCH_TOLERANCE_S",
+    "REASON_BAR_PHASE_BELOW_FLOOR",
     "REASON_NO_BEATS",
     "REASON_NO_DOWNBEAT_ANCHOR",
     "BarPhase",
     "assign_bar_phase",
+    "lock_bar_phase",
 ]
 
 
@@ -85,6 +99,10 @@ class BarPhase:
     n_bars_over_length: int
     n_bars_under_length: int
     max_bar_beats: int
+    chosen_phase: int | None = None
+    phase_agreement: float | None = None
+    n_phase_disagreements: int = 0
+    n_downbeats_thinned: int = 0
 
 
 # ----- Helpers ------------------------------------------------------------
@@ -190,4 +208,113 @@ def assign_bar_phase(
         n_bars_over_length=over,
         n_bars_under_length=under,
         max_bar_beats=longest,
+    )
+
+
+def _thin_anchors(anchors: list[int], min_gap: int) -> list[int]:
+    """Keep the first of each pair of downbeats closer than ``min_gap`` beats."""
+    if not anchors:
+        return []
+    kept = [anchors[0]]
+    for anchor in anchors[1:]:
+        if anchor - kept[-1] >= min_gap:
+            kept.append(anchor)
+    return kept
+
+
+def _vote_phase(kept: list[int], bar_beats: int) -> int:
+    """Majority phase over thinned anchors; tie-break to smallest phase index."""
+    votes = [0] * bar_beats
+    for anchor in kept:
+        votes[anchor % bar_beats] += 1
+    best_count = max(votes)
+    for phase in range(bar_beats):
+        if votes[phase] == best_count:
+            return phase
+    raise RuntimeError("unreachable: kept anchors produced no phase vote")
+
+
+def _lock_numbers(n_beats: int, chosen: int, bar_beats: int) -> list[int]:
+    """Every beat numbered from the chosen phase anchor."""
+    return [(index - chosen) % bar_beats + 1 for index in range(n_beats)]
+
+
+def lock_bar_phase(
+    beat_times: Sequence[float],
+    downbeat_times: Sequence[float],
+    *,
+    bar_beats: int = BAR_BEATS,
+    tolerance_s: float = DOWNBEAT_MATCH_TOLERANCE_S,
+    floor: float = BAR_PHASE_AGREEMENT_FLOOR,
+) -> BarPhase:
+    """Establish a deck-legal 1..4 cadence from thinned downbeat majority vote.
+
+    Raises when ``beat_times`` is not strictly ascending or when a downbeat is
+    not one of the beats. Fails closed when the thinned vote is below ``floor``.
+    """
+    if bar_beats < 1:
+        raise ValueError(f"bar_beats must be at least 1, got {bar_beats}")
+
+    beats = _ascending_floats(beat_times)
+    downbeats = sorted(float(t) for t in downbeat_times)
+    if not beats:
+        return BarPhase([], True, REASON_NO_BEATS, 0, len(downbeats), 0, 0, 0, 0)
+
+    anchors = _downbeat_indices(beats, downbeats, tolerance_s)
+    closed, open_bar = _bar_lengths(anchors, len(beats)) if anchors else ([], 0)
+    over, under, longest = _bar_anomalies(closed, open_bar, bar_beats)
+
+    if not anchors:
+        return BarPhase(
+            [],
+            True,
+            REASON_NO_DOWNBEAT_ANCHOR,
+            len(beats),
+            0,
+            0,
+            over,
+            under,
+            longest,
+        )
+
+    kept = _thin_anchors(anchors, DOUBLE_MIN_GAP_BEATS)
+    n_thinned = len(anchors) - len(kept)
+    chosen = _vote_phase(kept, bar_beats)
+    agree = sum(1 for anchor in kept if anchor % bar_beats == chosen)
+    agreement = agree / len(kept)
+    n_disagree = len(kept) - agree
+
+    if agreement < floor:
+        return BarPhase(
+            [],
+            True,
+            REASON_BAR_PHASE_BELOW_FLOOR,
+            len(beats),
+            len(anchors),
+            0,
+            over,
+            under,
+            longest,
+            chosen_phase=chosen,
+            phase_agreement=agreement,
+            n_phase_disagreements=n_disagree,
+            n_downbeats_thinned=n_thinned,
+        )
+
+    numbers = _lock_numbers(len(beats), chosen, bar_beats)
+    first_bar_one = next(i for i, n in enumerate(numbers) if n == 1)
+    return BarPhase(
+        beat_numbers=numbers,
+        bar_phase_unestablished=False,
+        reason=None,
+        n_beats=len(beats),
+        n_downbeats=len(anchors),
+        n_backprojected_beats=first_bar_one,
+        n_bars_over_length=over,
+        n_bars_under_length=under,
+        max_bar_beats=longest,
+        chosen_phase=chosen,
+        phase_agreement=agreement,
+        n_phase_disagreements=n_disagree,
+        n_downbeats_thinned=n_thinned,
     )
