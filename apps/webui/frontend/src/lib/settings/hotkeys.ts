@@ -3,11 +3,17 @@
  * Installed from root layout so it works on /performance and the shell.
  * Performance hotkeys already ignore meta/ctrl, so they do not conflict.
  */
+import {
+	SETTINGS_CHORD_CODE,
+	SETTINGS_CHORD_KEY
+} from '$lib/components/rb/hotkeys/hotkeys-registry';
 import { closeSettings, isSettingsOpen, openSettings, toggleSettings } from './overlay.svelte';
 
 function _isSettingsChord(e: KeyboardEvent): boolean {
 	const mod = e.metaKey || e.ctrlKey;
-	return mod && !e.altKey && !e.shiftKey && (e.key === ',' || e.code === 'Comma');
+	return (
+		mod && !e.altKey && !e.shiftKey && (e.key === SETTINGS_CHORD_KEY || e.code === SETTINGS_CHORD_CODE)
+	);
 }
 
 export function installSettingsHotkeys(): () => void {

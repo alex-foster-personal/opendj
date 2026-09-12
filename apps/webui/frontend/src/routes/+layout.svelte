@@ -12,6 +12,8 @@
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import SetupOverlay from '$lib/components/setup/SetupOverlay.svelte';
 	import AccountOverlay from '$lib/components/account/AccountOverlay.svelte';
+	import HotkeysOverlay from '$lib/components/rb/hotkeys/HotkeysOverlay.svelte';
+	import { installHotkeysOverlayHotkeys } from '$lib/components/rb/hotkeys/install-hotkeys-overlay';
 	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
 	import { preflightGate } from '$lib/preflight/preflight.svelte';
 	import { resolveFirstRun } from '$lib/setup/first-run';
@@ -90,12 +92,14 @@
 		refreshHealth();
 		void hydrateConfirmPrefsFromDisk();
 		const uninstallSettings = installSettingsHotkeys();
+		const uninstallHotkeysOverlay = installHotkeysOverlayHotkeys();
 		// Page-lifetime instruments: usage heartbeat + the DevTools perf log
 		// globals the e2e latency floor reads. See $lib/rb/app-init.
 		const stopInstruments = startAppInstruments();
 		const id = setInterval(refreshHealth, 30_000);
 		return () => {
 			uninstallSettings();
+			uninstallHotkeysOverlay();
 			stopInstruments();
 			clearInterval(id);
 		};
@@ -207,6 +211,10 @@
      above: the user bauble is drawn on /performance too, and its Account door
      must open something there. -->
 <AccountOverlay />
+<!-- Hotkeys overlay (LIBUX-04): "/" hold and "?" toggle. Mounted at the root
+     for the same reason SettingsOverlay is: /performance bypasses the app
+     shell, and the cheatsheet has to work there too. -->
+<HotkeysOverlay />
 
 <ToastStack items={toasts} />
 <BrandLaunch />
