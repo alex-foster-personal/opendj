@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -51,7 +52,23 @@ SHIP_DMG_LINE = re.compile(r"(?:^|[\s;/])ship_dmg\.sh(?:\s|$)")
 RESULT_RE = re.compile(r"^- result: (\S+)", re.M)
 COUNTS_RE = re.compile(r"- tracks: (\d+) playlists: (\d+)")
 HOST_RE = re.compile(r"^- host: (\S+)", re.M)
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 SUMMARY_PREFIX = "[dmg-smoke-cadence]"
+
+
+def _gh_env() -> dict[str, str]:
+    """gh honors CLICOLOR_FORCE even when stdout is captured (nucbox WSL)."""
+    env = os.environ.copy()
+    env["NO_COLOR"] = "1"
+    env["CLICOLOR"] = "0"
+    env.pop("CLICOLOR_FORCE", None)
+    env.pop("FORCE_COLOR", None)
+    env.pop("GH_FORCE_TTY", None)
+    return env
+
+
+def strip_ansi(text: str) -> str:
+    return ANSI_RE.sub("", text)
 
 
 @dataclass(frozen=True)
@@ -139,11 +156,12 @@ def fetch_comments(repo: str, issue: int) -> list[dict]:
         text=True,
         check=False,
         timeout=120,
+        env=_gh_env(),
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or f"gh exit {proc.returncode}")
     try:
-        raw = json.loads(proc.stdout or "[]")
+        raw = json.loads(strip_ansi(proc.stdout or "") or "[]")
         comments = flatten_comments(raw)
     except (json.JSONDecodeError, TypeError) as exc:
         raise RuntimeError(f"unreadable comments payload: {exc}") from exc
