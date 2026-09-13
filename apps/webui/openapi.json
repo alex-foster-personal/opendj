@@ -9040,6 +9040,17 @@
             ],
             "title": "Bpm"
           },
+          "cue_count": {
+            "title": "Cue Count",
+            "type": "integer"
+          },
+          "cue_positions_ms": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Cue Positions Ms",
+            "type": "array"
+          },
           "duration_ms": {
             "anyOf": [
               {
@@ -9055,6 +9066,14 @@
             "title": "File Exists",
             "type": "boolean"
           },
+          "has_beatgrid": {
+            "title": "Has Beatgrid",
+            "type": "boolean"
+          },
+          "hot_cue_count": {
+            "title": "Hot Cue Count",
+            "type": "integer"
+          },
           "is_canonical": {
             "title": "Is Canonical",
             "type": "boolean"
@@ -9069,6 +9088,10 @@
               }
             ],
             "title": "Key"
+          },
+          "loop_count": {
+            "title": "Loop Count",
+            "type": "integer"
           },
           "path": {
             "title": "Path",
@@ -9123,7 +9146,12 @@
           "key",
           "duration_ms",
           "rating",
-          "file_exists"
+          "file_exists",
+          "cue_count",
+          "hot_cue_count",
+          "loop_count",
+          "has_beatgrid",
+          "cue_positions_ms"
         ],
         "title": "MemberOut",
         "type": "object"
@@ -14706,6 +14734,61 @@
         "title": "SoundcloudTracklistRowModel",
         "type": "object"
       },
+      "SqlQueryIn": {
+        "properties": {
+          "limit": {
+            "default": 200,
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "SqlQueryIn",
+        "type": "object"
+      },
+      "SqlQueryOut": {
+        "properties": {
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "items": {},
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "columns",
+          "rows",
+          "truncated",
+          "row_count"
+        ],
+        "title": "SqlQueryOut",
+        "type": "object"
+      },
       "StatusResponse": {
         "properties": {
           "entitlement_provider": {
@@ -19848,6 +19931,47 @@
           }
         },
         "summary": "Get Quality Ratchet",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/sql-query": {
+      "post": {
+        "operationId": "sql_query_api_v1_admin_sql_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SqlQueryIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlQueryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sql Query",
         "tags": [
           "admin"
         ]
