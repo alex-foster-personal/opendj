@@ -102,6 +102,7 @@ from .routes import playlists as playlists_routes
 from .routes import preflight as preflight_routes
 from .routes import progress as progress_routes
 from .routes import quality as quality_routes
+from .routes import sql_playground as sql_playground_routes
 from .routes import worktree_ports as worktree_ports_routes
 from .routes import queues as queues_routes
 from .routes import rb_assets as rb_assets_routes
@@ -447,6 +448,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         progress_routes.router,
         quality_routes.router,
         worktree_ports_routes.router,
+        sql_playground_routes.router,
         smartlists_routes.router,
         autolists_routes.router,
         stems_routes.router,

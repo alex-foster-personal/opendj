@@ -14663,6 +14663,61 @@
         "title": "SoundcloudTracklistRowModel",
         "type": "object"
       },
+      "SqlQueryIn": {
+        "properties": {
+          "limit": {
+            "default": 200,
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "SqlQueryIn",
+        "type": "object"
+      },
+      "SqlQueryOut": {
+        "properties": {
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "items": {},
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "columns",
+          "rows",
+          "truncated",
+          "row_count"
+        ],
+        "title": "SqlQueryOut",
+        "type": "object"
+      },
       "StatusResponse": {
         "properties": {
           "entitlement_provider": {
@@ -19795,6 +19850,47 @@
           }
         },
         "summary": "Get Quality Ratchet",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/sql-query": {
+      "post": {
+        "operationId": "sql_query_api_v1_admin_sql_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SqlQueryIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlQueryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sql Query",
         "tags": [
           "admin"
         ]
