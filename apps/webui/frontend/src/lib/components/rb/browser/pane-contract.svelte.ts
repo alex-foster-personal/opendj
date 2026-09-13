@@ -229,6 +229,8 @@ export class PaneStore {
 	searching = $state(false);
 	search_total = $state(0);
 	search_result_query = $state('');
+	/** Whole-collection search failure detail; null when unsettled or succeeded. */
+	search_error = $state<string | null>(null);
 	/** Playlist-level ETag from the load's GET (add-remove-reorder-tracks
 	 * node) - '' for the All Tracks / blank pane, which have no single
 	 * playlist row to CAS against. Required If-Match for the next mutation. */
@@ -383,6 +385,7 @@ export class PaneStore {
 			this.search_results = [];
 			this.search_total = 0;
 			this.searching = false;
+			this.search_error = null;
 		}
 	}
 
@@ -393,6 +396,16 @@ export class PaneStore {
 
 export function createPaneStore(): PaneStore {
 	return new PaneStore();
+}
+
+/** Settled whole-collection empty-state copy; search failures beat zero-hit copy. */
+export function collectionSearchEmptyMessage(
+	searchError: string | null,
+	visibleCount: number
+): string | null {
+	if (searchError !== null) return `search failed: ${searchError}`;
+	if (visibleCount === 0) return 'no tracks match the search';
+	return null;
 }
 
 /** A membership replacement must be built from the complete playlist. The
