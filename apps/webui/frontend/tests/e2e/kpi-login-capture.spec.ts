@@ -47,6 +47,20 @@ function isLoginPerfSpan(body: Record<string, unknown> | null | undefined): bool
 	return body?.kind === 'perf-span' && body?.name === 'login-submit-to-library-usable';
 }
 
+/**
+ * The page's own `Date.now()` at the moment it built the span, or null.
+ *
+ * `recordPerfSpan` writes `client_timestamp` as an ISO string from that
+ * clock. Anything else -- absent, not a string, unparseable -- yields null,
+ * and a null is treated as "cannot prove this span is ours".
+ */
+function spanClientTimestampMs(body: Record<string, unknown>): number | null {
+	const raw = body.client_timestamp;
+	if (typeof raw !== 'string') return null;
+	const parsed = Date.parse(raw);
+	return Number.isFinite(parsed) ? parsed : null;
+}
+
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -99,18 +113,37 @@ function withholdExpired(phase: string): void {
 interface SpanCollector {
 	take(): Record<string, unknown> | null;
 	/**
-	 * Start accepting spans, discarding anything seen so far.
+	 * Accept only spans the page itself stamped at or after `gatePageMs`.
 	 *
 	 * Arming the listener early is what makes the span impossible to MISS;
 	 * this gate is what makes it impossible to attribute the WRONG one. A
 	 * restored session's own library load posts a span from the PREVIOUS
 	 * login, and the window between arming and the click is seconds long
-	 * (waitForSignInReady, the sign-out dance, clearing the mark). Accepting
-	 * only from the instant of the click closes that window; a stale span
-	 * scored as this run's KPI would be a wrong NUMBER, which is worse than
-	 * the UNKNOWN this capture exists to remove.
+	 * (waitForSignInReady, the sign-out dance, clearing the mark). A stale
+	 * span scored as this run's KPI would be a wrong NUMBER, which is worse
+	 * than the UNKNOWN this capture exists to remove.
+	 *
+	 * The gate is the span's OWN `client_timestamp`, not the order in which
+	 * Playwright delivered it. Request events cross CDP asynchronously, so a
+	 * POST the page issued microseconds BEFORE the gate opened can still be
+	 * handed to this listener after it: a flag flipped in the driver is a
+	 * fact about the driver, never about the span. `recordPerfSpan` stamps
+	 * `client_timestamp` from the page's `Date.now()` at the moment it
+	 * builds the payload, and `gatePageMs` is read from that same clock
+	 * immediately before the click, so the comparison is total and
+	 * monotonic. A span with no usable stamp is REJECTED rather than
+	 * guessed at; withholding is the safe direction.
 	 */
-	openAtClick(): void;
+	openAtClick(gatePageMs: number): void;
+	/**
+	 * How many login spans were seen but refused as older than the gate.
+	 *
+	 * Nonzero means the telemetry lifecycle WORKED and the only spans on the
+	 * wire belonged to an earlier login, which is a different fault from
+	 * telemetry never firing. Reporting one as the other sends the next
+	 * reader to the wrong file.
+	 */
+	staleRejected(): number;
 }
 
 /**
@@ -125,9 +158,10 @@ interface SpanCollector {
  */
 function armLoginSpanCollector(page: Page): SpanCollector {
 	let captured: Record<string, unknown> | null = null;
-	let accepting = false;
+	let gatePageMs: number | null = null;
+	let staleRejected = 0;
 	page.on('request', (request: Request) => {
-		if (!accepting) return;
+		if (gatePageMs === null) return;
 		if (request.method() !== 'POST') return;
 		if (!request.url().includes(CLIENT_EVENTS_PATH)) return;
 		let body: Record<string, unknown>;
@@ -137,13 +171,20 @@ function armLoginSpanCollector(page: Page): SpanCollector {
 			return;
 		}
 		if (!isLoginPerfSpan(body)) return;
+		const stampedAt = spanClientTimestampMs(body);
+		if (stampedAt === null || stampedAt < gatePageMs) {
+			staleRejected += 1;
+			return;
+		}
 		captured = body;
 	});
 	return {
 		take: () => captured,
-		openAtClick: () => {
+		staleRejected: () => staleRejected,
+		openAtClick: (openedAtPageMs: number) => {
 			captured = null;
-			accepting = true;
+			staleRejected = 0;
+			gatePageMs = openedAtPageMs;
 		}
 	};
 }
@@ -474,9 +515,11 @@ async function driveSignInClick(
 				{ timeout: waitMs }
 			)
 			.catch(() => null);
-		// Last thing before the click, so no span posted by the page we are
-		// leaving can be attributed to the login we are about to start.
-		collector.openAtClick();
+		// Read the gate from the PAGE's clock, the same one `recordPerfSpan`
+		// stamps spans with, as the last thing before the click. Every span
+		// the page had already built carries an earlier stamp and is refused
+		// no matter when Playwright gets around to delivering it.
+		collector.openAtClick(await page.evaluate(() => Date.now()));
 		// Bounded by the capture budget, not Playwright's default action
 		// timeout: a covered or permanently disabled control would otherwise
 		// wait until the test deadline, where the teardown happens INSTEAD of
@@ -599,7 +642,20 @@ test('capture S13 login submit-to-library-usable span', async ({ page }) => {
 			return;
 		}
 
-		// No span. Only now do the marks tell us anything: read them to say WHY.
+		// A span DID arrive, it just belonged to an earlier login. The
+		// lifecycle is healthy; the mark reads below would describe a
+		// telemetry fault that did not happen.
+		const stale = collector.staleRejected();
+		if (stale > 0) {
+			writeResult({
+				ok: false,
+				span: null,
+				reason: `stale-span-only: ${stale} login perf-span POST(s) arrived but every one was stamped before this run's sign-in click, so none can be scored as this login`
+			});
+			return;
+		}
+
+		// No span at all. Only now do the marks tell us anything: read them to say WHY.
 		const marks = await readSubmitMarks(page);
 		if (marks.state === 'unreadable') {
 			writeResult({
