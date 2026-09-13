@@ -3373,6 +3373,7 @@
 	{openModal}
 	stableIds={pane.selected_ids}
 	etags={modalEtags}
+	rows={pane.rows}
 	onclose={() => (openModal = null)}
 	onapplied={onEditApplied}
 />
