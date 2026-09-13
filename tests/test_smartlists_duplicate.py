@@ -1,4 +1,4 @@
-"""LIBMX-04: POST /api/v1/smartlists/{id}/duplicate regression tests."""
+"""LIBMX-04: POST /api/v1/smartlists/{id}/duplicate regression tests (issue #2445)."""
 
 from __future__ import annotations
 
