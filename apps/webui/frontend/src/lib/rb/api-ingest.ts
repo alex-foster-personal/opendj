@@ -102,10 +102,13 @@ export type AnalysisOrder = {
 	phase: 'queued' | 'running' | 'done' | 'error';
 };
 
+export type UploadVerdict = 'new' | 'possible_duplicate' | 'skipped_duplicate';
+
 export type UploadFileResult = {
 	filename: string;
 	staged_path: string | null;
 	skipped_duplicate: boolean;
+	verdict: UploadVerdict;
 	duplicate_of: {
 		stable_id: string;
 		title: string | null;
@@ -116,6 +119,15 @@ export type UploadFileResult = {
 	duration_s: number | null;
 	fingerprint_method: 'chromaprint' | 'duration';
 };
+
+export type PendingBatch = {
+	name: string;
+	dest_dir: string;
+	file_count: number;
+	awaiting_rb: boolean;
+};
+
+export type PendingOut = { batches: PendingBatch[] };
 
 export type UploadOut = { batch: string; dest_dir: string; results: UploadFileResult[] };
 
@@ -203,4 +215,31 @@ export async function uploadIngestFiles(
 	const r = await fetch(`${API_BASE}/api/v1/ingest/upload`, { method: 'POST', body: form });
 	if (!r.ok) await _err(r);
 	return (await r.json()) as UploadOut;
+}
+
+export async function decideIngestUpload(opts: {
+	batch: string;
+	filename: string;
+	action: 'accept' | 'reject';
+}): Promise<UploadFileResult> {
+	const r = await fetch(`${API_BASE}/api/v1/ingest/upload/decide`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(opts)
+	});
+	if (!r.ok) await _err(r);
+	return (await r.json()) as UploadFileResult;
+}
+
+export async function getIngestPending(): Promise<PendingOut> {
+	const r = await fetch(`${API_BASE}/api/v1/ingest/pending`);
+	if (!r.ok) await _err(r);
+	return (await r.json()) as PendingOut;
+}
+
+export async function confirmIngestPending(batch: string): Promise<void> {
+	const r = await fetch(`${API_BASE}/api/v1/ingest/pending/${encodeURIComponent(batch)}/confirm`, {
+		method: 'POST'
+	});
+	if (!r.ok) await _err(r);
 }

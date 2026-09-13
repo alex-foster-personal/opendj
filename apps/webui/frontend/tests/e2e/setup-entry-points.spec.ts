@@ -244,6 +244,24 @@ test.describe('setup entry points', () => {
 		const diagnostics = tabs.getByRole('tab', { name: 'Diagnostics' });
 		await expect(diagnostics).toBeVisible();
 		await expect(diagnostics).toHaveAttribute('aria-selected', 'false');
+		const playground = tabs.getByRole('tab', { name: 'Playground' });
+		await expect(playground).toBeVisible();
+		await expect(playground).toHaveAttribute('aria-selected', 'false');
+	});
+
+	test('the admin Playground tab shows API and SQL consoles', async ({ page }) => {
+		await gotoShellReady(page, '/admin?tab=playground');
+		const tabs = page.getByRole('tablist', { name: 'admin sections' });
+		await expect(tabs.getByRole('tab', { name: 'Playground' })).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+		await expect(tabs.getByRole('tab', { name: 'KPI ledger' })).toHaveAttribute(
+			'aria-selected',
+			'false'
+		);
+		await expect(page.getByRole('heading', { name: 'API console' })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'SQL console' })).toBeVisible();
 	});
 
 	test('the admin Diagnostics tab shows diagnostics sections', async ({ page }) => {

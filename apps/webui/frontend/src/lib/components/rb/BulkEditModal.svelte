@@ -22,6 +22,10 @@
 	let rating = $state(3);
 	let setNotes = $state(false);
 	let notes = $state('');
+	let setGenre = $state(false);
+	let genre = $state('');
+	let setComments = $state(false);
+	let comments = $state('');
 	let tagsAdd = $state('');
 	let tagsRemove = $state('');
 	let busy = $state(false);
@@ -37,7 +41,14 @@
 	async function apply(): Promise<void> {
 		const add = _splitTags(tagsAdd);
 		const remove = _splitTags(tagsRemove);
-		if (!setRating && !setNotes && add.length === 0 && remove.length === 0) {
+		if (
+			!setRating &&
+			!setNotes &&
+			!setGenre &&
+			!setComments &&
+			add.length === 0 &&
+			remove.length === 0
+		) {
 			error = 'set at least one field to apply';
 			return;
 		}
@@ -49,6 +60,8 @@
 				expected_etags: etags,
 				...(setRating ? { rating } : {}),
 				...(setNotes ? { notes } : {}),
+				...(setGenre ? { genre } : {}),
+				...(setComments ? { comments } : {}),
 				...(add.length > 0 ? { tags_add: add } : {}),
 				...(remove.length > 0 ? { tags_remove: remove } : {})
 			});
@@ -74,6 +87,21 @@
 			<input type="checkbox" bind:checked={setNotes} />
 			Notes
 			<input type="text" bind:value={notes} disabled={!setNotes} placeholder="new notes text" />
+		</label>
+		<label class="be-field">
+			<input type="checkbox" bind:checked={setGenre} />
+			Genre
+			<input type="text" bind:value={genre} disabled={!setGenre} placeholder="new genre text" />
+		</label>
+		<label class="be-field">
+			<input type="checkbox" bind:checked={setComments} />
+			Comments
+			<input
+				type="text"
+				bind:value={comments}
+				disabled={!setComments}
+				placeholder="new comments text"
+			/>
 		</label>
 		<label class="be-field">
 			Add tags

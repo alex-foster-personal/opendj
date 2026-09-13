@@ -1416,6 +1416,19 @@
 					</tr>
 				{/if}
 				{#each visibleRows as row, i (`${row.stable_id}:${row.order}`)}
+					{@const cloudView = trackCloudView({
+						fileExists: row.file_exists,
+						isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
+						hasRemoteCopy: row.has_remote_copy === true,
+						transfer:
+							row.cloud_transfer === null || row.cloud_transfer === undefined
+								? null
+								: {
+										direction: row.cloud_transfer.direction,
+										bytesTransferred: row.cloud_transfer.bytes_transferred,
+										bytesTotal: row.cloud_transfer.bytes_total
+									}
+					})}
 					<!-- key includes order: playlists CAN repeat a track -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -1485,19 +1498,6 @@
 						<!-- CloudSync presence, local availability, and transfer bytes are
 						     separate backend facts; this cell never guesses a percentage. -->
 						<td class="c-cloud">
-							{@const cloudView = trackCloudView({
-								fileExists: row.file_exists,
-								isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
-								hasRemoteCopy: row.has_remote_copy === true,
-								transfer:
-									row.cloud_transfer === null || row.cloud_transfer === undefined
-										? null
-										: {
-												direction: row.cloud_transfer.direction,
-												bytesTransferred: row.cloud_transfer.bytes_transferred,
-												bytesTotal: row.cloud_transfer.bytes_total
-											}
-							})}
 							{#if cloudView.showIcon}
 								<span class="cloud-state-wrap" data-cloud-state={cloudView.kind}>
 									{#if cloudView.kind === 'streaming'}

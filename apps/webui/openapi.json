@@ -2312,12 +2312,34 @@
       },
       "BulkEditIn": {
         "properties": {
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
           "expected_etags": {
             "additionalProperties": {
               "type": "string"
             },
             "title": "Expected Etags",
             "type": "object"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
           },
           "notes": {
             "anyOf": [
@@ -4379,6 +4401,33 @@
         "title": "CredentialsOut",
         "type": "object"
       },
+      "DecideIn": {
+        "properties": {
+          "action": {
+            "enum": [
+              "accept",
+              "reject"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "batch": {
+            "title": "Batch",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch",
+          "filename",
+          "action"
+        ],
+        "title": "DecideIn",
+        "type": "object"
+      },
       "DecisionIn": {
         "additionalProperties": false,
         "properties": {
@@ -5517,8 +5566,12 @@
             "type": "object"
           },
           "field": {
-            "const": "notes",
             "default": "notes",
+            "enum": [
+              "notes",
+              "genre",
+              "comments"
+            ],
             "title": "Field",
             "type": "string"
           },
@@ -5626,8 +5679,12 @@
             "type": "boolean"
           },
           "field": {
-            "const": "notes",
             "default": "notes",
+            "enum": [
+              "notes",
+              "genre",
+              "comments"
+            ],
             "title": "Field",
             "type": "string"
           },
@@ -9013,6 +9070,17 @@
             ],
             "title": "Bpm"
           },
+          "cue_count": {
+            "title": "Cue Count",
+            "type": "integer"
+          },
+          "cue_positions_ms": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Cue Positions Ms",
+            "type": "array"
+          },
           "duration_ms": {
             "anyOf": [
               {
@@ -9028,6 +9096,14 @@
             "title": "File Exists",
             "type": "boolean"
           },
+          "has_beatgrid": {
+            "title": "Has Beatgrid",
+            "type": "boolean"
+          },
+          "hot_cue_count": {
+            "title": "Hot Cue Count",
+            "type": "integer"
+          },
           "is_canonical": {
             "title": "Is Canonical",
             "type": "boolean"
@@ -9042,6 +9118,10 @@
               }
             ],
             "title": "Key"
+          },
+          "loop_count": {
+            "title": "Loop Count",
+            "type": "integer"
           },
           "path": {
             "title": "Path",
@@ -9096,7 +9176,12 @@
           "key",
           "duration_ms",
           "rating",
-          "file_exists"
+          "file_exists",
+          "cue_count",
+          "hot_cue_count",
+          "loop_count",
+          "has_beatgrid",
+          "cue_positions_ms"
         ],
         "title": "MemberOut",
         "type": "object"
@@ -10285,6 +10370,50 @@
           "limitation"
         ],
         "title": "PeakPressureOut",
+        "type": "object"
+      },
+      "PendingBatch": {
+        "properties": {
+          "awaiting_rb": {
+            "default": true,
+            "title": "Awaiting Rb",
+            "type": "boolean"
+          },
+          "dest_dir": {
+            "title": "Dest Dir",
+            "type": "string"
+          },
+          "file_count": {
+            "title": "File Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "dest_dir",
+          "file_count"
+        ],
+        "title": "PendingBatch",
+        "type": "object"
+      },
+      "PendingOut": {
+        "properties": {
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/PendingBatch"
+            },
+            "title": "Batches",
+            "type": "array"
+          }
+        },
+        "required": [
+          "batches"
+        ],
+        "title": "PendingOut",
         "type": "object"
       },
       "PendingTrackOut": {
@@ -14635,6 +14764,61 @@
         "title": "SoundcloudTracklistRowModel",
         "type": "object"
       },
+      "SqlQueryIn": {
+        "properties": {
+          "limit": {
+            "default": 200,
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "SqlQueryIn",
+        "type": "object"
+      },
+      "SqlQueryOut": {
+        "properties": {
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "items": {},
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "columns",
+          "rows",
+          "truncated",
+          "row_count"
+        ],
+        "title": "SqlQueryOut",
+        "type": "object"
+      },
       "StatusResponse": {
         "properties": {
           "entitlement_provider": {
@@ -16817,6 +17001,28 @@
       },
       "TrackPatch": {
         "properties": {
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
           "notes": {
             "anyOf": [
               {
@@ -17856,12 +18062,22 @@
               }
             ],
             "title": "Staged Path"
+          },
+          "verdict": {
+            "enum": [
+              "new",
+              "possible_duplicate",
+              "skipped_duplicate"
+            ],
+            "title": "Verdict",
+            "type": "string"
           }
         },
         "required": [
           "filename",
           "staged_path",
           "skipped_duplicate",
+          "verdict",
           "duplicate_of",
           "duration_s",
           "fingerprint_method"
@@ -19767,6 +19983,47 @@
           }
         },
         "summary": "Get Quality Ratchet",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/sql-query": {
+      "post": {
+        "operationId": "sql_query_api_v1_admin_sql_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SqlQueryIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlQueryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sql Query",
         "tags": [
           "admin"
         ]
@@ -23540,6 +23797,62 @@
         ]
       }
     },
+    "/api/v1/ingest/pending": {
+      "get": {
+        "operationId": "list_pending_api_v1_ingest_pending_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Pending",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/pending/{batch}/confirm": {
+      "post": {
+        "operationId": "confirm_pending_api_v1_ingest_pending__batch__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch",
+            "required": true,
+            "schema": {
+              "title": "Batch",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Pending",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
     "/api/v1/ingest/refresh": {
       "post": {
         "operationId": "start_refresh_api_v1_ingest_refresh_post",
@@ -23645,6 +23958,47 @@
           }
         },
         "summary": "Upload",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/upload/decide": {
+      "post": {
+        "operationId": "decide_upload_api_v1_ingest_upload_decide_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadFileResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Upload",
         "tags": [
           "ingest"
         ]
