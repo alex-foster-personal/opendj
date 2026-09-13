@@ -60,7 +60,7 @@ export type FindReplacePreviewResult = components['schemas']['FindReplacePreview
  * field/replace/mode/case_sensitive required (OpenAPI defaults), while the
  * exported client still accepts the optional form call sites already use. */
 export interface FindReplaceScope {
-	field?: 'notes';
+	field?: 'notes' | 'genre' | 'comments';
 	stable_ids: string[];
 	find: string;
 	replace?: string;
@@ -105,6 +105,8 @@ export interface BulkEditPatch {
 	expected_etags: Record<string, string>;
 	rating?: number;
 	notes?: string;
+	genre?: string;
+	comments?: string;
 	tags_add?: string[];
 	tags_remove?: string[];
 }

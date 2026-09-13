@@ -165,5 +165,6 @@ describe('mixer config persistence', () => {
 		store.set(MIXER_CONFIG_STORAGE_KEY, JSON.stringify({ head_delay_ms: 77 }));
 		const state = await loadTypeScriptModule('src/lib/player/state.svelte.ts');
 		assert.equal(state._defaultHeadphones().head_delay_ms, 77);
+		assert.equal(state._defaultHeadphones().mix, 0);
 	});
 });

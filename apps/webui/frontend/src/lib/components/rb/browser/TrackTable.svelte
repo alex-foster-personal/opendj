@@ -294,6 +294,7 @@
 		sortKey,
 		sortDir,
 		emptyMessage,
+		onemptyretry = undefined,
 		filterBypassNote = null,
 		restoreKey,
 		scrollTop,
@@ -345,6 +346,8 @@
 		sortKey: SortKey | null;
 		sortDir: SortDir;
 		emptyMessage: string | null;
+		/** Retry a failed whole-collection search from the empty state. */
+		onemptyretry?: (() => void) | undefined;
 		/** Honest note when a tiny search result bypasses the compatible filter. */
 		filterBypassNote?: string | null;
 		/** Identity of the pane being rendered (e.g. pane index) - the
@@ -959,7 +962,12 @@
 			artist: row.artist ?? '',
 			count: ids.length
 		});
-		beginTrackDrag(ids);
+		beginTrackDrag(ids, {
+			[row.stable_id]: {
+				file_exists: row.file_exists,
+				is_streaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false
+			}
+		});
 	}
 
 	function onRowDragEnd(): void {
@@ -1429,6 +1437,19 @@
 					</tr>
 				{/if}
 				{#each visibleRows as row, i (`${row.stable_id}:${row.order}`)}
+					{@const cloudView = trackCloudView({
+						fileExists: row.file_exists,
+						isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
+						hasRemoteCopy: row.has_remote_copy === true,
+						transfer:
+							row.cloud_transfer === null || row.cloud_transfer === undefined
+								? null
+								: {
+										direction: row.cloud_transfer.direction,
+										bytesTransferred: row.cloud_transfer.bytes_transferred,
+										bytesTotal: row.cloud_transfer.bytes_total
+									}
+					})}
 					<!-- key includes order: playlists CAN repeat a track -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -1498,19 +1519,6 @@
 						<!-- CloudSync presence, local availability, and transfer bytes are
 						     separate backend facts; this cell never guesses a percentage. -->
 						<td class="c-cloud">
-							{@const cloudView = trackCloudView({
-								fileExists: row.file_exists,
-								isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
-								hasRemoteCopy: row.has_remote_copy === true,
-								transfer:
-									row.cloud_transfer === null || row.cloud_transfer === undefined
-										? null
-										: {
-												direction: row.cloud_transfer.direction,
-												bytesTransferred: row.cloud_transfer.bytes_transferred,
-												bytesTotal: row.cloud_transfer.bytes_total
-											}
-							})}
 							{#if cloudView.showIcon}
 								<span class="cloud-state-wrap" data-cloud-state={cloudView.kind}>
 									{#if cloudView.kind === 'streaming'}
@@ -1805,7 +1813,12 @@
 			</tbody>
 		</table>
 		{#if rows.length === 0 && emptyMessage !== null}
-			<div class="empty">{emptyMessage}</div>
+			<div class="empty">
+				{emptyMessage}
+				{#if onemptyretry !== undefined}
+					<button type="button" class="empty-retry" onclick={onemptyretry}>Retry search</button>
+				{/if}
+			</div>
 		{/if}
 		{#if filterBypassNote !== null}
 			<p class="filter-bypass-note" data-testid="filter-bypass-note">{filterBypassNote}</p>
@@ -2858,6 +2871,21 @@
 		padding: 24px;
 		text-align: center;
 		color: var(--rb-text-dim);
+	}
+	.empty-retry {
+		display: block;
+		margin: 12px auto 0;
+		color: var(--rb-text);
+		background: var(--rb-surface-2);
+		border: 1px solid var(--rb-border);
+		border-radius: 4px;
+		padding: 6px 12px;
+		font: inherit;
+		cursor: pointer;
+	}
+	.empty-retry:focus-visible {
+		outline: 2px solid var(--rb-accent);
+		outline-offset: 2px;
 	}
 	.filter-bypass-note {
 		margin: 0;

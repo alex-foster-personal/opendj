@@ -15,6 +15,10 @@ export type PlaylistTreeProps = {
 	 * pin was about). */
 	playlistsLoading: boolean;
 	playlistsError: string | null;
+	/** Number of mostly-broken playlists hidden by the Broken filter. Required,
+	 * not optional -- an unwired caller must fail the Svelte type check rather
+	 * than silently omit the notice. */
+	hiddenBrokenPlaylistCount: number;
 	allTracksCount: number | null;
 	allTracksBrokenCount: number | null;
 	allTracksError: string | null;
@@ -44,6 +48,7 @@ export type PlaylistTreeProps = {
 	oncreateplaylist?: () => Promise<string | null> | string | null;
 	/** Commit in-place rename; empty/cancelled name leaves server name. */
 	onrenameplaylist?: (node: PlaylistNode, name: string) => void | Promise<void>;
+	onforbidduplicates?: (node: PlaylistNode) => void | Promise<void>;
 	ondeleteplaylist?: (node: PlaylistNode) => void;
 	onduplicateplaylist?: (node: PlaylistNode) => void;
 	/**

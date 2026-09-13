@@ -15,31 +15,45 @@ before(async () => {
 });
 
 test('splitCableGains routes master to left and cue to right in split_cable mode', () => {
-	assert.deepEqual(headphones.splitCableGains('split_cable', 0), {
+	assert.deepEqual(headphones.splitCableGains('split_cable', 0, 1), {
 		left: 1,
 		rightCue: 1,
 		rightMaster: 0
 	});
-	assert.deepEqual(headphones.splitCableGains('split_cable', 1), {
+	assert.deepEqual(headphones.splitCableGains('split_cable', 1, 1), {
 		left: 1,
 		rightCue: 0,
 		rightMaster: 1
 	});
-	const center = headphones.splitCableGains('split_cable', 0.5);
+	const center = headphones.splitCableGains('split_cable', 0.5, 1);
 	assert.equal(center.left, 1);
 	const mixCenter = headphones.headphoneMixGains(0.5);
 	assert.equal(center.rightCue, mixCenter.cue);
 	assert.equal(center.rightMaster, mixCenter.master);
 });
 
+test('splitCableGains scales the cue ear by GAIN and leaves the room left unscaled', () => {
+	assert.deepEqual(headphones.splitCableGains('split_cable', 0, 0.25), {
+		left: 1,
+		rightCue: 0.25,
+		rightMaster: 0
+	});
+	assert.deepEqual(headphones.splitCableGains('split_cable', 1, 0.5), {
+		left: 1,
+		rightCue: 0,
+		rightMaster: 0.5
+	});
+	assert.throws(() => headphones.splitCableGains('split_cable', 0), /headphone level/);
+});
+
 test('splitCableGains is silent outside split_cable mode', () => {
 	for (const mode of ['practice', 'two_outputs']) {
-		assert.deepEqual(headphones.splitCableGains(mode, 0), {
+		assert.deepEqual(headphones.splitCableGains(mode, 0, 1), {
 			left: 0,
 			rightCue: 0,
 			rightMaster: 0
 		});
-		assert.deepEqual(headphones.splitCableGains(mode, 1), {
+		assert.deepEqual(headphones.splitCableGains(mode, 1, 0.25), {
 			left: 0,
 			rightCue: 0,
 			rightMaster: 0

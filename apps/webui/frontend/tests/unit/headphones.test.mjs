@@ -12,6 +12,22 @@ before(async () => {
 	headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
 });
 
+test('headphoneMixAccent is cue orange at 0 and master accent at 1, never EQ red', () => {
+	assert.equal(
+		headphones.headphoneMixAccent(0),
+		'color-mix(in srgb, var(--rb-orange) 100%, var(--rb-accent))'
+	);
+	assert.equal(
+		headphones.headphoneMixAccent(1),
+		'color-mix(in srgb, var(--rb-orange) 0%, var(--rb-accent))'
+	);
+	assert.equal(
+		headphones.headphoneMixAccent(0.5),
+		'color-mix(in srgb, var(--rb-orange) 50%, var(--rb-accent))'
+	);
+	assert.doesNotMatch(headphones.headphoneMixAccent(0.5), /red/i);
+});
+
 test('headphoneMixGains uses equal-power law at endpoints and center', () => {
 	assert.deepEqual(headphones.headphoneMixGains(0), { cue: 1, master: 0 });
 	assert.deepEqual(headphones.headphoneMixGains(1), { cue: 0, master: 1 });
@@ -56,6 +72,56 @@ test('headphoneOwnershipIsCurrent requires matching generation and owned nodes',
 	assert.equal(headphones.headphoneOwnershipIsCurrent(3, 3, true), true);
 	assert.equal(headphones.headphoneOwnershipIsCurrent(3, 4, true), false);
 	assert.equal(headphones.headphoneOwnershipIsCurrent(3, 3, false), false);
+});
+
+test('headphoneAcquisitionKind uses the chooser only when selectAudioOutput exists', () => {
+	assert.equal(
+		headphones.headphoneAcquisitionKind({
+			enumerateDevices: true,
+			setSinkId: true,
+			selectAudioOutput: true
+		}),
+		'chooser'
+	);
+	assert.equal(
+		headphones.headphoneAcquisitionKind({
+			enumerateDevices: true,
+			setSinkId: true,
+			selectAudioOutput: false
+		}),
+		'unlock_and_enumerate'
+	);
+	assert.equal(
+		headphones.headphoneAcquisitionKind({
+			enumerateDevices: true,
+			setSinkId: false,
+			selectAudioOutput: false
+		}),
+		'unsupported'
+	);
+	assert.throws(
+		() => headphones.headphoneAcquisitionKind({ enumerateDevices: true, setSinkId: true }),
+		/booleans/
+	);
+});
+
+test('preferredAudioInputDeviceId prefers a built-in mic over Bluetooth-looking inputs', () => {
+	assert.equal(headphones.preferredAudioInputDeviceId([]), null);
+	assert.equal(
+		headphones.preferredAudioInputDeviceId([
+			{ kind: 'audiooutput', deviceId: 'speakers', label: 'MacBook Pro Speakers' },
+			{ kind: 'audioinput', deviceId: 'airpods-mic', label: 'AirPods Microphone' },
+			{ kind: 'audioinput', deviceId: 'builtin-mic', label: 'MacBook Pro Microphone' }
+		]),
+		'builtin-mic'
+	);
+	assert.equal(
+		headphones.preferredAudioInputDeviceId([
+			{ kind: 'audioinput', deviceId: 'default', label: '' },
+			{ kind: 'audioinput', deviceId: 'usb-mic', label: 'USB Condenser' }
+		]),
+		'usb-mic'
+	);
 });
 
 test('assertHeadphoneOutputSelection rejects empty ids and unknown devices', () => {

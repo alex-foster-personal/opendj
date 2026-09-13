@@ -66,11 +66,11 @@ test('MCP AX serialization includes pressed and numeric values', () => {
 // landed on trunk. Source-scan, matching this file's existing convention --
 // no jsdom/testing-library exists in this frontend package, so structural
 // position (not a rendered DOM) is what pins the regression.
-test('headphone "+ OUT" button is queryable by its accessible name', () => {
+test('headphone I/O button is queryable by its accessible name', () => {
 	const headphones = source('src/lib/components/rb/mixer/HeadphoneCluster.svelte');
 	assert.ok(
-		headphones.includes('aria-label="ADD OUTPUT"'),
-		'if the +OUT button loses its aria-label then it has no accessible name distinct from its "+ OUT" glyph text'
+		headphones.includes('aria-label="SHOW AUDIO I/O"'),
+		'if the I/O button loses its aria-label then it has no accessible name distinct from its I/O glyph text'
 	);
 });
 

@@ -1,10 +1,11 @@
 <script lang="ts">
 	/**
-	 * Headphone MIX + LEVEL knobs with headphone icon (SCREENSHOT-SPEC 4).
+	 * Headphone MIX + GAIN knobs with headphone icon (SCREENSHOT-SPEC 4).
 	 * Real CUE/MASTER monitor mix, level, and browser-selected output device.
 	 */
 	import { knobId } from '$lib/rb/knob-control.svelte';
-	import { twoOutputsWarning } from '$lib/player/headphones';
+	import { headphoneMixAccent, twoOutputsWarning } from '$lib/player/headphones';
+	import ControlExplainer from '../deck/ControlExplainer.svelte';
 	import Knob from './Knob.svelte';
 	import type { HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
 
@@ -16,10 +17,12 @@
 		onrefresh: () => void;
 		onacquire: () => void;
 		onselect: (deviceId: string) => void;
+		onmaster: (deviceId: string) => void;
+		oninput: (deviceId: string) => void;
 		onmode: (mode: HeadphoneOutputMode) => void;
 	}
 
-	let { state, onmix, onlevel, ondelay, onrefresh, onacquire, onselect, onmode }: Props = $props();
+	let { state, onmix, onlevel, ondelay, onrefresh, onacquire, onselect, onmaster, oninput, onmode }: Props = $props();
 
 	const modeLabel = $derived(
 		state.output_mode === 'practice'
@@ -34,7 +37,63 @@
 			? null
 			: (state.outputs.find((output) => output.id === state.selected_output_device_id)?.label ?? null)
 	);
+	const masterLabel = $derived(
+		state.selected_master_output_device_id === null
+			? null
+			: (state.outputs.find((output) => output.id === state.selected_master_output_device_id)?.label ?? null)
+	);
 	const warningText = $derived(twoOutputsWarning({ outputMode: state.output_mode, selectedLabel }));
+	const mixBullets = [
+		'Left is full CUE (orange). Right is full MASTER (blue). Default is full CUE.',
+		'In MAIN, MIX blends cue into the speakers. In two outputs, MIX feeds headphones only.'
+	];
+	const levelBullets = [
+		'Headphone GAIN (Mixxx Head Gain). Scales the CUE path: the phones in two outputs, the cue ear in SPLIT, and the cue blend in MAIN.',
+		'It does not change the room MASTER volume. Default is 1 (full). Turn down if the phones are hot.'
+	];
+	const mainBullets = [
+		'Cue and master share the speakers. Clears a selected headphone CUE sink.',
+		'Use this when you have one device (laptop speakers, or Bluetooth as the only output).'
+	];
+	const splitBullets = [
+		'Mono master on LEFT, mono cue on RIGHT of the same output.',
+		'Needs a DJ splitter cable. A Y cable will not separate the legs.'
+	];
+	const ioBullets = [
+		'MASTER/MAIN is the room mix (the four channels). Pin it to speakers so plugging headphones in cannot steal it.',
+		'HEADPHONE CUE is the cue mix. Pick wired or Bluetooth headphones here.',
+		'I/O briefly uses the built-in mic so device names appear. It does not flip Bluetooth to HFP.',
+		'First CUE select of Bluetooth (including names like WH-1000XM5) plays a chirp into the headphones. The built-in mic times it and fills HEAD DELAY (0-500 ms). A failed timing can be retried by selecting the same device again.',
+		'AUDIO IN defaults to the Mac microphone. A headphone/handsfree mic can collapse Bluetooth to HFP and drop quality.',
+		'HEAD DELAY is the Mixxx millisecond field on the cue path. Two devices still drift; Bluetooth is for auditioning, not beatmatching.'
+	];
+	const delayBullets = [
+		'Mixxx Head Delay, 0-500 ms, on the cue path only. It does not delay the room.',
+		'First CUE select of Bluetooth fills this from a chirp the built-in mic hears. A successful timing is not repeated; a failed one can be retried by selecting the same device again.',
+		'Two independently clocked devices still drift. Bluetooth is for auditioning, not beatmatching.'
+	];
+	const rescanBullets = [
+		'Re-enumerate outputs and inputs without flipping a Bluetooth headset to HFP.'
+	];
+	const modeBullets = [
+		'practice: cue and master share the speakers.',
+		'two outputs: MASTER/MAIN is the room, HEADPHONE CUE is headphones.',
+		'split cable: mono master on LEFT, mono cue on RIGHT of one device.'
+	];
+	const sinksBullets = [
+		'M is the pinned MASTER/MAIN room sink. C is the HEADPHONE CUE sink.',
+		'Change them from I/O. Re-selecting the live sink is a no-op so the room does not glitch.',
+		'Unplug, dead battery, or power-back-on of CUE never re-sets MASTER. The room speaker line cannot be interrupted.'
+	];
+	const masterPickBullets = [
+		'Room mix. Pin this to speakers so OS-default headphones cannot steal the room. CUE unplug or reconnect never moves this sink.'
+	];
+	const cuePickBullets = [
+		'Headphone CUE sink. First select of Bluetooth (including names like WH-1000XM5) chirps into the phones; the built-in mic times HEAD DELAY. Live Bluetooth pairing is CUEOUT-12, not this control.'
+	];
+	const inputPickBullets = [
+		'Used to unlock output names and to time CUE delay. Never pick a headphone/HFP mic.'
+	];
 
 	function toggleSplit(): void {
 		if (state.output_mode === 'split_cable') {
@@ -57,80 +116,161 @@
 		<rect x="1" y="7" width="2.4" height="3.4" rx="0.8" fill="currentColor" />
 		<rect x="8.6" y="7" width="2.4" height="3.4" rx="0.8" fill="currentColor" />
 	</svg>
-	<Knob knobId={knobId('hp', 'hp-mix')} label="MIX" value={state.mix} onchange={onmix} />
-	<Knob knobId={knobId('hp', 'hp-level')} label="LEVEL" value={state.level} onchange={onlevel} />
-	<span
-		class="hp-mode"
-		data-output-mode={state.output_mode}
-		title={
-			state.output_mode === 'practice'
-				? 'Practice: MIX blends cue into the main output'
-				: state.output_mode === 'two_outputs'
-					? 'Two outputs: MIX feeds the monitor only'
-					: 'Split cable: mono master on LEFT, mono cue on RIGHT'
-		}>{modeLabel}</span
+	<ControlExplainer title="MIX" bullets={mixBullets} showDelayMs={60}>
+		<Knob
+			knobId={knobId('hp', 'hp-mix')}
+			label="MIX"
+			accessibleLabel="Headphone CUE to MASTER mix"
+			value={state.mix}
+			onchange={onmix}
+			resetValue={0}
+			accentColor={headphoneMixAccent(state.mix)}
+		/>
+	</ControlExplainer>
+	<ControlExplainer title="GAIN" bullets={levelBullets} showDelayMs={60}>
+		<Knob
+			knobId={knobId('hp', 'hp-level')}
+			label="GAIN"
+			accessibleLabel="Headphone cue gain"
+			value={state.level}
+			onchange={onlevel}
+		/>
+	</ControlExplainer>
+	<ControlExplainer title="Output mode" bullets={modeBullets} showDelayMs={60}>
+		<span class="hp-mode" data-output-mode={state.output_mode}>{modeLabel}</span>
+	</ControlExplainer>
+	<ControlExplainer title="MAIN" bullets={mainBullets} showDelayMs={60}>
+		<button
+			type="button"
+			class="hp-btn"
+			aria-pressed={state.output_mode === 'practice'}
+			aria-label="Practice output mode"
+			onclick={() => onmode('practice')}>MAIN</button
+		>
+	</ControlExplainer>
+	<ControlExplainer title="SPLIT" bullets={splitBullets} showDelayMs={60}>
+		<button
+			type="button"
+			class="hp-btn"
+			aria-pressed={state.output_mode === 'split_cable'}
+			aria-label="Split cable output mode"
+			onclick={toggleSplit}>SPLIT</button
+		>
+	</ControlExplainer>
+	<ControlExplainer
+		title="Audio I/O"
+		bullets={ioBullets}
+		pinOnClick={true}
+		action={outputMenu}
 	>
-	<button
-		type="button"
-		class="hp-btn"
-		aria-pressed={state.output_mode === 'split_cable'}
-		aria-label="Split cable output mode"
-		title="Room feed is mono on LEFT, cue is mono on RIGHT. Use a DJ splitter cable, not a Y cable."
-		onclick={toggleSplit}>SPLIT</button
-	>
-	<button
-		type="button"
-		class="hp-btn"
-		aria-label="ADD OUTPUT"
-		title="Grant browser access to a second audio output for headphones"
-		onclick={onacquire}>+ OUT</button
-	>
-	<button
-		type="button"
-		class="hp-btn"
-		title="Rescan available headphone output devices"
-		aria-label="Rescan available headphone output devices"
-		onclick={onrefresh}>↻</button
-	>
-	<select
-		aria-label="headphone output device"
-		title="Headphone output device"
-		value={state.selected_output_device_id ?? ''}
-		disabled={!state.supported}
-		onchange={(event) => onselect(event.currentTarget.value)}
-	>
-		<option value="" disabled>HP out</option>
-		{#each state.outputs as output (output.id)}
-			<option value={output.id}>{output.label || output.id}</option>
-		{/each}
-	</select>
+		<button
+			type="button"
+			class="hp-btn"
+			aria-label="SHOW AUDIO I/O"
+			aria-expanded={state.supported}
+			onclick={onacquire}>I/O</button
+		>
+	</ControlExplainer>
+	<ControlExplainer title="Rescan" bullets={rescanBullets} showDelayMs={60}>
+		<button
+			type="button"
+			class="hp-btn"
+			aria-label="Rescan available headphone output devices"
+			onclick={onrefresh}>↻</button
+		>
+	</ControlExplainer>
+	{#if masterLabel !== null || selectedLabel !== null}
+		<ControlExplainer title="Pinned sinks" bullets={sinksBullets} showDelayMs={60}>
+			<span class="hp-sinks">
+				{#if masterLabel !== null}<span>M {masterLabel}</span>{/if}
+				{#if selectedLabel !== null}<span>C {selectedLabel}</span>{/if}
+			</span>
+		</ControlExplainer>
+	{/if}
 	{#if state.output_mode === 'split_cable'}
-		<span class="hp-split-warn" title="Split-cable mode requires a true DJ splitter cable, not a Y cable">
-			Room feed is mono. Use a DJ splitter cable, not a Y cable.
-		</span>
+		<ControlExplainer title="SPLIT warning" bullets={splitBullets} showDelayMs={60}>
+			<span class="hp-split-warn">
+				Room feed is mono. Use a DJ splitter cable, not a Y cable.
+			</span>
+		</ControlExplainer>
 	{/if}
 	{#if state.output_mode === 'two_outputs'}
-		<label class="hp-delay">
-			<span class="hp-delay-label">HEAD DELAY</span>
-			<input
-				type="number"
-				min="0"
-				max="500"
-				step="1"
-				value={state.head_delay_ms}
-				aria-label="head delay milliseconds"
-				title="Monitor head delay in milliseconds (Mixxx Head Delay contract)"
-				data-performance-control="head-delay"
-				onchange={(event) => ondelay(Number(event.currentTarget.value))}
-			/>
-			<span class="hp-delay-unit">ms</span>
-		</label>
+		<ControlExplainer title="HEAD DELAY" bullets={delayBullets} showDelayMs={60}>
+			<label class="hp-delay">
+				<span class="hp-delay-label">HEAD DELAY</span>
+				<input
+					type="number"
+					min="0"
+					max="500"
+					step="1"
+					value={state.head_delay_ms}
+					aria-label="head delay milliseconds"
+					data-performance-control="head-delay"
+					onchange={(event) => ondelay(Number(event.currentTarget.value))}
+				/>
+				<span class="hp-delay-unit">ms</span>
+			</label>
+		</ControlExplainer>
 		{#if warningText !== null}
-			<span class="hp-warn" role="status" data-two-outputs-warning>{warningText}</span>
+			<ControlExplainer title="Two outputs warning" bullets={[warningText]} showDelayMs={60}>
+				<span class="hp-warn" role="status" data-two-outputs-warning>{warningText}</span>
+			</ControlExplainer>
 		{/if}
 	{/if}
 	{#if state.error !== null}<span class="hp-error">{state.error}</span>{/if}
 </div>
+
+{#snippet outputMenu()}
+	<div class="hp-menu">
+		<ControlExplainer title="MASTER / MAIN" bullets={masterPickBullets} showDelayMs={40}>
+			<label class="hp-pick">
+				<span>MASTER / MAIN</span>
+				<select
+					aria-label="master output device"
+					value={state.selected_master_output_device_id ?? ''}
+					disabled={!state.supported}
+					onchange={(event) => onmaster(event.currentTarget.value)}
+				>
+					<option value="" disabled>choose master</option>
+					{#each state.outputs as output (output.id)}
+						<option value={output.id}>{output.label || output.id}</option>
+					{/each}
+				</select>
+			</label>
+		</ControlExplainer>
+		<ControlExplainer title="HEADPHONE CUE" bullets={cuePickBullets} showDelayMs={40}>
+			<label class="hp-pick">
+				<span>HEADPHONE CUE</span>
+				<select
+					aria-label="headphone output device"
+					value={state.selected_output_device_id ?? ''}
+					disabled={!state.supported}
+					onchange={(event) => onselect(event.currentTarget.value)}
+				>
+					<option value="" disabled>HP out</option>
+					{#each state.outputs as output (output.id)}
+						<option value={output.id}>{output.label || output.id}</option>
+					{/each}
+				</select>
+			</label>
+		</ControlExplainer>
+		<ControlExplainer title="AUDIO IN" bullets={inputPickBullets} showDelayMs={40}>
+			<label class="hp-pick">
+				<span>AUDIO IN</span>
+				<select
+					aria-label="audio input device"
+					value={state.selected_input_device_id ?? ''}
+					onchange={(event) => oninput(event.currentTarget.value)}
+				>
+					<option value="" disabled>choose input</option>
+					{#each state.inputs as input (input.id)}
+						<option value={input.id}>{input.label || input.id}</option>
+					{/each}
+				</select>
+			</label>
+		</ControlExplainer>
+	</div>
+{/snippet}
 
 <style>
 	.hp {
@@ -167,6 +307,34 @@
 		background: var(--rb-panel-raised, #1a1e25);
 		border: 1px solid var(--rb-border, #23282f);
 		color: var(--rb-text-dim, #838990);
+	}
+	.hp-menu {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		min-width: 180px;
+	}
+	.hp-pick {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		font-size: 8px;
+		letter-spacing: 0.04em;
+		color: var(--rb-text-dim, #838990);
+	}
+	.hp-pick select {
+		max-width: none;
+		font-size: 10px;
+	}
+	.hp-sinks {
+		display: inline-flex;
+		gap: 4px;
+		font-size: 7px;
+		color: var(--rb-text-dim, #838990);
+		max-width: 120px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.hp-mode {
 		font-size: 7px;

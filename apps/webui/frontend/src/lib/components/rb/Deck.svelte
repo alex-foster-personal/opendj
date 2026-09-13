@@ -43,6 +43,8 @@
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import {
 		acceptTrackDragOver,
+		applyDeckTrackDrop,
+		droppedRowFlags,
 		endTrackDrag,
 		primaryDroppedStableId
 	} from '$lib/rb/track-drag.svelte';
@@ -340,20 +342,13 @@
 	async function onTrackDrop(event: DragEvent): Promise<void> {
 		dropHover = false;
 		const stableId = primaryDroppedStableId(event);
+		const row = stableId !== null ? droppedRowFlags(stableId) : null;
 		// End here as well as on dragend: acceptance now depends on the state,
 		// so a dragend WebKit fails to deliver would leave every deck armed.
 		endTrackDrag();
 		if (stableId === null) return;
 		event.preventDefault();
-		try {
-			if (deck.stable_id !== null) {
-				await dispatchPerformanceCommand({ type: 'unload', deck: deckId });
-			}
-			await dispatchPerformanceCommand({ type: 'load', deck: deckId, stable_id: stableId });
-		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : String(error);
-			pushToast(`drop load failed: ${message}`, 'error');
-		}
+		await applyDeckTrackDrop({ deckId, occupied: deck.stable_id !== null, stableId, row, dispatch: dispatchPerformanceCommand, toast: pushToast });
 	}
 </script>
 

@@ -24,6 +24,7 @@
 		onapplied: () => void;
 	} = $props();
 
+	let field = $state<'notes' | 'genre' | 'comments'>('notes');
 	let find = $state('');
 	let replace = $state('');
 	let mode = $state<'literal' | 'regex'>('literal');
@@ -42,7 +43,7 @@
 		error = null;
 		try {
 			const res = await previewFindReplace({
-				field: 'notes',
+				field,
 				stable_ids: stableIds,
 				find,
 				replace,
@@ -65,7 +66,7 @@
 		error = null;
 		try {
 			await applyFindReplace({
-				field: 'notes',
+				field,
 				stable_ids: stableIds,
 				find,
 				replace,
@@ -94,8 +95,22 @@
 	}
 </script>
 
-<EditSuiteModal title={`Find & Replace - ${stableIds.length} track(s) - Notes`} {onclose}>
+<EditSuiteModal title={`Find & Replace - ${stableIds.length} track(s)`} {onclose}>
 	<div class="fr-form">
+		<label>
+			Field
+			<select
+				value={field}
+				onchange={(e) => {
+					field = e.currentTarget.value as 'notes' | 'genre' | 'comments';
+					void runPreview();
+				}}
+			>
+				<option value="notes">Notes</option>
+				<option value="genre">Genre</option>
+				<option value="comments">Comments</option>
+			</select>
+		</label>
 		<label>
 			Find
 			<input type="text" bind:value={find} oninput={runPreview} placeholder="text to find" />

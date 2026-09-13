@@ -225,6 +225,8 @@ class TrackPatch(BaseModel):
     tags_add: list[str] | None = None
     tags_remove: list[str] | None = None
     notes: str | None = None
+    genre: str | None = None
+    comments: str | None = None
     # PREF-01: send null to clear, omit to leave untouched (model_fields_set
     # distinguishes the two - see routes/tracks.py patch_track).
     tempo_pref: TempoPrefPatch | None = None
@@ -257,6 +259,7 @@ class PlaylistSummary(BaseModel):
     # None when the playlist is not a rekordbox one or has no live
     # djmdPlaylist row - clients must not invent an order for those.
     seq: int | None = None
+    forbid_duplicates: bool = False
 
 
 class PlaylistDiff(BaseModel):
@@ -326,6 +329,7 @@ class PlaylistDetail(BaseModel):
     playlist_id: str
     name: str
     vendor: str
+    forbid_duplicates: bool = False
     # Full membership as stable_ids (always unfiltered -- the diff viewer
     # and reorder flows key off this).
     items: list[str]

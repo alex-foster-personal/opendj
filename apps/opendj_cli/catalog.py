@@ -226,6 +226,12 @@ _VERBS: tuple[Verb, ...] = (
     Verb("headphone_output_acquire", "headphone_output_acquire", ()),
     Verb("headphone_output_select", "headphone_output_select",
          (arg("device_id", "text", text_value),)),
+    Verb("headphone_master_select", "headphone_master_select",
+         (arg("device_id", "text", text_value),),
+         note="CUEOUT-09: pin AudioContext master sink."),
+    Verb("headphone_input_select", "headphone_input_select",
+         (arg("device_id", "text", text_value),),
+         note="CUEOUT-10: audio input; default is never a headphone/HFP mic."),
     Verb("output_mode", "output_mode", (
         arg("mode", "enum", enum_value(OUTPUT_MODE_VALUES), "practice|two_outputs"),
     ), note="CUEOUT-01: practice blends PFL into the main output; two_outputs is the split."),

@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { openUsbPanel, presentNonForgotten } from '$lib/rb/usb-tracker.svelte';
+	import { canImportUsbVolume, importUsbVolume } from '$lib/rb/usb-import';
 
 	const volumes = $derived(presentNonForgotten());
+
+	const IMPORT_TITLE =
+		'Import tracks from this stick. Files stay on the stick. Tags only - no BPM, key, or beatgrid.';
 </script>
 
 <div class="usb-source-root">
@@ -16,15 +20,28 @@
 				role="button"
 				tabindex="0"
 				data-testid="usb-source-row"
-				onclick={() => openUsbPanel()}
+				onclick={() => openUsbPanel(vol.id)}
 				onkeydown={(e) => {
-					if (e.key === 'Enter') openUsbPanel();
+					if (e.key === 'Enter') openUsbPanel(vol.id);
 				}}
 			>
 				<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 					<path d="M4 2h8v12H4zM6 4h4v2H6z" fill="currentColor" />
 				</svg>
 				<span class="name" title={vol.name}>{vol.name}</span>
+				<button
+					type="button"
+					class="import-btn"
+					data-testid="usb-source-import"
+					title={IMPORT_TITLE}
+					disabled={!canImportUsbVolume(vol)}
+					onclick={(e) => {
+						e.stopPropagation();
+						void importUsbVolume(vol);
+					}}
+				>
+					Import
+				</button>
 			</div>
 		{/each}
 	{/if}
@@ -62,6 +79,19 @@
 	}
 	.name.dim {
 		color: var(--rb-text-dim);
+	}
+	.import-btn {
+		flex: none;
+		padding: 0 4px;
+		font-size: 10px;
+		background: var(--rb-panel);
+		border: 1px solid var(--rb-border);
+		color: var(--rb-text);
+		cursor: pointer;
+	}
+	.import-btn:disabled {
+		opacity: 0.4;
+		cursor: default;
 	}
 	.row.rb-inert {
 		opacity: 0.5;

@@ -864,7 +864,14 @@ def _mypy_metrics(records: list[dict[str, Any]], files_checked: int) -> list[Met
         # summary counts neither, and neither does this.
         if record["severity"] != "error":
             continue
-        bucket = _mypy_bucket(record["file"])
+        rel = record["file"]
+        # tests/ imports ops.agentic_testing; mypy follows those imports out of
+        # [tool.mypy] files (apps, tests, scripts). Scoring them as test debt
+        # inflates mypy.errors_tests past the ceiling; aborting hides every
+        # other metric. Drop follow-import hits from the unscored ops/ tree.
+        if rel.split("/", 1)[0] == "ops":
+            continue
+        bucket = _mypy_bucket(rel)
         by_bucket[bucket] += 1
         by_code[bucket][record.get("code") or "unknown"] += 1
 
@@ -1486,6 +1493,14 @@ def _measure_owners_at_base(
             "--only", ",".join(owners), "--json", str(out_json),
         ]
         proc = subprocess.run(cmd, cwd=base_dir, capture_output=True, text=True, check=False)
+        if not out_json.exists():
+            # Base's own gate can abort before --json (mypy follow-import into
+            # ops/agentic_testing/coach.py is the live case). Overlay this
+            # run's gate onto the throwaway worktree and retry so trunk debt
+            # can still inherit. The tree being measured stays the merge-base.
+            dest = base_dir / "scripts" / "quality_gate.py"
+            dest.write_text(Path(__file__).read_text(encoding="utf-8"), encoding="utf-8")
+            proc = subprocess.run(cmd, cwd=base_dir, capture_output=True, text=True, check=False)
         if not out_json.exists():
             return None, (
                 f"merge-base run for {','.join(owners)} exited {proc.returncode} "

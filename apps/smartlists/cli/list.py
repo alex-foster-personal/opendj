@@ -1,4 +1,8 @@
-"""``python -m apps.smartlists.cli.list`` -- list configured smartlists."""
+"""``python -m apps.smartlists.cli.list`` -- list configured smartlists.
+
+Documented agent path: ``opendj api GET /api/v1/smartlists``.
+This module reads a local state.db (tests / offline).
+"""
 from __future__ import annotations
 
 import argparse
@@ -12,7 +16,11 @@ from ._common import build_repo, smartlist_json
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python -m apps.smartlists.cli.list",
-        description="List configured smartlists.",
+        description=(
+            "List configured smartlists. "
+            "Documented agent path: opendj api GET /api/v1/smartlists. "
+            "This module reads a local state.db (tests / offline)."
+        ),
     )
     p.add_argument("--db", type=Path, default=None)
     p.add_argument("--format", default="table", choices=["table", "json"])

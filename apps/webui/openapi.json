@@ -2312,12 +2312,34 @@
       },
       "BulkEditIn": {
         "properties": {
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
           "expected_etags": {
             "additionalProperties": {
               "type": "string"
             },
             "title": "Expected Etags",
             "type": "object"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
           },
           "notes": {
             "anyOf": [
@@ -4379,6 +4401,33 @@
         "title": "CredentialsOut",
         "type": "object"
       },
+      "DecideIn": {
+        "properties": {
+          "action": {
+            "enum": [
+              "accept",
+              "reject"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "batch": {
+            "title": "Batch",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch",
+          "filename",
+          "action"
+        ],
+        "title": "DecideIn",
+        "type": "object"
+      },
       "DecisionIn": {
         "additionalProperties": false,
         "properties": {
@@ -4674,6 +4723,49 @@
           "stem_status"
         ],
         "title": "DeckPerformanceSample",
+        "type": "object"
+      },
+      "DeletedPlaylistOut": {
+        "properties": {
+          "deleted_at": {
+            "title": "Deleted At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "track_count": {
+            "title": "Track Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          },
+          "vendor_pl_id": {
+            "title": "Vendor Pl Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "name",
+          "vendor",
+          "vendor_pl_id",
+          "deleted_at",
+          "updated_at",
+          "track_count"
+        ],
+        "title": "DeletedPlaylistOut",
         "type": "object"
       },
       "DigestResponse": {
@@ -5474,8 +5566,12 @@
             "type": "object"
           },
           "field": {
-            "const": "notes",
             "default": "notes",
+            "enum": [
+              "notes",
+              "genre",
+              "comments"
+            ],
             "title": "Field",
             "type": "string"
           },
@@ -5583,8 +5679,12 @@
             "type": "boolean"
           },
           "field": {
-            "const": "notes",
             "default": "notes",
+            "enum": [
+              "notes",
+              "genre",
+              "comments"
+            ],
             "title": "Field",
             "type": "string"
           },
@@ -6320,6 +6420,13 @@
             "title": "Head Delay Ms",
             "type": "number"
           },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/HeadphoneOutputDeviceOut"
+            },
+            "title": "Inputs",
+            "type": "array"
+          },
           "level": {
             "title": "Level",
             "type": "number"
@@ -6338,6 +6445,28 @@
             },
             "title": "Outputs",
             "type": "array"
+          },
+          "selected_input_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Input Device Id"
+          },
+          "selected_master_output_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Master Output Device Id"
           },
           "selected_output_device_id": {
             "anyOf": [
@@ -6360,8 +6489,11 @@
           "level",
           "head_delay_ms",
           "selected_output_device_id",
+          "selected_master_output_device_id",
+          "selected_input_device_id",
           "output_mode",
           "outputs",
+          "inputs",
           "supported",
           "active",
           "error"
@@ -8970,6 +9102,17 @@
             ],
             "title": "Bpm"
           },
+          "cue_count": {
+            "title": "Cue Count",
+            "type": "integer"
+          },
+          "cue_positions_ms": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Cue Positions Ms",
+            "type": "array"
+          },
           "duration_ms": {
             "anyOf": [
               {
@@ -8985,6 +9128,14 @@
             "title": "File Exists",
             "type": "boolean"
           },
+          "has_beatgrid": {
+            "title": "Has Beatgrid",
+            "type": "boolean"
+          },
+          "hot_cue_count": {
+            "title": "Hot Cue Count",
+            "type": "integer"
+          },
           "is_canonical": {
             "title": "Is Canonical",
             "type": "boolean"
@@ -8999,6 +9150,10 @@
               }
             ],
             "title": "Key"
+          },
+          "loop_count": {
+            "title": "Loop Count",
+            "type": "integer"
           },
           "path": {
             "title": "Path",
@@ -9053,7 +9208,12 @@
           "key",
           "duration_ms",
           "rating",
-          "file_exists"
+          "file_exists",
+          "cue_count",
+          "hot_cue_count",
+          "loop_count",
+          "has_beatgrid",
+          "cue_positions_ms"
         ],
         "title": "MemberOut",
         "type": "object"
@@ -9153,6 +9313,10 @@
             "title": "Created At",
             "type": "string"
           },
+          "forbid_duplicates": {
+            "title": "Forbid Duplicates",
+            "type": "boolean"
+          },
           "items": {
             "items": {
               "type": "string"
@@ -9198,6 +9362,7 @@
           "track_count",
           "created_at",
           "updated_at",
+          "forbid_duplicates",
           "renumbered"
         ],
         "title": "MembershipMoveOut",
@@ -10239,6 +10404,50 @@
         "title": "PeakPressureOut",
         "type": "object"
       },
+      "PendingBatch": {
+        "properties": {
+          "awaiting_rb": {
+            "default": true,
+            "title": "Awaiting Rb",
+            "type": "boolean"
+          },
+          "dest_dir": {
+            "title": "Dest Dir",
+            "type": "string"
+          },
+          "file_count": {
+            "title": "File Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "dest_dir",
+          "file_count"
+        ],
+        "title": "PendingBatch",
+        "type": "object"
+      },
+      "PendingOut": {
+        "properties": {
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/PendingBatch"
+            },
+            "title": "Batches",
+            "type": "array"
+          }
+        },
+        "required": [
+          "batches"
+        ],
+        "title": "PendingOut",
+        "type": "object"
+      },
       "PendingTrackOut": {
         "description": "One persisted, unmatched Spotify playlist entry.",
         "properties": {
@@ -11269,6 +11478,11 @@
           "diff": {
             "$ref": "#/components/schemas/PlaylistDiff"
           },
+          "forbid_duplicates": {
+            "default": false,
+            "title": "Forbid Duplicates",
+            "type": "boolean"
+          },
           "items": {
             "items": {
               "type": "string"
@@ -11489,6 +11703,18 @@
       },
       "PlaylistRenameIn": {
         "properties": {
+          "forbid_duplicates": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When true, reject extra copies of an already-present track.",
+            "title": "Forbid Duplicates"
+          },
           "name": {
             "anyOf": [
               {
@@ -11736,6 +11962,11 @@
             "title": "Available Count",
             "type": "integer"
           },
+          "forbid_duplicates": {
+            "default": false,
+            "title": "Forbid Duplicates",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -11785,6 +12016,10 @@
             "title": "Created At",
             "type": "string"
           },
+          "forbid_duplicates": {
+            "title": "Forbid Duplicates",
+            "type": "boolean"
+          },
           "items": {
             "items": {
               "type": "string"
@@ -11825,7 +12060,8 @@
           "items",
           "track_count",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "forbid_duplicates"
         ],
         "title": "PlaylistWriteOut",
         "type": "object"
@@ -14185,7 +14421,7 @@
         "type": "object"
       },
       "SmartlistCreateIn": {
-        "description": "Create payload matching ``python -m apps.smartlists.cli.create``.",
+        "description": "Create payload matching ``opendj api POST /api/v1/smartlists``.",
         "properties": {
           "name": {
             "description": "Display name (non-empty)",
@@ -14558,6 +14794,61 @@
           "display_name"
         ],
         "title": "SoundcloudTracklistRowModel",
+        "type": "object"
+      },
+      "SqlQueryIn": {
+        "properties": {
+          "limit": {
+            "default": 200,
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "SqlQueryIn",
+        "type": "object"
+      },
+      "SqlQueryOut": {
+        "properties": {
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "items": {},
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "columns",
+          "rows",
+          "truncated",
+          "row_count"
+        ],
+        "title": "SqlQueryOut",
         "type": "object"
       },
       "StatusResponse": {
@@ -16742,6 +17033,28 @@
       },
       "TrackPatch": {
         "properties": {
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
           "notes": {
             "anyOf": [
               {
@@ -17781,12 +18094,22 @@
               }
             ],
             "title": "Staged Path"
+          },
+          "verdict": {
+            "enum": [
+              "new",
+              "possible_duplicate",
+              "skipped_duplicate"
+            ],
+            "title": "Verdict",
+            "type": "string"
           }
         },
         "required": [
           "filename",
           "staged_path",
           "skipped_duplicate",
+          "verdict",
           "duplicate_of",
           "duration_s",
           "fingerprint_method"
@@ -19692,6 +20015,47 @@
           }
         },
         "summary": "Get Quality Ratchet",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/sql-query": {
+      "post": {
+        "operationId": "sql_query_api_v1_admin_sql_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SqlQueryIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlQueryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sql Query",
         "tags": [
           "admin"
         ]
@@ -23465,6 +23829,62 @@
         ]
       }
     },
+    "/api/v1/ingest/pending": {
+      "get": {
+        "operationId": "list_pending_api_v1_ingest_pending_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Pending",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/pending/{batch}/confirm": {
+      "post": {
+        "operationId": "confirm_pending_api_v1_ingest_pending__batch__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch",
+            "required": true,
+            "schema": {
+              "title": "Batch",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Pending",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
     "/api/v1/ingest/refresh": {
       "post": {
         "operationId": "start_refresh_api_v1_ingest_refresh_post",
@@ -23570,6 +23990,47 @@
           }
         },
         "summary": "Upload",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/upload/decide": {
+      "post": {
+        "operationId": "decide_upload_api_v1_ingest_upload_decide_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadFileResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Upload",
         "tags": [
           "ingest"
         ]
@@ -25163,7 +25624,7 @@
             "application/json": {
               "schema": {
                 "additionalProperties": true,
-                "title": "Body",
+                "title": "HeadphoneChannelCueBody",
                 "type": "object"
               }
             }
@@ -25179,7 +25640,7 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Headphone state after toggling a channel CUE"
           },
           "422": {
             "content": {
@@ -25206,7 +25667,7 @@
             "application/json": {
               "schema": {
                 "additionalProperties": true,
-                "title": "Body",
+                "title": "HeadphoneHeadDelayBody",
                 "type": "object"
               }
             }
@@ -25222,7 +25683,7 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Headphone state after setting Mixxx HEAD DELAY"
           },
           "422": {
             "content": {
@@ -25241,15 +25702,15 @@
         ]
       }
     },
-    "/api/v1/performance/headphones/level": {
+    "/api/v1/performance/headphones/inputs/select": {
       "post": {
-        "operationId": "post_headphone_level_api_v1_performance_headphones_level_post",
+        "operationId": "post_headphone_input_select_api_v1_performance_headphones_inputs_select_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "additionalProperties": true,
-                "title": "Body",
+                "title": "HeadphoneAudioInputBody",
                 "type": "object"
               }
             }
@@ -25265,7 +25726,50 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Headphone state after selecting AUDIO IN"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Headphone Input Select",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/level": {
+      "post": {
+        "operationId": "post_headphone_level_api_v1_performance_headphones_level_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "HeadphoneLevelBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Headphone state after setting monitor LEVEL"
           },
           "422": {
             "content": {
@@ -25292,7 +25796,7 @@
             "application/json": {
               "schema": {
                 "additionalProperties": true,
-                "title": "Body",
+                "title": "HeadphoneMixBody",
                 "type": "object"
               }
             }
@@ -25308,7 +25812,7 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Headphone mix state after setting CUE-to-MASTER MIX"
           },
           "422": {
             "content": {
@@ -25335,7 +25839,7 @@
             "application/json": {
               "schema": {
                 "additionalProperties": true,
-                "title": "Body",
+                "title": "HeadphoneOutputModeBody",
                 "type": "object"
               }
             }
@@ -25351,7 +25855,7 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Headphone state after setting MAIN / two outputs / SPLIT"
           },
           "422": {
             "content": {
@@ -25365,6 +25869,49 @@
           }
         },
         "summary": "Post Output Mode",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/outputs/master": {
+      "post": {
+        "operationId": "post_headphone_master_select_api_v1_performance_headphones_outputs_master_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "HeadphoneMasterOutputBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Headphone state after selecting the MASTER/MAIN sink"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Headphone Master Select",
         "tags": [
           "performance-headphones"
         ]
@@ -25386,7 +25933,7 @@
                     "type": "null"
                   }
                 ],
-                "title": "Body"
+                "title": "HeadphoneOutputsRefreshBody"
               }
             }
           }
@@ -25400,7 +25947,7 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Headphone state after re-enumerating outputs and inputs"
           },
           "422": {
             "content": {
@@ -25427,7 +25974,7 @@
             "application/json": {
               "schema": {
                 "additionalProperties": true,
-                "title": "Body",
+                "title": "HeadphoneCueOutputBody",
                 "type": "object"
               }
             }
@@ -25443,7 +25990,7 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Headphone state after selecting the HEADPHONE CUE sink"
           },
           "422": {
             "content": {
@@ -25760,6 +26307,31 @@
         "summary": "Create Playlist",
         "tags": [
           "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/playlists/deleted": {
+      "get": {
+        "operationId": "list_deleted_playlists",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeletedPlaylistOut"
+                  },
+                  "title": "Response List Deleted Playlists",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Deleted Playlists",
+        "tags": [
+          "playlists"
         ]
       }
     },
@@ -26875,6 +27447,48 @@
         "summary": "Get Writeback Targets",
         "tags": [
           "playlist-writeback"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}:undelete": {
+      "post": {
+        "operationId": "undelete_playlist",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistWriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undelete Playlist",
+        "tags": [
+          "playlists-write"
         ]
       }
     },
