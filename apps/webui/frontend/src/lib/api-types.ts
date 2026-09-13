@@ -10143,7 +10143,7 @@ export interface components {
         };
         /**
          * SmartlistCreateIn
-         * @description Create payload matching ``python -m apps.smartlists.cli.create``.
+         * @description Create payload matching ``opendj api POST /api/v1/smartlists``.
          */
         SmartlistCreateIn: {
             /**
