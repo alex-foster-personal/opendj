@@ -83,6 +83,7 @@ from .routes import feedback_sync as feedback_sync_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
+from .routes import ingest_pending as ingest_pending_routes
 from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
 from .routes import library_jobs as library_jobs_routes
@@ -102,6 +103,7 @@ from .routes import playlists as playlists_routes
 from .routes import preflight as preflight_routes
 from .routes import progress as progress_routes
 from .routes import quality as quality_routes
+from .routes import sql_playground as sql_playground_routes
 from .routes import worktree_ports as worktree_ports_routes
 from .routes import queues as queues_routes
 from .routes import rb_assets as rb_assets_routes
@@ -447,6 +449,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         progress_routes.router,
         quality_routes.router,
         worktree_ports_routes.router,
+        sql_playground_routes.router,
         smartlists_routes.router,
         autolists_routes.router,
         stems_routes.router,
@@ -464,6 +467,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         auth_routes.router,
         ingest_routes.router,
         ingest_upload_routes.router,
+        ingest_pending_routes.router,
         library_routes.router,
         lyrics_search_routes.router,
         lyrics_words_routes.router,

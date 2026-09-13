@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy, onMount } from 'svelte';
 	import LibrarySourceTabs, { type LibrarySourceTab } from './LibrarySourceTabs.svelte';
 	import PlaylistTree from './PlaylistTree.svelte';
 	import type { PlaylistTreeProps } from './playlist-tree-props';
@@ -7,6 +8,8 @@
 	import TreeContextMenu from './TreeContextMenu.svelte';
 	import UsbSourceList from './UsbSourceList.svelte';
 	import AutolistBrowser from './AutolistBrowser.svelte';
+	import UsbPanel from '../UsbPanel.svelte';
+	import { startUsbWatch, stopUsbWatch } from '$lib/rb/usb-tracker.svelte';
 
 	let {
 		onautolistchange,
@@ -17,6 +20,14 @@
 	let treeContextMenu = $state<TreeContextMenu | null>(null);
 	let deleteSmartlistUi: ((sl: { id: string; name: string }) => void) | undefined;
 	let autolistsMounted = $state(false);
+
+	onMount(() => {
+		startUsbWatch();
+	});
+
+	onDestroy(() => {
+		stopUsbWatch();
+	});
 
 	$effect(() => {
 		if (activeTab === 'autolists') autolistsMounted = true;
@@ -53,10 +64,12 @@
 	{:else}
 		<UsbSourceList />
 	{/if}
+	<UsbPanel />
 </div>
 
 <style>
 	.library-nav-root {
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		min-height: 0;

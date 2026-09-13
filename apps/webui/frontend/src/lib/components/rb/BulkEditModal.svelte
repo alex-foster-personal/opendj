@@ -3,29 +3,65 @@
 	// selected track in one atomic request (backend pre-checks every row's
 	// ETag before writing any of them - see routes/bulk_edit.py).
 	import { bulkEditTracks } from '$lib/rb/api-edit-suite';
+	import {
+		MIXED_READOUT,
+		bulkEditFieldValues,
+		type BulkEditRowFields
+	} from '$lib/rb/bulk-edit-values';
 	import { pushToast } from '$lib/stores.svelte';
 	import EditSuiteModal from './EditSuiteModal.svelte';
 
 	let {
 		stableIds,
 		etags,
+		rows,
 		onclose,
 		onapplied
 	}: {
 		stableIds: string[];
 		etags: Record<string, string>;
+		rows: BulkEditRowFields[];
 		onclose: () => void;
 		onapplied: () => void;
 	} = $props();
 
+	const { rating: ratingConsensus, notes: notesConsensus } = bulkEditFieldValues(
+		stableIds,
+		rows
+	);
+
+	function _ratingToText(value: number | null): string {
+		return value === null ? '' : String(value);
+	}
+
 	let setRating = $state(false);
-	let rating = $state(3);
+	let ratingText = $state(
+		ratingConsensus.kind === 'shared' ? _ratingToText(ratingConsensus.value) : ''
+	);
 	let setNotes = $state(false);
-	let notes = $state('');
+	let notes = $state(notesConsensus.kind === 'shared' ? notesConsensus.value : '');
+	let setGenre = $state(false);
+	let genre = $state('');
+	let setComments = $state(false);
+	let comments = $state('');
 	let tagsAdd = $state('');
 	let tagsRemove = $state('');
 	let busy = $state(false);
 	let error = $state<string | null>(null);
+
+	function onSetRatingToggle(checked: boolean): void {
+		setRating = checked;
+		if (ratingConsensus.kind === 'mixed') {
+			ratingText = '';
+		}
+	}
+
+	function onSetNotesToggle(checked: boolean): void {
+		setNotes = checked;
+		if (notesConsensus.kind === 'mixed') {
+			notes = '';
+		}
+	}
 
 	function _splitTags(raw: string): string[] {
 		return raw
@@ -34,12 +70,40 @@
 			.filter((t) => t !== '');
 	}
 
+	function _parseRating(): number | null {
+		const trimmed = ratingText.trim();
+		if (trimmed === '') {
+			return null;
+		}
+		const parsed = Number(trimmed);
+		if (!Number.isFinite(parsed)) {
+			return null;
+		}
+		return parsed;
+	}
+
 	async function apply(): Promise<void> {
 		const add = _splitTags(tagsAdd);
 		const remove = _splitTags(tagsRemove);
-		if (!setRating && !setNotes && add.length === 0 && remove.length === 0) {
+		if (
+			!setRating &&
+			!setNotes &&
+			!setGenre &&
+			!setComments &&
+			add.length === 0 &&
+			remove.length === 0
+		) {
 			error = 'set at least one field to apply';
 			return;
+		}
+		let rating: number | undefined;
+		if (setRating) {
+			const parsed = _parseRating();
+			if (parsed === null) {
+				error = 'enter a valid rating to apply';
+				return;
+			}
+			rating = parsed;
 		}
 		busy = true;
 		error = null;
@@ -49,6 +113,8 @@
 				expected_etags: etags,
 				...(setRating ? { rating } : {}),
 				...(setNotes ? { notes } : {}),
+				...(setGenre ? { genre } : {}),
+				...(setComments ? { comments } : {}),
 				...(add.length > 0 ? { tags_add: add } : {}),
 				...(remove.length > 0 ? { tags_remove: remove } : {})
 			});
@@ -66,14 +132,43 @@
 <EditSuiteModal title={`Bulk Edit - ${stableIds.length} track(s)`} {onclose}>
 	<div class="be-form">
 		<label class="be-field">
-			<input type="checkbox" bind:checked={setRating} />
+			<input type="checkbox" checked={setRating} onchange={(e) => onSetRatingToggle(e.currentTarget.checked)} />
 			Rating
-			<input type="number" min="0" max="5" bind:value={rating} disabled={!setRating} />
+			{#if ratingConsensus.kind === 'mixed' && !setRating}
+				<span class="be-mixed-readout">{MIXED_READOUT}</span>
+			{:else}
+				<input
+					type="number"
+					min="0"
+					max="5"
+					bind:value={ratingText}
+					disabled={!setRating}
+				/>
+			{/if}
 		</label>
 		<label class="be-field">
-			<input type="checkbox" bind:checked={setNotes} />
+			<input type="checkbox" checked={setNotes} onchange={(e) => onSetNotesToggle(e.currentTarget.checked)} />
 			Notes
-			<input type="text" bind:value={notes} disabled={!setNotes} placeholder="new notes text" />
+			{#if notesConsensus.kind === 'mixed' && !setNotes}
+				<span class="be-mixed-readout">{MIXED_READOUT}</span>
+			{:else}
+				<input type="text" bind:value={notes} disabled={!setNotes} placeholder="new notes text" />
+			{/if}
+		</label>
+		<label class="be-field">
+			<input type="checkbox" bind:checked={setGenre} />
+			Genre
+			<input type="text" bind:value={genre} disabled={!setGenre} placeholder="new genre text" />
+		</label>
+		<label class="be-field">
+			<input type="checkbox" bind:checked={setComments} />
+			Comments
+			<input
+				type="text"
+				bind:value={comments}
+				disabled={!setComments}
+				placeholder="new comments text"
+			/>
 		</label>
 		<label class="be-field">
 			Add tags
@@ -116,6 +211,11 @@
 		color: var(--rb-text, #ddd);
 		padding: 4px 6px;
 		border-radius: 2px;
+	}
+	.be-mixed-readout {
+		flex: 1;
+		font-style: italic;
+		color: var(--rb-text-dim);
 	}
 	.be-error {
 		color: var(--rb-red, #e55);

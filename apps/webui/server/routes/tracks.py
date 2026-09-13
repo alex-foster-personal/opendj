@@ -526,6 +526,10 @@ def patch_track(
         patch_dict["rating"] = patch.rating
     if patch.notes is not None or "notes" in patch.model_fields_set:
         patch_dict["notes"] = patch.notes
+    if patch.genre is not None or "genre" in patch.model_fields_set:
+        patch_dict["genre"] = patch.genre
+    if patch.comments is not None or "comments" in patch.model_fields_set:
+        patch_dict["comments"] = patch.comments
     if patch.tags_add is not None:
         patch_dict["tags_add"] = patch.tags_add
     if patch.tags_remove is not None:

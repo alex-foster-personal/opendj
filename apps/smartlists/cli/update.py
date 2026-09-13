@@ -1,4 +1,8 @@
-"""``python -m apps.smartlists.cli.update`` -- replace a smartlist rule."""
+"""``python -m apps.smartlists.cli.update`` -- replace a smartlist rule.
+
+Documented agent path: ``opendj api PUT /api/v1/smartlists/{id} -H 'If-Match: "<etag>"' --json '{"rule":{...}}'``.
+This module writes a local state.db (tests / offline).
+"""
 from __future__ import annotations
 
 import argparse
@@ -15,7 +19,12 @@ from ._common import build_repo, smartlist_json
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m apps.smartlists.cli.update",
-        description="Replace a smartlist rule from a JSON rule file.",
+        description=(
+            "Replace a smartlist rule from a JSON rule file. "
+            "Documented agent path: opendj api PUT /api/v1/smartlists/{id} "
+            '-H \'If-Match: "<etag>"\' --json \'{"rule":{...}}\'. '
+            "This module writes a local state.db (tests / offline)."
+        ),
     )
     parser.add_argument("--name", required=True)
     parser.add_argument("--rule", required=True, type=Path)

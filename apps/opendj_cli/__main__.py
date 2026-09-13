@@ -4,6 +4,8 @@
     opendj deck 1 play | pause | cue | seek 42000
     opendj eq 2 low 0.2 --over 4beats
     opendj do "load 1 <stable-id>" then "play 1" and "play 2"
+    opendj api GET /api/v1/smartlists
+    opendj api POST /api/v1/smartlists --json '{"name":"...","rule":{...}}'
     opendj --list-verbs [--json]
 
 Exit codes are documented in :mod:`apps.opendj_cli`; the load-bearing ones are
@@ -62,11 +64,11 @@ from apps.opendj_cli.orders import (
     single,
     slowed_since,
 )
+from apps.opendj_cli.helptext import LIBRARY_EPILOG, print_verbs
 from apps.opendj_cli.origin import EngineNotRunning, EngineOrigin, resolve_origin
 from apps.opendj_cli.verbs import (
     DURATION_ANCHORS,
     InvocationError,
-    describe_verbs,
     parse_duration,
     parse_invocation,
 )
@@ -137,6 +139,8 @@ def _parser(as_json: bool = False) -> _Parser:
         as_json=as_json,
         prog="opendj",
         description="Drive the running Open DJ performance surface over the AGENT-03 bus.",
+        epilog=LIBRARY_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("invocation", nargs="*", help="a verb and its arguments")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
@@ -578,33 +582,6 @@ def _state_text(mirror: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _print_verbs(as_json: bool) -> None:
-    rows = describe_verbs()
-    if as_json:
-        print(json.dumps(rows, indent=2, sort_keys=True))
-        return
-    name_width = max(len(row["verb"]) for row in rows)
-    command_width = max(len(row["command"]) for row in rows)
-    usage_width = max(len(row["usage"]) for row in rows)
-    print(f"{'verb':<{name_width}}  {'bus command':<{command_width}}  usage")
-    for row in rows:
-        print(
-            f"{row['verb']:<{name_width}}  {row['command']:<{command_width}}  "
-            f"{row['usage']:<{usage_width}}  {_verb_flags(row)}".rstrip()
-        )
-
-
-def _verb_flags(row: dict[str, Any]) -> str:
-    flags = []
-    if row["quick_draw"]:
-        flags.append("quick-draw " + ",".join(row["quick_draw"]))
-    if row["rampable"]:
-        flags.append("--over")
-    if row["confirmed_against_mirror"]:
-        flags.append("mirror-confirmed")
-    return "  ".join(flags)
-
-
 # ----- entry point ---------------------------------------------------------
 
 def _head(tokens: Sequence[str]) -> tuple[str, list[str]]:
@@ -638,14 +615,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             [*global_tokens, _API_COMMAND]
         )
         if args.list_verbs:
-            _print_verbs(args.json)
+            print_verbs(args.json)
             return EXIT_CONFIRMED
         from apps.opendj_cli import api_cli
 
         return api_cli.run(api_tokens, as_json=args.json)
     args = _parser(as_json="--json" in tokens).parse_args(tokens)
     if args.list_verbs:
-        _print_verbs(args.json)
+        print_verbs(args.json)
         return EXIT_CONFIRMED
     try:
         head, rest = _head(args.invocation)

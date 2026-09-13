@@ -32,7 +32,12 @@ function clusterPayload({ decisionAction = null } = {}) {
 						key: '8A',
 						duration_ms: 210000,
 						rating: 4,
-						file_exists: true
+						file_exists: true,
+						cue_count: 0,
+						hot_cue_count: 0,
+						loop_count: 0,
+						has_beatgrid: false,
+						cue_positions_ms: []
 					}
 				],
 				decision:
@@ -312,4 +317,16 @@ test('undoDedupMerge posts undo and a 409 becomes DedupConflictError', async () 
 		);
 	assert.ok(caught instanceof dedupApi.DedupConflictError, 'expected a DedupConflictError');
 	assert.equal(caught.revision, NEXT_REVISION);
+});
+
+test('fetchDedupClusters rejects members missing cue_count', async () => {
+	const payload = clusterPayload();
+	delete payload.clusters[0].members[0].cue_count;
+	globalThis.fetch = async () =>
+		new Response(JSON.stringify(payload), {
+			status: 200,
+			headers: { 'content-type': 'application/json', etag: INITIAL_REVISION }
+		});
+
+	await assert.rejects(dedupApi.fetchDedupClusters(), /cue_count/);
 });

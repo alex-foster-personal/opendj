@@ -330,6 +330,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/sql-query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sql Query */
+        post: operations["sql_query_api_v1_admin_sql_query_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analysis-queue": {
         parameters: {
             query?: never;
@@ -1935,6 +1952,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ingest/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Pending */
+        get: operations["list_pending_api_v1_ingest_pending_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest/pending/{batch}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Pending */
+        post: operations["confirm_pending_api_v1_ingest_pending__batch__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ingest/refresh": {
         parameters: {
             query?: never;
@@ -1980,6 +2031,23 @@ export interface paths {
         put?: never;
         /** Upload */
         post: operations["upload_api_v1_ingest_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest/upload/decide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide Upload */
+        post: operations["decide_upload_api_v1_ingest_upload_decide_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2806,6 +2874,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playlists/deleted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Deleted Playlists */
+        get: operations["list_deleted_playlists"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playlists/{playlist_id}": {
         parameters: {
             query?: never;
@@ -3075,6 +3160,23 @@ export interface paths {
         get: operations["get_writeback_targets_api_v1_playlists__playlist_id__writeback_targets_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlists/{playlist_id}:undelete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undelete Playlist */
+        post: operations["undelete_playlist"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5613,10 +5715,14 @@ export interface components {
         };
         /** BulkEditIn */
         BulkEditIn: {
+            /** Comments */
+            comments?: string | null;
             /** Expected Etags */
             expected_etags: {
                 [key: string]: string;
             };
+            /** Genre */
+            genre?: string | null;
             /** Notes */
             notes?: string | null;
             /** Rating */
@@ -6300,6 +6406,18 @@ export interface components {
              */
             mode: "observe" | "enforce";
         };
+        /** DecideIn */
+        DecideIn: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "accept" | "reject";
+            /** Batch */
+            batch: string;
+            /** Filename */
+            filename: string;
+        };
         /** DecisionIn */
         DecisionIn: {
             /**
@@ -6414,6 +6532,23 @@ export interface components {
             sync_error?: string | null;
             /** Transport Pending */
             transport_pending: boolean;
+        };
+        /** DeletedPlaylistOut */
+        DeletedPlaylistOut: {
+            /** Deleted At */
+            deleted_at: string;
+            /** Name */
+            name: string;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Track Count */
+            track_count: number;
+            /** Updated At */
+            updated_at: string;
+            /** Vendor */
+            vendor: string;
+            /** Vendor Pl Id */
+            vendor_pl_id: string;
         };
         /** DigestResponse */
         DigestResponse: {
@@ -6736,9 +6871,9 @@ export interface components {
             /**
              * Field
              * @default notes
-             * @constant
+             * @enum {string}
              */
-            field: "notes";
+            field: "notes" | "genre" | "comments";
             /** Find */
             find: string;
             /**
@@ -6783,9 +6918,9 @@ export interface components {
             /**
              * Field
              * @default notes
-             * @constant
+             * @enum {string}
              */
-            field: "notes";
+            field: "notes" | "genre" | "comments";
             /** Find */
             find: string;
             /**
@@ -8140,14 +8275,24 @@ export interface components {
             artist: string | null;
             /** Bpm */
             bpm: number | null;
+            /** Cue Count */
+            cue_count: number;
+            /** Cue Positions Ms */
+            cue_positions_ms: number[];
             /** Duration Ms */
             duration_ms: number | null;
             /** File Exists */
             file_exists: boolean;
+            /** Has Beatgrid */
+            has_beatgrid: boolean;
+            /** Hot Cue Count */
+            hot_cue_count: number;
             /** Is Canonical */
             is_canonical: boolean;
             /** Key */
             key: string | null;
+            /** Loop Count */
+            loop_count: number;
             /** Path */
             path: string;
             /** Rating */
@@ -8186,6 +8331,8 @@ export interface components {
         MembershipMoveOut: {
             /** Created At */
             created_at: string;
+            /** Forbid Duplicates */
+            forbid_duplicates: boolean;
             /** Items */
             items: string[];
             /** Name */
@@ -8611,6 +8758,25 @@ export interface components {
             /** Skipped Unknown */
             skipped_unknown: number;
         };
+        /** PendingBatch */
+        PendingBatch: {
+            /**
+             * Awaiting Rb
+             * @default true
+             */
+            awaiting_rb: boolean;
+            /** Dest Dir */
+            dest_dir: string;
+            /** File Count */
+            file_count: number;
+            /** Name */
+            name: string;
+        };
+        /** PendingOut */
+        PendingOut: {
+            /** Batches */
+            batches: components["schemas"]["PendingBatch"][];
+        };
         /**
          * PendingTrackOut
          * @description One persisted, unmatched Spotify playlist entry.
@@ -8965,6 +9131,11 @@ export interface components {
         /** PlaylistDetail */
         PlaylistDetail: {
             diff: components["schemas"]["PlaylistDiff"];
+            /**
+             * Forbid Duplicates
+             * @default false
+             */
+            forbid_duplicates: boolean;
             /** Items */
             items: string[];
             /** Name */
@@ -9050,6 +9221,11 @@ export interface components {
         };
         /** PlaylistRenameIn */
         PlaylistRenameIn: {
+            /**
+             * Forbid Duplicates
+             * @description When true, reject extra copies of an already-present track.
+             */
+            forbid_duplicates?: boolean | null;
             /**
              * Name
              * @description New display name; omit for a no-op that returns the current row + etag
@@ -9141,6 +9317,11 @@ export interface components {
         PlaylistSummary: {
             /** Available Count */
             available_count: number;
+            /**
+             * Forbid Duplicates
+             * @default false
+             */
+            forbid_duplicates: boolean;
             /** Name */
             name: string;
             /** Playlist Id */
@@ -9158,6 +9339,8 @@ export interface components {
         PlaylistWriteOut: {
             /** Created At */
             created_at: string;
+            /** Forbid Duplicates */
+            forbid_duplicates: boolean;
             /** Items */
             items: string[];
             /** Name */
@@ -10073,7 +10256,7 @@ export interface components {
         };
         /**
          * SmartlistCreateIn
-         * @description Create payload matching ``python -m apps.smartlists.cli.create``.
+         * @description Create payload matching ``opendj api POST /api/v1/smartlists``.
          */
         SmartlistCreateIn: {
             /**
@@ -10231,6 +10414,27 @@ export interface components {
             title: string | null;
             /** Track Stable Id */
             track_stable_id: string | null;
+        };
+        /** SqlQueryIn */
+        SqlQueryIn: {
+            /**
+             * Limit
+             * @default 200
+             */
+            limit: number;
+            /** Sql */
+            sql: string;
+        };
+        /** SqlQueryOut */
+        SqlQueryOut: {
+            /** Columns */
+            columns: string[];
+            /** Row Count */
+            row_count: number;
+            /** Rows */
+            rows: unknown[][];
+            /** Truncated */
+            truncated: boolean;
         };
         /** StatusResponse */
         StatusResponse: {
@@ -11058,6 +11262,10 @@ export interface components {
         };
         /** TrackPatch */
         TrackPatch: {
+            /** Comments */
+            comments?: string | null;
+            /** Genre */
+            genre?: string | null;
             /** Notes */
             notes?: string | null;
             /** Rating */
@@ -11406,6 +11614,11 @@ export interface components {
             skipped_duplicate: boolean;
             /** Staged Path */
             staged_path: string | null;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "new" | "possible_duplicate" | "skipped_duplicate";
         };
         /** UploadOut */
         UploadOut: {
@@ -12443,6 +12656,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    sql_query_api_v1_admin_sql_query_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SqlQueryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SqlQueryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -15422,6 +15668,55 @@ export interface operations {
             };
         };
     };
+    list_pending_api_v1_ingest_pending_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingOut"];
+                };
+            };
+        };
+    };
+    confirm_pending_api_v1_ingest_pending__batch__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     start_refresh_api_v1_ingest_refresh_post: {
         parameters: {
             query?: never;
@@ -15495,6 +15790,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UploadOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_upload_api_v1_ingest_upload_decide_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadFileResult"];
                 };
             };
             /** @description Validation Error */
@@ -17052,6 +17380,26 @@ export interface operations {
             };
         };
     };
+    list_deleted_playlists: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedPlaylistOut"][];
+                };
+            };
+        };
+    };
     get_playlist_api_v1_playlists__playlist_id__get: {
         parameters: {
             query?: {
@@ -17697,6 +18045,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WritebackTargetsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undelete_playlist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistWriteOut"];
                 };
             };
             /** @description Validation Error */

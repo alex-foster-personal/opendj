@@ -193,6 +193,10 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         ),
         "origin_device_id": "Writing machine's machine_id; added in v6.",
         "deleted_at": "Tombstone timestamp; added in v6. NULL = live.",
+        "forbid_duplicates": (
+            "When 1, reject extra copies of an already-present stable_id on "
+            ":add and duplicate stable_ids on PUT; default 0 allows repeats."
+        ),
     },
     "playlist_memberships": {
         "item_id": "Stable membership row id; added in v13.",
