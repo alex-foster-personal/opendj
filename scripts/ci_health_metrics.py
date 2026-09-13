@@ -54,14 +54,16 @@ MINI-PRD
               [then] it is recorded once - a median must describe the build, not the cadence (*)
     R4 Watermark catch-up ........................................ done + ran + regression
        Job recording is cursored on the store itself: the newest `source: ci` record's ts
-       is the watermark, and every run whose jobs completed at or after it is fetched, up
-       to JOB_FETCH_MAX_PAGES pages. This replaced a fixed newest-10-runs window whose
+       is the watermark, and the oldest bounded batch of runs whose jobs completed at or
+       after it is fetched, after listing up to JOB_FETCH_MAX_PAGES pages. This replaced
+       a fixed newest-10-runs window whose
        stated assumption ("10 covers the 4-hour window several times over") was false at
        this repo's burst velocity - 391 runs completed between 09:00 and 12:10 UTC on
        Sun 31 Aug 2026, so most of a burst scrolled past unrecorded.
        Acceptance tests:
-         [if] a burst completed more runs since the watermark than the bootstrap count
-              [then] every one of them is job-fetched, none scrolls past unrecorded (*)
+       [if] a burst completed more runs since the watermark than the per-poll cap
+              [then] the oldest bounded batch is job-fetched and the named remainder
+              resumes from the metric watermark on the next poll (*)
          [if] no run has completed since the watermark
               [then] zero per-run job API calls are made - a quiet window costs nothing (*)
          [if] the backlog is deeper than JOB_FETCH_MAX_PAGES pages
@@ -146,7 +148,7 @@ JOB_FETCH_MAX_PAGES = 10
 # run.  Keep each poll bounded so a burst cannot consume the account's API budget.  The
 # watermark advances only through the oldest runs selected here, so the next poll resumes
 # at the first unprocessed completion rather than skipping the remainder.
-JOB_FETCH_MAX_RUNS_PER_POLL = 50
+JOB_FETCH_MAX_RUNS_PER_POLL = 10
 # The actions/runs listing filters by `created`, but a run is swept up here by when its jobs
 # COMPLETED (updated_at), and a run can be created well before it completes. Looking back a
 # day from the watermark covers any plausible run duration in this repo with huge headroom.
@@ -312,7 +314,7 @@ def _fetch_jobs(
     existing: list[Metric],
     job_payloads: RunJobsPayloadCache | None = None,
 ) -> JobFetchOutcome:
-    """Completed jobs for every run finished since the store's newest CI record.
+    """Completed jobs for one oldest-first, resumable batch since the CI watermark.
 
     Two paths. With no CI records in the store this is a fresh machine, so it seeds from the
     newest JOB_FETCH_BOOTSTRAP_RUN_COUNT of the runs checks 1-4 already fetched - no extra
