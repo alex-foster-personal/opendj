@@ -87,7 +87,7 @@
 	</div>
 	<label>
 		Body (JSON; GET ignores this)
-		<textarea bind:value={apiBody} placeholder="{}" rows="4" disabled={apiBusy}></textarea>
+		<textarea bind:value={apiBody} placeholder={'{}'} rows="4" disabled={apiBusy}></textarea>
 	</label>
 	{#if apiError}
 		<div class="fatal">{apiError}</div>
