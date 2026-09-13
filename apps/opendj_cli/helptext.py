@@ -1,0 +1,54 @@
+"""Library help strings for ``opendj --help`` and text-mode ``--list-verbs``."""
+
+from __future__ import annotations
+
+import json
+import sys
+from typing import Any
+
+from apps.opendj_cli.verbs import describe_verbs
+
+_LIBRARY_LINES = """\
+library (opendj api, LIBM-11; library daemon, not the performance bus):
+  opendj api GET /api/v1/playlists
+  opendj api POST /api/v1/playlists --json '{"name":"..."}'
+  opendj api GET /api/v1/smartlists
+  opendj api POST /api/v1/smartlists --json '{"name":"...","rule":{...}}'
+  opendj api PUT /api/v1/smartlists/{id} -H 'If-Match: "<etag>"' --json '{"rule":{...}}'
+  opendj api DELETE /api/v1/smartlists/{id}
+  opendj api GET /api/v1/tracks/{stable_id}
+  opendj track key-segments <stable_id>"""
+
+LIBRARY_EPILOG = _LIBRARY_LINES
+
+LIST_VERBS_FOOTER = _LIBRARY_LINES
+
+
+def _verb_flags(row: dict[str, Any]) -> str:
+    flags = []
+    if row["quick_draw"]:
+        flags.append("quick-draw " + ",".join(row["quick_draw"]))
+    if row["rampable"]:
+        flags.append("--over")
+    if row["confirmed_against_mirror"]:
+        flags.append("mirror-confirmed")
+    return "  ".join(flags)
+
+
+def print_verbs(as_json: bool) -> None:
+    """Print the AGENT-03 bus table, plus library ops in text mode."""
+    rows = describe_verbs()
+    if as_json:
+        print(json.dumps(rows, indent=2, sort_keys=True))
+        return
+    name_width = max(len(row["verb"]) for row in rows)
+    command_width = max(len(row["command"]) for row in rows)
+    usage_width = max(len(row["usage"]) for row in rows)
+    print(f"{'verb':<{name_width}}  {'bus command':<{command_width}}  usage")
+    for row in rows:
+        print(
+            f"{row['verb']:<{name_width}}  {row['command']:<{command_width}}  "
+            f"{row['usage']:<{usage_width}}  {_verb_flags(row)}".rstrip()
+        )
+    print()
+    print(LIST_VERBS_FOOTER, file=sys.stdout)

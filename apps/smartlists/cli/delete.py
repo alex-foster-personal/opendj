@@ -1,4 +1,8 @@
-"""``python -m apps.smartlists.cli.delete`` -- delete a smartlist by name."""
+"""``python -m apps.smartlists.cli.delete`` -- delete a smartlist by name.
+
+Documented agent path: ``opendj api DELETE /api/v1/smartlists/{id}``.
+This module writes a local state.db (tests / offline).
+"""
 from __future__ import annotations
 
 import argparse
@@ -11,7 +15,11 @@ from ._common import build_repo
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python -m apps.smartlists.cli.delete",
-        description="Delete a smartlist by name.",
+        description=(
+            "Delete a smartlist by name. "
+            "Documented agent path: opendj api DELETE /api/v1/smartlists/{id}. "
+            "This module writes a local state.db (tests / offline)."
+        ),
     )
     p.add_argument("--name", required=True)
     p.add_argument("--db", type=Path, default=None)

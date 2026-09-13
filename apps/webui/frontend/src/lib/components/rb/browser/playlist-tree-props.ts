@@ -15,6 +15,10 @@ export type PlaylistTreeProps = {
 	 * pin was about). */
 	playlistsLoading: boolean;
 	playlistsError: string | null;
+	/** Number of mostly-broken playlists hidden by the Broken filter. Required,
+	 * not optional -- an unwired caller must fail the Svelte type check rather
+	 * than silently omit the notice. */
+	hiddenBrokenPlaylistCount: number;
 	allTracksCount: number | null;
 	allTracksBrokenCount: number | null;
 	allTracksError: string | null;
