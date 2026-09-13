@@ -164,6 +164,8 @@ export interface PlaylistNode {
 	kind: 'all_tracks' | 'playlist' | 'smartlist' | 'folder' | 'missing_tracks' | 'taglist' | 'autolist';
 	/** Fewer than 30% of tracks exist on disk; tree row renders dimmed. */
 	mostly_broken?: boolean;
+	/** When true, extra copies of an already-present track are rejected on add. */
+	forbid_duplicates?: boolean;
 	/** Children for folder nodes; always [] at v1. */
 	children: PlaylistNode[];
 }

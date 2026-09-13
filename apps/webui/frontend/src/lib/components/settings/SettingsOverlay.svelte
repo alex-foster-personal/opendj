@@ -175,6 +175,12 @@
 
 	function activateSetting(def: SettingDef, e?: Event): void {
 		if (!def.implemented) return;
+		if (def.control.kind === 'link') {
+			e?.preventDefault();
+			closeSettings();
+			void goto(def.control.href);
+			return;
+		}
 		if (def.control.kind === 'boolean') {
 			e?.preventDefault();
 			const cur = Boolean(readSettingValue(def.id as AllowedSettingKey));
@@ -196,6 +202,11 @@
 			return;
 		}
 		if (!def.implemented) return;
+		if (def.control.kind === 'link' && (e.key === 'Enter' || e.key === ' ')) {
+			e.preventDefault();
+			activateSetting(def, e);
+			return;
+		}
 		if (def.control.kind === 'boolean') {
 			const action = booleanKeyAction(e.key);
 			if (action) {
@@ -461,6 +472,7 @@
 									class:todo={!def.implemented}
 									class:ai={isAi}
 									class:sel={isSel}
+									class:link-row={def.implemented && def.control.kind === 'link'}
 									role="option"
 									aria-selected={isSel}
 									aria-disabled={!def.implemented}
@@ -526,6 +538,14 @@
 														</label>
 													{/each}
 												</div>
+											{:else if def.control.kind === 'link'}
+												<a
+													href={def.control.href}
+													title={def.title}
+													onclick={() => closeSettings()}
+												>
+													Open
+												</a>
 											{:else if def.control.kind === 'number'}
 												<div class="so-number" title={def.title}>
 													<input
@@ -756,6 +776,9 @@
 	}
 	.so-row.todo {
 		opacity: 0.55;
+	}
+	.so-row.link-row {
+		cursor: pointer;
 	}
 	.so-row-main {
 		display: flex;

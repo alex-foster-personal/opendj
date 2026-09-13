@@ -6,12 +6,12 @@
  * which sits at the fan-in allowance, and it is what lets a master meter
  * reuse this later without inventing a deck id it does not have.
  *
- * The channel taps are connected post-EQ, pre-fader.
+ * The channel taps are connected post-fader.
  *
  * WHERE IT TAPS, AND WHY THAT IS THE WHOLE FEATURE. The tap is connected from
- * `high`, which is post-trim and post-EQ but pre-fader. That is the DJM
- * convention, and it is the point: you set trim until the meter reads right,
- * and the fader is then free for mixing without the meter lying to you.
+ * `fader`, which is post-trim, post-EQ, and post-channel-fader. The channel
+ * meter sits on the fader itself, so its volume slider and indicator always
+ * describe the same audible channel level.
  *
  * The AnalyserNode this replaces was connected BEFORE `trim` (it still is, for
  * `captureDeckAudio`, which wants raw deck output). A pre-trim tap sees neither

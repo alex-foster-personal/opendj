@@ -638,7 +638,7 @@ class SqliteBackend:
             rows = list(
                 conn.execute(
                     "SELECT playlist_id, name, vendor, vendor_pl_id, "
-                    "       created_at, updated_at "
+                    "       created_at, updated_at, forbid_duplicates "
                     "FROM playlists WHERE deleted_at IS NULL ORDER BY playlist_id"
                 )
             )
@@ -659,6 +659,7 @@ class SqliteBackend:
                 vendor=r["vendor"], vendor_pl_id=r["vendor_pl_id"],
                 items=members.get(r["playlist_id"], []),
                 created_at=r["created_at"], updated_at=r["updated_at"],
+                forbid_duplicates=bool(r["forbid_duplicates"]),
             )
             for r in rows
         ]
@@ -670,7 +671,7 @@ class SqliteBackend:
                 return self._fallback.get_playlist(playlist_id)
             row = conn.execute(
                 "SELECT playlist_id, name, vendor, vendor_pl_id, "
-                "       created_at, updated_at "
+                "       created_at, updated_at, forbid_duplicates "
                 "FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL",
                 (playlist_id,),
             ).fetchone()
@@ -693,6 +694,7 @@ class SqliteBackend:
             vendor=row["vendor"], vendor_pl_id=row["vendor_pl_id"], items=items,
             item_ids=item_ids,
             created_at=row["created_at"], updated_at=row["updated_at"],
+            forbid_duplicates=bool(row["forbid_duplicates"]),
         )
 
     def list_track_playlists(self, stable_id: str) -> list[TrackPlaylistHit]:

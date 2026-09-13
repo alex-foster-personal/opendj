@@ -32,10 +32,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import BinaryIO, Literal, Protocol
 from urllib.parse import quote
 
 from .config import REQUIRED_VARS, CloudConfig, MissingEnvError
@@ -55,6 +56,8 @@ SIGV4_SERVICE: str = "s3"
 UNSIGNED_PAYLOAD: str = "UNSIGNED-PAYLOAD"
 
 HttpMethod = Literal["GET", "PUT", "HEAD", "DELETE"]
+AssetProgress = Callable[[int, int], None]
+AssetBody = bytes | BinaryIO
 
 _HASH_CHUNK_BYTES: int = 1 << 20
 
@@ -89,7 +92,7 @@ class AssetS3Client(Protocol):
         """Return ``(body, etag)`` or ``None`` if the object does not exist."""
 
     def put_object_if_none_match(
-        self, bucket: str, key: str, body: bytes
+        self, bucket: str, key: str, body: AssetBody
     ) -> tuple[bool, str | None]:
         """Create if absent. Returns ``(created, new_etag)``.
 
@@ -186,6 +189,38 @@ class PushResult:
     uploaded: bool
 
 
+class _ProgressReader:
+    """File-like request body that reports bytes as the S3 client reads them."""
+
+    def __init__(self, handle: BinaryIO, total: int, callback: AssetProgress) -> None:
+        self._handle = handle
+        self._total = total
+        self._callback = callback
+        self.bytes_transferred = 0
+
+    def read(self, size: int = -1) -> bytes:
+        chunk = self._handle.read(size)
+        if chunk:
+            # Retries may seek backwards and re-read bytes. Publish the
+            # high-water position, not cumulative reads, so progress never
+            # exceeds total or regresses.
+            self.bytes_transferred = max(self.bytes_transferred, self._handle.tell())
+            self._callback(self.bytes_transferred, self._total)
+        return chunk
+
+    def tell(self) -> int:
+        return self._handle.tell()
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        return self._handle.seek(offset, whence)
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return True
+
+
 def object_exists(cfg: CloudConfig, s3: AssetS3Client, content_hash: str) -> bool:
     """True iff the content-addressed object is present in the audio bucket."""
     require_credentials(cfg)
@@ -193,7 +228,13 @@ def object_exists(cfg: CloudConfig, s3: AssetS3Client, content_hash: str) -> boo
     return s3.head_object(cfg.audio_bucket, key) is not None
 
 
-def push_asset(cfg: CloudConfig, s3: AssetS3Client, path: Path) -> PushResult:
+def push_asset(
+    cfg: CloudConfig,
+    s3: AssetS3Client,
+    path: Path,
+    *,
+    on_progress: AssetProgress | None = None,
+) -> PushResult:
     """Hash ``path``, upload it if absent, and return the resulting key.
 
     Idempotent by construction: a second call for identical bytes performs a
@@ -216,9 +257,22 @@ def push_asset(cfg: CloudConfig, s3: AssetS3Client, path: Path) -> PushResult:
             uploaded=False,
         )
 
-    created, _etag = s3.put_object_if_none_match(
-        cfg.audio_bucket, key, source.read_bytes()
-    )
+    if on_progress is None:
+        created, _etag = s3.put_object_if_none_match(
+            cfg.audio_bucket, key, source.read_bytes()
+        )
+    else:
+        on_progress(0, size_bytes)
+        with source.open("rb") as handle:
+            progress_body = _ProgressReader(handle, size_bytes, on_progress)
+            created, _etag = s3.put_object_if_none_match(
+                cfg.audio_bucket, key, progress_body
+            )
+        if created and progress_body.bytes_transferred != size_bytes:
+            raise AssetStoreError(
+                f"upload client accepted {key} after consuming "
+                f"{progress_body.bytes_transferred}/{size_bytes} bytes"
+            )
     if not created and s3.head_object(cfg.audio_bucket, key) is None:
         # The conditional create was rejected AND the key is still absent.
         # Something other than a benign concurrent upload went wrong; do not
@@ -439,7 +493,7 @@ def boto3_asset_client(cfg: CloudConfig) -> AssetS3Client:  # pragma: no cover
             return resp["Body"].read(), resp["ETag"]
 
         def put_object_if_none_match(
-            self, bucket: str, key: str, body: bytes
+            self, bucket: str, key: str, body: AssetBody
         ) -> tuple[bool, str | None]:
             try:
                 resp = client.put_object(

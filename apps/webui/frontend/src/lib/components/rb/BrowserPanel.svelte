@@ -119,6 +119,7 @@
 		markPlaylistCreateGrace,
 		movePlaylistItems,
 		PlaylistConflictError,
+		patchPlaylist,
 		renamePlaylist,
 		replacePlaylistTracks
 	} from '$lib/rb/playlist-write';
@@ -181,7 +182,8 @@
 		rowHasVocalLyrics,
 		rowIsRemix,
 		sortRows,
-		visibleRowsOf
+		visibleRowsOf,
+		collectionSearchEmptyMessage
 	} from './browser/pane-contract.svelte';
 	import type {
 		BrowserRow,
@@ -501,9 +503,17 @@
 					broken_count: p.track_count - p.available_count,
 					kind: 'playlist',
 					mostly_broken: playlistMostlyBroken(p),
+					forbid_duplicates: p.forbid_duplicates === true,
 					children: []
 				})
 			)
+	);
+	const hiddenBrokenPlaylistCount = $derived(
+		uiPrefs.hide_broken_links
+			? playlists.filter(
+					(p) => !isWithinCreateGrace(p.playlist_id) && playlistMostlyBroken(p)
+				).length
+			: 0
 	);
 	const tabs = $derived(
 		panes.map(
@@ -720,8 +730,7 @@
 			else return null;
 		}
 		if (wholeCollectionActive) {
-			if (visibleRows.length === 0) return 'no tracks match the search';
-			else return null;
+			return collectionSearchEmptyMessage(pane.search_error, visibleRows.length);
 		} else if (pane.error !== null) return `load failed: ${pane.error}`;
 		else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 		else if (visibleRows.length === 0 && pane.search.trim() !== '') return 'no tracks match the search';
@@ -1573,6 +1582,32 @@
 		}
 	}
 
+	async function toggleForbidDuplicates(node: PlaylistNode): Promise<void> {
+		if (
+			node.kind !== 'playlist' ||
+			node.playlist_id === 'all' ||
+			isMissingTracksId(node.playlist_id) ||
+			isAutolistId(node.playlist_id)
+		)
+			return;
+		try {
+			const { etag } = await getPlaylistTracksEtag(node.playlist_id);
+			await patchPlaylist(node.playlist_id, etag, {
+				forbid_duplicates: !node.forbid_duplicates
+			});
+			node.forbid_duplicates = !node.forbid_duplicates;
+			await _refreshPlaylists();
+			pushToast(
+				node.forbid_duplicates
+					? 'Forbid duplicates enabled'
+					: 'Forbid duplicates disabled',
+				'info'
+			);
+		} catch (exc) {
+			pushToast(`forbid duplicates failed: ${String(exc)}`, 'error');
+		}
+	}
+
 	async function renamePlaylistUi(node: PlaylistNode, name: string): Promise<void> {
 		if (
 			node.kind === 'all_tracks' ||
@@ -1847,6 +1882,8 @@
 			file_exists: wire.file_exists,
 			is_streaming: wire.is_streaming,
 			is_remote: wire.is_remote === true,
+			has_remote_copy: wire.has_remote_copy === true,
+			cloud_transfer: wire.cloud_transfer ?? null,
 			spotify_pending:
 				wire.spotify_pending === true || wire.stable_id.startsWith('spotify-pending:'),
 			quality: wire.quality ?? null,
@@ -1898,6 +1935,8 @@
 			file_exists: track.file_exists,
 			is_streaming: null,
 			is_remote: track.is_remote === true,
+			has_remote_copy: track.has_remote_copy === true,
+			cloud_transfer: track.cloud_transfer ?? null,
 			spotify_pending: track.stable_id.startsWith('spotify-pending:'),
 			quality: track.quality ?? null,
 			play_count: typeof track.play_count === 'number' ? track.play_count : 0,
@@ -2700,10 +2739,12 @@
 			active.search_results = [];
 			active.search_total = 0;
 			active.searching = false;
+			active.search_error = null;
 			if (request !== undefined) _reportBrowserSearchResult(request);
 			return;
 		}
 		active.searching = true;
+		active.search_error = null;
 		const startedAt = performance.now();
 		try {
 			const results = await searchCollection({ q: trimmed, limit: MAX_SEARCH_ROWS });
@@ -2722,6 +2763,7 @@
 			if (active.whole_collection && active.search.trim() === trimmed) {
 				active.search_results = [];
 				active.search_total = 0;
+				active.search_error = String(exc);
 				pushToast(`search failed: ${String(exc)}`, 'error');
 			}
 		} finally {
@@ -2949,6 +2991,7 @@
 				nodes={treeNodes}
 				playlistsLoading={playlistsLoading}
 				playlistsError={playlistsError}
+				hiddenBrokenPlaylistCount={hiddenBrokenPlaylistCount}
 				allTracksCount={allTracksNonBrokenCount}
 				allTracksBrokenCount={allTracksBrokenCount}
 				allTracksError={allTracksReconcileError}
@@ -2963,6 +3006,7 @@
 				onloadtrack={loadRow}
 				oncreateplaylist={() => createPlaylistUi()}
 				onrenameplaylist={(n, name) => void renamePlaylistUi(n, name)}
+				onforbidduplicates={(n) => void toggleForbidDuplicates(n)}
 				ondeleteplaylist={(n) => void deletePlaylistUi(n)}
 				onduplicateplaylist={(n) => void duplicatePlaylistUi(n)}
 				ondroptracks={(id, ids) => void dropTracksOnPlaylist(id, ids)}
@@ -3183,6 +3227,11 @@
 			sortKey={pane.sort_key}
 			sortDir={pane.sort_dir}
 			{emptyMessage}
+			onemptyretry={
+				wholeCollectionActive && pane.search_error !== null
+					? () => void _searchWholeCollection(pane, pane.search)
+					: undefined
+			}
 			{filterBypassNote}
 			restoreKey={`${activePane}:${navEpoch}`}
 			scrollTop={pane.scroll_top}

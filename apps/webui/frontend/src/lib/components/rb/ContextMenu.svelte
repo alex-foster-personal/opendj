@@ -8,6 +8,7 @@
 		run?: (() => void | Promise<void>) | undefined;
 		title?: string;
 		testId?: string;
+		checked?: boolean;
 	}
 
 	let { items, x, y, onclose }: {
@@ -47,7 +48,9 @@
 
 	function menuItems(): HTMLElement[] {
 		if (menu === null) return [];
-		return Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+		return Array.from(
+			menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]')
+		);
 	}
 
 	function focusMenuItem(index: number): void {
@@ -115,9 +118,10 @@
 		{@const descId = `ctx-menu-desc-${item.id}`}
 		<button
 			type="button"
-			role="menuitem"
+			role={typeof item.checked === 'boolean' ? 'menuitemcheckbox' : 'menuitem'}
 			data-testid={item.testId}
 			aria-disabled={unavailable ? true : undefined}
+			aria-checked={typeof item.checked === 'boolean' ? item.checked : undefined}
 			aria-describedby={unavailable ? descId : undefined}
 			title={explanation}
 			onclick={() => void activate(item)}

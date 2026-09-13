@@ -5,12 +5,22 @@
  * row painters) purely to keep both files under the frontend size ratchet -
  * no behavior change, no new coupling.
  */
-import type { AnlzCue } from '$lib/rb/anlz-types';
+import type { AnlzCue, AnlzPhrase } from '$lib/rb/anlz-types';
 
 /** Top strip reserved for beat ticks, cue markers and phrase chevrons.
  * Shared with render.ts's band painter so the marker strip and the band
  * area it carves out of the row stay in sync. */
 export const MARKER_BAND_PX = 10;
+
+/** Scale the opaque loop band for compact waveform surfaces. The main
+ * wavestack keeps the 10px cap; a mini waveform reserves at most its top
+ * third so the underlying waveform stays readable. */
+export function markerBandHeightForSurface(surfaceHeightPx: number): number {
+	if (!Number.isFinite(surfaceHeightPx) || surfaceHeightPx <= 0) {
+		throw new RangeError('wave/cues: surfaceHeightPx must be finite and positive');
+	}
+	return Math.min(MARKER_BAND_PX, Math.max(1, Math.floor(surfaceHeightPx / 3)));
+}
 
 // ------------------------------------------------ contrast (WCAG 2.1)
 //
@@ -204,7 +214,8 @@ function _drawLoopCueMarker(
 	tLeft: number,
 	pxPerS: number,
 	w: number,
-	palette: WavePalette
+	palette: WavePalette,
+	markerBandPx: number
 ): void {
 	if (cue.out_ms === null) {
 		throw new Error(`_drawLoopCueMarker: cue.is_loop true but out_ms is null (slot ${cue.slot})`);
@@ -216,10 +227,15 @@ function _drawLoopCueMarker(
 	const right = Math.min(w + 4, xOut);
 	const bandWidth = Math.max(2, right - left);
 	ctx.fillStyle = palette.cueLoop;
-	ctx.fillRect(left, 0, bandWidth, MARKER_BAND_PX);
+	ctx.fillRect(left, 0, bandWidth, markerBandPx);
 	ctx.lineWidth = 1;
 	ctx.strokeStyle = palette.cueOutline;
-	ctx.strokeRect(left + 0.5, 0.5, Math.max(0, bandWidth - 1), MARKER_BAND_PX - 1);
+	ctx.strokeRect(
+		left + 0.5,
+		0.5,
+		Math.max(0, bandWidth - 1),
+		Math.max(0, markerBandPx - 1)
+	);
 }
 
 /** Paint loop cues' spanning bands only. Split from `drawPointCueMarkers` so
@@ -234,10 +250,14 @@ export function drawLoopCueBands(
 	tLeft: number,
 	pxPerS: number,
 	w: number,
-	palette: WavePalette
+	palette: WavePalette,
+	markerBandPx = MARKER_BAND_PX
 ): void {
+	if (!Number.isFinite(markerBandPx) || markerBandPx <= 0 || markerBandPx > MARKER_BAND_PX) {
+		throw new RangeError(`wave/cues: markerBandPx must be within 0..${MARKER_BAND_PX}`);
+	}
 	for (const cue of cues) {
-		if (cue.is_loop) _drawLoopCueMarker(ctx, cue, tLeft, pxPerS, w, palette);
+		if (cue.is_loop) _drawLoopCueMarker(ctx, cue, tLeft, pxPerS, w, palette, markerBandPx);
 	}
 }
 
@@ -254,5 +274,31 @@ export function drawPointCueMarkers(
 ): void {
 	for (const cue of cues) {
 		if (!cue.is_loop) _drawPointCueMarker(ctx, cue, tLeft, pxPerS, w, palette);
+	}
+}
+
+/** Paint real PSSI phrase boundaries as the same compact chevrons on every
+ * waveform surface. Keeping this beside the cue painters gives the browser
+ * preview and main wavestack one segmentation policy instead of two shapes
+ * that can drift apart (LIBUX-12). */
+export function drawPhraseMarkers(
+	ctx: CanvasRenderingContext2D,
+	phrases: AnlzPhrase[],
+	tLeft: number,
+	pxPerS: number,
+	w: number,
+	palette: WavePalette
+): void {
+	if (phrases.length === 0) return;
+	ctx.strokeStyle = palette.phrase;
+	ctx.lineWidth = 1.5;
+	for (const phrase of phrases) {
+		const x = (phrase.start_s - tLeft) * pxPerS;
+		if (x < -6 || x > w + 6) continue;
+		ctx.beginPath();
+		ctx.moveTo(x, 1.5);
+		ctx.lineTo(x + 4, 4.5);
+		ctx.lineTo(x, 7.5);
+		ctx.stroke();
 	}
 }

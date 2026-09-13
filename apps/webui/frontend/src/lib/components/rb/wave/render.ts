@@ -13,10 +13,16 @@
  */
 import { vocalsOf } from '$lib/rb/api-rb';
 import { shouldPaintBeatGrid } from '$lib/player/grid-features';
-import type { AnlzBeat, AnlzData, AnlzPhrase, AnlzTempoChange, AnlzWaveform } from '$lib/rb/anlz-types';
+import type { AnlzBeat, AnlzData, AnlzTempoChange, AnlzWaveform } from '$lib/rb/anlz-types';
 import type { LoopState } from '$lib/rb/deck-state-types';
 import { LOOP_MIN_BAND_PX, loopBandPx, visibleBeatLines, type LoopBandSource } from './wave-math';
-import { drawLoopCueBands, drawPointCueMarkers, MARKER_BAND_PX, type WavePalette } from './cues';
+import {
+	drawLoopCueBands,
+	drawPhraseMarkers,
+	drawPointCueMarkers,
+	MARKER_BAND_PX,
+	type WavePalette
+} from './cues';
 
 // Cue-marker painting, the wavestack palette and its WCAG contrast floor
 // live in ./cues (issue #877) - readPalette/WavePalette re-exported here so
@@ -201,7 +207,7 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 			_drawBeatGrid(ctx, frame.anlz.beatgrid.beats, tLeft, pxPerS, w, h, palette);
 			_drawTempoChanges(ctx, frame.anlz.tempo_changes, tLeft, pxPerS, w, h, palette);
 		}
-		_drawPhrases(ctx, frame.anlz.phrases, tLeft, pxPerS, w, palette);
+		drawPhraseMarkers(ctx, frame.anlz.phrases, tLeft, pxPerS, w, palette);
 		drawPointCueMarkers(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
 		_drawVocals(ctx, frame.anlz, tLeft, pxPerS, w);
 	}
@@ -404,29 +410,6 @@ export function drawLoopRegion(
 	ctx.fillStyle = `rgba(${LOOP_ORANGE_RGB}, ${LOOP_EDGE_ALPHA})`;
 	ctx.fillRect(left, 0, edge, heightPx);
 	ctx.fillRect(right - edge, 0, edge, heightPx);
-}
-
-function _drawPhrases(
-	ctx: CanvasRenderingContext2D,
-	phrases: AnlzPhrase[],
-	tLeft: number,
-	pxPerS: number,
-	w: number,
-	palette: WavePalette
-): void {
-	if (phrases.length === 0) return;
-	ctx.strokeStyle = palette.phrase;
-	ctx.lineWidth = 1.5;
-	for (const phrase of phrases) {
-		const x = (phrase.start_s - tLeft) * pxPerS;
-		if (x < -6 || x > w + 6) continue;
-		// '>' chevron marking the phrase boundary (SCREENSHOT-SPEC 2).
-		ctx.beginPath();
-		ctx.moveTo(x, 1.5);
-		ctx.lineTo(x + 4, 4.5);
-		ctx.lineTo(x, 7.5);
-		ctx.stroke();
-	}
 }
 
 function _drawVocals(

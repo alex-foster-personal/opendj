@@ -326,13 +326,21 @@ def _replace_members(
                 f"{MEMBERSHIP_TABLE}: bundle for playlist {playlist_id} carries "
                 f"a row belonging to {member['playlist_id']!r}"
             )
+        track_id = str(member.get("stable_id") or "")
+        if conn.execute(
+            "SELECT 1 FROM tracks WHERE stable_id = ? LIMIT 1", (track_id,)
+        ).fetchone() is None:
+            log.warning(
+                "%s: playlist %s pos %r skipped; track %s is not here yet",
+                MEMBERSHIP_TABLE, playlist_id, member.get("position"), track_id,
+            )
+            continue
         try:
             conn.execute(sql, tuple(member[column] for column in columns))
         except sqlite3.IntegrityError as exc:
             raise SyncApplyError(
                 f"{MEMBERSHIP_TABLE}: playlist {playlist_id} position "
-                f"{member.get('position')!r} references a track this machine "
-                f"does not have yet ({exc})"
+                f"{member.get('position')!r} violates a constraint ({exc})"
             ) from exc
 
 

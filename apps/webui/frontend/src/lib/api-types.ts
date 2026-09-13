@@ -296,6 +296,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/ports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Worktree Ports */
+        get: operations["get_worktree_ports_api_v1_admin_ports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/quality-ratchet": {
         parameters: {
             query?: never;
@@ -2789,6 +2806,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playlists/deleted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Deleted Playlists */
+        get: operations["list_deleted_playlists"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playlists/{playlist_id}": {
         parameters: {
             query?: never;
@@ -3058,6 +3092,23 @@ export interface paths {
         get: operations["get_writeback_targets_api_v1_playlists__playlist_id__writeback_targets_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlists/{playlist_id}:undelete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undelete Playlist */
+        post: operations["undelete_playlist"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5958,6 +6009,21 @@ export interface components {
             /** Signed In As */
             signed_in_as: string | null;
         };
+        /**
+         * CloudTransferOut
+         * @description A real in-process CloudSync asset operation for one library row.
+         */
+        CloudTransferOut: {
+            /** Bytes Total */
+            bytes_total?: number | null;
+            /** Bytes Transferred */
+            bytes_transferred: number;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "upload" | "download";
+        };
         /** ClusterOut */
         ClusterOut: {
             /** Cluster Id */
@@ -6382,6 +6448,23 @@ export interface components {
             sync_error?: string | null;
             /** Transport Pending */
             transport_pending: boolean;
+        };
+        /** DeletedPlaylistOut */
+        DeletedPlaylistOut: {
+            /** Deleted At */
+            deleted_at: string;
+            /** Name */
+            name: string;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Track Count */
+            track_count: number;
+            /** Updated At */
+            updated_at: string;
+            /** Vendor */
+            vendor: string;
+            /** Vendor Pl Id */
+            vendor_pl_id: string;
         };
         /** DigestResponse */
         DigestResponse: {
@@ -8154,6 +8237,8 @@ export interface components {
         MembershipMoveOut: {
             /** Created At */
             created_at: string;
+            /** Forbid Duplicates */
+            forbid_duplicates: boolean;
             /** Items */
             items: string[];
             /** Name */
@@ -8933,6 +9018,11 @@ export interface components {
         /** PlaylistDetail */
         PlaylistDetail: {
             diff: components["schemas"]["PlaylistDiff"];
+            /**
+             * Forbid Duplicates
+             * @default false
+             */
+            forbid_duplicates: boolean;
             /** Items */
             items: string[];
             /** Name */
@@ -9018,6 +9108,11 @@ export interface components {
         };
         /** PlaylistRenameIn */
         PlaylistRenameIn: {
+            /**
+             * Forbid Duplicates
+             * @description When true, reject extra copies of an already-present track.
+             */
+            forbid_duplicates?: boolean | null;
             /**
              * Name
              * @description New display name; omit for a no-op that returns the current row + etag
@@ -9109,6 +9204,11 @@ export interface components {
         PlaylistSummary: {
             /** Available Count */
             available_count: number;
+            /**
+             * Forbid Duplicates
+             * @default false
+             */
+            forbid_duplicates: boolean;
             /** Name */
             name: string;
             /** Playlist Id */
@@ -9126,6 +9226,8 @@ export interface components {
         PlaylistWriteOut: {
             /** Created At */
             created_at: string;
+            /** Forbid Duplicates */
+            forbid_duplicates: boolean;
             /** Items */
             items: string[];
             /** Name */
@@ -9837,6 +9939,7 @@ export interface components {
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
+            cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Comments */
             comments: string | null;
             /** Duration Ms */
@@ -9855,6 +9958,8 @@ export interface components {
             genre: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /** Has Remote Copy */
+            has_remote_copy: boolean;
             /**
              * Is Radio Edit
              * @default false
@@ -10860,6 +10965,7 @@ export interface components {
             auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
+            cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Created At */
             created_at: string;
             /** Duration Ms */
@@ -10876,6 +10982,8 @@ export interface components {
             file_path?: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /** Has Remote Copy */
+            has_remote_copy: boolean;
             /**
              * Is Radio Edit
              * @default false
@@ -11064,6 +11172,7 @@ export interface components {
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
+            cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Comments */
             comments: string | null;
             /** Duration Ms */
@@ -11082,6 +11191,8 @@ export interface components {
             genre: string | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
+            /** Has Remote Copy */
+            has_remote_copy: boolean;
             /**
              * Is Radio Edit
              * @default false
@@ -11570,6 +11681,15 @@ export interface components {
             };
             /** Transcript */
             transcript: string;
+        };
+        /** WorktreePortsOut */
+        WorktreePortsOut: {
+            /** Api Proxy Target */
+            api_proxy_target: string;
+            /** Backend */
+            backend: number;
+            /** Frontend */
+            frontend: number;
         };
         /** WriteSurfaceOut */
         WriteSurfaceOut: {
@@ -12351,6 +12471,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_worktree_ports_api_v1_admin_ports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorktreePortsOut"];
                 };
             };
         };
@@ -16982,6 +17122,26 @@ export interface operations {
             };
         };
     };
+    list_deleted_playlists: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedPlaylistOut"][];
+                };
+            };
+        };
+    };
     get_playlist_api_v1_playlists__playlist_id__get: {
         parameters: {
             query?: {
@@ -17627,6 +17787,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WritebackTargetsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undelete_playlist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistWriteOut"];
                 };
             };
             /** @description Validation Error */

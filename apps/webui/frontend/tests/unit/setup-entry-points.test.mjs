@@ -238,6 +238,8 @@ test('the admin panel has a tab strip and Setup is one of the tabs', () => {
 	const tabs = [...admin.matchAll(/role="tab"/g)];
 	assert.ok(tabs.length >= 2, `expected a strip, found ${tabs.length} tab(s)`);
 	assert.match(admin, /KPI ledger/);
+	assert.match(admin, /Diagnostics/);
+	assert.match(admin, /tab=diagnostics|adminTabFromUrl|from '\.\/admin-tab'/);
 	assert.match(admin, />\s*\{setupBusy \? 'Opening setup\.\.\.' : 'Setup'\}\s*</);
 	// Through the shared module, so the tab behaves like the other two doors.
 	assert.match(admin, /from '\$lib\/setup\/run-setup'/);

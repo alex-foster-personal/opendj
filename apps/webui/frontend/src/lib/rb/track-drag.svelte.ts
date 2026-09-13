@@ -10,14 +10,20 @@
  * for cross-app interop and is still preferred when reading a drop.
  */
 
+import type { DraggableRow } from './track-drag-refusal';
+
+export { applyDeckTrackDrop } from './deck-track-drop';
+
 export const TRACK_STABLE_MIME = 'application/x-mdt-stable-id';
 
 export const trackDrag = $state<{
 	active: boolean;
 	stableIds: string[];
+	rows: Record<string, DraggableRow>;
 }>({
 	active: false,
-	stableIds: []
+	stableIds: [],
+	rows: {}
 });
 
 let _endBound = false;
@@ -32,17 +38,23 @@ function _ensureEndListener(): void {
 	_endBound = true;
 }
 
-export function beginTrackDrag(stableIds: string[]): void {
+export function beginTrackDrag(stableIds: string[], rows: Record<string, DraggableRow> = {}): void {
 	const ids = stableIds.map((s) => s.trim()).filter((s) => s.length > 0);
 	if (ids.length === 0) return;
 	trackDrag.active = true;
 	trackDrag.stableIds = ids;
+	trackDrag.rows = rows;
 	_ensureEndListener();
 }
 
 export function endTrackDrag(): void {
 	trackDrag.active = false;
 	trackDrag.stableIds = [];
+	trackDrag.rows = {};
+}
+
+export function droppedRowFlags(stableId: string): DraggableRow | null {
+	return trackDrag.rows[stableId] ?? null;
 }
 
 /**
