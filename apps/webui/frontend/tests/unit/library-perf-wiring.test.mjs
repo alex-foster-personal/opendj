@@ -137,6 +137,15 @@ test('BrowserPanel keeps the existing mostly-broken threshold and hides zero-tra
 	);
 });
 
+test('BrowserPanel computes and passes hiddenBrokenPlaylistCount for the playlist tree', () => {
+	const src = source('src/lib/components/rb/BrowserPanel.svelte');
+	assert.match(
+		src,
+		/const hiddenBrokenPlaylistCount = \$derived\(\s*uiPrefs\.hide_broken_links\s*\?\s*playlists\.filter\(\s*\(p\) => !isWithinCreateGrace\(p\.playlist_id\) && playlistMostlyBroken\(p\)\s*\)\.length\s*:\s*0\s*\);/
+	);
+	assert.match(src, /hiddenBrokenPlaylistCount=\{hiddenBrokenPlaylistCount\}/);
+});
+
 test('BrowserPanel keeps a playlist inside its create grace visible while broken links are hidden', () => {
 	// r3929355475: with Broken unchecked the '+' flow creates a zero-track
 	// playlist that the filter would remove before PlaylistTree can focus its
