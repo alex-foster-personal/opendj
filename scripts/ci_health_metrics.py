@@ -142,6 +142,11 @@ JOB_FETCH_BOOTSTRAP_RUN_COUNT = 10
 # generous is small: each page is ONE API call, while the expensive per-run job calls scale
 # with the actual backlog, not with this number, against a 5000/hour rate limit.
 JOB_FETCH_MAX_PAGES = 10
+# Per-run job endpoints are the expensive part of catch-up: one API request per workflow
+# run.  Keep each poll bounded so a burst cannot consume the account's API budget.  The
+# watermark advances only through the oldest runs selected here, so the next poll resumes
+# at the first unprocessed completion rather than skipping the remainder.
+JOB_FETCH_MAX_RUNS_PER_POLL = 50
 # The actions/runs listing filters by `created`, but a run is swept up here by when its jobs
 # COMPLETED (updated_at), and a run can be created well before it completes. Looking back a
 # day from the watermark covers any plausible run duration in this repo with huge headroom.
@@ -346,6 +351,20 @@ def _fetch_jobs(
         candidates += [
             run for run in runs if run.updated_at >= watermark and run.run_id not in listed
         ]
+
+        # Process oldest first.  This is a resumable queue backed by the CI metric
+        # watermark: recording these runs advances the cursor only as far as the bounded
+        # batch, leaving newer candidates for the next scheduled poll.  Do not take the
+        # newest slice, which would jump the watermark over unexamined runs.
+        candidates.sort(key=lambda run: (run.updated_at, run.run_id))
+        if len(candidates) > JOB_FETCH_MAX_RUNS_PER_POLL:
+            remaining = len(candidates) - JOB_FETCH_MAX_RUNS_PER_POLL
+            batch_note = (
+                f"job catch-up bounded to {JOB_FETCH_MAX_RUNS_PER_POLL} runs this poll; "
+                f"{remaining} newer runs remain queued for the next poll"
+            )
+            note = f"{note}; {batch_note}" if note else batch_note
+            candidates = candidates[:JOB_FETCH_MAX_RUNS_PER_POLL]
 
     jobs: list[Job] = []
     for run in candidates:
