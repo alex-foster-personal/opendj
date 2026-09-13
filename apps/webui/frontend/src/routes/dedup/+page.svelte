@@ -17,6 +17,7 @@
 		postDedupDecision,
 		undoDedupMerge
 	} from './dedup-api';
+	import { mergeCueWarning } from './cue-warning';
 	import type { Cluster, ClustersResponse, Decision, DecisionAction } from './types';
 
 	let data = $state<ClustersResponse | null>(null);
@@ -130,6 +131,12 @@
 	}
 
 	async function applyMerge(cluster: Cluster): Promise<void> {
+		const clusterKey = cluster.cluster_key;
+		const survivor = selectedSurvivor[clusterKey] ?? cluster.survivor_stable_id;
+		const warning = mergeCueWarning(cluster.members, survivor);
+		if (warning !== null && !window.confirm(warning)) {
+			return;
+		}
 		await runWrite(cluster, (survivor, revision, signal) =>
 			applyDedupMerge(cluster.cluster_id, cluster.cluster_key, survivor, revision, signal)
 		);
@@ -174,7 +181,7 @@
 	<h2>Duplicate review + merge</h2>
 
 	<div class="pending-apply-banner">
-		Merge rewrites OpenDJ playlist memberships; it does not delete files.
+		Merge rewrites OpenDJ playlist memberships; it does not delete files or copy cue points.
 	</div>
 
 	{#if error}
@@ -242,6 +249,34 @@
 										<span class="chip" class:missing={!member.file_exists}>
 											{member.file_exists ? 'file found' : 'file missing'}
 										</span>
+										<span
+											class="chip"
+											class:missing={member.cue_count === 0}
+											data-testid="dedup-member-cues"
+										>
+											{member.cue_count === 0 ? 'no cues' : `${member.cue_count} cues`}
+										</span>
+										{#if member.hot_cue_count > 0}
+											<span class="chip">{member.hot_cue_count} hot cues</span>
+										{/if}
+										{#if member.loop_count > 0}
+											<span class="chip">{member.loop_count} loops</span>
+										{/if}
+										<span
+											class="chip"
+											class:missing={!member.has_beatgrid}
+											data-testid="dedup-member-beatgrid"
+										>
+											{member.has_beatgrid ? 'beatgrid' : 'no beatgrid'}
+										</span>
+										{#if member.cue_positions_ms.length > 0}
+											<span class="chip" data-testid="dedup-member-cue-positions">
+												{member.cue_positions_ms
+													.slice(0, 8)
+													.map((position) => formatDuration(position))
+													.join(', ')}
+											</span>
+										{/if}
 									</div>
 									<div class="member-path">{member.path}</div>
 								</div>
