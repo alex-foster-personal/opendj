@@ -87,6 +87,8 @@ class Track:
     rating: int | None = None
     tags: list[str] = field(default_factory=list)
     notes: str | None = None
+    genre: str | None = None
+    comments: str | None = None
     last_played_at: str | None = None
     # PREF-01: {"regular": float|None, "min": float|None, "max": float|None},
     # or None when never set for this track. Never fabricated.
@@ -486,6 +488,16 @@ class InMemoryBackend:
                     prov["notes"] = Provenance(value=updated.notes, source=source,
                                                confidence=1.0, modified_at=now,
                                                status="ok")
+                if "genre" in update.patch:
+                    updated.genre = update.patch["genre"]
+                    prov["genre"] = Provenance(value=updated.genre, source=source,
+                                               confidence=1.0, modified_at=now,
+                                               status="ok")
+                if "comments" in update.patch:
+                    updated.comments = update.patch["comments"]
+                    prov["comments"] = Provenance(value=updated.comments, source=source,
+                                                  confidence=1.0, modified_at=now,
+                                                  status="ok")
                 if "tempo_pref" in update.patch:
                     updated.tempo_pref = resolve_tempo_pref_write(update.patch["tempo_pref"])
                     prov["tempo_pref"] = Provenance(value=updated.tempo_pref, source=source,

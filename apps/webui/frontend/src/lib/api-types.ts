@@ -5647,10 +5647,14 @@ export interface components {
         };
         /** BulkEditIn */
         BulkEditIn: {
+            /** Comments */
+            comments?: string | null;
             /** Expected Etags */
             expected_etags: {
                 [key: string]: string;
             };
+            /** Genre */
+            genre?: string | null;
             /** Notes */
             notes?: string | null;
             /** Rating */
@@ -6787,9 +6791,9 @@ export interface components {
             /**
              * Field
              * @default notes
-             * @constant
+             * @enum {string}
              */
-            field: "notes";
+            field: "notes" | "genre" | "comments";
             /** Find */
             find: string;
             /**
@@ -6834,9 +6838,9 @@ export interface components {
             /**
              * Field
              * @default notes
-             * @constant
+             * @enum {string}
              */
-            field: "notes";
+            field: "notes" | "genre" | "comments";
             /** Find */
             find: string;
             /**
@@ -10143,7 +10147,7 @@ export interface components {
         };
         /**
          * SmartlistCreateIn
-         * @description Create payload matching ``python -m apps.smartlists.cli.create``.
+         * @description Create payload matching ``opendj api POST /api/v1/smartlists``.
          */
         SmartlistCreateIn: {
             /**
@@ -11128,6 +11132,10 @@ export interface components {
         };
         /** TrackPatch */
         TrackPatch: {
+            /** Comments */
+            comments?: string | null;
+            /** Genre */
+            genre?: string | null;
             /** Notes */
             notes?: string | null;
             /** Rating */

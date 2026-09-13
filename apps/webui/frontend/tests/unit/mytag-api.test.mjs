@@ -103,6 +103,39 @@ test('bulkEditTracks PATCHes /api/v1/bulk-edit with the exact body', async () =>
 	assert.equal(result.applied_count, 1);
 });
 
+test('previewFindReplace POSTs genre field in the request body', async () => {
+	let body;
+	globalThis.fetch = async (request) => {
+		body = await request.clone().json();
+		return jsonResponse({ match_count: 0, results: [] });
+	};
+
+	await api.previewFindReplace({
+		field: 'genre',
+		stable_ids: ['sid-1'],
+		find: 'House',
+		replace: 'Deep House'
+	});
+
+	assert.equal(body.field, 'genre');
+});
+
+test('bulkEditTracks PATCHes genre in the request body', async () => {
+	let body;
+	globalThis.fetch = async (request) => {
+		body = await request.clone().json();
+		return jsonResponse({ applied_count: 1, results: [{ stable_id: 'sid-1', etag: '"e1"' }] });
+	};
+
+	await api.bulkEditTracks({
+		stable_ids: ['sid-1'],
+		expected_etags: { 'sid-1': '"e0"' },
+		genre: 'Deep House'
+	});
+
+	assert.equal(body.genre, 'Deep House');
+});
+
 test('previewFindReplace POSTs /api/v1/find-replace/preview with the exact body', async () => {
 	let seen;
 	let body;
