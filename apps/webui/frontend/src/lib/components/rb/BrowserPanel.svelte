@@ -507,6 +507,13 @@
 				})
 			)
 	);
+	const hiddenBrokenPlaylistCount = $derived(
+		uiPrefs.hide_broken_links
+			? playlists.filter(
+					(p) => !isWithinCreateGrace(p.playlist_id) && playlistMostlyBroken(p)
+				).length
+			: 0
+	);
 	const tabs = $derived(
 		panes.map(
 			(p): PaneTabInfo => ({
@@ -2981,6 +2988,7 @@
 				nodes={treeNodes}
 				playlistsLoading={playlistsLoading}
 				playlistsError={playlistsError}
+				hiddenBrokenPlaylistCount={hiddenBrokenPlaylistCount}
 				allTracksCount={allTracksNonBrokenCount}
 				allTracksBrokenCount={allTracksBrokenCount}
 				allTracksError={allTracksReconcileError}
