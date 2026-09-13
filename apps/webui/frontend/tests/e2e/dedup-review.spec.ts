@@ -143,6 +143,7 @@ test('dedup review: keep-all/skip persistence, merge apply/undo, conflict', asyn
 		await page.goto('/dedup');
 		await expect(page.getByTestId('dedup-cluster').first()).toBeVisible({ timeout: 30_000 });
 		const mergeCard = page.getByTestId('dedup-cluster').first();
+		page.once('dialog', (dialog) => dialog.accept());
 		await mergeCard.getByTestId('dedup-merge').click();
 		await expect(mergeCard.locator('.badge.decided')).toContainText(`applied: merge -> ${survivorId}`);
 		await page.reload();

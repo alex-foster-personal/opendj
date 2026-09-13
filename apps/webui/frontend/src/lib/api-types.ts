@@ -330,6 +330,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/sql-query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sql Query */
+        post: operations["sql_query_api_v1_admin_sql_query_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analysis-queue": {
         parameters: {
             query?: never;
@@ -5647,10 +5664,14 @@ export interface components {
         };
         /** BulkEditIn */
         BulkEditIn: {
+            /** Comments */
+            comments?: string | null;
             /** Expected Etags */
             expected_etags: {
                 [key: string]: string;
             };
+            /** Genre */
+            genre?: string | null;
             /** Notes */
             notes?: string | null;
             /** Rating */
@@ -6787,9 +6808,9 @@ export interface components {
             /**
              * Field
              * @default notes
-             * @constant
+             * @enum {string}
              */
-            field: "notes";
+            field: "notes" | "genre" | "comments";
             /** Find */
             find: string;
             /**
@@ -6834,9 +6855,9 @@ export interface components {
             /**
              * Field
              * @default notes
-             * @constant
+             * @enum {string}
              */
-            field: "notes";
+            field: "notes" | "genre" | "comments";
             /** Find */
             find: string;
             /**
@@ -8191,14 +8212,24 @@ export interface components {
             artist: string | null;
             /** Bpm */
             bpm: number | null;
+            /** Cue Count */
+            cue_count: number;
+            /** Cue Positions Ms */
+            cue_positions_ms: number[];
             /** Duration Ms */
             duration_ms: number | null;
             /** File Exists */
             file_exists: boolean;
+            /** Has Beatgrid */
+            has_beatgrid: boolean;
+            /** Hot Cue Count */
+            hot_cue_count: number;
             /** Is Canonical */
             is_canonical: boolean;
             /** Key */
             key: string | null;
+            /** Loop Count */
+            loop_count: number;
             /** Path */
             path: string;
             /** Rating */
@@ -10143,7 +10174,7 @@ export interface components {
         };
         /**
          * SmartlistCreateIn
-         * @description Create payload matching ``python -m apps.smartlists.cli.create``.
+         * @description Create payload matching ``opendj api POST /api/v1/smartlists``.
          */
         SmartlistCreateIn: {
             /**
@@ -10301,6 +10332,27 @@ export interface components {
             title: string | null;
             /** Track Stable Id */
             track_stable_id: string | null;
+        };
+        /** SqlQueryIn */
+        SqlQueryIn: {
+            /**
+             * Limit
+             * @default 200
+             */
+            limit: number;
+            /** Sql */
+            sql: string;
+        };
+        /** SqlQueryOut */
+        SqlQueryOut: {
+            /** Columns */
+            columns: string[];
+            /** Row Count */
+            row_count: number;
+            /** Rows */
+            rows: unknown[][];
+            /** Truncated */
+            truncated: boolean;
         };
         /** StatusResponse */
         StatusResponse: {
@@ -11128,6 +11180,10 @@ export interface components {
         };
         /** TrackPatch */
         TrackPatch: {
+            /** Comments */
+            comments?: string | null;
+            /** Genre */
+            genre?: string | null;
             /** Notes */
             notes?: string | null;
             /** Rating */
@@ -12513,6 +12569,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    sql_query_api_v1_admin_sql_query_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SqlQueryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SqlQueryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
