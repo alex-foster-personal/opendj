@@ -58,11 +58,27 @@ _SMARTLISTS_DDL: tuple[str, ...] = (
         last_evaluated_at            TEXT,
         last_materialized_track_ids  TEXT,
         created_at                   TEXT NOT NULL,
-        modified_at                  TEXT NOT NULL
+        modified_at                  TEXT NOT NULL,
+        deleted_at                   TEXT
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_smartlists_name ON smartlists(name)",
 )
+
+
+def migrate_smartlists_deleted_at(conn: sqlite3.Connection) -> None:
+    """Add ``deleted_at`` to an existing smartlists table when missing."""
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='smartlists'"
+    ).fetchone()
+    if row is None:
+        return
+    columns = {
+        col[1] for col in conn.execute("PRAGMA table_info(smartlists)")
+    }
+    if "deleted_at" in columns:
+        return
+    conn.execute("ALTER TABLE smartlists ADD COLUMN deleted_at TEXT")
 
 _PAIRING_CAPTURE_V1: tuple[str, ...] = (
     """
@@ -141,6 +157,7 @@ def ensure_phase08_tables(conn: sqlite3.Connection) -> None:
             conn.execute(stmt)
         for stmt in _SMARTLISTS_DDL:
             conn.execute(stmt)
+        migrate_smartlists_deleted_at(conn)
         if not in_transaction:
             conn.execute("COMMIT")
     except Exception:
@@ -238,4 +255,5 @@ __all__ = [
     "PAIRING_CAPTURE_SCHEMA_VERSION",
     "apply_pairing_capture_migrations",
     "ensure_phase08_tables",
+    "migrate_smartlists_deleted_at",
 ]
