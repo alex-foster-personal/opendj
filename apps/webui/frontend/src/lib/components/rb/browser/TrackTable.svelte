@@ -290,6 +290,7 @@
 		sortKey,
 		sortDir,
 		emptyMessage,
+		onemptyretry = undefined,
 		filterBypassNote = null,
 		restoreKey,
 		scrollTop,
@@ -340,6 +341,8 @@
 		sortKey: SortKey | null;
 		sortDir: SortDir;
 		emptyMessage: string | null;
+		/** Retry a failed whole-collection search from the empty state. */
+		onemptyretry?: (() => void) | undefined;
 		/** Honest note when a tiny search result bypasses the compatible filter. */
 		filterBypassNote?: string | null;
 		/** Identity of the pane being rendered (e.g. pane index) - the
@@ -1784,7 +1787,12 @@
 			</tbody>
 		</table>
 		{#if rows.length === 0 && emptyMessage !== null}
-			<div class="empty">{emptyMessage}</div>
+			<div class="empty">
+				{emptyMessage}
+				{#if onemptyretry !== undefined}
+					<button type="button" class="empty-retry" onclick={onemptyretry}>Retry search</button>
+				{/if}
+			</div>
 		{/if}
 		{#if filterBypassNote !== null}
 			<p class="filter-bypass-note" data-testid="filter-bypass-note">{filterBypassNote}</p>
@@ -2837,6 +2845,21 @@
 		padding: 24px;
 		text-align: center;
 		color: var(--rb-text-dim);
+	}
+	.empty-retry {
+		display: block;
+		margin: 12px auto 0;
+		color: var(--rb-text);
+		background: var(--rb-surface-2);
+		border: 1px solid var(--rb-border);
+		border-radius: 4px;
+		padding: 6px 12px;
+		font: inherit;
+		cursor: pointer;
+	}
+	.empty-retry:focus-visible {
+		outline: 2px solid var(--rb-accent);
+		outline-offset: 2px;
 	}
 	.filter-bypass-note {
 		margin: 0;
