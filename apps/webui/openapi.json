@@ -2312,12 +2312,34 @@
       },
       "BulkEditIn": {
         "properties": {
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
           "expected_etags": {
             "additionalProperties": {
               "type": "string"
             },
             "title": "Expected Etags",
             "type": "object"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
           },
           "notes": {
             "anyOf": [
@@ -5517,8 +5539,12 @@
             "type": "object"
           },
           "field": {
-            "const": "notes",
             "default": "notes",
+            "enum": [
+              "notes",
+              "genre",
+              "comments"
+            ],
             "title": "Field",
             "type": "string"
           },
@@ -5626,8 +5652,12 @@
             "type": "boolean"
           },
           "field": {
-            "const": "notes",
             "default": "notes",
+            "enum": [
+              "notes",
+              "genre",
+              "comments"
+            ],
             "title": "Field",
             "type": "string"
           },
@@ -16900,6 +16930,28 @@
       },
       "TrackPatch": {
         "properties": {
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
           "notes": {
             "anyOf": [
               {

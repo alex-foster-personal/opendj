@@ -517,6 +517,40 @@ class TestFallbackPaths:
         # Real persistence: sqlite (not the fallback) carries the edit.
         assert backend.get_track("sid-001").notes == "updated from webui"
 
+    def test_update_track_genre_persists_across_reopen(
+        self, fresh_state_db: Path,
+    ) -> None:
+        from apps.webui.server.etag import compute_etag
+
+        backend = SqliteBackend(fresh_state_db)
+        current = backend.get_track("sid-001")
+        etag = compute_etag(current.stable_id, current.updated_at)
+        backend.update_track(
+            "sid-001", {"genre": "Breaks"},
+            expected_etag=etag, source="webui",
+        )
+        reopened = SqliteBackend(fresh_state_db)
+        track = reopened.get_track("sid-001")
+        assert track.genre == "Breaks"
+        assert track.provenance["genre"].source == "webui"
+
+    def test_update_track_comments_persists_across_reopen(
+        self, fresh_state_db: Path,
+    ) -> None:
+        from apps.webui.server.etag import compute_etag
+
+        backend = SqliteBackend(fresh_state_db)
+        current = backend.get_track("sid-001")
+        etag = compute_etag(current.stable_id, current.updated_at)
+        backend.update_track(
+            "sid-001", {"comments": "late-night set"},
+            expected_etag=etag, source="webui",
+        )
+        reopened = SqliteBackend(fresh_state_db)
+        track = reopened.get_track("sid-001")
+        assert track.comments == "late-night set"
+        assert track.provenance["comments"].source == "webui"
+
     def test_update_track_tempo_pref_round_trips_and_defaults_null(
         self, fresh_state_db: Path,
     ) -> None:
