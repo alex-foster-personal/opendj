@@ -951,7 +951,12 @@
 			artist: row.artist ?? '',
 			count: ids.length
 		});
-		beginTrackDrag(ids);
+		beginTrackDrag(ids, {
+			[row.stable_id]: {
+				file_exists: row.file_exists,
+				is_streaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false
+			}
+		});
 	}
 
 	function onRowDragEnd(): void {
