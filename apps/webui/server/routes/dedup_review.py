@@ -30,6 +30,7 @@ from ..dedup_decisions import (
     commit_decision_store,
     decision_file_lock,
 )
+from ..dedup_cue_presence import CuePresence, bulk_cue_presence
 from ..dedup_review_ops import (
     cluster_key,
     cluster_member_ids,
@@ -100,6 +101,11 @@ class MemberOut(BaseModel):
     duration_ms: int | None
     rating: int | None
     file_exists: bool
+    cue_count: int
+    hot_cue_count: int
+    loop_count: int
+    has_beatgrid: bool
+    cue_positions_ms: list[int]
 
 
 class DecisionOut(BaseModel):
@@ -242,6 +248,8 @@ def get_dedup_clusters(
         }
     )
     tracks = backend.get_tracks_bulk(stable_ids)
+    cue_presence = bulk_cue_presence(stable_ids)
+    empty_presence = CuePresence()
 
     clusters_out: list[ClusterOut] = []
     for cluster in raw_clusters:
@@ -254,6 +262,7 @@ def get_dedup_clusters(
                 path=cluster["canonical_path"],
                 is_canonical=True,
                 similarity=None,
+                presence=cue_presence.get(cluster["canonical_stable_id"], empty_presence),
                 member_out_cls=MemberOut,
             )
         ]
@@ -264,6 +273,7 @@ def get_dedup_clusters(
                 path=alias["alias_path"],
                 is_canonical=False,
                 similarity=alias["similarity"],
+                presence=cue_presence.get(alias["alias_stable_id"], empty_presence),
                 member_out_cls=MemberOut,
             )
             for alias in cluster["aliases"]

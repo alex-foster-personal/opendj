@@ -168,6 +168,7 @@ def hydrate_member(
     path: str,
     is_canonical: bool,
     similarity: float | None,
+    presence: Any,
     member_out_cls: Any,
 ) -> Any:
     track = tracks.get(stable_id)
@@ -183,6 +184,11 @@ def hydrate_member(
         duration_ms=track.duration_ms if track else None,
         rating=track.rating if track else None,
         file_exists=bool(path) and fs_residency.is_materialised(Path(path)),
+        cue_count=presence.cue_count,
+        hot_cue_count=presence.hot_cue_count,
+        loop_count=presence.loop_count,
+        has_beatgrid=presence.has_beatgrid,
+        cue_positions_ms=list(presence.cue_positions_ms),
     )
 
 

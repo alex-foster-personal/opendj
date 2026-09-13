@@ -8191,14 +8191,24 @@ export interface components {
             artist: string | null;
             /** Bpm */
             bpm: number | null;
+            /** Cue Count */
+            cue_count: number;
+            /** Cue Positions Ms */
+            cue_positions_ms: number[];
             /** Duration Ms */
             duration_ms: number | null;
             /** File Exists */
             file_exists: boolean;
+            /** Has Beatgrid */
+            has_beatgrid: boolean;
+            /** Hot Cue Count */
+            hot_cue_count: number;
             /** Is Canonical */
             is_canonical: boolean;
             /** Key */
             key: string | null;
+            /** Loop Count */
+            loop_count: number;
             /** Path */
             path: string;
             /** Rating */
@@ -10143,7 +10153,7 @@ export interface components {
         };
         /**
          * SmartlistCreateIn
-         * @description Create payload matching ``python -m apps.smartlists.cli.create``.
+         * @description Create payload matching ``opendj api POST /api/v1/smartlists``.
          */
         SmartlistCreateIn: {
             /**

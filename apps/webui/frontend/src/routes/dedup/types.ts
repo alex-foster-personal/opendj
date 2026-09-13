@@ -20,6 +20,11 @@ export interface ClusterMember {
 	duration_ms: number | null;
 	rating: number | null;
 	file_exists: boolean;
+	cue_count: number;
+	hot_cue_count: number;
+	loop_count: number;
+	has_beatgrid: boolean;
+	cue_positions_ms: number[];
 }
 
 export interface Decision {
