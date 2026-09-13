@@ -6420,6 +6420,13 @@
             "title": "Head Delay Ms",
             "type": "number"
           },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/HeadphoneOutputDeviceOut"
+            },
+            "title": "Inputs",
+            "type": "array"
+          },
           "level": {
             "title": "Level",
             "type": "number"
@@ -6438,6 +6445,28 @@
             },
             "title": "Outputs",
             "type": "array"
+          },
+          "selected_input_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Input Device Id"
+          },
+          "selected_master_output_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Master Output Device Id"
           },
           "selected_output_device_id": {
             "anyOf": [
@@ -6460,8 +6489,11 @@
           "level",
           "head_delay_ms",
           "selected_output_device_id",
+          "selected_master_output_device_id",
+          "selected_input_device_id",
           "output_mode",
           "outputs",
+          "inputs",
           "supported",
           "active",
           "error"
@@ -14422,6 +14454,25 @@
         "title": "SmartlistCreateIn",
         "type": "object"
       },
+      "SmartlistDuplicateIn": {
+        "description": "Optional name override for a duplicated smartlist.",
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "SmartlistDuplicateIn",
+        "type": "object"
+      },
       "SmartlistPreconditionRequiredBody": {
         "description": "Structured response when an update omits its CAS precondition.",
         "properties": {
@@ -14528,7 +14579,7 @@
         "type": "object"
       },
       "SmartlistTracks": {
-        "description": "Live evaluation result, shaped like playlist detail.\n\n``items`` is the full ordered membership (stable_ids, evaluator\norder); ``tracks`` are hydrated rows in the SAME order, field-for-\nfield identical to the playlist-detail ``tracks`` rows so browser\ntable components render either without branching.",
+        "description": "Live evaluation result, shaped like playlist detail.",
         "properties": {
           "items": {
             "items": {
@@ -14573,8 +14624,20 @@
         "type": "object"
       },
       "SmartlistUpdateIn": {
-        "description": "Complete desired rule plus optional replacement ordering.",
+        "description": "Complete desired rule plus optional replacement ordering and name.",
         "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
           "order_by": {
             "anyOf": [
               {
@@ -25592,7 +25655,7 @@
             "application/json": {
               "schema": {
                 "additionalProperties": true,
-                "title": "Body",
+                "title": "HeadphoneChannelCueBody",
                 "type": "object"
               }
             }
@@ -25608,7 +25671,7 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Headphone state after toggling a channel CUE"
           },
           "422": {
             "content": {
@@ -25635,7 +25698,7 @@
             "application/json": {
               "schema": {
                 "additionalProperties": true,
-                "title": "Body",
+                "title": "HeadphoneHeadDelayBody",
                 "type": "object"
               }
             }
@@ -25651,7 +25714,7 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Headphone state after setting Mixxx HEAD DELAY"
           },
           "422": {
             "content": {
@@ -25670,15 +25733,15 @@
         ]
       }
     },
-    "/api/v1/performance/headphones/level": {
+    "/api/v1/performance/headphones/inputs/select": {
       "post": {
-        "operationId": "post_headphone_level_api_v1_performance_headphones_level_post",
+        "operationId": "post_headphone_input_select_api_v1_performance_headphones_inputs_select_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "additionalProperties": true,
-                "title": "Body",
+                "title": "HeadphoneAudioInputBody",
                 "type": "object"
               }
             }
@@ -25694,7 +25757,50 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Headphone state after selecting AUDIO IN"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Headphone Input Select",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/level": {
+      "post": {
+        "operationId": "post_headphone_level_api_v1_performance_headphones_level_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "HeadphoneLevelBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Headphone state after setting monitor LEVEL"
           },
           "422": {
             "content": {
@@ -25721,7 +25827,7 @@
             "application/json": {
               "schema": {
                 "additionalProperties": true,
-                "title": "Body",
+                "title": "HeadphoneMixBody",
                 "type": "object"
               }
             }
@@ -25737,7 +25843,7 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Headphone mix state after setting CUE-to-MASTER MIX"
           },
           "422": {
             "content": {
@@ -25764,7 +25870,7 @@
             "application/json": {
               "schema": {
                 "additionalProperties": true,
-                "title": "Body",
+                "title": "HeadphoneOutputModeBody",
                 "type": "object"
               }
             }
@@ -25780,7 +25886,7 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Headphone state after setting MAIN / two outputs / SPLIT"
           },
           "422": {
             "content": {
@@ -25794,6 +25900,49 @@
           }
         },
         "summary": "Post Output Mode",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/outputs/master": {
+      "post": {
+        "operationId": "post_headphone_master_select_api_v1_performance_headphones_outputs_master_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "HeadphoneMasterOutputBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Headphone state after selecting the MASTER/MAIN sink"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Headphone Master Select",
         "tags": [
           "performance-headphones"
         ]
@@ -25815,7 +25964,7 @@
                     "type": "null"
                   }
                 ],
-                "title": "Body"
+                "title": "HeadphoneOutputsRefreshBody"
               }
             }
           }
@@ -25829,7 +25978,7 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Headphone state after re-enumerating outputs and inputs"
           },
           "422": {
             "content": {
@@ -25856,7 +26005,7 @@
             "application/json": {
               "schema": {
                 "additionalProperties": true,
-                "title": "Body",
+                "title": "HeadphoneCueOutputBody",
                 "type": "object"
               }
             }
@@ -25872,7 +26021,7 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Headphone state after selecting the HEADPHONE CUE sink"
           },
           "422": {
             "content": {
@@ -28192,7 +28341,6 @@
         ]
       },
       "post": {
-        "description": "Persist a new smartlist and return the created summary plus ETag.",
         "operationId": "create_smartlist_api_v1_smartlists_post",
         "requestBody": {
           "content": {
@@ -28242,7 +28390,7 @@
     },
     "/api/v1/smartlists/{smartlist_id}": {
       "delete": {
-        "description": "Remove a smartlist row (hard delete via SmartlistsRepo.delete).",
+        "description": "Tombstone a smartlist row (soft delete via SmartlistsRepo.delete).",
         "operationId": "delete_smartlist_api_v1_smartlists__smartlist_id__delete",
         "parameters": [
           {
@@ -28324,7 +28472,6 @@
         ]
       },
       "put": {
-        "description": "CAS-apply a complete rule replacement and return persisted readback.",
         "operationId": "update_smartlist_api_v1_smartlists__smartlist_id__put",
         "parameters": [
           {
@@ -28415,6 +28562,73 @@
           }
         },
         "summary": "Update Smartlist",
+        "tags": [
+          "smartlists"
+        ]
+      }
+    },
+    "/api/v1/smartlists/{smartlist_id}/duplicate": {
+      "post": {
+        "operationId": "duplicate_smartlist_api_v1_smartlists__smartlist_id__duplicate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "smartlist_id",
+            "required": true,
+            "schema": {
+              "title": "Smartlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SmartlistDuplicateIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartlistSummary"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the complete persisted smartlist row",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Duplicate Smartlist",
         "tags": [
           "smartlists"
         ]

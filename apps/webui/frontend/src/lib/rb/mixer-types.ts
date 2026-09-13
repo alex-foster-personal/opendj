@@ -63,6 +63,11 @@ export interface HeadphoneState {
 	/** Mixxx Head Delay, milliseconds, 0..500. Applied as a DelayNode after level on the monitor path. */
 	head_delay_ms: number;
 	outputs: HeadphoneOutputDevice[];
+	inputs: HeadphoneOutputDevice[];
+	/** Room / MASTER sink (`AudioContext.setSinkId`). Null follows the OS default. */
+	selected_master_output_device_id: string | null;
+	/** Label-unlock and any later capture; never defaulted to a headphone/HFP mic. */
+	selected_input_device_id: string | null;
 	supported: boolean;
 	active: boolean;
 	error: string | null;

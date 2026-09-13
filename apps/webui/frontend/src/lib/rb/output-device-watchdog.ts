@@ -36,9 +36,10 @@
  * device gone - which is the entire reason #1642 was filed.
  *
  * `sinkId`/`enumerateDevices()` reconciliation lost the evaluation for the
- * same reason it always did: no production evidence for this pipeline, and
- * the app never calls `setSinkId` on the master output, so a sink id alone
- * cannot tell "still on default" from "default device changed under us".
+ * same reason it always did: no production evidence for this pipeline as a
+ * liveness signal. CUEOUT-09 does call `AudioContext.setSinkId` to pin master,
+ * but a sink id still cannot tell a dead device from a healthy one, so this
+ * fold does not use it.
  *
  * A PURE FOLD, not a class owning a timer, for the same reason
  * `silence-watchdog.ts` is one: the decision is what is worth testing, and a

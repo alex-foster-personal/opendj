@@ -82,11 +82,19 @@ def _log(
 
 
 def _seed_track(conn: sqlite3.Connection, stable_id: str) -> None:
-    """One orderable, fully stamped ``tracks`` row: the control's payload."""
+    """One orderable, fully stamped ``tracks`` row: the control's payload.
+
+    Carries a ``content_hash`` so it clears the identity-hold gate
+    (``sync_set._track_identity_reason``): an inferred-tier row with neither
+    a content hash nor a normalizable ISRC is a genuinely held row, and this
+    fixture's whole point is a row this guard is free to offer -- ordering
+    is what's under test here, not identity.
+    """
     conn.execute(
-        "INSERT INTO tracks(stable_id, stable_id_tier, title, created_at, "
-        "updated_at, origin_device_id) VALUES (?, 'inferred', ?, ?, ?, ?)",
-        (stable_id, "Control", _T1, _T1, _DEV),
+        "INSERT INTO tracks(stable_id, stable_id_tier, content_hash, title, "
+        "created_at, updated_at, origin_device_id) "
+        "VALUES (?, 'inferred', ?, ?, ?, ?, ?)",
+        (stable_id, f"hash-{stable_id}", "Control", _T1, _T1, _DEV),
     )
 
 

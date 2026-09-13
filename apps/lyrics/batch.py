@@ -234,7 +234,8 @@ def _resolve_tracks(
     try:
         marks = ",".join("?" for _ in stable_ids)
         rows = dict(conn.execute(
-            f"SELECT stable_id, file_path FROM tracks WHERE stable_id IN ({marks})",
+            f"SELECT stable_id, file_path FROM tracks "
+            f"WHERE stable_id IN ({marks}) AND deleted_at IS NULL",
             stable_ids,
         ).fetchall())
     finally:

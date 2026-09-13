@@ -36,11 +36,14 @@ def test_delete_smartlist_create_delete_list_absent(client, state_db_path):
     conn = sqlite3.connect(str(state_db_path))
     try:
         row = conn.execute(
-            "SELECT 1 FROM smartlists WHERE id=?", (sid,),
+            "SELECT name, deleted_at FROM smartlists WHERE id=?", (sid,),
         ).fetchone()
     finally:
         conn.close()
-    assert row is None
+    assert row is not None
+    assert row[1] is not None
+    assert "__deleted__" in row[0]
+    assert sid in row[0]
 
     recreated = client.post(
         "/api/v1/smartlists",
