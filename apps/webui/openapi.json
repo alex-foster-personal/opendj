@@ -4379,6 +4379,33 @@
         "title": "CredentialsOut",
         "type": "object"
       },
+      "DecideIn": {
+        "properties": {
+          "action": {
+            "enum": [
+              "accept",
+              "reject"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "batch": {
+            "title": "Batch",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch",
+          "filename",
+          "action"
+        ],
+        "title": "DecideIn",
+        "type": "object"
+      },
       "DecisionIn": {
         "additionalProperties": false,
         "properties": {
@@ -10287,6 +10314,50 @@
         "title": "PeakPressureOut",
         "type": "object"
       },
+      "PendingBatch": {
+        "properties": {
+          "awaiting_rb": {
+            "default": true,
+            "title": "Awaiting Rb",
+            "type": "boolean"
+          },
+          "dest_dir": {
+            "title": "Dest Dir",
+            "type": "string"
+          },
+          "file_count": {
+            "title": "File Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "dest_dir",
+          "file_count"
+        ],
+        "title": "PendingBatch",
+        "type": "object"
+      },
+      "PendingOut": {
+        "properties": {
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/PendingBatch"
+            },
+            "title": "Batches",
+            "type": "array"
+          }
+        },
+        "required": [
+          "batches"
+        ],
+        "title": "PendingOut",
+        "type": "object"
+      },
       "PendingTrackOut": {
         "description": "One persisted, unmatched Spotify playlist entry.",
         "properties": {
@@ -14260,7 +14331,7 @@
         "type": "object"
       },
       "SmartlistCreateIn": {
-        "description": "Create payload matching ``python -m apps.smartlists.cli.create``.",
+        "description": "Create payload matching ``opendj api POST /api/v1/smartlists``.",
         "properties": {
           "name": {
             "description": "Display name (non-empty)",
@@ -17856,12 +17927,22 @@
               }
             ],
             "title": "Staged Path"
+          },
+          "verdict": {
+            "enum": [
+              "new",
+              "possible_duplicate",
+              "skipped_duplicate"
+            ],
+            "title": "Verdict",
+            "type": "string"
           }
         },
         "required": [
           "filename",
           "staged_path",
           "skipped_duplicate",
+          "verdict",
           "duplicate_of",
           "duration_s",
           "fingerprint_method"
@@ -23540,6 +23621,62 @@
         ]
       }
     },
+    "/api/v1/ingest/pending": {
+      "get": {
+        "operationId": "list_pending_api_v1_ingest_pending_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Pending",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/pending/{batch}/confirm": {
+      "post": {
+        "operationId": "confirm_pending_api_v1_ingest_pending__batch__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch",
+            "required": true,
+            "schema": {
+              "title": "Batch",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Pending",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
     "/api/v1/ingest/refresh": {
       "post": {
         "operationId": "start_refresh_api_v1_ingest_refresh_post",
@@ -23645,6 +23782,47 @@
           }
         },
         "summary": "Upload",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/upload/decide": {
+      "post": {
+        "operationId": "decide_upload_api_v1_ingest_upload_decide_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadFileResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Upload",
         "tags": [
           "ingest"
         ]
