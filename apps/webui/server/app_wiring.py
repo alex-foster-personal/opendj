@@ -44,6 +44,7 @@ from .cloudsync_scheduler import CloudSyncScheduler
 from .errors import (
     handle_already_exists,
     handle_backend_error,
+    handle_bulk_limit,
     handle_conflict,
     handle_not_found,
     handle_rekordbox_writeback_disabled,
@@ -51,7 +52,7 @@ from .errors import (
     handle_smartlist_immutable,
     handle_target_inside_slice,
 )
-from .playlist_add import AlreadyExistsError, SmartlistImmutableError
+from .playlist_add import AlreadyExistsError, BulkLimitError, SmartlistImmutableError
 from .playlist_move import SliceNotContiguousError, TargetInsideSliceError
 from .routes import analysis as analysis_routes
 from .routes import analysis_backfill as analysis_backfill_routes
@@ -82,6 +83,7 @@ from .routes import feedback_sync as feedback_sync_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
+from .routes import ingest_pending as ingest_pending_routes
 from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
 from .routes import library_jobs as library_jobs_routes
@@ -101,6 +103,8 @@ from .routes import playlists as playlists_routes
 from .routes import preflight as preflight_routes
 from .routes import progress as progress_routes
 from .routes import quality as quality_routes
+from .routes import sql_playground as sql_playground_routes
+from .routes import worktree_ports as worktree_ports_routes
 from .routes import queues as queues_routes
 from .routes import rb_assets as rb_assets_routes
 from .routes import rb_hot_cues as rb_hot_cues_routes
@@ -330,6 +334,7 @@ def _install_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(SmartlistImmutableError, handle_smartlist_immutable)
     app.add_exception_handler(SliceNotContiguousError, handle_slice_not_contiguous)
     app.add_exception_handler(TargetInsideSliceError, handle_target_inside_slice)
+    app.add_exception_handler(BulkLimitError, handle_bulk_limit)
     app.add_exception_handler(BackendError, handle_backend_error)
 
 
@@ -443,6 +448,8 @@ def _mount_api_routers(app: FastAPI) -> None:
         rb_hot_cues_routes.router,
         progress_routes.router,
         quality_routes.router,
+        worktree_ports_routes.router,
+        sql_playground_routes.router,
         smartlists_routes.router,
         autolists_routes.router,
         stems_routes.router,
@@ -460,6 +467,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         auth_routes.router,
         ingest_routes.router,
         ingest_upload_routes.router,
+        ingest_pending_routes.router,
         library_routes.router,
         lyrics_search_routes.router,
         lyrics_words_routes.router,

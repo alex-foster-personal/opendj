@@ -92,6 +92,7 @@
 	import { getTrackAnalysisOrders, orderTrackAnalysis } from '$lib/rb/api-ingest';
 	import { runAnalysisOrder } from '$lib/rb/analysis-order';
 	import { pushToast } from '$lib/stores.svelte';
+	import { triggerFloatingAction } from '$lib/ui/clamp-to-viewport';
 	import AnalysisDots from './AnalysisDots.svelte';
 
 	let {
@@ -115,7 +116,6 @@
 	let hovered = $state(false);
 	let hoverTimer: ReturnType<typeof setTimeout> | null = null;
 	let wrapEl: HTMLSpanElement | undefined = $state();
-	let popStyle = $state('');
 	let ordering = $state<AnalysisKind | null>(null);
 
 	/** Whether the shared ingest config has been read for THIS popover's
@@ -288,10 +288,6 @@
 	}
 
 	function _openNow(): void {
-		if (wrapEl) {
-			const r = wrapEl.getBoundingClientRect();
-			popStyle = `left:${Math.round(r.left)}px;top:${Math.round(r.bottom + 4)}px`;
-		}
 		hovered = true;
 		_ensureIngestConfig();
 		void refreshOrders();
@@ -359,7 +355,11 @@
 	<AnalysisDots {badge} {issues} {mode} {...(title !== undefined ? { title } : {})} suppressDotTitles={true} />
 
 	{#if hovered}
-		<div class="pop" style={popStyle} data-testid="analysis-dots-pop">
+		<div
+			class="pop"
+			data-testid="analysis-dots-pop"
+			use:triggerFloatingAction={{ getTrigger: () => wrapEl ?? null, preferred: 'below', gap: 4 }}
+		>
 			<div class="pop-title">{mode === 'issues' ? 'Data-quality issues' : 'Analysis coverage'}</div>
 			<ul class="pop-list">
 				{#each KINDS as kind (kind)}

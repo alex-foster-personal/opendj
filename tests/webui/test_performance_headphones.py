@@ -39,8 +39,11 @@ _DEFAULT_HEADPHONES: dict[str, Any] = {
     "level": 0.5,
     "head_delay_ms": 0,
     "selected_output_device_id": None,
+    "selected_master_output_device_id": None,
+    "selected_input_device_id": None,
     "output_mode": "practice",
     "outputs": [],
+    "inputs": [],
     "supported": False,
     "active": False,
     "error": None,
@@ -130,10 +133,16 @@ def _apply_command(mirror: dict[str, Any], command: dict[str, Any]) -> dict[str,
         mirror["mixer"]["headphones"]["outputs"] = [
             {"id": "default", "label": "Default"},
         ]
+        mirror["mixer"]["headphones"]["inputs"] = [
+            {"id": "builtin-mic", "label": "MacBook Pro Microphone"},
+        ]
         changed = {
             "mixer": {
                 "headphones": {
                     "outputs": [{"id": "default", "label": "Default"}],
+                    "inputs": [
+                        {"id": "builtin-mic", "label": "MacBook Pro Microphone"},
+                    ],
                 },
             },
         }
@@ -143,6 +152,28 @@ def _apply_command(mirror: dict[str, Any], command: dict[str, Any]) -> dict[str,
             "mixer": {
                 "headphones": {
                     "selected_output_device_id": command["device_id"],
+                },
+            },
+        }
+    elif command_type == "headphone_master_select":
+        mirror["mixer"]["headphones"]["selected_master_output_device_id"] = command[
+            "device_id"
+        ]
+        changed = {
+            "mixer": {
+                "headphones": {
+                    "selected_master_output_device_id": command["device_id"],
+                },
+            },
+        }
+    elif command_type == "headphone_input_select":
+        mirror["mixer"]["headphones"]["selected_input_device_id"] = command[
+            "device_id"
+        ]
+        changed = {
+            "mixer": {
+                "headphones": {
+                    "selected_input_device_id": command["device_id"],
                 },
             },
         }
@@ -312,6 +343,16 @@ def test_no_page_returns_503() -> None:
             "/api/v1/performance/headphones/outputs/select",
             {"device_id": "usb-audio-1"},
             {"type": "headphone_output_select", "device_id": "usb-audio-1"},
+        ),
+        (
+            "/api/v1/performance/headphones/outputs/master",
+            {"device_id": "speakers"},
+            {"type": "headphone_master_select", "device_id": "speakers"},
+        ),
+        (
+            "/api/v1/performance/headphones/inputs/select",
+            {"device_id": "builtin-mic"},
+            {"type": "headphone_input_select", "device_id": "builtin-mic"},
         ),
     ],
 )

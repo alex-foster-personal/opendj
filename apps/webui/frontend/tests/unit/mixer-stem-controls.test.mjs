@@ -40,7 +40,8 @@ test('mixer routes strip gestures through the existing typed stem commands', asy
 
 test('the shared row remains the sole availability and RoFormer drums-reason implementation', async () => {
 	const row = await source('deck/StemRow.svelte');
-	assert.match(row, /disabled=\{!ready \|\| pending \|\| unavailable\(stem\.id\)\}/);
+	assert.match(row, /disabled=\{!ready \|\| unavailable\(stem\.id\)\}/);
+	assert.match(row, /aria-busy=\{pending\}/);
 	assert.match(row, /it is mixed into INST, so it cannot be muted on its own/);
 	assert.match(row, /stems \$\{deck\.stems\.status\}: \$\{deck\.stems\.error \?\? 'no aligned artifact'\}/);
 });

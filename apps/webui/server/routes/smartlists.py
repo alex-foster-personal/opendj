@@ -116,7 +116,7 @@ class SmartlistSummary(BaseModel):
 
 
 class SmartlistCreateIn(BaseModel):
-    """Create payload matching ``python -m apps.smartlists.cli.create``."""
+    """Create payload matching ``opendj api POST /api/v1/smartlists``."""
 
     name: str = Field(min_length=1, description="Display name (non-empty)")
     rule: dict[str, Any]

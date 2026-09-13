@@ -36,7 +36,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from apps.shared.google_oauth_client import CLIENT_ID_ENV_NAMES
+from apps.shared.google_oauth_client import (
+    CLIENT_ID_ENV_NAMES,
+    CLIENT_SECRET_ENV_NAMES,
+    env_with_bundled,
+)
 from apps.shared.state import db as state_db
 
 # ----- constants ---------------------------------------------------------
@@ -52,13 +56,9 @@ SESSION_TTL = timedelta(days=30)
 PENDING_LOGIN_TTL_SECONDS = 600
 CALLBACK_PATH = "/api/v1/auth/callback"
 
-# CLIENT_ID_ENV_NAMES lives in apps.shared.google_oauth_client, imported
-# above, because the sync hub pins id_token ``aud`` to the same client id and
-# cannot import the webui. Same precedence rule for the secret below.
-CLIENT_SECRET_ENV_NAMES: tuple[str, ...] = (
-    "OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET",
-    "GOOGLE_OAUTH_CLIENT_SECRET",
-)
+# CLIENT_ID_ENV_NAMES and CLIENT_SECRET_ENV_NAMES live in
+# apps.shared.google_oauth_client, imported above, because the sync hub
+# pins id_token ``aud`` to the same client id and cannot import the webui.
 
 _MISSING_CREDENTIALS_RUNBOOK = """\
 Google sign-in is not configured. The daemon needs a Google OAuth client id
@@ -117,6 +117,7 @@ class GoogleOAuthConfig:
         Fails fast and loudly: the message is the full provisioning runbook
         so an operator never has to guess which secret is missing.
         """
+        env = env_with_bundled(env)
         client_id = _first_present(env, CLIENT_ID_ENV_NAMES)
         client_secret = _first_present(env, CLIENT_SECRET_ENV_NAMES)
         if not client_id or not client_secret:
@@ -130,6 +131,7 @@ class GoogleOAuthConfig:
 
     @classmethod
     def is_configured(cls, env: dict[str, str]) -> bool:
+        env = env_with_bundled(env)
         return bool(
             _first_present(env, CLIENT_ID_ENV_NAMES)
             and _first_present(env, CLIENT_SECRET_ENV_NAMES)

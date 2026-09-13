@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * Channel level meter: ten discrete segments, read POST-EQ and PRE-FADER.
+	 * Channel level meter: ten discrete segments, read POST-EQ and POST-FADER.
 	 *
 	 * The reading arrives from an AudioWorklet tap on the channel strip, and
 	 * every number below (dB scale, segment thresholds, color bands, PPM
@@ -13,10 +13,8 @@
 	 *    Music sits far below full scale in linear terms, so the top segments
 	 *    were effectively unreachable and the bar behaved like an on/off lamp.
 	 *    Segment thresholds are spaced in dB now.
-	 * 2. The label said "post-deck, pre-channel-fader" while the underlying tap
-	 *    was connected BEFORE the trim gain and the EQ, so no mixer control
-	 *    moved it. The tap is now genuinely post-EQ and pre-fader, which is the
-	 *    DJM convention and what makes the meter usable for gain staging.
+	 * 2. The meter must tap after the actual channel-volume fader. A tap before
+	 *    it can make the slider change audio while this indicator stays still.
 	 *
 	 * Red means digital clipping at THIS point in the chain. It is not a
 	 * speaker-damage reading and must never be labelled as one: everything
@@ -100,12 +98,12 @@
 	class="rb-channel-level-meter"
 	class:clipped
 	role="meter"
-	aria-label={`channel ${deckId} level, post-EQ pre-fader`}
+	aria-label={`channel ${deckId} level, post-EQ post-fader`}
 	aria-valuemin={METER_FLOOR_DBFS}
 	aria-valuemax={0}
 	aria-valuenow={db}
 	aria-valuetext={readout}
-	title={`Post-EQ, pre-fader channel level: ${readout}. Responds to trim and EQ. Red means digital clipping here, not speaker risk.`}
+	title={`Post-EQ, post-fader channel level: ${readout}. Responds to trim, EQ, and the channel volume fader. Red means digital clipping here, not speaker risk.`}
 >
 	<!--
 		Keyed by index, not segment.threshold: a low red-calibration anchor clamps

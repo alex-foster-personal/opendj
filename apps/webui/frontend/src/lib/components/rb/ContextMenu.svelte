@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 
 	export interface ContextMenuItem {
 		id: string;
 		label: string;
 		run?: (() => void | Promise<void>) | undefined;
 		title?: string;
+		testId?: string;
+		checked?: boolean;
 	}
 
 	let { items, x, y, onclose }: {
@@ -22,10 +25,12 @@
 		await tick();
 		if (menu === null) return;
 		const rect = menu.getBoundingClientRect();
-		position = {
-			x: Math.max(8, Math.min(x, window.innerWidth - rect.width - 8)),
-			y: Math.max(8, Math.min(y, window.innerHeight - rect.height - 8))
-		};
+		position = clampToViewport(
+			x,
+			y,
+			{ width: rect.width, height: rect.height },
+			{ width: window.innerWidth, height: window.innerHeight }
+		);
 		menu.focus();
 	}
 
@@ -43,7 +48,9 @@
 
 	function menuItems(): HTMLElement[] {
 		if (menu === null) return [];
-		return Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+		return Array.from(
+			menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]')
+		);
 	}
 
 	function focusMenuItem(index: number): void {
@@ -111,8 +118,10 @@
 		{@const descId = `ctx-menu-desc-${item.id}`}
 		<button
 			type="button"
-			role="menuitem"
+			role={typeof item.checked === 'boolean' ? 'menuitemcheckbox' : 'menuitem'}
+			data-testid={item.testId}
 			aria-disabled={unavailable ? true : undefined}
+			aria-checked={typeof item.checked === 'boolean' ? item.checked : undefined}
 			aria-describedby={unavailable ? descId : undefined}
 			title={explanation}
 			onclick={() => void activate(item)}

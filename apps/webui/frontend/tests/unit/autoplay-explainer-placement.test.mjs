@@ -79,7 +79,10 @@ test('AutoPlay header delegates one-click ascending and clear behavior to the pa
 
 test('every static TrackTable header uses the shared body-portal action, never a native title', () => {
 	assert.equal(typeof placement.columnExplainer, 'function', 'the shared placement module must export the static header action');
-	assert.match(trackTable, /import\s+\{[^}]*columnExplainer[^}]*\}\s+from '\.\/column-explainer-placement'/);
+	assert.match(
+		trackTable,
+		/import\s+\{[^}]*columnExplainer[^}]*\}\s+from '\.\/(column-explainer-placement|track-table-support)'/
+	);
 	// Scoped to the headers this PR actually converts (sort/filter/err/cloud/
 	// preview/art/venue/stems), not the whole <thead> - the AutoPlay-queue and
 	// Energy headers carry their own unrelated, legitimate `title` (aggregate

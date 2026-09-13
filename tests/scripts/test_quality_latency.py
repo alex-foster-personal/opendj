@@ -32,12 +32,13 @@ def test_evaluate_emits_declared_floor_on_live_tree() -> None:
 def test_broken_wiring_emits_999() -> None:
     """[if] eq-apply wiring is gone [then] evaluate reports 999, [else stop]."""
     sources = {
-        quality_latency._SOURCE_PATHS[0]: "export const EQ_APPLY_KIND = 'eq-apply';",
-        quality_latency._SOURCE_PATHS[1]: "function setEq(deck, band, value, pressT0Ms) {}",
-        quality_latency._SOURCE_PATHS[
-            2
-        ]: "engine.setEq(command.deck, command.band, command.value, pressT0Ms)",
-        quality_latency._SOURCE_PATHS[3]: "'eq-apply'",
+        "apps/webui/frontend/src/lib/player/eq-apply.ts": "export const EQ_APPLY_KIND = 'eq-apply';",
+        "apps/webui/frontend/src/lib/player/mixer-apply.ts": "export const FILTER_APPLY_KIND = 'filter-apply';",
+        "apps/webui/frontend/src/lib/rb/audio-engine.svelte.ts": "function setEq(deck, band, value, pressT0Ms) {}",
+        "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts": (
+            "engine.setEq(command.deck, command.band, command.value, pressT0Ms)"
+        ),
+        "apps/webui/frontend/src/lib/rb/perf-event-buckets.ts": "'eq-apply'",
     }
     failures = quality_latency._wiring_failures(sources)
     assert failures
@@ -65,3 +66,35 @@ def test_missing_baseline_key_raises(tmp_path: Path) -> None:
 def test_latency_is_registered_as_an_evaluator() -> None:
     """[if] latency is not in EVALUATORS [then] the gate never checks the floor, [else stop]."""
     assert "latency" in {e.name for e in qg.EVALUATORS}
+
+
+@pytest.mark.requirement("LATENCY-01")
+def test_broken_mixer_wiring_emits_999() -> None:
+    """[if] filter/fader/xfader/stem-mute apply wiring is gone [then] evaluate reports 999, [else stop]."""
+    engine_path = "apps/webui/frontend/src/lib/rb/audio-engine.svelte.ts"
+    sources = {
+        "apps/webui/frontend/src/lib/player/eq-apply.ts": (
+            REPO / "apps/webui/frontend/src/lib/player/eq-apply.ts"
+        ).read_text(encoding="utf-8"),
+        "apps/webui/frontend/src/lib/player/mixer-apply.ts": (
+            REPO / "apps/webui/frontend/src/lib/player/mixer-apply.ts"
+        ).read_text(encoding="utf-8"),
+        engine_path: (
+            "function setEq(deck, band, value, pressT0Ms) {}\n"
+            "function setFilter(deck, value) {}\n"
+            "function setFader(deck, value, pressT0Ms) {}\n"
+            "function setCrossfader(value, pressT0Ms) {}\n"
+            "function setStemMute(deck, stem, muted, pressT0Ms) {}"
+        ),
+        "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts": (
+            REPO / "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts"
+        ).read_text(encoding="utf-8"),
+        "apps/webui/frontend/src/lib/rb/perf-event-buckets.ts": (
+            REPO / "apps/webui/frontend/src/lib/rb/perf-event-buckets.ts"
+        ).read_text(encoding="utf-8"),
+    }
+    failures = quality_latency._wiring_failures(sources)
+    assert failures
+    assert any("setFilter does not accept pressT0Ms" in item for item in failures)
+    value = quality_latency.WIRING_FAIL_VALUE if failures else 16.0
+    assert value == 999.0

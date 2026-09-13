@@ -211,6 +211,16 @@ def _invert_pk(pk: str) -> str:
     return "".join(chr(255 - ord(ch)) for ch in pk)
 
 
+def _follow_remap(remap: Mapping[str, str], pk: str) -> str:
+    """Walk ``pk -> survivor`` until it stops, so a chain of collapses lands."""
+    seen: set[str] = set()
+    current = pk
+    while current in remap and current not in seen:
+        seen.add(current)
+        current = remap[current]
+    return current
+
+
 def rewrite_incoming_change(
     change: RowChange, remap: Mapping[str, str]
 ) -> RowChange:
@@ -218,7 +228,8 @@ def rewrite_incoming_change(
 
     Incoming children of a losing ``tracks`` row still name the loser's
     ``stable_id``. Applying them as-is is a FOREIGN KEY 409. Rewriting them
-    onto the survivor is what lets both machines' locations land.
+    onto the survivor is what lets both machines' locations land. The map
+    may include remaps persisted from earlier HTTP batches.
     """
     if not remap:
         return change
@@ -227,13 +238,14 @@ def rewrite_incoming_change(
     rewritten = False
     old = _as_text(values.get("stable_id"))
     if old is not None and old in remap:
-        values["stable_id"] = remap[old]
+        survivor = _follow_remap(remap, old)
+        values["stable_id"] = survivor
         rewritten = True
         spec = SPEC_BY_TABLE.get(change.table)
         if spec is not None:
             for index, column in enumerate(spec.pk):
                 if column == "stable_id":
-                    pk[index] = remap[old]
+                    pk[index] = survivor
     members = change.members
     if members is not None:
         new_members: list[dict[str, Any]] = []
@@ -241,7 +253,7 @@ def rewrite_incoming_change(
             item = dict(member)
             member_id = _as_text(item.get("stable_id"))
             if member_id is not None and member_id in remap:
-                item["stable_id"] = remap[member_id]
+                item["stable_id"] = _follow_remap(remap, member_id)
                 rewritten = True
             new_members.append(item)
         members = tuple(new_members)
@@ -471,27 +483,106 @@ def unsyncable_inferred_pks(conn: sqlite3.Connection) -> tuple[str, ...]:
     )
 
 
+def hub_library_size(conn: sqlite3.Connection) -> int:
+    """How many live ``tracks`` rows this database holds.
+
+    A COUNT, deliberately, and not the set of ``origin_device_id`` values that
+    authored them. Attribution looked like the better signal and is not: a
+    library migrated from an older schema carries ``origin_device_id IS NULL``
+    on every row, so the authoring machine is simply not recorded. Measured on
+    the author's own 9194-track library after its first seed, Sat 12 Sep 2026 --
+    every hub row came back unattributed. An origin-based check would then read
+    its OWN seeded rows as a foreign library and refuse that machine's second
+    sync. A count cannot be wrong that way: it answers the only question
+    :func:`assert_merge_safe` actually asks, which is whether a library is
+    already here.
+    """
+    return int(
+        conn.execute(
+            "SELECT COUNT(*) FROM tracks WHERE deleted_at IS NULL"
+        ).fetchone()[0]
+    )
+
+
 def assert_identity_ready(conn: sqlite3.Connection) -> None:
     """Refuse to start a sync while inferred-tier rows still lack identity.
 
     A PK-only merge of those rows duplicates overlapping recordings across
     independently ingested libraries (CLOUDSYNC-07).
+
+    The named backfill only reaches rows whose audio this machine can still
+    open. It cannot hash a row whose file has been deleted or moved, so a
+    library with missing audio is told to relink FIRST -- otherwise the
+    operator runs the backfill, watches the count not move, and has no next
+    step. Measured on the author's own library, Sat 12 Sep 2026: 8291 rows
+    blocked, 926 of them hashable here and 7364 pointing at converter staging
+    directories that no longer exist.
     """
     unsyncable = unsyncable_inferred_pks(conn)
     if not unsyncable:
         return
     raise SyncIdentityPreflightError(
         f"{len(unsyncable)} live inferred-tier tracks row(s) have no "
-        f"content_hash and no normalizable ISRC; first-sync would duplicate "
-        f"overlapping recordings. Backfill with `python -m "
-        f"apps.shared.state.backfill_content_hash --live` before syncing."
+        f"content_hash and no normalizable ISRC; merging them into a library "
+        f"another machine already seeded would duplicate overlapping "
+        f"recordings. Rows whose audio is still on this machine: backfill "
+        f"with `python -m apps.shared.state.backfill_content_hash --live`. "
+        f"Rows whose audio is missing CANNOT be hashed and the backfill will "
+        f"not move them -- relink those first (`/fix-links`), because a hash "
+        f"needs a file to read."
     )
+
+
+def assert_merge_safe(
+    conn: sqlite3.Connection,
+    *,
+    hub_library_rows: int | None,
+    first_sync: bool,
+) -> None:
+    """Apply :func:`assert_identity_ready`, but only where a merge can happen.
+
+    CLOUDSYNC-07's duplication needs TWO independently ingested libraries: the
+    same recording ingested twice mints two path-tier ``stable_id`` values, and
+    with no ``content_hash`` and no ISRC nothing can collapse them. The
+    preflight's own message says FIRST-SYNC, and two of the three cases it was
+    refusing are not that:
+
+    * **Seeding.** The hub holds no library, so this one arrives under the PKs
+      it already has. Whatever overlap it contains, it contained before the
+      sync -- the hub mirrors it rather than creating it, and refusing
+      prevents no duplicate the local library does not already have.
+    * **Re-syncing.** This spoke has completed a sync against this hub before,
+      so the hub's library is partly its own. Its later pushes are increments
+      to a library it co-owns, not a second library arriving, and the hub-apply
+      collapse is what covers those.
+
+    What is left is the case the guard exists for: a spoke that has NEVER
+    synced here pushing into a library another machine already put there.
+
+    ``hub_library_rows`` is the hub's live ``tracks`` count. Following
+    :mod:`apps.sync_hub.capabilities`, ABSENT IS NEVER YES: ``None`` means the
+    hub is too old to report it, which is not the same as a hub reporting an
+    empty library, so the strict refusal stands.
+
+    A hub RESTORE resets this spoke's watermark, which reads here as a first
+    sync. If that hub still holds a library, the spoke is refused until its
+    rows carry identity -- the conservative side of a rare case, and the same
+    answer the guard gave before this change.
+    """
+    if hub_library_rows is None:
+        assert_identity_ready(conn)
+        return
+    if hub_library_rows == 0 or not first_sync:
+        return
+    assert_identity_ready(conn)
 
 
 __all__ = [
     "IdentityDecision",
     "SyncIdentityPreflightError",
     "assert_identity_ready",
+    "assert_merge_safe",
+    "hub_library_size",
     "names_held_parent",
     "remap_track_children",
     "resolve_track_identity",

@@ -136,4 +136,12 @@
 	.history-item[aria-current='step'] {
 		color: var(--rb-accent);
 	}
+	/* PERF-UI-01: the 72px history list plus Undo/Redo would crush
+	 * tree-scroll at 1280x720 so playlist-all-tracks leaves the
+	 * viewport. Hide the list; the buttons stay. */
+	@media (max-height: 799px) {
+		.history-list {
+			display: none;
+		}
+	}
 </style>

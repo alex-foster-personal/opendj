@@ -149,7 +149,12 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
     fixed(
         "schema-bookkeeping",
         "Migration bookkeeping",
-        state_tables("schema_meta", "pairing_capture_schema_meta", "play_orders_schema_meta"),
+        state_tables(
+            "schema_meta",
+            "pairing_capture_schema_meta",
+            "play_orders_schema_meta",
+            "playlist_sets_schema_meta",
+        ),
         "machine_local",
         "Records which migrations ran on THIS file; each machine migrates itself.",
         (),
@@ -330,6 +335,19 @@ UNBUILT_TABLE_CLASSES: tuple[DataClass, ...] = (
         state_tables("play_orders", "play_order_entries"),
         "not_yet_built",
         f"User-authored performance orderings. {_OUTSIDE_SYNC_SET}",
+        (logical("library-playlists"), logical("library-tracks")),
+    ),
+    fixed(
+        "playlist-sets",
+        "Playlist performance sets",
+        state_tables("playlist_sets", "playlist_set_entries", "playlist_set_runs"),
+        "not_yet_built",
+        "User-authored performance sets within a playlist (SET-05, ADR-0016). "
+        f"{_OUTSIDE_SYNC_SET}",
+        # playlist_sets.playlist_id carries no SQL REFERENCES clause (unlike
+        # playlist_memberships/playlist_pins, which genuinely reference
+        # playlists(playlist_id)) -- same as its sibling "play-orders" above,
+        # which declares both of its deps as logical for the same reason.
         (logical("library-playlists"), logical("library-tracks")),
     ),
     fixed(

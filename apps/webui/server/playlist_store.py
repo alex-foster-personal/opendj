@@ -25,13 +25,21 @@ from typing import Any, Literal
 from apps.shared.state import db as _state_db
 from apps.shared.state.events import EventBus, FakeEventBus
 from apps.shared.state.writer import StateWriter, compute_playlist_id
+from apps.shared.state.writer_playlists import (
+    PlaylistNotDeletedError,
+    PlaylistNotFoundError,
+)
 
 from .backend import BackendError, ConflictError, NotFoundError
 from .etag import compute_etag, strip_quotes
-from .playlist_add import add_memberships as _add_memberships
+from .playlist_add import AlreadyExistsError, add_memberships as _add_memberships
 from .playlist_add import MEMBERSHIP_ORDER_BY
+from .playlist_dupes import first_repeated_stable_id
 from .playlist_move import MoveResult, move_memberships as _move_memberships
-from .playlist_remove import apply_membership_snapshot, remove_membership as _remove_membership
+from .playlist_remove import (
+    apply_membership_snapshot,
+    remove_memberships as _remove_memberships,
+)
 from .playlist_transfer import (
     apply_dest_write,
     apply_source_write,
@@ -64,6 +72,7 @@ class PlaylistRow:
     items: list[str] = field(default_factory=list)
     created_at: str = ""
     updated_at: str = ""
+    forbid_duplicates: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -125,7 +134,7 @@ class PlaylistStore:
     def _load(self, playlist_id: str) -> PlaylistRow:
         row = self._conn.execute(
             "SELECT playlist_id, name, vendor, vendor_pl_id, "
-            "       created_at, updated_at "
+            "       created_at, updated_at, forbid_duplicates "
             "FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL",
             (playlist_id,),
         ).fetchone()
@@ -144,6 +153,7 @@ class PlaylistStore:
             vendor=row["vendor"], vendor_pl_id=row["vendor_pl_id"],
             items=items, created_at=row["created_at"],
             updated_at=row["updated_at"],
+            forbid_duplicates=bool(row["forbid_duplicates"]),
         )
 
     def _check_etag(self, row: PlaylistRow, expected_etag: str) -> None:
@@ -294,29 +304,55 @@ class PlaylistStore:
                     self._record_edit("create", playlist_id, None, self._snapshot(row))
                 return row
 
-    def rename_playlist(
-        self, playlist_id: str, name: str, *, expected_etag: str,
+    def update_playlist(
+        self,
+        playlist_id: str,
+        *,
+        expected_etag: str,
+        name: str | None = None,
+        forbid_duplicates: bool | None = None,
         record_edit: bool = True,
     ) -> PlaylistRow:
-        """Rename; renaming to the current name is a no-op (same etag)."""
-        cleaned = self._validated_name(name)
+        """Rename and/or toggle forbid_duplicates."""
+        cleaned = self._validated_name(name) if name is not None else None
         with self._lock:
             with self._writer.playlist_transaction():
                 row = self._load(playlist_id)
                 self._check_etag(row, expected_etag)
-                changed = self._writer.insert_playlist(
-                    playlist_id=playlist_id, name=cleaned,
-                    vendor=row.vendor, vendor_pl_id=row.vendor_pl_id,
-                )
+                changed = False
+                if cleaned is not None:
+                    changed = self._writer.insert_playlist(
+                        playlist_id=playlist_id, name=cleaned,
+                        vendor=row.vendor, vendor_pl_id=row.vendor_pl_id,
+                    ) or changed
+                if forbid_duplicates is not None:
+                    changed = (
+                        self._writer.set_playlist_forbid_duplicates(
+                            playlist_id, forbid_duplicates,
+                        )
+                        or changed
+                    )
                 if not changed:
                     return row
                 new_row = self._load(playlist_id)
-                if record_edit:
+                if record_edit and cleaned is not None:
                     self._record_edit(
                         "rename", playlist_id,
                         self._snapshot(row), self._snapshot(new_row),
                     )
                 return new_row
+
+    def rename_playlist(
+        self, playlist_id: str, name: str, *, expected_etag: str,
+        record_edit: bool = True,
+    ) -> PlaylistRow:
+        """Rename; renaming to the current name is a no-op (same etag)."""
+        return self.update_playlist(
+            playlist_id,
+            expected_etag=expected_etag,
+            name=name,
+            record_edit=record_edit,
+        )
 
     def delete_playlist(
         self, playlist_id: str, *, expected_etag: str,
@@ -333,6 +369,17 @@ class PlaylistStore:
                     self._record_edit(
                         "delete", playlist_id, self._snapshot(row), None,
                     )
+
+    def undelete_playlist(self, playlist_id: str) -> PlaylistRow:
+        with self._lock:
+            with self._writer.playlist_transaction():
+                try:
+                    self._writer.undelete_playlist(playlist_id)
+                except PlaylistNotFoundError as exc:
+                    raise NotFoundError(f"playlist not found: {playlist_id}") from exc
+                except PlaylistNotDeletedError:
+                    raise
+                return self._load(playlist_id)
 
     def duplicate_playlist(
         self,
@@ -362,6 +409,10 @@ class PlaylistStore:
                     playlist_id=new_id, name=new_name,
                     vendor=WEBUI_VENDOR, vendor_pl_id=vendor_pl_id,
                 )
+                if source.forbid_duplicates:
+                    self._writer.set_playlist_forbid_duplicates(
+                        new_id, True,
+                    )
                 if source.items:
                     self._writer.set_playlist_memberships(new_id, list(source.items))
                 copy = self._load(new_id)
@@ -385,6 +436,10 @@ class PlaylistStore:
                 row = self._load(playlist_id)
                 self._check_etag(row, expected_etag)
                 self._require_known_tracks(stable_ids)
+                if row.forbid_duplicates:
+                    repeated = first_repeated_stable_id(stable_ids)
+                    if repeated is not None:
+                        raise AlreadyExistsError(repeated, playlist_id)
                 if list(row.items) == list(stable_ids):
                     return row
                 self._writer.set_playlist_memberships(playlist_id, list(stable_ids))
@@ -411,14 +466,26 @@ class PlaylistStore:
                 position=position, record_edit=record_edit,
             )
 
+    def remove_memberships(
+        self,
+        playlist_id: str,
+        item_ids: list[str],
+        *,
+        record_edit: bool = True,
+    ) -> PlaylistRow:
+        """O(1) remove via POST :remove or DELETE by item_id (LIBM-21)."""
+        with self._lock:
+            return _remove_memberships(
+                self, playlist_id, item_ids, record_edit=record_edit,
+            )
+
     def remove_membership(
         self, playlist_id: str, item_id: str, *, record_edit: bool = True,
     ) -> PlaylistRow:
         """O(1) remove via DELETE by item_id (LIBM-21)."""
-        with self._lock:
-            return _remove_membership(
-                self, playlist_id, item_id, record_edit=record_edit,
-            )
+        return self.remove_memberships(
+            playlist_id, [item_id], record_edit=record_edit,
+        )
 
     def move_memberships(
         self,

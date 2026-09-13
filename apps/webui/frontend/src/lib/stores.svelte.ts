@@ -2,6 +2,11 @@
  * Uses Svelte 5 runes so components can `$derive` and re-render cheaply.
  */
 import { getHealth, getSettings, type HealthOut } from './api';
+import {
+	entryFromHealth,
+	pushHistory,
+	type HealthHistoryEntry
+} from '../routes/admin/health-history';
 import { auth } from './auth.svelte';
 import { reportClientError, type ClientErrorContext } from './client-error-reporting';
 import { readShellBuild } from './rb/build-identity';
@@ -335,16 +340,35 @@ export async function copyToast(logId: string): Promise<string> {
 	return text;
 }
 
-export const health = $state<{ data: HealthOut | null; bindWarning: string | null }>(
-	{ data: null, bindWarning: null }
-);
+export const health = $state<{
+	data: HealthOut | null;
+	bindWarning: string | null;
+	lastOkAt: number | null;
+	lastAttemptAt: number | null;
+	lastError: string | null;
+	history: HealthHistoryEntry[];
+}>({
+	data: null,
+	bindWarning: null,
+	lastOkAt: null,
+	lastAttemptAt: null,
+	lastError: null,
+	history: []
+});
 
 export async function refreshHealth(): Promise<void> {
+	const now = Date.now();
 	try {
 		const { health: data, bindWarning } = await getHealth();
 		health.data = data;
 		health.bindWarning = bindWarning;
+		health.lastOkAt = now;
+		health.lastAttemptAt = now;
+		health.lastError = null;
+		health.history = pushHistory(health.history, entryFromHealth(data, now));
 	} catch (exc) {
 		health.data = null;
+		health.lastAttemptAt = now;
+		health.lastError = exc instanceof Error ? exc.message : String(exc);
 	}
 }

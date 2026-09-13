@@ -24,7 +24,7 @@ import json
 import sys
 from typing import Any
 
-from apps.analysis_beatgrid.bar_phase import BarPhase, assign_bar_phase
+from apps.analysis_beatgrid.bar_phase import BarPhase, assign_bar_phase, lock_bar_phase
 from apps.analysis_beatgrid.bpm import estimate_bpm
 from apps.analysis_beatgrid.flags import evaluate_pulse
 from apps.analysis_beatgrid.tempo_change import detect_tempo_changes
@@ -104,14 +104,25 @@ def analyze(
             "activation_peak": pulse.activation_peak,
         }
     changes = detect_tempo_changes(beats)
-    phase = assign_bar_phase(beats, result.get("downbeats") or [])
+    diagnostic = assign_bar_phase(beats, result.get("downbeats") or [])
+    lock = lock_bar_phase(beats, result.get("downbeats") or [])
+    served_numbers = lock.beat_numbers if not lock.bar_phase_unestablished else []
+    phase_fields = _bar_phase_fields(diagnostic)
+    if lock.bar_phase_unestablished:
+        phase_fields["bar_phase_unestablished"] = True
+        phase_fields["bar_phase_reason"] = lock.reason
 
     return {
         "status": "ok",
         "beats": len(beats),
         "downbeats": len(result.get("downbeats") or []),
         "activation_peak": pulse.activation_peak,
-        **_bar_phase_fields(phase),
+        **phase_fields,
+        "beat_numbers": served_numbers,
+        "chosen_phase": lock.chosen_phase,
+        "bar_phase_agreement": lock.phase_agreement,
+        "n_phase_disagreements": lock.n_phase_disagreements,
+        "n_downbeats_thinned": lock.n_downbeats_thinned,
         "bpm": round(tempo.bpm, 2),
         "bpm_raw": round(tempo.raw_bpm, 4),
         "bpm_confidence": tempo.confidence,

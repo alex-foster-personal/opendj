@@ -1,8 +1,8 @@
 """CLI tests for playlist sets (SET-05).
 
 [if] the CLI performs a set [then] play_count increments and membership stays put, [else stop].
+[if] the playlist-sets CLI diverges from the store contract [then] fail, [else stop].
 """
-
 from __future__ import annotations
 
 import json

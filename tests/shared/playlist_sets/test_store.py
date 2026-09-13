@@ -1,8 +1,8 @@
 """Store-layer tests for playlist sets (SET-05).
 
 [if] a set is performed or practiced [then] play_count and runs update correctly, [else stop].
+[if] playlist_sets store semantics drift from SET-05 [then] fail, [else stop].
 """
-
 from __future__ import annotations
 
 import sqlite3

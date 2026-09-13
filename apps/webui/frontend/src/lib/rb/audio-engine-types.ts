@@ -89,9 +89,9 @@ export interface AudioEngine {
 	/** Elect one loaded deck as the globally exclusive master. */
 	setDeckMaster(deck: DeckId, options?: { lock?: boolean }): Promise<void>;
 	/** Mute one real stem group. Rejects unless aligned artifacts are ready. */
-	setStemMute(deck: DeckId, stem: StemControl, muted: boolean): void;
+	setStemMute(deck: DeckId, stem: StemControl, muted: boolean, pressT0Ms?: number): void;
 	/** Solo one real stem group. Rejects unless aligned artifacts are ready. */
-	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean): void;
+	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean, pressT0Ms?: number): void;
 	/** Per-stem level 0..1 (0.5 = unity). Rejects unless aligned artifacts are ready. */
 	setStemGain(deck: DeckId, stem: StemControl, value: number): void;
 	/** Toggle HI/MID/LOW between EQ and stem level for one channel strip. */
@@ -120,12 +120,12 @@ export interface AudioEngine {
 	setEq(deck: DeckId, band: EqBand, value: number, pressT0Ms?: number): void;
 	/** FILTER knob 0..1 (0.5 = bypass) -> paired lowpass/highpass Biquad
 	 * corner frequencies. See player/constants.ts FILTER_*. */
-	setFilter(deck: DeckId, value: number): void;
+	setFilter(deck: DeckId, value: number, pressT0Ms?: number): void;
 	/** Channel fader 0..1 -> fader GainNode. */
-	setFader(deck: DeckId, value: number): void;
+	setFader(deck: DeckId, value: number, pressT0Ms?: number): void;
 	/** Crossfader 0..1 (0 = full A, 1 = full B); applies the gain pair to
 	 * every channel assigned A or B. */
-	setCrossfader(value: number): void;
+	setCrossfader(value: number, pressT0Ms?: number): void;
 	/** Route a channel to crossfader bus A, B, or THRU (bypass). */
 	assignChannel(deck: DeckId, assign: CrossfaderAssign): void;
 	/** Enable or disable a channel's post-EQ, pre-fader headphone cue tap. */
@@ -142,4 +142,8 @@ export interface AudioEngine {
 	acquireHeadphoneOutput(): Promise<void>;
 	/** Route the real monitor element to an explicitly enumerated output device. */
 	selectHeadphoneOutput(deviceId: string): Promise<void>;
+	/** Pin the room mix to an enumerated output via AudioContext.setSinkId. */
+	selectMasterOutput(deviceId: string): Promise<void>;
+	/** Pin label-unlock / capture to an enumerated input. Never default a headphone mic. */
+	selectAudioInput(deviceId: string): Promise<void>;
 }

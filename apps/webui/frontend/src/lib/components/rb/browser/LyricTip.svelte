@@ -16,6 +16,7 @@
 		lyricVerdictGlyph,
 		lyricVerdictTitle
 	} from './lyric-column';
+	import { placeFloating } from '$lib/ui/clamp-to-viewport';
 
 	let {
 		stableId,
@@ -66,13 +67,22 @@
 	});
 
 	const pos = $derived.by(() => {
-		const margin = 8;
-		const left = Math.max(margin, Math.min(anchor.x, winW - panelW - margin));
-		// Prefer below the cell; flip above when it would overflow the bottom.
-		let top = anchor.bottom + 4;
-		if (top + panelH > winH - margin) top = anchor.top - panelH - 4;
-		if (top < margin) top = margin;
-		return { left, top };
+		if (panelW <= 0 || panelH <= 0) {
+			return { left: anchor.x, top: anchor.bottom + 4 };
+		}
+		const box = placeFloating({
+			trigger: {
+				left: anchor.x,
+				top: anchor.top,
+				width: 0,
+				height: anchor.bottom - anchor.top
+			},
+			size: { width: panelW, height: panelH },
+			viewport: { width: winW, height: winH },
+			preferred: 'below',
+			gap: 4
+		});
+		return { left: box.x, top: box.y };
 	});
 </script>
 

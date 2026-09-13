@@ -295,3 +295,19 @@ export function envOverrideNotes(config: CloudSyncConfigOut): string[] {
 	}
 	return notes;
 }
+
+export type CloudSyncTab = 'status' | 'policies' | 'pins' | 'overview' | 'fleet';
+
+export const CLOUDSYNC_TABS: ReadonlyArray<{ id: CloudSyncTab; label: string }> = [
+	{ id: 'status', label: 'Status & config' },
+	{ id: 'policies', label: 'Machines & policies' },
+	{ id: 'pins', label: 'Playlist pins' },
+	{ id: 'overview', label: 'Hydration overview' },
+	{ id: 'fleet', label: 'Fleet' }
+];
+
+/** Resolve the visible /cloudsync tab from the current URL query string. */
+export function cloudSyncTabFromUrl(url: URL): CloudSyncTab {
+	const raw = url.searchParams.get('tab');
+	return CLOUDSYNC_TABS.find((t) => t.id === raw)?.id ?? 'status';
+}

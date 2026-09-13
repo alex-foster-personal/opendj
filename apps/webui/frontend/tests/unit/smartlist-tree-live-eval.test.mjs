@@ -11,6 +11,7 @@ const source = readFileSync(filename, 'utf8');
 test('smartlist rows expose live count, identity, empty state, and their gear', () => {
 	assert.match(source, /data-testid="smartlists-folder"/);
 	assert.match(source, /data-testid="smartlists-empty"/);
+	assert.match(source, /no smartlists yet/);
 	assert.match(source, /data-testid="smartlist-row"/);
 	assert.match(source, /data-smartlist-id=\{sl\.id\}/);
 	assert.match(source, /<svg class="gear"/);

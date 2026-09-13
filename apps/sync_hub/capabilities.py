@@ -53,8 +53,14 @@ from collections.abc import Sequence
 #: accordingly rather than stepping over what did not arrive.
 QUARANTINE_V1: str = "quarantine/v1"
 
+#: This hub reports how many live ``tracks`` rows it holds, so a spoke can
+#: tell SEEDING an empty hub from MERGING into a library another machine
+#: already put there (CLOUDSYNC-07, ``assert_merge_safe``). Only the second
+#: case can duplicate overlapping recordings.
+LIBRARY_SIZE_V1: str = "library-size/v1"
+
 #: Everything this build understands, advertised on every request it makes.
-THIS_BUILD: tuple[str, ...] = (QUARANTINE_V1,)
+THIS_BUILD: tuple[str, ...] = (QUARANTINE_V1, LIBRARY_SIZE_V1)
 
 
 def understands_quarantine(advertised: Sequence[str] | None) -> bool:
@@ -90,6 +96,7 @@ def refusal(endpoint: str, detail: str, advertised: Sequence[str] | None) -> str
 
 
 __all__ = [
+    "LIBRARY_SIZE_V1",
     "QUARANTINE_V1",
     "THIS_BUILD",
     "refusal",

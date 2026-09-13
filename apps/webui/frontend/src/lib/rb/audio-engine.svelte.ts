@@ -87,7 +87,12 @@ import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import { detachProcessorForDisposal, disposeAudioResources } from '$lib/rb/audio-resource-disposal';
-import { beginDeckLoad, recordDeckLoad, reportDeckLoadFailure } from '$lib/rb/deck-load-context';
+import {
+	beginDeckLoad,
+	formatDeckLoadFailureMessage,
+	recordDeckLoad,
+	reportDeckLoadFailure
+} from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import {
 	noteMasterSilence,
@@ -113,7 +118,7 @@ import {
 	withPauseOrigin
 } from '$lib/rb/unexpected-pause-report';
 import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes } from '$lib/rb/deck-channel-graph';
-import { applyEqRamp, logEqApply, measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
+import { applyEqRamp, logEqApply, logMixerApply, measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
 import {
 	ConflictError,
 	fetchAnlz,
@@ -238,7 +243,9 @@ import {
 	disposeHeadphoneMonitor,
 	ensureHeadphoneGraph,
 	refreshHeadphoneOutputs as refreshMonitorOutputs,
+	selectAudioInput as selectMonitorAudioInput,
 	selectHeadphoneOutput as selectMonitorOutput,
+	selectMasterOutput as selectMonitorMasterOutput,
 	setHeadDelayMs as setMonitorHeadDelay,
 	setHeadphoneOutputMode as setMonitorOutputMode,
 	wirePracticeBlendIntoMasterPath,
@@ -783,7 +790,7 @@ function _ensureGraph(): AudioContext {
 		wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones);
 		wireSplitCableIntoMasterPath(_masterGain, _masterMuteGain, headphones);
 	}
-	// Post-EQ, pre-fader tap points, one per deck, PLUS one master tap sourced
+	// Post-fader channel tap points, one per deck, PLUS one master tap sourced
 	// from `_masterGain` itself (post master gain, so the master volume
 	// control genuinely moves it - pin 5a5c3b8033d8's still-open half).
 	// Collected here and armed after the loop because addModule is async and
@@ -3047,8 +3054,9 @@ class RbAudioEngine implements AudioEngine {
 			}
 			if (token !== rt.loadToken) throw exc;
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
-			const msg =
+			const raw =
 				exc instanceof RbApiError ? `${exc.code}: ${exc.message}` : String(exc);
+			const msg = formatDeckLoadFailureMessage(track?.title, stable_id, raw);
 			deckLoadErrors[deck] = msg;
 			reportDeckLoadFailure(deck, msg, exc, stages);
 			throw exc;
@@ -4036,20 +4044,16 @@ class RbAudioEngine implements AudioEngine {
 		}
 	}
 
-	setStemMute(deck: DeckId, stem: StemControl, muted: boolean): void {
+	setStemMute(deck: DeckId, stem: StemControl, muted: boolean, pressT0Ms?: number): void {
 		if (typeof muted !== 'boolean') throw new TypeError('setStemMute: muted must be boolean');
-		applyStemControl(deck, stem, 'muted', muted, {
-			requireLoaded: _requireLoaded,
-			getChannel: (d) => mixerState.channels[d]
-		});
+		applyStemControl(deck, stem, 'muted', muted, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d] });
+		if (_ctx !== null) logMixerApply('stem-mute-apply', deck, pressT0Ms, _ctx.currentTime);
 	}
 
-	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean): void {
+	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean, pressT0Ms?: number): void {
 		if (typeof solo !== 'boolean') throw new TypeError('setStemSolo: solo must be boolean');
-		applyStemControl(deck, stem, 'solo', solo, {
-			requireLoaded: _requireLoaded,
-			getChannel: (d) => mixerState.channels[d]
-		});
+		applyStemControl(deck, stem, 'solo', solo, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d] });
+		if (_ctx !== null) logMixerApply('stem-solo-apply', deck, pressT0Ms, _ctx.currentTime);
 	}
 
 	setStemGain(deck: DeckId, stem: StemControl, value: number): void {
@@ -4125,7 +4129,7 @@ class RbAudioEngine implements AudioEngine {
 		applyEqRamp(gain, db, now, PARAM_SMOOTH_S); logEqApply(deck, pressT0Ms, now, PARAM_SMOOTH_S);
 	}
 
-	setFilter(deck: DeckId, value: number): void {
+	setFilter(deck: DeckId, value: number, pressT0Ms?: number): void {
 		assertUnitRange('setFilter value', value);
 		mixerState.channels[deck].filter = value;
 		const nodes = _rt[deck].nodes;
@@ -4135,20 +4139,22 @@ class RbAudioEngine implements AudioEngine {
 			_setParam(nodes.filterDry.gain, dryGain); _setParam(nodes.filterLpWet.gain, lpWetGain);
 			_setParam(nodes.filterHpWet.gain, hpWetGain);
 		}
+		if (_ctx !== null) logMixerApply('filter-apply', deck, pressT0Ms, _ctx.currentTime);
 	}
 
-	setFader(deck: DeckId, value: number): void {
+	setFader(deck: DeckId, value: number, pressT0Ms?: number): void {
 		assertUnitRange('setFader value', value);
 		mixerState.channels[deck].fader = value;
 		const nodes = _rt[deck].nodes;
 		if (nodes !== null) _setParam(nodes.fader.gain, value);
 		_maybeHandoffOnAir();
+		if (_ctx !== null) logMixerApply('fader-apply', deck, pressT0Ms, _ctx.currentTime);
 	}
 
-	setCrossfader(value: number): void {
+	setCrossfader(value: number, pressT0Ms?: number): void {
 		assertUnitRange('setCrossfader value', value);
 		mixerState.crossfader = value;
-		if (_ctx !== null) _applyCrossfader();
+		if (_ctx !== null) { _applyCrossfader(); logMixerApply('xfader-apply', null, pressT0Ms, _ctx.currentTime); }
 		_maybeHandoffOnAir();
 	}
 
@@ -4183,15 +4189,13 @@ class RbAudioEngine implements AudioEngine {
 
 	setHeadphoneOutputMode = setMonitorOutputMode;
 	setHeadDelayMs = setMonitorHeadDelay;
-	refreshHeadphoneOutputs = refreshMonitorOutputs;
-	/** Must be called from a visible user gesture so the browser can open its
-	 * output chooser. This never requests microphone capture. */
-	async acquireHeadphoneOutput(): Promise<void> {
-		return acquireMonitorOutput(_monitorSource);
-	}
-	async selectHeadphoneOutput(deviceId: string): Promise<void> {
-		return selectMonitorOutput(deviceId, _monitorSource);
-	}
+	refreshHeadphoneOutputs = (): Promise<void> => refreshMonitorOutputs(_monitorSource);
+	/** Must be called from a visible user gesture. May briefly open the
+	 * microphone to label output devices when selectAudioOutput is missing. */
+	acquireHeadphoneOutput = (): Promise<void> => acquireMonitorOutput(_monitorSource);
+	selectHeadphoneOutput = (deviceId: string): Promise<void> => selectMonitorOutput(deviceId, _monitorSource);
+	selectMasterOutput = (deviceId: string): Promise<void> => selectMonitorMasterOutput(deviceId, _monitorSource);
+	selectAudioInput = (deviceId: string): Promise<void> => selectMonitorAudioInput(deviceId);
 
 	/** Topbar master-volume slider -> master GainNode (COMPONENT-MAP 1.1). */
 	setMaster(value: number): void {

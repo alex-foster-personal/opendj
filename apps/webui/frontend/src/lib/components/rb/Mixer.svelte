@@ -11,6 +11,7 @@
 	 * This keeps preset automation, agent control, audio truth, and visible
 	 * knob/fader positions inseparable.
 	 */
+	import { onMount } from 'svelte';
 	import { engine, getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
 	import {
 		performanceCommandStatus,
@@ -84,14 +85,14 @@
 		void runPerformanceCommandFromUi({ type: 'channel_cue', deck, enabled });
 	}
 
-	async function handleStemMute(deck: DeckId, stem: StemControl): Promise<void> {
+	function handleStemMute(deck: DeckId, stem: StemControl): void {
 		const muted = getDeckState(deck).stems.controls[stem].muted;
-		await runPerformanceCommandFromUi({ type: 'stem_mute', deck, stem, muted: !muted });
+		void runPerformanceCommandFromUi({ type: 'stem_mute', deck, stem, muted: !muted });
 	}
 
-	async function handleStemSolo(deck: DeckId, stem: StemControl): Promise<void> {
+	function handleStemSolo(deck: DeckId, stem: StemControl): void {
 		const solo = getDeckState(deck).stems.controls[stem].solo;
-		await runPerformanceCommandFromUi({ type: 'stem_solo', deck, stem, solo: !solo });
+		void runPerformanceCommandFromUi({ type: 'stem_solo', deck, stem, solo: !solo });
 	}
 
 	function handleStemEqMode(deck: DeckId, enabled: boolean): void {
@@ -129,6 +130,18 @@
 	function selectHeadphoneOutput(device_id: string): void {
 		void runPerformanceCommandFromUi({ type: 'headphone_output_select', device_id });
 	}
+
+	function selectMasterOutput(device_id: string): void {
+		void runPerformanceCommandFromUi({ type: 'headphone_master_select', device_id });
+	}
+
+	function selectAudioInput(device_id: string): void {
+		void runPerformanceCommandFromUi({ type: 'headphone_input_select', device_id });
+	}
+
+	onMount(() => {
+		void runPerformanceCommandFromUi({ type: 'headphone_outputs_refresh' });
+	});
 </script>
 
 <section class="rb-mixer rb-panel">
@@ -207,6 +220,8 @@
 				onrefresh={refreshHeadphoneOutputs}
 				onacquire={acquireHeadphoneOutput}
 				onselect={selectHeadphoneOutput}
+				onmaster={selectMasterOutput}
+				oninput={selectAudioInput}
 				onmode={handleHeadphoneOutputMode}
 			/>
 		</div>

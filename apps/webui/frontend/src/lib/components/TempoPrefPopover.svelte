@@ -3,7 +3,9 @@
 	// tempo plus its playable min/max range. Fetches the track fresh on open
 	// (etag for CAS + current values) rather than trusting a possibly-stale
 	// row prop - this is an infrequent action, not a hot path.
+	import { tick } from 'svelte';
 	import { getTrack, patchTrack, ConflictError } from '$lib/api';
+	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 	import { pushToast } from '$lib/stores.svelte';
 
 	let {
@@ -22,6 +24,25 @@
 	let saving = $state(false);
 	let saveError = $state<string | null>(null);
 	let panelEl: HTMLDivElement | undefined = $state();
+	let position = $state({ x: 0, y: 0 });
+
+	async function placePanel(): Promise<void> {
+		await tick();
+		if (panelEl === undefined) return;
+		const rect = panelEl.getBoundingClientRect();
+		position = clampToViewport(
+			x,
+			y,
+			{ width: rect.width, height: rect.height },
+			{ width: window.innerWidth, height: window.innerHeight }
+		);
+	}
+
+	$effect(() => {
+		void x;
+		void y;
+		void placePanel();
+	});
 
 	function _fmt(v: number | null | undefined): string {
 		return v === null || v === undefined ? '' : String(v);
@@ -116,7 +137,7 @@
 <div
 	bind:this={panelEl}
 	class="tempo-pref-popover"
-	style={`left:${x}px;top:${y}px`}
+	style={`left:${position.x}px;top:${position.y}px`}
 	role="dialog"
 	aria-label="Set preferred tempo and playable range"
 >

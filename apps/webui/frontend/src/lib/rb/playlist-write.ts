@@ -205,6 +205,37 @@ export async function deletePlaylistItem(
 	return { items: out.items, etag: fresh };
 }
 
+/** POST /playlists/{id}/items:remove - O(k) bulk remove without rewriting
+ * existing membership rows (LIBM-21). No If-Match required. */
+export async function removePlaylistItems(
+	playlistId: string,
+	itemIds: string[]
+): Promise<PlaylistWriteResult> {
+	let data: unknown;
+	let response: Response;
+	try {
+		({ data, response } = await api.POST('/api/v1/playlists/{playlist_id}/items:remove', {
+			params: { path: { playlist_id: playlistId } },
+			body: { item_ids: itemIds }
+		}));
+	} catch (error) {
+		if (error instanceof ApiError) {
+			throw new Error(
+				`remove from playlist ${playlistId} failed (${error.status}): ${_messageOf(error)}`
+			);
+		}
+		throw error;
+	}
+	const fresh = response.headers.get('etag');
+	if (!fresh) {
+		throw new Error(
+			`playlist ${playlistId}: POST items:remove response carries no ETag header`
+		);
+	}
+	const out = data as PlaylistRowWire;
+	return { items: out.items, etag: fresh };
+}
+
 export interface MembershipMoveBody {
 	range_start: string;
 	range_length?: number;
@@ -289,22 +320,36 @@ export async function createPlaylist(name: string): Promise<PlaylistRowWire> {
 	}
 }
 
+export type PlaylistPatchBody = {
+	name?: string;
+	forbid_duplicates?: boolean;
+};
+
+/** PATCH /playlists/{id} - rename and/or forbid_duplicates (If-Match required). */
+export async function patchPlaylist(
+	playlistId: string,
+	etag: string,
+	body: PlaylistPatchBody
+): Promise<PlaylistRowWire> {
+	try {
+		return await unwrap(
+			api.PATCH('/api/v1/playlists/{playlist_id}', {
+				params: { path: { playlist_id: playlistId }, header: { 'If-Match': etag } },
+				body
+			})
+		);
+	} catch (error) {
+		_throwWriteError(error, `patch playlist ${playlistId}`);
+	}
+}
+
 /** PATCH /playlists/{id} - rename (If-Match required). */
 export async function renamePlaylist(
 	playlistId: string,
 	etag: string,
 	name: string
 ): Promise<PlaylistRowWire> {
-	try {
-		return await unwrap(
-			api.PATCH('/api/v1/playlists/{playlist_id}', {
-				params: { path: { playlist_id: playlistId }, header: { 'If-Match': etag } },
-				body: { name }
-			})
-		);
-	} catch (error) {
-		_throwWriteError(error, `rename playlist ${playlistId}`);
-	}
+	return patchPlaylist(playlistId, etag, { name });
 }
 
 /** DELETE /playlists/{id} (If-Match required) -> 204, so no unwrap: the

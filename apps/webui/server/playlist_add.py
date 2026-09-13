@@ -11,9 +11,12 @@ from apps.shared.state.writer import StateWriter
 from typing import TYPE_CHECKING
 
 from .backend import BackendError, NotFoundError
+from .playlist_dupes import new_stable_ids
 
 if TYPE_CHECKING:
     from .playlist_store import PlaylistRow, PlaylistStore
+
+MEMBERSHIP_BATCH_LIMIT = 1000
 
 MEMBERSHIP_ORDER_BY = (
     "COALESCE(order_key, printf('%08d', position)), position"
@@ -37,6 +40,13 @@ class AlreadyExistsError(BackendError):
         self.playlist_id = playlist_id
         super().__init__(
             f"track {stable_id} is already a member of playlist {playlist_id}"
+        )
+
+
+class BulkLimitError(BackendError):
+    def __init__(self, got: int) -> None:
+        super().__init__(
+            f"batch exceeds limit of {MEMBERSHIP_BATCH_LIMIT} items (got {got})"
         )
 
 
@@ -82,6 +92,11 @@ def _load_live_members(
         )
         for row in rows
     ]
+
+
+def _reject_over_cap(items: list) -> None:
+    if len(items) > MEMBERSHIP_BATCH_LIMIT:
+        raise BulkLimitError(len(items))
 
 
 def _insert_index(members: list[MembershipRow], position: int | None) -> int:
@@ -130,13 +145,14 @@ def add_memberships(
         raise
 
     store._require_known_tracks(stable_ids)
+    _reject_over_cap(stable_ids)
+
+    if before_row.forbid_duplicates:
+        stable_ids = new_stable_ids(before_row.items, stable_ids)
+        if not stable_ids:
+            return before_row
 
     members = _load_live_members(conn, playlist_id)
-    live_ids = {m.stable_id for m in members}
-    for sid in stable_ids:
-        if sid in live_ids:
-            raise AlreadyExistsError(sid, playlist_id)
-
     insert_index = _insert_index(members, position)
     left_key = members[insert_index - 1].order_key if insert_index > 0 else None
     right_key = (
@@ -159,10 +175,13 @@ def add_memberships(
 
 __all__ = [
     "AlreadyExistsError",
+    "BulkLimitError",
+    "MEMBERSHIP_BATCH_LIMIT",
     "MEMBERSHIP_ORDER_BY",
     "MembershipRow",
     "SmartlistImmutableError",
     "_is_smartlist",
     "_load_live_members",
+    "_reject_over_cap",
     "add_memberships",
 ]

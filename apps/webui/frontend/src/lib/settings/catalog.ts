@@ -3,6 +3,7 @@
  * Search filters this list in-place (results ARE the settings).
  */
 
+import { APP_POSTURE_SETTING } from './app-posture-setting';
 import {
 	WHEEL_SENSITIVITY,
 	WHEEL_SENSITIVITY_MAX,
@@ -33,14 +34,8 @@ export type SettingControl =
 			kind: 'multi_bool';
 			keys: ReadonlyArray<{ id: string; label: string; title: string }>;
 	  }
-	// Pure-navigation entry: no inline widget, just a searchable pointer to a
-	// full route page. SettingsOverlay.svelte's control-kind branches
-	// (boolean/enum/multi_bool) do not render one of these -- by design,
-	// this lane could not touch that shared component (fan-out file
-	// ownership) -- so today the row is discoverable and shows its target in
-	// `detail`/`title`, but clicking it does not yet navigate. A follow-up
-	// in SettingsOverlay.svelte adding `{:else if kind === 'link'}<a href=...>`
-	// (and a matching branch in `activateSetting`) makes it clickable.
+	// Pure-navigation entry: searchable pointer to a full route page. The
+	// overlay renders an `<a href>` control and `activateSetting` calls `goto`.
 	| { kind: 'link'; href: string }
 	// A live numeric row: range slider + value readout + a "default" reset.
 	// Bounds come from the module that VALIDATES the value (never a second
@@ -193,6 +188,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 			]
 		}
 	},
+	APP_POSTURE_SETTING,
 	{
 		id: 'auto_play_enabled',
 		label: 'AutoPlay',
@@ -470,12 +466,9 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	},
 
 	// ----- cloudsync (specs/cloudsync-spec.md D5) -------------------------
-	// Navigation entries only (no inline widget) -- the real controls are
-	// the policy matrix / pin list / overview table on the /cloudsync route.
+	// Navigation entries to the policy matrix / pin list / overview on /cloudsync.
 	// Full CRUD backing every row there is live at /api/v1/cloudsync/*
-	// (apps/webui/server/routes/cloudsync.py); implemented: true is correct
-	// even though these specific catalog rows are not yet click-to-navigate
-	// (see the 'link' control-kind comment above).
+	// (apps/webui/server/routes/cloudsync.py).
 	{
 		id: 'cloudsync.machines',
 		label: 'CloudSync: machines & asset policy',
@@ -589,4 +582,14 @@ function _todo(
 
 export function groupLabel(id: SettingGroupId): string {
 	return SETTING_GROUPS.find((g) => g.id === id)?.label ?? id;
+}
+
+export type LinkSettingDef = SettingDef & { control: { kind: 'link'; href: string } };
+
+/** Implemented link-kind rows in catalog order for a settings group. */
+export function catalogLinkSettings(group: SettingGroupId): LinkSettingDef[] {
+	return SETTINGS_CATALOG.filter(
+		(def): def is LinkSettingDef =>
+			def.group === group && def.implemented && def.control.kind === 'link'
+	);
 }

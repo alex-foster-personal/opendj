@@ -29,6 +29,10 @@ from apps.sync_hub.engine_identity import (
     resolve_track_identity,
     rewrite_incoming_change,
 )
+from apps.sync_hub.engine_identity_map import (
+    load_identity_remap,
+    record_identity_remap,
+)
 from apps.sync_hub.engine_watermark import current_seq
 from apps.sync_hub.protocol import MEMBERSHIP_TABLE, SPEC_BY_TABLE, RowChange, TableSpec
 
@@ -322,13 +326,21 @@ def _replace_members(
                 f"{MEMBERSHIP_TABLE}: bundle for playlist {playlist_id} carries "
                 f"a row belonging to {member['playlist_id']!r}"
             )
+        track_id = str(member.get("stable_id") or "")
+        if conn.execute(
+            "SELECT 1 FROM tracks WHERE stable_id = ? LIMIT 1", (track_id,)
+        ).fetchone() is None:
+            log.warning(
+                "%s: playlist %s pos %r skipped; track %s is not here yet",
+                MEMBERSHIP_TABLE, playlist_id, member.get("position"), track_id,
+            )
+            continue
         try:
             conn.execute(sql, tuple(member[column] for column in columns))
         except sqlite3.IntegrityError as exc:
             raise SyncApplyError(
                 f"{MEMBERSHIP_TABLE}: playlist {playlist_id} position "
-                f"{member.get('position')!r} references a track this machine "
-                f"does not have yet ({exc})"
+                f"{member.get('position')!r} violates a constraint ({exc})"
             ) from exc
 
 
@@ -354,7 +366,7 @@ def _apply(
     quarantined = 0
     identity_conflicts = 0
     faults: list[protocol.StampFault] = []
-    remap: dict[str, str] = {}
+    remap: dict[str, str] = load_identity_remap(conn)
     held: set[str] = set()
     for change in ordered:
         outcome, extra = _apply_one(
@@ -403,7 +415,9 @@ def _apply_one(
         return "quarantined", verdict.faults
     if verdict.loses:
         if verdict.rewrite_incoming_to is not None:
-            remap[change.pk[0]] = verdict.rewrite_incoming_to
+            record_identity_remap(
+                conn, remap, change.pk[0], verdict.rewrite_incoming_to
+            )
         return "rejected", ()
     # Survivor PK must exist before children remap onto it. Incoming-wins
     # identity collapse writes the incoming row first, then moves stored
@@ -411,6 +425,7 @@ def _apply_one(
     # failure: the incoming PK is not stored yet.
     _upsert(conn, change.table, spec, columns, values)
     for stored_pk in verdict.drop_stored_pks:
+        record_identity_remap(conn, remap, stored_pk, change.pk[0])
         remap_track_children(conn, stored_pk, change.pk[0])
         _drop_superseded(conn, spec, (stored_pk,))
     if change.table == "playlists" and change.members is not None:

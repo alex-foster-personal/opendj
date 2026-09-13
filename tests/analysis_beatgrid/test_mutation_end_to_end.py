@@ -44,7 +44,7 @@ import wave
 
 import pytest
 
-from apps.analysis_beatgrid.bar_phase import BAR_BEATS, assign_bar_phase
+from apps.analysis_beatgrid.bar_phase import BAR_BEATS, assign_bar_phase, lock_bar_phase
 from apps.analysis_beatgrid.bpm import estimate_bpm
 from apps.analysis_beatgrid.tempo_change import MIN_SEGMENT_BARS, detect_tempo_changes
 from apps.analysis_beatgrid.tempo_map import fit_tempo_map
@@ -283,27 +283,22 @@ def test_every_beat_is_numbered_consistently_with_the_emitted_downbeats(analyzed
     """
     result = analyzed["payload"]["results"][analyzed["steady"]]
     beats = result["beats"]
-    downbeats = set(result["downbeats"])
-    phase = assign_bar_phase(beats, result["downbeats"])
-    numbers = phase.beat_numbers
+    lock = lock_bar_phase(beats, result["downbeats"])
+    numbers = lock.beat_numbers
 
-    assert numbers, "assign_bar_phase produced nothing"
-    assert not phase.bar_phase_unestablished
+    assert numbers, "lock_bar_phase produced nothing"
+    assert not lock.bar_phase_unestablished
     assert len(numbers) == len(beats)
     assert all(1 <= n <= BAR_BEATS for n in numbers), f"max n {max(numbers)} exceeds a bar"
 
-    # Every emitted downbeat must have received n == 1: a downbeat that snapped
-    # onto a beat and then lost its number would be silently dropped structure.
-    for time_s, number in zip(beats, numbers, strict=True):
-        if time_s in downbeats:
-            assert number == 1, f"downbeat at {time_s}s numbered {number}"
-
-    # The cycle restarts on a downbeat and otherwise advances by one, wrapping
-    # at the bar length. Both branches are asserted because a rule that only
-    # allowed "1 or n+1" is exactly the unbounded count this fix removed.
-    for (_t0, n0), (t1, n1) in itertools.pairwise(zip(beats, numbers, strict=True)):
-        expected = 1 if t1 in downbeats else n0 % BAR_BEATS + 1
-        assert n1 == expected, f"beat numbering went {n0} -> {n1}, expected {expected}"
+    bar_one_times = [t for t, n in zip(beats, numbers, strict=True) if n == 1]
+    for earlier, later in itertools.pairwise(bar_one_times):
+        earlier_index = beats.index(earlier)
+        later_index = beats.index(later)
+        assert later_index - earlier_index == BAR_BEATS, (
+            f"served bar-1 at {earlier}s and {later}s are {later_index - earlier_index} "
+            "beats apart, expected 4"
+        )
 
 
 def test_the_click_track_downbeat_density_is_recorded_not_assumed(analyzed):

@@ -7,6 +7,8 @@ on these six endpoints and their etag semantics):
   * ``POST   /api/v1/playlists``                 {name}            -> 201 + ETag
   * ``PATCH  /api/v1/playlists/{id}``            {name?}           -> 200 + ETag
   * ``DELETE /api/v1/playlists/{id}``                              -> 204
+  * ``POST   /api/v1/playlists/{id}:undelete``                     -> 200 + ETag
+  * ``GET    /api/v1/playlists/deleted``                           -> 200 list
   * ``POST   /api/v1/playlists/{id}/duplicate``  {name?} optional  -> 201 + ETag
   * ``PUT    /api/v1/playlists/{id}/tracks``     {stable_ids: []}  -> 200 + ETag
   * ``POST   /api/v1/playlists/{id}/tracks/transfer``  {stable_ids, mode, ...} -> 200
@@ -25,8 +27,9 @@ ETag / error semantics copied from the tracks PATCH:
 ``PUT .../tracks`` is the full-replace membership primitive for import/restore.
 ``POST .../items:add`` is the O(1) append/insert primitive (LIBM-20): one or
 more tracks are inserted without rewriting existing membership rows.
-``DELETE .../items/{item_id}`` is the O(1) remove primitive (LIBM-21): one
-membership row is tombstoned without rewriting neighbors.
+``POST .../items:remove`` and ``DELETE .../items/{item_id}`` are the O(1)
+remove primitives (LIBM-21): membership rows are tombstoned without rewriting
+neighbors.
 ``POST .../items:move`` is the O(k) slice reorder primitive (LIBM-22): a
 contiguous block moves by updating order_keys only.
 
@@ -58,6 +61,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from apps.shared.events import publish
+from apps.shared.state.writer_playlists import PlaylistNotDeletedError
 
 from ..backend import StateBackend
 from ..deps import get_write_state
@@ -80,6 +84,10 @@ class PlaylistRenameIn(BaseModel):
         None, min_length=1,
         description="New display name; omit for a no-op that returns the "
                     "current row + etag",
+    )
+    forbid_duplicates: bool | None = Field(
+        None,
+        description="When true, reject extra copies of an already-present track.",
     )
 
 
@@ -112,6 +120,10 @@ class MembershipTransferIn(BaseModel):
     source_etag: str | None = None
 
 
+class MembershipRemoveIn(BaseModel):
+    item_ids: list[str] = Field(min_length=1)
+
+
 class MembershipMoveIn(BaseModel):
     range_start: str = Field(min_length=1)
     range_length: int | None = Field(None, ge=1)
@@ -134,6 +146,7 @@ class PlaylistWriteOut(BaseModel):
     track_count: int
     created_at: str
     updated_at: str
+    forbid_duplicates: bool
 
 
 class MembershipMoveOut(PlaylistWriteOut):
@@ -183,7 +196,7 @@ def _out(row: PlaylistRow, response: Response) -> PlaylistWriteOut:
         playlist_id=row.playlist_id, name=row.name, vendor=row.vendor,
         vendor_pl_id=row.vendor_pl_id, items=list(row.items),
         track_count=len(row.items), created_at=row.created_at,
-        updated_at=row.updated_at,
+        updated_at=row.updated_at, forbid_duplicates=row.forbid_duplicates,
     )
 
 
@@ -195,7 +208,8 @@ def _move_out(
         playlist_id=row.playlist_id, name=row.name, vendor=row.vendor,
         vendor_pl_id=row.vendor_pl_id, items=list(row.items),
         track_count=len(row.items), created_at=row.created_at,
-        updated_at=row.updated_at, renumbered=renumbered,
+        updated_at=row.updated_at, forbid_duplicates=row.forbid_duplicates,
+        renumbered=renumbered,
     )
 
 
@@ -227,11 +241,16 @@ def rename_playlist(
         return precondition_required(
             "PATCH /playlists/{playlist_id} requires If-Match header"
         )
-    if body.name is None:
+    if body.name is None and body.forbid_duplicates is None:
         # Explicit no-op: CAS-verify and echo the current row.
         row = store.verify_etag(playlist_id, if_match)
         return _out(row, response)
-    row = store.rename_playlist(playlist_id, body.name, expected_etag=if_match)
+    row = store.update_playlist(
+        playlist_id,
+        expected_etag=if_match,
+        name=body.name,
+        forbid_duplicates=body.forbid_duplicates,
+    )
     publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
     return _out(row, response)
 
@@ -250,6 +269,28 @@ def delete_playlist(
     store.delete_playlist(playlist_id, expected_etag=if_match)
     publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{playlist_id}:undelete",
+    response_model=PlaylistWriteOut,
+    operation_id="undelete_playlist",
+)
+def undelete_playlist(
+    playlist_id: str,
+    response: Response,
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008
+    store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
+) -> PlaylistWriteOut:
+    try:
+        row = store.undelete_playlist(playlist_id)
+    except PlaylistNotDeletedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": "not_deleted", "message": str(exc)},
+        ) from exc
+    publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
+    return _out(row, response)
 
 
 @router.post("/{playlist_id}/duplicate", response_model=PlaylistWriteOut,
@@ -286,6 +327,23 @@ def add_playlist_items(
     row = store.add_memberships(
         playlist_id, body.stable_ids, position=body.position,
     )
+    publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
+    return _out(row, response)
+
+
+@router.post(
+    "/{playlist_id}/items:remove",
+    response_model=PlaylistWriteOut,
+    operation_id="remove_playlist_items",
+)
+def remove_playlist_items(
+    playlist_id: str,
+    body: MembershipRemoveIn,
+    response: Response,
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008
+    store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
+) -> PlaylistWriteOut:
+    row = store.remove_memberships(playlist_id, body.item_ids)
     publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
     return _out(row, response)
 

@@ -116,7 +116,9 @@ test('playlist undo/redo: mixed edits, panel, hotkey, reload, IPC', async ({ pag
 	await _openPlaylist(page, originalName);
 	await expect.poll(async () => (await _visibleStableIds(page)).join('\0')).toBe(ids.join('\0'));
 
-	await page.getByTestId('playlist-history-list').click();
+	// PERF-UI-01 hides the history list at Playwright's default 720px viewport;
+	// defocus the undo button so Ctrl+Z reaches the window hotkey handler.
+	await page.locator('.deck-area').click({ position: { x: 8, y: 8 } });
 	await page.keyboard.press('Control+z');
 	await expect.poll(async () => (await _visibleStableIds(page)).join('\0')).toBe('');
 

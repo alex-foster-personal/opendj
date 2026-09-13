@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { kpiCaptureTestTimeoutMs } from './kpi-capture-timeouts.mjs';
 
 const DEFAULT_FRONTEND_BASE = 'http://127.0.0.1:5273';
 const DEFAULT_API_BASE = 'http://127.0.0.1:8686';
@@ -41,7 +42,9 @@ export default defineConfig({
 	fullyParallel: false,
 	workers: 1,
 	retries: 0,
-	timeout: 120_000,
+	// Derived from the capture budget, never a bare constant: see
+	// kpi-capture-timeouts.mjs for why the two must not be set independently.
+	timeout: kpiCaptureTestTimeoutMs(process.env.KPI_CAPTURE_TIMEOUT_S),
 	expect: { timeout: 15_000 },
 	use: {
 		baseURL: frontend.origin,
@@ -53,7 +56,14 @@ export default defineConfig({
 	projects: [
 		{
 			name: 'kpi-capture-chromium',
-			use: { ...devices['Desktop Chrome'] }
+			use: {
+				...devices['Desktop Chrome'],
+				channel: 'chrome',
+				launchOptions: {
+					ignoreDefaultArgs: ['--enable-automation'],
+					args: ['--disable-blink-features=AutomationControlled']
+				}
+			}
 		}
 	]
 });

@@ -7,6 +7,7 @@
 		onrename,
 		deleteNode,
 		onduplicate,
+		onforbidduplicates,
 		onselect,
 		ondeletesmartlist
 	}: {
@@ -14,6 +15,7 @@
 		onrename?: ((node: PlaylistNode) => void) | undefined;
 		deleteNode?: ((node: PlaylistNode) => void) | undefined;
 		onduplicate?: ((node: PlaylistNode) => void) | undefined;
+		onforbidduplicates?: ((node: PlaylistNode) => void) | undefined;
 		onselect: (node: PlaylistNode) => void;
 		ondeletesmartlist?: ((sl: { id: string; name: string }) => void) | undefined;
 	} = $props();
@@ -54,6 +56,17 @@
 				run:
 					kind === 'playlist' && node !== undefined
 						? () => onduplicate?.(node)
+						: undefined
+			},
+			{
+				id: 'forbid-duplicates',
+				label: 'Forbid duplicates',
+				checked: kind === 'playlist' && node !== undefined
+					? node.forbid_duplicates === true
+					: undefined,
+				run:
+					kind === 'playlist' && node !== undefined
+						? () => onforbidduplicates?.(node)
 						: undefined
 			},
 			{ id: 'export', label: 'Export' }, { id: 'spotify', label: 'Import from Spotify' },

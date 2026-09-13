@@ -28,6 +28,7 @@
 	import { entitlements } from '$lib/api/entitlements.svelte';
 	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
 	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
+	import PerformanceAppNav from '$lib/components/PerformanceAppNav.svelte';
 
 	let { children } = $props();
 
@@ -123,6 +124,7 @@
 
 {#if isPerformance}
 	{@render children()}
+	<PerformanceAppNav />
 {:else}
 <div class="app-shell">
 	<aside class="sidebar">
@@ -168,11 +170,9 @@
 					{:else}
 						<span class="readout">lock: free</span>
 					{/if}
-					<span class="sep" aria-hidden="true"> · </span>
 					{#if health.data.syncthing}
-						<span class="readout">sync: {health.data.syncthing.peers_connected} peers - {health.data.syncthing.folder_state}</span>
-					{:else}
-						<span class="readout" title="not implemented - see PARITY-TODO (syncthing not configured)">sync: n/a</span>
+						<span class="sep" aria-hidden="true"> · </span>
+						<span class="readout">syncthing: {health.data.syncthing.peers_connected} peers - {health.data.syncthing.folder_state}</span>
 					{/if}
 					<span class="sep" aria-hidden="true"> · </span>
 					<span class="readout">bind: {health.data.bind_host}</span>

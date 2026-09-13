@@ -807,6 +807,23 @@ def claim_ports(
     return selected
 
 
+def show_ports(
+    *,
+    repo_root: Path | None = None,
+    common_dir: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> WebuiPorts:
+    """Return this worktree's reserved pair, or raise PortConfigError.
+
+    Same refusal as ``python -m apps.webui.port_config show``.
+    """
+    return _require_reservation(
+        _repo_root(repo_root),
+        _common_dir(common_dir),
+        os.environ if environ is None else environ,
+    )
+
+
 def _require_reservation(
     repo_root: Path,
     common_dir: Path,
@@ -947,11 +964,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"[OK] {args.service} port reservation is free")
                 _print_ports(ports)
         elif args.command == "show":
-            ports = _require_reservation(
-                _repo_root(None),
-                _common_dir(None),
-                os.environ,
-            )
+            ports = show_ports()
             if args.json:
                 _print_ports_json(ports)
             else:
@@ -985,4 +998,5 @@ __all__ = [
     "resolve_backend_port",
     "resolve_frontend_port",
     "resolve_ports",
+    "show_ports",
 ]

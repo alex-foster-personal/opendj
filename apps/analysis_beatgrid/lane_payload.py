@@ -14,21 +14,13 @@ would drift from whichever one changed second.
 
 ## Three decisions this module makes, none of them silent
 
-**A grid whose bar numbers do not cycle 1,2,3,4 is FAILED, not repaired.**
-`assign_bar_phase` numbers every beat from its nearest preceding downbeat and
-lets an over- or under-length bar show up as a repeated or skipped number,
-deliberately, so a missed downbeat is visible. The deck cannot consume that:
-`validateBeatGrid` in `apps/webui/frontend/src/lib/rb/beat-sync-math.ts` throws
-on a broken cadence, and `quantizeToNearestDownbeat` and the 2-bar quantize
-grid both rely on every downbeat being exactly four beats after the last. So
-the two honest options are to publish a grid the deck refuses, or to re-phase
-the beats from a single anchor and hide the missed downbeat inside a
-plausible-looking cadence. This lane takes neither: the cadence is CHECKED
-against the consumer's own rule, and a grid that fails it is
-`status: failed` with reason `bar_length_anomaly`, naming how many bars were
-the wrong length. The check reads the produced numbers rather than inferring
-from the anomaly counts, so it cannot pass for a reason unrelated to what the
-deck will do with the grid.
+**A grid whose diagnostic bars are over- or under-length is re-phased, not failed.**
+`assign_bar_phase` still counts anomalies for diagnostics, but served numbers
+come from `lock_bar_phase`, which thins detector doubles, votes a majority
+phase, and numbers every beat 1,2,3,4. A track fails only when that vote is
+below the locked agreement floor (`bar_phase_below_floor`), not when a missed
+downbeat would have broken the old nearest-preceding cadence
+(`bar_length_anomaly` is no longer emitted in production).
 
 **Per-beat BPM comes from the tempo SEGMENTS, not from adjacent intervals.**
 A beat entry carries its local BPM and the deck plays against it, so deriving
@@ -60,7 +52,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from apps.analysis_beatgrid.activations import FPS as ACTIVATIONS_FPS
-from apps.analysis_beatgrid.bar_phase import BAR_BEATS, assign_bar_phase
+from apps.analysis_beatgrid.bar_phase import BAR_BEATS, lock_bar_phase
 from apps.analysis_beatgrid.bpm import estimate_bpm
 from apps.analysis_beatgrid.flags import evaluate_pulse
 from apps.analysis_beatgrid.tempo_change import detect_tempo_changes
@@ -206,16 +198,14 @@ def _pulse_and_phase(
     if tempo is None:
         return _failed(REASON_NO_TEMPO_FIT)
 
-    phase = assign_bar_phase(beats, downbeats)
+    phase = lock_bar_phase(beats, downbeats)
     if phase.bar_phase_unestablished:
         assert phase.reason is not None
         return _failed(phase.reason)
     breaks = _cadence_breaks(phase.beat_numbers, BAR_BEATS)
     if breaks:
-        return _failed(
-            f"{REASON_BAR_LENGTH_ANOMALY}: {breaks} break(s) in the 1..{BAR_BEATS} "
-            f"cadence from {phase.n_bars_over_length} long and "
-            f"{phase.n_bars_under_length} short bar(s)"
+        raise LanePayloadError(
+            f"lock_bar_phase produced {breaks} cadence break(s); programmer error"
         )
 
     return _PulseCheck(beats=beats, tempo=tempo, phase=phase)
@@ -279,6 +269,9 @@ def build_beatgrid_lane(
         ],
         "static_grid_untrusted": False,
     }
+    if phase.phase_agreement is not None:
+        payload["bar_phase_agreement"] = round(phase.phase_agreement, 4)
+        payload["n_phase_disagreements"] = phase.n_phase_disagreements
     _stamp_activations(result, payload)
     return BeatgridLane(
         status="ok", reason=None, confidence=tempo.confidence, payload=payload

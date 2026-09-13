@@ -138,14 +138,99 @@ export function appendLedger(ledgerPath, rows) {
 }
 
 /**
- * Lines printed when fewer than the required FLAC fixtures exist.
+ * @param {{ engine: 'webkit' | 'chromium', lane: 'main-thread' | 'workers' }} opts
+ * @returns {string}
+ */
+export function mpegKpiId({ engine, lane }) {
+	if (engine !== 'webkit' && engine !== 'chromium') {
+		throw new Error(`unknown engine: ${engine}`);
+	}
+	const laneLabel = lane === 'main-thread' ? 'main' : lane === 'workers' ? 'workers' : null;
+	if (laneLabel === null) {
+		throw new Error(`unknown lane: ${lane}`);
+	}
+	return `stem_decode_4way_mp3_ms_${engine}_${laneLabel}`;
+}
+
+/**
+ * @param {Array<{ engine: string, baselineMs: number, workerMs: number, chosenLane: string, agrees: boolean, maxAbsDiff: number, lengthDelta: number, alignOffset: number, lsbAgrees?: boolean }>} engineResults
+ * @param {{ date: string, round?: string, machine: string, source?: string, captureId?: string, shipped?: boolean }} meta
+ * @returns {object[]}
+ */
+export function mpegLaneTimingsToRows(engineResults, meta) {
+	const round = meta.round ?? 'issue-2311';
+	const captureId = meta.captureId ?? 'issue-2311-mp3-stem-decode';
+	const source =
+		meta.source ??
+		'PERF-STEMDEC-03. `pnpm test:live:stem-decode-workers-mpeg`, 4 DISTINCT real mp3s, Playwright <engine>, warm decoder pool, decode only (fetch outside the timer)';
+	const shipped = meta.shipped ?? false;
+	const rows = [];
+	for (const r of engineResults) {
+		const otherMs = { 'main-thread': r.workerMs, workers: r.baselineMs };
+		const lsbOk = r.lsbAgrees ?? r.maxAbsDiff < 1 / 32768;
+		for (const lane of ['main-thread', 'workers']) {
+			const value = lane === 'main-thread' ? r.baselineMs : r.workerMs;
+			rows.push({
+				date: meta.date,
+				round,
+				kpi: mpegKpiId({ engine: r.engine, lane }),
+				value,
+				unit: 'ms',
+				machine: meta.machine,
+				source: source.replace('<engine>', r.engine),
+				capture_id: captureId,
+				note:
+					`4-way mp3 ${r.engine} ${lane}: ${value}ms, other lane ${otherMs[lane]}ms, ` +
+					`calibration ${r.chosenLane}, ${r.agrees ? 'AGREE' : 'DISAGREE'}, ` +
+					`maxAbsDiff=${r.maxAbsDiff}, lengthDelta=${r.lengthDelta}, alignOffset=${r.alignOffset}, ` +
+					`enableGapless=true, LSB ${lsbOk ? 'AGREE' : 'DISAGREE'}, ` +
+					`rung ${shipped ? 'shipped' : 'not shipped'}`
+			});
+		}
+	}
+	return rows;
+}
+
+/**
+ * @param {{ fixtureCount: number, enginesRan: number, requiredEngines?: number, structuralFailures?: number, rows: object[] }} opts
+ * @returns {boolean}
+ */
+export function mpegLedgerAppendAllowed({
+	fixtureCount,
+	enginesRan,
+	requiredEngines = 2,
+	structuralFailures = 0,
+	rows
+}) {
+	if (fixtureCount < 4) return false;
+	if (enginesRan < requiredEngines) return false;
+	if (structuralFailures !== 0) return false;
+	if (!rows || rows.length !== 4) return false;
+	for (const row of rows) {
+		if (typeof row.value !== 'number') return false;
+		if (row.value == null) return false;
+		if (row.status === 'withheld') return false;
+		if (row.measured === false) return false;
+	}
+	return true;
+}
+
+/**
+ * Lines printed when fewer than the required stem fixtures exist.
  *
- * @param {{ found: number, required: number, fixtureDir: string, envVar?: string }} opts
+ * @param {{ found: number, required: number, fixtureDir: string, envVar?: string, ext?: string, script?: string }} opts
  * @returns {string[]}
  */
-export function missingFixtureMessage({ found, required, fixtureDir, envVar = 'Q18_FLAC_DIR' }) {
+export function missingFixtureMessage({
+	found,
+	required,
+	fixtureDir,
+	envVar = 'Q18_FLAC_DIR',
+	ext = '.flac',
+	script = 'pnpm test:live:stem-decode-workers'
+}) {
 	return [
-		`need ${required} distinct .flac files, found ${found} in ${fixtureDir}`,
-		`point this run at a directory: ${envVar}=/abs/dir pnpm test:live:stem-decode-workers`
+		`need ${required} distinct ${ext} files, found ${found} in ${fixtureDir}`,
+		`point this run at a directory: ${envVar}=/abs/dir ${script}`
 	];
 }

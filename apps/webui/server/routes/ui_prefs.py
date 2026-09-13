@@ -21,8 +21,10 @@ router = APIRouter(prefix="/ui-prefs", tags=["ui-prefs"])
 _FILENAME = "ui-prefs.json"
 UiTheme = Literal["dark", "light"]
 PerfTierPref = Literal["auto", "low", "standard", "high"]
+AppPosturePref = Literal["prep", "gig"]
 _DEFAULT_THEME: UiTheme = "dark"
 _DEFAULT_PERF_TIER: PerfTierPref = "auto"
+_DEFAULT_APP_POSTURE: AppPosturePref = "prep"
 _DEFAULT_AUTO_SYNC: dict[str, bool] = {
     "rekordbox": False,
     "djay": False,
@@ -222,6 +224,21 @@ def _parse_perf_tier(raw: dict[str, Any]) -> str:
     return value
 
 
+def _parse_app_posture(raw: dict[str, Any]) -> str:
+    if "app_posture" not in raw:
+        return _DEFAULT_APP_POSTURE
+    value = raw["app_posture"]
+    if value not in ("prep", "gig"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "app_posture must be prep|gig",
+            },
+        )
+    return value
+
+
 def _load(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {
@@ -234,6 +251,7 @@ def _load(path: Path) -> dict[str, Any]:
             "show_agent_pins": _DEFAULT_SHOW_AGENT_PINS,
             "level_calibration": dict(_DEFAULT_LEVEL_CALIBRATION),
             "perf_tier": _DEFAULT_PERF_TIER,
+            "app_posture": _DEFAULT_APP_POSTURE,
             **_lyrics_defaults(),
         }
     raw = json.loads(path.read_text(encoding="utf-8"))
@@ -300,6 +318,7 @@ def _load(path: Path) -> dict[str, Any]:
         "show_agent_pins": show_agent_pins,
         "level_calibration": _parse_level_calibration(raw.get("level_calibration")),
         "perf_tier": _parse_perf_tier(raw),
+        "app_posture": _parse_app_posture(raw),
         **_parse_lyrics(raw),
     }
 
@@ -346,6 +365,7 @@ class UiPrefsOut(BaseModel):
     lyrics_waveform_overlay: bool = _DEFAULT_LYRICS_BOOLS["lyrics_waveform_overlay"]
     lyrics_deck_line: bool = _DEFAULT_LYRICS_BOOLS["lyrics_deck_line"]
     perf_tier: PerfTierPref = _DEFAULT_PERF_TIER
+    app_posture: AppPosturePref = _DEFAULT_APP_POSTURE
 
 
 class UiPrefsPatch(BaseModel):
@@ -366,6 +386,7 @@ class UiPrefsPatch(BaseModel):
     lyrics_waveform_overlay: bool | None = None
     lyrics_deck_line: bool | None = None
     perf_tier: PerfTierPref | None = None
+    app_posture: AppPosturePref | None = None
 
 
 def _merge_lyrics(current: dict[str, Any], body: UiPrefsPatch) -> None:
@@ -410,6 +431,8 @@ def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
     _merge_lyrics(current, body)
     if body.perf_tier is not None:
         current["perf_tier"] = body.perf_tier
+    if body.app_posture is not None:
+        current["app_posture"] = body.app_posture
     if body.level_calibration is not None:
         # R and M are independent (see LevelCalibrationOut docstring): merge onto
         # what's stored so a PUT naming only one half cannot silently wipe the

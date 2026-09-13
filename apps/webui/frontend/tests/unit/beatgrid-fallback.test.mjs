@@ -140,6 +140,27 @@ test('PARITY-02: rekordbox explicitly selected never gets an own-derived grid', 
 		effectiveSource: 'rekordbox'
 	};
 	assert.equal(beatgridFallback.shouldUseBeatgridFallback(unmappedEmpty), false);
+	const mappedNoPath = {
+		anlzErrorCode: null,
+		anlz: { ...anlzWithBeats([]), local_waveform: { status: 'decoded' } },
+		vendor: 'rekordbox',
+		effectiveSource: 'rekordbox'
+	};
+	assert.equal(
+		beatgridFallback.shouldUseBeatgridFallback(mappedNoPath),
+		true,
+		'issue #2346: rekordbox-selected mapped-no-AnalysisDataPath may still reach apps.analysis'
+	);
+});
+
+test('a rekordbox-mapped empty PQTZ without local_waveform never reaches the fallback', () => {
+	const gate = {
+		anlzErrorCode: null,
+		anlz: anlzWithBeats([]),
+		vendor: 'rekordbox',
+		effectiveSource: 'rekordbox'
+	};
+	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), false);
 });
 
 test('PARITY-02: an unconfirmed selection is treated the same as rekordbox, never guessed as own', () => {

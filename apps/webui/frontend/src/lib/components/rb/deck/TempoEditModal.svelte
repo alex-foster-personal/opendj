@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 	import {
 		DECK_IDS,
 		deckEffectiveBpm,
@@ -89,10 +90,12 @@
 		await tick();
 		if (pane === null) return;
 		const rect = pane.getBoundingClientRect();
-		position = {
-			x: Math.max(8, Math.min(x, window.innerWidth - rect.width - 8)),
-			y: Math.max(8, Math.min(y, window.innerHeight - rect.height - 8))
-		};
+		position = clampToViewport(
+			x,
+			y,
+			{ width: rect.width, height: rect.height },
+			{ width: window.innerWidth, height: window.innerHeight }
+		);
 		const input = pane.querySelector<HTMLInputElement>(
 			`[data-testid="tempo-edit-bpm-deck-${deckId}"]`
 		);

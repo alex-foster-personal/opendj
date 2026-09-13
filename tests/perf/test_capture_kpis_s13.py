@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import socket
 import subprocess
 import sys
+import threading
+from collections.abc import Iterator
+from contextlib import closing, contextmanager
 from pathlib import Path
 
 import pytest
 
+from scripts.perf import capture_s13
 from scripts.perf.capture_kpis import main as capture_kpis_main
-from scripts.perf.capture_ledger import span_to_ledger_rows
+from scripts.perf.capture_ledger import classify_s13_withhold_reason, span_to_ledger_rows
 from scripts.perf.kpi_scorecard import UNKNOWN, score_scenarios
 
 _REPO = Path(__file__).resolve().parents[2]
@@ -197,3 +202,183 @@ def test_scorecard_unknown_on_withheld_rows() -> None:
     rendered = str(score)
     assert "UNKNOWN" in rendered
     assert "login_submit_to_library_usable_s = " not in rendered
+
+
+@pytest.mark.requirement("PERF-KPI-S13")
+def test_classify_s13_withhold_reason_restored_session() -> None:
+    """[if] submit marks are absent [then] reason is restored-session, [else stop]."""
+    reason = classify_s13_withhold_reason(
+        "restored-session: submit or navigate mark missing after login"
+    )
+    assert reason.startswith("restored-session:")
+
+
+@pytest.mark.requirement("PERF-KPI-S13")
+def test_classify_s13_withhold_reason_missing_telemetry() -> None:
+    """[if] marks exist but no span POST [then] the reason is missing-telemetry, [else stop]."""
+    reason = classify_s13_withhold_reason("missing library-usable mark: no perf-span POST")
+    assert reason.startswith("missing-telemetry:")
+
+
+@pytest.mark.requirement("PERF-KPI-S13")
+def test_withheld_capture_prints_stderr_and_names_ledger_row(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] S13 capture is withheld [then] stderr names the note and ledger row, [else stop]."""
+    ledger = tmp_path / "kpi-ledger.json"
+    ledger.write_text(
+        json.dumps({"schema_version": 1, "entries": []}, indent=1) + "\n",
+        encoding="utf-8",
+    )
+
+    def _fake_playwright(**_kwargs: object) -> dict[str, object]:
+        return {
+            "ok": False,
+            "span": None,
+            "reason": (
+                "missing-telemetry: login marks present but no perf-span POST "
+                "(library-usable hooks absent or library did not reach first paint)"
+            ),
+        }
+
+    monkeypatch.setattr(capture_s13, "_probe_engine", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(capture_s13, "_run_playwright_capture", _fake_playwright)
+
+    exit_code = capture_s13.capture_s13(
+        engine="http://127.0.0.1:8686",
+        frontend="http://127.0.0.1:8686",
+        ledger_path=ledger,
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "missing-telemetry:" in captured.err
+    assert "login_submit_to_library_usable_s" in captured.err
+    assert "WITHHELD" in captured.err
+    assert str(ledger) in captured.err
+    payload = json.loads(ledger.read_text(encoding="utf-8"))
+    assert payload["entries"][0]["kpi"] == "login_submit_to_library_usable_s"
+    assert payload["entries"][0]["status"] == "withheld"
+
+
+@pytest.mark.requirement("PERF-KPI-S13")
+def test_unreachable_engine_prints_withheld_stderr(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] engine probe fails [then] stderr names the withheld ledger row, [else stop]."""
+    ledger = tmp_path / "kpi-ledger.json"
+    ledger.write_text(
+        json.dumps({"schema_version": 1, "entries": []}, indent=1) + "\n",
+        encoding="utf-8",
+    )
+    exit_code = capture_kpis_main(
+        [
+            "--engine",
+            "http://127.0.0.1:1",
+            "--scenario",
+            "S13",
+            "--ledger",
+            str(ledger),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code != 0
+    assert "login_submit_to_library_usable_s" in captured.err
+    assert "WITHHELD" in captured.err
+    assert str(ledger) in captured.err
+
+@contextmanager
+def _hanging_http_server() -> Iterator[str]:
+    """A REAL listening socket that accepts and never answers.
+
+    Not a mock: the connection completes, the request is sent, and the client
+    blocks on the response until its own timeout fires -- which is the exact
+    transport failure a wedged engine produces. A mocked `urlopen` proves only
+    that the except arm is reachable, not that the real socket path reaches it.
+    """
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", 0))
+    server.listen(8)
+    held: list[socket.socket] = []
+    stop = threading.Event()
+
+    def _accept_and_hold() -> None:
+        server.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                conn, _addr = server.accept()
+            except (TimeoutError, OSError):
+                continue
+            held.append(conn)
+
+    thread = threading.Thread(target=_accept_and_hold, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.getsockname()[1]}"
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+        for conn in held:
+            conn.close()
+        server.close()
+
+
+def test_http_json_turns_a_real_socket_timeout_into_connection_error() -> None:
+    """[if] the engine accepts but never answers [then] _http_json raises
+    ConnectionError naming the timeout, [else the caller cannot withhold]."""
+    with _hanging_http_server() as base, pytest.raises(ConnectionError) as excinfo:
+        capture_s13._http_json("GET", f"{base}/api/v1/health", timeout_s=0.5)
+    assert "TimeoutError" in str(excinfo.value)
+
+
+def test_engine_socket_timeout_withholds_instead_of_crashing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A slow engine must withhold, never raise.
+
+    Measured Sat 12 Sep 2026 on a host at load average 118: the probe's
+    urlopen raised `TimeoutError`, which is an OSError and not a URLError, so
+    it escaped `_http_json` and the capture died with a traceback instead of
+    writing the withheld row S13 promises. Driven here through a real socket
+    that accepts and stays silent.
+    """
+    ledger = tmp_path / "kpi-ledger.json"
+    ledger.write_text(
+        json.dumps({"schema_version": 1, "entries": []}, indent=1) + "\n",
+        encoding="utf-8",
+    )
+    with _hanging_http_server() as base:
+        code = capture_s13.capture_s13(
+            engine=base,
+            frontend=base,
+            ledger_path=ledger,
+            probe_timeout_s=0.5,
+        )
+
+    assert code == 1
+    rows = json.loads(ledger.read_text(encoding="utf-8"))["entries"]
+    scored = [r for r in rows if r["kpi"] == "login_submit_to_library_usable_s"]
+    assert len(scored) == 1
+    assert scored[0]["value"] is None
+    assert scored[0]["status"] == "withheld"
+    assert "TimeoutError" in scored[0]["note"]
+    assert "engine unreachable" in capsys.readouterr().err
+
+
+def test_a_reachable_engine_is_not_reported_as_a_timeout() -> None:
+    """Negative control: the hanging-socket fixture must not make every probe
+    look timed out. A CLOSED port is refused promptly and names refusal, not a
+    timeout, so the assertion above is discriminating rather than universal."""
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as probe:
+        probe.bind(("127.0.0.1", 0))
+        closed_port = probe.getsockname()[1]
+    with pytest.raises(ConnectionError) as excinfo:
+        capture_s13._http_json(
+            "GET", f"http://127.0.0.1:{closed_port}/api/v1/health", timeout_s=2.0
+        )
+    assert "TimeoutError" not in str(excinfo.value)
