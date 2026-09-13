@@ -9,28 +9,27 @@ function isAudioName(name: string): boolean {
 	return AUDIO_EXT_RE.test(name);
 }
 
-type FileSystemEntry = {
+type DropFsEntry = {
 	isFile: boolean;
 	isDirectory: boolean;
 	name: string;
 	fullPath: string;
-	file: (cb: (f: File) => void) => void;
-	createReader: () => { readEntries: (cb: (entries: FileSystemEntry[]) => void) => void };
+	file: (success: (f: File) => void, error?: (err: DOMException) => void) => void;
+	createReader: () => { readEntries: (cb: (entries: DropFsEntry[]) => void) => void };
 };
 
-function entryFromItem(item: DataTransferItem): FileSystemEntry | null {
-	const fn = (item as DataTransferItem & { webkitGetAsEntry?: () => FileSystemEntry | null })
-		.webkitGetAsEntry;
+function entryFromItem(item: DataTransferItem): DropFsEntry | null {
+	const fn = (item as DataTransferItem & { webkitGetAsEntry?: () => unknown }).webkitGetAsEntry;
 	if (typeof fn !== 'function') return null;
-	return fn();
+	return fn() as DropFsEntry | null;
 }
 
 async function readAllEntries(reader: {
-	readEntries: (cb: (entries: FileSystemEntry[]) => void) => void;
-}): Promise<FileSystemEntry[]> {
-	const out: FileSystemEntry[] = [];
+	readEntries: (cb: (entries: DropFsEntry[]) => void) => void;
+}): Promise<DropFsEntry[]> {
+	const out: DropFsEntry[] = [];
 	for (;;) {
-		const batch = await new Promise<FileSystemEntry[]>((resolve) => {
+		const batch = await new Promise<DropFsEntry[]>((resolve) => {
 			reader.readEntries(resolve);
 		});
 		if (batch.length === 0) break;
@@ -39,19 +38,22 @@ async function readAllEntries(reader: {
 	return out;
 }
 
-function fileFromEntry(entry: FileSystemEntry): Promise<File> {
+function fileFromEntry(entry: DropFsEntry): Promise<File> {
 	return new Promise((resolve, reject) => {
-		entry.file((f) => {
-			const rel = entry.fullPath.replace(/^\//, '');
-			if (rel && rel !== f.name) {
-				Object.defineProperty(f, 'name', { value: rel, configurable: true });
-			}
-			resolve(f);
-		}, reject);
+		entry.file(
+			(f) => {
+				const rel = entry.fullPath.replace(/^\//, '');
+				if (rel && rel !== f.name) {
+					Object.defineProperty(f, 'name', { value: rel, configurable: true });
+				}
+				resolve(f);
+			},
+			reject
+		);
 	});
 }
 
-async function walkEntry(entry: FileSystemEntry): Promise<File[]> {
+async function walkEntry(entry: DropFsEntry): Promise<File[]> {
 	if (entry.isFile) {
 		if (!isAudioName(entry.name)) return [];
 		return [await fileFromEntry(entry)];
@@ -69,7 +71,7 @@ async function walkEntry(entry: FileSystemEntry): Promise<File[]> {
 export async function collectDroppedAudioFiles(dt: DataTransfer): Promise<File[]> {
 	const items = dt.items;
 	if (items && items.length > 0) {
-		const entries: FileSystemEntry[] = [];
+		const entries: DropFsEntry[] = [];
 		for (const item of items) {
 			const entry = entryFromItem(item);
 			if (entry) entries.push(entry);
