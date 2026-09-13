@@ -6,7 +6,16 @@
  *
  * Rune class - the .svelte.ts extension is REQUIRED for $state.
  */
-import { deleteSmartlist, listSmartlists, type SmartlistSummary } from '$lib/rb/api-smartlists';
+import {
+	createSmartlist,
+	deleteSmartlist,
+	duplicateSmartlist,
+	getSmartlistWithEtag,
+	listSmartlists,
+	updateSmartlist,
+	type SmartlistRule,
+	type SmartlistSummary
+} from '$lib/rb/api-smartlists';
 import {
 	subscribeKind,
 	subscribeResync,
@@ -49,8 +58,6 @@ export class TreeSmartlists {
 			this.rows = await this.list({ includeCounts: true });
 			this.error = null;
 		} catch (err: unknown) {
-			// Explicit backend errors render as a dim error row, never as an
-			// empty success. Keep the backend code when one is available.
 			this.error =
 				typeof err === 'object' && err !== null && 'code' in err && typeof err.code === 'string'
 					? err.code
@@ -65,6 +72,24 @@ export class TreeSmartlists {
 	click(sl: SmartlistSummary): void {
 		const onselect = this.onselect();
 		if (onselect) onselect(sl);
+	}
+
+	async create(name: string, rule: SmartlistRule): Promise<SmartlistSummary> {
+		const row = await createSmartlist({ name, rule });
+		await this.reload();
+		return row;
+	}
+
+	async rename(id: string, name: string): Promise<void> {
+		const { summary, etag } = await getSmartlistWithEtag(id);
+		await updateSmartlist(id, { rule: summary.rule, name }, etag);
+		await this.reload();
+	}
+
+	async duplicate(id: string): Promise<SmartlistSummary> {
+		const row = await duplicateSmartlist(id);
+		await this.reload();
+		return row;
 	}
 
 	async remove(id: string): Promise<void> {

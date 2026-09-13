@@ -3623,10 +3623,7 @@ export interface paths {
         /** List Smartlists */
         get: operations["list_smartlists_api_v1_smartlists_get"];
         put?: never;
-        /**
-         * Create Smartlist
-         * @description Persist a new smartlist and return the created summary plus ETag.
-         */
+        /** Create Smartlist */
         post: operations["create_smartlist_api_v1_smartlists_post"];
         delete?: never;
         options?: never;
@@ -3643,17 +3640,31 @@ export interface paths {
         };
         /** Get Smartlist */
         get: operations["get_smartlist_api_v1_smartlists__smartlist_id__get"];
-        /**
-         * Update Smartlist
-         * @description CAS-apply a complete rule replacement and return persisted readback.
-         */
+        /** Update Smartlist */
         put: operations["update_smartlist_api_v1_smartlists__smartlist_id__put"];
         post?: never;
         /**
          * Delete Smartlist
-         * @description Remove a smartlist row (hard delete via SmartlistsRepo.delete).
+         * @description Tombstone a smartlist row (soft delete via SmartlistsRepo.delete).
          */
         delete: operations["delete_smartlist_api_v1_smartlists__smartlist_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/smartlists/{smartlist_id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Duplicate Smartlist */
+        post: operations["duplicate_smartlist_api_v1_smartlists__smartlist_id__duplicate_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -10315,6 +10326,14 @@ export interface components {
             };
         };
         /**
+         * SmartlistDuplicateIn
+         * @description Optional name override for a duplicated smartlist.
+         */
+        SmartlistDuplicateIn: {
+            /** Name */
+            name?: string | null;
+        };
+        /**
          * SmartlistPreconditionRequiredBody
          * @description Structured response when an update omits its CAS precondition.
          */
@@ -10363,11 +10382,6 @@ export interface components {
         /**
          * SmartlistTracks
          * @description Live evaluation result, shaped like playlist detail.
-         *
-         *     ``items`` is the full ordered membership (stable_ids, evaluator
-         *     order); ``tracks`` are hydrated rows in the SAME order, field-for-
-         *     field identical to the playlist-detail ``tracks`` rows so browser
-         *     table components render either without branching.
          */
         SmartlistTracks: {
             /** Items */
@@ -10385,9 +10399,11 @@ export interface components {
         };
         /**
          * SmartlistUpdateIn
-         * @description Complete desired rule plus optional replacement ordering.
+         * @description Complete desired rule plus optional replacement ordering and name.
          */
         SmartlistUpdateIn: {
+            /** Name */
+            name?: string | null;
             /** Order By */
             order_by?: string | null;
             /** Rule */
@@ -18709,6 +18725,43 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    duplicate_smartlist_api_v1_smartlists__smartlist_id__duplicate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                smartlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SmartlistDuplicateIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    /** @description Strong validator for the complete persisted smartlist row */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SmartlistSummary"];
+                };
             };
             /** @description Validation Error */
             422: {

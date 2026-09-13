@@ -81,6 +81,7 @@ from functools import cache
 
 from apps.analysis.queue_stale import STALE_TABLES_SQL
 from apps.analysis.queue_store import QUEUE_TABLES_SQL
+from apps.shared.pairings.schema_sql import migrate_smartlists_deleted_at
 from apps.shared.state.migrations_v9 import ENROLLED_VIA_VALUES
 
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -728,7 +729,8 @@ _CURATION: tuple[str, ...] = (
         last_evaluated_at            TEXT,
         last_materialized_track_ids  TEXT,
         created_at                   TEXT NOT NULL,
-        modified_at                  TEXT NOT NULL
+        modified_at                  TEXT NOT NULL,
+        deleted_at                   TEXT
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_smartlists_name ON smartlists(name)",
@@ -1693,6 +1695,7 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
     # absorb a create.
     if adopting:
         _assert_adoptable(conn)
+    migrate_smartlists_deleted_at(conn)
     _audit_existing_shapes(conn)
 
     # IMMEDIATE, not the default DEFERRED: this runner reads (the census and
