@@ -145,6 +145,8 @@ export type HeadphoneCommand =
 	| { type: 'head_delay_ms'; value: number }
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_select'; device_id: string }
+	| { type: 'headphone_master_select'; device_id: string }
+	| { type: 'headphone_input_select'; device_id: string }
 	| { type: 'output_mode'; mode: HeadphoneOutputMode };
 
 export type PerformanceCommand =
@@ -201,6 +203,8 @@ export type PerformanceCommand =
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
+	| { type: 'headphone_master_select'; device_id: string }
+	| { type: 'headphone_input_select'; device_id: string }
 	| { type: 'output_mode'; mode: HeadphoneOutputMode }
 	| { type: 'analysis_source'; feature: AnalysisSourceFeature; source: AnalysisSource }
 	/** UI contract only: no automatic second-track selection or mixing exists yet. */
@@ -869,6 +873,20 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, device_id: record.device_id };
 	}
+	if (type === 'headphone_master_select') {
+		_exactKeys(record, ['type', 'device_id']);
+		if (typeof record.device_id !== 'string' || record.device_id.trim() === '') {
+			throw new TypeError('device_id must be a non-empty string');
+		}
+		return { type, device_id: record.device_id };
+	}
+	if (type === 'headphone_input_select') {
+		_exactKeys(record, ['type', 'device_id']);
+		if (typeof record.device_id !== 'string' || record.device_id.trim() === '') {
+			throw new TypeError('device_id must be a non-empty string');
+		}
+		return { type, device_id: record.device_id };
+	}
 	if (type === 'output_mode') {
 		_exactKeys(record, ['type', 'mode']);
 		assertHeadphoneOutputMode(record.mode);
@@ -1345,7 +1363,8 @@ export function queryPerformanceState(): PerformanceState {
 			master: mixerState.master,
 			headphones: {
 				...mixerState.headphones,
-				outputs: mixerState.headphones.outputs.map((output) => ({ ...output }))
+				outputs: mixerState.headphones.outputs.map((output) => ({ ...output })),
+				inputs: mixerState.headphones.inputs.map((input) => ({ ...input }))
 			},
 			channels: {
 				1: { ...mixerState.channels[1] },
@@ -1432,6 +1451,8 @@ export function performanceCommandQueueScopes(
 		command.type === 'headphone_outputs_refresh' ||
 		command.type === 'headphone_output_acquire' ||
 		command.type === 'headphone_output_select' ||
+		command.type === 'headphone_master_select' ||
+		command.type === 'headphone_input_select' ||
 		command.type === 'output_mode'
 	) {
 		return ['headphone'];
@@ -1669,6 +1690,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.acquireHeadphoneOutput();
 	} else if (command.type === 'headphone_output_select') {
 		await engine.selectHeadphoneOutput(command.device_id);
+	} else if (command.type === 'headphone_master_select') {
+		await engine.selectMasterOutput(command.device_id);
+	} else if (command.type === 'headphone_input_select') {
+		await engine.selectAudioInput(command.device_id);
 	} else if (command.type === 'output_mode') {
 		engine.setHeadphoneOutputMode(command.mode);
 	} else if (command.type === 'analysis_source') {

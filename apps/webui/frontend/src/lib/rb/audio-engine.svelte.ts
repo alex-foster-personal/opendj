@@ -243,7 +243,9 @@ import {
 	disposeHeadphoneMonitor,
 	ensureHeadphoneGraph,
 	refreshHeadphoneOutputs as refreshMonitorOutputs,
+	selectAudioInput as selectMonitorAudioInput,
 	selectHeadphoneOutput as selectMonitorOutput,
+	selectMasterOutput as selectMonitorMasterOutput,
 	setHeadDelayMs as setMonitorHeadDelay,
 	setHeadphoneOutputMode as setMonitorOutputMode,
 	wirePracticeBlendIntoMasterPath,
@@ -4187,15 +4189,13 @@ class RbAudioEngine implements AudioEngine {
 
 	setHeadphoneOutputMode = setMonitorOutputMode;
 	setHeadDelayMs = setMonitorHeadDelay;
-	refreshHeadphoneOutputs = refreshMonitorOutputs;
-	/** Must be called from a visible user gesture so the browser can open its
-	 * output chooser. This never requests microphone capture. */
-	async acquireHeadphoneOutput(): Promise<void> {
-		return acquireMonitorOutput(_monitorSource);
-	}
-	async selectHeadphoneOutput(deviceId: string): Promise<void> {
-		return selectMonitorOutput(deviceId, _monitorSource);
-	}
+	refreshHeadphoneOutputs = (): Promise<void> => refreshMonitorOutputs(_monitorSource);
+	/** Must be called from a visible user gesture. May briefly open the
+	 * microphone to label output devices when selectAudioOutput is missing. */
+	acquireHeadphoneOutput = (): Promise<void> => acquireMonitorOutput(_monitorSource);
+	selectHeadphoneOutput = (deviceId: string): Promise<void> => selectMonitorOutput(deviceId, _monitorSource);
+	selectMasterOutput = (deviceId: string): Promise<void> => selectMonitorMasterOutput(deviceId, _monitorSource);
+	selectAudioInput = (deviceId: string): Promise<void> => selectMonitorAudioInput(deviceId);
 
 	/** Topbar master-volume slider -> master GainNode (COMPONENT-MAP 1.1). */
 	setMaster(value: number): void {

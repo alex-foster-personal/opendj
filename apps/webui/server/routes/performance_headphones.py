@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import math
 from copy import deepcopy
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Request
 from pydantic import BaseModel
 
 from .commands import page_is_open, submit_single_command
@@ -21,6 +21,8 @@ HEADPHONE_IPC_ROUTES: dict[str, tuple[str, str]] = {
     "head_delay_ms": ("POST", "/api/v1/performance/headphones/head-delay"),
     "headphone_outputs_refresh": ("POST", "/api/v1/performance/headphones/outputs/refresh"),
     "headphone_output_select": ("POST", "/api/v1/performance/headphones/outputs/select"),
+    "headphone_master_select": ("POST", "/api/v1/performance/headphones/outputs/master"),
+    "headphone_input_select": ("POST", "/api/v1/performance/headphones/inputs/select"),
 }
 
 _PAGE_REQUIRED = "performance page is not attached"
@@ -36,8 +38,11 @@ class HeadphoneStateOut(BaseModel):
     level: float
     head_delay_ms: float
     selected_output_device_id: str | None
+    selected_master_output_device_id: str | None
+    selected_input_device_id: str | None
     output_mode: str
     outputs: list[HeadphoneOutputDeviceOut]
+    inputs: list[HeadphoneOutputDeviceOut]
     supported: bool
     active: bool
     error: str | None
@@ -168,8 +173,15 @@ async def get_headphones(request: Request) -> HeadphoneStateOut:
     return _headphone_state_out(request)
 
 
-@router.post("/mix", response_model=HeadphoneStateOut)
-async def post_headphone_mix(request: Request, body: dict[str, Any]) -> HeadphoneStateOut:
+@router.post(
+    "/mix",
+    response_model=HeadphoneStateOut,
+    response_description="Headphone mix state after setting CUE-to-MASTER MIX",
+)
+async def post_headphone_mix(
+    request: Request,
+    body: Annotated[dict[str, Any], Body(..., title="HeadphoneMixBody")],
+) -> HeadphoneStateOut:
     _require_page(request)
     value = _validate_unit(body.get("value"))
     return await _submit_headphone_command(
@@ -177,8 +189,15 @@ async def post_headphone_mix(request: Request, body: dict[str, Any]) -> Headphon
     )
 
 
-@router.post("/level", response_model=HeadphoneStateOut)
-async def post_headphone_level(request: Request, body: dict[str, Any]) -> HeadphoneStateOut:
+@router.post(
+    "/level",
+    response_model=HeadphoneStateOut,
+    response_description="Headphone state after setting monitor LEVEL",
+)
+async def post_headphone_level(
+    request: Request,
+    body: Annotated[dict[str, Any], Body(..., title="HeadphoneLevelBody")],
+) -> HeadphoneStateOut:
     _require_page(request)
     value = _validate_unit(body.get("value"))
     return await _submit_headphone_command(
@@ -186,8 +205,15 @@ async def post_headphone_level(request: Request, body: dict[str, Any]) -> Headph
     )
 
 
-@router.post("/channel-cue", response_model=HeadphoneStateOut)
-async def post_channel_cue(request: Request, body: dict[str, Any]) -> HeadphoneStateOut:
+@router.post(
+    "/channel-cue",
+    response_model=HeadphoneStateOut,
+    response_description="Headphone state after toggling a channel CUE",
+)
+async def post_channel_cue(
+    request: Request,
+    body: Annotated[dict[str, Any], Body(..., title="HeadphoneChannelCueBody")],
+) -> HeadphoneStateOut:
     _require_page(request)
     deck = _validate_deck(body.get("deck"))
     enabled = _validate_boolean("enabled", body.get("enabled"))
@@ -196,15 +222,29 @@ async def post_channel_cue(request: Request, body: dict[str, Any]) -> HeadphoneS
     )
 
 
-@router.post("/output-mode", response_model=HeadphoneStateOut)
-async def post_output_mode(request: Request, body: dict[str, Any]) -> HeadphoneStateOut:
+@router.post(
+    "/output-mode",
+    response_model=HeadphoneStateOut,
+    response_description="Headphone state after setting MAIN / two outputs / SPLIT",
+)
+async def post_output_mode(
+    request: Request,
+    body: Annotated[dict[str, Any], Body(..., title="HeadphoneOutputModeBody")],
+) -> HeadphoneStateOut:
     _require_page(request)
     mode = _validate_output_mode(body.get("mode"))
     return await _submit_headphone_command(request, {"type": "output_mode", "mode": mode})
 
 
-@router.post("/head-delay", response_model=HeadphoneStateOut)
-async def post_head_delay_ms(request: Request, body: dict[str, Any]) -> HeadphoneStateOut:
+@router.post(
+    "/head-delay",
+    response_model=HeadphoneStateOut,
+    response_description="Headphone state after setting Mixxx HEAD DELAY",
+)
+async def post_head_delay_ms(
+    request: Request,
+    body: Annotated[dict[str, Any], Body(..., title="HeadphoneHeadDelayBody")],
+) -> HeadphoneStateOut:
     _require_page(request)
     value = _validate_head_delay_ms(body.get("value"))
     return await _submit_headphone_command(
@@ -212,9 +252,14 @@ async def post_head_delay_ms(request: Request, body: dict[str, Any]) -> Headphon
     )
 
 
-@router.post("/outputs/refresh", response_model=HeadphoneStateOut)
+@router.post(
+    "/outputs/refresh",
+    response_model=HeadphoneStateOut,
+    response_description="Headphone state after re-enumerating outputs and inputs",
+)
 async def post_headphone_outputs_refresh(
-    request: Request, body: dict[str, Any] | None = None
+    request: Request,
+    body: Annotated[dict[str, Any] | None, Body(title="HeadphoneOutputsRefreshBody")] = None,
 ) -> HeadphoneStateOut:
     _require_page(request)
     return await _submit_headphone_command(
@@ -222,12 +267,49 @@ async def post_headphone_outputs_refresh(
     )
 
 
-@router.post("/outputs/select", response_model=HeadphoneStateOut)
+@router.post(
+    "/outputs/select",
+    response_model=HeadphoneStateOut,
+    response_description="Headphone state after selecting the HEADPHONE CUE sink",
+)
 async def post_headphone_output_select(
-    request: Request, body: dict[str, Any]
+    request: Request,
+    body: Annotated[dict[str, Any], Body(..., title="HeadphoneCueOutputBody")],
 ) -> HeadphoneStateOut:
     _require_page(request)
     device_id = _validate_device_id(body.get("device_id"))
     return await _submit_headphone_command(
         request, {"type": "headphone_output_select", "device_id": device_id}
+    )
+
+
+@router.post(
+    "/outputs/master",
+    response_model=HeadphoneStateOut,
+    response_description="Headphone state after selecting the MASTER/MAIN sink",
+)
+async def post_headphone_master_select(
+    request: Request,
+    body: Annotated[dict[str, Any], Body(..., title="HeadphoneMasterOutputBody")],
+) -> HeadphoneStateOut:
+    _require_page(request)
+    device_id = _validate_device_id(body.get("device_id"))
+    return await _submit_headphone_command(
+        request, {"type": "headphone_master_select", "device_id": device_id}
+    )
+
+
+@router.post(
+    "/inputs/select",
+    response_model=HeadphoneStateOut,
+    response_description="Headphone state after selecting AUDIO IN",
+)
+async def post_headphone_input_select(
+    request: Request,
+    body: Annotated[dict[str, Any], Body(..., title="HeadphoneAudioInputBody")],
+) -> HeadphoneStateOut:
+    _require_page(request)
+    device_id = _validate_device_id(body.get("device_id"))
+    return await _submit_headphone_command(
+        request, {"type": "headphone_input_select", "device_id": device_id}
     )

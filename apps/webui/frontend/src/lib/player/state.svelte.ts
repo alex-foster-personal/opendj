@@ -107,12 +107,15 @@ import { loadMixerConfig } from '$lib/player/mixer-config';
 /** Exported (name kept) so dispose resets headphones through one definition. */
 export function _defaultHeadphones(): HeadphoneState {
 	return {
-		mix: 0.5,
+		mix: 0,
 		level: 0.5,
 		selected_output_device_id: null,
+		selected_master_output_device_id: null,
+		selected_input_device_id: null,
 		output_mode: 'practice',
 		head_delay_ms: loadMixerConfig().head_delay_ms,
 		outputs: [],
+		inputs: [],
 		supported: false,
 		active: false,
 		error: null

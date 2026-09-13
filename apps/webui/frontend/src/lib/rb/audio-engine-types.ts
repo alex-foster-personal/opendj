@@ -142,4 +142,8 @@ export interface AudioEngine {
 	acquireHeadphoneOutput(): Promise<void>;
 	/** Route the real monitor element to an explicitly enumerated output device. */
 	selectHeadphoneOutput(deviceId: string): Promise<void>;
+	/** Pin the room mix to an enumerated output via AudioContext.setSinkId. */
+	selectMasterOutput(deviceId: string): Promise<void>;
+	/** Pin label-unlock / capture to an enumerated input. Never default a headphone mic. */
+	selectAudioInput(deviceId: string): Promise<void>;
 }

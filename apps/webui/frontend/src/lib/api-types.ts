@@ -2639,6 +2639,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/performance/headphones/inputs/select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Headphone Input Select */
+        post: operations["post_headphone_input_select_api_v1_performance_headphones_inputs_select_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/performance/headphones/level": {
         parameters: {
             query?: never;
@@ -2684,6 +2701,23 @@ export interface paths {
         put?: never;
         /** Post Output Mode */
         post: operations["post_output_mode_api_v1_performance_headphones_output_mode_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/headphones/outputs/master": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Headphone Master Select */
+        post: operations["post_headphone_master_select_api_v1_performance_headphones_outputs_master_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7214,6 +7248,8 @@ export interface components {
             error: string | null;
             /** Head Delay Ms */
             head_delay_ms: number;
+            /** Inputs */
+            inputs: components["schemas"]["HeadphoneOutputDeviceOut"][];
             /** Level */
             level: number;
             /** Mix */
@@ -7222,6 +7258,10 @@ export interface components {
             output_mode: string;
             /** Outputs */
             outputs: components["schemas"]["HeadphoneOutputDeviceOut"][];
+            /** Selected Input Device Id */
+            selected_input_device_id: string | null;
+            /** Selected Master Output Device Id */
+            selected_master_output_device_id: string | null;
             /** Selected Output Device Id */
             selected_output_device_id: string | null;
             /** Supported */
@@ -12039,6 +12079,40 @@ export interface components {
     pathItems: never;
 }
 export type $defs = Record<string, never>;
+type _HeadphoneJsonPost = {
+    parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+    };
+    requestBody: {
+        content: {
+            "application/json": {
+                [key: string]: unknown;
+            };
+        };
+    };
+    responses: {
+        200: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["HeadphoneStateOut"];
+            };
+        };
+        422: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["HTTPValidationError"];
+            };
+        };
+    };
+};
+
 export interface operations {
     get_play_analytics_api_play_analytics_get: {
         parameters: {
@@ -16879,181 +16953,13 @@ export interface operations {
             };
         };
     };
-    post_channel_cue_api_v1_performance_headphones_channel_cue_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HeadphoneStateOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    post_head_delay_ms_api_v1_performance_headphones_head_delay_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HeadphoneStateOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    post_headphone_level_api_v1_performance_headphones_level_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HeadphoneStateOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    post_headphone_mix_api_v1_performance_headphones_mix_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HeadphoneStateOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    post_output_mode_api_v1_performance_headphones_output_mode_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HeadphoneStateOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
+    post_channel_cue_api_v1_performance_headphones_channel_cue_post: _HeadphoneJsonPost;
+    post_head_delay_ms_api_v1_performance_headphones_head_delay_post: _HeadphoneJsonPost;
+    post_headphone_input_select_api_v1_performance_headphones_inputs_select_post: _HeadphoneJsonPost;
+    post_headphone_level_api_v1_performance_headphones_level_post: _HeadphoneJsonPost;
+    post_headphone_mix_api_v1_performance_headphones_mix_post: _HeadphoneJsonPost;
+    post_output_mode_api_v1_performance_headphones_output_mode_post: _HeadphoneJsonPost;
+    post_headphone_master_select_api_v1_performance_headphones_outputs_master_post: _HeadphoneJsonPost;
     post_headphone_outputs_refresh_api_v1_performance_headphones_outputs_refresh_post: {
         parameters: {
             query?: never;
@@ -17069,7 +16975,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Successful Response */
+            /** @description Headphone state after re-enumerating outputs and inputs */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -17089,41 +16995,7 @@ export interface operations {
             };
         };
     };
-    post_headphone_output_select_api_v1_performance_headphones_outputs_select_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HeadphoneStateOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
+    post_headphone_output_select_api_v1_performance_headphones_outputs_select_post: _HeadphoneJsonPost;
     latest_client_performance_sample_api_v1_performance_telemetry_client_samples_get: {
         parameters: {
             query?: never;
