@@ -64,7 +64,7 @@
 		</div>
 	{:else if smartlists.rows.length === 0}
 		<div class="row child rb-inert" data-testid="smartlists-empty">
-			<span class="name dim">no smartlists</span>
+			<span class="name dim">no smartlists yet</span>
 		</div>
 	{:else}
 		{#each smartlists.rows as sl (sl.id)}
