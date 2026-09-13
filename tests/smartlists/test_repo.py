@@ -191,3 +191,48 @@ def test_rule_roundtrips_through_json(smartlists_repo: SmartlistsRepo) -> None:
     row = smartlists_repo.create("rt", _rule())
     fetched = smartlists_repo.get_by_name("rt")
     assert fetched.rule == row.rule
+
+
+def test_update_rule_can_rename(smartlists_repo: SmartlistsRepo) -> None:
+    row = smartlists_repo.create("old", _rule())
+    updated = smartlists_repo.update_rule(
+        row.id,
+        _rule(),
+        expected_revision=smartlist_revision(row),
+        name="new",
+    )
+    assert updated.name == "new"
+    assert smartlists_repo.get_by_name("new") is not None
+
+
+def test_delete_tombstones_and_rewrites_name(smartlists_repo: SmartlistsRepo) -> None:
+    row = smartlists_repo.create("gone", _rule())
+    assert smartlists_repo.delete(row.id) is True
+    assert smartlists_repo.get_by_id(row.id) is None
+    raw = smartlists_repo.conn.execute(
+        "SELECT name, deleted_at FROM smartlists WHERE id=?", (row.id,),
+    ).fetchone()
+    assert raw[1] is not None
+    assert "__deleted__" in raw[0]
+
+
+def test_list_all_omits_tombstones(smartlists_repo: SmartlistsRepo) -> None:
+    live = smartlists_repo.create("live", _rule())
+    dead = smartlists_repo.create("dead", _rule())
+    smartlists_repo.delete(dead.id)
+    names = [r.name for r in smartlists_repo.list_all()]
+    assert names == [live.name]
+
+
+def test_duplicate_copies_rule_with_new_id(smartlists_repo: SmartlistsRepo) -> None:
+    source = smartlists_repo.create("src", _rule())
+    copy = smartlists_repo.duplicate(source.id)
+    assert copy.id != source.id
+    assert copy.rule == source.rule
+    assert copy.name == "src (copy)"
+
+
+def test_unused_name_skips_live_names(smartlists_repo: SmartlistsRepo) -> None:
+    smartlists_repo.create("base", _rule())
+    smartlists_repo.create("base 2", _rule())
+    assert smartlists_repo.unused_name("base") == "base 3"

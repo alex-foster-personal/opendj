@@ -497,7 +497,7 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     },
     "smartlists": {
         "id": "Primary key.",
-        "name": "Smartlist display name. UNIQUE.",
+        "name": "Smartlist display name. UNIQUE among live rows; tombstones rewrite name to free it.",
         "rule": "The rule, as a JSON AST.",
         "rule_schema_version": (
             "Version of the rule AST shape this row was written under, "
@@ -520,6 +520,7 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         ),
         "created_at": "First-insert timestamp.",
         "modified_at": "Most recent write timestamp.",
+        "deleted_at": "Tombstone timestamp; NULL means live.",
     },
     "play_orders": {
         "id": "Surrogate AUTOINCREMENT primary key.",

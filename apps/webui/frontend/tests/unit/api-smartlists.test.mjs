@@ -170,6 +170,78 @@ test('deleteSmartlist maps SMARTLIST_NOT_FOUND to RbApiError', async () => {
 	assert.equal(caught.code, 'SMARTLIST_NOT_FOUND');
 });
 
+test('createSmartlist posts the collection route', async () => {
+	let seen;
+	globalThis.fetch = async (request) => {
+		seen = request;
+		return jsonResponse(summaryPayload(), { status: 201 });
+	};
+
+	const row = await smartlists.createSmartlist({
+		name: 'Fresh',
+		rule: { field: 'rating', op: '>=', value: 0 }
+	});
+
+	assert.equal(seen.url, `${API_BASE}/api/v1/smartlists`);
+	assert.equal(seen.method, 'POST');
+	assert.equal(row.name, 'Peak time');
+});
+
+test('updateSmartlist sends If-Match and optional name', async () => {
+	let seen;
+	globalThis.fetch = async (request) => {
+		seen = request;
+		return jsonResponse({ ...summaryPayload(), name: 'Renamed' });
+	};
+
+	const row = await smartlists.updateSmartlist(
+		'sl-1',
+		{ rule: { field: 'rating', op: '>=', value: 4 }, name: 'Renamed' },
+		'"etag-1"'
+	);
+
+	assert.equal(seen.url, `${API_BASE}/api/v1/smartlists/sl-1`);
+	assert.equal(seen.method, 'PUT');
+	assert.equal(seen.headers.get('if-match'), '"etag-1"');
+	assert.equal(row.name, 'Renamed');
+});
+
+test('duplicateSmartlist posts the duplicate route', async () => {
+	let seen;
+	globalThis.fetch = async (request) => {
+		seen = request;
+		return jsonResponse({ ...summaryPayload(), id: 'sl-copy', name: 'Peak time (copy)' }, {
+			status: 201
+		});
+	};
+
+	const row = await smartlists.duplicateSmartlist('sl-1', 'Custom');
+
+	assert.equal(seen.url, `${API_BASE}/api/v1/smartlists/sl-1/duplicate`);
+	assert.equal(seen.method, 'POST');
+	const body = await seen.clone().json();
+	assert.equal(body.name, 'Custom');
+	assert.equal(row.id, 'sl-copy');
+});
+
+test('updateSmartlist maps SMARTLIST_NAME_CONFLICT to RbApiError', async () => {
+	globalThis.fetch = async () =>
+		jsonResponse(
+			{ detail: { code: 'SMARTLIST_NAME_CONFLICT', message: 'dup' } },
+			{ status: 409, statusText: 'Conflict' }
+		);
+
+	const caught = await smartlists
+		.updateSmartlist('sl-1', { rule: { field: 'rating', op: '>=', value: 1 }, name: 'x' }, '"e"')
+		.then(
+			() => null,
+			(error) => error
+		);
+
+	assert.equal(caught.name, 'RbApiError');
+	assert.equal(caught.code, 'SMARTLIST_NAME_CONFLICT');
+});
+
 test('a daemon error keeps the RbApiError contract with the route code and message', async () => {
 	globalThis.fetch = async () =>
 		jsonResponse(
