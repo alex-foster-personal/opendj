@@ -182,7 +182,8 @@
 		rowHasVocalLyrics,
 		rowIsRemix,
 		sortRows,
-		visibleRowsOf
+		visibleRowsOf,
+		collectionSearchEmptyMessage
 	} from './browser/pane-contract.svelte';
 	import type {
 		BrowserRow,
@@ -729,8 +730,7 @@
 			else return null;
 		}
 		if (wholeCollectionActive) {
-			if (visibleRows.length === 0) return 'no tracks match the search';
-			else return null;
+			return collectionSearchEmptyMessage(pane.search_error, visibleRows.length);
 		} else if (pane.error !== null) return `load failed: ${pane.error}`;
 		else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 		else if (visibleRows.length === 0 && pane.search.trim() !== '') return 'no tracks match the search';
@@ -2739,10 +2739,12 @@
 			active.search_results = [];
 			active.search_total = 0;
 			active.searching = false;
+			active.search_error = null;
 			if (request !== undefined) _reportBrowserSearchResult(request);
 			return;
 		}
 		active.searching = true;
+		active.search_error = null;
 		const startedAt = performance.now();
 		try {
 			const results = await searchCollection({ q: trimmed, limit: MAX_SEARCH_ROWS });
@@ -2761,6 +2763,7 @@
 			if (active.whole_collection && active.search.trim() === trimmed) {
 				active.search_results = [];
 				active.search_total = 0;
+				active.search_error = String(exc);
 				pushToast(`search failed: ${String(exc)}`, 'error');
 			}
 		} finally {
@@ -3224,6 +3227,11 @@
 			sortKey={pane.sort_key}
 			sortDir={pane.sort_dir}
 			{emptyMessage}
+			onemptyretry={
+				wholeCollectionActive && pane.search_error !== null
+					? () => void _searchWholeCollection(pane, pane.search)
+					: undefined
+			}
 			{filterBypassNote}
 			restoreKey={`${activePane}:${navEpoch}`}
 			scrollTop={pane.scroll_top}
