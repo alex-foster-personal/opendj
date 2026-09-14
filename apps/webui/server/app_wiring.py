@@ -349,10 +349,16 @@ def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None
     falls back to its pre-hydration behavior rather than raising -- the same
     "cfg may be omitted" contract ``resolve_playback_source`` already
     documents in ``apps/cloud/hydration_core.py``.
+
+    Configured but unable to arm (cloud mode, credentials resolve, no boto3)
+    is NOT that legitimate state: the engine still boots, but
+    ``stem_hydration_unarmed_reason`` is set and the stems routes answer a
+    miss with 502 STEM_HYDRATION_NOT_ARMED.
     """
     app.state.stem_hydration_cfg = None
     app.state.stem_hydration_s3 = None
     app.state.stem_hydration_data_dir = None
+    app.state.stem_hydration_unarmed_reason = None
     if not enabled:
         return
     from apps.cloud import asset_store, policy
@@ -369,9 +375,11 @@ def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None
         s3 = asset_store.boto3_asset_client(cfg)
     except asset_store.AssetStoreError as exc:
         # The packaged engine ships without the cloud extra, so boto3 can be
-        # absent even when R2 credentials resolve. Decline to arm, loudly,
-        # rather than take the whole engine boot down with it.
+        # absent even when R2 credentials resolve. Keep the engine up, but
+        # record the reason so every stems miss fails loud with it (502
+        # STEM_HYDRATION_NOT_ARMED), never the ordinary "no bundle" state.
         log.warning("stem-hydration: R2 credentials resolve but hydration is NOT armed: %s", exc)
+        app.state.stem_hydration_unarmed_reason = str(exc)
         return
     app.state.stem_hydration_cfg = cfg
     app.state.stem_hydration_s3 = s3
