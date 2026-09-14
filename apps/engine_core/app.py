@@ -39,6 +39,11 @@ from apps.engine_core.account.api import (
     entitlements_router,
     flags_router,
 )
+from apps.engine_core.availability_api import add_availability_routes
+from apps.engine_core.library_availability import (
+    LibraryAvailabilityWorker,
+    attach_library_changed_probe,
+)
 from apps.engine_core.assistant.api import router as assistant_router
 from apps.engine_core.build_info import BUILD_IDENTITY_STATE_ATTR, add_build_info_route
 from apps.engine_core.host_info import add_host_info_route
@@ -177,6 +182,8 @@ def create_app(
     # verification. Here so an agent and a browser tab can ask the same
     # question the shell's button asks.
     add_update_check_route(app)
+    availability_worker = LibraryAvailabilityWorker(cfg.data_dir)
+    add_availability_routes(app, availability_worker)
 
     _drop_root_placeholder(app)
     _mount_spa(app)
@@ -195,8 +202,17 @@ def create_app(
     # a half-written file change behaviour mid-request. A malformed file
     # raises here and stops the boot rather than degrading into defaults.
     app.state.feature_flags = load_flags(cfg.data_dir)
+    app.state.availability_worker = availability_worker
 
-    _wrap_lifespan(app, cfg=cfg, hub=hub, store=store, runner=runner, lock=lock)
+    _wrap_lifespan(
+        app,
+        cfg=cfg,
+        hub=hub,
+        store=store,
+        runner=runner,
+        lock=lock,
+        availability_worker=availability_worker,
+    )
     return app
 
 
@@ -360,6 +376,7 @@ def _wrap_lifespan(
     store: JobStore,
     runner: JobRunner,
     lock: EngineLock | None,
+    availability_worker: LibraryAvailabilityWorker,
 ) -> None:
     """Wrap, never replace, the legacy lifespan.
 
@@ -372,6 +389,7 @@ def _wrap_lifespan(
     async def _lifespan(instance: FastAPI) -> AsyncIterator[None]:
         hub.bind(asyncio.get_running_loop())
         events.set_hub(hub)
+        restore_hub_publish = attach_library_changed_probe(availability_worker, hub)
         await runner.start()
         heartbeat = (
             asyncio.create_task(_heartbeat(lock)) if lock is not None else None
@@ -391,7 +409,11 @@ def _wrap_lifespan(
             # its env overrides) turns it on, and never starts on the hub.
             cloudsync_dir = Path(str(instance.state.state_db_path)).resolve().parent.parent
             async with legacy_lifespan(instance), scheduler_lifespan(cloudsync_dir):
-                yield
+                availability_worker.start()
+                try:
+                    yield
+                finally:
+                    availability_worker.stop()
         finally:
             if heartbeat is not None:
                 heartbeat.cancel()
@@ -407,6 +429,7 @@ def _wrap_lifespan(
             try:
                 await runner.stop()
             finally:
+                hub.publish = restore_hub_publish  # type: ignore[method-assign]
                 events.set_hub(None)
                 hub.unbind()
                 store.close()

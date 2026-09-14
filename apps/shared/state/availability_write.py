@@ -1,0 +1,170 @@
+"""Shared ``track_availability`` upsert primitive.
+
+Both the MIK CLI and the engine availability worker route writes through
+this module so there is exactly one SQL path. ``StateWriter`` wraps it with
+durable events; callers that only need the table update (dry-run guards)
+import from here directly.
+"""
+from __future__ import annotations
+
+import sqlite3
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from apps.shared.scan_mass_missing import guard_scan_count
+from apps.shared.state.schema import AVAILABILITY_STATES
+
+
+@dataclass(frozen=True)
+class AvailabilityRow:
+    stable_id: str
+    state: str
+    checked_path: str | None
+
+
+@dataclass
+class AvailabilityReport:
+    counts: dict[str, int] = field(default_factory=dict)
+    changed: int = 0
+    unchanged: int = 0
+    total: int = 0
+
+    def bump(self, state: str) -> None:
+        self.counts[state] = self.counts.get(state, 0) + 1
+
+
+@dataclass
+class AvailabilityWriteReport:
+    counts: dict[str, int] = field(default_factory=dict)
+    changed: int = 0
+    unchanged: int = 0
+    total: int = 0
+    changed_stable_ids: list[str] = field(default_factory=list)
+
+    def bump(self, state: str) -> None:
+        self.counts[state] = self.counts.get(state, 0) + 1
+
+
+def present_count(conn: sqlite3.Connection) -> int:
+    """Live tracks currently classified as ``present``."""
+    return int(
+        conn.execute(
+            "SELECT COUNT(*) FROM track_availability "
+            "JOIN tracks ON tracks.stable_id = track_availability.stable_id "
+            "WHERE tracks.deleted_at IS NULL AND track_availability.state = 'present'"
+        ).fetchone()[0]
+    )
+
+
+def projected_present_count(
+    conn: sqlite3.Connection,
+    rows: list[AvailabilityRow],
+) -> int:
+    """Present count after applying ``rows`` without writing them."""
+    present = {
+        stable_id
+        for stable_id, in conn.execute(
+            "SELECT track_availability.stable_id FROM track_availability "
+            "JOIN tracks ON tracks.stable_id = track_availability.stable_id "
+            "WHERE tracks.deleted_at IS NULL AND track_availability.state = 'present'"
+        )
+    }
+    for row in rows:
+        if row.state == "present":
+            present.add(row.stable_id)
+        else:
+            present.discard(row.stable_id)
+    return len(present)
+
+
+def guard_present_drop(
+    conn: sqlite3.Connection,
+    rows: list[AvailabilityRow],
+    *,
+    allow_mass_missing: bool = False,
+) -> None:
+    """Refuse a probe that would wipe a previously present library (LIBM-41)."""
+    prior = present_count(conn)
+    current = sum(1 for row in rows if row.state == "present")
+    guard_scan_count(
+        "library",
+        current,
+        prior if prior else None,
+        allow_mass_missing=allow_mass_missing,
+    )
+
+
+def guard_round_present_drop(
+    conn: sqlite3.Connection,
+    rows: list[AvailabilityRow],
+    *,
+    round_start_present: int,
+    allow_mass_missing: bool = False,
+) -> None:
+    """Refuse a background batch that collapses the trusted present count."""
+    if round_start_present <= 0:
+        return
+    projected = projected_present_count(conn, rows)
+    guard_scan_count(
+        "library-round",
+        projected,
+        round_start_present,
+        allow_mass_missing=allow_mass_missing,
+    )
+
+
+def upsert_availability_rows(
+    conn: sqlite3.Connection,
+    rows: list[AvailabilityRow],
+    *,
+    now: str | None = None,
+    allow_mass_missing: bool = False,
+    apply_mass_missing_guard: bool = True,
+) -> AvailabilityWriteReport:
+    """Upsert ``rows`` into ``track_availability``. Idempotent.
+
+    ``apply_mass_missing_guard=False`` is for engine-sized partial batches that
+    must not compare a local batch count with the whole library.
+    """
+    if apply_mass_missing_guard:
+        guard_present_drop(conn, rows, allow_mass_missing=allow_mass_missing)
+    stamp = now or datetime.now(UTC).isoformat()
+    report = AvailabilityWriteReport()
+    existing: dict[str, tuple[str, str | None]] = {
+        stable_id: (state, checked_path)
+        for stable_id, state, checked_path in conn.execute(
+            "SELECT stable_id, state, checked_path FROM track_availability"
+        )
+    }
+    for row in rows:
+        if row.state not in AVAILABILITY_STATES:
+            raise ValueError(
+                f"state {row.state!r} not in {AVAILABILITY_STATES}"
+            )
+        report.total += 1
+        report.bump(row.state)
+        prior = existing.get(row.stable_id)
+        if prior == (row.state, row.checked_path):
+            report.unchanged += 1
+            continue
+        conn.execute(
+            "INSERT INTO track_availability(stable_id, state, checked_path, "
+            "checked_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(stable_id) DO UPDATE SET state=excluded.state, "
+            "checked_path=excluded.checked_path, checked_at=excluded.checked_at",
+            (row.stable_id, row.state, row.checked_path, stamp),
+        )
+        report.changed += 1
+        report.changed_stable_ids.append(row.stable_id)
+    return report
+
+
+__all__ = [
+    "AvailabilityReport",
+    "AvailabilityRow",
+    "AvailabilityWriteReport",
+    "guard_present_drop",
+    "guard_round_present_drop",
+    "present_count",
+    "projected_present_count",
+    "upsert_availability_rows",
+]

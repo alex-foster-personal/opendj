@@ -41,33 +41,18 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 
-from apps.shared.scan_mass_missing import guard_scan_count
+from apps.shared.state.availability_write import (
+    AvailabilityReport,
+    AvailabilityRow,
+    guard_present_drop,
+)
+from apps.shared.state.events import FakeEventBus
 from apps.shared.state.locations import list_location_paths
-from apps.shared.state.schema import AVAILABILITY_STATES
+from apps.shared.state.writer import StateWriter
 
 VOLUMES_ROOT = "/Volumes"
-
-
-@dataclass(frozen=True)
-class AvailabilityRow:
-    stable_id: str
-    state: str
-    checked_path: str | None
-
-
-@dataclass
-class AvailabilityReport:
-    counts: dict[str, int] = field(default_factory=dict)
-    changed: int = 0
-    unchanged: int = 0
-    total: int = 0
-
-    def bump(self, state: str) -> None:
-        self.counts[state] = self.counts.get(state, 0) + 1
 
 
 def _mounted_volumes() -> set[str]:
@@ -117,6 +102,52 @@ def classify_path(
     return "absent", path
 
 
+def _classify_track_row(
+    stable_id: str,
+    file_path: str | None,
+    alt_paths: dict[str, list[str]],
+    *,
+    mounted: set[str],
+) -> AvailabilityRow:
+    state, checked = classify_path(file_path, mounted=mounted)
+    if state != "present":
+        awaiting: tuple[str, str | None] | None = None
+        for alt in alt_paths.get(stable_id, []):
+            alt_state, alt_checked = classify_path(alt, mounted=mounted)
+            if alt_state == "present":
+                state, checked = alt_state, alt_checked
+                awaiting = None
+                break
+            if alt_state == "awaiting_volume" and awaiting is None:
+                awaiting = (alt_state, alt_checked)
+        if state == "absent" and awaiting is not None:
+            state, checked = awaiting
+    return AvailabilityRow(stable_id=stable_id, state=state, checked_path=checked)
+
+
+def probe_batch(
+    conn: sqlite3.Connection, stable_ids: list[str]
+) -> list[AvailabilityRow]:
+    """Classify a batch of live tracks. Read-only; does not write."""
+    if not stable_ids:
+        return []
+    mounted = _mounted_volumes()
+    placeholders = ",".join("?" * len(stable_ids))
+    tracks = list(
+        conn.execute(
+            f"SELECT stable_id, file_path FROM tracks "
+            f"WHERE deleted_at IS NULL AND stable_id IN ({placeholders}) "
+            f"ORDER BY stable_id",
+            stable_ids,
+        )
+    )
+    alt_paths = list_location_paths(conn, [stable_id for stable_id, _ in tracks])
+    return [
+        _classify_track_row(stable_id, file_path, alt_paths, mounted=mounted)
+        for stable_id, file_path in tracks
+    ]
+
+
 def probe(conn: sqlite3.Connection) -> list[AvailabilityRow]:
     """Classify every ``tracks`` row. Read-only; does not write.
 
@@ -129,58 +160,13 @@ def probe(conn: sqlite3.Connection) -> list[AvailabilityRow]:
     track absent or awaiting_volume, so a genuinely playable track is not
     excluded from the safe-default availability views.
     """
-    mounted = _mounted_volumes()
-    tracks = list(
-        conn.execute(
-            "SELECT stable_id, file_path FROM tracks "
-            "WHERE deleted_at IS NULL ORDER BY stable_id"
+    stable_ids = [
+        row[0]
+        for row in conn.execute(
+            "SELECT stable_id FROM tracks WHERE deleted_at IS NULL ORDER BY stable_id"
         )
-    )
-    alt_paths = list_location_paths(conn, [stable_id for stable_id, _ in tracks])
-    rows: list[AvailabilityRow] = []
-    for stable_id, file_path in tracks:
-        state, checked = classify_path(file_path, mounted=mounted)
-        if state != "present":
-            awaiting: tuple[str, str | None] | None = None
-            for alt in alt_paths.get(stable_id, []):
-                alt_state, alt_checked = classify_path(alt, mounted=mounted)
-                if alt_state == "present":
-                    state, checked = alt_state, alt_checked
-                    awaiting = None
-                    break
-                if alt_state == "awaiting_volume" and awaiting is None:
-                    awaiting = (alt_state, alt_checked)
-            # No alternate is mounted right now, but one points under an
-            # unplugged volume: prefer awaiting_volume over an outright
-            # absent so a re-acquisition query does not treat a track that
-            # will come back with its volume as genuinely gone.
-            if state == "absent" and awaiting is not None:
-                state, checked = awaiting
-        rows.append(
-            AvailabilityRow(stable_id=stable_id, state=state, checked_path=checked)
-        )
-    return rows
-
-
-def guard_present_drop(
-    conn: sqlite3.Connection,
-    rows: list[AvailabilityRow],
-    *,
-    allow_mass_missing: bool = False,
-) -> None:
-    """Refuse a probe that would wipe a previously present library (LIBM-41)."""
-    prior = conn.execute(
-        "SELECT COUNT(*) FROM track_availability "
-        "JOIN tracks ON tracks.stable_id = track_availability.stable_id "
-        "WHERE tracks.deleted_at IS NULL AND track_availability.state = 'present'"
-    ).fetchone()[0]
-    current = sum(1 for row in rows if row.state == "present")
-    guard_scan_count(
-        "library",
-        current,
-        prior if prior else None,
-        allow_mass_missing=allow_mass_missing,
-    )
+    ]
+    return probe_batch(conn, stable_ids)
 
 
 def write(
@@ -189,6 +175,7 @@ def write(
     *,
     now: str | None = None,
     allow_mass_missing: bool = False,
+    apply_mass_missing_guard: bool = True,
 ) -> AvailabilityReport:
     """Upsert ``rows`` into ``track_availability``. Idempotent.
 
@@ -198,37 +185,15 @@ def write(
 
     LIBM-41: a library that was present and is now empty (or dropped by more
     than 50%) is refused unless ``allow_mass_missing`` is set. The check
-    runs before any row is written.
+    runs before any row is written when ``apply_mass_missing_guard`` is True.
     """
-    guard_present_drop(conn, rows, allow_mass_missing=allow_mass_missing)
-    stamp = now or datetime.now(UTC).isoformat()
-    report = AvailabilityReport()
-    existing: dict[str, tuple[str, str | None]] = {
-        stable_id: (state, checked_path)
-        for stable_id, state, checked_path in conn.execute(
-            "SELECT stable_id, state, checked_path FROM track_availability"
+    with StateWriter(conn, bus=FakeEventBus()) as writer:
+        return writer.upsert_availability(
+            rows,
+            now=now,
+            allow_mass_missing=allow_mass_missing,
+            apply_mass_missing_guard=apply_mass_missing_guard,
         )
-    }
-    for row in rows:
-        if row.state not in AVAILABILITY_STATES:
-            raise ValueError(
-                f"state {row.state!r} not in {AVAILABILITY_STATES}"
-            )
-        report.total += 1
-        report.bump(row.state)
-        prior = existing.get(row.stable_id)
-        if prior == (row.state, row.checked_path):
-            report.unchanged += 1
-            continue
-        conn.execute(
-            "INSERT INTO track_availability(stable_id, state, checked_path, "
-            "checked_at) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(stable_id) DO UPDATE SET state=excluded.state, "
-            "checked_path=excluded.checked_path, checked_at=excluded.checked_at",
-            (row.stable_id, row.state, row.checked_path, stamp),
-        )
-        report.changed += 1
-    return report
 
 
 def refresh(
@@ -287,6 +252,7 @@ __all__ = [
     "counts",
     "guard_present_drop",
     "probe",
+    "probe_batch",
     "refresh",
     "resolve_data_dir",
     "write",
