@@ -40,6 +40,7 @@
 		explainEngineUrl,
 		explainSide,
 		fetchEngineBuild,
+		formatAge,
 		formatStamp,
 		readShellBuild,
 		shortLabel,
@@ -75,6 +76,12 @@
 	);
 	const evidenceStamp = $derived(
 		shell.kind === 'ok' ? formatStamp(shell.value.evidence_written_at_utc) : null
+	);
+	/** Re-read once a minute so the age ticks over while the app stays open. */
+	let now = $state(new Date());
+	const engineAge = $derived(engine.kind === 'ok' ? formatAge(engine.value.built_at_utc, now) : null);
+	const evidenceAge = $derived(
+		shell.kind === 'ok' ? formatAge(shell.value.evidence_written_at_utc, now) : null
 	);
 
 	/** Where this app lives. Read once at mount, for the same reason the build
@@ -194,6 +201,8 @@
 		// clicks is not an indicator, and the failure this whole readout exists
 		// to prevent is running a stale build without noticing.
 		void checkForUpdates();
+		const ageTick = setInterval(() => (now = new Date()), 60_000);
+		return () => clearInterval(ageTick);
 	});
 </script>
 
@@ -243,14 +252,14 @@
 				class="when"
 				title={`Stable evidence written ${evidenceStamp.local} local time, ${evidenceStamp.utc} UTC.`}
 			>
-				{evidenceStamp.local}
+				{evidenceAge !== null ? `${evidenceAge} ago` : evidenceStamp.local}
 			</span>
 		{:else if engineStamp !== null}
 			<span
 				class="when"
 				title={`Built ${engineStamp.local} local time, ${engineStamp.utc} UTC. Source: ${engine.kind === 'ok' && engine.value.built_at_kind === 'payload-build' ? 'when the payload was packaged' : "the HEAD commit's timestamp, because this engine runs from a source checkout"}.`}
 			>
-				{engineStamp.local}
+				{engineAge !== null ? `${engineAge} ago` : engineStamp.local}
 			</span>
 		{/if}
 	</button>
