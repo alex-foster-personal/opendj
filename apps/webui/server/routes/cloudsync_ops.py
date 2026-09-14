@@ -44,7 +44,7 @@ from apps.sync_hub import enrollment_credentials, maintenance, maintenance_enrol
 from apps.sync_hub.scheduler_owed import mark_scheduler_owed
 from apps.sync_hub.single_flight import sync_lock_for
 from apps.webui.server.local_operator import local_operator_refusal
-from apps.webui.server.machine_pressure import read_machine_pressure
+from apps.shared.machine_pressure import read_machine_pressure
 
 from .cloudsync_status import data_dir_for_request
 
