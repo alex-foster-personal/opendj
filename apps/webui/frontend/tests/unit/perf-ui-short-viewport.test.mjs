@@ -32,6 +32,9 @@ import { test } from 'node:test';
 const PAGE_PATH = fileURLToPath(
 	new URL('../../src/routes/performance/+page.svelte', import.meta.url)
 );
+const TOPBAR_PATH = fileURLToPath(
+	new URL('../../src/lib/components/rb/TopBar.svelte', import.meta.url)
+);
 const BROWSER_PANEL_PATH = fileURLToPath(
 	new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)
 );
@@ -99,8 +102,20 @@ test('MORE-mode compact wavestack at max-height 799px leaves room for one track 
 
 	assert.match(
 		pageSource,
-		/@media\s*\(max-height:\s*799px\)[\s\S]*?\.word-lane/,
+		/@media\s*\(max-height:\s*799px\)[\s\S]*?\.word-lane[\s\S]*?display:\s*none/,
 		'compact rows are below the 34px lyric-lane floor; WordLane must not paint over the next waverow'
+	);
+
+	const topbar = readFileSync(TOPBAR_PATH, 'utf8');
+	assert.match(
+		topbar,
+		/\.lyrics-compact-chip[\s\S]*@media\s*\(max-height:\s*799px\)[\s\S]*display:\s*inline-flex/,
+		'TopBar must show the compact lyric-status chip at max-height 799px'
+	);
+	assert.match(
+		topbar,
+		/class="bsm-toggle topbar-slot-lyr"[\s\S]*aria-pressed=\{uiPrefs\.lyrics_global\}/,
+		'LYR toggle must keep aria-pressed tied to the global lyrics preference'
 	);
 
 	// 800px LIBUX-01 tests must keep the default 43px / 497px MORE block.
