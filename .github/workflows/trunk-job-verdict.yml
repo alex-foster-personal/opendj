@@ -58,7 +58,8 @@ jobs:
     timeout-minutes: 5
     # Trunk only. PR runs are still legitimately cancel-in-progress, so alerting on them
     # would manufacture the alert fatigue this work exists to prevent.
-    if: github.event.workflow_run.head_branch == github.event.repository.default_branch
+    # A cancelled trunk run is not a verdict.
+    if: github.event.workflow_run.head_branch == github.event.repository.default_branch && github.event.workflow_run.conclusion != 'cancelled'
 
     steps:
       # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).
