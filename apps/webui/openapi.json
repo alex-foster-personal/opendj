@@ -31016,7 +31016,7 @@
     },
     "/api/v1/tracks/{stable_id}/stems/{part}": {
       "get": {
-        "description": "Stream one validated WAV stem from its already-verified file handle.",
+        "description": "Stream one validated stem part using the bundle's container media type.",
         "operationId": "get_stem_file_api_v1_tracks__stable_id__stems__part__get",
         "parameters": [
           {
