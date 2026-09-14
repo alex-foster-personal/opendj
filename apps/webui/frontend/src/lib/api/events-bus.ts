@@ -39,6 +39,7 @@ export const TOPIC_HELLO = 'hello';
 export const TOPIC_LIBRARY_CHANGED = 'library.changed';
 export const TOPIC_JOBS_UPDATED = 'jobs.updated';
 export const TOPIC_HEALTH_CHANGED = 'health.changed';
+export const TOPIC_SHELL_QUIT = 'shell.quit';
 
 /** `kind` values the server publishes on `library.changed`. Mirrors the
  * `publish("library.changed", {"kind": ...})` call sites under

@@ -298,6 +298,7 @@ export function installPerformanceSessionRestore(
 	const snapshot = parsePerformanceSession(storage.getItem(PERFORMANCE_SESSION_STORAGE_KEY));
 	const urlDeckIds = parseLv2Ids(location.search ?? '');
 	let writer: SessionSnapshotWriter | null = null;
+	activeSessionWriter = null;
 
 	void _restoreSession(dispatch, snapshot, urlDeckIds).finally(() => {
 		writer = createSessionSnapshotWriter({
@@ -312,10 +313,26 @@ export function installPerformanceSessionRestore(
 			clearInterval: opts.clearInterval
 		});
 		writer.flush(true);
+		activeSessionWriter = writer;
 	});
 
 	return () => {
 		writer?.dispose();
 		writer = null;
+		activeSessionWriter = null;
 	};
+}
+
+let activeSessionWriter: SessionSnapshotWriter | null = null;
+
+/** INSTALL-21 / RESCUE-01: final session snapshot before a confirmed shell quit. */
+export function flushPerformanceSessionSnapshot(): void {
+	if (activeSessionWriter !== null) {
+		activeSessionWriter.flush(true);
+		return;
+	}
+	if (typeof window === 'undefined' || window.location.pathname !== '/performance') return;
+	const now = Date.now();
+	const serialized = buildPerformanceSessionSnapshot(queryPerformanceState(), now);
+	window.localStorage.setItem(PERFORMANCE_SESSION_STORAGE_KEY, serialized);
 }
