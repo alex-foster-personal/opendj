@@ -4,11 +4,12 @@
 memberships return at original positions and the audio file is untouched,
 [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -55,7 +56,8 @@ def audio_path(db_path: Path) -> Path:
     conn = sqlite3.connect(str(db_path))
     try:
         row = conn.execute(
-            "SELECT file_path FROM tracks WHERE stable_id = ?", (TRACK_T,),
+            "SELECT file_path FROM tracks WHERE stable_id = ?",
+            (TRACK_T,),
         ).fetchone()
     finally:
         conn.close()
@@ -106,12 +108,18 @@ def test_remove_then_undelete_in_two_playlists_leaves_file_untouched(
     audio_path: Path,
 ) -> None:
     """[if] a track in two playlists is removed then undeleted [then] memberships
-    and listing visibility round-trip and the file mtime is unchanged, [else stop]."""
+    and listing visibility round-trip and the file mtime is unchanged, [else stop].
+
+    [if] a track in two playlists is removed then undeleted [then] both round-trip, [else stop].
+    """
     playlist_a, etag_a = _create_playlist(client, "Playlist A")
     playlist_b, etag_b = _create_playlist(client, "Playlist B")
     etag_a = _put_tracks(client, playlist_a["playlist_id"], [TRACK_T], etag_a)
     etag_b = _put_tracks(
-        client, playlist_b["playlist_id"], [TRACK_OTHER, TRACK_T], etag_b,
+        client,
+        playlist_b["playlist_id"],
+        [TRACK_OTHER, TRACK_T],
+        etag_b,
     )
 
     before = audio_path.stat()
@@ -128,7 +136,8 @@ def test_remove_then_undelete_in_two_playlists_leaves_file_untouched(
     conn = sqlite3.connect(str(db_path))
     try:
         track_deleted_at = conn.execute(
-            "SELECT deleted_at FROM tracks WHERE stable_id = ?", (TRACK_T,),
+            "SELECT deleted_at FROM tracks WHERE stable_id = ?",
+            (TRACK_T,),
         ).fetchone()[0]
         assert track_deleted_at == body["deleted_at"]
         for playlist_id, position in (
@@ -142,8 +151,7 @@ def test_remove_then_undelete_in_two_playlists_leaves_file_untouched(
             ).fetchone()[0]
             assert membership_deleted_at == body["deleted_at"]
         changelog_tables = {
-            row[0]
-            for row in conn.execute("SELECT DISTINCT table_name FROM local_changelog")
+            row[0] for row in conn.execute("SELECT DISTINCT table_name FROM local_changelog")
         }
     finally:
         conn.close()
@@ -211,8 +219,7 @@ def test_undelete_live_track_409(client: TestClient) -> None:
 
 @pytest.mark.requirement("LIBM-52")
 def test_openapi_includes_remove_and_undelete_paths(db_path: Path) -> None:
-    """[if] the app OpenAPI schema is generated [then] :remove and :undelete paths
-    are present, [else stop]."""
+    """[if] the OpenAPI schema is generated [then] :remove/:undelete paths exist, [else stop]."""
     app = create_app(
         backend=SqliteBackend(db_path),
         state_db_path=str(db_path),

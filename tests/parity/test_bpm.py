@@ -1,4 +1,7 @@
-"""BPM lane: djmdContent.BPM (integer, BPM x100) vs own analysis.bpm."""
+"""BPM lane: djmdContent.BPM (integer, BPM x100) vs own analysis.bpm.
+
+[if] own BPM is compared to rekordbox BPM x100 [then] it is exact, octave, or a miss, [else stop].
+"""
 
 from __future__ import annotations
 

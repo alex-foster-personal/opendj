@@ -67,8 +67,7 @@ def test_a_healthy_holder_is_not_something_the_operator_is_told_to_kill(
     assert "already running" in message, message
     for kill_word in ("Stop it", "kill it", "Kill it"):
         assert kill_word not in message, (
-            f"the healthy-holder refusal tells the operator to {kill_word!r}: "
-            f"{message}"
+            f"the healthy-holder refusal tells the operator to {kill_word!r}: {message}"
         )
 
 
@@ -232,6 +231,9 @@ def test_relative_data_dir_is_refused() -> None:
 def test_lock_json_records_parent_pid_when_set(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """
+    [if] OPENDJ_PARENT_PID is set [then] the lock json records parent_pid and port, [else stop].
+    """
     lock_path = tmp_path / ".engine.lock"
     monkeypatch.setenv("OPENDJ_PARENT_PID", "4242")
     with EngineLock(lock_path, host="127.0.0.1", port=9001, boot_id="boot-a"):
@@ -243,6 +245,9 @@ def test_lock_json_records_parent_pid_when_set(
 
 @pytest.mark.requirement("INSTALL-14")
 def test_read_holder_does_not_take_the_exclusive_lock(tmp_path: Path) -> None:
+    """
+    [if] read_holder peeks a held lock [then] it never blocks or steals the lock, [else stop].
+    """
     lock_path = tmp_path / ".engine.lock"
     with EngineLock(lock_path, host="127.0.0.1", port=8585, boot_id="boot-a"):
         peeked = read_holder(lock_path)
@@ -256,6 +261,9 @@ def test_read_holder_does_not_take_the_exclusive_lock(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("INSTALL-14")
 def test_inspect_lock_reports_free_after_release(tmp_path: Path) -> None:
+    """
+    [if] a lock is acquired then released [then] inspect_lock reports free again after, [else stop].
+    """
     lock_path = tmp_path / ".engine.lock"
     assert inspect_lock(lock_path) == "free"
     lock = EngineLock(lock_path, boot_id="boot-a")
@@ -267,6 +275,9 @@ def test_inspect_lock_reports_free_after_release(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("INSTALL-14")
 def test_inspect_lock_reports_the_holder_while_held(tmp_path: Path) -> None:
+    """
+    [if] a lock is held [then] inspect_lock reports the holder's pid and port, [else stop].
+    """
     lock_path = tmp_path / ".engine.lock"
     with EngineLock(lock_path, host="127.0.0.1", port=7777, boot_id="boot-a"):
         inspected = inspect_lock(lock_path)

@@ -1341,6 +1341,66 @@ test('queryPerformanceState reports the analysis source selection, as a snapshot
 	);
 });
 
+test('LATENCY-02 play.quantize arms countdown and plain play cancels while armed', async () => {
+	globalThis.window = {};
+	ipc.resetQuantizedLaunchArmedForTest();
+	const armCalls = [];
+	const clearCalls = [];
+	let clockSec = 10;
+	const resetDriver = ipc.installPerformanceQuantizedLaunchDriverForTest({
+		arm: async (...args) => {
+			armCalls.push(args);
+			return 12.25;
+		},
+		clear: (deck) => {
+			clearCalls.push(deck);
+		},
+		contextTimeNowSec: () => clockSec
+	});
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await window.musicDjToolsPerformance.dispatch({
+			type: 'play',
+			deck: 2,
+			playing: true,
+			quantize: true
+		});
+		assert.equal(armCalls.length, 1);
+		const armed = ipc.queryPerformanceState().decks[2].quantized_launch_armed;
+		assert.notEqual(armed, null);
+		assert.ok(armed.remaining_ms > 0);
+		await window.musicDjToolsPerformance.dispatch({ type: 'play', deck: 2, playing: true });
+		assert.equal(clearCalls.length, 1);
+		assert.equal(ipc.queryPerformanceState().decks[2].quantized_launch_armed, null);
+		clockSec = 12.26;
+		assert.equal(ipc.queryPerformanceState().decks[2].quantized_launch_armed, null);
+	} finally {
+		uninstall();
+		resetDriver();
+		ipc.resetQuantizedLaunchArmedForTest();
+		delete globalThis.window;
+	}
+});
+
+test('LATENCY-02 play parse accepts omitted quantize and rejects unknown fields', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({
+				type: 'play',
+				deck: 1,
+				playing: true,
+				extra: true
+			}),
+			/unexpected fields/i
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
 test('master command accepts optional lock and query exposes master_mode', async () => {
 	assert.deepEqual(
 		ipc.performanceCommandQueueScopes({ type: 'master', deck: 4, lock: true }),

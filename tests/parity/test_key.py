@@ -1,4 +1,7 @@
-"""Key lane: djmdContent.KeyID -> djmdKey vs own camelot/openkey."""
+"""Key lane: djmdContent.KeyID -> djmdKey vs own camelot/openkey.
+
+[if] own camelot/openkey vs rekordbox key [then] it is exact, related, or failed, [else stop].
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,8 @@
-"""Fractional order_key tests (LIBM-20 / LIBM-22)."""
+"""Fractional order_key tests (LIBM-20 / LIBM-22).
+
+[if] a key is allocated between two neighbors [then] it sorts uniquely between them, [else stop].
+"""
+
 from __future__ import annotations
 
 import pytest

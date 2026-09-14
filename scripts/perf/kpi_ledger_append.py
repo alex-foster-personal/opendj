@@ -70,13 +70,24 @@ def _atomic_write(path: Path, content: str) -> None:
 
 def _splice_entries(stripped: str, rows: list[dict[str, Any]]) -> str:
     formatted = _format_new_entries(rows)
-    insert = ",\n" + formatted
     matches = list(_ENTRIES_CLOSE_RE.finditer(stripped))
     if matches:
         match = matches[-1]
+        # Keep the previous last entry's own line byte-for-byte, no trailing
+        # comma added: consuming match.start() (the "\n" already following
+        # it) into the untouched prefix and adding the separator as a NEW
+        # line above the array's closing bracket. Splicing the comma onto
+        # the end of that existing line instead would turn "  }" into
+        # "  },", which git reports as a modified line (1 deletion) rather
+        # than a pure append -- exactly what test_append_preserves_shipped_
+        # ledger_bytes checks for, since a nightly ledger append must never
+        # touch history.
+        preserved_end = match.start() + 1
         return (
-            stripped[: match.start()]
-            + insert
+            stripped[:preserved_end]
+            + match.group("ws")
+            + ",\n"
+            + formatted
             + "\n"
             + match.group("ws")
             + "]"
@@ -92,7 +103,8 @@ def _splice_entries(stripped: str, rows: list[dict[str, Any]]) -> str:
             raise ValueError("cannot locate last entry close in compact ledger")
         return (
             stripped[: last_brace + 1]
-            + insert
+            + ",\n"
+            + formatted
             + stripped[last_brace + 1 : bracket_pos]
             + "]"
             + compact.group("tail")

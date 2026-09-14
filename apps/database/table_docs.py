@@ -297,6 +297,14 @@ TABLE_DOCS: dict[str, str] = {
         "softly rather than at the schema level "
         "(apps/launcher/scripts/bootstrap_db.py)."
     ),
+    "sync_identity_remap": (
+        "Spoke-side bookkeeping for CloudSync content-identity collapses: "
+        "loser_pk -> survivor_pk, remembered across the batched HTTP push "
+        "so a later batch's playlist can still resolve a track PK a prior "
+        "batch already remapped. Not in the sync set itself -- carries no "
+        "updated_at/origin_device_id/deleted_at -- and does not drop the "
+        "loser's tracks row (apps/sync_hub/engine_identity_map.py)."
+    ),
     # ----- apps/shared/pairings/schema_sql.py, its SECOND ladder ---------
     # apply_pairing_capture_migrations, applied lazily by the webui capture
     # routes on the daemon's writable state.db. Column docs live in

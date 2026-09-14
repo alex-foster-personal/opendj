@@ -74,6 +74,7 @@ from apps.shared.playlist_sets import schema as playlist_sets_schema
 from apps.shared.state import schema as state_schema
 from apps.shared.state import sync_stamp
 from apps.spotify import state_aux as spotify_aux
+from apps.sync_hub import engine_identity_map
 
 #: Name of the production-shaped, migrated state DB inside :class:`Scan`.
 STATE_LADDER: str = "shared_state"
@@ -322,6 +323,13 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
     # desktop launcher creates launcher_meta in the same state.db on every
     # start, and no derivation restricted to *.py could ever have seen it.
     Authority("apps/launcher/src-tauri/src/state.rs", _apply_rust_launcher_meta),
+    # apps/sync_hub/client.py runs this against the same shared connection on
+    # every sync round (prepare_spoke_identity), to hold identity-collapse
+    # remaps across batched hub_apply calls. Not in the sync set itself.
+    Authority(
+        "apps/sync_hub/engine_identity_map.py",
+        lambda conn, _path: engine_identity_map.ensure_identity_remap_table(conn),
+    ),
 )
 """Every writer of DDL into ``state.db``, in the order production runs them.
 

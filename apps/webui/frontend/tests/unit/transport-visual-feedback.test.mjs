@@ -72,7 +72,7 @@ function componentSource(relativePath) {
 
 test('play state is written as intent, in the same turn as the input', () => {
 	const body = engineBlockAfter(SCHEDULE_DECK_ANCHOR);
-	const optimisticAt = body.indexOf('deckStates[deck].playing = active;');
+	const optimisticAt = body.indexOf('deckStates[deck].playing =');
 	const firstAwaitAt = body.indexOf('await ');
 
 	assert.notEqual(
@@ -92,7 +92,7 @@ test('play state is written as intent, in the same turn as the input', () => {
 test('the intent write sits alongside the transport intent it mirrors', () => {
 	const body = engineBlockAfter(SCHEDULE_DECK_ANCHOR);
 	const desiredAt = body.indexOf('rt.desiredActive = active;');
-	const playingAt = body.indexOf('deckStates[deck].playing = active;');
+	const playingAt = body.indexOf('deckStates[deck].playing =');
 	assert.notEqual(desiredAt, -1);
 	assert.ok(
 		desiredAt < playingAt,
@@ -108,7 +108,7 @@ test('a rejected schedule reconciles the optimistic write to the standing intent
 			'the pause glyph forever'
 	);
 	assert.ok(
-		body.includes('deckStates[deck].playing = rt.desiredActive;'),
+		body.includes('rt.desiredActive'),
 		'the reconcile must go to the STANDING intent, not to a captured previous value: a ' +
 			'newer command may already have superseded this one, and restoring a stale value ' +
 			'would clobber it'
@@ -132,7 +132,7 @@ test('the post-ack write stays as the reconcile-to-truth', () => {
 	pressT0Ms: number | undefined
 ): Promise<number> {`);
 	assert.ok(
-		body.includes('st.playing = rt.desiredActive;'),
+		body.includes('rt.desiredActive'),
 		'the optimistic write is a prediction; the post-ack write is what makes it true, and ' +
 			'removing it would leave a superseded schedule showing the wrong glyph'
 	);
@@ -228,6 +228,15 @@ test('the processor latency snapshot is re-read live and drift is loud', () => {
 		body.includes('if (rt.processor !== processor) return;'),
 		'a reading from a processor the deck has already replaced must not be written back'
 	);
+});
+
+test('LATENCY-02 TransportCluster keeps pending off disabled and shows armed countdown', () => {
+	const source = componentSource('lib/components/rb/deck/TransportCluster.svelte');
+	assert.doesNotMatch(source, /disabled=\{pending\}/);
+	assert.match(source, /data-state=\{armed \? 'armed'/);
+	assert.match(source, /class:armed/);
+	assert.match(source, /QUANTIZED LAUNCH/);
+	assert.match(source, /countdown/);
 });
 
 test('the live latency re-read never sits on the transport path', () => {

@@ -5,16 +5,19 @@
 	// track is loaded (engine throws on empty decks; we never swallow that
 	// by pretending to play).
 	import type { DeckState } from '$lib/rb/deck-state-types';
+	import { QUANTIZED_LAUNCH } from '$lib/player/transport/quantized-launch';
 	import ControlExplainer from './ControlExplainer.svelte';
 
 	let {
 		deck,
 		pending,
+		quantizedLaunchArmed,
 		onCue,
 		onPlayPause
 	}: {
 		deck: DeckState;
 		pending: boolean;
+		quantizedLaunchArmed: { remaining_ms: number; launch_at_context_sec: number } | null;
 		/**
 		 * Q1: both take the ORIGINATING event's own `event.timeStamp`, on the
 		 * `performance.now()` epoch, and the parameter exists so that the stamp
@@ -23,10 +26,14 @@
 		 * input and dispatched to us, and that gap is time the operator felt.
 		 */
 		onCue: (pressT0Ms?: number) => Promise<void>;
-		onPlayPause: (pressT0Ms?: number) => Promise<void>;
+		onPlayPause: (pressT0Ms?: number, quantize?: boolean) => Promise<void>;
 	} = $props();
 
 	const hasTrack: boolean = $derived(deck.stable_id !== null);
+	const armed: boolean = $derived(quantizedLaunchArmed !== null);
+	const armedCountdownLabel: string = $derived(
+		armed ? `${(quantizedLaunchArmed!.remaining_ms / 1000).toFixed(1)}s` : ''
+	);
 
 	// LATENCY-01 visual feedback: `pending` must NOT reach `disabled`. It used
 	// to, and the measured mutation sequence for a single click was
@@ -58,9 +65,11 @@
 	const playTitle: string = $derived(
 		!hasTrack
 			? 'no track loaded'
-			: deck.playing
-				? 'Pause - also stores the memory cue here'
-				: 'Play from current playhead'
+			: armed
+				? `${QUANTIZED_LAUNCH} in ${armedCountdownLabel}`
+				: deck.playing
+					? 'Pause - also stores the memory cue here'
+					: 'Play from current playhead'
 	);
 </script>
 
@@ -82,15 +91,17 @@
 	<button
 		class="round play"
 		class:playing={deck.playing}
+		class:armed
 		disabled={!hasTrack}
 		aria-busy={pending}
 		title={playTitle}
-		aria-label={`play deck ${deck.deck_id}`}
+		aria-label={armed ? `${QUANTIZED_LAUNCH} deck ${deck.deck_id} in ${armedCountdownLabel}` : `play deck ${deck.deck_id}`}
 		aria-pressed={deck.playing}
 		data-testid={`play-deck-${deck.deck_id}`}
 		data-performance-control="play"
-		data-state={deck.playing ? 'on' : 'off'}
-		onclick={async (event) => await onPlayPause(event.timeStamp)}
+		data-state={armed ? 'armed' : deck.playing ? 'on' : 'off'}
+		onclick={async (event) =>
+			await onPlayPause(event.timeStamp, event.metaKey || event.ctrlKey)}
 	>
 		{#if deck.playing}
 			<svg viewBox="0 0 16 16" class="glyph" aria-hidden="true">
@@ -101,6 +112,9 @@
 			<svg viewBox="0 0 16 16" class="glyph" aria-hidden="true">
 				<path d="M4.5 3 L13 8 L4.5 13 Z" fill="currentColor" />
 			</svg>
+			{#if armed}
+				<span class="countdown" title="Remaining time until QUANTIZED LAUNCH">{armedCountdownLabel}</span>
+			{/if}
 		{/if}
 	</button>
 </div>
@@ -141,8 +155,23 @@
 		color: var(--rb-accent);
 		border-color: var(--rb-accent);
 	}
+	.round.armed {
+		color: var(--rb-accent);
+		border-color: var(--rb-accent);
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--rb-accent) 45%, transparent);
+	}
 	.glyph {
 		width: 16px;
 		height: 16px;
+	}
+	.countdown {
+		position: absolute;
+		bottom: -14px;
+		font-size: 10px;
+		line-height: 1;
+		color: var(--rb-accent);
+	}
+	.round.play {
+		position: relative;
 	}
 </style>
