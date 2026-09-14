@@ -1,4 +1,7 @@
-"""PARITY-01 vocal lane: PVDI denominator, SPIKE-B2 IoU, probe reuse."""
+"""PARITY-01 vocal lane: PVDI denominator, SPIKE-B2 IoU, probe reuse.
+
+[if] own vocal regions vs rekordbox PVDI [then] IoU scores, missing PVDI ungradable, [else stop].
+"""
 
 from __future__ import annotations
 

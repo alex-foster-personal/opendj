@@ -1,4 +1,4 @@
-"""``python -m apps.engine_core serve --data-dir PATH --port N [--host H]``.
+"""``python -m apps.engine_core serve --data-dir PATH --port N [--host H] [--machine-name NAME]``.
 
 argparse rather than typer: typer is not in the repo venv, and a CLI that
 needs a new dependency to print its own help is not a chassis.
@@ -44,6 +44,7 @@ from apps.shared.sync_bind_guard import SyncBindRefused, assert_sync_bind_allowe
 EXIT_OK: int = 0
 EXIT_LOCKED: int = 1
 EXIT_REFUSED: int = 2
+HUB_MACHINE_NAME_ENV: str = "MDT_HUB_MACHINE_NAME"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -76,6 +77,15 @@ def build_parser() -> argparse.ArgumentParser:
             "never defaulted to the full build."
         ),
     )
+    serve.add_argument(
+        "--machine-name",
+        default=os.environ.get(HUB_MACHINE_NAME_ENV),
+        help=(
+            "this hub's CloudSync display/registration name "
+            f"(default: ${HUB_MACHINE_NAME_ENV} when set, otherwise the "
+            "short hostname at first sync)"
+        ),
+    )
     return parser
 
 
@@ -88,7 +98,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except EngineBootError as exc:
         print(f"[ERROR] engine refused to boot: {exc}", file=sys.stderr)
         return EXIT_REFUSED
-    return _serve(cfg, log_level=args.log_level)
+    return _serve(cfg, log_level=args.log_level, machine_name=args.machine_name)
 
 
 def _apply_build_profile(name: str | None) -> None:
@@ -172,7 +182,7 @@ def _telemetry_decision():
     return decide_telemetry(os.environ, build_source=source, release=release)
 
 
-def _serve(cfg: EngineConfig, *, log_level: str) -> int:
+def _serve(cfg: EngineConfig, *, log_level: str, machine_name: str | None) -> int:
     lock = EngineLock(cfg.lock_path, host=cfg.host, port=cfg.port)
     try:
         lock.acquire()
@@ -217,6 +227,8 @@ def _serve(cfg: EngineConfig, *, log_level: str) -> int:
             return EXIT_REFUSED
 
         app = create_app(cfg, lock=lock)
+        if machine_name is not None:
+            app.state.sync_hub_machine_name = machine_name
         print(
             f"[OK] opendj engine {ENGINE_VERSION} boot_id={lock.boot_id} "
             f"contract_rev={app.state.contract_rev} "

@@ -171,9 +171,15 @@
 	 * waited, and previously invisible to `press_to_schedule_ms` on every one of
 	 * these paths, because no call site in the app has ever passed the stamp.
 	 */
-	async function playPause(pressT0Ms?: number): Promise<void> {
+	async function playPause(pressT0Ms?: number, quantize?: boolean): Promise<void> {
+		const playing = !deck.playing;
 		await runPerformanceCommandFromUi(
-			{ type: 'play', deck: deckId, playing: !deck.playing },
+			{
+				type: 'play',
+				deck: deckId,
+				playing,
+				...(quantize === true && playing ? { quantize: true } : {})
+			},
 			pressT0Ms
 		);
 	}
@@ -423,7 +429,13 @@
 			<BeatJump {deck} {pending} onJump={beatJump} />
 		</div>
 
-		<TransportCluster {deck} {pending} onCue={returnToCue} onPlayPause={playPause} />
+		<TransportCluster
+			{deck}
+			{pending}
+			quantizedLaunchArmed={queryPerformanceState().decks[deckId].quantized_launch_armed}
+			onCue={returnToCue}
+			onPlayPause={playPause}
+		/>
 
 		<JogDial
 			{deck}

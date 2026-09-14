@@ -17,8 +17,12 @@ test('deck controls expose scoped AX names and stable test ids', () => {
 	const loops = source('src/lib/components/rb/deck/LoopCluster.svelte');
 
 	assert.ok(
-		transport.includes("aria-label={`play deck ${deck.deck_id}`}"),
+		transport.includes('`play deck ${deck.deck_id}`'),
 		'if play names stop carrying their deck then an AX-tree agent finds four indistinguishable play buttons'
+	);
+	assert.ok(
+		transport.includes('${QUANTIZED_LAUNCH} deck ${deck.deck_id}'),
+		'if QUANTIZED LAUNCH names stop carrying their deck then an AX-tree agent finds four indistinguishable armed play buttons'
 	);
 	assert.ok(
 		transport.includes('data-testid={`play-deck-${deck.deck_id}`}'),

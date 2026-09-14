@@ -43,6 +43,7 @@ except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.ci_fixer") from None
     raise
+from scripts.ci_fixer_pr_diff import fetch_pr_diff_with_fallback
 from scripts.ci_fixer_sandbox import run_recheck
 from scripts.ci_health_core import REPO, PreconditionError, _gh_api_json, _run_gh
 
@@ -135,7 +136,7 @@ def fetch_failed_job_log(job: cf.FailedJob) -> str:
 
 
 def fetch_pr_diff(pr_number: int) -> str:
-    return _run_gh(["pr", "diff", str(pr_number)])
+    return fetch_pr_diff_with_fallback(pr_number, REPO, _run_gh)
 
 
 def fetch_pr_head_sha(pr_number: int) -> str:

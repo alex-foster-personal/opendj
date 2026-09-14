@@ -352,6 +352,12 @@ def test_every_state_authority_contributes_to_the_subject(clean_scan: lint.Scan)
             "pairing_sync_snapshots"
         ),
         "apps/shared/play_orders/schema.py": "play_orders",
+        # SET-05's private ladder, the same shape as play_orders just above.
+        # Missing here until this fix even though it was already declared in
+        # DDL_SOURCE_FILES and STATE_AUTHORITIES: the two production
+        # declarations agreed with each other, so nothing caught this test's
+        # own per_authority dict going stale the day playlist_sets was added.
+        "apps/shared/playlist_sets/schema.py": "playlist_sets",
         "apps/spotify/state_aux.py": "spotify_playlist_links",
         "apps/launcher/scripts/bootstrap_db.py": "tracks_frecency",
         # The one authority that is NOT PYTHON. Every derivation of this list
@@ -359,6 +365,7 @@ def test_every_state_authority_contributes_to_the_subject(clean_scan: lint.Scan)
         # live state.db on every launcher start while no inventory, no test
         # and no docs run had heard of it.
         "apps/launcher/src-tauri/src/state.rs": "launcher_meta",
+        "apps/sync_hub/engine_identity_map.py": "sync_identity_remap",
     }
     assert {a.name for a in subject.STATE_AUTHORITIES} == set(per_authority)
     for authority, table in per_authority.items():

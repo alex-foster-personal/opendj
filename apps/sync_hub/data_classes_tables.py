@@ -140,10 +140,13 @@ REGISTRY_CLASSES: tuple[DataClass, ...] = (
 LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
     fixed(
         "sync-bookkeeping",
-        "Sync watermarks and changelogs",
-        state_tables("sync_state", "hub_changelog", "local_changelog"),
+        "Sync watermarks, changelogs and identity remaps",
+        state_tables("sync_state", "hub_changelog", "local_changelog", "sync_identity_remap"),
         "machine_local",
-        "Syncing your own sync watermarks would be incoherent (migrations_v6_v8.py).",
+        "Syncing your own sync watermarks would be incoherent (migrations_v6_v8.py). "
+        "sync_identity_remap (engine_identity_map.py) holds identity-collapse remaps "
+        "across batched hub_apply calls on the shared connection; additive bookkeeping "
+        "for this machine's own apply, not part of the sync set itself.",
         (),
     ),
     fixed(

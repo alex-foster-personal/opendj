@@ -1,4 +1,7 @@
-"""Phrase lane: rekordbox PSSI vs own phrase analysis."""
+"""Phrase lane: rekordbox PSSI vs own phrase analysis.
+
+[if] own phrases vs rekordbox PSSI [then] boundary and kind accuracy are scored, [else stop].
+"""
 
 from __future__ import annotations
 

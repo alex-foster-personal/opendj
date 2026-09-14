@@ -92,8 +92,7 @@ Kinds:
 
 cpu, memory, and disk alter real machine resources and require
 --confirm-real-pressure. memory-notify is notification-only and cannot stand
-in for real starvation. This harness requires macOS because Linux is an
-engine-side proxy, not a WKWebView/CoreAudio KPI environment.
+in for real starvation. This harness requires macOS because Linux is an engine-side proxy, not a WKWebView/CoreAudio KPI environment.
 USAGE
 }
 

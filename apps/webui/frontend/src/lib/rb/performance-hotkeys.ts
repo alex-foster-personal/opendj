@@ -8,7 +8,7 @@ import { DECK_IDS, getDeckState } from '$lib/rb/audio-engine.svelte';
 import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 import { getRecentDeck, noteRecentDeck } from '$lib/rb/recent-deck';
 import { toggleNextOnlyFilter } from '$lib/rb/prefs.svelte';
-import { mostRecentPendingLoadPlay, type DeckId } from '$lib/rb/deck-slots';
+import { mostRecentPendingLoadPlay, setPendingLoadPlayIntent, type DeckId } from '$lib/rb/deck-slots';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 import { isNativeInteractiveTarget } from '$lib/rb/performance-hotkeys-target';
 import { armPinPlacement } from './feedback-store.svelte';
@@ -86,18 +86,22 @@ function _resolveTransportDeck(): DeckId | null {
  * instrument honest: no command means no schedule, so no press row, so silence
  * can never be quoted as a latency.
  */
-async function _toggleRecentPlay(pressT0Ms?: number): Promise<void> {
+async function _toggleRecentPlay(pressT0Ms?: number, quantize?: boolean): Promise<void> {
 	const pending = mostRecentPendingLoadPlay();
 	if (pending !== null) {
+		const desiredPlay = !pending.desiredPlay;
 		await runPerformanceCommandFromUi(
 			{
 				type: 'load_play_intent',
 				deck: pending.deck,
 				generation: pending.generation,
-				desired_play: !pending.desiredPlay
+				desired_play: desiredPlay
 			},
 			pressT0Ms
 		);
+		if (quantize === true && desiredPlay) {
+			setPendingLoadPlayIntent(pending.deck, pending.generation, desiredPlay, pressT0Ms, true);
+		}
 		return;
 	}
 	const deck = _resolveTransportDeck();
@@ -105,7 +109,16 @@ async function _toggleRecentPlay(pressT0Ms?: number): Promise<void> {
 	const st = getDeckState(deck);
 	if (st.stable_id === null) return;
 	noteRecentDeck(deck);
-	await runPerformanceCommandFromUi({ type: 'play', deck, playing: !st.playing }, pressT0Ms);
+	const playing = !st.playing;
+	await runPerformanceCommandFromUi(
+		{
+			type: 'play',
+			deck,
+			playing,
+			...(quantize === true && playing ? { quantize: true } : {})
+		},
+		pressT0Ms
+	);
 }
 
 async function _resizeLast(factor: 0.5 | 2): Promise<void> {
@@ -137,11 +150,21 @@ async function _exitLast(): Promise<void> {
 export function installPerformanceHotkeys(): () => void {
 	const onKey = (e: KeyboardEvent): void => {
 		if (isSettingsOpen()) return;
-		if (isNativeInteractiveTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
 		if (e.code === 'Space' || e.key === ' ') {
+			if (isNativeInteractiveTarget(e.target)) return;
+			if (e.metaKey || e.ctrlKey) {
+				if (e.altKey) return;
+				e.preventDefault();
+				void _toggleRecentPlay(e.timeStamp, true);
+				return;
+			}
+			if (e.altKey) return;
 			e.preventDefault();
 			void _toggleRecentPlay(e.timeStamp);
-		} else if (e.key === 'Tab') {
+			return;
+		}
+		if (isNativeInteractiveTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+		if (e.key === 'Tab') {
 			e.preventDefault();
 			toggleNextOnlyFilter();
 		} else if (e.key === '+' || e.key === '=') {
