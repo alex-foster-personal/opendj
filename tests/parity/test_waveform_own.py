@@ -1,4 +1,7 @@
-"""Own-envelope producer for PARITY-01 waveform lanes."""
+"""Own-envelope producer for PARITY-01 waveform lanes.
+
+[if] raw peak data converts to envelopes [then] preview, detail, and triband appear, [else stop].
+"""
 
 from __future__ import annotations
 

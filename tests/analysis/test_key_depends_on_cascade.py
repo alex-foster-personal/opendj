@@ -5,8 +5,11 @@ nav1-key-record writes the five-field identity on
 and hash that block (not only ``features_blob``) so a current key is not
 re-queued and a stale key is.
 
+[if] a key's stored beatgrid digest is stale [then] cascade requeues the key lane, [else stop].
+
 -Claude
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -19,6 +22,8 @@ from apps.analysis.backends.own_key import BACKEND_NAME, PRODUCER_VERSION
 from apps.analysis.canonical import canonical_pointer
 from apps.analysis.depends_on import (
     beatgrid_record_digest as queue_beatgrid_digest,
+)
+from apps.analysis.depends_on import (
     declared_dependency,
     dependency_identity,
 )
@@ -33,7 +38,7 @@ from .test_key_depends_on_staleness import (
     _beatgrid_record,
     _depends_on_for,
     _key_record,
-    state_db,
+    state_db,  # noqa: F401  (fixture, referenced by name in test signatures below)
 )
 
 pytestmark = pytest.mark.requirement("NATIVE-10")
@@ -50,7 +55,7 @@ def test_the_two_digest_helpers_agree_on_the_same_payload() -> None:
     assert record_digest == payload_digest
 
 
-def test_declared_dependency_reads_the_key_payload_block(state_db: Path) -> None:
+def test_declared_dependency_reads_the_key_payload_block(state_db: Path) -> None:  # noqa: F811
     stable_id = "t-declared-payload"
     grid = _beatgrid_record(
         stable_id,
@@ -64,7 +69,7 @@ def test_declared_dependency_reads_the_key_payload_block(state_db: Path) -> None
     assert declared_dependency(key, "beatgrid") == dependency_identity(grid)
 
 
-def test_cascade_does_not_requeue_a_matching_real_key_record(state_db: Path) -> None:
+def test_cascade_does_not_requeue_a_matching_real_key_record(state_db: Path) -> None:  # noqa: F811
     stable_id = "t-cascade-match"
     grid = _beatgrid_record(
         stable_id,
@@ -89,7 +94,7 @@ def test_cascade_does_not_requeue_a_matching_real_key_record(state_db: Path) -> 
         conn.close()
 
 
-def test_cascade_requeues_when_beatgrid_version_moves(state_db: Path) -> None:
+def test_cascade_requeues_when_beatgrid_version_moves(state_db: Path) -> None:  # noqa: F811
     stable_id = "t-cascade-version"
     grid_v1 = _beatgrid_record(
         stable_id,
@@ -120,9 +125,7 @@ def test_cascade_requeues_when_beatgrid_version_moves(state_db: Path) -> None:
         )
         requeued = [o for o in outcomes if o.lane == "key" and o.requeued]
         assert requeued, outcomes
-        assert queue_store.stale_rows(conn, stable_id, "key") == {
-            (BACKEND_NAME, PRODUCER_VERSION)
-        }
+        assert queue_store.stale_rows(conn, stable_id, "key") == {(BACKEND_NAME, PRODUCER_VERSION)}
     finally:
         conn.close()
 
@@ -134,7 +137,7 @@ def test_cascade_requeues_when_beatgrid_version_moves(state_db: Path) -> None:
         conn.close()
 
 
-def test_cascade_requeues_when_only_decode_fingerprint_moves(state_db: Path) -> None:
+def test_cascade_requeues_when_only_decode_fingerprint_moves(state_db: Path) -> None:  # noqa: F811
     stable_id = "t-cascade-fingerprint"
     grid_v1 = _beatgrid_record(
         stable_id,
@@ -165,9 +168,7 @@ def test_cascade_requeues_when_only_decode_fingerprint_moves(state_db: Path) -> 
         )
         requeued = [o for o in outcomes if o.lane == "key" and o.requeued]
         assert requeued, outcomes
-        assert queue_store.stale_rows(conn, stable_id, "key") == {
-            (BACKEND_NAME, PRODUCER_VERSION)
-        }
+        assert queue_store.stale_rows(conn, stable_id, "key") == {(BACKEND_NAME, PRODUCER_VERSION)}
     finally:
         conn.close()
 

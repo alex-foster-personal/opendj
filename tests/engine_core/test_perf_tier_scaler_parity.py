@@ -32,6 +32,9 @@ def _ts_int(block: str, key: str) -> int:
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_ts_scaler_table_matches_python() -> None:
+    """
+    [if] the TS scaler table is parsed [then] it matches scalers_for's python values, [else stop].
+    """
     text = TS_PATH.read_text(encoding="utf-8")
     for tier in PerfTier:
         py = scalers_for(tier)

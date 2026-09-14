@@ -4,6 +4,8 @@ Lane brief `specs/native-analysis-v1-lanes/nav1-queue.md` item 1, requirement
 NATIVE-10 ("[if] a producer version is bumped [then] the affected lanes are
 re-queued rather than left on the old output").
 
+[if] a producer version bumps [then] only tracks on the old version are requeued, [else stop].
+
 Two mechanisms, deliberately separate:
 
 * the VERSION BUMP re-queues tracks whose record for a producer is on an old
@@ -29,6 +31,7 @@ Single-line intent, one assertion block each:
 - if a key record whose depends_on already matches is re-queued anyway, the
   cascade re-analyzes the whole library on every beatgrid write -- broken.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -90,6 +93,7 @@ def _key_cands(ids: list[str], tmp_path: Path) -> list:
 
 # --- producer version bump ------------------------------------------------
 
+
 def test_a_version_bump_requeues_only_the_tracks_on_the_old_version(
     tmp_path: Path, probe_env: Path
 ) -> None:
@@ -118,9 +122,7 @@ def test_a_version_bump_requeues_only_the_tracks_on_the_old_version(
     )
     assert result is not None
     assert result.admitted == 2
-    queued = {
-        i.stable_id for i in queue_store.list_items(conn, result.batch_id)
-    }
+    queued = {i.stable_id for i in queue_store.list_items(conn, result.batch_id)}
     assert queued == {"a", "b"}
 
     run_batch(conn, result.batch_id, backend_cls=BeatgridProbeV2)
@@ -130,9 +132,10 @@ def test_a_version_bump_requeues_only_the_tracks_on_the_old_version(
             BeatgridProbeV2.version,
         )
     # Rows never overwrite across versions: the 1.0.0 rows are still there.
-    assert conn.execute(
-        "SELECT COUNT(*) FROM analysis WHERE backend_version = '1.0.0'"
-    ).fetchone()[0] == 3
+    assert (
+        conn.execute("SELECT COUNT(*) FROM analysis WHERE backend_version = '1.0.0'").fetchone()[0]
+        == 3
+    )
     conn.close()
 
 
@@ -161,6 +164,7 @@ def test_nothing_stale_returns_no_batch_rather_than_an_empty_one(
 
 # --- dependency cascade ---------------------------------------------------
 
+
 def test_key_enqueued_before_beatgrid_is_requeued_through_the_static_edge(
     tmp_path: Path, probe_env: Path
 ) -> None:
@@ -186,17 +190,13 @@ def test_key_enqueued_before_beatgrid_is_requeued_through_the_static_edge(
     assert declared_dependency(early, "beatgrid") is None
 
     def resolve(conn_, ids, *, lane):
-        return _cands(
-            list(ids), tmp_path, lane=lane, backend=KeyProbeV1.name
-        )
+        return _cands(list(ids), tmp_path, lane=lane, backend=KeyProbeV1.name)
 
     grid = queue_api.enqueue(conn, _beatgrid_cands(["a"], tmp_path))
     summaries = drain(
         conn,
         grid.batch_id,
-        backend_for_lane=lambda lane: (
-            BeatgridProbeV1 if lane == "beatgrid" else KeyProbeV1
-        ),
+        backend_for_lane=lambda lane: BeatgridProbeV1 if lane == "beatgrid" else KeyProbeV1,
         cascade_resolver=resolve,
     )
     # Two batches ran: the beatgrid one, and the key one its cascade created.
@@ -217,12 +217,8 @@ def test_key_enqueued_before_beatgrid_is_requeued_through_the_static_edge(
         ).fetchone()[0]
     )
     assert key_record.lanes["key"].status == "ok"
-    assert declared_dependency(key_record, "beatgrid") == dependency_identity(
-        grid_record
-    )
-    assert canonical_pointer(conn, "a", "key") == (
-        KeyProbeV1.name, KeyProbeV1.version
-    )
+    assert declared_dependency(key_record, "beatgrid") == dependency_identity(grid_record)
+    assert canonical_pointer(conn, "a", "key") == (KeyProbeV1.name, KeyProbeV1.version)
     conn.close()
 
 
@@ -239,14 +235,10 @@ def test_a_beatgrid_bump_makes_the_old_key_stale_and_non_canonical(
     drain(
         conn,
         grid.batch_id,
-        backend_for_lane=lambda lane: (
-            BeatgridProbeV1 if lane == "beatgrid" else KeyProbeV1
-        ),
+        backend_for_lane=lambda lane: BeatgridProbeV1 if lane == "beatgrid" else KeyProbeV1,
         cascade_resolver=resolve,
     )
-    assert canonical_pointer(conn, "a", "key") == (
-        KeyProbeV1.name, KeyProbeV1.version
-    )
+    assert canonical_pointer(conn, "a", "key") == (KeyProbeV1.name, KeyProbeV1.version)
 
     # Now bump the beatgrid producer. The key record's depends_on names the
     # 1.0.0 grid, so it must go stale AND stop being canonical.
@@ -254,24 +246,23 @@ def test_a_beatgrid_bump_makes_the_old_key_stale_and_non_canonical(
     summary = run_batch(conn, bumped.batch_id, backend_cls=BeatgridProbeV2)
     requeued = [o for o in summary.cascade_outcomes if o.requeued]
     assert [o.lane for o in requeued] == ["key"]
-    assert queue_store.stale_rows(conn, "a", "key") == {
-        (KeyProbeV1.name, KeyProbeV1.version)
-    }
+    assert queue_store.stale_rows(conn, "a", "key") == {(KeyProbeV1.name, KeyProbeV1.version)}
     assert canonical_pointer(conn, "a", "key") is None, (
         "a key computed against a superseded beatgrid must not stay canonical"
     )
     # The row itself is untouched: staleness excludes it from the pointer,
     # it does not delete produced work.
-    assert conn.execute(
-        "SELECT COUNT(*) FROM analysis WHERE stable_id='a' AND backend=?",
-        (KeyProbeV1.name,),
-    ).fetchone()[0] == 1
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM analysis WHERE stable_id='a' AND backend=?",
+            (KeyProbeV1.name,),
+        ).fetchone()[0]
+        == 1
+    )
     conn.close()
 
 
-def test_a_matching_depends_on_block_is_not_requeued(
-    tmp_path: Path, probe_env: Path
-) -> None:
+def test_a_matching_depends_on_block_is_not_requeued(tmp_path: Path, probe_env: Path) -> None:
     """The control that stops the cascade re-analyzing everything forever."""
     db = tmp_path / "state.db"
     conn = open_conn(db)
@@ -283,9 +274,7 @@ def test_a_matching_depends_on_block_is_not_requeued(
     drain(
         conn,
         grid.batch_id,
-        backend_for_lane=lambda lane: (
-            BeatgridProbeV1 if lane == "beatgrid" else KeyProbeV1
-        ),
+        backend_for_lane=lambda lane: BeatgridProbeV1 if lane == "beatgrid" else KeyProbeV1,
         cascade_resolver=resolve,
     )
 

@@ -11,8 +11,11 @@ until recomputed. Both stale cases are covered here:
   `/anlz` and the canonical pointer both treat the key lane as stale,
   [else stop]
 
+[if] the beatgrid moves after a key was written [then] the key lane reports stale, [else stop].
+
 -Claude
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -64,8 +67,7 @@ def _beatgrid_record(
     n_beats: int = 16,
 ) -> AnalysisRecord:
     beats = [
-        {"t": round(index * 0.5, 5), "n": (index % 4) + 1, "bpm": 120.0}
-        for index in range(n_beats)
+        {"t": round(index * 0.5, 5), "n": (index % 4) + 1, "bpm": 120.0} for index in range(n_beats)
     ]
     payload = {
         "beats": beats,
@@ -151,9 +153,7 @@ def test_a_newer_beatgrid_version_makes_the_key_lane_stale_on_anlz(state_db: Pat
     upsert_record(grid_v2, db_path=state_db)
 
     selection.set_toggle("key", "own")
-    payload = overlay_mod.apply_own_key_segments(
-        {}, stable_id, state_db_path=state_db
-    )
+    payload = overlay_mod.apply_own_key_segments({}, stable_id, state_db_path=state_db)
     assert payload["key_segments"]["status"] == "missing"
     assert payload["key_segments"]["reason"] == REASON_STALE_DEPENDENCY
 
@@ -173,9 +173,7 @@ def test_the_same_version_with_a_different_fingerprint_is_stale_too(state_db: Pa
     upsert_record(grid_v2, db_path=state_db)
 
     selection.set_toggle("key", "own")
-    payload = overlay_mod.apply_own_key_segments(
-        {}, stable_id, state_db_path=state_db
-    )
+    payload = overlay_mod.apply_own_key_segments({}, stable_id, state_db_path=state_db)
     assert payload["key_segments"]["status"] == "missing"
     assert payload["key_segments"]["reason"] == REASON_STALE_DEPENDENCY
 

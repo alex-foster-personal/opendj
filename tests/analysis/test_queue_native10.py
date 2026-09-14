@@ -4,8 +4,11 @@ Issue #2258. Closes the holes the #1586 audit left: ``progress()`` mid-run,
 ``auto_requeue_on_version_bump`` via ``upsert_record``, stems/lyrics exclusion,
 backend registration, and a CI-scale no-network scan of v1 producer modules.
 
+[if] a v1 producer version bumps [then] the queue requeues only stale tracks, [else stop].
+
 No mocks. Fail fast.
 """
+
 from __future__ import annotations
 
 import ast
@@ -33,9 +36,7 @@ from .queue_probe_backends import (
 
 pytestmark = pytest.mark.requirement("NATIVE-10")
 
-_FORBIDDEN_NAMES: frozenset[str] = frozenset(
-    {"urlopen", "requests", "httpx", "urllib", "hub"}
-)
+_FORBIDDEN_NAMES: frozenset[str] = frozenset({"urlopen", "requests", "httpx", "urllib", "hub"})
 
 _V1_AST_MODULES: tuple[str, ...] = (
     "apps.analysis.backends.own_key",
@@ -159,9 +160,7 @@ def probe_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return d
 
 
-def test_progress_reports_running_and_pending_mid_batch(
-    tmp_path: Path, probe_dir: Path
-) -> None:
+def test_progress_reports_running_and_pending_mid_batch(tmp_path: Path, probe_dir: Path) -> None:
     db = tmp_path / "state.db"
     conn = open_conn(db)
     result = queue_api.enqueue(conn, _candidates(3, tmp_path))
@@ -198,10 +197,7 @@ def test_upsert_of_a_new_producer_version_requeues_only_stale_tracks(
     batches_after = queue_store.list_batches(conn)
     assert len(batches_after) == 2
     requeue_batch_id = batches_after[0].batch_id
-    queued = {
-        i.stable_id
-        for i in queue_store.list_items(conn, requeue_batch_id)
-    }
+    queued = {i.stable_id for i in queue_store.list_items(conn, requeue_batch_id)}
     assert queued == {"a", "b"}
     assert "c" not in queued
 
@@ -253,6 +249,4 @@ def test_v1_own_backends_do_not_import_a_network_client() -> None:
         names = _referenced_names(module)
         hits = names & _FORBIDDEN_NAMES
         assert not hits, f"{mod_name} references forbidden names: {sorted(hits)}"
-        assert not _torch_hub_referenced(module), (
-            f"{mod_name} references torch.hub"
-        )
+        assert not _torch_hub_referenced(module), f"{mod_name} references torch.hub"
