@@ -3,25 +3,31 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import shutil
 import sqlite3
 import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from apps.engine_core.app import create_app
 from apps.engine_core.availability_api import PROBE_PATH, STATUS_PATH
 from apps.engine_core.config import EngineConfig
 from apps.engine_core.library_availability import LibraryAvailabilityWorker
-from apps.mik import availability as avail
 from apps.shared.events import publish
 from apps.shared.state import db as state_db
 from apps.shared.state.writer import StateWriter
 from tests.waits import THREAD_HANG_GUARD_S
+
+# A listing that waited on the probe would block for the probe's whole run; this
+# bound only catches that hang, while `pending > 0` proves the listing did not wait.
+LISTING_HANG_BOUND_S: float = 10.0
 
 pytestmark = pytest.mark.requirement("LIBM-09")
 
@@ -81,14 +87,38 @@ def _wait_worker_complete(worker: LibraryAvailabilityWorker, *, guard_s: float) 
     )
 
 
-def _wait_probe_pending(client: TestClient, *, guard_s: float) -> dict[str, object]:
-    started = time.monotonic()
-    while time.monotonic() - started < guard_s:
-        status = client.get(STATUS_PATH).json()
-        if status["pending"] > 0 and status["phase"] in {"queued", "running"}:
-            return status
-        time.sleep(0.02)
-    raise AssertionError("availability probe never entered a pending state")
+def _get_with_deadline(
+    client: TestClient, url: str, *, timeout: float, **kwargs: Any
+) -> Response:
+    """``client.get`` with a real enforced wall-clock deadline.
+
+    httpx's own ``timeout=`` kwarg is a documented no-op against TestClient's
+    in-process ASGI transport (empirically confirmed in
+    tests/webui/test_audio_deck_load_contract.py): a handler that hangs just
+    hangs the call. Running it on a daemon thread and bounding the wait with a
+    real ``queue.Queue.get(timeout=...)`` is what actually enforces the
+    deadline, which is the whole point of a hang-detection test like this one.
+    """
+    result: queue.Queue[tuple[str, Any]] = queue.Queue(maxsize=1)
+
+    def _run() -> None:
+        try:
+            result.put(("ok", client.get(url, **kwargs)))
+        except Exception as exc:  # noqa: BLE001 - re-raised on the main thread below
+            result.put(("error", exc))
+
+    thread = threading.Thread(target=_run, daemon=True)
+    thread.start()
+    try:
+        outcome, payload = result.get(timeout=timeout)
+    except queue.Empty:
+        pytest.fail(
+            f"GET {url} did not respond within {timeout}s -- the listing "
+            "route waited on the availability probe"
+        )
+    if outcome == "error":
+        raise payload
+    return payload
 
 
 @pytest.fixture
@@ -593,15 +623,70 @@ def test_listing_does_not_wait_for_probe(
         conn.close()
 
     app = create_app(EngineConfig(data_dir=data_dir))
+    # A minimal, explicit test seam (LibraryAvailabilityWorker.set_on_batch_committed):
+    # create_app() already owns this worker instance by the time it is reachable
+    # via app.state.availability_worker, so the constructor's on_batch_committed
+    # kwarg cannot be used here -- the hook must be installed on the real
+    # instance before start() (triggered by entering the TestClient lifespan
+    # below).
+    worker: LibraryAvailabilityWorker = app.state.availability_worker
+
+    first_batch_committed = threading.Event()
+    release_probe = threading.Event()
+
+    def _hold_after_first_batch(status: object) -> None:
+        if first_batch_committed.is_set():
+            return
+        first_batch_committed.set()
+        release_probe.wait(timeout=THREAD_HANG_GUARD_S)
+
+    worker.set_on_batch_committed(_hold_after_first_batch)
+
     with TestClient(app) as client:
-        _wait_probe_pending(client, guard_s=THREAD_HANG_GUARD_S)
-        list_started = time.monotonic()
-        response = client.get("/api/v1/tracks", params={"limit": 5})
-        elapsed = time.monotonic() - list_started
-        assert response.status_code == 200
-        assert elapsed < 2.0
-        status = client.get(STATUS_PATH).json()
-        assert status["pending"] > 0
+        try:
+            # Warm the listing route first so the timed call measures waiting
+            # on the probe, not first-request route initialization (which
+            # flaked this test before it held the probe deterministically).
+            warm = _get_with_deadline(
+                client,
+                "/api/v1/tracks",
+                timeout=LISTING_HANG_BOUND_S,
+                params={"limit": 1},
+            )
+            assert warm.status_code == 200
+
+            assert first_batch_committed.wait(timeout=THREAD_HANG_GUARD_S), (
+                "probe never committed its first batch"
+            )
+            # Provably still running, asserted BEFORE the timed listing call:
+            # 150 seeded tracks at the worker's default batch size of 100
+            # leaves a second batch pending while the worker thread sits
+            # inside the hook above.
+            status = client.get(STATUS_PATH).json()
+            assert status["pending"] > 0
+
+            list_started = time.monotonic()
+            response = _get_with_deadline(
+                client,
+                "/api/v1/tracks",
+                timeout=LISTING_HANG_BOUND_S,
+                params={"limit": 5},
+            )
+            elapsed = time.monotonic() - list_started
+            assert response.status_code == 200
+            # `pending > 0` above is the structural proof the probe was still
+            # running; this bound only catches a genuine hang (a fixed 2.0s
+            # wall-clock bound failed 6 of 16 runs under ordinary machine
+            # load before the probe was held deterministically).
+            assert elapsed < LISTING_HANG_BOUND_S
+        finally:
+            # Always release, even on assertion failure above, so the worker
+            # thread is not left blocked past this test (lifespan shutdown
+            # would otherwise wait out stop()'s own 30s join).
+            release_probe.set()
+
+        final = _wait_status_complete(client, guard_s=THREAD_HANG_GUARD_S)
+        assert final["pending"] == 0
 
 
 def test_http_probe_and_status_routes(

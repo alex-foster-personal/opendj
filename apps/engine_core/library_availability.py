@@ -114,6 +114,18 @@ class LibraryAvailabilityWorker:
         self._scan_awaiting_volume = False
         self._on_batch_committed = on_batch_committed
 
+    def set_on_batch_committed(
+        self, callback: Callable[[AvailabilityWorkerStatus], None] | None
+    ) -> None:
+        """Replace the post-batch-commit callback.
+
+        A test/observability seam: the constructor kwarg cannot be reached once
+        ``create_app`` already owns the instance (it is exposed read-only via
+        ``app.state.availability_worker``), so this lets a caller install a hook
+        on the real worker before calling ``start()``.
+        """
+        self._on_batch_committed = callback
+
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
             return
