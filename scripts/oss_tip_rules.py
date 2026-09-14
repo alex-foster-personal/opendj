@@ -198,6 +198,12 @@ ALLOWED_NON_ADDRESSES = frozenset(
         "icon_128x128@2x.png",
         "icon_256x256@2x.png",
         "icon_512x512@2x.png",
+        # tests/scripts/test_oss_tip_audit_mailbox.py's own f-string TEMPLATE
+        # for generating the five entries above, scanned as source text before
+        # Python ever substitutes `{size}`: the audit sees the literal
+        # characters `icon_{size}@2x.png` in the .py file itself, which is
+        # the same iconset shape as the entries above, not a mailbox.
+        "icon_{size}@2x.png",
     }
 )
 # The files whose whole function is holding the addresses attached to this
