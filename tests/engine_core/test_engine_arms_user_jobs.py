@@ -58,7 +58,7 @@ with TestClient(app) as client:
 print(json.dumps({
     "stems_miss_status": stems_miss.status_code,
     "stems_miss_code": stems_miss_body.get("code") or stems_miss_body.get("detail", {}).get("code"),
-    "hydration_armed": app.state.stem_hydration_source is not None,
+    "hydration_armed": app.state.stem_hydration_s3 is not None,
     "jobs_enabled": app.state.auto_user_jobs.enabled,
     "drain_alive": drain_alive,
     "thread_names": thread_names,
