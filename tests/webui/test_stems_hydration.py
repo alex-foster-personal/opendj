@@ -24,9 +24,15 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import apps.webui.server.routes.stems as stems_module
+from apps.cloud import stem_index
 from apps.cloud.asset_store import asset_object_key
 from apps.cloud.config import CloudConfig
-from apps.cloud.stem_index import local_index_cache_path, save_cached_index
+from apps.cloud.stem_index import (
+    INDEX_OBJECT_KEY,
+    local_index_cache_path,
+    publish_index,
+    save_cached_index,
+)
 from apps.webui.server.routes.stems import router
 from apps.webui.server.routes.stems_assets import router as stems_assets_router
 from tests.cloudsync.conftest import InMemoryAssetS3
@@ -102,9 +108,17 @@ def _reset_hydration_module_state():
     them around every test so tests cannot leak into each other."""
     stems_module._INFLIGHT.clear()
     stems_module._LAST_HYDRATE_ERROR.clear()
+    stem_index._last_refresh_attempt_mono.clear()
+    stem_index._last_refresh_error.clear()
+    stems_module.stem_hydration.OPEN_DECKS._open.clear()
+    stems_module.stem_hydration.OPEN_DECKS._served_at.clear()
     yield
     stems_module._INFLIGHT.clear()
     stems_module._LAST_HYDRATE_ERROR.clear()
+    stem_index._last_refresh_attempt_mono.clear()
+    stem_index._last_refresh_error.clear()
+    stems_module.stem_hydration.OPEN_DECKS._open.clear()
+    stems_module.stem_hydration.OPEN_DECKS._served_at.clear()
 
 
 @pytest.mark.requirement("STEM-15")
@@ -387,3 +401,130 @@ def test_deck_open_close_endpoints_update_the_registry(tmp_path: Path):
         assert OPEN_DECKS.is_open("deck-track")
         client.post("/api/v1/tracks/deck-track/stems/deck-close")
         assert not OPEN_DECKS.is_open("deck-track")
+
+
+# --- cold-cache index refresh (STEM-26) ------------------------------------
+
+
+class _IndexGetFailingS3(InMemoryAssetS3):
+    """Raises on get_object for the stem index key only."""
+
+    def get_object(self, bucket: str, key: str):
+        if key == INDEX_OBJECT_KEY:
+            raise TimeoutError("simulated index fetch failure")
+        return super().get_object(bucket, key)
+
+
+class _TrackingGetS3(InMemoryAssetS3):
+    """Records get_object calls for assertions."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.get_calls: list[tuple[str, str]] = []
+
+    def get_object(self, bucket: str, key: str):
+        self.get_calls.append((bucket, key))
+        return super().get_object(bucket, key)
+
+
+@pytest.mark.requirement("STEM-26")
+def test_manifest_route_refreshes_cold_cache_and_enqueues(tmp_path: Path):
+    """No local cache file: first manifest GET refreshes from R2 and enqueues."""
+    stems_dir = tmp_path / "stems"
+    data_dir = tmp_path / "data"
+    cfg = _cfg()
+    s3 = InMemoryAssetS3()
+    stable_id = "cold-cache-track"
+    entry = _seed_bundle(s3, cfg, stable_id)
+    publish_index(cfg, s3, {stable_id: entry})
+    assert not local_index_cache_path(data_dir).is_file()
+
+    with _client(stems_dir, data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
+        resp = client.get(f"/api/v1/tracks/{stable_id}/stems")
+    assert resp.status_code == 200
+    assert resp.json()["hydrating"] is True
+    assert local_index_cache_path(data_dir).is_file()
+
+
+@pytest.mark.requirement("STEM-26")
+def test_manifest_route_surfaces_refresh_failure(tmp_path: Path):
+    stems_dir = tmp_path / "stems"
+    data_dir = tmp_path / "data"
+    cfg = _cfg()
+    s3 = _IndexGetFailingS3()
+    assert not local_index_cache_path(data_dir).is_file()
+
+    with _client(stems_dir, data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
+        resp = client.get("/api/v1/tracks/unrelated-track/stems")
+    assert resp.status_code == 502
+    assert resp.json()["detail"]["code"] == "STEM_INDEX_REFRESH_FAILED"
+
+
+@pytest.mark.requirement("STEM-26")
+def test_manifest_route_warm_cache_does_not_refetch(tmp_path: Path):
+    """A warm local cache (even empty of this stable_id) must not refetch R2."""
+    stems_dir = tmp_path / "stems"
+    data_dir = tmp_path / "data"
+    cfg = _cfg()
+    s3 = _TrackingGetS3()
+    save_cached_index(data_dir, {})
+
+    with _client(stems_dir, data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
+        first = client.get("/api/v1/tracks/missing-track/stems")
+        second = client.get("/api/v1/tracks/missing-track/stems")
+    assert first.status_code == 200
+    assert first.json()["code"] == "STEM_BUNDLE_NOT_FOUND"
+    assert second.status_code == 200
+    assert second.json()["code"] == "STEM_BUNDLE_NOT_FOUND"
+    index_gets = [c for c in s3.get_calls if c[1] == INDEX_OBJECT_KEY]
+    assert index_gets == []
+
+
+# --- transport failure classification (STEM-27) ------------------------------
+
+
+@pytest.mark.requirement("STEM-27")
+def test_part_route_returns_502_on_transport_failure(tmp_path: Path):
+    from tests.cloudsync.test_stem_hydration import _TransportFailingAssetS3
+
+    stems_dir = tmp_path / "stems"
+    data_dir = tmp_path / "data"
+    cfg = _cfg()
+    stable_id = "transport-fail-track"
+    base_s3 = InMemoryAssetS3()
+    entry = _seed_bundle(base_s3, cfg, stable_id)
+    fail_digest = entry["vocals.wav"]
+    fail_key = (cfg.audio_bucket, asset_object_key(fail_digest))
+    s3 = _TransportFailingAssetS3(fail_key=fail_key)
+    for bucket, key in base_s3.store:
+        s3.store[(bucket, key)] = base_s3.store[(bucket, key)]
+    save_cached_index(data_dir, {stable_id: entry})
+
+    with _client(stems_dir, data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
+        first = client.get(f"/api/v1/tracks/{stable_id}/stems/vocals")
+        second = client.get(f"/api/v1/tracks/{stable_id}/stems/vocals")
+    assert first.status_code == 502
+    assert first.json()["detail"]["code"] == "STEM_BUNDLE_HYDRATION_FAILED"
+    assert second.status_code == 502
+    assert second.json()["detail"]["code"] == "STEM_BUNDLE_HYDRATION_FAILED"
+
+
+# --- serve-TTL eviction protection (STEM-30) --------------------------------
+
+
+@pytest.mark.requirement("STEM-30")
+def test_manifest_route_marks_bundle_recently_served(tmp_path: Path):
+    stems_dir = tmp_path / "stems"
+    data_dir = tmp_path / "data"
+    stable_id = "served-track"
+    bundle_dir = stems_dir / stable_id
+    bundle_dir.mkdir(parents=True)
+    (bundle_dir / "manifest.json").write_bytes(_manifest_bytes(stable_id))
+    for part in ("vocals", "drums", "bass", "other"):
+        (bundle_dir / f"{part}.wav").write_bytes(_wav_bytes())
+
+    with _client(stems_dir, data_dir=data_dir) as client:
+        resp = client.get(f"/api/v1/tracks/{stable_id}/stems")
+    assert resp.status_code == 200
+    assert stable_id in stems_module.stem_hydration.OPEN_DECKS.open_ids()
+    assert not stems_module.stem_hydration.OPEN_DECKS.is_open(stable_id)

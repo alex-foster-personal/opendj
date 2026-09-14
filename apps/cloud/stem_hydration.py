@@ -31,16 +31,17 @@ Two entry points:
 from __future__ import annotations
 
 import json
-import os
 import shutil
+import tempfile
 import threading
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from apps.cloud import asset_store, policy, stem_index
-from apps.cloud.asset_store import AssetS3Client, asset_object_key
+from apps.cloud.asset_store import AssetS3Client
 from apps.cloud.config import CloudConfig
 from apps.cloud.eviction import BYTES_PER_MB, HydrationError
 from apps.webui.server.stem_artifacts import (
@@ -89,6 +90,15 @@ def load_reserved_ids(data_dir: Path) -> frozenset[str]:
 # --- open-deck protection ------------------------------------------------------
 
 
+#: How long a bundle stays eviction-protected after the manifest or part
+#: route last served it, with no explicit deck-open call required. Chosen
+#: as a generous multiple of a normal DJ set length so a long-running
+#: session's decks are never evicted between two real loads of the same
+#: track; see docs/decisions/ADR-0024-stem-bundle-hydration-index.md
+#: Addendum 3 for the full rationale.
+OPEN_DECK_SERVED_TTL_S: float = 6 * 3600.0  # 6 hours
+
+
 class OpenDeckRegistry:
     """Which stable_ids are currently loaded on a deck, in this process.
 
@@ -102,6 +112,7 @@ class OpenDeckRegistry:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._open: dict[str, int] = {}
+        self._served_at: dict[str, float] = {}
 
     def mark_open(self, stable_id: str) -> None:
         with self._lock:
@@ -121,13 +132,42 @@ class OpenDeckRegistry:
         with self._lock:
             return self._open.get(stable_id, 0) > 0
 
-    def open_ids(self) -> frozenset[str]:
+    def mark_served(self, stable_id: str, *, now: float | None = None) -> None:
+        """Record that a manifest/part route just served this bundle's
+        bytes, protecting it from eviction for OPEN_DECK_SERVED_TTL_S even
+        with no explicit deck-open/close call -- there is currently no
+        production caller of those endpoints (see ADR-0024 Addendum 3).
+        ``now`` is injectable for tests; production omits it."""
         with self._lock:
-            return frozenset(self._open)
+            self._served_at[stable_id] = now if now is not None else time.monotonic()
+
+    def open_ids(self, *, now: float | None = None) -> frozenset[str]:
+        """Explicitly-open ids, UNION any id served within the TTL. This is
+        the single set every eviction caller already protects via
+        ``protected=OPEN_DECKS.open_ids()`` -- widening its meaning here
+        needs no changes at any of those call sites."""
+        moment = now if now is not None else time.monotonic()
+        with self._lock:
+            recently_served = {
+                sid for sid, at in self._served_at.items()
+                if moment - at < OPEN_DECK_SERVED_TTL_S
+            }
+            return frozenset(self._open) | recently_served
 
 
 #: Process-wide registry shared by the deck-load route and eviction.
 OPEN_DECKS = OpenDeckRegistry()
+
+_hydrate_locks_guard = threading.Lock()
+_hydrate_locks: dict[str, threading.Lock] = {}
+
+
+def _hydrate_lock(stable_id: str) -> threading.Lock:
+    """One lock per stable_id, created lazily, shared process-wide, so
+    concurrent in-process hydration calls for the SAME bundle serialize
+    instead of racing on the same destination directory."""
+    with _hydrate_locks_guard:
+        return _hydrate_locks.setdefault(stable_id, threading.Lock())
 
 
 # --- outcomes -------------------------------------------------------------------
@@ -175,7 +215,7 @@ def _bundle_remote_size(
     """Sum HEAD sizes for every indexed file, or ``None`` if any object is absent."""
     total = 0
     for digest in file_hashes.values():
-        head = s3.head_object(cfg.audio_bucket, asset_object_key(digest))
+        head = asset_store.head_asset(cfg, s3, digest)
         if head is None:
             return None
         total += head.size
@@ -186,35 +226,21 @@ def _fetch_bundle_files(
     cfg: CloudConfig,
     s3: AssetS3Client,
     *,
-    stable_id: str,
     file_hashes: dict[str, str],
-    bundle_dir: Path,
+    tmp_dir: Path,
 ) -> int:
-    """Fetch every file the index names, into a tmp dir, then publish it as
-    ``bundle_dir`` with one atomic rename. A failure anywhere leaves no
-    partial bundle behind -- a half-written directory would strict-load-fail
-    forever until someone notices and deletes it by hand."""
-    tmp_dir = bundle_dir.parent / f"{stable_id}.tmp-hydrate-{os.getpid()}"
-    if tmp_dir.exists():
-        shutil.rmtree(tmp_dir)
-    tmp_dir.mkdir(parents=True)
+    """Fetch every file the index names into ``tmp_dir`` (already created,
+    empty, and unique to this call). Never touches ``bundle_dir`` -- the
+    caller decides when/whether to publish."""
     total = 0
-    try:
-        for filename, digest in file_hashes.items():
-            dest = tmp_dir / filename
-            asset_store.fetch_asset(cfg, s3, digest, dest)
-            total += dest.stat().st_size
-        if bundle_dir.exists():
-            shutil.rmtree(bundle_dir)
-        bundle_dir.parent.mkdir(parents=True, exist_ok=True)
-        tmp_dir.rename(bundle_dir)
-    except BaseException:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise
+    for filename, digest in file_hashes.items():
+        dest = tmp_dir / filename
+        asset_store.fetch_asset(cfg, s3, digest, dest)
+        total += dest.stat().st_size
     return total
 
 
-def hydrate_one(
+def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch, all real states
     stable_id: str,
     *,
     data_dir: Path,
@@ -268,21 +294,48 @@ def hydrate_one(
         )
 
     bundle_dir = root / stable_id
-    try:
-        total = _fetch_bundle_files(
-            cfg, s3, stable_id=stable_id, file_hashes=file_hashes, bundle_dir=bundle_dir
+    with _hydrate_lock(stable_id):
+        # Double-checked: another in-process call may have just published
+        # this bundle while we were waiting for the lock.
+        if _is_local(stable_id, root):
+            return HydrationOutcome(stable_id, "already_local")
+        root.mkdir(parents=True, exist_ok=True)
+        tmp_dir = Path(
+            tempfile.mkdtemp(dir=root, prefix=f"{stable_id}.tmp-hydrate-")
         )
-        load_stem_bundle(stable_id, stems_dir=root)  # strict re-verify, never mocked
-    except (
-        asset_store.AssetStoreError,
-        StemArtifactError,
-        StemBundleNotFoundError,
-        OSError,
-    ) as exc:
-        shutil.rmtree(bundle_dir, ignore_errors=True)
-        return HydrationOutcome(stable_id, "error", reason=str(exc))
+        renamed = False
+        try:
+            total = _fetch_bundle_files(cfg, s3, file_hashes=file_hashes, tmp_dir=tmp_dir)
+            if bundle_dir.exists():
+                # Cross-process race: something else already published a
+                # valid bundle while we were fetching. Keep the winner,
+                # discard our own copy rather than clobbering it.
+                if _is_local(stable_id, root):
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
+                    return HydrationOutcome(stable_id, "already_local")
+                shutil.rmtree(bundle_dir)
+            bundle_dir.parent.mkdir(parents=True, exist_ok=True)
+            tmp_dir.rename(bundle_dir)
+            renamed = True
+            load_stem_bundle(stable_id, stems_dir=root)  # strict re-verify, never mocked
+        except (
+            asset_store.AssetStoreError,
+            StemArtifactError,
+            StemBundleNotFoundError,
+            OSError,
+        ) as exc:
+            if renamed:
+                # We just published this bundle and OUR OWN verify failed:
+                # it's genuinely bad, remove it -- not another call's work,
+                # because we hold this stable_id's lock.
+                shutil.rmtree(bundle_dir, ignore_errors=True)
+            else:
+                # Fetch failed before publish: remove only OUR OWN temp
+                # dir, never bundle_dir (which we never touched).
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            return HydrationOutcome(stable_id, "error", reason=str(exc))
 
-    enforce_budget(root, protected=OPEN_DECKS.open_ids())
+    enforce_budget(root, protected=OPEN_DECKS.open_ids() | {stable_id})
     return HydrationOutcome(stable_id, "hydrated", bytes_fetched=total)
 
 
@@ -416,6 +469,7 @@ def enforce_budget(
 
 __all__ = [
     "OPEN_DECKS",
+    "OPEN_DECK_SERVED_TTL_S",
     "RESERVATION_FILENAME",
     "STEM_ASSET_KIND",
     "BulkHydrateReport",

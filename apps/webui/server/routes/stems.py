@@ -9,6 +9,7 @@ part GET still 404s when there is no file to stream.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import stat
 import threading
@@ -170,15 +171,20 @@ def _run_hydration(
     data_dir: Path,
     stems_dir: Path,
 ) -> stem_hydration.HydrationOutcome:
-    outcome = stem_hydration.hydrate_one(
-        stable_id,
-        data_dir=data_dir,
-        cfg=cfg,
-        s3=s3,
-        index=index,
-        stems_dir=stems_dir,
-        skip_reserved=False,  # on-demand deck load NEVER skips reserved ids (D5)
-    )
+    try:
+        outcome = stem_hydration.hydrate_one(
+            stable_id,
+            data_dir=data_dir,
+            cfg=cfg,
+            s3=s3,
+            index=index,
+            stems_dir=stems_dir,
+            skip_reserved=False,  # on-demand deck load NEVER skips reserved ids (D5)
+        )
+    except Exception as exc:
+        with _INFLIGHT_LOCK:
+            _LAST_HYDRATE_ERROR[stable_id] = str(exc)
+        raise
     with _INFLIGHT_LOCK:
         if outcome.status == "error":
             _LAST_HYDRATE_ERROR[stable_id] = outcome.reason or "hydration failed"
@@ -200,6 +206,11 @@ def _enqueue_hydration(stable_id: str, request: Request) -> Future | None:
     if deps is None:
         return None
     cfg, s3, data_dir = deps
+    cache_path = stem_index.local_index_cache_path(data_dir)
+    if not cache_path.is_file():
+        with contextlib.suppress(Exception):
+            # recorded; consulted below via stem_index.refresh_error
+            stem_index.refresh_local_cache_from_r2_throttled(cfg, s3, data_dir)
     with _INFLIGHT_LOCK:
         existing = _INFLIGHT.get(stable_id)
         if existing is not None and not existing.done():
@@ -211,6 +222,10 @@ def _enqueue_hydration(stable_id: str, request: Request) -> Future | None:
         except stem_index.StemIndexError as exc:
             _raise_stem_index_corrupt(exc, data_dir)
         if stable_id not in index:
+            if not cache_path.is_file():
+                refresh_err = stem_index.refresh_error(data_dir)
+                if refresh_err is not None:
+                    _raise_index_refresh_failed(refresh_err)
             return None
         stems_dir = _stems_dir(request)
         future = _HYDRATE_EXECUTOR.submit(
@@ -256,6 +271,17 @@ def _raise_stem_index_corrupt(exc: stem_index.StemIndexError, data_dir: Path) ->
             "path": str(stem_index.local_index_cache_path(data_dir)),
         },
     ) from exc
+
+
+def _raise_index_refresh_failed(reason: str) -> None:
+    """Fail loud when a cold-cache single-flight refresh from R2 failed: the
+    caller cannot tell 'nothing published yet' from 'refresh error' unless
+    this is surfaced explicitly, never silently folded into the ordinary
+    unavailable/404 empty state."""
+    raise HTTPException(
+        status_code=502,
+        detail={"code": "STEM_INDEX_REFRESH_FAILED", "message": reason},
+    )
 
 
 def _manifest_out(bundle: StemBundle) -> StemManifestOut:
@@ -348,6 +374,7 @@ def get_stem_manifest(
             status_code=422,
             detail={"code": "STEM_ARTIFACT_INVALID", "message": str(exc)},
         ) from exc
+    stem_hydration.OPEN_DECKS.mark_served(stable_id)
     return _manifest_out(bundle)
 
 
@@ -387,6 +414,8 @@ def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingRespo
                     "message": "still fetching from R2; retry shortly",
                 },
             ) from None
+        except Exception as exc:  # noqa: BLE001 - any escaping exception from the hydration future must still answer the same 502 contract, never an unclassified 500
+            _raise_hydration_failed(str(exc))
         if outcome.status == "error":
             _raise_hydration_failed(outcome.reason or "hydration failed")
         bundle = _load_or_http_error(stable_id, request)
@@ -408,6 +437,7 @@ def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingRespo
             status_code=422,
             detail={"code": "STEM_ARTIFACT_INVALID", "message": str(exc)},
         ) from exc
+    stem_hydration.OPEN_DECKS.mark_served(stable_id)
     return StreamingResponse(
         _stream_file(source),
         media_type=bundle.media_type,

@@ -30,6 +30,8 @@ from apps.cloud.stem_index import (
     is_allowed_stem_filename,
     load_cached_index,
     publish_index,
+    refresh_error,
+    refresh_local_cache_from_r2_throttled,
     save_cached_index,
 )
 
@@ -289,3 +291,74 @@ def test_publish_index_merges_concurrent_updates_under_cas(cfg: CloudConfig):
     assert s3.get_calls >= 3
     final = fetch_index(cfg, s3)
     assert final == {"a": {"manifest.json": "a" * 64}, "b": {"manifest.json": "b" * 64}}
+
+
+@pytest.fixture(autouse=True)
+def _reset_stem_index_refresh_state():
+    from apps.cloud import stem_index
+
+    stem_index._last_refresh_attempt_mono.clear()
+    stem_index._last_refresh_error.clear()
+    yield
+    stem_index._last_refresh_attempt_mono.clear()
+    stem_index._last_refresh_error.clear()
+
+
+class _CountingGetS3(FakeS3Client):
+    def __init__(self) -> None:
+        super().__init__()
+        self.get_calls = 0
+
+    def get_object(self, bucket: str, key: str):
+        self.get_calls += 1
+        return super().get_object(bucket, key)
+
+
+@pytest.mark.requirement("STEM-26")
+def test_refresh_local_cache_from_r2_throttled_runs_once_within_interval(
+    tmp_path: Path, cfg: CloudConfig
+):
+    data_dir = tmp_path / "data"
+    s3 = _CountingGetS3()
+    publish_index(cfg, s3, {"t": {"manifest.json": "a" * 64}})
+    s3.get_calls = 0
+
+    assert refresh_local_cache_from_r2_throttled(cfg, s3, data_dir) is True
+    assert refresh_local_cache_from_r2_throttled(cfg, s3, data_dir) is False
+    assert s3.get_calls == 1
+
+
+@pytest.mark.requirement("STEM-26")
+def test_refresh_local_cache_from_r2_throttled_force_bypasses_backoff(
+    tmp_path: Path, cfg: CloudConfig
+):
+    data_dir = tmp_path / "data"
+    s3 = _CountingGetS3()
+    publish_index(cfg, s3, {"t": {"manifest.json": "a" * 64}})
+    s3.get_calls = 0
+
+    refresh_local_cache_from_r2_throttled(cfg, s3, data_dir)
+    assert refresh_local_cache_from_r2_throttled(cfg, s3, data_dir) is False
+    assert refresh_local_cache_from_r2_throttled(cfg, s3, data_dir, force=True) is True
+    assert s3.get_calls == 2
+
+
+@pytest.mark.requirement("STEM-26")
+def test_refresh_local_cache_from_r2_throttled_records_and_clears_error(
+    tmp_path: Path, cfg: CloudConfig
+):
+    data_dir = tmp_path / "data"
+
+    class FailingS3(FakeS3Client):
+        def get_object(self, bucket: str, key: str):
+            raise TimeoutError("simulated failure")
+
+    failing = FailingS3()
+    with pytest.raises(TimeoutError):
+        refresh_local_cache_from_r2_throttled(cfg, failing, data_dir, force=True)
+    assert refresh_error(data_dir) is not None
+
+    s3 = FakeS3Client()
+    publish_index(cfg, s3, {"t": {"manifest.json": "a" * 64}})
+    refresh_local_cache_from_r2_throttled(cfg, s3, data_dir, force=True)
+    assert refresh_error(data_dir) is None

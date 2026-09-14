@@ -50,6 +50,8 @@ retry) instead of the asset tier's conditional create or a blind overwrite.
 from __future__ import annotations
 
 import json
+import threading
+import time
 from pathlib import Path
 from typing import TypeAlias
 
@@ -278,16 +280,67 @@ def save_cached_index(data_dir: Path, index: StemAssetIndex) -> Path:
 
 def refresh_local_cache_from_r2(cfg: CloudConfig, s3: S3Client, data_dir: Path) -> StemAssetIndex:
     """Fetch the R2 index and persist it as the local cache. Explicit,
-    network-touching; never called from a request-serving code path."""
+    network-touching; not called directly from request-serving code paths --
+    use :func:`refresh_local_cache_from_r2_throttled` there instead."""
     index = fetch_index(cfg, s3)
     save_cached_index(data_dir, index)
     return index
+
+
+#: Floor between REQUEST-PATH refresh attempts for the same data_dir, so a
+#: cold cache with nothing published (or a flaky network) cannot turn every
+#: manifest miss into a fresh R2 round trip. Named constant, not a magic
+#: number, per this repo's brittle-fail-fast convention.
+INDEX_REFRESH_RETRY_INTERVAL_S: float = 300.0
+
+_refresh_lock = threading.Lock()
+_last_refresh_attempt_mono: dict[Path, float] = {}
+_last_refresh_error: dict[Path, str] = {}
+
+
+def refresh_error(data_dir: Path) -> str | None:
+    """The most recent index refresh failure recorded for this data_dir, or
+    ``None`` if the last attempt (if any) succeeded or none has run yet."""
+    return _last_refresh_error.get(Path(data_dir))
+
+
+def refresh_local_cache_from_r2_throttled(
+    cfg: CloudConfig, s3: S3Client, data_dir: Path, *, force: bool = False
+) -> bool:
+    """Single-flight, backoff-guarded wrapper around
+    :func:`refresh_local_cache_from_r2`, safe to call from a request-serving
+    code path (unlike that function, which stays explicit/CLI-only).
+
+    Returns ``True`` if a refresh actually ran this call (success or
+    failure -- check :func:`refresh_error` after), ``False`` if skipped
+    because one already ran for this ``data_dir`` within
+    :data:`INDEX_REFRESH_RETRY_INTERVAL_S`. ``force=True`` bypasses the
+    backoff (used once, at process startup). At most one refresh per
+    interval per data_dir: the attempt timestamp is stamped while holding
+    the lock, before the network call, so a second caller arriving
+    immediately after sees the stamp and skips rather than racing it.
+    """
+    data_dir = Path(data_dir)
+    now = time.monotonic()
+    with _refresh_lock:
+        last = _last_refresh_attempt_mono.get(data_dir)
+        if not force and last is not None and now - last < INDEX_REFRESH_RETRY_INTERVAL_S:
+            return False
+        _last_refresh_attempt_mono[data_dir] = now
+    try:
+        refresh_local_cache_from_r2(cfg, s3, data_dir)
+    except Exception as exc:
+        _last_refresh_error[data_dir] = str(exc)
+        raise
+    _last_refresh_error.pop(data_dir, None)
+    return True
 
 
 __all__ = [
     "ALLOWED_STEM_FILENAMES",
     "INDEX_CACHE_FILENAME",
     "INDEX_OBJECT_KEY",
+    "INDEX_REFRESH_RETRY_INTERVAL_S",
     "INDEX_SCHEMA_VERSION",
     "MANIFEST_FILENAME",
     "STEM_MEDIA_EXTENSIONS",
@@ -300,6 +353,8 @@ __all__ = [
     "load_cached_index",
     "local_index_cache_path",
     "publish_index",
+    "refresh_error",
     "refresh_local_cache_from_r2",
+    "refresh_local_cache_from_r2_throttled",
     "save_cached_index",
 ]
