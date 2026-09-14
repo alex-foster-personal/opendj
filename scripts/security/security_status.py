@@ -48,7 +48,7 @@ SWOT_MARKER_RE = re.compile(r"<!-- swot-reviewed-for: ([0-9a-f]{12}|UNSET) -->")
 WIRED = "WIRED"
 NOT_WIRED = "NOT WIRED"
 EXTERNAL = "EXTERNAL"
-# ADR-0041: security reports, it does not block merges, until the promotion gate exists.
+# ADR-0043: security reports, it does not block merges, until the promotion gate exists.
 MERGE_BLOCKING = "no"
 
 OSV_CHECK = "Dependency vulnerability scan (osv-scanner)"
@@ -376,7 +376,7 @@ def render_block(rows: list[Row]) -> str:
     lines = [
         BLOCK_BEGIN,
         f"**{wired} of {len(rows)} checks wired in this tree."
-        " Security blocks no merges (ADR-0041).**",
+        " Security blocks no merges (ADR-0043).**",
         "",
         "| Check | Where it runs | State | Blocks merge | Evidence |",
         "|---|---|---|---|---|",

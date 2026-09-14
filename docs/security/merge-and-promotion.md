@@ -1,13 +1,13 @@
 # Merge fast in private, promote to public only when all CI and security pass
 
 Part of [security.md](security.md). Status: **design, not built.** Decision
-record: [ADR-0041](../decisions/ADR-0041-security-review-system.md).
+record: [ADR-0043](../decisions/ADR-0043-security-review-system.md).
 Requirement: SEC-03.
 
 ## Problem
 
 Agents merge very fast. Security checks cannot block those merges without
-slowing the fleet, and today they do not (ADR-0041). The repo is going
+slowing the fleet, and today they do not (ADR-0043). The repo is going
 public (OSSPUB). Unvetted fast merges must not reach the public repo.
 
 ## Decision: private upstream, public downstream
