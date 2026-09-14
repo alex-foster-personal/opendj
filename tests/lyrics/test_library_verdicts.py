@@ -278,7 +278,14 @@ def test_backfill_writes_no_lyrics_verdict_for_silent_vocal_bundle(conn, data_di
 @requires_ffmpeg
 @requires_mp3_loader
 @pytest.mark.requires_audio_stack
-def test_backfill_preserves_a_human_override(conn, data_dir) -> None:
+def test_backfill_skips_a_human_override_and_reports_it(conn, data_dir) -> None:
+    """P1 BLOCKING fix (Sol review round 4, PR #2611, library_verdicts.py:308):
+    LYR-06's own acceptance criterion groups a human ``override`` with
+    ``words_content_hash`` -- "the backfill never overwrites it, only
+    fills/refreshes coverage-only rows". An overridden row is not a
+    coverage-only row, so it must be excluded from a recompute ENTIRELY, not
+    merely have ``override``/``override_note`` themselves survive underneath
+    an otherwise-refreshed computed verdict."""
     seed_track(conn, "sid-override-001")
     _write_bundle(_stems_root(data_dir), "sid-override-001", vocal_loud=False)
     library_verdicts.backfill_verdicts(
@@ -287,9 +294,12 @@ def test_backfill_preserves_a_human_override(conn, data_dir) -> None:
     store.set_override(
         conn, stable_id="sid-override-001", override="vocal", note="I heard singing"
     )
+    original = store.get_verdict(conn, "sid-override-001")
+    assert original is not None
 
-    # A changed bundle forces a genuine recompute (new source hash), the
-    # scenario that would clobber an override if the guarantee ever broke.
+    # A changed bundle would otherwise force a genuine recompute (new source
+    # hash) -- the scenario that would clobber the computed fields under an
+    # override if the guarantee ever broke.
     shutil.rmtree(_stems_root(data_dir) / "sid-override-001")
     _write_bundle(
         _stems_root(data_dir), "sid-override-001", vocal_loud=False,
@@ -299,10 +309,15 @@ def test_backfill_preserves_a_human_override(conn, data_dir) -> None:
         conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False
     )
 
-    assert report.processed == ("sid-override-001",)
+    assert report.processed == ()
+    assert report.skipped.get(library_verdicts.SKIP_HAS_OVERRIDE) == ("sid-override-001",)
     verdict = store.get_verdict(conn, "sid-override-001")
     assert verdict is not None
-    assert verdict.verdict == "no-lyrics", "the computed value still updates"
+    assert verdict.verdict == original.verdict, "the computed value is frozen, not refreshed"
+    assert verdict.coverage_pct == original.coverage_pct
+    assert verdict.source == original.source
+    assert verdict.pipeline_version == original.pipeline_version
+    assert verdict.computed_at == original.computed_at
     assert verdict.override == "vocal"
     assert verdict.override_note == "I heard singing"
     assert verdict.effective == "vocal", "the override still wins"
@@ -395,6 +410,51 @@ def test_backfill_never_clobbers_word_level_data(conn, data_dir) -> None:
     assert verdict is not None
     assert verdict.n_words == 42
     assert verdict.words_content_hash == digest
+
+
+def test_backfill_never_clobbers_an_overridden_row(conn, data_dir) -> None:
+    """No ffmpeg / MP3-loader dependency: the has-override guard fires
+    before the bundle is ever loaded, symmetric with
+    ``test_backfill_never_clobbers_word_level_data`` above. P1 BLOCKING fix
+    (Sol review round 4, PR #2611, library_verdicts.py:308)."""
+    seed_track(conn, "sid-has-override-001")
+    _write_bundle_dir_stub(_stems_root(data_dir), "sid-has-override-001")
+    store.upsert_verdict(
+        conn,
+        stable_id="sid-has-override-001",
+        verdict="no-lyrics",
+        coverage_pct=3.0,
+        source="stem-coverage:v1:" + "e" * 64,
+        language_iso3=None,
+        n_words=None,
+        n_lines=None,
+        pct_witness_red=None,
+        pipeline_version=library_verdicts.STEM_COVERAGE_PIPELINE_VERSION,
+        words_content_hash=None,
+        computed_at="2026-09-01T00:00:00.000000+00:00",
+        resurrect=False,
+    )
+    store.set_override(
+        conn, stable_id="sid-has-override-001", override="vocal", note="I heard singing"
+    )
+    before = store.get_verdict(conn, "sid-has-override-001")
+    assert before is not None
+
+    report = library_verdicts.backfill_verdicts(
+        conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False
+    )
+
+    assert report.processed == ()
+    assert report.skipped.get(library_verdicts.SKIP_HAS_OVERRIDE) == (
+        "sid-has-override-001",
+    )
+    verdict = store.get_verdict(conn, "sid-has-override-001")
+    assert verdict is not None
+    assert verdict.verdict == before.verdict
+    assert verdict.coverage_pct == before.coverage_pct
+    assert verdict.computed_at == before.computed_at
+    assert verdict.override == "vocal"
+    assert verdict.effective == "vocal"
 
 
 @requires_ffmpeg
@@ -776,6 +836,117 @@ def test_cached_coverage_pct_rejects_non_finite_and_out_of_range_values(data_dir
     )
 
 
+def test_cached_coverage_pct_raises_on_a_present_but_corrupt_cache_entry(data_dir) -> None:
+    """P1 BLOCKING fix (Sol review round 4, PR #2611, library_verdicts.py:227):
+    a MISSING cache file and a PRESENT-but-unreadable one were folded into
+    the same ``None`` return, so a corrupt cache file was silently treated
+    as "no cache" and the caller derived fresh coverage and reported the
+    track as successfully processed -- masking a real filesystem/corruption
+    fault from the operator, against the project's fail-fast rule. A
+    present file that fails to parse as JSON must raise, not return None."""
+    stems_root = _stems_root(data_dir)
+    _write_wav_bundle(stems_root, "sid-cache-corrupt-001", source_sha256="b" * 64)
+    bundle = load_stem_bundle("sid-cache-corrupt-001", stems_dir=stems_root)
+    cache_path = vcache.cache_path(data_dir, "sid-cache-corrupt-001")
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text("{this is not valid json", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="not valid JSON"):
+        library_verdicts._cached_coverage_pct(data_dir, "sid-cache-corrupt-001", bundle)
+
+
+def test_cached_coverage_pct_raises_on_an_unreadable_cache_file(
+    data_dir, monkeypatch
+) -> None:
+    """Sibling of the corrupt-JSON case above: a present file that raises
+    ``OSError`` on read (permission error, I/O fault, truncated device) must
+    also raise rather than being folded into the "no cache" path."""
+    stems_root = _stems_root(data_dir)
+    _write_wav_bundle(stems_root, "sid-cache-unreadable-001", source_sha256="c" * 64)
+    bundle = load_stem_bundle("sid-cache-unreadable-001", stems_dir=stems_root)
+    cache_path = vcache.cache_path(data_dir, "sid-cache-unreadable-001")
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    # Content is irrelevant -- read_text itself is made to fail below.
+    cache_path.write_text("{}", encoding="utf-8")
+
+    real_read_text = Path.read_text
+
+    def _boom(self, *args, **kwargs):
+        if self == cache_path:
+            raise OSError("simulated I/O error")
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _boom)
+
+    with pytest.raises(RuntimeError, match="could not be read"):
+        library_verdicts._cached_coverage_pct(data_dir, "sid-cache-unreadable-001", bundle)
+
+
+def test_backfill_reports_a_corrupt_cache_entry_as_a_failure_not_a_miss(
+    conn, data_dir
+) -> None:
+    """End-to-end control for the two unit tests above, proving the
+    PRESENCE of the good thing per the project's verification rule: the
+    backfill itself must surface a present-but-corrupt cache entry as a
+    FAILURE line an operator can see, never silently re-derive and report
+    the track as successfully processed."""
+    seed_track(conn, "sid-cache-corrupt-backfill-001")
+    stems_root = _stems_root(data_dir)
+    _write_wav_bundle(stems_root, "sid-cache-corrupt-backfill-001", source_sha256="d" * 64)
+    cache_path = vcache.cache_path(data_dir, "sid-cache-corrupt-backfill-001")
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text("{this is not valid json", encoding="utf-8")
+
+    report = library_verdicts.backfill_verdicts(
+        conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False
+    )
+
+    assert report.processed == ()
+    assert "sid-cache-corrupt-backfill-001" in report.failed
+    assert "not valid JSON" in report.failed["sid-cache-corrupt-backfill-001"]
+    assert store.get_verdict(conn, "sid-cache-corrupt-backfill-001") is None
+
+
+def test_backfill_reuses_a_readable_cache_entry_as_the_opposite_direction_control(
+    conn, data_dir
+) -> None:
+    """Opposite-direction control for the two tests above: a present,
+    READABLE, compatible cache entry must still be reused and processed
+    normally -- the fix must not turn every cache hit into a failure."""
+    seed_track(conn, "sid-cache-readable-001")
+    stems_root = _stems_root(data_dir)
+    _write_wav_bundle(stems_root, "sid-cache-readable-001", source_sha256="e" * 64)
+    bundle = load_stem_bundle("sid-cache-readable-001", stems_dir=stems_root)
+    cache_path = vcache.cache_path(data_dir, "sid-cache-readable-001")
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(
+        json.dumps(
+            {
+                "schema": vcache.VOCAL_CACHE_SCHEMA,
+                "coverage_pct": 5.0,
+                "duration_s": library_verdicts._bundle_duration_s(bundle),
+                "params": {
+                    "derived_from_stems": True,
+                    "bundle_layout": bundle.layout,
+                    "bundle_stem_sha256": vfrom_stems.bundle_stem_identity(bundle),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = library_verdicts.backfill_verdicts(
+        conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False
+    )
+
+    assert report.failed == {}
+    assert report.processed == ("sid-cache-readable-001",)
+    assert report.reused_cache == ("sid-cache-readable-001",)
+    verdict = store.get_verdict(conn, "sid-cache-readable-001")
+    assert verdict is not None
+    assert verdict.coverage_pct == 5.0
+
+
 @requires_ffmpeg
 @requires_mp3_loader
 @pytest.mark.requires_audio_stack
@@ -851,7 +1022,7 @@ def test_backfill_never_clobbers_a_word_row_written_during_the_race(
     silently overwritten with stem-only values. This test now asserts the
     row that landed mid-race survives WHOLLY intact, every column, and that
     the backfill's own write is counted as a race loss
-    (``SKIP_WORD_LEVEL_RACE``), never folded into ``processed``."""
+    (``SKIP_PROTECTED_ROW_RACE``), never folded into ``processed``."""
     seed_track(conn, "sid-race-001")
     stems_root = _stems_root(data_dir)
     _write_wav_bundle(stems_root, "sid-race-001", source_sha256="9" * 64)
@@ -910,7 +1081,7 @@ def test_backfill_never_clobbers_a_word_row_written_during_the_race(
     )
 
     assert report.processed == (), "a race loss must never be counted as processed"
-    assert report.skipped.get(library_verdicts.SKIP_WORD_LEVEL_RACE) == ("sid-race-001",)
+    assert report.skipped.get(library_verdicts.SKIP_PROTECTED_ROW_RACE) == ("sid-race-001",)
     verdict = store.get_verdict(conn, "sid-race-001")
     assert verdict is not None
     # EVERY field of the word-level row must survive untouched -- not just
@@ -925,6 +1096,101 @@ def test_backfill_never_clobbers_a_word_row_written_during_the_race(
     assert verdict.pipeline_version == "asr-v9"
     assert verdict.words_content_hash == "a" * 64
     assert verdict.computed_at == "2026-09-14T00:00:00Z"
+
+
+def test_backfill_never_clobbers_a_row_overridden_during_the_race(
+    conn, data_dir, monkeypatch
+) -> None:
+    """Sibling of the word-level race test above, same defect class (Sol
+    review round 4, PR #2611, library_verdicts.py:308): the scan phase's
+    ``store.get_verdict`` check for SKIP_HAS_OVERRIDE is not atomic with the
+    write phase's write either, so a human ``set_override`` call can land in
+    the exact same gap a real ASR/aligner write can. Drives that gap
+    directly: a concurrent ``set_override`` runs from inside
+    ``coverage_pct_for_bundle``, called immediately before this module's own
+    write, after the scan already decided (found no override) not to skip.
+    """
+    seed_track(conn, "sid-override-race-001")
+    stems_root = _stems_root(data_dir)
+    _write_wav_bundle(stems_root, "sid-override-race-001", source_sha256="8" * 64)
+    bundle = load_stem_bundle("sid-override-race-001", stems_dir=stems_root)
+    # A matching vocal-cache entry means the write side's coverage lookup is
+    # served from cache, not a real audio decode -- fast, stdlib-only, same
+    # pattern as the word-level race test above.
+    cache_path = vcache.cache_path(data_dir, "sid-override-race-001")
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(
+        json.dumps(
+            {
+                "schema": vcache.VOCAL_CACHE_SCHEMA,
+                "coverage_pct": 4.0,
+                "duration_s": library_verdicts._bundle_duration_s(bundle),
+                "params": {
+                    "derived_from_stems": True,
+                    "bundle_layout": bundle.layout,
+                    "bundle_stem_sha256": vfrom_stems.bundle_stem_identity(bundle),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # A genuine PRE-EXISTING coverage-only row, stamped stale enough (an old
+    # pipeline_version/source pair) that the scan schedules a real recompute
+    # rather than skipping it as already up to date. set_override requires
+    # an existing computed row, so this is also the setup for that.
+    store.upsert_stem_coverage_verdict(
+        conn,
+        stable_id="sid-override-race-001",
+        verdict="no-lyrics",
+        coverage_pct=3.0,
+        source="stem-coverage:v1:" + "0" * 64,
+        pipeline_version="stale-pre-race-version",
+        computed_at="2026-09-01T00:00:00.000000+00:00",
+    )
+    before = store.get_verdict(conn, "sid-override-race-001")
+    assert before is not None and before.override is None
+
+    real_coverage_pct_for_bundle = library_verdicts.coverage_pct_for_bundle
+
+    def _racing_coverage_pct_for_bundle(data_dir_arg, stable_id, bundle_arg):
+        if stable_id == "sid-override-race-001":
+            # A human sets the override IN THE GAP between the scan phase's
+            # get_verdict check (already passed, since it found no override)
+            # and this module's own write, a few lines below this return.
+            store.set_override(
+                conn,
+                stable_id="sid-override-race-001",
+                override="vocal",
+                note="race override",
+            )
+        return real_coverage_pct_for_bundle(data_dir_arg, stable_id, bundle_arg)
+
+    monkeypatch.setattr(
+        library_verdicts, "coverage_pct_for_bundle", _racing_coverage_pct_for_bundle
+    )
+
+    report = library_verdicts.backfill_verdicts(
+        conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False
+    )
+
+    assert report.processed == (), "a race loss must never be counted as processed"
+    assert report.skipped.get(library_verdicts.SKIP_PROTECTED_ROW_RACE) == (
+        "sid-override-race-001",
+    )
+    verdict = store.get_verdict(conn, "sid-override-race-001")
+    assert verdict is not None
+    # The computed fields from BEFORE the race must survive untouched --
+    # this write must never overwrite them just because the override itself
+    # would separately survive via the ON CONFLICT column omission.
+    assert verdict.verdict == before.verdict
+    assert verdict.coverage_pct == before.coverage_pct
+    assert verdict.source == before.source
+    assert verdict.pipeline_version == before.pipeline_version
+    assert verdict.computed_at == before.computed_at
+    assert verdict.override == "vocal"
+    assert verdict.override_note == "race override"
+    assert verdict.effective == "vocal"
 
 
 def test_backfill_updates_a_coverage_only_row(conn, data_dir) -> None:
@@ -960,7 +1226,7 @@ def test_backfill_updates_a_coverage_only_row(conn, data_dir) -> None:
     )
 
     assert report.processed == ("sid-coverage-update-001",)
-    assert library_verdicts.SKIP_WORD_LEVEL_RACE not in report.skipped
+    assert library_verdicts.SKIP_PROTECTED_ROW_RACE not in report.skipped
     verdict = store.get_verdict(conn, "sid-coverage-update-001")
     assert verdict is not None
     assert verdict.coverage_pct == 3.0

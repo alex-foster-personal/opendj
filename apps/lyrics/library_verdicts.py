@@ -28,13 +28,16 @@ before. Until then every MP3-part bundle fails to load here exactly as it
 does for ``from-stems``, and reports as a FAILURE line, never silently.
 
 **Never clobbers real work.** A row already carrying ``words_content_hash``
-holds real ASR/aligner word-level data, so this module SKIPS any track whose
-live row already has it set at scan time, rather than writing through it --
-this is a work-avoidance optimization (and an honest ``SKIP_HAS_WORDS`` line
-in the report), not the only thing standing between this backfill and a
+(real ASR/aligner word-level data) OR a human ``override`` is excluded from
+this backfill ENTIRELY -- not merely protected column-by-column. LYR-06's
+own acceptance criterion groups the two together: "the backfill never
+overwrites it, only fills/refreshes coverage-only rows." A row is SKIPPED at
+scan time (``SKIP_HAS_WORDS`` / ``SKIP_HAS_OVERRIDE``) the moment either
+field is set, rather than writing through it -- this is a work-avoidance
+optimization, not the only thing standing between this backfill and a
 clobber. The scan's :func:`apps.lyrics.store.get_verdict` check and this
 module's own write are two separate statements, so a real ASR/aligner write
-can still land in the gap between them.
+or a fresh human override can still land in the gap between them.
 
 An earlier revision tried closing that gap inside the SHARED
 :func:`apps.lyrics.store.upsert_verdict` writer, by ``COALESCE``-preserving
@@ -44,20 +47,25 @@ column this module writes -- ``verdict``, ``coverage_pct``, ``source``,
 ``language_iso3``, ``pct_witness_red``, ``pipeline_version``,
 ``computed_at`` -- still exposed to the exact same race: a word-level row
 would keep its words, but with a stem-only verdict and coverage number
-stamped over the real ASR judgement. This module now writes through
-:func:`apps.lyrics.store.upsert_stem_coverage_verdict` instead, a dedicated
-writer whose conflict update is itself conditional on the row still being
-coverage-only (``WHERE lyric_verdict.words_content_hash IS NULL``, checked
-inside the SAME atomic write, not as a separate prior read) -- so a row that
-has gone word-level in that gap is left WHOLLY untouched, not partially
-protected. The write reports back whether it actually landed; a race loss
-is counted as :data:`SKIP_WORD_LEVEL_RACE`, not silently folded into
-``processed``. ``upsert_verdict`` itself is unchanged -- the shared writer
-every other caller (:mod:`apps.lyrics.ingest_state`,
-:mod:`apps.lyrics.legacy_words`) relies on keeps its original semantics. A
-human ``override`` needs no special case either: neither writer's ``ON
-CONFLICT`` clause touches ``override``/``override_note``, so it survives
-every write this module makes.
+stamped over the real ASR judgement. A later revision moved to a dedicated
+:func:`apps.lyrics.store.upsert_stem_coverage_verdict` writer whose conflict
+update was conditional on ``words_content_hash IS NULL`` alone -- closing the
+word-level race, but Sol's follow-up review pointed out the identical race
+still existed for ``override``: the SCAN check excluded an overridden row,
+but nothing guarded the WRITE against a fresh ``set_override`` landing in
+the same gap, so an overridden row's computed fields (not the ``override``
+column itself, which survives structurally via the ``ON CONFLICT`` set-list
+omission either way) could still get silently recomputed underneath the
+human's decision. The writer's conditional guard now covers BOTH columns in
+the SAME statement (``WHERE lyric_verdict.words_content_hash IS NULL AND
+lyric_verdict.override IS NULL``, checked inside the SAME atomic write, not
+as a separate prior read) -- so a row that has gone word-level OR gained an
+override in that gap is left WHOLLY untouched, not partially protected. The
+write reports back whether it actually landed; a race loss is counted as
+:data:`SKIP_PROTECTED_ROW_RACE`, not silently folded into ``processed``.
+``upsert_verdict`` itself is unchanged -- the shared writer every other
+caller (:mod:`apps.lyrics.ingest_state`, :mod:`apps.lyrics.legacy_words`)
+relies on keeps its original semantics.
 
 **Resumability.** Each write's ``source`` column encodes the STEMS'
 identity (:func:`_bundle_source_label`: layout +
@@ -132,15 +140,22 @@ _CACHE_DURATION_TOL_S: float = 1.0
 
 SKIP_RESERVED: str = "reserved"
 SKIP_HAS_WORDS: str = "has-word-level-data"
+#: LYR-06's acceptance criterion groups a human ``override`` with
+#: ``words_content_hash``: both exclude a row from this backfill entirely,
+#: not merely from having ``override``/``override_note`` themselves
+#: overwritten. ``set_override`` only ever applies to a row that already has
+#: a computed verdict, so this check (like ``SKIP_HAS_WORDS``) is always
+#: scanning a real, pre-existing row.
+SKIP_HAS_OVERRIDE: str = "has-human-override"
 SKIP_UP_TO_DATE: str = "up-to-date"
-#: The scan-phase :data:`SKIP_HAS_WORDS` check missed this row (it was
-#: coverage-only, or absent, when scanned), but a real ASR/aligner write
-#: landed on it before this module's own write reached it. Distinct from
-#: ``SKIP_HAS_WORDS``: that is the cheap, expected, common case caught up
-#: front; this is the rare race counted separately so it is never silently
-#: folded into ``processed``. See :func:`apps.lyrics.store.
-#: upsert_stem_coverage_verdict`.
-SKIP_WORD_LEVEL_RACE: str = "word-level-race"
+#: The scan-phase :data:`SKIP_HAS_WORDS` / :data:`SKIP_HAS_OVERRIDE` checks
+#: missed this row (it was coverage-only, or absent, when scanned), but a
+#: real ASR/aligner write OR a fresh human override landed on it before this
+#: module's own write reached it. Distinct from those two: they are the
+#: cheap, expected, common case caught up front; this is the rare race
+#: counted separately so it is never silently folded into ``processed``. See
+#: :func:`apps.lyrics.store.upsert_stem_coverage_verdict`.
+SKIP_PROTECTED_ROW_RACE: str = "protected-row-race"
 
 
 @dataclass(frozen=True)
@@ -251,15 +266,43 @@ def _cached_coverage_pct(data_dir: Path, stable_id: str, bundle: StemBundle) -> 
     (every comparison against NaN is False, so ``> _CACHE_DURATION_TOL_S``
     is never true). Both values must be finite, ``coverage_pct`` must sit in
     ``[0, 100]``, and ``duration_s`` must be positive -- anything else falls
-    through to a real derive exactly like a missing or unreadable entry.
+    through to a real derive exactly like an INCOMPATIBLE entry (wrong
+    schema, mismatched bundle identity): the file read fine, its content
+    just is not reusable, so silently deriving instead is the honest
+    behaviour.
+
+    A MISSING file (no prior ``from-stems`` run for this track) is a third,
+    equally legitimate ``None`` case -- there was never anything to read.
+
+    A PRESENT but unreadable file is different in kind from either of those,
+    and is NOT folded into the same ``None`` path: a permission error, a
+    truncated write, or corrupt JSON on a file that exists means something is
+    actually wrong on disk, not merely "no cache yet". Silently treating that
+    as a miss and deriving fresh coverage would still produce a technically
+    correct verdict, but it would mask the underlying fault from the
+    operator on every affected track, forever -- the project's fail-fast
+    rule against silent exception handling. This raises instead, which
+    :func:`backfill_verdicts`'s existing per-track exception handler turns
+    into an honest FAILURE line rather than a quiet, indistinguishable
+    re-derive.
     """
     path = vcache.cache_path(data_dir, stable_id)
     if not path.is_file():
         return None
     try:
-        entry = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(
+            f"vocal-cache entry for {stable_id!r} exists at {path} but could "
+            f"not be read: {exc}"
+        ) from exc
+    try:
+        entry = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"vocal-cache entry for {stable_id!r} exists at {path} but is "
+            f"not valid JSON: {exc}"
+        ) from exc
     if (
         not isinstance(entry, dict)
         or entry.get("schema") != vcache.VOCAL_CACHE_SCHEMA
@@ -321,6 +364,48 @@ def _existing_row_is_current(
     )
 
 
+@dataclass(frozen=True)
+class _ScanOutcome:
+    """One candidate's scan-phase classification: exactly one field is set.
+    Pulled out of :func:`backfill_verdicts` so that function's own branching
+    stays flat -- a caller-facing loop over ``if outcome.skip_reason /
+    outcome.fail_reason / else`` instead of every one of these checks inline.
+    """
+
+    skip_reason: str | None = None
+    fail_reason: str | None = None
+    attempt: tuple[str, StemBundle, str] | None = None
+
+
+def _scan_candidate(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    *,
+    reserved: frozenset[str],
+    demucs_root: Path,
+    roformer_root: Path,
+) -> _ScanOutcome:
+    """Classify one candidate stable_id: reserved / protected (override or
+    word-level) / a failed bundle load / already current / needs a real
+    recompute. Never loads a bundle for a reserved or protected row -- both
+    checks are cheap and must fire before the more expensive load."""
+    if stable_id in reserved:
+        return _ScanOutcome(skip_reason=SKIP_RESERVED)
+    row = store.get_verdict(conn, stable_id)
+    if row is not None and row.override is not None:
+        return _ScanOutcome(skip_reason=SKIP_HAS_OVERRIDE)
+    if row is not None and row.words_content_hash is not None:
+        return _ScanOutcome(skip_reason=SKIP_HAS_WORDS)
+    try:
+        bundle = load_stem_bundle(stable_id, roots=(demucs_root, roformer_root))
+    except (StemArtifactError, StemBundleNotFoundError) as exc:
+        return _ScanOutcome(fail_reason=f"bundle load failed: {exc}")
+    expected_source = _bundle_source_label(bundle)
+    if _existing_row_is_current(row, expected_source):
+        return _ScanOutcome(skip_reason=SKIP_UP_TO_DATE)
+    return _ScanOutcome(attempt=(stable_id, bundle, expected_source))
+
+
 def backfill_verdicts(
     conn: sqlite3.Connection,
     *,
@@ -348,23 +433,20 @@ def backfill_verdicts(
 
     to_attempt: list[tuple[str, StemBundle, str]] = []
     for stable_id in candidates:
-        if stable_id in reserved:
-            _skip(skipped, SKIP_RESERVED, stable_id)
-            continue
-        row = store.get_verdict(conn, stable_id)
-        if row is not None and row.words_content_hash is not None:
-            _skip(skipped, SKIP_HAS_WORDS, stable_id)
-            continue
-        try:
-            bundle = load_stem_bundle(stable_id, roots=(demucs_root, roformer_root))
-        except (StemArtifactError, StemBundleNotFoundError) as exc:
-            failed[stable_id] = f"bundle load failed: {exc}"
-            continue
-        expected_source = _bundle_source_label(bundle)
-        if _existing_row_is_current(row, expected_source):
-            _skip(skipped, SKIP_UP_TO_DATE, stable_id)
-            continue
-        to_attempt.append((stable_id, bundle, expected_source))
+        outcome = _scan_candidate(
+            conn,
+            stable_id,
+            reserved=reserved,
+            demucs_root=demucs_root,
+            roformer_root=roformer_root,
+        )
+        if outcome.skip_reason is not None:
+            _skip(skipped, outcome.skip_reason, stable_id)
+        elif outcome.fail_reason is not None:
+            failed[stable_id] = outcome.fail_reason
+        else:
+            assert outcome.attempt is not None
+            to_attempt.append(outcome.attempt)
 
     planned = to_attempt if limit is None else to_attempt[:limit]
 
@@ -385,12 +467,13 @@ def backfill_verdicts(
                 failed[stable_id] = f"{type(exc).__name__}: {exc}"
                 continue
             if not written:
-                # A real ASR/aligner write landed on this row after the scan
-                # passed it (SKIP_HAS_WORDS looks stale-but-honest here) and
-                # before this write reached it. upsert_stem_coverage_verdict
-                # already left the row wholly untouched; this is only the
-                # bookkeeping for that outcome.
-                _skip(skipped, SKIP_WORD_LEVEL_RACE, stable_id)
+                # A real ASR/aligner write OR a fresh human override landed
+                # on this row after the scan passed it (SKIP_HAS_WORDS /
+                # SKIP_HAS_OVERRIDE look stale-but-honest here) and before
+                # this write reached it. upsert_stem_coverage_verdict already
+                # left the row wholly untouched; this is only the bookkeeping
+                # for that outcome.
+                _skip(skipped, SKIP_PROTECTED_ROW_RACE, stable_id)
                 continue
             processed.append(stable_id)
             if reused:
@@ -443,10 +526,11 @@ def report_to_dict(report: VerdictBackfillReport) -> dict[str, Any]:
 
 __all__ = [
     "RESERVED_FILENAME",
+    "SKIP_HAS_OVERRIDE",
     "SKIP_HAS_WORDS",
+    "SKIP_PROTECTED_ROW_RACE",
     "SKIP_RESERVED",
     "SKIP_UP_TO_DATE",
-    "SKIP_WORD_LEVEL_RACE",
     "STEM_COVERAGE_PIPELINE_VERSION",
     "VerdictBackfillReport",
     "backfill_verdicts",
