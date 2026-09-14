@@ -47,13 +47,18 @@ from apps.engine_core.app import create_app
 from apps.engine_core.config import EngineConfig
 
 app = create_app(EngineConfig(data_dir=Path(os.environ["MDT_DATA_DIR"])))
-with TestClient(app):
+with TestClient(app) as client:
     watcher = app.state.library_jobs_watcher
     thread = watcher._thread
     drain_alive = thread is not None and thread.is_alive()
     thread_names = sorted(t.name for t in threading.enumerate())
+    stems_miss = client.get("/api/v1/tracks/odj-probe-no-bundle/stems")
+    stems_miss_body = stems_miss.json()
 
 print(json.dumps({
+    "stems_miss_status": stems_miss.status_code,
+    "stems_miss_code": stems_miss_body.get("code") or stems_miss_body.get("detail", {}).get("code"),
+    "hydration_armed": app.state.stem_hydration_s3 is not None,
     "jobs_enabled": app.state.auto_user_jobs.enabled,
     "drain_alive": drain_alive,
     "thread_names": thread_names,
@@ -124,6 +129,46 @@ def test_library_jobs_off_starts_no_drain(tmp_path: Path) -> None:
     assert payload["jobs_enabled"] is False
     assert payload["drain_alive"] is False
     assert DRAIN_THREAD_NAME not in payload["thread_names"]
+
+
+@pytest.mark.requirement("STEM-15")
+def test_cloud_mode_without_boto3_still_boots(tmp_path: Path) -> None:
+    """Regression, Mon 14 Sep 2026: the installed app (cloud mode, R2
+    credentials resolving, no boto3 in the packaged closure) crashed at boot
+    with AssetStoreError from _bind_stem_hydration. The engine must boot,
+    run the drain, and leave hydration unarmed with a loud warning."""
+    shim = tmp_path / "no-boto3"
+    (shim / "boto3").mkdir(parents=True)
+    (shim / "boto3" / "__init__.py").write_text(
+        'raise ImportError("simulated: boto3 is absent from the packaged closure")\n',
+        encoding="utf-8",
+    )
+    result = _run_probe(
+        tmp_path,
+        {
+            "PYTHONPATH": f"{shim}{os.pathsep}{REPO_ROOT}",
+            "MUSIC_DJ_CLOUDSYNC_MODE": "cloud",
+            "R2_ACCOUNT_ID": "test-account",
+            "R2_ACCESS_KEY_ID": "test-key-id",
+            "R2_SECRET_ACCESS_KEY": "test-secret",
+        },
+    )
+    payload = _probe_payload(result)
+    assert payload["drain_alive"] is True
+    assert payload["hydration_armed"] is False
+    assert "stem-hydration: R2 credentials resolve but hydration is NOT armed" in result.stderr
+    # Unarmed-while-configured must fail loud on a stems miss, never read as
+    # the ordinary "no bundle anywhere" empty state.
+    assert payload["stems_miss_status"] == 502
+    assert payload["stems_miss_code"] == "STEM_HYDRATION_NOT_ARMED"
+
+
+@pytest.mark.requirement("STEM-15")
+def test_local_mode_stems_miss_stays_the_ordinary_empty_state(default_probe: dict) -> None:
+    """Opposite-direction control: with hydration legitimately unconfigured
+    (local mode), a miss is still the HTTP 200 unavailable empty state."""
+    assert default_probe["stems_miss_status"] == 200
+    assert default_probe["stems_miss_code"] == "STEM_BUNDLE_NOT_FOUND"
 
 
 @pytest.mark.requirement("PERFBATCH-05")

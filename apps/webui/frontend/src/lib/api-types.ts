@@ -20590,7 +20590,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT when the local index cache is present but unreadable */
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is present but unreadable, or STEM_HYDRATION_NOT_ARMED when this engine is configured for R2 hydration but could not arm it (for example boto3 is absent) */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -20693,7 +20693,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT when the local index cache is present but unreadable */
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is present but unreadable, or STEM_HYDRATION_NOT_ARMED when this engine is configured for R2 hydration but could not arm it (for example boto3 is absent) */
             502: {
                 headers: {
                     [name: string]: unknown;
