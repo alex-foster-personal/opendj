@@ -4957,6 +4957,17 @@
             "title": "Google Oauth Configured",
             "type": "boolean"
           },
+          "process_env_forbidden_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Process Env Forbidden Keys",
+            "type": "array"
+          },
+          "process_env_home_present": {
+            "title": "Process Env Home Present",
+            "type": "boolean"
+          },
           "state_db": {
             "$ref": "#/components/schemas/HealthStateDb"
           },
@@ -4990,6 +5001,8 @@
           "bind_host",
           "version",
           "google_oauth_configured",
+          "process_env_forbidden_keys",
+          "process_env_home_present",
           "contract_rev",
           "engine_version",
           "boot_id"
