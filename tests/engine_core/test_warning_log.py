@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from apps.engine_core import warning_log
-from apps.engine_core.warning_log import configure_warning_log
+from apps.engine_core.warning_log import _WarningJsonHandler, configure_warning_log
 
 
 def test_warning_log_writes_warning_with_boot_id(tmp_path: Path) -> None:
@@ -72,3 +72,59 @@ def test_warning_log_prunes_archives_older_than_retention(
 
     assert not old_archive.exists()
     assert recent_archive.exists()
+
+
+def test_warning_log_emit_swallows_enospc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    handler = _WarningJsonHandler(tmp_path / "engine-warn.log", "boot-enospc")
+    record = logging.LogRecord(
+        name="tests.warning_log",
+        level=logging.ERROR,
+        pathname=__file__,
+        lineno=1,
+        msg="disk full probe",
+        args=(),
+        exc_info=None,
+    )
+    original_open = Path.open
+
+    def _raise_enospc(self: Path, *args: object, **kwargs: object) -> object:
+        if self == handler.path:
+            raise OSError(28, "No space left on device")
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", _raise_enospc)
+    handler.emit(record)
+    captured = capsys.readouterr()
+    assert "no space left on device" in captured.err
+
+
+def test_warning_log_scheduler_survives_enospc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    handler = _WarningJsonHandler(tmp_path / "engine-warn.log", "boot-enospc-2")
+    record = logging.LogRecord(
+        name="tests.warning_log",
+        level=logging.ERROR,
+        pathname=__file__,
+        lineno=1,
+        msg="second emit probe",
+        args=(),
+        exc_info=None,
+    )
+    original_open = Path.open
+    calls = 0
+
+    def _raise_enospc(self: Path, *args: object, **kwargs: object) -> object:
+        nonlocal calls
+        if self == handler.path:
+            calls += 1
+            raise OSError(28, "No space left on device")
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", _raise_enospc)
+    handler.emit(record)
+    handler.emit(record)
+    assert calls == 2
+    assert capsys.readouterr().err.count("no space left on device") == 2
