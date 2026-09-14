@@ -72,10 +72,12 @@ STEM_HYDRATION_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
         "description": (
             "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when "
             "the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when "
-            "the local index cache is unreadable, STEM_HUB_UNREACHABLE when the "
-            "configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub "
-            "rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub "
-            "index or presign path fails"
+            "the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when "
+            "this engine is configured for hydration but could not arm it at boot "
+            "(for example boto3 is absent or the hub was unreachable), "
+            "STEM_HUB_UNREACHABLE when the configured hub cannot be reached, "
+            "STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or "
+            "STEM_HUB_INDEX_FAILED when the hub index or presign path fails"
         )
     }
 }
@@ -178,6 +180,12 @@ def _unavailable_out(stable_id: str, exc: StemBundleNotFoundError) -> StemUnavai
 
 
 def _hydration_deps(request: Request) -> tuple[StemHydrationSource, Path] | None:
+    unarmed_reason = getattr(request.app.state, "stem_hydration_unarmed_reason", None)
+    if unarmed_reason is not None:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "STEM_HYDRATION_NOT_ARMED", "message": unarmed_reason},
+        )
     source = getattr(request.app.state, "stem_hydration_source", None)
     data_dir = getattr(request.app.state, "stem_hydration_data_dir", None)
     if source is None and getattr(request.app.state, "stem_hydration_cfg", None) is not None:

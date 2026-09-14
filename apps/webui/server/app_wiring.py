@@ -6,6 +6,7 @@ factory stays under the complexity and file-size ratchets.
 """
 from __future__ import annotations
 
+import logging
 import os
 import socket
 import threading
@@ -132,6 +133,8 @@ from .routes import voice_probe as voice_probe_routes
 from .routes import worktree_ports as worktree_ports_routes
 from .share_gate import ShareConfig, share_gate_middleware
 from .usage_telemetry import UsageStore
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from apps.cloud.config import CloudConfig
@@ -341,27 +344,40 @@ def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None
     machine with neither R2 credentials nor a configured hub, simply never
     hydrates on demand. Routes check ``stem_hydration_source`` for ``None``
     and fall back to pre-hydration behavior.
+
+    Configured but unable to arm (cloud mode with R2 credentials but no boto3,
+    or CloudSync enabled but hub unreachable / no sync credential at boot) is
+    NOT that legitimate state: the engine still boots, but
+    ``stem_hydration_unarmed_reason`` is set and stems misses answer 502
+    ``STEM_HYDRATION_NOT_ARMED``.
     """
+    from apps.cloud.stem_source import DirectR2Source, arm_stem_hydration_source
+
     app.state.stem_hydration_source = None
     app.state.stem_hydration_data_dir = None
+    app.state.stem_hydration_unarmed_reason = None
     # Legacy test injection points; production uses stem_hydration_source.
     app.state.stem_hydration_cfg = None
     app.state.stem_hydration_s3 = None
     if not enabled:
         return
-    from apps.cloud.stem_source import DirectR2Source, resolve_stem_hydration_source
-
-    source = resolve_stem_hydration_source(Path(data_dir))
+    data_dir = Path(data_dir)
+    armed = arm_stem_hydration_source(data_dir)
+    if armed.unarmed_reason is not None:
+        app.state.stem_hydration_unarmed_reason = armed.unarmed_reason
+        app.state.stem_hydration_data_dir = data_dir
+        return
+    source = armed.source
     if source is None:
         return
     app.state.stem_hydration_source = source
-    app.state.stem_hydration_data_dir = Path(data_dir)
+    app.state.stem_hydration_data_dir = data_dir
     if isinstance(source, DirectR2Source):
         app.state.stem_hydration_cfg = source.cfg
         app.state.stem_hydration_s3 = source.s3
     threading.Thread(
         target=_startup_stem_index_refresh,
-        args=(source, Path(data_dir)),
+        args=(source, data_dir),
         name="opendj-stem-index-startup-refresh",
         daemon=True,
     ).start()

@@ -7,6 +7,7 @@ A credentialed workstation keeps the direct-R2 path unchanged.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
@@ -17,13 +18,16 @@ from apps.cloud.config import CloudConfig
 from apps.shared.state.machine_identity import get_or_create_machine_id
 from apps.sync_hub import config as sync_config
 from apps.sync_hub import spoke_credential
-from apps.sync_hub.transport import HubTransport, HttpTransport, SyncTransportError
+from apps.sync_hub.transport import HttpTransport, HubTransport, SyncTransportError
+
+log = logging.getLogger(__name__)
 
 STEM_HUB_UNREACHABLE = "STEM_HUB_UNREACHABLE"
 STEM_HUB_AUTH_REFUSED = "STEM_HUB_AUTH_REFUSED"
 STEM_HUB_INDEX_FAILED = "STEM_HUB_INDEX_FAILED"
 STEM_BUNDLE_NOT_INDEXED = "STEM_BUNDLE_NOT_INDEXED"
 STEM_BUNDLE_PRESIGN_FAILED = "STEM_BUNDLE_PRESIGN_FAILED"
+STEM_HYDRATION_NOT_ARMED = "STEM_HYDRATION_NOT_ARMED"
 
 SourceMode = Literal["direct_r2", "hub_presigned"]
 
@@ -58,6 +62,14 @@ class StemHydrationSource(Protocol):
         file_hashes: dict[str, str],
         tmp_dir: Path,
     ) -> int: ...
+
+
+@dataclass(frozen=True)
+class StemHydrationArmResult:
+    """Boot-time stem hydration wiring: armed source or a loud unarmed reason."""
+
+    source: StemHydrationSource | None
+    unarmed_reason: str | None
 
 
 @dataclass(frozen=True)
@@ -220,32 +232,88 @@ class HubPresignedSource:
         return total
 
 
-def resolve_stem_hydration_source(data_dir: Path) -> StemHydrationSource | None:
-    """Choose direct R2 when credentials exist, else hub when configured."""
+def _cloudsync_configured(data_dir: Path) -> bool:
+    effective = sync_config.resolve_config(data_dir)
+    return effective.configured and effective.hub_url is not None
+
+
+def arm_stem_hydration_source(data_dir: Path) -> StemHydrationArmResult:
+    """Boot-time wiring: arm a source or record why hydration stays unarmed.
+
+    Local mode and machines with neither R2 credentials nor CloudSync configured
+    are legitimate unconfigured states (``unarmed_reason`` is ``None``). A
+    machine that IS configured for direct R2 or hub hydration but cannot arm
+    records ``unarmed_reason`` so stems misses answer 502
+    ``STEM_HYDRATION_NOT_ARMED`` instead of the ordinary empty state.
+    """
     from apps.cloud import policy
     from apps.cloud.config import CloudConfig, MissingEnvError
 
-    if policy.CFG.mode != "cloud":
-        return None
     data_dir = Path(data_dir)
+    if policy.CFG.mode != "cloud":
+        return StemHydrationArmResult(None, None)
     try:
         cfg = CloudConfig.from_env()
         asset_store.require_credentials(cfg)
     except MissingEnvError:
         cfg = None
     if cfg is not None:
-        return DirectR2Source(cfg=cfg, s3=asset_store.boto3_asset_client(cfg))
+        try:
+            s3 = asset_store.boto3_asset_client(cfg)
+        except asset_store.AssetStoreError as exc:
+            log.warning(
+                "stem-hydration: R2 credentials resolve but hydration is NOT armed: %s",
+                exc,
+            )
+            return StemHydrationArmResult(None, str(exc))
+        return StemHydrationArmResult(DirectR2Source(cfg=cfg, s3=s3), None)
+    if not _cloudsync_configured(data_dir):
+        return StemHydrationArmResult(None, None)
     effective = sync_config.resolve_config(data_dir)
-    if not effective.configured or effective.hub_url is None:
-        return None
+    hub_url = effective.hub_url
+    if hub_url is None:
+        return StemHydrationArmResult(None, None)
     machine_id = get_or_create_machine_id(data_dir)
-    bearer = spoke_credential.read_credential(data_dir)
-    return HubPresignedSource(
+    try:
+        bearer = spoke_credential.read_credential(data_dir)
+    except spoke_credential.SpokeCredentialError as exc:
+        log.warning("stem-hydration: CloudSync configured but credential unusable: %s", exc)
+        return StemHydrationArmResult(None, str(exc))
+    from apps.sync_hub import machine_credentials
+
+    if bearer is None and machine_credentials.configured_mode() == "enforce":
+        reason = (
+            "CloudSync is enabled but this machine has no stored sync credential; "
+            "re-enroll with the hub before stem hydration can arm"
+        )
+        log.warning("stem-hydration: %s", reason)
+        return StemHydrationArmResult(None, reason)
+    source = HubPresignedSource(
         data_dir=data_dir,
-        hub_url=effective.hub_url,
+        hub_url=hub_url,
         machine_id=machine_id,
         bearer=bearer,
     )
+    try:
+        source.refresh_index(data_dir, force=True)
+    except StemSourceError as exc:
+        log.warning(
+            "stem-hydration: CloudSync configured but hub index refresh failed: %s",
+            exc.message,
+        )
+        return StemHydrationArmResult(None, exc.message)
+    except Exception as exc:
+        log.warning(
+            "stem-hydration: CloudSync configured but hub index refresh failed: %s",
+            exc,
+        )
+        return StemHydrationArmResult(None, str(exc))
+    return StemHydrationArmResult(source, None)
+
+
+def resolve_stem_hydration_source(data_dir: Path) -> StemHydrationSource | None:
+    """Runtime source selection for workers and one-off callers."""
+    return arm_stem_hydration_source(data_dir).source
 
 
 __all__ = [
@@ -256,7 +324,10 @@ __all__ = [
     "STEM_HUB_AUTH_REFUSED",
     "STEM_HUB_INDEX_FAILED",
     "STEM_HUB_UNREACHABLE",
+    "STEM_HYDRATION_NOT_ARMED",
+    "StemHydrationArmResult",
     "StemHydrationSource",
     "StemSourceError",
+    "arm_stem_hydration_source",
     "resolve_stem_hydration_source",
 ]

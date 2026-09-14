@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -52,6 +53,12 @@ SHA256_HEX_LEN: int = 64
 MAX_PRESIGN_EXPIRY_SECONDS: int = 900
 DEFAULT_PRESIGN_EXPIRY_SECONDS: int = MAX_PRESIGN_EXPIRY_SECONDS
 PRESIGNED_FETCH_TIMEOUT_S: float = 120.0
+
+#: Loopback override for presigned GET URLs. Production leaves this unset; hub
+#: presign tests point it at a local HTTP server the same way enrollment tests
+#: point ``OPENDJ_GOOGLE_JWKS_URL`` at :mod:`tests.cloudsync.google_jwks_rig`.
+PRESIGN_HOST_ENV: str = "MDT_ASSET_PRESIGN_HOST"
+PRESIGN_SCHEME_ENV: str = "MDT_ASSET_PRESIGN_SCHEME"
 
 SIGV4_ALGORITHM: str = "AWS4-HMAC-SHA256"
 SIGV4_REGION: str = "auto"  # R2 has one region and it is spelled "auto".
@@ -488,9 +495,16 @@ def presign_url(
         )
     key = asset_object_key(content_hash)
     stamp = (now or datetime.now(UTC)).astimezone(UTC)
-    return sigv4_presigned_url(
+    host_override = os.environ.get(PRESIGN_HOST_ENV, "").strip()
+    presign_host = host_override or f"{cfg.r2_account_id}.r2.cloudflarestorage.com"
+    scheme = os.environ.get(PRESIGN_SCHEME_ENV, "https").strip() or "https"
+    if scheme not in ("http", "https"):
+        raise AssetStoreError(
+            f"{PRESIGN_SCHEME_ENV} must be http or https; got {scheme!r}"
+        )
+    signed = sigv4_presigned_url(
         method=method,
-        host=f"{cfg.r2_account_id}.r2.cloudflarestorage.com",
+        host=presign_host,
         # R2 is path-style: the bucket is the first path segment.
         canonical_uri="/" + quote(f"{cfg.audio_bucket}/{key}", safe="/"),
         access_key_id=cfg.r2_access_key_id,
@@ -498,6 +512,9 @@ def presign_url(
         expiry_seconds=expiry_seconds,
         amz_date=stamp.strftime("%Y%m%dT%H%M%SZ"),
     )
+    if scheme == "http":
+        return "http://" + signed.removeprefix("https://")
+    return signed
 
 
 # --- production adapter --------------------------------------------------
@@ -588,6 +605,8 @@ __all__ = [
     "fetch_presigned_asset",
     "head_asset",
     "PRESIGNED_FETCH_TIMEOUT_S",
+    "PRESIGN_HOST_ENV",
+    "PRESIGN_SCHEME_ENV",
     "object_exists",
     "presign_url",
     "push_asset",
