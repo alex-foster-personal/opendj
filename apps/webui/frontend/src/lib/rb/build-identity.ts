@@ -241,6 +241,24 @@ export function formatStamp(iso: string | null, timeZone?: string): Stamp | null
 	return { local, utc: `${when.toISOString().slice(0, 16).replace('T', ' ')}Z` };
 }
 
+const HOUR_MS = 3_600_000;
+
+/**
+ * How long ago a build was stamped, in whole days and hours ("1d 5h", "5h",
+ * "<1h"): a stale build should read as stale at a glance, which a calendar
+ * date does not. A stamp in the future (a skewed clock) or an unparseable one
+ * has NO age rather than a negative or zero one.
+ */
+export function formatAge(iso: string | null, now: Date): string | null {
+	if (iso === null || iso === '') return null;
+	const ageMs = now.getTime() - new Date(iso).getTime();
+	if (Number.isNaN(ageMs) || ageMs < 0) return null;
+	const hours = Math.floor(ageMs / HOUR_MS);
+	if (hours === 0) return '<1h';
+	if (hours < 24) return `${hours}h`;
+	return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+
 // ----- where this app is --------------------------------------------------
 /** The subset of `Location` this module reads. Keeps the function callable
  * from node:test, where there is no DOM. */

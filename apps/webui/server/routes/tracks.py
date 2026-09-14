@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
+from apps.cloud import stem_index
 from apps.lyrics import cache as lyrics_cache
 from apps.shared import audio_quality
 from apps.shared.events import publish
@@ -129,16 +131,53 @@ def _stems_available_from_summary(stems: dict[str, Any]) -> bool:
     return (stems or {}).get("status") != "none"
 
 
+_STEM_INDEX_CACHE_LOCK = threading.Lock()
+_STEM_INDEX_CACHE: dict[Path, tuple[float | None, stem_index.StemAssetIndex]] = {}
+
+
+def _cached_stem_index(data_dir: Path) -> stem_index.StemAssetIndex:
+    """Load the local R2 stem index cache, re-parsing only when its mtime
+    changes -- a track-listing page's N rows cost one file read, not N."""
+    path = stem_index.local_index_cache_path(data_dir)
+    try:
+        mtime = path.stat().st_mtime
+    except FileNotFoundError:
+        mtime = None
+    with _STEM_INDEX_CACHE_LOCK:
+        cached = _STEM_INDEX_CACHE.get(data_dir)
+        if cached is not None and cached[0] == mtime:
+            return cached[1]
+    index = stem_index.load_cached_index(data_dir)
+    with _STEM_INDEX_CACHE_LOCK:
+        _STEM_INDEX_CACHE[data_dir] = (mtime, index)
+    return index
+
+
+def _stems_available(stable_id: str, stems: dict[str, Any], request: Request) -> bool:
+    """True from the local summary, OR (when on-demand hydration is wired on
+    this app -- ``app_wiring._bind_stem_hydration``) from the cached R2 index,
+    so a bundle absent locally but indexed still reports available and the
+    frontend's stems probe actually issues the manifest GET that starts
+    hydration (see apps/webui/server/routes/stems.py `_enqueue_hydration`)."""
+    if _stems_available_from_summary(stems):
+        return True
+    data_dir = getattr(request.app.state, "stem_hydration_data_dir", None)
+    if data_dir is None:
+        return False
+    return stable_id in _cached_stem_index(Path(data_dir))
+
+
 def _optional_resource_flags(
     stable_id: str,
     *,
+    request: Request,
     data_dir: Path,
     analysis_db_path: Path,
     stems: dict[str, Any],
 ) -> tuple[bool, bool, bool]:
     lyrics = _lyrics_available_bulk(data_dir, [stable_id])[stable_id]
     auto_cues = _auto_cues_available_bulk(analysis_db_path, [stable_id])[stable_id]
-    return lyrics, auto_cues, _stems_available_from_summary(stems)
+    return lyrics, auto_cues, _stems_available(stable_id, stems, request)
 
 
 def _track_to_out(
@@ -239,7 +278,7 @@ def list_tracks(
             has_rb_mapping=row["has_rb_mapping"],
             lyrics_available=lyrics_by_sid[track.stable_id],
             auto_cues_available=auto_cues_by_sid[track.stable_id],
-            stems_available=_stems_available_from_summary(row["stems"]),
+            stems_available=_stems_available(track.stable_id, row["stems"], request),
             artwork_available=row["artwork_available"],
         ).model_dump()
         base["play_count"] = int(row.get("play_count") or 0)
@@ -250,6 +289,8 @@ def list_tracks(
                 preview_max=row["preview_max"],
                 file_exists=row["file_exists"],
                 is_remote=bool(row.get("is_remote")),
+                has_remote_copy=bool(row["has_remote_copy"]),
+                cloud_transfer=row["cloud_transfer"],
                 quality=row["quality"],
                 vocals=row["vocals"],
                 stems=row["stems"],
@@ -472,6 +513,7 @@ def get_track(
     stems = bulk_stem_summaries([stable_id], stems_dir=_stems_dir(request))[stable_id]
     lyrics, auto_cues, stems_avail = _optional_resource_flags(
         stable_id,
+        request=request,
         data_dir=data_dir,
         analysis_db_path=_analysis_db_path(request),
         stems=stems,
@@ -524,6 +566,10 @@ def patch_track(
         patch_dict["rating"] = patch.rating
     if patch.notes is not None or "notes" in patch.model_fields_set:
         patch_dict["notes"] = patch.notes
+    if patch.genre is not None or "genre" in patch.model_fields_set:
+        patch_dict["genre"] = patch.genre
+    if patch.comments is not None or "comments" in patch.model_fields_set:
+        patch_dict["comments"] = patch.comments
     if patch.tags_add is not None:
         patch_dict["tags_add"] = patch.tags_add
     if patch.tags_remove is not None:
@@ -553,6 +599,7 @@ def patch_track(
     stems = bulk_stem_summaries([stable_id], stems_dir=_stems_dir(request))[stable_id]
     lyrics, auto_cues, stems_avail = _optional_resource_flags(
         stable_id,
+        request=request,
         data_dir=data_dir,
         analysis_db_path=_analysis_db_path(request),
         stems=stems,

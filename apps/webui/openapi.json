@@ -14948,6 +14948,130 @@
         "title": "StatusResponse",
         "type": "object"
       },
+      "StemBulkHydrateIn": {
+        "description": "Agent-native parity body for ``python -m apps.stems bulk-hydrate``.",
+        "properties": {
+          "budget_bytes": {
+            "exclusiveMinimum": 0.0,
+            "title": "Budget Bytes",
+            "type": "integer"
+          },
+          "data_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Dir"
+          },
+          "include_reserved": {
+            "default": false,
+            "title": "Include Reserved",
+            "type": "boolean"
+          },
+          "playlist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist"
+          },
+          "refresh_index": {
+            "default": false,
+            "title": "Refresh Index",
+            "type": "boolean"
+          },
+          "stable_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Ids"
+          }
+        },
+        "required": [
+          "budget_bytes"
+        ],
+        "title": "StemBulkHydrateIn",
+        "type": "object"
+      },
+      "StemBulkHydrateOut": {
+        "properties": {
+          "bytes_fetched": {
+            "title": "Bytes Fetched",
+            "type": "integer"
+          },
+          "fetched": {
+            "items": {
+              "$ref": "#/components/schemas/StemBulkHydrateOutcomeOut"
+            },
+            "title": "Fetched",
+            "type": "array"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/StemBulkHydrateOutcomeOut"
+            },
+            "title": "Skipped",
+            "type": "array"
+          }
+        },
+        "required": [
+          "fetched",
+          "skipped",
+          "bytes_fetched"
+        ],
+        "title": "StemBulkHydrateOut",
+        "type": "object"
+      },
+      "StemBulkHydrateOutcomeOut": {
+        "properties": {
+          "bytes_fetched": {
+            "default": 0,
+            "title": "Bytes Fetched",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "status"
+        ],
+        "title": "StemBulkHydrateOutcomeOut",
+        "type": "object"
+      },
       "StemHydrateIn": {
         "properties": {
           "data_dir": {
@@ -14975,6 +15099,62 @@
           "manifest_path"
         ],
         "title": "StemHydrateIn",
+        "type": "object"
+      },
+      "StemIndexBuildIn": {
+        "properties": {
+          "data_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Dir"
+          },
+          "journal_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journal Path"
+          },
+          "publish": {
+            "default": false,
+            "title": "Publish",
+            "type": "boolean"
+          }
+        },
+        "title": "StemIndexBuildIn",
+        "type": "object"
+      },
+      "StemIndexBuildOut": {
+        "properties": {
+          "bundles": {
+            "title": "Bundles",
+            "type": "integer"
+          },
+          "files": {
+            "title": "Files",
+            "type": "integer"
+          },
+          "published": {
+            "title": "Published",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bundles",
+          "files",
+          "published"
+        ],
+        "title": "StemIndexBuildOut",
         "type": "object"
       },
       "StemManifestOut": {
@@ -15108,10 +15288,18 @@
         "description": "HTTP 200 empty-state: no stored bundle for this stable_id.",
         "properties": {
           "code": {
-            "const": "STEM_BUNDLE_NOT_FOUND",
             "default": "STEM_BUNDLE_NOT_FOUND",
+            "enum": [
+              "STEM_BUNDLE_NOT_FOUND",
+              "STEM_BUNDLE_HYDRATING"
+            ],
             "title": "Code",
             "type": "string"
+          },
+          "hydrating": {
+            "default": false,
+            "title": "Hydrating",
+            "type": "boolean"
           },
           "message": {
             "title": "Message",
@@ -28822,6 +29010,54 @@
         ]
       }
     },
+    "/api/v1/stems/bulk-hydrate": {
+      "post": {
+        "description": "Agent-native parity for ``python -m apps.stems bulk-hydrate`` (ADR-0024).\n\nHydrates as many bundles as fit ``budget_bytes``, skipping the\nreservation guard unless ``include_reserved`` is explicitly true.",
+        "operationId": "bulk_hydrate_stems_api_v1_stems_bulk_hydrate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemBulkHydrateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemBulkHydrateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid request, missing R2 credentials, or no published stem bundle index in R2"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "Local stem bundle index cache is present but unreadable (STEM_INDEX_CORRUPT)"
+          }
+        },
+        "summary": "Bulk Hydrate Stems",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
     "/api/v1/stems/estimate": {
       "get": {
         "description": "Every tier costed for one track, so a UI needs one round trip not three.\n\nA tier with no benchmark returns ``measured: false`` and the reason rather\nthan a plausible-looking guess. Rendering a guess as a number is how an\nassumption becomes ground truth.",
@@ -29003,6 +29239,48 @@
         "summary": "Generate",
         "tags": [
           "stem-tiers"
+        ]
+      }
+    },
+    "/api/v1/stems/index/build": {
+      "post": {
+        "description": "Agent-native parity for ``python -m apps.stems build-index`` (ADR-0024).",
+        "operationId": "build_stem_index_api_v1_stems_index_build_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemIndexBuildIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemIndexBuildOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Build Stem Index",
+        "tags": [
+          "stems"
         ]
       }
     },
@@ -30965,7 +31243,7 @@
     },
     "/api/v1/tracks/{stable_id}/stems": {
       "get": {
-        "description": "Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.",
+        "description": "Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.\n\nNever blocks on R2: if the bundle is missing locally but the R2 index\nhas it, this ENQUEUES a background hydration and returns immediately\nwith ``hydrating=True`` (D2). A prior hydration attempt that already\nfailed is reported LOUD as HTTP 502, never silently folded into the\nordinary \"no bundle\" empty state.",
         "operationId": "get_stem_manifest_api_v1_tracks__stable_id__stems_get",
         "parameters": [
           {
@@ -31006,6 +31284,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "502": {
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT when the local index cache is present but unreadable"
           }
         },
         "summary": "Get Stem Manifest",
@@ -31014,9 +31295,103 @@
         ]
       }
     },
+    "/api/v1/tracks/{stable_id}/stems/deck-close": {
+      "post": {
+        "description": "Release one deck-open reference. See :func:`mark_stem_deck_open`.",
+        "operationId": "mark_stem_deck_closed_api_v1_tracks__stable_id__stems_deck_close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Mark Stem Deck Closed Api V1 Tracks  Stable Id  Stems Deck Close Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Stem Deck Closed",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/stems/deck-open": {
+      "post": {
+        "description": "A deck has this bundle open. Protects it from eviction until closed.\n\nAgent-native parity for the deck-load lifecycle: there is no other\nrequest boundary that tells the eviction path \"a deck is playing this\nright now, do not free its bundle regardless of recency\" (D3). Refcounted\n(:class:`apps.cloud.stem_hydration.OpenDeckRegistry`), so two open\nreferences (e.g. two decks on the same track) both need closing.",
+        "operationId": "mark_stem_deck_open_api_v1_tracks__stable_id__stems_deck_open_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Mark Stem Deck Open Api V1 Tracks  Stable Id  Stems Deck Open Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Stem Deck Open",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}/stems/{part}": {
       "get": {
-        "description": "Stream one validated WAV stem from its already-verified file handle.",
+        "description": "Stream one validated stem part using the bundle's container media type.\n\nUnlike the manifest route, this one DOES wait (bounded) for an in-flight\nhydration: a part request means the caller already decided it wants\nthese bytes. A prior failure is surfaced immediately as HTTP 502; a\nfresh attempt that does not finish within\n:data:`STEM_PART_HYDRATE_WAIT_S` answers HTTP 503 so the caller can\nretry rather than hang forever on this one request.",
         "operationId": "get_stem_file_api_v1_tracks__stable_id__stems__part__get",
         "parameters": [
           {
@@ -31051,6 +31426,12 @@
               }
             },
             "description": "Validation Error"
+          },
+          "502": {
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT when the local index cache is present but unreadable"
+          },
+          "503": {
+            "description": "STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request"
           }
         },
         "summary": "Get Stem File",

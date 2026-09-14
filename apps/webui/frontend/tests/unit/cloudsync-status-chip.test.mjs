@@ -9,6 +9,7 @@ function source(relative) {
 
 const CHIP = source('lib/components/CloudSyncStatusChip.svelte');
 const VIEW = source('lib/components/cloudsync/cloudsync-view.ts');
+const TAB = source('lib/components/cloudsync/CloudSyncStatusTab.svelte');
 const LAYOUT = source('routes/+layout.svelte');
 const TOPBAR = source('lib/components/rb/TopBar.svelte');
 
@@ -34,6 +35,38 @@ test('the chip carries an explanatory hover title derived from status', () => {
 	assert.match(VIEW, /Click to open CloudSync\./);
 	assert.doesNotMatch(VIEW, /Click to open recent results\./);
 	assert.match(VIEW, /last_push_at/);
+});
+
+// requirement: CSSTATUS-04
+// [if] the chip is in error [then] it binds a derived aria-label helper and never interpolates raw last_result.message, [else stop]
+test('the chip binds a derived aria-label and does not render raw diagnostics', () => {
+	assert.match(CHIP, /const ariaLabel = \$derived\(chipAriaLabel\(status, loadError\)\)/);
+	assert.match(CHIP, /aria-label=\{ariaLabel\}/);
+	assert.doesNotMatch(CHIP, /last_result\.message/);
+	assert.match(CHIP, /class:error=\{chipState\(\) === 'error'\}/);
+});
+
+// requirement: CSSTATUS-04
+// [if] CloudSync errors are surfaced in the status tab [then] the shared formatter and labelled technical details are used, [else stop]
+test('the status tab uses shared error presentation and technical details disclosures', () => {
+	assert.match(TAB, /presentCloudSyncError/);
+	assert.match(TAB, /presentCloudSyncResultError/);
+	assert.match(TAB, /data-testid="cloudsync-notice-details"/);
+	assert.match(TAB, /data-testid="cloudsync-last-result-details"/);
+	assert.match(TAB, /<summary>\{CLOUDSYNC_TECHNICAL_DETAILS_LABEL\}<\/summary>/);
+	assert.doesNotMatch(TAB, /Sync failed: \$\{message\(exc\)\}/);
+	assert.doesNotMatch(
+		TAB,
+		/`\$\{status\.last_result\.status\}: \$\{status\.last_result\.message\}`/
+	);
+	assert.match(TAB, /presentCloudSyncResultError\(status\.last_result\)\.summary/);
+	assert.match(TAB, /<pre class="technical-details">\{status\.last_result\.message\}<\/pre>/);
+	assert.match(TAB, /<pre class="technical-details">\{row\.message\}<\/pre>/);
+	assert.match(
+		VIEW,
+		/CloudSync conflict: another sync is already running/
+	);
+	assert.match(VIEW, /HTTP 409/);
 });
 
 test('the chip is a link to /cloudsync instead of an in-place popover', () => {

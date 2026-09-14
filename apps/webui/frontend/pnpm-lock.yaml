@@ -57,6 +57,9 @@ importers:
       openapi-typescript:
         specifier: ^7.4.0
         version: 7.13.0(typescript@5.9.3)
+      playwright:
+        specifier: 1.61.1
+        version: 1.61.1
       storybook:
         specifier: 10.5.10
         version: 10.5.10(@types/react@19.2.18)(react@19.2.8)

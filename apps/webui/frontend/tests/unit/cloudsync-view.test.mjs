@@ -16,9 +16,12 @@ import { before, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let view;
+let ApiError;
 
 before(async () => {
 	view = await loadTypeScriptModule('src/lib/components/cloudsync/cloudsync-view.ts');
+	const client = await loadTypeScriptModule('src/lib/api/client.ts');
+	ApiError = client.ApiError;
 });
 
 function policy(overrides = {}) {
@@ -226,6 +229,98 @@ test('chipShortLabel is three letters or fewer for compact viewports', () => {
 	);
 });
 
+// requirement: CSSTATUS-04
+// [if] a local in-progress 409 is presented [then] the summary names conflict and next step without raw host or HTTP 409, [else stop]
+test('a local in-progress 409 gets a plain conflict summary with raw text only in details', () => {
+	const raw =
+		'a CloudSync sync (a Sync now or a scheduler round) is already running against this data dir';
+	const error = new ApiError(409, 'CLOUDSYNC_SYNC_IN_PROGRESS', raw, new Response());
+	const presented = view.presentCloudSyncError(error);
+	assert.match(presented.summary, /conflict/i);
+	assert.match(presented.summary, /wait|refresh|try again/i);
+	assert.doesNotMatch(presented.summary, /HTTP 409/);
+	assert.doesNotMatch(presented.summary, /http:\/\//i);
+	assert.doesNotMatch(presented.ariaLabel, /HTTP 409/);
+	assert.equal(presented.details, raw);
+	assert.equal(presented.isConflict409, true);
+});
+
+// requirement: CSSTATUS-04
+// [if] a journaled SyncDigestMismatch row is presented [then] the conflict summary is shown and the raw text stays in details, [else stop]
+test('a journaled SyncDigestMismatch gets the remote conflict summary', () => {
+	const raw = 'SyncDigestMismatch: local and hub digests disagree after sync';
+	const presented = view.presentCloudSyncResultError({ status: 'error', message: raw });
+	assert.equal(presented.summary, view.CLOUDSYNC_REMOTE_409_SUMMARY);
+	assert.equal(presented.details, raw);
+	assert.equal(presented.isConflict409, true);
+});
+
+// requirement: CSSTATUS-04
+// [if] a transport-shaped HTTP 409 message is presented [then] the remote conflict summary is shown and the raw input stays in details, [else stop]
+test('a transport-shaped HTTP 409 gets the remote conflict summary', () => {
+	const raw = 'POST http://internal-hub.example/api/v1/sync -> HTTP 409: track_vendor_ids conflict';
+	const presented = view.presentCloudSyncResultError({ status: 'error', message: raw });
+	assert.equal(presented.summary, view.CLOUDSYNC_REMOTE_409_SUMMARY);
+	assert.equal(presented.details, raw);
+	assert.equal(presented.isConflict409, true);
+});
+
+// requirement: CSSTATUS-04
+// [if] a non-409 error is presented [then] the generic failure summary is shown and raw text stays in details, [else stop]
+test('a non-409 error gets a safe failure summary', () => {
+	const raw = 'POST http://hub.example/api/v1/sync -> HTTP 502: hub unreachable';
+	const presented = view.presentCloudSyncResultError({ status: 'error', message: raw });
+	assert.equal(presented.summary, view.CLOUDSYNC_GENERIC_ERROR_SUMMARY);
+	assert.equal(presented.details, raw);
+	assert.equal(presented.isConflict409, false);
+});
+
+// requirement: CSSTATUS-04
+// [if] the chip is in error [then] chipTitle uses the safe summary plus the CloudSync link CTA, [else stop]
+test('chipTitle uses the safe error summary plus Click to open CloudSync', () => {
+	const live = { configured: true, running: true, enabled: true };
+	const raw = 'POST http://internal-hub.example/api/v1/sync -> HTTP 409: busy';
+	const title = view.chipTitle(
+		status({ ...live, last_result: { status: 'error', message: raw } }),
+		null
+	);
+	assert.match(title, /CloudSync conflict:/);
+	assert.match(title, /Click to open CloudSync\./);
+	assert.doesNotMatch(title, /HTTP 409/);
+	assert.doesNotMatch(title, /internal-hub/);
+});
+
+// requirement: CSSTATUS-04
+// [if] the chip is in error [then] chipAriaLabel is descriptive, [else stop]
+test('chipAriaLabel is descriptive for error and stable for non-error states', () => {
+	const live = { configured: true, running: true, enabled: true };
+	const raw = 'CLOUDSYNC_SYNC_IN_PROGRESS: already running';
+	const errorStatus = status({ ...live, last_result: { status: 'error', message: raw } });
+	assert.match(view.chipAriaLabel(errorStatus, null), /another sync is already running/);
+	assert.equal(view.chipAriaLabel(status(live), null), 'CloudSync status');
+	assert.equal(view.chipAriaLabel(null, null), 'CloudSync status');
+});
+
+// requirement: CSSTATUS-04
+// [if] chip state helpers are unchanged [then] off/syncing/ok/error/inconclusive labels still match, [else stop]
+test('chip state helpers still return the existing off/syncing/ok/error/inconclusive values', () => {
+	const live = { configured: true, running: true, enabled: true };
+	assert.equal(view.chipState(status(live)), 'syncing');
+	assert.equal(
+		view.chipState(status({ ...live, last_result: { status: 'ok', message: '' } })),
+		'ok'
+	);
+	assert.equal(
+		view.chipState(status({ ...live, last_result: { status: 'error', message: '' } })),
+		'error'
+	);
+	assert.equal(view.chipShortLabel(status({ ...live, last_result: { status: 'error', message: '' } })), 'err');
+	assert.equal(
+		view.chipShortLabel(status({ ...live, last_result: { status: 'inconclusive', message: '' } })),
+		'inc'
+	);
+});
+
 test('chipTitle names the state and links to /cloudsync', () => {
 	/** if the tooltip CTA still points at the old popover then broken */
 	assert.equal(view.CHIP_HREF, '/cloudsync');
@@ -272,6 +367,18 @@ test('the config form mirrors the backend validator', () => {
 		kind: 'put',
 		body: { enabled: true, hub_url: 'http://h:1', machine_name: null }
 	});
+});
+
+// requirement: CSUI-01
+// if /cloudsync tab state stops following the URL query then broken
+test('cloudSyncTabFromUrl maps tab query params to the visible tab', () => {
+	const tab = (query) => view.cloudSyncTabFromUrl(new URL(`http://localhost/cloudsync${query}`));
+	assert.equal(tab('?tab=policies'), 'policies');
+	assert.equal(tab('?tab=pins'), 'pins');
+	assert.equal(tab('?tab=overview'), 'overview');
+	assert.equal(tab('?tab=fleet'), 'fleet');
+	assert.equal(tab(''), 'status');
+	assert.equal(tab('?tab=nope'), 'status');
 });
 
 test('env overrides are named when they mask the saved config', () => {

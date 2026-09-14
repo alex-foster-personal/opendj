@@ -315,7 +315,9 @@ export function armAudioContextWatchdog(
 					cause: 'context-suspended',
 					deck: first.deck,
 					position_ms: first.position_ms,
-					context_state: state
+					context_state: state,
+					decoded_duration_ms: first.decoded_duration_ms ?? null,
+					metadata_duration_ms: first.metadata_duration_ms ?? null
 				});
 			}
 		},

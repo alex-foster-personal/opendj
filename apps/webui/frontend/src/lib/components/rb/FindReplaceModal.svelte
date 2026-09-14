@@ -5,6 +5,7 @@
 	// value), so the diff shown is always real.
 	import {
 		applyFindReplace,
+		editSuiteConflictRows,
 		previewFindReplace,
 		type FindReplaceRow
 	} from '$lib/rb/api-edit-suite';
@@ -23,6 +24,7 @@
 		onapplied: () => void;
 	} = $props();
 
+	let field = $state<'notes' | 'genre' | 'comments'>('notes');
 	let find = $state('');
 	let replace = $state('');
 	let mode = $state<'literal' | 'regex'>('literal');
@@ -41,7 +43,7 @@
 		error = null;
 		try {
 			const res = await previewFindReplace({
-				field: 'notes',
+				field,
 				stable_ids: stableIds,
 				find,
 				replace,
@@ -64,7 +66,7 @@
 		error = null;
 		try {
 			await applyFindReplace({
-				field: 'notes',
+				field,
 				stable_ids: stableIds,
 				find,
 				replace,
@@ -75,16 +77,40 @@
 			pushToast(`find & replace applied to ${matchCount} track(s)`, 'info');
 			onapplied();
 		} catch (exc) {
-			error = String(exc);
-			pushToast(`find & replace failed: ${String(exc)}`, 'error');
+			// STATE-08: same row-level 409 detail as bulk-edit (STATE-07), plus the
+			// preview table used to keep showing the pre-conflict diff as if the
+			// apply had succeeded - clear it so a stale "would change" list can't
+			// be mistaken for what actually happened.
+			const conflicts = editSuiteConflictRows(exc);
+			error =
+				conflicts !== null
+					? `${conflicts.length} of ${matchCount} matching track(s) changed elsewhere since preview - reload and try again`
+					: String(exc);
+			previewRows = null;
+			matchCount = 0;
+			pushToast(`find & replace failed: ${error}`, 'error');
 		} finally {
 			busy = false;
 		}
 	}
 </script>
 
-<EditSuiteModal title={`Find & Replace - ${stableIds.length} track(s) - Notes`} {onclose}>
+<EditSuiteModal title={`Find & Replace - ${stableIds.length} track(s)`} {onclose}>
 	<div class="fr-form">
+		<label>
+			Field
+			<select
+				value={field}
+				onchange={(e) => {
+					field = e.currentTarget.value as 'notes' | 'genre' | 'comments';
+					void runPreview();
+				}}
+			>
+				<option value="notes">Notes</option>
+				<option value="genre">Genre</option>
+				<option value="comments">Comments</option>
+			</select>
+		</label>
 		<label>
 			Find
 			<input type="text" bind:value={find} oninput={runPreview} placeholder="text to find" />

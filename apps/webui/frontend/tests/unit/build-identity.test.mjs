@@ -172,6 +172,21 @@ test('an unparseable timestamp renders nothing rather than "Invalid Date"', () =
 	assert.equal(mod.formatStamp(''), null);
 });
 
+test('build age reads in whole days and hours, never minutes', () => {
+	const now = new Date('2026-09-14T06:30:00Z');
+	assert.equal(mod.formatAge('2026-09-13T01:00:00Z', now), '1d 5h');
+	assert.equal(mod.formatAge('2026-09-12T06:30:00Z', now), '2d 0h');
+	assert.equal(mod.formatAge('2026-09-14T00:31:00Z', now), '5h');
+	assert.equal(mod.formatAge('2026-09-14T06:00:00Z', now), '<1h');
+});
+
+test('a build stamped in the future or unparseable has no age, never a negative one', () => {
+	const now = new Date('2026-09-14T06:30:00Z');
+	assert.equal(mod.formatAge('2026-09-14T07:30:00Z', now), null);
+	assert.equal(mod.formatAge('not-a-date', now), null);
+	assert.equal(mod.formatAge(null, now), null);
+});
+
 test('the dirty marker is part of the one-line label', () => {
 	const clean = mod.shortLabel({ kind: 'ok', value: ENGINE_OK });
 	const dirty = mod.shortLabel({ kind: 'ok', value: { ...ENGINE_OK, git_dirty: true } });
