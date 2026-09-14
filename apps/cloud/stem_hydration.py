@@ -1,4 +1,4 @@
-"""Hydrate R2-indexed stem bundles onto local disk (ADR-0020).
+"""Hydrate R2-indexed stem bundles onto local disk (ADR-0024).
 
 Composes existing primitives rather than duplicating them: content-address
 fetch is :func:`apps.cloud.asset_store.fetch_asset`, the mapping is

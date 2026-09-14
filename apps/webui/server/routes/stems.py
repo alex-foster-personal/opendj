@@ -135,7 +135,7 @@ def _unavailable_out(stable_id: str, exc: StemBundleNotFoundError) -> StemUnavai
 
 
 # ---------------------------------------------------------------------------
-# On-demand R2 hydration (ADR-0020). Wiring is OPTIONAL: a machine with no
+# On-demand R2 hydration (ADR-0024). Wiring is OPTIONAL: a machine with no
 # CloudConfig / S3 client bound to app.state (local mode, or no R2 creds)
 # simply never enqueues -- the routes fall back to the pre-existing
 # unavailable/404 behavior unchanged. See apps.webui.server.app_wiring.
@@ -220,7 +220,7 @@ def _raise_hydration_failed(reason: str) -> None:
     """Fail LOUD, never silent-empty: the index said this bundle exists, and
     hydration could not produce it. A caller must never read this the same
     as "no bundle anywhere" (HTTP 200 unavailable / 404) -- see the storage
-    view's fail-loud requirement (ADR-0020)."""
+    view's fail-loud requirement (ADR-0024)."""
     raise HTTPException(
         status_code=502,
         detail={"code": "STEM_BUNDLE_HYDRATION_FAILED", "message": reason},

@@ -1,4 +1,4 @@
-"""On-demand + bulk R2 stem hydration (ADR-0020).
+"""On-demand + bulk R2 stem hydration (ADR-0024).
 
 Uses the SAME asset-tier fake other cloud tests use (``InMemoryAssetS3`` /
 ``fake_s3`` from ``tests/cloudsync/conftest.py``) and the real strict loader

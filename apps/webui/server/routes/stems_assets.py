@@ -119,7 +119,7 @@ def _resolve_playlist_stable_ids(data_dir: Path, playlist: str) -> list[str]:
 
 @router.post("/stems/bulk-hydrate", response_model=StemBulkHydrateOut)
 def bulk_hydrate_stems(body: StemBulkHydrateIn) -> StemBulkHydrateOut:
-    """Agent-native parity for ``python -m apps.stems bulk-hydrate`` (ADR-0020).
+    """Agent-native parity for ``python -m apps.stems bulk-hydrate`` (ADR-0024).
 
     Hydrates as many bundles as fit ``budget_bytes``, skipping the
     reservation guard unless ``include_reserved`` is explicitly true.
@@ -168,7 +168,7 @@ def bulk_hydrate_stems(body: StemBulkHydrateIn) -> StemBulkHydrateOut:
 
 @router.post("/stems/index/build", response_model=StemIndexBuildOut)
 def build_stem_index(body: StemIndexBuildIn) -> StemIndexBuildOut:
-    """Agent-native parity for ``python -m apps.stems build-index`` (ADR-0020)."""
+    """Agent-native parity for ``python -m apps.stems build-index`` (ADR-0024)."""
     from apps.cloud import stem_index
     from apps.shared.paths import DATA_DIR
 

@@ -1,4 +1,4 @@
-"""Stem bundle hydration index (ADR-0020): journal -> index -> R2 pointer.
+"""Stem bundle hydration index (ADR-0024): journal -> index -> R2 pointer.
 
 * [if] the journal has (legacy_key, key) pairs for a stable_id's manifest and
   parts [then] the index maps that stable_id's filenames to their sha256.

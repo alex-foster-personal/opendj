@@ -477,7 +477,7 @@ def cmd_cancel(args: argparse.Namespace) -> int:
     return 0
 
 
-# ----- R2 hydration index + bulk hydrate (ADR-0020) --------------------------
+# ----- R2 hydration index + bulk hydrate (ADR-0024) --------------------------
 
 
 def _default_journal_path(data_dir: Path) -> Path:
@@ -645,7 +645,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     build_index = sub.add_parser(
         "build-index", parents=[common],
-        help="fold the R2 push journal into the local stem-index cache (ADR-0020)",
+        help="fold the R2 push journal into the local stem-index cache (ADR-0024)",
     )
     build_index.add_argument("--journal", type=Path, default=None)
     build_index.add_argument(
@@ -656,7 +656,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     bulk_hydrate = sub.add_parser(
         "bulk-hydrate", parents=[common],
-        help="hydrate many R2-indexed stem bundles within a byte budget (ADR-0020)",
+        help="hydrate many R2-indexed stem bundles within a byte budget (ADR-0024)",
     )
     bulk_ids = bulk_hydrate.add_mutually_exclusive_group(required=True)
     bulk_ids.add_argument("--ids", default=None, help="comma-separated stable_ids")

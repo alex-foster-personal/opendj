@@ -1,4 +1,4 @@
-"""On-demand R2 hydration wired into the stems routes (ADR-0020).
+"""On-demand R2 hydration wired into the stems routes (ADR-0024).
 
 * [if] a bundle is missing locally but present in the R2 index [then] the
   manifest GET returns immediately (never blocking on the 4-part fetch) with

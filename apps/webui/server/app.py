@@ -101,7 +101,7 @@ def create_app(  # noqa: PLR0913
     reason: only the daemon entry points arm it, and even armed it runs only
     when ``MDT_CLOUDSYNC_SCHEDULER=1`` and a hub URL are set.
 
-    ``stem_hydration`` arms on-demand R2 stem-bundle hydration (ADR-0020, see
+    ``stem_hydration`` arms on-demand R2 stem-bundle hydration (ADR-0024, see
     :mod:`apps.cloud.stem_hydration`). Same shape as ``cloudsync_scheduler``:
     OFF here so no test spins up a thread pool or reaches for credentials,
     and even armed it stays inert unless CloudSync is in ``cloud`` mode AND

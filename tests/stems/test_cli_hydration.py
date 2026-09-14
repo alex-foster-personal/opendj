@@ -1,4 +1,4 @@
-"""``python -m apps.stems build-index`` / ``bulk-hydrate`` CLI dispatch (ADR-0020).
+"""``python -m apps.stems build-index`` / ``bulk-hydrate`` CLI dispatch (ADR-0024).
 
 Covers the CLI surface itself (argument parsing, journal-path defaulting,
 credential refusal, output) -- the library functions underneath

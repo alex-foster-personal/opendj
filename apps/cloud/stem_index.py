@@ -1,4 +1,4 @@
-"""Stem bundle hydration index: ``stable_id -> {filename: sha256}`` (ADR-0020).
+"""Stem bundle hydration index: ``stable_id -> {filename: sha256}`` (ADR-0024).
 
 THE GAP THIS CLOSES: ``scripts/local_stems_to_r2.py`` content-addresses every
 pushed stem file and journals the (legacy_key, key) mapping to
@@ -14,7 +14,7 @@ ONE file per (stable_id, kind, role) -- see ``apps/cloud/hydration_core.py``
 A stem bundle is 4-5 files (manifest + parts) that must all resolve before a
 bundle can even be attempted, so it needs a multi-file mapping that
 ``track_locations`` cannot express without a schema change to a table many
-other readers depend on. ADR-0020 records the decision to add this narrow,
+other readers depend on. ADR-0024 records the decision to add this narrow,
 purpose-built index instead of widening ``track_locations``.
 
 WHY R2, NOT A NEW state.db TABLE: wiring a new table into the CloudSync

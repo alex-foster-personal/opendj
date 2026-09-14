@@ -325,7 +325,7 @@ def _bind_stem_and_usage(
 
 
 def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None:
-    """Wire on-demand R2 stem hydration deps onto ``app.state`` (ADR-0020),
+    """Wire on-demand R2 stem hydration deps onto ``app.state`` (ADR-0024),
     or leave them unset.
 
     Unset is a legitimate machine state, not a failure: local mode, or a
