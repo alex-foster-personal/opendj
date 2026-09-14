@@ -34,7 +34,7 @@ from apps.webui.frontend.tests.e2e.support.deckload_fixture import (
     _track_rows,
     ensure_audio,
 )
-from apps.webui.server.stem_artifacts import STEM_PARTS
+from apps.stems.artifacts import STEM_PARTS
 
 FIXTURE_REVISION_STEM: str = f"{FIXTURE_REVISION}-stem-decode-bench-v1"
 BENCH_TRACK = FixtureTrack(

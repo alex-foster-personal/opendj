@@ -28,7 +28,7 @@ from apps.cloud import stem_hydration, stem_index
 from apps.cloud.asset_store import AssetS3Client
 from apps.cloud.config import CloudConfig
 
-from ..stem_artifacts import (
+from apps.stems.artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
     StemBundle,

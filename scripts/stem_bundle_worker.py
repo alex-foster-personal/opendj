@@ -12,7 +12,7 @@
 """Standalone htdemucs 4-stem bundle writer for the webui stems contract.
 
 Writes ``data/state/stems/<stable_id>/{vocals,drums,bass,other}.<ext>`` plus
-a schema v3 ``manifest.json`` (apps.webui.server.stem_artifacts), where
+a schema v3 ``manifest.json`` (apps.stems.artifacts), where
 ``<ext>`` is decided by apps/stems/stem_size_policy.py's source-extension
 codec policy, not hardcoded WAV.
 
@@ -45,7 +45,7 @@ mirror would only add drift risk for zero benefit here):
     kept and recorded in manifest.json's ``size_policy``, never discarded
 
 MANIFEST SCHEMA: THIS SCRIPT WRITES SCHEMA V3, NOT V1. v1's reader
-(``_load_v1_bundle`` in apps/webui/server/stem_artifacts.py) hardcodes
+(``_load_v1_bundle`` in apps/stems/artifacts.py) hardcodes
 ``media_type="audio/wav"`` and parses every declared file as a WAV RIFF
 header (``read_wav_metadata``) regardless of its actual extension --
 writing non-WAV files under a v1 manifest reproduces the exact
@@ -355,7 +355,7 @@ def _manifest_dict(
     audio: dict[str, int],
     size_policy: dict[str, Any],
 ) -> dict[str, Any]:
-    """The schema v3 manifest body (apps.webui.server.stem_artifacts). Pure
+    """The schema v3 manifest body (apps.stems.artifacts). Pure
     and GPU-free so tests/scripts/test_stem_bundle_worker_codec.py can round-
     trip it through the real reader (load_stem_bundle) without a GPU.
 

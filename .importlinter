@@ -86,15 +86,14 @@ forbidden_modules =
 ;   apps.smartlists <-> apps.webui   via webui.server.playlist_writeback
 ;   apps.stems      <-> apps.webui   via webui.server.stem_artifacts
 ;   apps.vocals     <-> apps.webui   via webui.server.stem_artifacts
-; The fix is to move those two modules down into a domain package (they hold
-; no HTTP concerns) and let webui import them, which deletes all five lines at
-; once. Never add a line here: add the inversion instead.
+; stem_artifacts inversion completed Mon 14 Sep 2026: moved
+; apps.webui.server.stem_artifacts to apps.stems.artifacts, clearing the
+; apps.stems <-> apps.webui and apps.vocals <-> apps.webui cycles. Only the
+; smartlists <-> webui pair (playlist_writeback) remains outstanding.
+; Never add a line here: add the inversion instead.
 ignore_imports =
     apps.smartlists.djay_writer -> apps.webui.server.playlist_writeback
     apps.smartlists.rb_writer -> apps.webui.server.playlist_writeback
-    apps.stems.cli -> apps.webui.server.stem_artifacts
-    apps.vocals.cli -> apps.webui.server.stem_artifacts
-    apps.vocals.from_stems -> apps.webui.server.stem_artifacts
 
 ; ---------------------------------------------------------------------------
 [importlinter:contract:production-code-never-imports-tests]
