@@ -16,9 +16,13 @@
 	import HotkeysOverlay from '$lib/components/rb/hotkeys/HotkeysOverlay.svelte';
 	import { installHotkeysOverlayHotkeys } from '$lib/components/rb/hotkeys/install-hotkeys-overlay';
 	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
-	import { preflightGate } from '$lib/preflight/preflight.svelte';
+	import {
+		LIBRARY_ATTACHED_CHECK_ID,
+		preflightGate,
+		shouldBlockOnPreflight
+	} from '$lib/preflight/preflight.svelte';
 	import { resolveFirstRun } from '$lib/setup/first-run';
-	import { openSetupOverlay } from '$lib/setup/overlay.svelte';
+	import { openSetupOverlay, setupOverlay } from '$lib/setup/overlay.svelte';
 	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
 	import { hydrateConfirmPrefsFromDisk, uiPrefs } from '$lib/rb/prefs.svelte';
@@ -40,6 +44,15 @@
 	// bypass the app shell (sidebar/topbar/padding) - RECON-FRONTEND 5,
 	// option (a). Toasts stay global as the app-wide error surface.
 	const isPerformance = $derived(isPerformanceRoutePath($page.url.pathname));
+
+	const setupOpen = $derived(setupOverlay.open);
+	const blockOnPreflight = $derived(shouldBlockOnPreflight(preflightGate.status, setupOpen));
+	const hideCheckIds = $derived(
+		setupOpen && preflightGate.checks.some((check) => check.id === LIBRARY_ATTACHED_CHECK_ID)
+			? [LIBRARY_ATTACHED_CHECK_ID]
+			: []
+	);
+	const showPreflightIndicator = $derived(!blockOnPreflight && !preflightGate.cleared);
 
 	// Keep html[data-theme] in sync (prefs module also applies on load/set).
 	$effect(() => {
@@ -112,11 +125,12 @@
 	<title>Open DJ</title>
 </svelte:head>
 
-{#if !preflightGate.cleared}
+{#if blockOnPreflight}
 	<!-- PREFLIGHT-01 (#771): the boot gate. Nothing else renders until a real
 	     `pass` arrives from GET /api/v1/preflight -- no skip/continue-anyway,
-	     see PreflightScreen.svelte for the polling policy. -->
-	<PreflightScreen mode="boot" navigate={goto} />
+	     see PreflightScreen.svelte for the polling policy. While first-run
+	     setup is open the gate yields so the wizard is not buried. -->
+	<PreflightScreen mode="boot" blocking navigate={goto} hideCheckIds={hideCheckIds} />
 {:else}
 
 {#if health.bindWarning}
@@ -199,6 +213,15 @@
 </div>
 {/if}
 
+{/if}
+
+{#if showPreflightIndicator}
+	<PreflightScreen
+		mode="boot"
+		blocking={false}
+		navigate={goto}
+		hideCheckIds={hideCheckIds}
+	/>
 {/if}
 
 <SettingsOverlay />
