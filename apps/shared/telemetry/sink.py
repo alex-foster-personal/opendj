@@ -398,7 +398,7 @@ def _source_site_from_hint(hint: Mapping[str, Any] | None) -> str:
     return "engine:uncaught"
 
 
-def _existing_error_id(event: Mapping[str, Any]) -> str | None:
+def event_error_id(event: Mapping[str, Any]) -> str | None:
     tags = event.get("tags")
     if isinstance(tags, dict):
         value = tags.get("error_id")
@@ -418,7 +418,7 @@ def enrich_sentry_event(
     Called from before_send. If capture_browser_error already stamped error_id
     on the scope, this does not append a second JSONL row.
     """
-    if _existing_error_id(event):
+    if event_error_id(event):
         return
     record = capture_error_event(
         message=_message_from_sentry_event(event),
