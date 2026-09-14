@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Literal
 
@@ -13,21 +14,38 @@ from scripts.icon_composer_asset import try_find_actool
 
 NoActoolEnv = Literal["native"] | dict[str, str]
 
+_XCRUN_NO_ACTOOL_SHIM = """#!/bin/sh
+if [ "$1" = "--find" ] && [ "$2" = "actool" ]; then
+    echo 'xcrun: error: unable to find utility "actool", not a developer tool or in PATH' >&2
+    exit 72
+fi
+exec "{real_xcrun}" "$@"
+"""
+
 
 def path_without_actool_resolver() -> str | None:
-    """PATH with every directory that provides xcrun removed."""
-    xcrun = shutil.which("xcrun")
-    if xcrun is None:
+    """PATH that cannot resolve actool, with dirname/uname/etc. left reachable.
+
+    ``dmg_preflight.sh`` shells out to plain coreutils (dirname, uname) as well
+    as ``xcrun --find actool``. Stripping xcrun's whole directory out of PATH
+    used to isolate "no actool" by also taking those coreutils with it, since
+    on macOS both live in /usr/bin -- a preflight run under that PATH failed
+    before it ever reached the actool check, with 'dirname: command not
+    found'. Instead, PREPEND a throwaway shim directory whose only ``xcrun``
+    answers ``--find actool`` exactly as a real Xcode-less host's xcrun does
+    (stderr message, exit 72) and forwards every other call to the real
+    xcrun, plus a second, empty, actool-less directory. Everything else on
+    PATH is untouched.
+    """
+    real_xcrun = shutil.which("xcrun")
+    if real_xcrun is None:
         return None
-    xcrun_dir = str(Path(xcrun).parent)
-    kept = [
-        part
-        for part in os.environ.get("PATH", "").split(os.pathsep)
-        if part and part != xcrun_dir
-    ]
-    if len(kept) == len(os.environ.get("PATH", "").split(os.pathsep)):
-        return None
-    return os.pathsep.join(kept)
+    shim_dir = Path(tempfile.mkdtemp(prefix="no-actool-xcrun-"))
+    empty_dir = Path(tempfile.mkdtemp(prefix="no-actool-empty-"))
+    xcrun_shim = shim_dir / "xcrun"
+    xcrun_shim.write_text(_XCRUN_NO_ACTOOL_SHIM.format(real_xcrun=real_xcrun))
+    xcrun_shim.chmod(0o755)
+    return os.pathsep.join([str(shim_dir), str(empty_dir), os.environ.get("PATH", "")])
 
 
 def require_no_actool_env() -> NoActoolEnv:
