@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
 
-from apps.cloud import asset_store, stem_index
+from apps.cloud import asset_store, hydration, stem_index
 from apps.cloud.asset_store import AssetS3Client
 from apps.cloud.config import CloudConfig
 from apps.shared.state.machine_identity import get_or_create_machine_id
@@ -114,7 +114,16 @@ class DirectR2Source:
         total = 0
         for filename, digest in file_hashes.items():
             dest = tmp_dir / filename
-            asset_store.fetch_asset(self.cfg, self.s3, digest, dest)
+            head = asset_store.head_asset(self.cfg, self.s3, digest)
+            bytes_total = head.size if head is not None else None
+            hydration.fetch_asset_for_hydration(
+                self.cfg,
+                self.s3,
+                digest,
+                dest,
+                stable_id=stable_id,
+                bytes_total=bytes_total,
+            )
             total += dest.stat().st_size
         return total
 
@@ -227,7 +236,15 @@ class HubPresignedSource:
                     ),
                 )
             dest = tmp_dir / filename
-            asset_store.fetch_presigned_asset(entry["url"], digest, dest)
+            hydration.fetch_asset_for_hydration(
+                None,
+                None,
+                digest,
+                dest,
+                stable_id=stable_id,
+                bytes_total=int(entry["size_bytes"]),
+                presigned_url=entry["url"],
+            )
             total += dest.stat().st_size
         return total
 

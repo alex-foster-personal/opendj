@@ -300,15 +300,9 @@ def push_asset(
     )
 
 
-def fetch_asset(
+def _fetch_asset_impl(
     cfg: CloudConfig, s3: AssetS3Client, content_hash: str, dest: Path
 ) -> Path:
-    """Download the object for ``content_hash`` to ``dest`` and verify it.
-
-    The digest of the retrieved bytes is re-checked against the key before
-    ``dest`` is written, so a truncated or mismatched download can never be
-    mistaken for a cache hit later.
-    """
     require_credentials(cfg)
     digest = validate_content_hash(content_hash)
     key = asset_object_key(digest)
@@ -334,6 +328,21 @@ def fetch_asset(
     return target
 
 
+def fetch_asset(
+    cfg: CloudConfig, s3: AssetS3Client, content_hash: str, dest: Path
+) -> Path:
+    """Download the object for ``content_hash`` to ``dest`` and verify it.
+
+    The digest of the retrieved bytes is re-checked against the key before
+    ``dest`` is written, so a truncated or mismatched download can never be
+    mistaken for a cache hit later. Download concurrency is bounded by
+    :mod:`apps.cloud.hydration_pool`.
+    """
+    from apps.cloud.hydration_pool import run_download
+
+    return run_download(lambda: _fetch_asset_impl(cfg, s3, content_hash, dest))
+
+
 def head_asset(cfg: CloudConfig, s3: AssetS3Client, content_hash: str) -> AssetHead | None:
     """HEAD the object for ``content_hash``, wrapping transport/service
     failures into :class:`AssetStoreError` so callers never see a raw
@@ -353,18 +362,13 @@ def delete_asset(cfg: CloudConfig, s3: AssetS3Client, content_hash: str) -> bool
     return s3.delete_object(cfg.audio_bucket, asset_object_key(content_hash))
 
 
-def fetch_presigned_asset(
+def _fetch_presigned_asset_impl(
     url: str,
     content_hash: str,
     dest: Path,
     *,
     timeout_s: float = PRESIGNED_FETCH_TIMEOUT_S,
 ) -> Path:
-    """Download ``url`` and verify the body matches ``content_hash`` before writing.
-
-    The URL is never persisted. A non-2xx response or digest mismatch raises
-    :class:`AssetStoreError` and leaves ``dest`` untouched.
-    """
     digest = validate_content_hash(content_hash)
     request = urllib.request.Request(url, method="GET")
     try:
@@ -389,6 +393,28 @@ def fetch_presigned_asset(
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(body)
     return target
+
+
+def fetch_presigned_asset(
+    url: str,
+    content_hash: str,
+    dest: Path,
+    *,
+    timeout_s: float = PRESIGNED_FETCH_TIMEOUT_S,
+) -> Path:
+    """Download ``url`` and verify the body matches ``content_hash`` before writing.
+
+    The URL is never persisted. A non-2xx response or digest mismatch raises
+    :class:`AssetStoreError` and leaves ``dest`` untouched. Download
+    concurrency is bounded by :mod:`apps.cloud.hydration_pool`.
+    """
+    from apps.cloud.hydration_pool import run_download
+
+    return run_download(
+        lambda: _fetch_presigned_asset_impl(
+            url, content_hash, dest, timeout_s=timeout_s
+        )
+    )
 
 
 # --- presigning (SigV4 query auth, stdlib only) --------------------------
