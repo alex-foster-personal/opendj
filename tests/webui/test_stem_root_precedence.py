@@ -24,7 +24,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.webui.server import stem_artifacts
+from apps.stems import artifacts as stem_artifacts
 from apps.webui.server.routes.stems import router
 
 STABLE_ID = "track-both-stores"

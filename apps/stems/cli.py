@@ -33,7 +33,7 @@ from apps.vocals.cli import (
     load_tracks,
     order_todo,
 )
-from apps.webui.server.stem_artifacts import (
+from apps.stems.artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
     StemBundleNotFoundError,

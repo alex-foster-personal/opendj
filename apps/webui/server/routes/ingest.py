@@ -81,7 +81,7 @@ from apps.webui.server.routes.ingest_job import (
 )
 from apps.webui.server.routes.ingest_scope import RefreshIn, resolve_scope, unmapped_steps
 from apps.webui.server.routes.ingest_track import select_track_target
-from apps.webui.server.stem_artifacts import DEFAULT_STEMS_DIR, stem_roots
+from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 

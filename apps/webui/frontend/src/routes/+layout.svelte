@@ -115,7 +115,7 @@
 	<!-- PREFLIGHT-01 (#771): the boot gate. Nothing else renders until a real
 	     `pass` arrives from GET /api/v1/preflight -- no skip/continue-anyway,
 	     see PreflightScreen.svelte for the polling policy. -->
-	<PreflightScreen mode="boot" />
+	<PreflightScreen mode="boot" navigate={goto} />
 {:else}
 
 {#if health.bindWarning}

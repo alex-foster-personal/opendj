@@ -1058,7 +1058,7 @@ def cmd_one(args: argparse.Namespace) -> int:
 
 def cmd_from_stems(args: argparse.Namespace) -> int:
     """CPU backfill: stem bundles -> vocal-cache (no demucs)."""
-    from apps.webui.server.stem_artifacts import (
+    from apps.stems.artifacts import (
         StemArtifactError,
         StemBundleNotFoundError,
         load_stem_bundle,

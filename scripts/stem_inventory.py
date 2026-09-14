@@ -8,7 +8,7 @@
 WHY THIS EXISTS. Stem bundles were produced by four different efforts (the
 RoFormer library spike, an A/B render, a review-clip batch, and a bought-in
 acapella pack) and each landed in its own directory with its own naming. Only
-one of those stores is a shape ``apps.webui.server.stem_artifacts`` can load,
+one of those stores is a shape ``apps.stems.artifacts`` can load,
 so bundles that cost GPU hours are sitting on disk invisible to the app. You
 cannot centralize what you have not counted, so counting is step one.
 
