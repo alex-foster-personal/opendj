@@ -346,6 +346,11 @@ def test_bulk_hydrate_with_warm_cache_does_not_refetch_index(
         "apps.lyrics.artifacts.asset_clients_for_mode", lambda *, writing: (s3, cfg)
     )
 
+    # publish_index's own read-merge-CAS just touched INDEX_OBJECT_KEY as
+    # part of THIS SETUP, not the bulk-hydrate run under test; only calls
+    # made by the CLI invocation below are what this assertion is about.
+    s3.get_calls.clear()
+
     rc = _run(
         [
             "bulk-hydrate", "--data-dir", str(data_dir),

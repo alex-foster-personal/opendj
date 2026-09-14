@@ -29035,6 +29035,9 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "description": "Invalid request, missing R2 credentials, or no published stem bundle index in R2"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -29044,6 +29047,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "502": {
+            "description": "Local stem bundle index cache is present but unreadable (STEM_INDEX_CORRUPT)"
           }
         },
         "summary": "Bulk Hydrate Stems",
@@ -31278,6 +31284,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "502": {
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT when the local index cache is present but unreadable"
           }
         },
         "summary": "Get Stem Manifest",
@@ -31417,6 +31426,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "502": {
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT when the local index cache is present but unreadable"
           }
         },
         "summary": "Get Stem File",

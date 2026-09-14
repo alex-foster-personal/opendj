@@ -26,10 +26,10 @@ from fastapi.testclient import TestClient
 import apps.webui.server.routes.stems as stems_module
 from apps.cloud.asset_store import asset_object_key
 from apps.cloud.config import CloudConfig
-from apps.cloud.lock import FakeS3Client as _UnusedFakeS3  # noqa: F401 (documents the sibling fake)
-from apps.cloud.stem_index import save_cached_index
+from apps.cloud.stem_index import local_index_cache_path, save_cached_index
 from apps.webui.server.routes.stems import router
 from apps.webui.server.routes.stems_assets import router as stems_assets_router
+from tests.cloudsync.conftest import InMemoryAssetS3
 
 
 def _wav_bytes(*, frames: int = 8, sample_rate: int = 44_100, channels: int = 2) -> bytes:
@@ -58,35 +58,6 @@ def _manifest_bytes(stable_id: str) -> bytes:
     return (json.dumps(manifest) + "\n").encode("utf-8")
 
 
-class _InMemoryAssetS3:
-    """Minimal AssetS3Client fake, local to this test module (routes tests
-    should not import the cloudsync test tree's fixtures)."""
-
-    def __init__(self) -> None:
-        self.store: dict[tuple[str, str], bytes] = {}
-
-    def head_object(self, bucket, key):
-        from apps.cloud.asset_store import AssetHead
-
-        body = self.store.get((bucket, key))
-        return None if body is None else AssetHead(size=len(body), etag="x")
-
-    def get_object(self, bucket, key):
-        body = self.store.get((bucket, key))
-        return None if body is None else (body, "x")
-
-    def put_object_if_none_match(self, bucket, key, body):
-        if not isinstance(body, bytes):
-            body = body.read()
-        if (bucket, key) in self.store:
-            return False, None
-        self.store[(bucket, key)] = body
-        return True, "x"
-
-    def delete_object(self, bucket, key):
-        return self.store.pop((bucket, key), None) is not None
-
-
 def _cfg() -> CloudConfig:
     return CloudConfig(
         r2_account_id="acct", r2_access_key_id="id", r2_secret_access_key="secret",
@@ -95,7 +66,7 @@ def _cfg() -> CloudConfig:
     )
 
 
-def _seed_bundle(s3: _InMemoryAssetS3, cfg: CloudConfig, stable_id: str) -> dict[str, str]:
+def _seed_bundle(s3: InMemoryAssetS3, cfg: CloudConfig, stable_id: str) -> dict[str, str]:
     files = {
         "manifest.json": _manifest_bytes(stable_id),
         "vocals.wav": _wav_bytes(), "drums.wav": _wav_bytes(),
@@ -114,7 +85,7 @@ def _client(
     *,
     data_dir: Path,
     hydration_cfg: CloudConfig | None = None,
-    hydration_s3: _InMemoryAssetS3 | None = None,
+    hydration_s3: InMemoryAssetS3 | None = None,
 ) -> TestClient:
     app = FastAPI()
     app.state.stems_dir = stems_dir
@@ -142,7 +113,7 @@ def test_manifest_route_enqueues_and_returns_immediately(tmp_path: Path):
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     cfg = _cfg()
-    s3 = _InMemoryAssetS3()
+    s3 = InMemoryAssetS3()
     entry = _seed_bundle(s3, cfg, "remote-track")
     save_cached_index(data_dir, {"remote-track": entry})
 
@@ -159,7 +130,7 @@ def test_part_route_waits_then_serves_hydrated_bytes(tmp_path: Path):
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     cfg = _cfg()
-    s3 = _InMemoryAssetS3()
+    s3 = InMemoryAssetS3()
     entry = _seed_bundle(s3, cfg, "remote-track")
     save_cached_index(data_dir, {"remote-track": entry})
 
@@ -192,7 +163,7 @@ def test_not_in_index_is_ordinary_unavailable_not_hydrating(tmp_path: Path):
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     cfg = _cfg()
-    s3 = _InMemoryAssetS3()
+    s3 = InMemoryAssetS3()
     save_cached_index(data_dir, {})  # empty index cached
 
     with _client(stems_dir, data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
@@ -221,7 +192,7 @@ def test_manifest_route_fails_loud_when_hydration_cannot_produce_the_bundle(tmp_
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     cfg = _cfg()
-    s3 = _InMemoryAssetS3()
+    s3 = InMemoryAssetS3()
     entry = _seed_bundle(s3, cfg, "broken-track")
     entry["vocals.wav"] = "f" * 64  # never actually pushed
     save_cached_index(data_dir, {"broken-track": entry})
@@ -253,7 +224,7 @@ def test_part_route_fails_loud_on_hydration_error(tmp_path: Path):
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     cfg = _cfg()
-    s3 = _InMemoryAssetS3()
+    s3 = InMemoryAssetS3()
     entry = _seed_bundle(s3, cfg, "broken-track")
     entry["vocals.wav"] = "f" * 64  # never actually pushed
     save_cached_index(data_dir, {"broken-track": entry})
@@ -278,7 +249,7 @@ def _assets_client(
     *,
     data_dir: Path,
     hydration_cfg: CloudConfig | None = None,
-    hydration_s3: _InMemoryAssetS3 | None = None,
+    hydration_s3: InMemoryAssetS3 | None = None,
 ) -> TestClient:
     app = FastAPI()
     app.state.stem_hydration_cfg = hydration_cfg
@@ -296,7 +267,7 @@ def test_bulk_hydrate_http_writes_under_request_data_dir(
     data_dir = tmp_path / "custom-data"
     default_stems_dir = tmp_path / "must-stay-empty"
     cfg = _cfg()
-    s3 = _InMemoryAssetS3()
+    s3 = InMemoryAssetS3()
     entry = _seed_bundle(s3, cfg, "http-track")
     save_cached_index(data_dir, {"http-track": entry})
 
@@ -319,6 +290,92 @@ def test_bulk_hydrate_http_writes_under_request_data_dir(
     assert resp.status_code == 200
     assert (data_dir / "state" / "stems" / "http-track" / "manifest.json").exists()
     assert not (default_stems_dir / "http-track" / "manifest.json").exists()
+
+
+@pytest.mark.requirement("STEM-24")
+def test_manifest_route_corrupt_index_cache_returns_502(tmp_path: Path):
+    """[if] the local index cache is corrupt and no local bundle exists [then]
+    the manifest route answers HTTP 502 STEM_INDEX_CORRUPT."""
+    stems_dir = tmp_path / "stems"
+    data_dir = tmp_path / "data"
+    cfg = _cfg()
+    s3 = InMemoryAssetS3()
+    cache_path = local_index_cache_path(data_dir)
+    cache_path.parent.mkdir(parents=True)
+    cache_path.write_text("not json at all", encoding="utf-8")
+
+    with _client(stems_dir, data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
+        resp = client.get("/api/v1/tracks/missing-track/stems")
+    assert resp.status_code == 502
+    assert resp.json()["detail"]["code"] == "STEM_INDEX_CORRUPT"
+
+
+@pytest.mark.requirement("STEM-24")
+def test_part_route_corrupt_index_cache_returns_502(tmp_path: Path):
+    stems_dir = tmp_path / "stems"
+    data_dir = tmp_path / "data"
+    cfg = _cfg()
+    s3 = InMemoryAssetS3()
+    cache_path = local_index_cache_path(data_dir)
+    cache_path.parent.mkdir(parents=True)
+    cache_path.write_text("not json at all", encoding="utf-8")
+
+    with _client(stems_dir, data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
+        resp = client.get("/api/v1/tracks/missing-track/stems/vocals")
+    assert resp.status_code == 502
+    assert resp.json()["detail"]["code"] == "STEM_INDEX_CORRUPT"
+
+
+@pytest.mark.requirement("STEM-24")
+def test_bulk_hydrate_corrupt_index_cache_returns_502(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    data_dir = tmp_path / "data"
+    cfg = _cfg()
+    s3 = InMemoryAssetS3()
+    cache_path = local_index_cache_path(data_dir)
+    cache_path.parent.mkdir(parents=True)
+    cache_path.write_text("not json at all", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "apps.lyrics.artifacts.asset_clients_for_mode", lambda *, writing: (s3, cfg)
+    )
+
+    with _assets_client(data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
+        resp = client.post(
+            "/api/v1/stems/bulk-hydrate",
+            json={
+                "stable_ids": ["any-track"],
+                "budget_bytes": 10**9,
+                "data_dir": str(data_dir),
+            },
+        )
+    assert resp.status_code == 502
+    assert resp.json()["detail"]["code"] == "STEM_INDEX_CORRUPT"
+
+
+@pytest.mark.requirement("STEM-24")
+def test_local_bundle_ignores_corrupt_index_cache(tmp_path: Path):
+    """[if] a valid local bundle exists [then] a corrupt index cache is never consulted."""
+    stems_dir = tmp_path / "stems"
+    data_dir = tmp_path / "data"
+    stable_id = "local-track"
+    bundle_dir = stems_dir / stable_id
+    bundle_dir.mkdir(parents=True)
+    (bundle_dir / "manifest.json").write_bytes(_manifest_bytes(stable_id))
+    for part in ("vocals", "drums", "bass", "other"):
+        (bundle_dir / f"{part}.wav").write_bytes(_wav_bytes())
+
+    cache_path = local_index_cache_path(data_dir)
+    cache_path.parent.mkdir(parents=True)
+    cache_path.write_text("not json at all", encoding="utf-8")
+
+    with _client(stems_dir, data_dir=data_dir) as client:
+        resp = client.get(f"/api/v1/tracks/{stable_id}/stems")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body.get("status") != "unavailable"
+    assert body["stable_id"] == stable_id
 
 
 @pytest.mark.requirement("STEM-14")

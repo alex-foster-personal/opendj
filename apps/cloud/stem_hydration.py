@@ -252,6 +252,20 @@ def hydrate_one(
             "unavailable",
             reason="index has no manifest.json hash for this bundle",
         )
+    bad_filenames = sorted(
+        filename
+        for filename in file_hashes
+        if not stem_index.is_allowed_stem_filename(filename)
+    )
+    if bad_filenames:
+        return HydrationOutcome(
+            stable_id,
+            "error",
+            reason=(
+                "index has disallowed filename(s): "
+                + ", ".join(bad_filenames)
+            ),
+        )
 
     bundle_dir = root / stable_id
     try:

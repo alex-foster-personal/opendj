@@ -149,6 +149,36 @@ def test_hydrate_one_not_in_index_is_unavailable(tmp_path: Path, fake_s3, cfg: C
     assert outcome.status == "unavailable"
 
 
+@pytest.mark.requirement("STEM-22")
+def test_hydrate_one_rejects_disallowed_index_filename(
+    tmp_path: Path, fake_s3, cfg: CloudConfig
+):
+    """[if] the caller-supplied index names a traversal filename [then] no files
+    are written and hydration reports an explicit error."""
+    stems_dir = tmp_path / "stems"
+    stable_id = "escape-track"
+    index_entry = _seed_bundle(fake_s3, cfg, stable_id)
+    del index_entry["vocals.wav"]
+    index_entry["../escape.wav"] = "f" * 64
+
+    parent_dir = stems_dir.parent
+    outcome = hydrate_one(
+        stable_id,
+        data_dir=tmp_path / "data",
+        cfg=cfg,
+        s3=fake_s3,
+        index={stable_id: index_entry},
+        stems_dir=stems_dir,
+    )
+    assert outcome.status == "error"
+    assert "../escape.wav" in (outcome.reason or "")
+    assert not (stems_dir / stable_id).exists()
+    # The filename check runs before any filesystem write, so the whole
+    # stems_dir tree (not just the bundle) must never have been created.
+    assert not stems_dir.exists()
+    assert list(parent_dir.iterdir()) == []
+
+
 @pytest.mark.requirement("STEM-12")
 def test_hydrate_one_leaves_no_partial_bundle_on_fetch_failure(
     tmp_path: Path, fake_s3, cfg: CloudConfig

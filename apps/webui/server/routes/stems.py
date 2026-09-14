@@ -17,7 +17,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from io import BufferedReader
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -54,6 +54,16 @@ _INFLIGHT: dict[str, Future] = {}
 #: request can fail loud immediately instead of waiting out the full timeout
 #: again for an error already known.
 _LAST_HYDRATE_ERROR: dict[str, str] = {}
+
+STEM_HYDRATION_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
+    502: {
+        "description": (
+            "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when "
+            "the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT "
+            "when the local index cache is present but unreadable"
+        )
+    }
+}
 
 
 class StemPartOut(BaseModel):
@@ -194,13 +204,12 @@ def _enqueue_hydration(stable_id: str, request: Request) -> Future | None:
         existing = _INFLIGHT.get(stable_id)
         if existing is not None and not existing.done():
             return existing
-        # Corrupt cache must not crash deck-load: treat as "nothing indexed
-        # this request" and fall back to ordinary unavailable. The shared
-        # loader raises on corrupt files; callers that need repair must catch.
+        # Corrupt cache must fail loud on the index-dependent miss path only.
+        # A bundle that already loads locally never reaches this code.
         try:
             index = stem_index.load_cached_index(data_dir)
-        except stem_index.StemIndexError:
-            return None
+        except stem_index.StemIndexError as exc:
+            _raise_stem_index_corrupt(exc, data_dir)
         if stable_id not in index:
             return None
         stems_dir = _stems_dir(request)
@@ -231,6 +240,22 @@ def _raise_hydration_failed(reason: str) -> None:
         status_code=502,
         detail={"code": "STEM_BUNDLE_HYDRATION_FAILED", "message": reason},
     )
+
+
+def _raise_stem_index_corrupt(exc: stem_index.StemIndexError, data_dir: Path) -> None:
+    """Fail loud when the local index cache exists but cannot be read.
+
+    Only reached on the index-dependent miss path (no local bundle yet).
+    A bundle that already loads locally never consults the index cache.
+    """
+    raise HTTPException(
+        status_code=502,
+        detail={
+            "code": "STEM_INDEX_CORRUPT",
+            "message": str(exc),
+            "path": str(stem_index.local_index_cache_path(data_dir)),
+        },
+    ) from exc
 
 
 def _manifest_out(bundle: StemBundle) -> StemManifestOut:
@@ -286,6 +311,7 @@ def _stream_file(source: BufferedReader) -> Iterator[bytes]:
 @router.get(
     "/{stable_id}/stems",
     response_model=StemManifestOut | StemUnavailableOut,
+    responses=STEM_HYDRATION_ERROR_RESPONSES,
 )
 def get_stem_manifest(
     stable_id: str, request: Request
@@ -325,7 +351,11 @@ def get_stem_manifest(
     return _manifest_out(bundle)
 
 
-@router.get("/{stable_id}/stems/{part}", response_class=StreamingResponse)
+@router.get(
+    "/{stable_id}/stems/{part}",
+    response_class=StreamingResponse,
+    responses=STEM_HYDRATION_ERROR_RESPONSES,
+)
 def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingResponse:
     """Stream one validated stem from its already-verified file handle.
 
@@ -410,6 +440,7 @@ def mark_stem_deck_closed(stable_id: str) -> dict[str, str]:
 
 
 __all__ = [
+    "STEM_HYDRATION_ERROR_RESPONSES",
     "STEM_PART_HYDRATE_WAIT_S",
     "StemManifestOut",
     "StemPartOut",

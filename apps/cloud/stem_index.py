@@ -26,15 +26,18 @@ object at a FIXED (not content-addressed) key is the smallest correct
 extension of the SAME store, not a new subsystem. This is a deliberate
 exception to ADR 06's content-addressing rule: every other R2 object here is
 immutable, but the index is a pointer that must be overwritten as bundles are
-added, so :func:`upsert_object` performs an explicit create-or-replace
-instead of the asset tier's conditional create.
+added, so :func:`publish_index` merges into the shared object under
+compare-and-swap (read current + etag, union by stable_id with the
+caller's entries winning, write with If-Match / If-None-Match, bounded
+retry) instead of the asset tier's conditional create or a blind overwrite.
 
 * [if] the journal has a (legacy_key, key) pair for a stem object [then]
   the index maps that object's stable_id + filename to its sha256.
 * [if] the journal's final line is torn (a kill mid-append) [then] the
   index still builds from every earlier, well-formed line.
-* [if] the R2 index object does not exist yet [then] :func:`upsert_object`
-  creates it; [if] it already exists [then] the same call replaces its body.
+* [if] the R2 index object does not exist yet [then] :func:`publish_index`
+  creates it; [if] it already exists [then] the same call merges the
+  caller's entries into the current body under CAS.
 * [if] no index object exists in R2 [then] :func:`fetch_index` returns an
   empty index, not an error -- a fleet with no stem push run yet has
   nothing to hydrate from, which is a fact, not a failure.
@@ -53,6 +56,7 @@ from typing import TypeAlias
 from apps.cloud.config import CloudConfig
 from apps.cloud.lock import S3Client
 from apps.cloud.r2_keys import R2KeyError, parse_legacy_stem_key
+from apps.webui.server.stem_artifacts import ROFORMER_PARTS, STEM_PARTS
 
 #: A fixed, mutable pointer key. NOT content-addressed: unlike every other
 #: object under ``assets/``, this one is replaced in place as new bundles
@@ -67,6 +71,26 @@ StemFileHashes: TypeAlias = dict[str, str]
 StemAssetIndex: TypeAlias = dict[str, StemFileHashes]
 
 MANIFEST_FILENAME: str = "manifest.json"
+
+#: Must stay in sync with ``stem_artifacts._MEDIA_TYPES`` keys.
+STEM_MEDIA_EXTENSIONS: tuple[str, str, str] = (".wav", ".flac", ".mp3")
+
+_ALLOWED_PARTS: tuple[str, ...] = tuple(dict.fromkeys((*STEM_PARTS, *ROFORMER_PARTS)))
+ALLOWED_STEM_FILENAMES: frozenset[str] = frozenset(
+    {MANIFEST_FILENAME}
+    | {
+        f"{part}{ext}"
+        for part in _ALLOWED_PARTS
+        for ext in STEM_MEDIA_EXTENSIONS
+    }
+)
+
+_PUBLISH_CAS_MAX_ATTEMPTS: int = 5
+
+
+def is_allowed_stem_filename(filename: str) -> bool:
+    """Return whether ``filename`` is an exact allowed bundle basename."""
+    return filename in ALLOWED_STEM_FILENAMES
 
 
 class StemIndexError(RuntimeError):
@@ -154,33 +178,63 @@ def _decode(body: bytes) -> StemAssetIndex:
         raise StemIndexError(
             f"stem bundle index at {INDEX_OBJECT_KEY} is missing a 'stable_ids' object"
         )
-    return payload["stable_ids"]
-
-
-def upsert_object(s3: S3Client, bucket: str, key: str, body: bytes) -> str:
-    """Create-or-replace ``key``. The one deliberate non-content-addressed
-    write in this codebase's R2 usage; see the module docstring.
-
-    ``put_object_if_none_match`` is content-addressed R2's normal write and
-    treats "already exists" as success without touching the body. A pointer
-    object needs the opposite: the second and every later publish MUST
-    replace the body, so a failed create falls through to an unconditional
-    ``If-Match: *`` overwrite.
-    """
-    created, etag = s3.put_object_if_none_match(bucket, key, body)
-    if created:
-        if etag is None:
-            raise StemIndexError(f"put_object_if_none_match({key}) created but returned no etag")
-        return etag
-    ok, etag2 = s3.put_object_if_match(bucket, key, body, etag="*")
-    if not ok or etag2 is None:
-        raise StemIndexError(f"failed to overwrite index object {bucket}/{key}")
-    return etag2
+    stable_ids = payload["stable_ids"]
+    for stable_id, file_hashes in stable_ids.items():
+        if not isinstance(file_hashes, dict):
+            raise StemIndexError(
+                f"stem bundle index at {INDEX_OBJECT_KEY} has a non-object entry "
+                f"for stable_id {stable_id!r}"
+            )
+        for filename in file_hashes:
+            if not is_allowed_stem_filename(filename):
+                raise StemIndexError(
+                    f"stem bundle index at {INDEX_OBJECT_KEY} has disallowed "
+                    f"filename {filename!r} for stable_id {stable_id!r}"
+                )
+    return stable_ids
 
 
 def publish_index(cfg: CloudConfig, s3: S3Client, index: StemAssetIndex) -> str:
-    """PUT the whole index to its fixed R2 key. Returns the resulting etag."""
-    return upsert_object(s3, cfg.audio_bucket, INDEX_OBJECT_KEY, _encode(index))
+    """Merge ``index`` into the shared R2 pointer object under CAS.
+
+    Reads the current object (if any), unions by ``stable_id`` with the
+    caller's entries winning on collision, and writes with
+    ``If-None-Match`` (create) or ``If-Match`` (update). Retries up to
+    :data:`_PUBLISH_CAS_MAX_ATTEMPTS` on precondition failure. Returns the
+    resulting etag.
+    """
+    bucket = cfg.audio_bucket
+    for _attempt in range(1, _PUBLISH_CAS_MAX_ATTEMPTS + 1):
+        got = s3.get_object(bucket, INDEX_OBJECT_KEY)
+        current = _decode(got[0]) if got is not None else {}
+        current_etag = got[1] if got is not None else None
+        merged = dict(current)
+        merged.update(index)
+        body = _encode(merged)
+        if current_etag is None:
+            created, new_etag = s3.put_object_if_none_match(bucket, INDEX_OBJECT_KEY, body)
+            if created:
+                if new_etag is None:
+                    raise StemIndexError(
+                        f"put_object_if_none_match({INDEX_OBJECT_KEY}) created but "
+                        "returned no etag"
+                    )
+                return new_etag
+        else:
+            ok, new_etag = s3.put_object_if_match(
+                bucket, INDEX_OBJECT_KEY, body, etag=current_etag
+            )
+            if ok:
+                if new_etag is None:
+                    raise StemIndexError(
+                        f"put_object_if_match({INDEX_OBJECT_KEY}) succeeded but "
+                        "returned no etag"
+                    )
+                return new_etag
+    raise StemIndexError(
+        f"failed to publish {INDEX_OBJECT_KEY} after {_PUBLISH_CAS_MAX_ATTEMPTS} "
+        "compare-and-swap attempts"
+    )
 
 
 def fetch_index(cfg: CloudConfig, s3: S3Client) -> StemAssetIndex:
@@ -231,19 +285,21 @@ def refresh_local_cache_from_r2(cfg: CloudConfig, s3: S3Client, data_dir: Path) 
 
 
 __all__ = [
+    "ALLOWED_STEM_FILENAMES",
     "INDEX_CACHE_FILENAME",
     "INDEX_OBJECT_KEY",
     "INDEX_SCHEMA_VERSION",
     "MANIFEST_FILENAME",
+    "STEM_MEDIA_EXTENSIONS",
     "StemAssetIndex",
     "StemFileHashes",
     "StemIndexError",
     "build_index_from_journal",
     "fetch_index",
+    "is_allowed_stem_filename",
     "load_cached_index",
     "local_index_cache_path",
     "publish_index",
     "refresh_local_cache_from_r2",
     "save_cached_index",
-    "upsert_object",
 ]

@@ -8,6 +8,7 @@ the hash-based hydrate path without going through the track-scoped loader.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,6 +16,21 @@ from pydantic import BaseModel, ConfigDict, Field
 from apps.lyrics import stems_sync
 
 router = APIRouter(tags=["stems"])
+
+STEM_BULK_HYDRATE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: {
+        "description": (
+            "Invalid request, missing R2 credentials, or no published stem "
+            "bundle index in R2"
+        )
+    },
+    502: {
+        "description": (
+            "Local stem bundle index cache is present but unreadable "
+            "(STEM_INDEX_CORRUPT)"
+        )
+    },
+}
 
 
 class StemBulkHydrateIn(BaseModel):
@@ -118,7 +134,11 @@ def _resolve_playlist_stable_ids(data_dir: Path, playlist: str) -> list[str]:
     return [t.stable_id for t in ordered]
 
 
-@router.post("/stems/bulk-hydrate", response_model=StemBulkHydrateOut)
+@router.post(
+    "/stems/bulk-hydrate",
+    response_model=StemBulkHydrateOut,
+    responses=STEM_BULK_HYDRATE_RESPONSES,
+)
 def bulk_hydrate_stems(body: StemBulkHydrateIn) -> StemBulkHydrateOut:
     """Agent-native parity for ``python -m apps.stems bulk-hydrate`` (ADR-0024).
 
@@ -148,7 +168,12 @@ def bulk_hydrate_stems(body: StemBulkHydrateIn) -> StemBulkHydrateOut:
             status_code=400,
             detail="bulk-hydrate needs cloudsync mode 'cloud' with R2 credentials",
         )
-    index = stem_index.load_cached_index(data_dir)
+    try:
+        index = stem_index.load_cached_index(data_dir)
+    except stem_index.StemIndexError as exc:
+        from apps.webui.server.routes.stems import _raise_stem_index_corrupt
+
+        _raise_stem_index_corrupt(exc, data_dir)
     # Parity with CLI ``bulk-hydrate``: refresh from R2 when the local cache
     # is empty or the caller passes ``refresh_index=True`` explicitly.
     if body.refresh_index or not index:

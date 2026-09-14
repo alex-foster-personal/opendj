@@ -23,9 +23,11 @@ from apps.cloud.config import CloudConfig
 from apps.cloud.lock import FakeS3Client
 from apps.cloud.stem_index import (
     INDEX_OBJECT_KEY,
+    MANIFEST_FILENAME,
     StemIndexError,
     build_index_from_journal,
     fetch_index,
+    is_allowed_stem_filename,
     load_cached_index,
     publish_index,
     save_cached_index,
@@ -187,3 +189,103 @@ def test_local_cache_missing_stable_ids_key_raises(tmp_path: Path):
     path.write_text(json.dumps({"schema_version": 1}), encoding="utf-8")
     with pytest.raises(StemIndexError, match=re.escape("stem-bundle-index.json")):
         load_cached_index(data_dir)
+
+
+@pytest.mark.requirement("STEM-22")
+def test_is_allowed_stem_filename_accepts_real_bundle_basenames():
+    """Over-strict allowlist guard: every real demucs/roformer basename must pass."""
+    positives = [
+        MANIFEST_FILENAME,
+        "vocals.wav",
+        "vocals.flac",
+        "vocals.mp3",
+        "drums.wav",
+        "bass.wav",
+        "other.wav",
+        "instrumental.wav",
+        "instrumental.flac",
+        "instrumental.mp3",
+    ]
+    for filename in positives:
+        assert is_allowed_stem_filename(filename)
+
+
+@pytest.mark.requirement("STEM-22")
+def test_is_allowed_stem_filename_rejects_traversal_and_unknown_names():
+    negatives = [
+        "../x",
+        "/etc/passwd",
+        "a/b/vocals.wav",
+        "vocals.exe",
+        "",
+        "bonus.wav",
+    ]
+    for filename in negatives:
+        assert not is_allowed_stem_filename(filename)
+
+
+@pytest.mark.requirement("STEM-22")
+def test_local_cache_disallowed_filename_raises(tmp_path: Path):
+    """[if] a cached index names a traversal filename [then] load raises."""
+    data_dir = tmp_path / "data"
+    path = tmp_path / "data" / "state" / "stem-bundle-index.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "stable_ids": {
+                    "evil-track": {
+                        "../evil": "a" * 64,
+                        "manifest.json": "b" * 64,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(StemIndexError, match=re.escape("../evil")):
+        load_cached_index(data_dir)
+
+
+@pytest.mark.requirement("STEM-23")
+def test_publish_index_merges_concurrent_updates_under_cas(cfg: CloudConfig):
+    """[if] publisher B lands a write strictly between publisher A's read and
+    A's write [then] A's first CAS write hits a real precondition failure,
+    A retries against the fresh state, and both publishers' entries survive.
+
+    Deterministic, not thread/timing-dependent: ``get_object`` returns the
+    snapshot captured BEFORE publisher B's write (so A's first attempt is
+    provably stale), then triggers B's publish as a side effect. This forces
+    A's ``put_object_if_none_match`` to fail against the real store (B
+    already created the object), proving the retry loop -- not just the
+    merge -- actually ran. A mutation back to the old blind-overwrite
+    ``upsert_object`` fails this test two ways: it never reads first (so B's
+    nested publish is never triggered by this hook), and even if it were, it
+    would overwrite B's entry outright instead of merging it.
+    """
+    b_index = {"b": {"manifest.json": "b" * 64}}
+    a_index = {"a": {"manifest.json": "a" * 64}}
+
+    class InterleavingS3(FakeS3Client):
+        def __init__(self) -> None:
+            super().__init__()
+            self.get_calls = 0
+
+        def get_object(self, bucket: str, key: str):
+            self.get_calls += 1
+            stale_snapshot = super().get_object(bucket, key)
+            if key == INDEX_OBJECT_KEY and self.get_calls == 1:
+                # B publishes AFTER we captured A's snapshot, so A's
+                # upcoming write is provably against state that has moved.
+                publish_index(cfg, self, b_index)
+            return stale_snapshot
+
+    s3 = InterleavingS3()
+    publish_index(cfg, s3, a_index)
+    # 1 (A's stale read) + 1 (B's nested read) + 1 (A's retry re-read) = 3.
+    # Fewer than 3 would mean A's write landed without ever re-reading after
+    # B's write, i.e. no real retry happened.
+    assert s3.get_calls >= 3
+    final = fetch_index(cfg, s3)
+    assert final == {"a": {"manifest.json": "a" * 64}, "b": {"manifest.json": "b" * 64}}
