@@ -276,6 +276,8 @@ def _row_to_track(
     rating = _val("rating")
     tags_val = _val("tags")
     notes = _val("notes")
+    genre = _val("genre")
+    comments = _val("comments")
     last_played_at = _val("last_played_at")
     tempo_pref_val = _val("tempo_pref")
 
@@ -294,6 +296,10 @@ def _row_to_track(
         tags = []
     if notes is not None and not isinstance(notes, str):
         notes = str(notes)
+    if genre is not None and not isinstance(genre, str):
+        genre = str(genre)
+    if comments is not None and not isinstance(comments, str):
+        comments = str(comments)
     if last_played_at is not None and not isinstance(last_played_at, str):
         last_played_at = str(last_played_at)
     if key is not None and not isinstance(key, str):
@@ -325,6 +331,8 @@ def _row_to_track(
         rating=rating,
         tags=tags,
         notes=notes,
+        genre=genre,
+        comments=comments,
         last_played_at=last_played_at,
         tempo_pref=tempo_pref,
         file_path=row["file_path"],
@@ -425,6 +433,10 @@ def _field_writes(current: Track, patch: dict[str, Any]) -> dict[str, Any]:
         writes["rating"] = rating
     if "notes" in patch:
         writes["notes"] = patch["notes"]
+    if "genre" in patch:
+        writes["genre"] = patch["genre"]
+    if "comments" in patch:
+        writes["comments"] = patch["comments"]
     if "tempo_pref" in patch:
         writes["tempo_pref"] = resolve_tempo_pref_write(patch["tempo_pref"])
     if "tags_add" in patch or "tags_remove" in patch:

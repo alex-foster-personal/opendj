@@ -13,7 +13,7 @@ from apps.vocals.prefetch import DEFAULT_WORKERS, read_ahead
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_low_tier_halves_default_workers() -> None:
-    """[if] tier is LOW [then] background_worker_count halves defaults, [else stop]."""
+    """[if] tier is LOW [then] background_worker_count halves defaults to 8, [else stop]."""
     assert background_worker_count(DEFAULT_WORKERS, PerfTier.LOW) == 8
     assert background_worker_count(DEFAULT_WORKERS, PerfTier.STANDARD) == 16
 

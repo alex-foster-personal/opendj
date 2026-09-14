@@ -30,6 +30,17 @@
  *     [if] the deck is stopped, or has an engaged loop, or BeatSyncMax is off
  *       [then] the jump fires immediately - a stopped deck has no audible
  *       transition to protect, and an engaged loop already owns its window
+ *   ✔︎ LATENCY-02 QUANTIZED LAUNCH is opt-in via play.quantize / Cmd+Space / Cmd+click.
+ *     [if] Cmd+Space or Cmd+click on play starts a paused loaded deck while a
+ *       playing master has a trusted beatgrid [then] playback is scheduled at the
+ *       next point where this deck's beat 1 aligns with the master's beat 1, and
+ *       the play control shows an armed/waiting countdown until that instant ⛔️
+ *     [if] Space or a plain play click, or a play command with no quantize flag,
+ *       starts a paused loaded deck [then] playback uses the Class A immediate path ⛔️
+ *     [if] the AGENT-03 play command carries quantize: true [then] it takes the same
+ *       QUANTIZED LAUNCH path as Cmd+Space, including the armed countdown in query() ⛔️
+ *     [if] a QUANTIZED LAUNCH cannot be planned [then] the command refuses with a named
+ *       error that includes QUANTIZED LAUNCH and the play button does not stay busy ⛔️
  */
 
 import { assertHeadDelayMs } from '$lib/player/constants';
@@ -145,6 +156,8 @@ export type HeadphoneCommand =
 	| { type: 'head_delay_ms'; value: number }
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_select'; device_id: string }
+	| { type: 'headphone_master_select'; device_id: string }
+	| { type: 'headphone_input_select'; device_id: string }
 	| { type: 'output_mode'; mode: HeadphoneOutputMode };
 
 export type PerformanceCommand =
@@ -157,7 +170,7 @@ export type PerformanceCommand =
 	| { type: 'load'; deck: DeckId; stable_id: string; refuseIfMaster?: boolean }
 	| { type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean }
 	| { type: 'unload'; deck: DeckId; refuseIfMaster?: boolean }
-	| { type: 'play'; deck: DeckId; playing: boolean }
+	| { type: 'play'; deck: DeckId; playing: boolean; quantize?: boolean }
 	| { type: 'cue'; deck: DeckId }
 	| { type: 'seek'; deck: DeckId; position_ms: number }
 	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null }
@@ -201,6 +214,8 @@ export type PerformanceCommand =
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
+	| { type: 'headphone_master_select'; device_id: string }
+	| { type: 'headphone_input_select'; device_id: string }
 	| { type: 'output_mode'; mode: HeadphoneOutputMode }
 	| { type: 'analysis_source'; feature: AnalysisSourceFeature; source: AnalysisSource }
 	/** UI contract only: no automatic second-track selection or mixing exists yet. */
@@ -305,6 +320,8 @@ export interface PerformanceDeckSnapshot {
 	 * downbeat (BeatSyncMax, playing, unlooped); null when nothing is armed
 	 * or once the deferred jump has landed. */
 	hot_cue_armed: { slot: HotCueSlot; target_position_ms: number; remaining_ms: number } | null;
+	/** LATENCY-02: QUANTIZED LAUNCH armed countdown; null once launched or cleared. */
+	quantized_launch_armed: { remaining_ms: number; launch_at_context_sec: number } | null;
 	command_error: string | null;
 	command_pending: boolean;
 	/** Last command observed for this deck, including MIDI and UI sources. */
@@ -550,6 +567,40 @@ const hotCueArmed: Record<
 	DeckId,
 	{ slot: HotCueSlot; target_position_ms: number; target_context_time: number } | null
 > = $state({ 1: null, 2: null, 3: null, 4: null });
+
+const quantizedLaunchArmed: Record<DeckId, { launch_at_context_sec: number } | null> = $state({
+	1: null,
+	2: null,
+	3: null,
+	4: null
+});
+
+export interface PerformanceQuantizedLaunchDriver {
+	arm(deck: DeckId, pressT0Ms?: number): Promise<number>;
+	clear(deck: DeckId): void;
+	contextTimeNowSec(): number;
+}
+
+const _defaultQuantizedLaunchDriver: PerformanceQuantizedLaunchDriver = {
+	arm: (deck, pressT0Ms) => engine.armQuantizedLaunch(deck, pressT0Ms),
+	clear: (deck) => engine.clearQuantizedLaunch(deck),
+	contextTimeNowSec: () => engine.contextTimeNowSec()
+};
+let _quantizedLaunchDriver: PerformanceQuantizedLaunchDriver = _defaultQuantizedLaunchDriver;
+
+export function installPerformanceQuantizedLaunchDriverForTest(
+	driver: PerformanceQuantizedLaunchDriver
+): () => void {
+	const previous = _quantizedLaunchDriver;
+	_quantizedLaunchDriver = driver;
+	return () => {
+		_quantizedLaunchDriver = previous;
+	};
+}
+
+export function resetQuantizedLaunchArmedForTest(): void {
+	for (const deckId of DECK_IDS) quantizedLaunchArmed[deckId] = null;
+}
 
 export interface PerformanceHotCueDriver {
 	stableId(deck: DeckId): string | null;
@@ -869,6 +920,20 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, device_id: record.device_id };
 	}
+	if (type === 'headphone_master_select') {
+		_exactKeys(record, ['type', 'device_id']);
+		if (typeof record.device_id !== 'string' || record.device_id.trim() === '') {
+			throw new TypeError('device_id must be a non-empty string');
+		}
+		return { type, device_id: record.device_id };
+	}
+	if (type === 'headphone_input_select') {
+		_exactKeys(record, ['type', 'device_id']);
+		if (typeof record.device_id !== 'string' || record.device_id.trim() === '') {
+			throw new TypeError('device_id must be a non-empty string');
+		}
+		return { type, device_id: record.device_id };
+	}
 	if (type === 'output_mode') {
 		_exactKeys(record, ['type', 'mode']);
 		assertHeadphoneOutputMode(record.mode);
@@ -979,8 +1044,14 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		if (record.lock === undefined) return { type, deck };
 		return { type, deck, lock: _boolean('lock', record.lock) };
 	} else if (type === 'play') {
-		_exactKeys(record, ['type', 'deck', 'playing']);
-		return { type, deck, playing: _boolean('playing', record.playing) };
+		_exactKeys(record, ['type', 'deck', 'playing', 'quantize']);
+		if (record.quantize === undefined) return { type, deck, playing: _boolean('playing', record.playing) };
+		return {
+			type,
+			deck,
+			playing: _boolean('playing', record.playing),
+			quantize: _boolean('quantize', record.quantize)
+		};
 	} else if (type === 'safety_loop_save' || type === 'safety_loop_clear') {
 		_exactKeys(record, ['type', 'deck']);
 		return { type, deck };
@@ -1196,6 +1267,19 @@ function _hotCueArmedSnapshot(
 	return { slot: armed.slot, target_position_ms: armed.target_position_ms, remaining_ms: remainingMs };
 }
 
+function _quantizedLaunchArmedSnapshot(
+	deckId: DeckId
+): { remaining_ms: number; launch_at_context_sec: number } | null {
+	const armed = quantizedLaunchArmed[deckId];
+	if (armed === null) return null;
+	const remainingMs = (armed.launch_at_context_sec - _quantizedLaunchDriver.contextTimeNowSec()) * 1000;
+	if (remainingMs <= 0) {
+		quantizedLaunchArmed[deckId] = null;
+		return null;
+	}
+	return { remaining_ms: remainingMs, launch_at_context_sec: armed.launch_at_context_sec };
+}
+
 function _openPairingSnapshot(): PairingSnapshot {
 	const unit: 'beats' | 'time' = uiPrefs.beat_sync_max ? 'beats' : 'time';
 	const decks = DECK_IDS.flatMap((deckId) => {
@@ -1309,6 +1393,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		})),
 		hot_cue_reversal: hotCueReversals[deckId],
 		hot_cue_armed: _hotCueArmedSnapshot(deckId),
+		quantized_launch_armed: _quantizedLaunchArmedSnapshot(deckId),
 		command_error: performanceCommandStatus.deck_errors[deckId],
 		command_pending: performanceCommandStatus.deck_pending[deckId] > 0,
 		last_command_id: _deckCommandIds[deckId]
@@ -1345,7 +1430,8 @@ export function queryPerformanceState(): PerformanceState {
 			master: mixerState.master,
 			headphones: {
 				...mixerState.headphones,
-				outputs: mixerState.headphones.outputs.map((output) => ({ ...output }))
+				outputs: mixerState.headphones.outputs.map((output) => ({ ...output })),
+				inputs: mixerState.headphones.inputs.map((input) => ({ ...input }))
 			},
 			channels: {
 				1: { ...mixerState.channels[1] },
@@ -1432,6 +1518,8 @@ export function performanceCommandQueueScopes(
 		command.type === 'headphone_outputs_refresh' ||
 		command.type === 'headphone_output_acquire' ||
 		command.type === 'headphone_output_select' ||
+		command.type === 'headphone_master_select' ||
+		command.type === 'headphone_input_select' ||
 		command.type === 'output_mode'
 	) {
 		return ['headphone'];
@@ -1554,6 +1642,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		}
 		hotCueReversals[command.deck] = null;
 		hotCueArmed[command.deck] = null;
+		quantizedLaunchArmed[command.deck] = null;
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'load_play_intent') {
 		// Q1: the stamp rides WITH the intent, so the play this eventually
@@ -1578,9 +1667,24 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.unload(command.deck);
 		hotCueReversals[command.deck] = null;
 		hotCueArmed[command.deck] = null;
+		quantizedLaunchArmed[command.deck] = null;
 	} else if (command.type === 'play') {
-		if (command.playing) await engine.play(command.deck, pressT0Ms);
-		else await engine.pause(command.deck, pressT0Ms);
+		if (command.playing) {
+			if (quantizedLaunchArmed[command.deck] !== null && command.quantize !== true) {
+				quantizedLaunchArmed[command.deck] = null;
+				_quantizedLaunchDriver.clear(command.deck);
+			} else if (command.quantize === true) {
+				if (pressT0Ms !== undefined) markArmedHotCuePress(pressT0Ms);
+				const launchAt = await _quantizedLaunchDriver.arm(command.deck, pressT0Ms);
+				quantizedLaunchArmed[command.deck] = { launch_at_context_sec: launchAt };
+			} else {
+				await engine.play(command.deck, pressT0Ms);
+			}
+		} else {
+			quantizedLaunchArmed[command.deck] = null;
+			_quantizedLaunchDriver.clear(command.deck);
+			await engine.pause(command.deck, pressT0Ms);
+		}
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'cue') {
 		await engine.pressCue(command.deck, pressT0Ms);
@@ -1669,6 +1773,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.acquireHeadphoneOutput();
 	} else if (command.type === 'headphone_output_select') {
 		await engine.selectHeadphoneOutput(command.device_id);
+	} else if (command.type === 'headphone_master_select') {
+		await engine.selectMasterOutput(command.device_id);
+	} else if (command.type === 'headphone_input_select') {
+		await engine.selectAudioInput(command.device_id);
 	} else if (command.type === 'output_mode') {
 		engine.setHeadphoneOutputMode(command.mode);
 	} else if (command.type === 'analysis_source') {

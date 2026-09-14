@@ -108,6 +108,7 @@ def _playlist_change(
             "updated_at": updated_at,
             "origin_device_id": origin,
             "deleted_at": None,
+            "forbid_duplicates": 0,
         }
     )
     member_columns = protocol.table_columns(conn, protocol.MEMBERSHIP_TABLE)

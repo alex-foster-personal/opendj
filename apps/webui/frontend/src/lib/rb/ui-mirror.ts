@@ -82,6 +82,7 @@ export function buildUiMirror(): Record<string, unknown> {
 				stable_id: deck.stable_id,
 				title: deck.title, artist: deck.artist, key: deck.key, bpm: deck.bpm,
 				effective_bpm: deck.effective_bpm, position: _position(deck), playing: deck.playing,
+				quantized_launch_armed: deck.quantized_launch_armed,
 				audible:
 					deck.audible &&
 					silence.verdict !== 'silent-while-playing' &&

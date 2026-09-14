@@ -147,7 +147,18 @@ test('only the explicit pointer-only marker opts a control out of the hotkey gua
 	);
 });
 
+test('LATENCY-02 Cmd+Space sends quantize when starting a paused deck', async () => {
+	const source = await readFile('src/lib/rb/performance-hotkeys.ts', 'utf8');
+	assert.match(source, /quantize === true && playing \? \{ quantize: true \}/);
+});
+
 test('the global performance listener uses the native-control guard before handling a shortcut', async () => {
 	const source = await readFile('src/lib/rb/performance-hotkeys.ts', 'utf8');
-	assert.match(source, /if \(isNativeInteractiveTarget\(e\.target\) \|\| e\.metaKey/);
+	assert.match(source, /if \(e\.code === 'Space' \|\| e\.key === ' '\)/);
+	assert.match(source, /void _toggleRecentPlay\(e\.timeStamp, true\)/);
+	assert.match(source, /void _toggleRecentPlay\(e\.timeStamp\);/);
+	assert.doesNotMatch(
+		source,
+		/if \(isNativeInteractiveTarget\(e\.target\) \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey\) return;[\s\S]*Space/
+	);
 });

@@ -159,10 +159,12 @@ import {
 	beatJumpTargetWithinDurationMs,
 	computeFollowerSyncPlan,
 	displayLoopFrom,
+	computeQuantizedLaunchArm,
 	planPhaseCompensatedReanchor,
 	playbackBpm,
 	quantizeToNearestBeat,
-	quantizeToNearestGridBeat
+	quantizeToNearestGridBeat,
+	QUANTIZED_LAUNCH
 } from '$lib/rb/beat-sync-math';
 import type { TempoRampStep } from '$lib/rb/beat-sync-math';
 import { beatSyncOutcomeNotices } from '$lib/rb/beat-sync-math';
@@ -172,7 +174,8 @@ import {
 	effectiveQuantize,
 	gridFeatureInertTip,
 	gridFeaturesInert,
-	hasRealBeatGrid
+	hasRealBeatGrid,
+	hasTrustedBeatGrid
 } from '$lib/player/grid-features';
 import {
 	beatFourLeadInSec,
@@ -243,7 +246,9 @@ import {
 	disposeHeadphoneMonitor,
 	ensureHeadphoneGraph,
 	refreshHeadphoneOutputs as refreshMonitorOutputs,
+	selectAudioInput as selectMonitorAudioInput,
 	selectHeadphoneOutput as selectMonitorOutput,
+	selectMasterOutput as selectMonitorMasterOutput,
 	setHeadDelayMs as setMonitorHeadDelay,
 	setHeadphoneOutputMode as setMonitorOutputMode,
 	wirePracticeBlendIntoMasterPath,
@@ -481,6 +486,8 @@ interface _DeckRuntime {
 	keySyncBaselineSemitones: number | null;
 	/** Decoded mix buffer retained for short sync-seek crossfades. */
 	audioBuffer: AudioBuffer | null;
+	/** Library-listed track duration; decoded buffer duration lives in deck state. */
+	metadataDurationMs: number | null;
 	/**
 	 * True from the moment a re-anchor tempo ramp begins until its last step
 	 * is registered. Each ramp step's own revision briefly becomes "presented"
@@ -532,6 +539,7 @@ function _emptyRuntime(): _DeckRuntime {
 		slipTempoBoundaries: [],
 		keySyncBaselineSemitones: null,
 		audioBuffer: null,
+		metadataDurationMs: null,
 		reanchorRampActive: false,
 		pendingStemUpgrade: null
 	};
@@ -545,6 +553,7 @@ let _masterMuteGain: GainNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null, _externalRouteAnalyser: AnalyserNode | null = null; // #1642: taps _externalMerger, which bypasses _masterGain
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
+const _quantizedLaunchAt: Record<DeckId, number | null> = { 1: null, 2: null, 3: null, 4: null };
 let _masterMode: MasterMode = 'auto';
 let _masterReason: MasterReason = null;
 /**
@@ -742,7 +751,9 @@ function _ensureGraph(): AudioContext {
 	setPlayingPositionReader(() =>
 		DECK_IDS.filter((d) => deckStates[d].playing).map((d) => ({
 			deck: d,
-			position_ms: deckStates[d].position_ms
+			position_ms: deckStates[d].position_ms,
+			decoded_duration_ms: deckStates[d].duration_ms,
+			metadata_duration_ms: _rt[d].metadataDurationMs
 		}))
 	);
 	_masterGain = _ctx.createGain();
@@ -1048,30 +1059,11 @@ function _setPausedPosition(deck: DeckId, positionMs: number): void {
 	rt.startCtxTime = _ctx?.currentTime ?? 0;
 }
 
-/**
- * The grid to snap to, or null when quantize is off or this deck has no grid.
- * Never throws.
- *
- * This is the transport path's only route to the beat grid. Transport is never
- * gated by a grid-dependent feature: on a track with no real PQTZ grid,
- * quantize simply has no effect and play, pause and cue use exact playhead
- * times. pause() in particular must be unrefusable - a deck the DJ cannot stop
- * is worse than one that starts unquantized.
- *
- * effectiveQuantize is the authority on WHETHER to snap; hasRealBeatGrid is
- * re-asked only to narrow readonly AnlzBeat[] | undefined for the caller.
- */
 function _quantizeGrid(st: DeckState): readonly AnlzBeat[] | null {
 	const beats = st.anlz?.beatgrid.beats;
 	return effectiveQuantize(st) && beats !== undefined ? beats : null;
 }
 
-/**
- * The deck's selected quantize grid (pin a67bafbfc4b0), narrowed to the beat counts a snap calculation can actually use.
- * 'phase' can never reach here: setQuantizeGrid rejects any value except 1/4/8, so a deck's stored quantize_grid_beats
- * is always one of those at runtime - this throws rather than silently falling back, so a bug that DID let 'phase'
- * through is loud instead of quietly snapping to the wrong grid.
- */
 function _quantizeGridBeats(st: DeckState): 1 | 4 | 8 {
 	const beats = st.quantize_grid_beats;
 	if (beats === 'phase') {
@@ -1210,6 +1202,8 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	const rt = _rt[deck];
 	const message = error instanceof Error ? error.message : String(error);
 	const positionMs = st.position_ms;
+	const decodedDurationMs = st.duration_ms;
+	const metadataDurationMs = rt.metadataDurationMs;
 	const failedProcessor = rt.processor;
 	rt.processor = null;
 	if (failedProcessor !== null) _retireProcessor(failedProcessor);
@@ -1229,7 +1223,9 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 		cause: 'worklet-error',
 		deck,
 		position_ms: positionMs,
-		context_state: _ctx?.state ?? 'uninitialized'
+		context_state: _ctx?.state ?? 'uninitialized',
+		decoded_duration_ms: decodedDurationMs,
+		metadata_duration_ms: metadataDurationMs
 	});
 	withPauseOrigin('worklet', () => {
 		_clearLoadedTrackState(st);
@@ -1291,16 +1287,8 @@ async function _scheduleDeck(
 	const predecessor = rt.scheduleTail;
 	let release!: () => void;
 	rt.desiredActive = active;
-	// LATENCY-01 visual feedback (<=16ms, one frame): the play glyph reads
-	// st.playing, and st.playing used to be written only AFTER the AudioWorklet
-	// MessagePort round trip acknowledged the schedule. That made the button's
-	// appearance causally downstream of the audio thread - fast today only
-	// because that RPC happens to be ~2ms, and not independently fast at all: a
-	// worklet stall, a stem deck's four parallel schedules or a busy sync scope
-	// drags the glyph along with it. Write the INTENT here, in the same
-	// synchronous turn as the input, before any await. The post-ack write in
-	// _scheduleDeckSerial stays as the reconcile-to-truth.
-	deckStates[deck].playing = active;
+	// LATENCY-01: optimistic play glyph; LATENCY-02 armed launch keeps triangle until commit.
+	deckStates[deck].playing = _quantizedLaunchAt[deck] !== null && active ? false : active;
 	if (!active) {
 		const st = deckStates[deck];
 		notePlayingFallingEdge({
@@ -1308,6 +1296,7 @@ async function _scheduleDeck(
 			deck,
 			position_ms: st.position_ms,
 			duration_ms: st.duration_ms,
+			metadata_duration_ms: rt.metadataDurationMs,
 			processor_error: st.processor_error,
 			context_state: _ctx?.state ?? 'uninitialized'
 		});
@@ -1339,7 +1328,10 @@ async function _scheduleDeck(
 		// rolling back to a stale value would clobber it. A processor failure and
 		// a mid-queue reload both reset desiredActive to false first, so this
 		// lands on "not playing" for a genuinely failed start.
-		if (isCurrent()) deckStates[deck].playing = rt.desiredActive;
+		if (isCurrent()) {
+			deckStates[deck].playing =
+				_quantizedLaunchAt[deck] !== null && rt.desiredActive ? false : rt.desiredActive;
+		}
 		throw error;
 	} finally {
 		rt.scheduleIntentCount -= 1;
@@ -1347,20 +1339,6 @@ async function _scheduleDeck(
 	}
 }
 
-/**
- * Re-read the processor's OWN self-reported latency and heal our snapshot.
- *
- * `rt.latencySec` is read once, at load. Signalsmith's `configure()` ends by
- * re-reading `_inputLatency()` / `_outputLatency()` from WASM and `latency()`
- * returns their live sum (vendored 1.3.2, SignalsmithStretch.js:215-216), so
- * the library tracks its own reconfiguration and our copy does not. A stale
- * copy would corrupt two things at once: the schedule floor computed from it,
- * and the `processor_latency_ms` term the logged decomposition is read against.
- *
- * Never awaited by the transport path - the schedule is already posted when
- * this runs, so it adds no latency to the thing it measures. A move is recorded
- * loudly rather than absorbed: schedules taken before it used the old value.
- */
 async function _observeLiveProcessorLatency(
 	deck: DeckId,
 	processor: _DeckProcessor
@@ -1495,7 +1473,7 @@ async function _scheduleDeckSerial(
 	st.pitch = scheduledTempoRatio;
 	st.master_tempo_enabled = scheduledMasterTempoEnabled;
 	st.loop = scheduledLoop === null ? null : { ...scheduledLoop };
-	st.playing = rt.desiredActive;
+	st.playing = _quantizedLaunchAt[deck] !== null ? false : rt.desiredActive;
 	_recordSlipTempoBoundary(rt, effectiveWhen, scheduledTempoRatio);
 	rt.pending = rt.pending.filter((pending) => pending.startContextTime < effectiveWhen);
 	rt.pending.push({
@@ -1751,6 +1729,10 @@ function _commitPendingIfDue(deck: DeckId): void {
 		rt.controlTempoRatio = pending.tempoRatio;
 		rt.controlMasterTempoEnabled = pending.masterTempoEnabled ?? true;
 		rt.controlKeyShiftSemitones = pending.keyShiftSemitones ?? 0;
+		if (pending.active && _quantizedLaunchAt[deck] !== null) {
+			deckStates[deck].playing = true;
+			_quantizedLaunchAt[deck] = null;
+		}
 	}
 }
 
@@ -1761,41 +1743,10 @@ function _projectPositionAt(deck: DeckId, when: number): number {
 	return _positionForSegment(_controlSegmentAt(rt, when), when, rt.durationSec);
 }
 
-/**
- * The lead an IMMEDIATE (Class A) transport mutation must give deck `deck`'s
- * processor, derived from the measured ONSET RAMP rather than the processor's
- * `latency()` self-report (round 2; see `processorOnsetLeadSec`).
- *
- * Every plain-transport schedule floor on this engine goes through here, so
- * play, pause, cue, seek, loop entry, key shift, the natural-end stop and the
- * safety loop all get the same term from one place and cannot drift apart.
- *
- * BEAT SYNC deliberately does NOT use it: a group launch is planned from
- * `maxLatency` (the raw self-report) plus `SYNC_SCHEDULE_SAFETY_S`, which keeps
- * the shared instant comfortably clear of every participant's ramp.
- */
 function _transportLeadSec(deck: DeckId): number {
 	return processorOnsetLeadSec(_rt[deck].latencySec);
 }
 
-/**
- * UNIFORMITY: every loaded deck must report the same processor latency.
- *
- * For the Signalsmith worklet `latency()` equals the STFT block length exactly,
- * and the block length sets the onset ramp (0.37x, see
- * `PROCESSOR_ONSET_RAMP_FACTOR`). Two decks configured with different blocks
- * therefore have different ramps, and two different ramps launched at ONE
- * shared beat-sync instant do not start together: one deck is still ramping
- * while the other is at level, so the group's first beat smears. That is the
- * constraint the round-2 design names as the price of making the block
- * configurable at all, and it is why STEP 2 must be a global setting rather
- * than a per-deck "high quality mode".
- *
- * Checked at LOAD, before the candidate processor is published, so a mixed
- * fleet fails the load that would have created it rather than going audibly
- * wrong later under sync. Tolerance is one sample: `latency()` quantises the
- * block to whole samples, so exact equality would be brittle across rates.
- */
 function _assertUniformProcessorBlock(
 	deck: DeckId,
 	latencySec: number,
@@ -2020,6 +1971,7 @@ function _clearLoadedTrackState(st: DeckState): void {
 	st.key_shift_semitones = 0;
 	st.key_sync_enabled = false;
 	st.duration_ms = null;
+	_rt[st.deck_id].metadataDurationMs = null;
 	st.position_ms = 0;
 	st.transport_pending = false;
 	st.cue_ms = null;
@@ -3129,6 +3081,7 @@ class RbAudioEngine implements AudioEngine {
 			// The decoded buffer is the audio actually scheduled. Metadata can
 			// differ, so it must not define waveform bounds or transport truth.
 			st.duration_ms = decodedTransportDurationMs(candidateBuffer.duration);
+			rt.metadataDurationMs = candidateTrack.duration_ms ?? null;
 			// Re-reads the shared cache rather than trusting `candidateAnlz` -
 			// see `resolvePublishedAnlz`'s own doc for the race this guards.
 			const latestAnlzEntry = getAnlzEntry(stable_id);
@@ -3296,6 +3249,7 @@ class RbAudioEngine implements AudioEngine {
 	/** Q1: see `play` for the `pressT0Ms` contract. */
 	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {
 		return withPauseOrigin('command', async () => {
+			this.clearQuantizedLaunch(deck);
 			const { st, rt } = _requireLoaded(deck, 'pause');
 			if (!rt.desiredActive) return; // already paused is a valid state
 			if (_ctx === null) throw new Error('pause: audio graph not initialised');
@@ -3457,6 +3411,52 @@ class RbAudioEngine implements AudioEngine {
 		const targetContextTime = Math.max(_futureScheduleTime(deck), _ctx.currentTime + deltaContextSec);
 		await _schedulePress(deck, targetContextTime, targetPositionMs / 1000, rt.desiredActive, pressT0Ms);
 		return targetContextTime;
+	}
+
+	clearQuantizedLaunch(deck: DeckId): void {
+		const rt = _rt[deck];
+		const launchAt = _quantizedLaunchAt[deck];
+		if (launchAt !== null) {
+			rt.pending = rt.pending.filter((pending) => !(pending.active && pending.startContextTime >= launchAt));
+			_quantizedLaunchAt[deck] = null;
+		}
+		if (!rt.controlActive) {
+			rt.desiredActive = false;
+			deckStates[deck].playing = false;
+		}
+	}
+
+	async armQuantizedLaunch(deck: DeckId, pressT0Ms?: number): Promise<number> {
+		const { st, rt } = _requireLoaded(deck, 'armQuantizedLaunch');
+		const master = _syncClockMaster();
+		const ctx = await _resumeContext();
+		const masterState = master === null ? null : deckStates[master];
+		if (master !== null && masterState === null) {
+			throw new Error(`armQuantizedLaunch: deck ${master} has no state despite being the sync clock master`);
+		}
+		const { launchAtContextSec, followerStartSec } = computeQuantizedLaunchArm({
+			followerPlaying: st.playing,
+			followerDesiredActive: rt.desiredActive,
+			followerTrustedGrid: st.anlz !== null && hasTrustedBeatGrid(st.anlz),
+			masterDeck: master,
+			masterSameAsFollower: master === deck,
+			masterPlaying: masterState?.playing === true,
+			masterTrustedGrid:
+				masterState !== null && masterState.anlz !== null && masterState.anlz !== undefined && hasTrustedBeatGrid(masterState.anlz),
+			nowContextTimeSec: ctx.currentTime,
+			processorLeadSec: _transportLeadSec(deck),
+			masterBeats: masterState === null ? [] : requireBeatGrid(masterState, QUANTIZED_LAUNCH),
+			masterPositionSec: master === null ? 0 : _projectPositionAt(master, ctx.currentTime),
+			masterTempoRatio: master === null ? 1 : _tempoAt(master, ctx.currentTime),
+			followerBeats: requireBeatGrid(st, QUANTIZED_LAUNCH),
+			followerPositionSec: st.position_ms / 1000
+		});
+		this.clearQuantizedLaunch(deck);
+		rt.desiredActive = true;
+		_quantizedLaunchAt[deck] = launchAtContextSec;
+		const startSec = playResumePositionSec(followerStartSec, rt.durationSec, st.loop);
+		await _schedulePress(deck, launchAtContextSec, startSec, true, pressT0Ms);
+		return launchAtContextSec;
 	}
 
 	/** The engine's AudioContext clock, for projecting an armed hot-cue
@@ -4187,15 +4187,13 @@ class RbAudioEngine implements AudioEngine {
 
 	setHeadphoneOutputMode = setMonitorOutputMode;
 	setHeadDelayMs = setMonitorHeadDelay;
-	refreshHeadphoneOutputs = refreshMonitorOutputs;
-	/** Must be called from a visible user gesture so the browser can open its
-	 * output chooser. This never requests microphone capture. */
-	async acquireHeadphoneOutput(): Promise<void> {
-		return acquireMonitorOutput(_monitorSource);
-	}
-	async selectHeadphoneOutput(deviceId: string): Promise<void> {
-		return selectMonitorOutput(deviceId, _monitorSource);
-	}
+	refreshHeadphoneOutputs = (): Promise<void> => refreshMonitorOutputs(_monitorSource);
+	/** Must be called from a visible user gesture. May briefly open the
+	 * microphone to label output devices when selectAudioOutput is missing. */
+	acquireHeadphoneOutput = (): Promise<void> => acquireMonitorOutput(_monitorSource);
+	selectHeadphoneOutput = (deviceId: string): Promise<void> => selectMonitorOutput(deviceId, _monitorSource);
+	selectMasterOutput = (deviceId: string): Promise<void> => selectMonitorMasterOutput(deviceId, _monitorSource);
+	selectAudioInput = (deviceId: string): Promise<void> => selectMonitorAudioInput(deviceId);
 
 	/** Topbar master-volume slider -> master GainNode (COMPONENT-MAP 1.1). */
 	setMaster(value: number): void {

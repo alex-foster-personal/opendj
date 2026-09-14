@@ -4,11 +4,12 @@
 playlists [then] it returns exactly those K playlists and excludes tombstoned
 memberships and deleted playlists, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -93,13 +94,19 @@ def test_track_in_two_live_playlists_plus_tombstoned_membership(
 ) -> None:
     """[if] a track is in two live playlists and one tombstoned membership
     [then] GET playlists returns exactly two rows with correct positions,
-    [else stop]."""
+    [else stop].
+
+    [if] a track is in 2 live playlists plus 1 tombstoned one [then] GET returns 2, [else stop].
+    """
     playlist_a, etag_a = _create_playlist(sqlite_client, "Playlist A")
     playlist_b, etag_b = _create_playlist(sqlite_client, "Playlist B")
     playlist_dead, etag_dead = _create_playlist(sqlite_client, "Playlist Dead")
     etag_a = _put_tracks(sqlite_client, playlist_a["playlist_id"], [TRACK_T], etag_a)
     etag_b = _put_tracks(
-        sqlite_client, playlist_b["playlist_id"], [TRACK_OTHER, TRACK_T], etag_b,
+        sqlite_client,
+        playlist_b["playlist_id"],
+        [TRACK_OTHER, TRACK_T],
+        etag_b,
     )
     _put_tracks(sqlite_client, playlist_dead["playlist_id"], [TRACK_T], etag_dead)
 
@@ -129,8 +136,7 @@ def test_track_in_two_live_playlists_plus_tombstoned_membership(
 
 @pytest.mark.requirement("LIBM-29")
 def test_unknown_stable_id_returns_404(sqlite_client: TestClient) -> None:
-    """[if] the stable_id does not exist [then] GET playlists is 404 not [],
-    [else stop]."""
+    """[if] the stable_id does not exist [then] GET playlists is 404 not [], [else stop]."""
     response = sqlite_client.get("/api/v1/tracks/no-such-stable-id/playlists")
     assert response.status_code == 404
     assert response.json() != []
@@ -141,7 +147,10 @@ def test_unknown_stable_id_returns_404(sqlite_client: TestClient) -> None:
 @pytest.mark.requirement("LIBM-29")
 def test_known_track_zero_memberships_returns_empty_list(sqlite_client: TestClient) -> None:
     """[if] a known track has no playlist memberships [then] GET playlists is
-    200 [], [else stop]."""
+    200 [], [else stop].
+
+    [if] a track has no memberships [then] GET playlists returns 200 [], [else stop].
+    """
     response = sqlite_client.get(f"/api/v1/tracks/{TRACK_T}/playlists")
     assert response.status_code == 200, response.text
     assert response.json() == []
@@ -150,13 +159,19 @@ def test_known_track_zero_memberships_returns_empty_list(sqlite_client: TestClie
 @pytest.mark.requirement("LIBM-29")
 def test_deleted_playlist_excluded(sqlite_client: TestClient, db_path: Path) -> None:
     """[if] a third playlist holding the track is deleted [then] reverse lookup
-    still returns only the two live playlists, [else stop]."""
+    still returns only the two live playlists, [else stop].
+
+    [if] a third playlist holding the track is deleted [then] lookup excludes it, [else stop].
+    """
     playlist_a, etag_a = _create_playlist(sqlite_client, "Playlist A")
     playlist_b, etag_b = _create_playlist(sqlite_client, "Playlist B")
     playlist_c, etag_c = _create_playlist(sqlite_client, "Playlist C")
     etag_a = _put_tracks(sqlite_client, playlist_a["playlist_id"], [TRACK_T], etag_a)
     etag_b = _put_tracks(
-        sqlite_client, playlist_b["playlist_id"], [TRACK_OTHER, TRACK_T], etag_b,
+        sqlite_client,
+        playlist_b["playlist_id"],
+        [TRACK_OTHER, TRACK_T],
+        etag_b,
     )
     etag_c = _put_tracks(sqlite_client, playlist_c["playlist_id"], [TRACK_T], etag_c)
 
@@ -177,10 +192,16 @@ def test_deleted_playlist_excluded(sqlite_client: TestClient, db_path: Path) -> 
 @pytest.mark.requirement("LIBM-29")
 def test_duplicate_positions_in_one_playlist(sqlite_client: TestClient) -> None:
     """[if] a track appears twice in one playlist [then] one row lists both
-    positions sorted ascending, [else stop]."""
+    positions sorted ascending, [else stop].
+
+    [if] a track appears twice in one playlist [then] one row lists both positions, [else stop].
+    """
     playlist, etag = _create_playlist(sqlite_client, "Dupes")
     etag = _put_tracks(
-        sqlite_client, playlist["playlist_id"], [TRACK_T, TRACK_OTHER, TRACK_T], etag,
+        sqlite_client,
+        playlist["playlist_id"],
+        [TRACK_T, TRACK_OTHER, TRACK_T],
+        etag,
     )
 
     response = sqlite_client.get(f"/api/v1/tracks/{TRACK_T}/playlists")

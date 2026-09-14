@@ -72,6 +72,9 @@ def _http_get(url: str) -> int:
 
 @pytest.mark.requirement("INSTALL-14")
 def test_leaked_engine_is_adoptable_and_singleton_stays_enforced(tmp_path: Path) -> None:
+    """
+    [if] the leaked holder dies [then] the lock frees and a new engine can adopt it, [else stop].
+    """
     lock_path = tmp_path / ".engine.lock"
     leaked = _start_leaked_holder(lock_path)
     try:
@@ -97,4 +100,3 @@ def test_leaked_engine_is_adoptable_and_singleton_stays_enforced(tmp_path: Path)
     lock = EngineLock(lock_path, boot_id="after-leak")
     lock.acquire()
     lock.release()
-

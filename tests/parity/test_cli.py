@@ -1,4 +1,7 @@
-"""CLI: `python -m apps.parity score --payload` prints a real report."""
+"""CLI: `python -m apps.parity score --payload` prints a real report.
+
+[if] the score CLI runs a fixture [then] stdout names lanes and dates, never parity, [else stop].
+"""
 
 from __future__ import annotations
 

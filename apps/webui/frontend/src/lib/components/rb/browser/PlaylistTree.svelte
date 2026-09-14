@@ -48,7 +48,8 @@
 		onforbidduplicates,
 		ondeleteplaylist,
 		onduplicateplaylist,
-		ondroptracks
+		ondroptracks,
+		oncreatesmartlist
 	}: PlaylistTreeProps = $props();
 
 	/** playlist_id currently under a track drag, for the drop outline. */
@@ -171,7 +172,7 @@
 
 <div class="tree-root">
 	<PlaylistHistoryPanel />
-	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} onforbidduplicates={onforbidduplicates} {onselect} />
+	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} {oncreatesmartlist} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} onforbidduplicates={onforbidduplicates} {onselect} />
 	{#if mode === 'tree'}
 		<button
 			type="button"

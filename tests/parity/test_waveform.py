@@ -1,4 +1,7 @@
-"""Waveform preview, detail, and tri-band PARITY-01 scoring."""
+"""Waveform preview, detail, and tri-band PARITY-01 scoring.
+
+[if] own waveform envelopes vs rekordbox PWAV/PWV3/PWV6 [then] median r is scored, [else stop].
+"""
 
 from __future__ import annotations
 

@@ -1,5 +1,6 @@
 """CLI tests for playlist sets (SET-05).
 
+[if] the CLI performs a set [then] play_count increments and membership stays put, [else stop].
 [if] the playlist-sets CLI diverges from the store contract [then] fail, [else stop].
 """
 from __future__ import annotations
@@ -49,9 +50,7 @@ def test_create_then_list(tmp_path: Path) -> None:
 def test_perform_increments_membership_unchanged(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
     _seed_db(db)
-    created = _run_cli(
-        db, "--json", "create", "--playlist", "pl1", "--name", "Gig"
-    )
+    created = _run_cli(db, "--json", "create", "--playlist", "pl1", "--name", "Gig")
     set_id = json.loads(created.stdout)["id"]
     conn = sqlite3.connect(db)
     before_entries = conn.execute(
@@ -74,9 +73,7 @@ def test_perform_increments_membership_unchanged(tmp_path: Path) -> None:
 def test_practice_does_not_increment(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
     _seed_db(db)
-    created = _run_cli(
-        db, "--json", "create", "--playlist", "pl1", "--name", "Rehearsal"
-    )
+    created = _run_cli(db, "--json", "create", "--playlist", "pl1", "--name", "Rehearsal")
     set_id = json.loads(created.stdout)["id"]
     practiced = _run_cli(db, "--json", "practice", "--set", str(set_id))
     assert practiced.returncode == 0

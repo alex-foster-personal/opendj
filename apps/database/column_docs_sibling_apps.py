@@ -332,6 +332,18 @@ SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
             "layer's updated_at, because the table is not in SYNC_TABLES."
         ),
     },
+    "sync_identity_remap": {
+        "loser_pk": (
+            "Primary key. The content-identity duplicate's stable_id that "
+            "lost the LWW comparison. Its tracks row is held out of the "
+            "sync offer, not deleted (apps/sync_hub/engine_identity_map.py)."
+        ),
+        "survivor_pk": (
+            "The stable_id every loser_pk's children get remapped onto "
+            "before the digest is computed, so a spoke's local digest "
+            "matches the hub's remapped bundle (ADR 04 c6)."
+        ),
+    },
 }
 
 __all__ = ["SIBLING_APP_COLUMN_DOCS"]

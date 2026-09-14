@@ -46,6 +46,8 @@ export type PlaylistTreeProps = {
 	onloadtrack?: (row: ColumnTrackRow, deck: DeckId | null) => void;
 	/** Create then return new playlist_id (or null on cancel/fail). */
 	oncreateplaylist?: () => Promise<string | null> | string | null;
+	/** Tree context menu: create a smartlist from /performance (LIBMX-10). */
+	oncreatesmartlist?: () => void;
 	/** Commit in-place rename; empty/cancelled name leaves server name. */
 	onrenameplaylist?: (node: PlaylistNode, name: string) => void | Promise<void>;
 	onforbidduplicates?: (node: PlaylistNode) => void | Promise<void>;

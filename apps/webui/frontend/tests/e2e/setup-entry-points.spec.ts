@@ -151,7 +151,7 @@ async function fatalBlockers(page: Page): Promise<string[]> {
 }
 
 test.describe('setup entry points', () => {
-	test('Cmd+, opens settings, and Run setup lands on the wizard', async ({ page }) => {
+	test('Cmd+, opens settings, and Run setup lands on the wizard', async ({ page, request }) => {
 		// No rb-meta allowlist here on purpose. This suite's library is entirely
 		// locally imported, so every listing row reports has_rb_mapping false and
 		// the browser issues no rb-meta request at all. The 404 that used to be
@@ -164,6 +164,12 @@ test.describe('setup entry points', () => {
 			errors.push(`${msg.text()} [${msg.location()?.url ?? ''}]`);
 		});
 
+		// BuildIdentity issues this on first navigation; register before goto so
+		// the initial check cannot race past the test.
+		const updateCheckResponsePromise = page.waitForResponse((response) =>
+			response.url().includes('/api/v1/update/check')
+		);
+
 		await gotoShellReady(page, '/');
 		await expect(settingsDialog(page)).toHaveCount(0);
 
@@ -173,36 +179,25 @@ test.describe('setup entry points', () => {
 		await runSetupButton(page).click();
 		await expectWizard(page);
 
-		// The update channel's 502 is EXPECTED, for the same reason and by the
-		// same rule as the 401 above: the endpoint is answering correctly and the
-		// browser logs every non-2xx fetch regardless.
-		//
-		// apps/engine_core/update_channel.py deliberately answers 502 with a named
-		// status rather than a silent "up to date", because a channel that hides
-		// its own outage converts an outage into a false reassurance. Its own
-		// docstring calls a 404 from the release manifest "the expected state of
-		// this channel until the repo or its releases exist", and #655 shipped the
-		// updater with NO workflow that publishes a release. So the manifest 404s,
-		// the engine faults honestly, the UI renders the fault, and three console
-		// errors land here on EVERY run. This is deterministic, not flaky.
-		//
-		// Both sides are individually correct and only the union is red, which is
-		// the same union-defect pattern #678 recorded inside the quality gate:
-		// neither change could observe the other, because neither ran against a
-		// tree containing the other.
-		//
-		// Scoped to this endpoint AND this status, exactly as narrow as the 401
-		// filter: a 502 from any other URL, or any other status from this one,
-		// still fails the gate. This filter must be DELETED once a release
-		// manifest publishes, because a 502 here is a real defect again from that
-		// moment. Burn-down owner is issue #684, not this comment: a cleanup note
-		// with no owner is how GITHUB_REPO_BASE pointed at a dead org for weeks.
-		const isUnpublishedUpdateChannel = (entry: string) =>
-			entry.includes('/api/v1/update/check') && entry.includes('502');
+		const updateCheckBody = (await (await updateCheckResponsePromise).json()) as {
+			endpoint: string;
+		};
+		const manifestResponse = await request.get(updateCheckBody.endpoint);
+		expect(manifestResponse.status()).toBe(200);
+		const manifest = (await manifestResponse.json()) as {
+			version?: string;
+			platforms?: Record<string, { url?: string; signature?: string }>;
+		};
+		expect(typeof manifest.version).toBe('string');
+		expect((manifest.version ?? '').length).toBeGreaterThan(0);
+		expect(manifest.platforms).toBeTruthy();
+		const darwinEntry = manifest.platforms?.['darwin-aarch64'];
+		expect(typeof darwinEntry?.url).toBe('string');
+		expect((darwinEntry?.url ?? '').length).toBeGreaterThan(0);
+		expect(typeof darwinEntry?.signature).toBe('string');
+		expect((darwinEntry?.signature ?? '').length).toBeGreaterThan(0);
 
-		expect(
-			errors.filter((e) => !e.includes('favicon') && !isUnpublishedUpdateChannel(e))
-		).toEqual([]);
+		expect(errors.filter((e) => !e.includes('favicon'))).toEqual([]);
 	});
 
 	test('the accelerator also works on /performance', async ({ page }) => {
@@ -244,6 +239,24 @@ test.describe('setup entry points', () => {
 		const diagnostics = tabs.getByRole('tab', { name: 'Diagnostics' });
 		await expect(diagnostics).toBeVisible();
 		await expect(diagnostics).toHaveAttribute('aria-selected', 'false');
+		const playground = tabs.getByRole('tab', { name: 'Playground' });
+		await expect(playground).toBeVisible();
+		await expect(playground).toHaveAttribute('aria-selected', 'false');
+	});
+
+	test('the admin Playground tab shows API and SQL consoles', async ({ page }) => {
+		await gotoShellReady(page, '/admin?tab=playground');
+		const tabs = page.getByRole('tablist', { name: 'admin sections' });
+		await expect(tabs.getByRole('tab', { name: 'Playground' })).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+		await expect(tabs.getByRole('tab', { name: 'KPI ledger' })).toHaveAttribute(
+			'aria-selected',
+			'false'
+		);
+		await expect(page.getByRole('heading', { name: 'API console' })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'SQL console' })).toBeVisible();
 	});
 
 	test('the admin Diagnostics tab shows diagnostics sections', async ({ page }) => {

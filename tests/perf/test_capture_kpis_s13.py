@@ -4,15 +4,23 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import socket
 import subprocess
 import sys
+import threading
+from collections.abc import Iterator
+from contextlib import closing, contextmanager
 from pathlib import Path
 
 import pytest
 
 from scripts.perf import capture_s13
 from scripts.perf.capture_kpis import main as capture_kpis_main
-from scripts.perf.capture_ledger import classify_s13_withhold_reason, span_to_ledger_rows
+from scripts.perf.capture_ledger import (
+    append_ledger_rows,
+    classify_s13_withhold_reason,
+    span_to_ledger_rows,
+)
 from scripts.perf.kpi_scorecard import UNKNOWN, score_scenarios
 
 _REPO = Path(__file__).resolve().parents[2]
@@ -286,3 +294,173 @@ def test_unreachable_engine_prints_withheld_stderr(
     assert "login_submit_to_library_usable_s" in captured.err
     assert "WITHHELD" in captured.err
     assert str(ledger) in captured.err
+
+@contextmanager
+def _hanging_http_server() -> Iterator[str]:
+    """A REAL listening socket that accepts and never answers.
+
+    Not a mock: the connection completes, the request is sent, and the client
+    blocks on the response until its own timeout fires -- which is the exact
+    transport failure a wedged engine produces. A mocked `urlopen` proves only
+    that the except arm is reachable, not that the real socket path reaches it.
+    """
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", 0))
+    server.listen(8)
+    held: list[socket.socket] = []
+    stop = threading.Event()
+
+    def _accept_and_hold() -> None:
+        server.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                conn, _addr = server.accept()
+            except (TimeoutError, OSError):
+                continue
+            held.append(conn)
+
+    thread = threading.Thread(target=_accept_and_hold, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.getsockname()[1]}"
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+        for conn in held:
+            conn.close()
+        server.close()
+
+
+def test_http_json_turns_a_real_socket_timeout_into_connection_error() -> None:
+    """[if] the engine accepts but never answers [then] _http_json raises
+    ConnectionError naming the timeout, [else the caller cannot withhold]."""
+    with _hanging_http_server() as base, pytest.raises(ConnectionError) as excinfo:
+        capture_s13._http_json("GET", f"{base}/api/v1/health", timeout_s=0.5)
+    assert "TimeoutError" in str(excinfo.value)
+
+
+def test_engine_socket_timeout_withholds_instead_of_crashing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A slow engine must withhold, never raise.
+
+    Measured Sat 12 Sep 2026 on a host at load average 118: the probe's
+    urlopen raised `TimeoutError`, which is an OSError and not a URLError, so
+    it escaped `_http_json` and the capture died with a traceback instead of
+    writing the withheld row S13 promises. Driven here through a real socket
+    that accepts and stays silent.
+    """
+    ledger = tmp_path / "kpi-ledger.json"
+    ledger.write_text(
+        json.dumps({"schema_version": 1, "entries": []}, indent=1) + "\n",
+        encoding="utf-8",
+    )
+    with _hanging_http_server() as base:
+        code = capture_s13.capture_s13(
+            engine=base,
+            frontend=base,
+            ledger_path=ledger,
+            probe_timeout_s=0.5,
+        )
+
+    assert code == 1
+    rows = json.loads(ledger.read_text(encoding="utf-8"))["entries"]
+    scored = [r for r in rows if r["kpi"] == "login_submit_to_library_usable_s"]
+    assert len(scored) == 1
+    assert scored[0]["value"] is None
+    assert scored[0]["status"] == "withheld"
+    assert "TimeoutError" in scored[0]["note"]
+    assert "engine unreachable" in capsys.readouterr().err
+
+
+def _git_numstat(orig: Path, updated: Path) -> tuple[int, int]:
+    result = subprocess.run(
+        ["git", "diff", "--numstat", "--no-index", str(orig), str(updated)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1, "append must produce a non-empty git diff"
+    parts = result.stdout.strip().split()
+    assert len(parts) >= 2
+    return int(parts[0]), int(parts[1])
+
+
+def _historical_s13_row() -> dict:
+    return {
+        "date": "2026-09-01",
+        "round": "issue-1885",
+        "kpi": "login_submit_to_library_usable_s",
+        "value": 0.5,
+        "unit": "s",
+        "machine": "testhost",
+        "source": (
+            "client-telemetry login span (submit mark to first recordLibraryLoadTiming); "
+            "scored value is in-app (Google consent excluded)"
+        ),
+        "method": (
+            "client-telemetry markLoginSubmit/markLoginNavigate to recordLibraryLoadTiming "
+            "(in-app, Google excluded)"
+        ),
+        "sha": "oldsha",
+        "capture_id": "perf-capture",
+        "note": "historical row",
+    }
+
+
+@pytest.mark.parametrize("indent_width", [2, 4])
+@pytest.mark.requirement("PERF-KPI-S13")
+def test_append_ledger_rows_preserves_fixture_indent(
+    tmp_path: Path, indent_width: int
+) -> None:
+    """[if] append_ledger_rows appends N rows [then] git diff shows zero deleted lines."""
+    historical = _historical_s13_row()
+    ledger = tmp_path / "kpi-ledger.json"
+    orig_payload = {"schema_version": 2, "entries": [historical]}
+    orig_text = json.dumps(orig_payload, indent=indent_width, ensure_ascii=False) + "\n"
+    ledger.write_text(orig_text, encoding="utf-8")
+    orig_copy = tmp_path / "orig.json"
+    orig_copy.write_text(orig_text, encoding="utf-8")
+
+    new_rows = span_to_ledger_rows(
+        _happy_span(),
+        sha="newsha",
+        machine="testhost",
+        capture_date=_dt.date(2026, 9, 11),
+    )
+    append_ledger_rows(ledger, new_rows)
+
+    updated_text = ledger.read_text(encoding="utf-8")
+    updated_payload = json.loads(updated_text)
+    assert updated_payload["entries"][0] == historical
+    assert updated_payload["entries"][1:] == new_rows
+    expected = json.dumps(updated_payload, indent=indent_width, ensure_ascii=False) + "\n"
+    assert updated_text == expected
+
+    added, deleted = _git_numstat(orig_copy, ledger)
+    assert added > 0
+    assert deleted == 0
+
+
+@pytest.mark.requirement("PERF-KPI-S13")
+def test_append_ledger_rows_rejects_unindented_ledger(tmp_path: Path) -> None:
+    """[if] the ledger is not pretty-printed [then] append fails instead of rewriting it."""
+    ledger = tmp_path / "kpi-ledger.json"
+    ledger.write_text('{"schema_version":1,"entries":[]}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="cannot infer JSON indent"):
+        append_ledger_rows(ledger, [_historical_s13_row()])
+
+
+def test_a_reachable_engine_is_not_reported_as_a_timeout() -> None:
+    """Negative control: the hanging-socket fixture must not make every probe
+    look timed out. A CLOSED port is refused promptly and names refusal, not a
+    timeout, so the assertion above is discriminating rather than universal."""
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as probe:
+        probe.bind(("127.0.0.1", 0))
+        closed_port = probe.getsockname()[1]
+    with pytest.raises(ConnectionError) as excinfo:
+        capture_s13._http_json(
+            "GET", f"http://127.0.0.1:{closed_port}/api/v1/health", timeout_s=2.0
+        )
+    assert "TimeoutError" not in str(excinfo.value)

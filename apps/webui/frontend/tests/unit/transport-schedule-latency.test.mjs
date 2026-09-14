@@ -227,10 +227,14 @@ test('the two non-sync play branches schedule through the plain-transport helper
 	const helperUses = body.split('safeTransportScheduleTime(').length - 1;
 	assert.equal(
 		helperUses,
-		2,
-		'if the two non-sync play branches do not both route through ' +
-			`safeTransportScheduleTime (found ${helperUses}) then one of them is computing ` +
-			'its own margin and can drift away from the contract'
+		1,
+		'if play() defines more than one plain-transport margin then the branches can drift apart'
+	);
+	const branchUses = body.split('await schedulePlainTransport();').length - 1;
+	assert.ok(
+		branchUses >= 2,
+		'if fewer than two non-sync play branches call schedulePlainTransport then one path ' +
+			'bypasses the shared plain-transport helper'
 	);
 	assert.ok(
 		body.includes('_synchronizeFollowers('),
@@ -264,6 +268,15 @@ test('the plain schedule horizon is the shared helper, not a hand-rolled margin'
 		'if _futureScheduleTime names the sync margin then every plain transport mutation ' +
 			'that routes through it pays 100ms'
 	);
+});
+
+test('LATENCY-02 engine.play stays free of QUANTIZED LAUNCH branching', () => {
+	const playBody = engineBlockAfter('async play(deck: DeckId, pressT0Ms?: number): Promise<void> {');
+	assert.doesNotMatch(playBody, /QUANTIZED LAUNCH/);
+	assert.doesNotMatch(playBody, /armQuantizedLaunch/);
+	const scheduleBody = engineBlockAfter('const schedulePlainTransport = async (): Promise<void> => {');
+	assert.doesNotMatch(scheduleBody, /QUANTIZED LAUNCH/);
+	assert.doesNotMatch(scheduleBody, /armQuantizedLaunch/);
 });
 
 test('beat-sync scheduling is untouched: one shared instant, sync-margin sourced', () => {

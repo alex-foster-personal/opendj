@@ -1,4 +1,8 @@
-"""LIBM-20: POST /playlists/{id}/items:add without rewriting membership."""
+"""LIBM-20: POST /playlists/{id}/items:add without rewriting membership.
+
+[if] a track is added to a playlist [then] existing membership rows stay unrewritten, [else stop].
+"""
+
 from __future__ import annotations
 
 import sqlite3
@@ -37,9 +41,14 @@ def db_path(tmp_path: Path) -> Path:
     try:
         for i, sid in enumerate(TRACK_IDS, start=1):
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred",
-                title=f"Track {i}", artists=[f"Artist {i}"], album=None,
-                isrc=None, duration_ms=180_000 + i, file_path=None,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=f"Track {i}",
+                artists=[f"Artist {i}"],
+                album=None,
+                isrc=None,
+                duration_ms=180_000 + i,
+                file_path=None,
             )
     finally:
         writer.close()
@@ -50,9 +59,12 @@ def db_path(tmp_path: Path) -> Path:
 @pytest.fixture
 def client(db_path: Path) -> Iterator[TestClient]:
     app = create_app(
-        backend=SqliteBackend(db_path), state_db_path=str(db_path),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        backend=SqliteBackend(db_path),
+        state_db_path=str(db_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     with TestClient(app) as c:
         yield c

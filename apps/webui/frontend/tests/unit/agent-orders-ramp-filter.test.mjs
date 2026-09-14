@@ -58,7 +58,7 @@ test('agent ramp still rejects a control that is not eq/fader/trim/filter', asyn
 						over: { unit: 'ms', n: 20 }
 					}
 				}),
-			/ramp command must be eq, fader, trim, or filter/
+			/ramp command must be eq, fader, trim, filter, or stem_gain/
 		);
 	} finally {
 		uninstall();

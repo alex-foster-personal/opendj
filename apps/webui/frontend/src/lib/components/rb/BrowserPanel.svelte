@@ -2420,7 +2420,12 @@
 						markLoadSpanningPress(pendingPlay.pressT0Ms);
 					}
 					await dispatchPerformanceCommand(
-						{ type: 'play', deck: target, playing: true },
+						{
+							type: 'play',
+							deck: target,
+							playing: true,
+							...(pendingPlay.quantize === true ? { quantize: true } : {})
+						},
 						pendingPlay.pressT0Ms
 					);
 				}
@@ -3373,6 +3378,7 @@
 	{openModal}
 	stableIds={pane.selected_ids}
 	etags={modalEtags}
+	rows={pane.rows}
 	onclose={() => (openModal = null)}
 	onapplied={onEditApplied}
 />

@@ -140,10 +140,13 @@ REGISTRY_CLASSES: tuple[DataClass, ...] = (
 LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
     fixed(
         "sync-bookkeeping",
-        "Sync watermarks and changelogs",
-        state_tables("sync_state", "hub_changelog", "local_changelog"),
+        "Sync watermarks, changelogs and identity remaps",
+        state_tables("sync_state", "hub_changelog", "local_changelog", "sync_identity_remap"),
         "machine_local",
-        "Syncing your own sync watermarks would be incoherent (migrations_v6_v8.py).",
+        "Syncing your own sync watermarks would be incoherent (migrations_v6_v8.py). "
+        "sync_identity_remap (engine_identity_map.py) holds identity-collapse remaps "
+        "across batched hub_apply calls on the shared connection; additive bookkeeping "
+        "for this machine's own apply, not part of the sync set itself.",
         (),
     ),
     fixed(
@@ -344,7 +347,11 @@ UNBUILT_TABLE_CLASSES: tuple[DataClass, ...] = (
         "not_yet_built",
         "User-authored performance sets within a playlist (SET-05, ADR-0016). "
         f"{_OUTSIDE_SYNC_SET}",
-        (fk("library-playlists"), logical("library-tracks")),
+        # playlist_sets.playlist_id carries no SQL REFERENCES clause (unlike
+        # playlist_memberships/playlist_pins, which genuinely reference
+        # playlists(playlist_id)) -- same as its sibling "play-orders" above,
+        # which declares both of its deps as logical for the same reason.
+        (logical("library-playlists"), logical("library-tracks")),
     ),
     fixed(
         "analysis-retention",

@@ -103,10 +103,8 @@ def _stale_page(first_id: int) -> list[dict]:
     ]
 
 
-def test_burst_larger_than_the_bootstrap_window_is_fully_recorded(monkeypatch):
-    """If a burst of 30 runs since the watermark lost any of them
-    then the fixed newest-10 window is still in place and the sample thins, or broken.
-    """
+def test_burst_larger_than_the_cap_is_queued_oldest_first(monkeypatch):
+    """If a burst spent unlimited API calls, the four-hour watchdog could hang."""
     page = [
         _run_item(500 + index, created=_stamp(1), updated=_stamp(2 + index)) for index in range(30)
     ]
@@ -115,10 +113,12 @@ def test_burst_larger_than_the_bootstrap_window_is_fully_recorded(monkeypatch):
 
     outcome = mod._fetch_jobs([], [_ci_record(WATERMARK_TS, 1)])
 
-    assert len(outcome.jobs) == 30
-    assert {job.job_id for job in outcome.jobs} == {500 + index for index in range(30)}
-    assert outcome.note is None
-    assert len(fake.job_paths) == 30
+    assert [job.job_id for job in outcome.jobs] == list(
+        range(500, 500 + mod.JOB_FETCH_MAX_RUNS_PER_POLL)
+    )
+    assert outcome.note is not None
+    assert "20 newer runs remain queued" in outcome.note
+    assert len(fake.job_paths) == mod.JOB_FETCH_MAX_RUNS_PER_POLL
 
 
 def test_bootstrap_seeds_from_the_newest_runs_when_the_store_has_no_ci_records(monkeypatch):
@@ -170,9 +170,9 @@ def test_catch_up_pages_past_a_full_first_page(monkeypatch):
 
     assert len(fake.run_paths) == 2
     assert "page=2" in fake.run_paths[1]
-    assert len(outcome.jobs) == mod.RUN_FETCH_COUNT + 2
-    assert {9001, 9002} <= {job.job_id for job in outcome.jobs}
-    assert 9003 not in {job.job_id for job in outcome.jobs}
+    assert len(outcome.jobs) == mod.JOB_FETCH_MAX_RUNS_PER_POLL
+    assert outcome.note is not None
+    assert "newer runs remain queued" in outcome.note
 
 
 def test_truncated_catch_up_records_what_it_got_and_names_the_gap(monkeypatch):
@@ -186,7 +186,7 @@ def test_truncated_catch_up_records_what_it_got_and_names_the_gap(monkeypatch):
 
     outcome = mod._fetch_jobs([], [_ci_record(WATERMARK_TS, 1)])
 
-    assert len(outcome.jobs) == fetchable
+    assert len(outcome.jobs) == mod.JOB_FETCH_MAX_RUNS_PER_POLL
     assert outcome.note is not None
     assert "500" in outcome.note
     assert str(mod.JOB_FETCH_MAX_PAGES) in outcome.note
@@ -217,8 +217,9 @@ def test_backlog_of_exactly_the_page_bound_is_complete_not_a_gap(monkeypatch):
 
     outcome = mod._fetch_jobs([], [_ci_record(WATERMARK_TS, 1)])
 
-    assert len(outcome.jobs) == mod.JOB_FETCH_MAX_PAGES * mod.RUN_FETCH_COUNT
-    assert outcome.note is None
+    assert len(outcome.jobs) == mod.JOB_FETCH_MAX_RUNS_PER_POLL
+    assert outcome.note is not None
+    assert "newer runs remain queued" in outcome.note
 
 
 def test_busy_prior_day_past_the_bound_gets_the_hedged_note_not_a_definite_gap(monkeypatch):
@@ -237,10 +238,9 @@ def test_busy_prior_day_past_the_bound_gets_the_hedged_note_not_a_definite_gap(m
 
     outcome = mod._fetch_jobs([], [_ci_record(WATERMARK_TS, 1)])
 
-    # Everything newer than the watermark (page 1) was recorded. The note hedges: it
-    # names the unexamined older-created remainder and the long-runner risk, and it does
-    # NOT make the definite "runs newer than the watermark" backlog claim.
-    assert len(outcome.jobs) == mod.RUN_FETCH_COUNT
+    # The oldest bounded batch is recorded. The note still hedges about the unexamined
+    # older-created remainder and the long-runner risk, then names the resumable queue.
+    assert len(outcome.jobs) == mod.JOB_FETCH_MAX_RUNS_PER_POLL
     assert outcome.note is not None
     assert "2000" in outcome.note
     assert "never examined" in outcome.note
@@ -343,3 +343,21 @@ def test_long_running_run_created_before_the_watermark_is_included(monkeypatch):
         "%Y-%m-%dT%H:%M:%SZ"
     )
     assert f"created=%3E%3D{lookback}" in fake.run_paths[0]
+
+
+def test_busy_catch_up_is_a_small_resumable_oldest_first_batch(monkeypatch):
+    """If one poll fetched an unbounded burst, it could consume the API budget or hang."""
+    page = [
+        _run_item(9_000 + index, created=_stamp(1), updated=_stamp(index + 1))
+        for index in range(mod.JOB_FETCH_MAX_RUNS_PER_POLL + 3)
+    ]
+    fake = _FakeGh([page])
+    monkeypatch.setattr(mod, "_gh_api_json", fake)
+
+    outcome = mod._fetch_jobs([], [_ci_record(WATERMARK_TS, 1)])
+
+    assert [job.job_id for job in outcome.jobs] == list(
+        range(9_000, 9_000 + mod.JOB_FETCH_MAX_RUNS_PER_POLL)
+    )
+    assert outcome.note is not None
+    assert "3 newer runs remain queued" in outcome.note

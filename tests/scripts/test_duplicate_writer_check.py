@@ -77,7 +77,10 @@ def _report_script() -> str:
 def test_first_run_lists_known_duplicates_and_is_red() -> None:
     """Wed 9 Sep 2026 inventory, before cleanup: the check must go red and
     name every known duplicate. This is the first-run evidence; cleanup is
-    a later assertion against the committed manifest."""
+    a later assertion against the committed manifest.
+
+    [if] the known-duplicates fixture runs [then] it goes red naming all three dupes, [else stop].
+    """
     report = mod.evaluate(_load(KNOWN_DUPES), scan_dir=None)
     text = mod.render(report)
     assert report.findings, "the Wed 9 Sep 2026 snapshot must fail the check"
@@ -96,6 +99,7 @@ def test_first_run_lists_known_duplicates_and_is_red() -> None:
 
 @pytest.mark.requirement("DEVOPS-10")
 def test_dash_vs_underscore_is_a_near_duplicate() -> None:
+    """[if] a dash-underscore path pair is evaluated [then] it is a near duplicate, [else stop]."""
     payload = {
         "files": [
             {
@@ -119,6 +123,7 @@ def test_dash_vs_underscore_is_a_near_duplicate() -> None:
 
 @pytest.mark.requirement("DEVOPS-10")
 def test_old_vs_new_prefix_is_a_near_duplicate() -> None:
+    """[if] two paths differ by an old vs new prefix [then] it is a near duplicate, [else stop]."""
     payload = {
         "files": [
             {
@@ -142,6 +147,7 @@ def test_old_vs_new_prefix_is_a_near_duplicate() -> None:
 
 @pytest.mark.requirement("DEVOPS-10")
 def test_two_writers_of_one_path_fail() -> None:
+    """[if] one path has two writers [then] it is named a multi-writer finding, [else stop]."""
     payload = {
         "files": [
             {
@@ -160,6 +166,7 @@ def test_two_writers_of_one_path_fail() -> None:
 
 @pytest.mark.requirement("DEVOPS-10")
 def test_reader_of_a_path_no_writer_produces_fails() -> None:
+    """[if] a reader names a path with no writer [then] it is an orphan reader, [else stop]."""
     payload = {
         "files": [
             {
@@ -176,6 +183,7 @@ def test_reader_of_a_path_no_writer_produces_fails() -> None:
 
 @pytest.mark.requirement("DEVOPS-10")
 def test_tombstone_with_supersedes_is_not_a_live_duplicate() -> None:
+    """[if] duplicates are tombstoned with supersedes [then] no findings remain, [else stop]."""
     payload = {
         "files": [
             {
@@ -207,6 +215,7 @@ def test_tombstone_with_supersedes_is_not_a_live_duplicate() -> None:
 
 @pytest.mark.requirement("DEVOPS-10")
 def test_reading_a_tombstone_fails_loud() -> None:
+    """[if] a tombstoned path is still read [then] it is a tombstone-read finding, [else stop]."""
     payload = {
         "files": [
             {
@@ -231,6 +240,7 @@ def test_reading_a_tombstone_fails_loud() -> None:
 
 @pytest.mark.requirement("DEVOPS-10")
 def test_unreadable_manifest_is_unknown_not_a_clean_zero(tmp_path: Path) -> None:
+    """[if] the manifest cannot be read [then] the check reports UNKNOWN, not zero, [else stop]."""
     missing = tmp_path / "no-such.yaml"
     code, text = mod.run_check(missing, scan_dir=None)
     assert code == mod.EXIT_UNKNOWN
@@ -241,7 +251,10 @@ def test_unreadable_manifest_is_unknown_not_a_clean_zero(tmp_path: Path) -> None
 @pytest.mark.requirement("DEVOPS-10")
 def test_committed_manifest_is_green_after_cleanup() -> None:
     """The inventory that lands on main must be green. The red first-run is
-    the fixture above, not this file."""
+    the fixture above, not this file.
+
+    [if] the committed fleet manifest is evaluated [then] it is green with no dupes, [else stop].
+    """
     payload = _load(COMMITTED)
     report = mod.evaluate(payload, scan_dir=REPO_ROOT / "ops" / "fleet")
     assert report.exit_code == mod.EXIT_OK, mod.render(report)
@@ -257,7 +270,10 @@ def test_committed_manifest_is_green_after_cleanup() -> None:
 
 @pytest.mark.requirement("DEVOPS-10")
 def test_second_writer_on_committed_inventory_goes_red() -> None:
-    """Mutation: bolting a second writer onto a live path is the defect."""
+    """Mutation: bolting a second writer onto a live path is the defect.
+
+    [if] a second writer is bolted onto a live committed path [then] it goes red, [else stop].
+    """
     payload = _load(COMMITTED)
     live = next(entry for entry in payload["files"] if entry.get("status") != "tombstone")
     writer = live["writer"]
@@ -272,6 +288,7 @@ def test_second_writer_on_committed_inventory_goes_red() -> None:
 
 @pytest.mark.requirement("DEVOPS-10")
 def test_cli_json_names_findings_and_exits_nonzero(tmp_path: Path) -> None:
+    """[if] the CLI runs --json on known dupes [then] it exits nonzero naming them, [else stop]."""
     dest = tmp_path / "dupes.yaml"
     dest.write_text(KNOWN_DUPES.read_text(encoding="utf-8"), encoding="utf-8")
     code, text = mod.run_check(dest, scan_dir=None, as_json=True)
@@ -285,6 +302,7 @@ def test_cli_json_names_findings_and_exits_nonzero(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("DEVOPS-10")
 def test_convention_paragraph_exists() -> None:
+    """[if] the supersession doc is read [then] it defines Supersedes and tombstone, [else stop]."""
     text = CONVENTION.read_text(encoding="utf-8")
     assert "Supersedes:" in text
     assert "Add beside" in text
@@ -295,6 +313,7 @@ def test_convention_paragraph_exists() -> None:
 
 @pytest.mark.requirement("DEVOPS-10")
 def test_policy_table_has_row_14() -> None:
+    """[if] the policy doc is read [then] row 14 names the duplicate-writer check, [else stop]."""
     text = POLICY.read_text(encoding="utf-8")
     assert "| 14 |" in text
     assert "duplicate-writer" in text or "duplicate writer" in text
@@ -303,6 +322,7 @@ def test_policy_table_has_row_14() -> None:
 
 @pytest.mark.requirement("DEVOPS-10")
 def test_workflow_runs_the_check_inside_the_merge_window() -> None:
+    """[if] the check job is inspected [then] it runs only in the merge window, [else stop]."""
     job = _check_job()
     assert job.get("if") == "needs.window.outputs.run == 'true'", (
         f"the job is not gated on the merge window: if={job.get('if')!r}"
@@ -313,6 +333,7 @@ def test_workflow_runs_the_check_inside_the_merge_window() -> None:
 
 @pytest.mark.requirement("DEVOPS-10")
 def test_the_ledger_comment_carries_the_row() -> None:
+    """[if] the ledger comment is inspected [then] row 14 marks that job pass/fail, [else stop]."""
     script = _report_script()
     assert f"| {ROW} |" in script, (
         f"the ledger comment has no row {ROW} line; a failure in it is invisible"

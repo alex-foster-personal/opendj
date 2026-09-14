@@ -32,12 +32,14 @@ def prefs_client(tmp_path: Path) -> TestClient:
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_default_perf_tier_is_auto(prefs_client: TestClient) -> None:
+    """[if] ui-prefs has never been written [then] GET returns perf_tier auto, [else stop]."""
     body = prefs_client.get("/api/v1/ui-prefs").json()
     assert body["perf_tier"] == "auto"
 
 
 @pytest.mark.requirement("PERFMODE-01")
 def test_put_perf_tier_round_trip(prefs_client: TestClient) -> None:
+    """[if] perf_tier is PUT as high [then] the response reflects perf_tier high, [else stop]."""
     response = prefs_client.put("/api/v1/ui-prefs", json={"perf_tier": "high"})
     assert response.status_code == 200
     assert response.json()["perf_tier"] == "high"
@@ -46,14 +48,14 @@ def test_put_perf_tier_round_trip(prefs_client: TestClient) -> None:
 @pytest.mark.requirement("PERFMODE-01")
 @pytest.mark.parametrize("bad", ["AUTO", "1", True])
 def test_put_rejects_invalid_perf_tier(prefs_client: TestClient, bad) -> None:
+    """[if] perf_tier is PUT invalid [then] the request is rejected with 422, [else stop]."""
     response = prefs_client.put("/api/v1/ui-prefs", json={"perf_tier": bad})
     assert response.status_code == 422
 
 
 @pytest.mark.requirement("PERFMODE-01")
-def test_old_blob_without_perf_tier_defaults_auto(
-    prefs_client: TestClient, tmp_path: Path
-) -> None:
+def test_old_blob_without_perf_tier_defaults_auto(prefs_client: TestClient, tmp_path: Path) -> None:
+    """[if] the stored prefs blob predates perf_tier [then] GET still defaults auto, [else stop]."""
     prefs = tmp_path / "data" / "state" / "ui-prefs.json"
     prefs.write_text(json.dumps({"theme": "dark"}) + "\n", encoding="utf-8")
     body = prefs_client.get("/api/v1/ui-prefs").json()

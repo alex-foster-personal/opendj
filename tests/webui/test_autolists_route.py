@@ -1,4 +1,8 @@
-"""Autolists HTTP router tests (issue #2263 / SMART-06)."""
+"""Autolists HTTP router tests (issue #2263 / SMART-06).
+
+[if] autolists groups/buckets/query are called [then] results reflect seeded fields, [else stop].
+"""
+
 from __future__ import annotations
 
 import json
@@ -41,8 +45,17 @@ def _seed_state_db(path: Path) -> None:
                 "content_hash, created_at, updated_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    sid, "inferred", title, json.dumps(["Artist"]),
-                    None, None, 300000, None, None, created, created,
+                    sid,
+                    "inferred",
+                    title,
+                    json.dumps(["Artist"]),
+                    None,
+                    None,
+                    300000,
+                    None,
+                    None,
+                    created,
+                    created,
                 ),
             )
             for fname, value in (("bpm", bpm), ("genre", genre), ("rating", rating)):
@@ -97,9 +110,12 @@ def test_buckets_for_genre(client: TestClient) -> None:
 
 
 def test_query_empty_selection(client: TestClient) -> None:
-    res = client.post("/api/v1/autolists/query", json={
-        "selection": {"genre": [], "rating": [], "bpm": []},
-    })
+    res = client.post(
+        "/api/v1/autolists/query",
+        json={
+            "selection": {"genre": [], "rating": [], "bpm": []},
+        },
+    )
     assert res.status_code == 200
     body = res.json()
     assert body["items"] == []
@@ -108,11 +124,14 @@ def test_query_empty_selection(client: TestClient) -> None:
 
 
 def test_query_house_returns_page(client: TestClient) -> None:
-    res = client.post("/api/v1/autolists/query", json={
-        "selection": {"genre": ["House"], "rating": [], "bpm": []},
-        "offset": 0,
-        "limit": 500,
-    })
+    res = client.post(
+        "/api/v1/autolists/query",
+        json={
+            "selection": {"genre": ["House"], "rating": [], "bpm": []},
+            "offset": 0,
+            "limit": 500,
+        },
+    )
     assert res.status_code == 200
     body = res.json()
     assert body["total"] == 1
