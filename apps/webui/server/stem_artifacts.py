@@ -913,11 +913,15 @@ def _flac_tail_frame_covers_stream(path: Path, *, streaminfo: bytes) -> None:
     if min_blocksize <= 0 or max_blocksize <= 0 or total_samples <= 0:
         raise StemArtifactError(f"{path.name} FLAC STREAMINFO has invalid geometry")
     try:
+        # Read only the tail: the final frame and any ID3v1 trailer both live in
+        # it, so a whole-file read would cost proportional to part size on every
+        # deck load for no extra coverage.
         file_size = path.stat().st_size
-        file_data = path.read_bytes()
-        stream_end = _flac_stream_end(file_data)
         tail_len = min(file_size, 65_536)
-        tail = file_data[file_size - tail_len : file_size]
+        with path.open("rb") as handle:
+            handle.seek(file_size - tail_len)
+            tail = handle.read(tail_len)
+        stream_end = _flac_stream_end(tail)
     except OSError as exc:
         raise StemArtifactError(
             f"cannot read FLAC tail for {path.name}: {exc}"
@@ -945,8 +949,7 @@ def _flac_tail_frame_covers_stream(path: Path, *, streaminfo: bytes) -> None:
         best_end = validated[0]
         if best_end != total_samples:
             continue
-        frame_start = file_size - tail_len + index
-        if not _flac_frame_crc16_valid(file_data, frame_start, stream_end):
+        if not _flac_frame_crc16_valid(tail, index, stream_end):
             continue
         found_exact = True
         break
@@ -1131,7 +1134,7 @@ def _validate_mp3_xing_tail(
         if data[index] != 0xFF or (data[index + 1] & 0xE0) != 0xE0:
             continue
         try:
-            header_version, layer, bitrate_idx, sample_rate_idx, padding, _channels = (
+            header_version, layer, bitrate_idx, sample_rate_idx, _padding, _channels = (
                 _parse_mpeg_frame_header(data[index : index + 4])
             )
         except StemArtifactError:
