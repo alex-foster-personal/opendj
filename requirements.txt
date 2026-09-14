@@ -115,7 +115,7 @@ spotipy>=2.23.0
 # anything in pyproject.toml's `dev` extra that is missing here reaches no CI
 # run at all. tests/test_dependency_contract.py holds that line in both
 # directions.
-pytest>=8.0
+pytest>=9.0.3
 # Nothing in tests/ uses this TODAY: the suite has zero `async def test_` and
 # zero @pytest.mark.asyncio, and every coroutine is driven through
 # asyncio.run() inside an ordinary sync test. That is why CI has been green
