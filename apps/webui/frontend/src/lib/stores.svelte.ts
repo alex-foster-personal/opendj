@@ -33,10 +33,16 @@ import {
  * the timestamp on the clipboard and the timestamp in the log are the same
  * instant rather than two readings a millisecond apart.
  */
+export type ToastAction = {
+	label: string;
+	handler: () => void;
+};
+
 export type Toast = {
 	id: number;
 	logId: string;
 	message: string;
+	action?: ToastAction;
 	/**
 	 * `warn` is the middle rung, added for pin 9bf12adccb45: a BAR beat sync
 	 * that had to fold to half/double tempo now HAPPENS and says so in orange,
@@ -131,7 +137,8 @@ export function pushToast(
 	dismissMs: number = TOAST_DEFAULT_MS,
 	cause?: unknown,
 	context: ClientErrorContext = {},
-	groupKey?: string
+	groupKey?: string,
+	action?: ToastAction
 ): void {
 	if (!Number.isFinite(dismissMs) || dismissMs <= 0) {
 		throw new RangeError(`pushToast: dismissMs must be a positive finite number, got ${dismissMs}`);
@@ -174,7 +181,13 @@ export function pushToast(
 		logIds.add(logId);
 		_toastLogIds.set(toast.id, logIds);
 	}
-	Object.assign(toast, { logId, message, createdAt: row.t, count: toast.count + 1 });
+	Object.assign(toast, {
+		logId,
+		message,
+		createdAt: row.t,
+		count: toast.count + 1,
+		action
+	});
 	if (existing === undefined) toasts.push(toast);
 	// Warm the host lookup now so the eventual click can write the clipboard
 	// synchronously inside its own gesture. See _machineName.
