@@ -1007,6 +1007,220 @@ def test_collect_round_stable_ids_caps_each_round_at_max_round_ids(
     )
 
 
+def test_priority_id_does_not_corrupt_the_keyset_cursor_across_rounds(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    """Round-5 Sol finding (BLOCKING P1): a priority id supplied mid-scan
+    must not advance ``_keyset_cursor`` past rows the keyset scan itself
+    never visited.
+
+    Library: 2 * MAX_ROUND_IDS + 400 rows, so settling needs 3 rounds.
+    Round 1 is a pure keyset scan (no priority ids yet) and correctly
+    leaves the cursor at its own true tail. Between round 1 and round 2, a
+    priority id is enqueued -- the row that sorts HIGHEST in the whole
+    library, i.e. one the keyset scan itself would only reach in some
+    later round, exactly like a ``library.changed`` notification arriving
+    mid-scan for an arbitrary row. ``batch_size`` is set larger than one
+    round's candidate count so round 2 commits as a single chunk, making
+    the corruption (if present) land in the FINAL value of
+    ``_keyset_cursor`` for that round, not just a value transiently
+    overwritten and then correctly overwritten again by a later chunk.
+
+    Pre-fix, ``_commit_batch`` sets ``_keyset_cursor = max(stable_ids)``
+    over that single chunk, which includes the priority id -- the highest
+    id in the entire library -- so the cursor jumps to the library's end.
+    Round 3's incomplete scan then runs ``WHERE stable_id > <library end>``,
+    finds nothing, and incorrectly concludes the incomplete scan is
+    exhausted, permanently skipping the real unclassified rows between the
+    round 2 keyset tail and the priority id.
+    """
+    from apps.engine_core.library_availability import MAX_ROUND_IDS
+
+    audio_dir = tmp_path / "priority-cursor"
+    audio_dir.mkdir()
+    track_count = 2 * MAX_ROUND_IDS + 400
+    all_ids = [_stable(f"pc{index:06d}") for index in range(track_count)]
+    conn = state_db.open_rw(state_db_path)
+    try:
+        with StateWriter(conn, actor="test-availability") as writer:
+            for index, stable_id in enumerate(all_ids):
+                writer.upsert_track(
+                    stable_id=stable_id,
+                    stable_id_tier="inferred",
+                    title=f"pc{index}",
+                    artists=[],
+                    album=None,
+                    isrc=None,
+                    duration_ms=None,
+                    # Never created: classifies to `absent` without touching
+                    # the filesystem for thousands of files.
+                    file_path=str(audio_dir / f"{index}.mp3"),
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Bigger than one round's candidate count (MAX_ROUND_IDS), so each
+    # round's writes commit as a single `_commit_batch` chunk.
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=MAX_ROUND_IDS + 500)
+
+    # Round 1: pure keyset scan, indices 0..MAX_ROUND_IDS-1. No priority
+    # ids involved -- both pre- and post-fix this leaves the cursor at the
+    # scan's own true tail.
+    worker._drain_once()
+    expected_round1_cursor = all_ids[MAX_ROUND_IDS - 1]
+    assert worker._keyset_cursor == expected_round1_cursor, (
+        f"round 1 cursor = {worker._keyset_cursor!r}, expected the "
+        f"keyset scan's own tail {expected_round1_cursor!r}"
+    )
+
+    # A `library.changed`-style priority request for the row that sorts
+    # LAST in the whole library, arriving between round 1 and round 2.
+    priority_id = all_ids[-1]
+    worker.request_probe([priority_id])
+
+    # Round 2: MAX_ROUND_IDS candidates = [priority_id] + the next
+    # MAX_ROUND_IDS-1 keyset-scanned rows (indices MAX_ROUND_IDS..
+    # 2*MAX_ROUND_IDS-2). `_collect_round_stable_ids` itself must set the
+    # cursor to that keyset scan's own tail, NOT to the priority id.
+    worker._drain_once()
+    expected_round2_cursor = all_ids[2 * MAX_ROUND_IDS - 2]
+    assert worker._keyset_cursor == expected_round2_cursor, (
+        f"round 2 cursor = {worker._keyset_cursor!r}, expected the keyset "
+        f"scan's own tail {expected_round2_cursor!r} -- a chunk containing "
+        "the priority id must not be allowed to set the cursor"
+    )
+
+    # Round 3 (and a generous few more, in case the real per-round cap
+    # ever changes): must resume exactly where round 2's keyset scan left
+    # off and finish classifying every remaining row.
+    for _ in range(4):
+        if worker.status().pending == 0:
+            break
+        worker._drain_once()
+
+    status = worker.status()
+    assert status.pending == 0, (
+        f"{status.pending} row(s) never settled -- a corrupted cursor "
+        "made a later round believe the incomplete scan was exhausted"
+    )
+    conn = state_db.open_rw(state_db_path)
+    try:
+        classified = conn.execute(
+            "SELECT COUNT(*) FROM track_availability"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert classified == track_count, (
+        f"only {classified} of {track_count} rows were ever classified -- "
+        "the rows between the round 2 keyset tail and the priority id "
+        "were skipped"
+    )
+
+
+def test_priority_id_is_still_probed_ahead_of_its_natural_scan_position(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    """Opposite-direction control for the cursor fix above: a priority id
+    must still be classified in the very next round, well ahead of where
+    the keyset scan would naturally reach it on its own -- the fix must
+    only stop the priority id from corrupting the cursor, not remove the
+    priority queue's fast-track purpose.
+    """
+    from apps.engine_core.library_availability import MAX_ROUND_IDS
+
+    audio_dir = tmp_path / "priority-fast-track"
+    audio_dir.mkdir()
+    track_count = MAX_ROUND_IDS + 200
+    all_ids = [_stable(f"pf{index:06d}") for index in range(track_count)]
+    conn = state_db.open_rw(state_db_path)
+    try:
+        with StateWriter(conn, actor="test-availability") as writer:
+            for index, stable_id in enumerate(all_ids):
+                writer.upsert_track(
+                    stable_id=stable_id,
+                    stable_id_tier="inferred",
+                    title=f"pf{index}",
+                    artists=[],
+                    album=None,
+                    isrc=None,
+                    duration_ms=None,
+                    file_path=str(audio_dir / f"{index}.mp3"),
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=MAX_ROUND_IDS + 500)
+    # Index MAX_ROUND_IDS + 100: the keyset scan alone would not reach
+    # this row until round 2 (round 1's cap is MAX_ROUND_IDS rows,
+    # indices 0..MAX_ROUND_IDS-1).
+    priority_id = all_ids[MAX_ROUND_IDS + 100]
+    worker.request_probe([priority_id])
+
+    worker._drain_once()
+
+    conn = state_db.open_rw(state_db_path)
+    try:
+        row = conn.execute(
+            "SELECT state FROM track_availability WHERE stable_id = ?",
+            (priority_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None, (
+        "the priority id was not classified in round 1, even though it "
+        "was requested ahead of the keyset scan reaching it naturally"
+    )
+    assert row[0] == "absent"
+
+    # And the fix above still holds: the round's cursor reflects only the
+    # keyset scan's own tail, not the priority id mixed into the chunk.
+    expected_cursor = all_ids[MAX_ROUND_IDS - 2]
+    assert worker._keyset_cursor == expected_cursor, (
+        f"round 1 cursor = {worker._keyset_cursor!r}, expected the keyset "
+        f"scan's own tail {expected_cursor!r}"
+    )
+
+
+def test_status_pending_does_not_double_count_a_stale_awaiting_volume_row(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    """Round-5 Sol finding (NON-BLOCKING P2): a row that is BOTH stale
+    (``tracks.updated_at > track_availability.checked_at``) AND
+    ``awaiting_volume`` must be counted once in ``pending``, not twice.
+    """
+    audio = tmp_path / "overlap.mp3"
+    audio.write_bytes(b"\x00")
+    stable_id = _stable("ov")
+
+    conn = state_db.open_rw(state_db_path)
+    try:
+        _upsert_track(conn, stable_id, str(audio))
+        # A checked_at far in the past guarantees `tracks.updated_at >
+        # track_availability.checked_at` (stale), while the row's own
+        # state is independently `awaiting_volume`.
+        conn.execute(
+            "INSERT INTO track_availability "
+            "(stable_id, state, checked_path, checked_at) VALUES (?, ?, ?, ?)",
+            (stable_id, "awaiting_volume", str(audio), "2000-01-01T00:00:00+00:00"),
+        )
+        conn.commit()
+
+        worker = LibraryAvailabilityWorker(data_dir)
+        counts = worker._status_counts_from_conn(conn)
+    finally:
+        conn.close()
+
+    assert counts["stale"] == 1
+    assert counts["awaiting_volume"] == 1
+    assert counts["pending"] == 1, (
+        f"pending={counts['pending']}, expected 1 -- a row that is both "
+        "stale and awaiting_volume must be counted once, not summed "
+        "across overlapping categories"
+    )
+
+
 def test_background_round_settles_a_library_larger_than_the_round_cap(
     data_dir: Path, state_db_path: Path, tmp_path: Path
 ) -> None:

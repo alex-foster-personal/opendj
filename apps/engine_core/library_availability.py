@@ -258,21 +258,29 @@ class LibraryAvailabilityWorker:
                 FROM tracks t3
                 JOIN track_availability a3 ON a3.stable_id = t3.stable_id
                 WHERE t3.deleted_at IS NULL AND a3.state = 'present'
-              )
+              ),
+              -- pending: the UNION of candidate rows (never-probed, or
+              -- needing re-probe), not a sum of the categories above -- a
+              -- row can be BOTH stale (t.updated_at > a.checked_at) AND
+              -- awaiting_volume (a.state = 'awaiting_volume') at once, and
+              -- summing double-counts it (round-5 Sol finding).
+              SUM(CASE
+                    WHEN a.stable_id IS NULL THEN 1
+                    WHEN t.updated_at > a.checked_at THEN 1
+                    WHEN a.state = 'awaiting_volume' THEN 1
+                    ELSE 0
+                  END)
             FROM tracks t
             LEFT JOIN track_availability a ON a.stable_id = t.stable_id
             WHERE t.deleted_at IS NULL
             """
         ).fetchone()
-        unknown, stale, awaiting, present = row or (0, 0, 0, 0)
-        unknown_i = int(unknown or 0)
-        stale_i = int(stale or 0)
-        awaiting_i = int(awaiting or 0)
+        unknown, stale, awaiting, present, pending = row or (0, 0, 0, 0, 0)
         return {
-            "unknown": unknown_i,
-            "stale": stale_i,
-            "awaiting_volume": awaiting_i,
-            "pending": unknown_i + stale_i + awaiting_i,
+            "unknown": int(unknown or 0),
+            "stale": int(stale or 0),
+            "awaiting_volume": int(awaiting or 0),
+            "pending": int(pending or 0),
             "present": int(present or 0),
         }
 
@@ -367,11 +375,20 @@ class LibraryAvailabilityWorker:
             always_refresh_checked_at=True,
         )
         conn.commit()
-        stable_ids = [row.stable_id for row in rows]
+        # Do NOT derive self._keyset_cursor from `rows` here: `rows` is a
+        # chunk of `round_rows`, which mixes priority-queue ids in ahead of
+        # the keyset-scanned ones (`_collect_round_stable_ids`'s own
+        # ordering). A priority id supplied via library.changed sorts
+        # arbitrarily relative to the scan's true position, and taking
+        # max(stable_ids) over a chunk that contains one can advance the
+        # cursor PAST rows the keyset scan itself never visited, so a later
+        # round's `WHERE stable_id > cursor` silently skips them forever
+        # (round-5 Sol finding, BLOCKING P1). `_collect_round_stable_ids`
+        # already set the correct cursor for this round, from the keyset
+        # scan's own last-returned row only, before any of these rows were
+        # even probed -- this method must leave that value alone.
         with self._lock:
             self._status.processed_total += report.total
-            if stable_ids:
-                self._keyset_cursor = max(stable_ids)
         return report.changed
 
     def _run_full_probe(self, conn: sqlite3.Connection, req: _FullProbeRequest) -> None:
