@@ -33,6 +33,9 @@ _SUBSTITUTION = re.compile(r"\$\{(?P<kind>[^:}]+)(?::(?P<name>[^}]+))?\}")
 _DECIMAL_INTEGER = re.compile(r"^[0-9]+$")
 _SCRIPT_EXTENSIONS = (".py", ".js", ".mjs", ".ts", ".sh")
 _MODULE_FLAGS = frozenset({"-m", "--module"})
+_PORT_FLAGS = frozenset({"--port", "-p"})
+_PORT_FLAG_EQUALS = re.compile(r"^(?:--port|-p)=([0-9]+)$")
+_LOCALHOST_HOSTNAMES = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
 class LaunchJsonGuardError(ValueError):
@@ -94,14 +97,40 @@ def _localhost_url_findings(raw_url: str, *, label: str) -> tuple[list[str], int
     parsed = urlparse(raw_url)
     findings: list[str] = []
     if parsed.scheme not in ("http", "https"):
-        findings.append(f'{label}: url {raw_url!r} must use http or https')
+        findings.append(f"{label}: url {raw_url!r} must use http or https")
+    if parsed.hostname not in _LOCALHOST_HOSTNAMES:
+        findings.append(f"{label}: url {raw_url!r} must point at localhost, not a remote host")
     if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
         findings.append(
             f"{label}: url {raw_url!r} must be just the server origin, no path or query"
         )
     if parsed.port is None:
-        findings.append(f'{label}: url {raw_url!r} must carry an explicit port')
+        findings.append(f"{label}: url {raw_url!r} must carry an explicit port")
     return findings, parsed.port
+
+
+def _port_values_in_args(runtime_args: list[str]) -> list[str]:
+    """Return every raw port-value string in ``runtime_args``.
+
+    Covers a bare positional port ("9434"), a "--port"/"-p" flag whose
+    value is the next argument, and a "--port=9434"/"-p=9434" single token.
+    """
+    values: list[str] = []
+    take_next_as_port = False
+    for arg in runtime_args:
+        if take_next_as_port:
+            values.append(arg)
+            take_next_as_port = False
+            continue
+        if arg in _PORT_FLAGS:
+            take_next_as_port = True
+            continue
+        equals_match = _PORT_FLAG_EQUALS.match(arg)
+        if equals_match:
+            values.append(equals_match.group(1))
+        elif _DECIMAL_INTEGER.match(arg):
+            values.append(arg)
+    return values
 
 
 def load_config(launch_json_path: Path) -> dict:
@@ -145,9 +174,9 @@ def _validate_command_entry(
         port = None
     else:
         findings.extend(
-            f'{label}: runtimeArgs port {arg} does not match "port" field {port}'
-            for arg in runtime_args
-            if _DECIMAL_INTEGER.match(arg) and int(arg) != port
+            f'{label}: runtimeArgs port {value} does not match "port" field {port}'
+            for value in _port_values_in_args(runtime_args)
+            if int(value) != port
         )
 
     raw_url = entry.get("url")
