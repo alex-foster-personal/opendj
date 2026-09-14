@@ -331,6 +331,43 @@ test('statusHeadline leads with a plain sentence and a next step for every state
 	assert.match(noHeartbeat.text, /not running automatically/);
 	assert.notEqual(noHeartbeat.text, notConfigured.text);
 
+	/** Sol review, PR #2604: an OK result must win over a stale heartbeat,
+	 * never "not running automatically" -- if this regresses then broken */
+	const okDespiteStaleHeartbeat = view.statusHeadline(
+		status({
+			configured: true,
+			running: false,
+			last_push_at: '2026-09-14T11:00:00.000Z',
+			last_result: { status: 'ok', message: '' }
+		})
+	);
+	assert.equal(okDespiteStaleHeartbeat.tone, 'ok');
+	assert.match(okDespiteStaleHeartbeat.text, /^In sync\./);
+
+	/** Devin review, PR #2604: a saved endpoint with automatic sync off is
+	 * "manual only", never the same "not set up" text as no endpoint at all
+	 * -- if it reads identically to notConfigured then broken */
+	const manualOnly = view.statusHeadline(
+		status({ configured: false, endpoint: 'http://hub:8686', endpoint_source: 'file' })
+	);
+	assert.equal(manualOnly.tone, 'off');
+	assert.match(manualOnly.text, /Automatic sync is off/);
+	assert.match(manualOnly.text, /http:\/\/hub:8686/);
+	assert.notEqual(manualOnly.text, notConfigured.text);
+
+	/** Devin review, PR #2604: disabling CloudSync after a recorded error
+	 * must not leave the headline red -- current config wins over a stale
+	 * journal verdict; if this still reads "Not synced" then broken */
+	const disabledAfterError = view.statusHeadline(
+		status({
+			configured: false,
+			endpoint: null,
+			last_result: { status: 'error', message: 'Connection refused' }
+		})
+	);
+	assert.equal(disabledAfterError.tone, 'off');
+	assert.doesNotMatch(disabledAfterError.text, /Not synced/);
+
 	/** if an inconclusive result reads as ok or as error then broken */
 	const inconclusive = view.statusHeadline(
 		status({ configured: true, running: true, last_result: { status: 'inconclusive', message: '' } })

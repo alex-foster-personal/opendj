@@ -343,23 +343,35 @@ export function statusHeadline(status: CloudSyncStatus | null): StatusHeadline {
 	if (status === null) {
 		return { tone: 'off', text: 'Loading CloudSync status...' };
 	}
+	// Current configuration wins over a historical journal verdict: the
+	// journal keeps the last result even after the user turns automatic sync
+	// off, so an old error must not outlive the config change that disabled
+	// it (Devin review, PR #2604). A saved endpoint with automatic sync off
+	// is also not "not set up" -- Sync now still works against it.
+	if (!status.configured) {
+		if (status.endpoint === null) {
+			return {
+				tone: 'off',
+				text: 'CloudSync is not set up on this machine. Enter a hub URL below and save to turn it on.'
+			};
+		}
+		return {
+			tone: 'off',
+			text: `Automatic sync is off, but a hub URL is saved (${status.endpoint}). Use Sync now below, or turn on automatic sync above.`
+		};
+	}
+	// A recorded result is checked BEFORE the heartbeat: what the last sync
+	// actually did is more informative than whether the scheduler is alive
+	// right now, and CSSTATUS-04 requires the "In sync" headline for every
+	// recorded ok result even with a stale heartbeat (Sol review, PR #2604).
 	if (status.last_result?.status === 'error') {
 		return {
 			tone: 'error',
 			text: `Not synced: ${plainSyncFailureCause(status.last_result.message)}. Check the hub URL below and that the hub machine is running, then try Sync now again.`
 		};
 	}
-	if (!status.configured) {
-		return {
-			tone: 'off',
-			text: 'CloudSync is not set up on this machine. Enter a hub URL below and save to turn it on.'
-		};
-	}
-	if (!status.running) {
-		return {
-			tone: 'warn',
-			text: 'CloudSync is set up but not running automatically (no recent heartbeat). Use Sync now below, or start the background scheduler.'
-		};
+	if (status.last_result?.status === 'ok') {
+		return { tone: 'ok', text: `In sync. Last synced ${relativeTime(status.last_push_at)}.` };
 	}
 	if (status.last_result?.status === 'inconclusive') {
 		return {
@@ -367,8 +379,11 @@ export function statusHeadline(status: CloudSyncStatus | null): StatusHeadline {
 			text: 'Last sync finished but could not fully confirm both sides agree. Run Sync now again to reconfirm.'
 		};
 	}
-	if (status.last_result?.status === 'ok') {
-		return { tone: 'ok', text: `In sync. Last synced ${relativeTime(status.last_push_at)}.` };
+	if (!status.running) {
+		return {
+			tone: 'warn',
+			text: 'CloudSync is set up but not running automatically (no recent heartbeat). Use Sync now below, or start the background scheduler.'
+		};
 	}
 	return { tone: 'warn', text: 'Syncing...' };
 }
