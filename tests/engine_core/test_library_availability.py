@@ -960,6 +960,256 @@ def test_probe_batch_chunks_the_in_clause_at_id_bind_batch(
     )
 
 
+def test_collect_round_stable_ids_caps_each_round_at_max_round_ids(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    """A library bigger than MAX_ROUND_IDS must be gathered across several
+    rounds, each one capped -- not one unbounded round that stats (and
+    holds in memory) the whole library before its first write commits.
+    """
+    from apps.engine_core.library_availability import MAX_ROUND_IDS
+
+    audio_dir = tmp_path / "round-cap"
+    audio_dir.mkdir()
+    track_count = MAX_ROUND_IDS + 400
+    all_ids = {_stable(f"rc{index:06d}") for index in range(track_count)}
+    conn = state_db.open_rw(state_db_path)
+    try:
+        with StateWriter(conn, actor="test-availability") as writer:
+            for index in range(track_count):
+                writer.upsert_track(
+                    stable_id=_stable(f"rc{index:06d}"),
+                    stable_id_tier="inferred",
+                    title=f"rc{index}",
+                    artists=[],
+                    album=None,
+                    isrc=None,
+                    duration_ms=None,
+                    file_path=str(audio_dir / f"{index}.mp3"),
+                )
+        conn.commit()
+
+        worker = LibraryAvailabilityWorker(data_dir, batch_size=500)
+        round1 = worker._collect_round_stable_ids(conn)
+        round2 = worker._collect_round_stable_ids(conn)
+    finally:
+        conn.close()
+
+    assert len(round1) == MAX_ROUND_IDS, (
+        f"first round collected {len(round1)} ids, expected exactly the "
+        f"cap ({MAX_ROUND_IDS}) when the library has more incomplete rows "
+        "than that"
+    )
+    assert len(round2) == track_count - MAX_ROUND_IDS
+    assert set(round1).isdisjoint(round2), "the two rounds must not overlap"
+    assert set(round1) | set(round2) == all_ids, (
+        "the two capped rounds together must still cover every row"
+    )
+
+
+def test_background_round_settles_a_library_larger_than_the_round_cap(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    """Integration-level repro: a library bigger than MAX_ROUND_IDS must
+    still fully settle, via the real background thread looping across
+    several rounds (each capped) rather than needing one unbounded round.
+    """
+    from apps.engine_core.library_availability import MAX_ROUND_IDS
+
+    audio_dir = tmp_path / "round-cap-e2e"
+    audio_dir.mkdir()
+    track_count = MAX_ROUND_IDS + 400
+    conn = state_db.open_rw(state_db_path)
+    try:
+        with StateWriter(conn, actor="test-availability") as writer:
+            for index in range(track_count):
+                writer.upsert_track(
+                    stable_id=_stable(f"re{index:06d}"),
+                    stable_id_tier="inferred",
+                    title=f"re{index}",
+                    artists=[],
+                    album=None,
+                    isrc=None,
+                    duration_ms=None,
+                    # Never created: classifies to `absent` without touching
+                    # the filesystem for thousands of files.
+                    file_path=str(audio_dir / f"{index}.mp3"),
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=500)
+    worker.start()
+    try:
+        _wait_worker_complete(worker, guard_s=THREAD_HANG_GUARD_S)
+        status = worker.status()
+    finally:
+        worker.stop()
+
+    assert status.phase == "complete"
+    assert status.pending == 0
+    assert status.processed_total == track_count, (
+        f"expected every one of {track_count} rows classified exactly "
+        f"once across however many capped rounds it took, got "
+        f"processed_total={status.processed_total}"
+    )
+
+    conn = state_db.open_rw(state_db_path)
+    try:
+        absent_count = conn.execute(
+            "SELECT COUNT(*) FROM track_availability WHERE state = 'absent'"
+        ).fetchone()[0]
+        assert absent_count == track_count
+    finally:
+        conn.close()
+
+
+def test_background_round_guard_refuses_a_mass_drop_within_one_bounded_round(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    """Opposite-direction control for the MAX_ROUND_IDS cap: a round well
+    under the cap (but big enough to span several ID_BIND_BATCH-sized
+    probe_batch chunks) must still have a catastrophic drop refused as ONE
+    whole-round decision -- capping a round must not weaken or bypass the
+    LIBM-41 guard for rounds that fit comfortably inside it.
+    """
+    from apps.shared.state.locations import ID_BIND_BATCH
+
+    audio_dir = tmp_path / "bounded-round-guard"
+    audio_dir.mkdir()
+    track_count = ID_BIND_BATCH + 100  # 600: several probe_batch chunks, << MAX_ROUND_IDS
+    paths: list[Path] = []
+    conn = state_db.open_rw(state_db_path)
+    try:
+        for index in range(track_count):
+            audio = audio_dir / f"{index}.mp3"
+            audio.write_bytes(b"\x00")
+            paths.append(audio)
+            _upsert_track(conn, _stable(f"bg{index:06d}"), str(audio))
+    finally:
+        conn.close()
+
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=200)
+    worker.start()
+    try:
+        _wait_worker_complete(worker, guard_s=THREAD_HANG_GUARD_S)
+    finally:
+        worker.stop()
+
+    for audio in paths:
+        audio.unlink()
+    conn = state_db.open_rw(state_db_path)
+    try:
+        now = datetime.now(UTC).isoformat()
+        conn.execute(
+            "UPDATE tracks SET updated_at = ? WHERE deleted_at IS NULL", (now,)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    worker2 = LibraryAvailabilityWorker(data_dir, batch_size=200)
+    worker2.start()
+    try:
+        started = time.monotonic()
+        while time.monotonic() - started < THREAD_HANG_GUARD_S:
+            if worker2.status().phase == "refused":
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError(
+                "background round never refused the mass-missing drop"
+            )
+    finally:
+        worker2.stop()
+
+    conn = state_db.open_rw(state_db_path)
+    try:
+        absent_after = conn.execute(
+            "SELECT COUNT(*) FROM track_availability WHERE state = 'absent'"
+        ).fetchone()[0]
+        assert absent_after == 0, (
+            f"{absent_after} row(s) were downgraded before the round was "
+            f"refused, even though the whole round ({track_count} rows, "
+            "several probe_batch chunks) fit well inside MAX_ROUND_IDS"
+        )
+    finally:
+        conn.close()
+
+
+def test_status_reads_every_counter_from_one_consistent_snapshot(
+    data_dir: Path,
+    state_db_path: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """status() must never report counters describing different moments.
+
+    Pre-fix, ``status()`` computed ``pending`` and ``present`` via TWO
+    separate connections (``_count_pending``/``_count_present``), and never
+    refreshed ``unknown``/``stale``/``awaiting_volume`` at all outside a
+    completed batch. A write landing between those two connection-opens is
+    visible to the later read but not the earlier one, so the response's
+    own invariant -- ``unknown + stale + awaiting_volume == pending`` --
+    can break.
+
+    Simulated deterministically rather than as a real thread race (which
+    this project's own conventions treat as unreliable/non-deterministic):
+    the SECOND time this worker opens a connection during one ``status()``
+    call, a write lands via a separate connection just before it, standing
+    in for a background round committing mid-status()-call. Post-fix,
+    ``status()`` opens exactly ONE connection per call, so this injection
+    point is never reached at all.
+    """
+    audio_dir = tmp_path / "status-snapshot"
+    audio_dir.mkdir()
+    audio = audio_dir / "a.mp3"
+    audio.write_bytes(b"\x00")
+    stable_id = _stable("ss01")
+    conn = state_db.open_rw(state_db_path)
+    try:
+        _upsert_track(conn, stable_id, str(audio))
+    finally:
+        conn.close()
+
+    worker = LibraryAvailabilityWorker(data_dir)
+    open_count = 0
+    original_open_conn = worker._open_conn
+
+    def counting_open_conn() -> sqlite3.Connection:
+        nonlocal open_count
+        open_count += 1
+        if open_count == 2:
+            side_conn = state_db.open_rw(state_db_path)
+            try:
+                rows = avail.probe_batch(side_conn, [stable_id])
+                avail.write(side_conn, rows, apply_mass_missing_guard=False)
+                side_conn.commit()
+            finally:
+                side_conn.close()
+        return original_open_conn()
+
+    monkeypatch.setattr(worker, "_open_conn", counting_open_conn)
+
+    snapshot = worker.status()
+
+    assert (
+        snapshot.unknown + snapshot.stale + snapshot.awaiting_volume
+        == snapshot.pending
+    ), (
+        "status() counters describe different moments: "
+        f"unknown={snapshot.unknown} stale={snapshot.stale} "
+        f"awaiting_volume={snapshot.awaiting_volume} do not sum to "
+        f"pending={snapshot.pending} -- a write landed between separate "
+        "counter reads"
+    )
+    assert open_count <= 1, (
+        f"status() opened {open_count} connections for one call -- every "
+        "counter must come from a single connection/snapshot"
+    )
+
+
 def _seed_mass_missing_refusal_fixture(
     data_dir: Path,
     state_db_path: Path,
