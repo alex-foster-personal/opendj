@@ -56,6 +56,10 @@ from apps.shared.stable_id import is_safe_stable_id_segment
 
 LOGGER = logging.getLogger(__name__)
 
+# MP3 encoder padding can shift frame counts slightly between parts; the deck
+# mixes the overlap, never invented samples (same contract as register_stems).
+FRAME_MISMATCH_TOL_S = 0.1
+
 STEM_PARTS: tuple[str, str, str, str] = ("vocals", "drums", "bass", "other")
 """The complete standard Demucs 4-part output, in API presentation order."""
 
@@ -334,24 +338,39 @@ def _load_v1_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
 
     files: dict[StemPart, Path] = {}
     metadata: dict[StemPart, WavMetadata] = {}
+    containers: dict[StemPart, str] = {}
     for part in STEM_LAYOUTS[manifest.layout]:
         file_path = _resolve_stem_file(bundle_dir, manifest.files[part], part)
         files[part] = file_path
-        metadata[part] = read_wav_metadata(file_path)
+        part_meta, container = read_stem_container_metadata(file_path)
+        metadata[part] = part_meta
+        containers[part] = container
+
+    unique_containers = set(containers.values())
+    if len(unique_containers) != 1:
+        raise StemArtifactError(
+            "v1 bundle mixes containers "
+            f"{ {part: containers[part] for part in containers} }; "
+            "every part must share one codec"
+        )
+    container = unique_containers.pop()
+    media_type = _MEDIA_TYPES[container]
 
     parts = STEM_LAYOUTS[manifest.layout]
     alignment = metadata[parts[0]]
     for part in parts[1:]:
-        if metadata[part] != alignment:
-            raise StemArtifactError(
-                f"{part} metadata {metadata[part]!r} does not align with "
-                f"{parts[0]} metadata {alignment!r}"
-            )
+        alignment = _align_v1_part_metadata(
+            alignment,
+            metadata[part],
+            reference_part=parts[0],
+            part=part,
+            container=container,
+        )
     return StemBundle(
         manifest=manifest,
         files=files,
         alignment=alignment,
-        media_type="audio/wav",
+        media_type=media_type,
         layout=manifest.layout,
     )
 
@@ -548,7 +567,7 @@ def _resolve_stem_file(bundle_dir: Path, declared_name: str, part: StemPart) -> 
         or suffix not in _STEM_SUFFIXES
     ):
         raise StemArtifactError(
-            f"{part} file entry must be a relative .wav/.flac path within its bundle"
+            f"{part} file entry must be a relative .wav/.flac/.mp3 path within its bundle"
         )
     candidate = bundle_dir / declared_path
     _require_regular_file(candidate, label=f"{part} stem")
@@ -569,6 +588,367 @@ def _require_regular_file(path: Path, *, label: str) -> None:
         raise StemArtifactError(
             f"{label} must be a real regular file, not a symlink or directory"
         )
+
+
+# ---------------------------------------------------------------------------
+# Container metadata validation (v1 parts: WAV, FLAC, MP3)
+# ---------------------------------------------------------------------------
+
+_MPEG1_L3_BITRATES_KBPS = (
+    0,
+    32,
+    40,
+    48,
+    56,
+    64,
+    80,
+    96,
+    112,
+    128,
+    160,
+    192,
+    224,
+    256,
+    320,
+)
+_MPEG2_L3_BITRATES_KBPS = (
+    0,
+    8,
+    16,
+    24,
+    32,
+    40,
+    48,
+    56,
+    64,
+    80,
+    96,
+    112,
+    128,
+    144,
+    160,
+)
+_MPEG_SAMPLE_RATES = {
+    3: (44_100, 48_000, 32_000),
+    2: (22_050, 24_000, 16_000),
+    0: (11_025, 12_000, 8_000),
+}
+
+
+def read_stem_container_metadata(path: Path) -> tuple[WavMetadata, str]:
+    """Read one stem part's geometry from its declared suffix and magic bytes."""
+    suffix = path.suffix.lower()
+    if suffix not in _STEM_SUFFIXES:
+        raise StemArtifactError(
+            f"{path.name} must use a supported stem suffix {sorted(_STEM_SUFFIXES)}"
+        )
+    try:
+        with path.open("rb") as source:
+            magic = source.read(12)
+    except OSError as exc:
+        raise StemArtifactError(
+            f"cannot read container header for {path.name}: {exc}"
+        ) from exc
+
+    if suffix == ".wav":
+        if len(magic) < 12 or magic[:4] != b"RIFF" or magic[8:12] != b"WAVE":
+            raise StemArtifactError(
+                f"{path.name} suffix is .wav but content is not RIFF/WAVE"
+            )
+        return read_wav_metadata(path), ".wav"
+    if suffix == ".flac":
+        if len(magic) < 4 or magic[:4] != b"fLaC":
+            raise StemArtifactError(
+                f"{path.name} suffix is .flac but content is not FLAC"
+            )
+        return read_flac_metadata(path), ".flac"
+    if suffix == ".mp3":
+        probe = _read_mp3_probe(path, magic)
+        if not _looks_like_mp3(probe):
+            raise StemArtifactError(
+                f"{path.name} suffix is .mp3 but content is not MPEG audio"
+            )
+        return read_mp3_metadata(path), ".mp3"
+    raise StemArtifactError(f"{path.name} uses unsupported container {suffix!r}")
+
+
+def _read_mp3_probe(path: Path, initial: bytes) -> bytes:
+    try:
+        file_size = path.stat().st_size
+        probe_len = min(file_size, 256 * 1024)
+        if len(initial) >= probe_len:
+            return initial[:probe_len]
+        with path.open("rb") as source:
+            return source.read(probe_len)
+    except OSError:
+        return initial
+
+
+def _looks_like_mp3(data: bytes) -> bool:
+    return _find_mp3_sync(data, _id3v2_skip_size(data)) >= 0
+
+
+def read_flac_metadata(path: Path) -> WavMetadata:
+    """Parse FLAC STREAMINFO without decoding audio."""
+    try:
+        with path.open("rb") as source:
+            magic = source.read(4)
+            if magic != b"fLaC":
+                raise StemArtifactError(f"{path.name} is not a FLAC file (missing fLaC magic)")
+            streaminfo: bytes | None = None
+            while True:
+                header = source.read(4)
+                if len(header) != 4:
+                    raise StemArtifactError(f"{path.name} has truncated FLAC metadata")
+                block_header = struct.unpack(">I", header)[0]
+                is_last = (block_header & 0x80000000) != 0
+                block_type = (block_header & 0x7F000000) >> 24
+                block_len = block_header & 0x00FFFFFF
+                payload = source.read(block_len)
+                if len(payload) != block_len:
+                    raise StemArtifactError(f"{path.name} has truncated FLAC metadata block")
+                if block_type == 0:
+                    streaminfo = payload
+                if is_last:
+                    break
+            if streaminfo is None:
+                raise StemArtifactError(f"{path.name} FLAC missing STREAMINFO block")
+            return _parse_flac_streaminfo(path.name, streaminfo)
+    except OSError as exc:
+        raise StemArtifactError(
+            f"cannot read FLAC metadata for {path.name}: {exc}"
+        ) from exc
+
+
+def _parse_flac_streaminfo(file_name: str, streaminfo: bytes) -> WavMetadata:
+    if len(streaminfo) < 18:
+        raise StemArtifactError(f"{file_name} STREAMINFO block is too short")
+    packed = int.from_bytes(streaminfo[10:18], "big")
+    sample_rate = (packed >> 44) & 0xFFFFF
+    channels = ((packed >> 41) & 0x7) + 1
+    frame_count = packed & 0xFFFFFFFFF
+    if sample_rate <= 0 or channels <= 0 or frame_count <= 0:
+        raise StemArtifactError(f"{file_name} FLAC STREAMINFO has invalid geometry")
+    return WavMetadata(
+        sample_rate=sample_rate,
+        frame_count=frame_count,
+        channels=channels,
+    )
+
+
+def read_mp3_metadata(path: Path) -> WavMetadata:
+    """Parse MP3 geometry from frame headers without decoding or subprocess."""
+    try:
+        file_size = path.stat().st_size
+        data = path.read_bytes()
+    except OSError as exc:
+        raise StemArtifactError(
+            f"cannot read MP3 metadata for {path.name}: {exc}"
+        ) from exc
+    if file_size < 4:
+        raise StemArtifactError(f"{path.name} is too short to be MP3")
+
+    offset = _id3v2_skip_size(data)
+    sync = _find_mp3_sync(data, offset)
+    if sync < 0 or sync + 4 > len(data):
+        raise StemArtifactError(f"{path.name} has no MPEG audio sync word")
+
+    header = data[sync : sync + 4]
+    version_id, layer, bitrate_idx, sample_rate_idx, padding, channels = (
+        _parse_mpeg_frame_header(header)
+    )
+    if layer != 3:
+        raise StemArtifactError(f"{path.name} is not MPEG Layer III")
+
+    sample_rate = _mpeg_sample_rate(version_id, sample_rate_idx)
+    bitrate_kbps = _mpeg_bitrate_kbps(version_id, layer, bitrate_idx)
+    if sample_rate <= 0 or channels <= 0:
+        raise StemArtifactError(f"{path.name} has invalid MP3 header geometry")
+    if bitrate_kbps <= 0:
+        raise StemArtifactError(f"{path.name} uses free-format or invalid MP3 bitrate")
+
+    samples_per_frame = 1152 if version_id == 3 else 576
+    frame_size = _mpeg_layer3_frame_size(
+        version_id, bitrate_kbps, sample_rate, padding
+    )
+    if frame_size <= 0 or sync + frame_size > len(data):
+        raise StemArtifactError(f"{path.name} has truncated MP3 frame")
+
+    frame_count, approximate = _mp3_frame_count(
+        data,
+        sync=sync,
+        version_id=version_id,
+        channels=channels,
+        samples_per_frame=samples_per_frame,
+        file_size=file_size,
+        bitrate_kbps=bitrate_kbps,
+        sample_rate=sample_rate,
+    )
+    if frame_count <= 0:
+        raise StemArtifactError(f"{path.name} has zero MP3 frames")
+    if approximate:
+        LOGGER.debug(
+            "approximate MP3 frame count for %s: %s frames at %s Hz",
+            path.name,
+            frame_count,
+            sample_rate,
+        )
+    return WavMetadata(
+        sample_rate=sample_rate,
+        frame_count=frame_count,
+        channels=channels,
+    )
+
+
+def _id3v2_skip_size(data: bytes) -> int:
+    if len(data) < 10 or data[:3] != b"ID3":
+        return 0
+    size = (
+        ((data[6] & 0x7F) << 21)
+        | ((data[7] & 0x7F) << 14)
+        | ((data[8] & 0x7F) << 7)
+        | (data[9] & 0x7F)
+    )
+    return 10 + size
+
+
+def _find_mp3_sync(data: bytes, start: int) -> int:
+    limit = len(data) - 1
+    for index in range(start, limit):
+        if data[index] == 0xFF and (data[index + 1] & 0xE0) == 0xE0:
+            return index
+    return -1
+
+
+def _parse_mpeg_frame_header(header: bytes) -> tuple[int, int, int, int, int, int]:
+    if len(header) != 4 or header[0] != 0xFF or (header[1] & 0xE0) != 0xE0:
+        raise StemArtifactError("invalid MPEG frame header")
+    version_id = (header[1] >> 3) & 0x03
+    layer = 4 - ((header[1] >> 1) & 0x03)
+    bitrate_idx = (header[2] >> 4) & 0x0F
+    sample_rate_idx = (header[2] >> 2) & 0x03
+    padding = (header[2] >> 1) & 0x01
+    channel_mode = (header[3] >> 6) & 0x03
+    mode_extension = (header[3] >> 4) & 0x03
+    channels = _mpeg_channels(channel_mode, mode_extension)
+    return version_id, layer, bitrate_idx, sample_rate_idx, padding, channels
+
+
+def _mpeg_channels(channel_mode: int, mode_extension: int) -> int:
+    if channel_mode == 3:
+        return 1
+    if channel_mode == 1 and mode_extension == 3:
+        return 1
+    return 2
+
+
+def _mpeg_sample_rate(version_id: int, sample_rate_idx: int) -> int:
+    if sample_rate_idx == 3:
+        return 0
+    try:
+        return _MPEG_SAMPLE_RATES[version_id][sample_rate_idx]
+    except (KeyError, IndexError):
+        return 0
+
+
+def _mpeg_bitrate_kbps(version_id: int, layer: int, bitrate_idx: int) -> int:
+    if bitrate_idx in {0, 15}:
+        return 0
+    if layer != 3:
+        return 0
+    table = _MPEG1_L3_BITRATES_KBPS if version_id == 3 else _MPEG2_L3_BITRATES_KBPS
+    return table[bitrate_idx]
+
+
+def _mpeg_layer3_frame_size(
+    version_id: int, bitrate_kbps: int, sample_rate: int, padding: int
+) -> int:
+    if sample_rate <= 0 or bitrate_kbps <= 0:
+        return 0
+    if version_id == 3:
+        return (144_000 * bitrate_kbps) // sample_rate + padding
+    return (72_000 * bitrate_kbps) // sample_rate + padding
+
+
+def _mp3_side_info_len(version_id: int, channels: int) -> int:
+    if version_id == 3:
+        return 17 if channels == 1 else 32
+    return 9 if channels == 1 else 17
+
+
+def _mp3_frame_count(
+    data: bytes,
+    *,
+    sync: int,
+    version_id: int,
+    channels: int,
+    samples_per_frame: int,
+    file_size: int,
+    bitrate_kbps: int,
+    sample_rate: int,
+) -> tuple[int, bool]:
+    side_info_len = _mp3_side_info_len(version_id, channels)
+    xing_offset = sync + 4 + side_info_len
+    if xing_offset + 12 <= len(data):
+        tag = data[xing_offset : xing_offset + 4]
+        if tag in {b"Xing", b"Info"}:
+            flags = struct.unpack(">I", data[xing_offset + 4 : xing_offset + 8])[0]
+            if flags & 0x01 and xing_offset + 12 <= len(data):
+                frames = struct.unpack(">I", data[xing_offset + 8 : xing_offset + 12])[0]
+                if frames > 0:
+                    return frames * samples_per_frame, False
+    bitrate_bps = bitrate_kbps * 1000
+    approx_frames = int(
+        ((file_size * 8) / bitrate_bps) * sample_rate / samples_per_frame
+    )
+    return approx_frames, True
+
+
+def _align_v1_part_metadata(
+    reference: WavMetadata,
+    candidate: WavMetadata,
+    *,
+    reference_part: str,
+    part: str,
+    container: str,
+) -> WavMetadata:
+    if candidate.sample_rate != reference.sample_rate:
+        raise StemArtifactError(
+            f"{part} sample_rate {candidate.sample_rate} does not match "
+            f"{reference_part} sample_rate {reference.sample_rate}"
+        )
+    if candidate.channels != reference.channels:
+        raise StemArtifactError(
+            f"{part} channels {candidate.channels} does not match "
+            f"{reference_part} channels {reference.channels}"
+        )
+    if container == ".wav":
+        if candidate.frame_count != reference.frame_count:
+            raise StemArtifactError(
+                f"{part} metadata {candidate!r} does not align with "
+                f"{reference_part} metadata {reference!r}"
+            )
+        return reference
+    if container == ".flac":
+        if candidate.frame_count != reference.frame_count:
+            raise StemArtifactError(
+                f"{part} metadata {candidate!r} does not align with "
+                f"{reference_part} metadata {reference!r}"
+            )
+        return reference
+    frame_gap = abs(candidate.frame_count - reference.frame_count)
+    if frame_gap > FRAME_MISMATCH_TOL_S * reference.sample_rate:
+        raise StemArtifactError(
+            f"{part} frame_count {candidate.frame_count} differs from "
+            f"{reference_part} frame_count {reference.frame_count} by {frame_gap} "
+            f"frames (> {FRAME_MISMATCH_TOL_S}s at {reference.sample_rate} Hz)"
+        )
+    min_frames = min(reference.frame_count, candidate.frame_count)
+    return WavMetadata(
+        sample_rate=reference.sample_rate,
+        frame_count=min_frames,
+        channels=reference.channels,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -805,6 +1185,9 @@ __all__ = [
     "WavMetadata",
     "bulk_stem_summaries",
     "load_stem_bundle",
+    "read_flac_metadata",
+    "read_mp3_metadata",
+    "read_stem_container_metadata",
     "read_wav_metadata",
     "stem_roots",
     "summarize_stem_bundle",
