@@ -5,6 +5,14 @@ lane and the ship flow's OPS-05 probe all read THIS endpoint. There is no
 UI-only pass/fail logic anywhere -- every verdict is computed in
 :mod:`apps.webui.server.preflight_checks` and this route only serves it.
 
+PREFLIGHT-02 (issue #2589): the ``state.db`` path used here comes from
+:func:`apps.webui.server.state_paths.resolve_state_db_path`, the SAME
+function ``GET /api/v1/health`` calls, rather than the independent
+``apps.adapters.rekordbox.config.STATE_DB`` module constant this route used
+to read. Two independent computations of "the same" path is exactly how a
+brand-new install's dismissed, empty library got told "no state.db" by
+preflight in the same breath health reported that path's tracks as 0.
+
 "Re-check" (poll) and "Re-request permissions" (the audio-access retry) are
 the SAME GET: the audio-access check already performs the real gated read
 every time it runs, so a second GET after granting the OS permission is
@@ -27,23 +35,18 @@ Requirements (mini-PRD):
 """
 from __future__ import annotations
 
-from fastapi import APIRouter
-
-from apps.adapters.rekordbox import config as rb_config
+from fastapi import APIRouter, Request
 
 from ..models import PreflightOut
 from ..preflight_checks import run_preflight
+from ..state_paths import resolve_state_db_path
 
 router = APIRouter(prefix="/preflight", tags=["preflight"])
 
 
 @router.get("", response_model=PreflightOut)
-def read_preflight() -> PreflightOut:
-    # rb_config.STATE_DB, not app.state.state_db_path: this is the same
-    # module-level constant the rest of the rekordbox adapter reads, so the
-    # check opens the SAME state.db a real boot would rather than a second,
-    # divergent one.
-    return run_preflight(rb_config.STATE_DB)
+def read_preflight(request: Request) -> PreflightOut:
+    return run_preflight(resolve_state_db_path(request))
 
 
 __all__ = ["router"]
