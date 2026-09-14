@@ -463,6 +463,98 @@ export function envOverrideNotes(config: CloudSyncConfigOut): string[] {
 	return notes;
 }
 
+// ----------------------------------------------------------- status headline
+
+export type HeadlineTone = 'off' | 'warn' | 'error' | 'ok';
+
+export interface StatusHeadline {
+	tone: HeadlineTone;
+	text: string;
+}
+
+/**
+ * Turns a raw sync-transport exception string into one plain clause a DJ can
+ * act on. The raw message is NEVER dropped (fail-fast: no masking) -- callers
+ * still show it verbatim behind a disclosure. This only prefixes it with a
+ * cause instead of leaving a bare "error".
+ */
+export function plainSyncFailureCause(rawMessage: string): string {
+	const msg = rawMessage.toLowerCase();
+	if (msg.includes('connection refused')) {
+		return 'could not reach the hub machine (connection refused)';
+	}
+	if (msg.includes('timed out') || msg.includes('timeout')) {
+		return 'the hub did not respond in time (timeout)';
+	}
+	if (
+		msg.includes('name or service not known') ||
+		msg.includes('nodename nor servname') ||
+		msg.includes('getaddrinfo')
+	) {
+		return 'the hub address could not be found (DNS lookup failed)';
+	}
+	if (msg.includes('401') || msg.includes('unauthorized') || msg.includes('403') || msg.includes('forbidden')) {
+		return 'the hub rejected the sign-in';
+	}
+	return 'the last sync attempt failed';
+}
+
+/**
+ * One plain-language status line with a concrete next step -- the "is my
+ * library safe" headline the panel was missing (the maintainer, Mon 14 Sep 2026: "it
+ * says error" with no explanation). The raw status fields (configured,
+ * running, heartbeat, rows_pending) stay visible below for anyone who wants
+ * them; this never replaces them, only leads with a sentence a DJ can read.
+ */
+export function statusHeadline(status: CloudSyncStatus | null): StatusHeadline {
+	if (status === null) {
+		return { tone: 'off', text: 'Loading CloudSync status...' };
+	}
+	// Current configuration wins over a historical journal verdict: the
+	// journal keeps the last result even after the user turns automatic sync
+	// off, so an old error must not outlive the config change that disabled
+	// it (Devin review, PR #2604). A saved endpoint with automatic sync off
+	// is also not "not set up" -- Sync now still works against it.
+	if (!status.configured) {
+		if (status.endpoint === null) {
+			return {
+				tone: 'off',
+				text: 'CloudSync is not set up on this machine. Enter a hub URL below and save to turn it on.'
+			};
+		}
+		return {
+			tone: 'off',
+			text: `Automatic sync is off, but a hub URL is saved (${status.endpoint}). Use Sync now below, or turn on automatic sync above.`
+		};
+	}
+	// A recorded result is checked BEFORE the heartbeat: what the last sync
+	// actually did is more informative than whether the scheduler is alive
+	// right now, and CSSTATUS-05 requires the "In sync" headline for every
+	// recorded ok result even with a stale heartbeat (Sol review, PR #2604).
+	if (status.last_result?.status === 'error') {
+		return {
+			tone: 'error',
+			text: `Not synced: ${plainSyncFailureCause(status.last_result.message)}. Check the hub URL below and that the hub machine is running, then try Sync now again.`
+		};
+	}
+	if (status.last_result?.status === 'ok') {
+		return { tone: 'ok', text: `In sync. Last synced ${relativeTime(status.last_push_at)}.` };
+	}
+	if (status.last_result?.status === 'inconclusive') {
+		return {
+			tone: 'warn',
+			text: 'Last sync finished but could not fully confirm both sides agree. Run Sync now again to reconfirm.'
+		};
+	}
+	if (!status.running) {
+		return {
+			tone: 'warn',
+			text: 'CloudSync is set up but not running automatically (no recent heartbeat). Use Sync now below, or start the background scheduler.'
+		};
+	}
+	return { tone: 'warn', text: 'Syncing...' };
+}
+
 export type CloudSyncTab = 'status' | 'policies' | 'pins' | 'overview' | 'fleet';
 
 export const CLOUDSYNC_TABS: ReadonlyArray<{ id: CloudSyncTab; label: string }> = [

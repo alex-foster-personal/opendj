@@ -108,7 +108,8 @@ export const BACKGROUND_SHED_JOBS = [
 	'background-workers',
 	'waveform-detail-bands',
 	'audio-prefetch-cache-caps',
-	'eager-stem-decode'
+	'eager-stem-decode',
+	'cloudsync-scheduler'
 ] as const;
 
 export type BackgroundShedJobId = (typeof BACKGROUND_SHED_JOBS)[number];
@@ -233,7 +234,7 @@ interface BackgroundDemandShedOptions {
 	record?: typeof recordPerfTiming | undefined;
 }
 
-interface BackgroundDemandShed {
+export interface BackgroundDemandShed {
 	request(id: BackgroundShedJobId): void;
 	sync(): void;
 	readonly pending: boolean;
@@ -336,6 +337,7 @@ export interface StartBackgroundDemandShedOptions {
 	readXruns?: (() => number) | undefined;
 	notify?: ((suggestion: { action: string; message: string }) => void) | undefined;
 	jobs?: ReadonlyArray<BackgroundDemandShedJob> | undefined;
+	onShed?: ((shed: BackgroundDemandShed) => void) | undefined;
 	schedule?: IdleScheduler | undefined;
 	now?: (() => number) | undefined;
 	record?: typeof recordPerfTiming | undefined;
@@ -355,6 +357,7 @@ export function startBackgroundDemandShed(
 		now: options.now,
 		record: options.record
 	});
+	options.onShed?.(shed);
 	const unsubscribe = subscribeMachinePressure(() => shed.sync());
 	shed.sync();
 	return unsubscribe;

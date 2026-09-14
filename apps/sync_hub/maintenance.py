@@ -84,8 +84,8 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.state import db as state_db
-from apps.shared.sync_runtime_gates import SyncDeferredError, refuse_sync_round
 from apps.shared.state import sync_stamp
+from apps.shared.sync_runtime_gates import SyncDeferredError, refuse_sync_round
 from apps.sync_hub import (
     client,
     config_cli,

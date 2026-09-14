@@ -283,6 +283,60 @@ def test_safe_views_exclude_a_soft_deleted_field_row(
     )
 
 
+def test_partial_batch_write_skips_mass_missing_guard(
+    state_conn: sqlite3.Connection, add_track, tmp_path: Path
+) -> None:
+    """Engine-sized batches must not compare a local batch with the whole library."""
+    one = tmp_path / "one.mp3"
+    two = tmp_path / "two.mp3"
+    one.write_bytes(b"\x00")
+    two.write_bytes(b"\x00")
+    add_track("a" * 40, file_path=str(one))
+    add_track("b" * 40, file_path=str(two))
+    avail.refresh(state_conn)
+    one.unlink()
+    rows = avail.probe_batch(state_conn, ["a" * 40])
+    report = avail.write(state_conn, rows, apply_mass_missing_guard=False)
+    assert report.changed == 1
+    state = state_conn.execute(
+        "SELECT state FROM track_availability WHERE stable_id = ?", ("a" * 40,)
+    ).fetchone()[0]
+    assert state == "absent"
+
+
+def test_round_present_drop_refuses_a_background_batch(
+    state_conn: sqlite3.Connection, add_track, tmp_path: Path
+) -> None:
+    from apps.shared.scan_mass_missing import MassMissingError
+    from apps.shared.state.availability_write import guard_round_present_drop
+
+    paths: list[Path] = []
+    for index in range(10):
+        audio = tmp_path / f"{index}.mp3"
+        audio.write_bytes(b"\x00")
+        paths.append(audio)
+        add_track(f"{index}" * 40, file_path=str(audio))
+    avail.refresh(state_conn)
+    for audio in paths[:6]:
+        audio.unlink()
+    rows = avail.probe_batch(state_conn, [f"{index}" * 40 for index in range(10)])
+    with pytest.raises(MassMissingError, match="library-round"):
+        guard_round_present_drop(state_conn, rows, round_start_present=10)
+
+
+def test_probe_batch_matches_probe_subset(
+    state_conn: sqlite3.Connection, add_track, tmp_path: Path
+) -> None:
+    audio = tmp_path / "a.mp3"
+    audio.write_bytes(b"\x00")
+    add_track("a" * 40, file_path=str(audio))
+    add_track("b" * 40, file_path="/nope/b.mp3")
+    full = {row.stable_id: row for row in avail.probe(state_conn)}
+    batch = avail.probe_batch(state_conn, ["a" * 40])
+    assert len(batch) == 1
+    assert batch[0] == full["a" * 40]
+
+
 def test_resolve_data_dir_rejects_a_non_directory(tmp_path: Path) -> None:
     bogus = tmp_path / "not-a-dir"
     bogus.write_text("x", encoding="utf-8")

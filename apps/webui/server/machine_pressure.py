@@ -42,6 +42,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
+from collections.abc import Mapping
 from typing import Any
 
 # Locked signals (specs/perf-latency-program.md Pressure cluster, PERFMODE-05).
@@ -92,6 +93,13 @@ def sample_wall_p95_ms(walls: Sequence[float]) -> float | None:
 
 def pressure_band_for_level(level: int) -> str:
     return {1: "fine", 2: "warning", 4: "critical"}[level]
+
+
+def pressure_is_elevated(payload: Mapping[str, Any]) -> bool:
+    """True on locked PERFMODE-04 signals. False when available is false or fields absent."""
+    if payload.get("available") is False:
+        return False
+    return _is_elevated(dict(payload))
 
 
 def _is_elevated(values: dict[str, Any]) -> bool:

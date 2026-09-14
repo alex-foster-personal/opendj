@@ -37,6 +37,7 @@ from apps.shared.state import schema as state_schema
 from apps.sync_hub import client, enrollment_credentials, maintenance
 from apps.sync_hub import config as sync_config
 from apps.sync_hub.scheduler import CloudSyncScheduler
+from apps.sync_hub.scheduler_owed import owed_path
 from apps.sync_hub.single_flight import sync_lock_for
 from apps.webui.server.app import create_app
 from apps.webui.server.local_operator import is_loopback_ip
@@ -492,9 +493,20 @@ def test_the_grant_token_is_never_logged(
     assert token not in caplog.text
 
 
+@pytest.mark.requirement("CLOUDSYNC-09")
+def test_post_scheduler_resume_owed_creates_marker(enroll_spoke_dir: Path) -> None:
+    """if POST /scheduler/resume-owed does not mark owed [then] broken."""
+    with ops_client(enroll_spoke_dir) as http:
+        response = http.post("/api/v1/cloudsync/scheduler/resume-owed")
+    assert response.status_code == 200, response.text
+    assert response.json() == {"ok": True}
+    assert owed_path(enroll_spoke_dir).is_file()
+
+
 # ----- local-operator guard -------------------------------------------------
 
 OPS_CALLS: list[tuple[str, str, dict[str, Any] | None]] = [
+    ("POST", "/api/v1/cloudsync/scheduler/resume-owed", None),
     ("POST", "/api/v1/cloudsync/sync", {"hub_url": "http://127.0.0.1:9"}),
     ("GET", "/api/v1/cloudsync/fleet", None),
     ("POST", "/api/v1/cloudsync/enrollment-grants", {"owner_email": ENROLL_OWNER_EMAIL}),
