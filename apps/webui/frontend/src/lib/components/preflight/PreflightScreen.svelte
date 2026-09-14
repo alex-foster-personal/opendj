@@ -24,18 +24,34 @@
 	 *   ✔︎ 🎯 every numeric/status readout carries a `title` explaining itself
 	 *     (house rule), not just a color.
 	 *     [if] the light or the status word has no title/text fallback [then ⛔️] broken
+	 *   ✔︎ 🎯 PREFLIGHT-02 (issue #2589): a `library-attached` row that is
+	 *     `pending` because setup was dismissed with an empty library shows a
+	 *     real, working "Run setup" control -- a dismissed-empty library must
+	 *     never be a dead end with only prose remediation. That row's markup
+	 *     lives in PreflightCheckRow.svelte (see its own doc for why it is a
+	 *     separate, lifecycle-hook-free component).
+	 *     [if] this state renders no control, or a disabled/inert one, while
+	 *     the daemon is reachable [then ⛔️] broken
+	 *
+	 * NAVIGATION IS INJECTED, never imported, exactly for the reason
+	 * `run-setup.ts` documents: `$app/navigation` only exists inside a
+	 * SvelteKit runtime. Both call sites already import `goto` for their own
+	 * use and pass it straight through to PreflightCheckRow.
 	 */
 	import { onDestroy, onMount } from 'svelte';
-	import type { PreflightCheck } from '$lib/api';
 	import {
 		checkPreflight,
 		preflightGate,
 		requestPermissions
 	} from '$lib/preflight/preflight.svelte';
+	import PreflightCheckRow from './PreflightCheckRow.svelte';
 
 	const POLL_MS = 3_000;
 
-	let { mode = 'boot' }: { mode?: 'boot' | 'admin' } = $props();
+	let {
+		mode = 'boot',
+		navigate
+	}: { mode?: 'boot' | 'admin'; navigate?: (path: string) => unknown } = $props();
 
 	let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -71,21 +87,6 @@
 	});
 
 	onDestroy(stopPolling);
-
-	function lightClass(status: PreflightCheck['status']): string {
-		if (status === 'pass') return 'light-pass';
-		if (status === 'fail') return 'light-fail';
-		return 'light-pending';
-	}
-
-	/** The `x-apple.systempreferences:` deep link inside a remediation
-	 * sentence, or null when the remediation carries no such link (e.g. the
-	 * state-db check's remediation, which only ever names a restart). */
-	function settingsUrl(remediation: string | null | undefined): string | null {
-		if (!remediation) return null;
-		const match = remediation.match(/x-apple\.systempreferences:\S+/);
-		return match ? match[0] : null;
-	}
 </script>
 
 <section
@@ -101,27 +102,7 @@
 	{/if}
 	<ul class="preflight-checks">
 		{#each preflightGate.checks as check (check.id)}
-			<li data-check-id={check.id} data-check-status={check.status}>
-				<details open={check.status !== 'pass'}>
-					<summary>
-						<span
-							class="light {lightClass(check.status)}"
-							title={`${check.label}: ${check.status}`}
-						></span>
-						<span class="label">{check.label}</span>
-						<span class="status-word">{check.status}</span>
-					</summary>
-					<p class="detail" title={check.detail}>{check.detail}</p>
-					{#if check.remediation}
-						<p class="remediation">{check.remediation}</p>
-						{#if settingsUrl(check.remediation)}
-							<a href={settingsUrl(check.remediation)} class="settings-link">
-								Open System Settings
-							</a>
-						{/if}
-					{/if}
-				</details>
-			</li>
+			<PreflightCheckRow {check} {navigate} />
 		{/each}
 	</ul>
 	<div class="preflight-actions">
@@ -179,45 +160,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
-	}
-	.preflight-checks summary {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		cursor: pointer;
-	}
-	.light {
-		display: inline-block;
-		width: 10px;
-		height: 10px;
-		border-radius: 50%;
-		flex: none;
-	}
-	.light-pass {
-		background: var(--preflight-ok);
-	}
-	.light-fail {
-		background: var(--danger);
-	}
-	.light-pending {
-		background: var(--accent);
-	}
-	.label {
-		font-weight: 600;
-	}
-	.status-word {
-		color: var(--muted);
-		font-size: 0.85em;
-	}
-	.detail,
-	.remediation {
-		margin: 0.25rem 0 0 1.5rem;
-		color: var(--muted);
-		font-size: 0.9em;
-	}
-	.settings-link {
-		margin-left: 1.5rem;
-		display: inline-block;
 	}
 	.preflight-actions {
 		display: flex;

@@ -17,6 +17,7 @@ from ..models import (
     HealthSyncthing,
     HealthWaveformMaterialization,
 )
+from ..state_paths import resolve_state_db_path
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -28,7 +29,9 @@ def health(
 ) -> HealthOut:
     stats = backend.stats()
     last_writer = backend.last_writer()
-    db_path = getattr(request.app.state, "state_db_path", "data/state/state.db")
+    # PREFLIGHT-02 (#2589): the same resolver GET /api/v1/preflight calls, so
+    # the two endpoints cannot report two different files under one name.
+    db_path = resolve_state_db_path(request)
     bind_host = getattr(request.app.state, "bind_host", "127.0.0.1")
     version = getattr(request.app.state, "version", "0.1.0")
 

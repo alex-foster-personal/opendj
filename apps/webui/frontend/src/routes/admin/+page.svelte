@@ -278,7 +278,7 @@
 
 <!-- PREFLIGHT-01 (#771): read-only, always-live-polling reference. Same
      GET /api/v1/preflight the boot gate reads; no navigation side effect. -->
-<PreflightScreen mode="admin" />
+<PreflightScreen mode="admin" navigate={goto} />
 
 <TipLayer />
 {:else if tab === 'diagnostics'}
