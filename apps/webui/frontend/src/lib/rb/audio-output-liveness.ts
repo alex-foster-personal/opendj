@@ -221,7 +221,7 @@ export interface HeadphoneLivenessEffects {
 	now?: () => number;
 	onSnapshot?(snapshot: HeadphoneOutputSnapshot): void;
 	/** Subscribe to `navigator.mediaDevices` devicechange; return an unsubscribe. */
-	watchDeviceChanges?(handler: () => void): () => void;
+	watchDeviceChanges?: ((handler: () => void) => () => void) | undefined;
 }
 
 export interface HeadphoneOutputSnapshot {

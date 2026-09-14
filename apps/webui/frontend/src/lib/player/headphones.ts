@@ -812,7 +812,7 @@ let _lastMonitorSource: MonitorSource | undefined;
 let _headphoneLiveness: ReturnType<typeof installHeadphoneOutputLiveness> | null = null;
 
 function _isAnyDeckPlaying(): boolean {
-	return [1, 2, 3, 4].some((deck) => deckStates[deck].playing);
+	return ([1, 2, 3, 4] as const).some((deck) => deckStates[deck].playing);
 }
 
 function _shouldMonitorHeadphoneOutput(): boolean {
