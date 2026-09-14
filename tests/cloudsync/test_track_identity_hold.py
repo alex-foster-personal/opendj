@@ -242,6 +242,75 @@ def test_prepare_spoke_identity_remaps_children_and_holds_the_loser(
         conn.close()
 
 
+def test_count_unsyncable_inferred_matches_the_hold_predicate(tmp_path: Path) -> None:
+    """The admin-panel backlog number must count exactly what excludes a
+    ``tracks`` row for identity, no more and no less (CLOUDSYNC-16:
+    the maintainer has never seen CloudSync converge, and this backlog -- not a code
+    bug -- is the dominant reason on a real library)."""
+    conn = state_db.open_rw(client.state_db_path(tmp_path / "spoke"))
+    try:
+        # Held: inferred tier, no hash, no ISRC.
+        _insert_identified_track(
+            conn, "trk-unsyncable-a", title="a", updated_at=_T0, origin=_DEV_A
+        )
+        _insert_identified_track(
+            conn, "trk-unsyncable-b", title="b", updated_at=_T0, origin=_DEV_A
+        )
+        # Free: has a content hash.
+        _insert_identified_track(
+            conn,
+            "trk-hashed",
+            title="hashed",
+            content_hash=_HASH_A,
+            updated_at=_T0,
+            origin=_DEV_A,
+        )
+        # Free: no hash, but a normalizable ISRC.
+        _insert_identified_track(
+            conn,
+            "trk-isrc",
+            title="isrc",
+            isrc="US-S1Z-99-00001",
+            updated_at=_T0,
+            origin=_DEV_A,
+        )
+        # Free: not inferred tier.
+        _insert_identified_track(
+            conn, "trk-vendor-tier", title="vendor", updated_at=_T0, origin=_DEV_A, tier="isrc"
+        )
+        # Excluded from the count: soft-deleted.
+        _insert_identified_track(
+            conn,
+            "trk-deleted",
+            title="deleted",
+            updated_at=_T0,
+            origin=_DEV_A,
+            deleted_at=_T0,
+        )
+        conn.commit()
+
+        assert sync_set.count_unsyncable_inferred(conn) == 2
+
+        held = sync_set.HeldKeys(conn)
+        columns = sync_set.deciding_columns(conn, "tracks")
+        spec = sync_set.spec_for("tracks")
+        held_reasons = 0
+        for stable_id in ("trk-unsyncable-a", "trk-unsyncable-b"):
+            row = conn.execute(
+                f"SELECT {', '.join(columns)} FROM tracks WHERE stable_id = ?",
+                (stable_id,),
+            ).fetchone()
+            reason = sync_set.row_reason("tracks", columns, row, spec, held)
+            if reason == sync_set.IDENTITY_HOLD_REASON:
+                held_reasons += 1
+        assert held_reasons == 2, (
+            "count_unsyncable_inferred must count exactly the rows "
+            "row_reason holds for IDENTITY_HOLD_REASON, not an approximation"
+        )
+    finally:
+        conn.close()
+
+
 def test_run_sync_holds_unidentifiable_inferred_and_still_syncs_identity(
     tmp_path: Path,
 ) -> None:
