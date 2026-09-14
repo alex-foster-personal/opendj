@@ -41,7 +41,9 @@
 		SCANNING_SENTENCE,
 		blockerTone,
 		detectPhase,
-		probeRows
+		escapeAgentEndpoint,
+		probeRows,
+		shortenPath
 	} from '$lib/setup/detect-view';
 	import {
 		clearSetupIncomplete,
@@ -56,16 +58,28 @@
 		FOLDER_STAGE_LABELS,
 		STAGE_LABELS,
 		accessCaveat,
+		agentAccessDetail,
+		blockerAgentDetail,
 		blockerSentence,
 		finalSetupRefusal,
+		finalSetupRefusalAgent,
 		folderVerdict,
 		setupProbePending
 	} from '$lib/setup/setup-api';
+	import {
+		AGENT_DETAILS_LABEL,
+		humanDataDirLabel,
+		humanImportJobMessage,
+		humanImportJobStatus,
+		humanImportSourceLabel,
+		humanSetupProbePending
+	} from '$lib/setup/present';
 	import {
 		STEP_TITLES,
 		WIZARD_STEPS,
 		advanceRefusal,
 		fatalBlockers,
+		humanRefusal,
 		importPct,
 		setupWizard,
 		stepIndex
@@ -107,7 +121,12 @@
 	const fatal = $derived(fatalBlockers(detection));
 	const source = $derived(setupWizard.source);
 	const folderScan = $derived(setupWizard.folderScan);
-	const nextRefusal = $derived(advanceRefusal(step, { source, detection, folderScan, job }));
+	const nextRefusal = $derived(
+		humanRefusal(step, { source, detection, folderScan, job })
+	);
+	const nextRefusalAgent = $derived(
+		advanceRefusal(step, { source, detection, folderScan, job })
+	);
 	const pct = $derived(importPct(job));
 	const stageLabels = $derived(source === 'folder' ? FOLDER_STAGE_LABELS : STAGE_LABELS);
 	const stageNames = $derived((source === 'folder' ? status?.folder_stages : status?.stages) ?? []);
@@ -225,34 +244,47 @@
 
 					{#if refusal !== null}
 						<p class="fatal" role="alert">{refusal}</p>
+						{#if finalSetupRefusalAgent() !== null}
+							<details class="agent-details">
+								<summary>{AGENT_DETAILS_LABEL}</summary>
+								<pre data-agent-refusal={finalSetupRefusalAgent()}>{finalSetupRefusalAgent()}</pre>
+							</details>
+						{/if}
 					{:else if probing}
-						<p class="scanning" role="status">
-							Checking which daemon is serving this page (GET /api/v1/health)...
-						</p>
+						<p class="scanning" role="status">{humanSetupProbePending()}</p>
 					{/if}
 
 					{#if setupWizard.error !== null}
 						<p class="fatal" role="alert">{setupWizard.error}</p>
+						{#if setupWizard.errorDiagnostic !== null && setupWizard.errorDiagnostic !== setupWizard.error}
+							<details class="agent-details">
+								<summary>{AGENT_DETAILS_LABEL}</summary>
+								<pre data-agent-error={setupWizard.errorDiagnostic}>{setupWizard.errorDiagnostic}</pre>
+							</details>
+						{/if}
 					{/if}
 
 					<!-- -------------------------------------------------- welcome -->
 					{#if step === 'welcome'}
 						<div class="panel">
 							<p>
-								This engine has a library database of its own. Setting it up means
-								reading your existing rekordbox collection into it: tracks,
-								playlists, BPM, key and rating. Nothing in rekordbox is written to
-								or changed -- the import only ever reads a copy.
+								This app keeps its own library. Setting it up means reading your
+								existing DJ collection into it: tracks, playlists, tempo, key and
+								rating. Your original collection is never changed -- the import only
+								reads a copy.
 							</p>
 							{#if status !== null}
 								<p class="counts">
 									Library right now:
-									<strong title="Tracks currently in the engine's state database">
+									<strong title="Tracks currently in your library">
 										{status.tracks} tracks
 									</strong>,
-									<strong title="Playlists currently in the engine's state database">
+									<strong title="Playlists currently in your library">
 										{status.playlists} playlists
-									</strong>. Data directory <code>{status.data_dir}</code>.
+									</strong>.
+									{#if status.data_dir}
+										Stored in <code>{humanDataDirLabel(status.data_dir)}</code>.
+									{/if}
 								</p>
 								{#if lastImport !== null}
 									<p class="muted">
@@ -276,7 +308,8 @@
 									class="secondary"
 									onclick={() => void dismissAndClose()}
 									disabled={setupWizard.busy}
-									title="Close setup and use the app with whatever is already in the library (POST /api/v1/setup/dismiss)."
+									title="Close setup and use the app with whatever is already in the library."
+									data-agent-endpoint="POST /api/v1/setup/dismiss"
 								>
 									Skip for now
 								</button>
@@ -290,6 +323,14 @@
 							{#if deniedRoots.length > 0}
 								<p class="fatal" role="alert">{caveat}</p>
 								<p class="muted">{permissions?.how_to_grant}</p>
+								{#if agentAccessDetail(permissions) !== null}
+									<details class="agent-details">
+										<summary>{AGENT_DETAILS_LABEL}</summary>
+										<pre data-agent-denied={agentAccessDetail(permissions)}>
+											{agentAccessDetail(permissions)}
+										</pre>
+									</details>
+								{/if}
 							{/if}
 
 							<fieldset class="choice">
@@ -301,7 +342,7 @@
 										checked={source === 'rekordbox'}
 										onchange={() => setupWizard.useSource('rekordbox')}
 									/>
-									A rekordbox collection on this machine
+									An existing DJ collection on this machine
 								</label>
 								<label>
 									<input
@@ -310,7 +351,7 @@
 										checked={source === 'folder'}
 										onchange={() => setupWizard.useSource('folder')}
 									/>
-									A folder of audio files (no rekordbox needed)
+									A folder of audio files
 								</label>
 							</fieldset>
 						</div>
@@ -327,7 +368,7 @@
 							<form class="folder-form" onsubmit={(event) => event.preventDefault()}>
 								<input
 									type="text"
-									placeholder="/Users/you/Music"
+									placeholder="~/Music"
 									bind:value={folderInput}
 									aria-label="Folder to import"
 								/>
@@ -365,7 +406,7 @@
 									</p>
 									<ul class="probes">
 										{#each folderScan.sample as example (example)}
-											<li><code>{example}</code></li>
+											<li><code>{shortenPath(example)}</code></li>
 										{/each}
 									</ul>
 								{/if}
@@ -376,9 +417,9 @@
 									type="button"
 									class="secondary"
 									onclick={() => setupWizard.useSource('rekordbox')}
-									title="Go back to looking for a rekordbox collection"
+									title="Go back to looking for an existing DJ collection"
 								>
-									Look for rekordbox instead
+									Look for a collection instead
 								</button>
 								<button
 									type="button"
@@ -386,13 +427,14 @@
 									onclick={() => void dismissAndClose()}
 									disabled={setupWizard.busy}
 									title={ESCAPE_ACTIONS[2].title}
+									data-agent-endpoint={escapeAgentEndpoint('dismiss')}
 								>
 									{ESCAPE_ACTIONS[2].label}
 								</button>
 								<button
 									type="button"
 									onclick={() => setupWizard.beginFolderImport()}
-									disabled={nextRefusal !== null || setupWizard.busy}
+									disabled={nextRefusalAgent !== null || setupWizard.busy}
 									title={nextRefusal ?? 'Import this folder'}
 								>
 									Import this folder
@@ -414,7 +456,11 @@
 							{:else if detection !== null}
 								<ul class="probes">
 									{#each rows as row (row.key)}
-										<li class:danger={row.danger} title={row.title}>
+										<li
+											class:danger={row.danger}
+											title={row.title}
+											data-agent-detail={row.agentDetail}
+										>
 											{#if row.danger}
 												<span role="alert">{row.text}</span>
 											{:else}
@@ -425,21 +471,19 @@
 								</ul>
 
 								{#if detection.import_source !== null}
-									<p>
-										The import will read <code>{detection.import_source}</code>
-										{#if detection.import_source_encrypted}
-											, which is encrypted and will be decrypted first.
-										{:else}
-											, which is already decrypted.
-										{/if}
-									</p>
+									<p>{humanImportSourceLabel(detection.import_source_encrypted)}</p>
+									<details class="agent-details">
+										<summary>{AGENT_DETAILS_LABEL}</summary>
+										<pre data-agent-import-source={detection.import_source}>
+											{detection.import_source}
+										</pre>
+									</details>
 								{/if}
 
 								{#if detection.rekordbox_running}
 									<p class="muted">
-										rekordbox is running. That is fine -- the import reads a copy
-										-- but anything you change in rekordbox from now on will not
-										be in it.
+										Your DJ app is running. That is fine -- the import reads a copy
+										-- but anything you change there from now on will not be in it.
 									</p>
 								{/if}
 
@@ -451,6 +495,10 @@
 											{blockerSentence(code, detection)}
 										</p>
 									{/if}
+									<details class="agent-details">
+										<summary>{AGENT_DETAILS_LABEL}</summary>
+										<pre data-agent-blocker={code}>{blockerAgentDetail(code, detection)}</pre>
+									</details>
 								{/each}
 							{/if}
 
@@ -463,6 +511,7 @@
 									class="secondary"
 									onclick={() => setupWizard.redetect()}
 									title={ESCAPE_ACTIONS[0].title}
+									data-agent-endpoint={escapeAgentEndpoint('redetect')}
 								>
 									{ESCAPE_ACTIONS[0].label}
 								</button>
@@ -471,6 +520,7 @@
 									class="secondary"
 									onclick={() => setupWizard.useSource('folder')}
 									title={ESCAPE_ACTIONS[1].title}
+									data-agent-endpoint={escapeAgentEndpoint('folder')}
 								>
 									{ESCAPE_ACTIONS[1].label}
 								</button>
@@ -480,20 +530,19 @@
 									onclick={() => void dismissAndClose()}
 									disabled={setupWizard.busy}
 									title={ESCAPE_ACTIONS[2].title}
+									data-agent-endpoint={escapeAgentEndpoint('dismiss')}
 								>
 									{ESCAPE_ACTIONS[2].label}
 								</button>
 								<button
 									type="button"
 									onclick={() => setupWizard.next()}
-									disabled={nextRefusal !== null || setupWizard.busy}
+									disabled={nextRefusalAgent !== null || setupWizard.busy}
 									title={nextRefusal ?? 'Continue to the import'}
 								>
 									Continue
 								</button>
 							</div>
-							<!-- The refusal, INLINE. It used to live only in the hover
-							     title above, which on a trackpad nobody ever sees. -->
 							{#if nextRefusal !== null}
 								<p class="why" class:fatal={fatal.length > 0} role={fatal.length > 0 ? 'alert' : 'status'}>
 									Continue is not available: {nextRefusal}.
@@ -501,6 +550,12 @@
 										Use one of the three options above instead.
 									{/if}
 								</p>
+								{#if nextRefusalAgent !== null}
+									<details class="agent-details">
+										<summary>{AGENT_DETAILS_LABEL}</summary>
+										<pre data-agent-refusal={nextRefusalAgent}>{nextRefusalAgent}</pre>
+									</details>
+								{/if}
 							{/if}
 						</div>
 					{/if}
@@ -511,8 +566,8 @@
 							<h3>Confirm the import</h3>
 							{#if detection !== null && detection.import_source !== null}
 								<p>
-									Reading <code>{detection.import_source}</code> into
-									<code>{status?.data_dir ?? 'the data directory'}</code>.
+									Reading your collection into
+									<code>{humanDataDirLabel(status?.data_dir ?? 'your library')}</code>.
 								</p>
 							{/if}
 							<p>These are the stages it will report:</p>
@@ -524,8 +579,7 @@
 							{#if detection?.plain_copy.exists}
 								<label class="checkbox">
 									<input type="checkbox" bind:checked={refreshDecrypt} />
-									Decrypt again instead of reusing the existing
-									<code>master.plain.db</code>
+									Unlock the collection again instead of reusing the saved copy
 								</label>
 							{/if}
 							<div class="actions">
@@ -550,9 +604,7 @@
 							<h3>Importing</h3>
 							{#if job === null}
 								<p class="scanning" role="status">
-									Waiting for the engine to report on job
-									<code>{setupWizard.jobId ?? '(none started)'}</code>. Nothing has
-									come back yet.
+									Waiting for the import to start. Nothing has come back yet.
 								</p>
 							{:else}
 								<div
@@ -570,15 +622,33 @@
 									</span>
 								</div>
 								<p class="status-line">
-									<span title="The job's current status as the engine last wrote it">
-										{job.status}
+									<span title="Current import status">
+										{humanImportJobStatus(job.status)}
 									</span>
-									{#if job.message !== null && job.message !== undefined}
-										-- {job.message}
+									{#if humanImportJobMessage(job.message) !== null}
+										-- {humanImportJobMessage(job.message)}
 									{/if}
 								</p>
+								<details class="agent-details">
+									<summary>{AGENT_DETAILS_LABEL}</summary>
+									<pre
+										data-agent-job-status={job.status}
+										data-agent-job-message={job.message ?? ''}
+									>
+status={job.status}
+{#if job.message !== null && job.message !== undefined}
+message={job.message}
+{/if}
+									</pre>
+								</details>
 								{#if job.error !== null && job.error !== undefined}
-									<pre class="error-tail">{errorTail(job.error)}</pre>
+									<p class="fatal" role="alert">The import hit a problem.</p>
+									<details class="agent-details">
+										<summary>{AGENT_DETAILS_LABEL}</summary>
+										<pre class="error-tail" data-agent-job-error={setupWizard.jobId}>
+											{errorTail(job.error)}
+										</pre>
+									</details>
 								{/if}
 							{/if}
 							<div class="actions">
@@ -593,7 +663,7 @@
 								<button
 									type="button"
 									onclick={() => setupWizard.next()}
-									disabled={nextRefusal !== null}
+									disabled={nextRefusalAgent !== null}
 									title={nextRefusal ?? 'Continue'}
 								>
 									Continue
@@ -634,9 +704,8 @@
 							</div>
 
 							{#if stemsJobId !== null}
-								<p class="muted" title={`Engine job ${stemsJobId}`}>
-									Separation is running in the background as job
-									<code>{stemsJobId}</code>. You can finish setup now.
+								<p class="muted" title="Stem separation is running in the background">
+									Separation is running in the background. You can finish setup now.
 								</p>
 							{/if}
 
@@ -666,12 +735,12 @@
 								</p>
 								<p class="muted">
 									<span
-										title="Rekordbox analysis files (waveforms, beatgrids) found on disk, out of the imported tracks that name one"
+										title="Analysis files (waveforms, beatgrids) found on disk, out of the imported tracks that name one"
 									>
 										{lastImport.analyses_linked} of
 										{lastImport.analyses_expected}
 									</span>
-									analyses were found under <code>{lastImport.share_root}</code>.
+									analyses were found for your waveform data.
 									{#if lastImport.analyses_linked === 0 && lastImport.analyses_expected > 0}
 										None resolved, so waveforms will not draw until that folder is
 										reachable.
@@ -679,13 +748,13 @@
 								</p>
 								{#if importDenied.length > 0}
 									<p class="fatal" role="alert">
-										macOS blocked
-										<span title="Music folders that could not be listed during the import">
-											{importDenied.length}
-										</span>
-										folder(s) during this import ({importDenied.join(', ')}), so
-										the counts above cover only what could be read.
+										Some music folders could not be read during this import, so the
+										counts above cover only what could be accessed.
 									</p>
+									<details class="agent-details">
+										<summary>{AGENT_DETAILS_LABEL}</summary>
+										<pre data-agent-denied={importDenied.join(', ')}>{importDenied.join(', ')}</pre>
+									</details>
 								{/if}
 							{:else if lastImport !== null && lastImport.kind === 'folder'}
 								<p class="counts">
@@ -718,14 +787,18 @@
 								{/if}
 								{#if importDenied.length > 0}
 									<p class="fatal" role="alert">
-										macOS blocked {importDenied.join(', ')}, so the counts above
-										cover only what could be read.
+										Some folders could not be read, so the counts above cover only
+										what was accessible.
 									</p>
+									<details class="agent-details">
+										<summary>{AGENT_DETAILS_LABEL}</summary>
+										<pre data-agent-denied={importDenied.join(', ')}>{importDenied.join(', ')}</pre>
+									</details>
 								{/if}
 							{:else}
 								<p class="muted">
-									No import was recorded for this data directory. The library is
-									whatever was already in it.
+									No import was recorded yet. The library is whatever was already in
+									it.
 								</p>
 							{/if}
 							<div class="actions">
@@ -735,11 +808,6 @@
 							</div>
 						</div>
 					{/if}
-
-					<p class="muted footnote">
-						Every step here is an HTTP endpoint under <code>/api/v1/setup</code>, so
-						this whole flow can be driven without a browser.
-					</p>
 				</section>
 
 				<!-- The assistant lane. Contract with the assistant-backend work is
@@ -756,7 +824,7 @@
 		class="su-chip"
 		onclick={() => expandSetupOverlay()}
 		title={importRunning
-			? `Setup is minimised while import job ${setupWizard.jobId} runs. Click to reopen it with live progress.`
+			? 'Setup is minimised while the import runs. Click to reopen it with live progress.'
 			: 'Setup is minimised. Click to reopen it at the step you left.'}
 	>
 		{#if importRunning}
@@ -772,7 +840,7 @@
 	<div class="su-incomplete" role="status">
 		<span>
 			Setup incomplete -- library is
-			<strong title="Tracks currently in the engine's state database (GET /api/v1/setup/status)">
+			<strong title="Tracks currently in your library">
 				empty ({emptyTracks} tracks)
 			</strong>.
 		</span>
@@ -996,6 +1064,16 @@
 	.footnote {
 		font-size: 0.8rem;
 		margin-top: 1rem;
+	}
+	.agent-details {
+		margin-top: 0.5rem;
+		font-size: 0.75rem;
+		color: var(--muted);
+	}
+	.agent-details pre {
+		white-space: pre-wrap;
+		margin: 0.35rem 0 0;
+		font-size: 0.72rem;
 	}
 	/* ----- the minimised chip and the incomplete note --------------------- */
 	.su-chip,
