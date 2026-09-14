@@ -8966,6 +8966,104 @@
         "title": "LyricsUnavailableOut",
         "type": "object"
       },
+      "LyricsVerdictBackfillIn": {
+        "description": "Parity for ``python -m apps.lyrics verdicts backfill``.",
+        "properties": {
+          "dry_run": {
+            "description": "NO default on purpose, same reasoning as the purge lever: the caller states which one it wants",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "include_reserved": {
+            "default": false,
+            "description": "also process the 100 stable_ids reserved for in-app ordering QA (refused by default)",
+            "title": "Include Reserved",
+            "type": "boolean"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "max tracks to compute this call (null = no cap)",
+            "title": "Limit"
+          }
+        },
+        "required": [
+          "dry_run"
+        ],
+        "title": "LyricsVerdictBackfillIn",
+        "type": "object"
+      },
+      "LyricsVerdictBackfillOut": {
+        "description": ":class:`apps.lyrics.library_verdicts.VerdictBackfillReport`.",
+        "properties": {
+          "candidates": {
+            "description": "stable_ids with a bundle directory in either root",
+            "title": "Candidates",
+            "type": "integer"
+          },
+          "data_dir": {
+            "title": "Data Dir",
+            "type": "string"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "failed": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "stable_id -> failure reason",
+            "title": "Failed",
+            "type": "object"
+          },
+          "processed": {
+            "description": "written (or, on a dry run, would be written)",
+            "items": {
+              "type": "string"
+            },
+            "title": "Processed",
+            "type": "array"
+          },
+          "reused_cache": {
+            "description": "subset of processed whose coverage came from an existing from-stems vocal-cache entry instead of a fresh decode",
+            "items": {
+              "type": "string"
+            },
+            "title": "Reused Cache",
+            "type": "array"
+          },
+          "skipped": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": "reason -> stable_ids",
+            "title": "Skipped",
+            "type": "object"
+          }
+        },
+        "required": [
+          "dry_run",
+          "data_dir",
+          "candidates",
+          "processed",
+          "reused_cache",
+          "skipped",
+          "failed"
+        ],
+        "title": "LyricsVerdictBackfillOut",
+        "type": "object"
+      },
       "MachineIdIn": {
         "properties": {
           "machine_id": {
@@ -25542,6 +25640,48 @@
           }
         },
         "summary": "Get Lyrics Summary",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/verdicts/backfill": {
+      "post": {
+        "description": "Parity for ``python -m apps.lyrics verdicts backfill`` (LYR-06): fill\nor refresh the stem-coverage-only verdict for every loadable bundle,\nagent-native so the library-scale backfill is drivable without the CLI.\n\nA track whose row already carries word-level data (``words_content_hash``)\nis reported skipped, never overwritten - this endpoint only ever fills or\nrefreshes the coverage fields, same contract as the CLI.",
+        "operationId": "post_lyrics_verdicts_backfill_api_v1_lyrics_verdicts_backfill_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LyricsVerdictBackfillIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsVerdictBackfillOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Lyrics Verdicts Backfill",
         "tags": [
           "lyrics"
         ]
