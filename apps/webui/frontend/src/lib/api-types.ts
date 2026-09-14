@@ -2429,6 +2429,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lyrics/verdicts/backfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Lyrics Verdicts Backfill
+         * @description Parity for ``python -m apps.lyrics verdicts backfill`` (LYR-06): fill
+         *     or refresh the stem-coverage-only verdict for every loadable bundle,
+         *     agent-native so the library-scale backfill is drivable without the CLI.
+         *
+         *     A track whose row already carries word-level data (``words_content_hash``)
+         *     is reported skipped, never overwritten - this endpoint only ever fills or
+         *     refreshes the coverage fields, same contract as the CLI.
+         */
+        post: operations["post_lyrics_verdicts_backfill_api_v1_lyrics_verdicts_backfill_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mytags": {
         parameters: {
             query?: never;
@@ -8235,6 +8261,67 @@ export interface components {
         LyricsUnavailableOut: {
             /** Detail */
             detail: string;
+        };
+        /**
+         * LyricsVerdictBackfillIn
+         * @description Parity for ``python -m apps.lyrics verdicts backfill``.
+         */
+        LyricsVerdictBackfillIn: {
+            /**
+             * Dry Run
+             * @description NO default on purpose, same reasoning as the purge lever: the caller states which one it wants
+             */
+            dry_run: boolean;
+            /**
+             * Include Reserved
+             * @description also process the 100 stable_ids reserved for in-app ordering QA (refused by default)
+             * @default false
+             */
+            include_reserved: boolean;
+            /**
+             * Limit
+             * @description max tracks to compute this call (null = no cap)
+             */
+            limit?: number | null;
+        };
+        /**
+         * LyricsVerdictBackfillOut
+         * @description :class:`apps.lyrics.library_verdicts.VerdictBackfillReport`.
+         */
+        LyricsVerdictBackfillOut: {
+            /**
+             * Candidates
+             * @description stable_ids with a bundle directory in either root
+             */
+            candidates: number;
+            /** Data Dir */
+            data_dir: string;
+            /** Dry Run */
+            dry_run: boolean;
+            /**
+             * Failed
+             * @description stable_id -> failure reason
+             */
+            failed: {
+                [key: string]: string;
+            };
+            /**
+             * Processed
+             * @description written (or, on a dry run, would be written)
+             */
+            processed: string[];
+            /**
+             * Reused Cache
+             * @description subset of processed whose coverage came from an existing from-stems vocal-cache entry instead of a fresh decode
+             */
+            reused_cache: string[];
+            /**
+             * Skipped
+             * @description reason -> stable_ids
+             */
+            skipped: {
+                [key: string]: string[];
+            };
         };
         /** MachineIdIn */
         MachineIdIn: {
@@ -16553,6 +16640,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KaraokeSummaryOut"];
+                };
+            };
+        };
+    };
+    post_lyrics_verdicts_backfill_api_v1_lyrics_verdicts_backfill_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LyricsVerdictBackfillIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsVerdictBackfillOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
