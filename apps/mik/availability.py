@@ -55,10 +55,10 @@ from apps.shared.state.writer import StateWriter
 VOLUMES_ROOT = "/Volumes"
 
 
-def _mounted_volumes() -> set[str]:
-    """Names under ``/Volumes``. Empty set if the directory is unreadable."""
+def _mounted_volumes(volumes_root: str = VOLUMES_ROOT) -> set[str]:
+    """Names under ``volumes_root``. Empty set if the directory is unreadable."""
     try:
-        return set(os.listdir(VOLUMES_ROOT))
+        return set(os.listdir(volumes_root))
     except OSError:
         return set()
 
@@ -79,12 +79,20 @@ def _looks_like_uri(path: str) -> bool:
 
 
 def classify_path(
-    file_path: str | None, *, mounted: set[str] | None = None
+    file_path: str | None,
+    *,
+    mounted: set[str] | None = None,
+    volumes_root: str = VOLUMES_ROOT,
 ) -> tuple[str, str | None]:
     """Classify one ``tracks.file_path``. Returns ``(state, checked_path)``.
 
     Pure apart from the ``os.path.exists`` probe, so it is unit-testable
-    against a tmp_path without touching the real library.
+    against a tmp_path without touching the real library. ``volumes_root``
+    defaults to the real production contract (:data:`VOLUMES_ROOT`,
+    ``/Volumes``); a caller that needs a fully isolated volume-root tree for
+    a test passes an explicit override here (or through :func:`probe_batch`/
+    :func:`probe`) rather than monkeypatching the module constant, which
+    would silently stop exercising the real ``/Volumes`` prefix contract.
     """
     if file_path is None or not file_path.strip():
         return "absent", None
@@ -93,10 +101,10 @@ def classify_path(
         return "streaming", path
     if os.path.exists(path):
         return "present", path
-    if path.startswith(VOLUMES_ROOT + "/"):
-        remainder = path[len(VOLUMES_ROOT) + 1 :]
+    if path.startswith(volumes_root + "/"):
+        remainder = path[len(volumes_root) + 1 :]
         volume = remainder.split("/", 1)[0]
-        names = _mounted_volumes() if mounted is None else mounted
+        names = _mounted_volumes(volumes_root) if mounted is None else mounted
         if volume and volume not in names:
             return "awaiting_volume", path
     return "absent", path
@@ -108,12 +116,15 @@ def _classify_track_row(
     alt_paths: dict[str, list[str]],
     *,
     mounted: set[str],
+    volumes_root: str = VOLUMES_ROOT,
 ) -> AvailabilityRow:
-    state, checked = classify_path(file_path, mounted=mounted)
+    state, checked = classify_path(file_path, mounted=mounted, volumes_root=volumes_root)
     if state != "present":
         awaiting: tuple[str, str | None] | None = None
         for alt in alt_paths.get(stable_id, []):
-            alt_state, alt_checked = classify_path(alt, mounted=mounted)
+            alt_state, alt_checked = classify_path(
+                alt, mounted=mounted, volumes_root=volumes_root
+            )
             if alt_state == "present":
                 state, checked = alt_state, alt_checked
                 awaiting = None
@@ -126,7 +137,10 @@ def _classify_track_row(
 
 
 def probe_batch(
-    conn: sqlite3.Connection, stable_ids: list[str]
+    conn: sqlite3.Connection,
+    stable_ids: list[str],
+    *,
+    volumes_root: str = VOLUMES_ROOT,
 ) -> list[AvailabilityRow]:
     """Classify a batch of live tracks. Read-only; does not write.
 
@@ -139,10 +153,17 @@ def probe_batch(
     binding one placeholder per id past SQLite's compiled variable limit
     (999 on many builds, 32766 on others) raises "too many SQL variables"
     instead of classifying anything.
+
+    ``volumes_root`` defaults to the real production ``/Volumes`` contract
+    (:data:`VOLUMES_ROOT`). Callers that need a fully isolated volume tree
+    for a test (rather than monkeypatching the module constant, a mocked
+    production input Sol flagged on PR #2619 round 6) pass an explicit
+    override, mirroring the same DI seam already used by
+    :func:`apps.webui.server.routes.usb_volumes` for its own volume root.
     """
     if not stable_ids:
         return []
-    mounted = _mounted_volumes()
+    mounted = _mounted_volumes(volumes_root)
     tracks: list[tuple[str, str | None]] = []
     for start in range(0, len(stable_ids), ID_BIND_BATCH):
         chunk = stable_ids[start : start + ID_BIND_BATCH]
@@ -157,12 +178,16 @@ def probe_batch(
     tracks.sort(key=lambda row: row[0])
     alt_paths = list_location_paths(conn, [stable_id for stable_id, _ in tracks])
     return [
-        _classify_track_row(stable_id, file_path, alt_paths, mounted=mounted)
+        _classify_track_row(
+            stable_id, file_path, alt_paths, mounted=mounted, volumes_root=volumes_root
+        )
         for stable_id, file_path in tracks
     ]
 
 
-def probe(conn: sqlite3.Connection) -> list[AvailabilityRow]:
+def probe(
+    conn: sqlite3.Connection, *, volumes_root: str = VOLUMES_ROOT
+) -> list[AvailabilityRow]:
     """Classify every ``tracks`` row. Read-only; does not write.
 
     ``tracks.file_path`` is the legacy primary path, but a track can also
@@ -180,7 +205,7 @@ def probe(conn: sqlite3.Connection) -> list[AvailabilityRow]:
             "SELECT stable_id FROM tracks WHERE deleted_at IS NULL ORDER BY stable_id"
         )
     ]
-    return probe_batch(conn, stable_ids)
+    return probe_batch(conn, stable_ids, volumes_root=volumes_root)
 
 
 def write(

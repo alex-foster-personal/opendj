@@ -102,6 +102,18 @@ class _FullProbeRequest:
     allow_mass_missing: bool = False
 
 
+@dataclass
+class _RoundCursor:
+    """A round's candidate resumption state, not yet committed.
+
+    See ``_collect_round_stable_ids`` / ``_commit_round_cursor``.
+    """
+
+    cursor: str
+    scan_awaiting: bool
+    priority_taken: list[str]
+
+
 class LibraryAvailabilityWorker:
     """Background availability probe owned by the engine."""
 
@@ -112,6 +124,7 @@ class LibraryAvailabilityWorker:
         batch_size: int = DEFAULT_BATCH_SIZE,
         state_db_path: Path | None = None,
         on_batch_committed: Callable[[AvailabilityWorkerStatus], None] | None = None,
+        volumes_root: str | None = None,
     ) -> None:
         self._data_dir = data_dir
         self._state_db_path = state_db_path or (data_dir / "state" / "state.db")
@@ -125,7 +138,18 @@ class LibraryAvailabilityWorker:
         self._status = AvailabilityWorkerStatus()
         self._keyset_cursor = ""
         self._scan_awaiting_volume = False
+        #: The ORIGINAL present count when the current sweep began (the
+        #: first capped round after the worker last had nothing pending),
+        #: not recomputed every round -- see `_drain_once`'s LIBM-41
+        #: follow-up note (round-6 Sol finding, cumulative loss guard).
+        self._sweep_baseline_present: int | None = None
         self._on_batch_committed = on_batch_committed
+        #: Defaults to the real production ``/Volumes`` contract
+        #: (`apps.mik.availability.VOLUMES_ROOT`). A caller that needs a
+        #: fully isolated volume-root tree for a test passes an explicit
+        #: override here (round-6 Sol finding: a test must not monkeypatch
+        #: the module constant, a mocked production input).
+        self._volumes_root = volumes_root if volumes_root is not None else avail.VOLUMES_ROOT
 
     def set_on_batch_committed(
         self, callback: Callable[[AvailabilityWorkerStatus], None] | None
@@ -299,7 +323,9 @@ class LibraryAvailabilityWorker:
                 and self._status.phase not in {"queued", "running"}
             )
 
-    def _collect_round_stable_ids(self, conn: sqlite3.Connection) -> list[str]:
+    def _collect_round_stable_ids(
+        self, conn: sqlite3.Connection
+    ) -> tuple[list[str], _RoundCursor]:
         """Every stable_id THIS round will touch, capped at MAX_ROUND_IDS.
 
         Mirrors ``_next_batch``'s source order (the priority queue, then the
@@ -310,10 +336,19 @@ class LibraryAvailabilityWorker:
         before any row of it is probed for writing -- not batch by batch
         after earlier batches have already committed (round 2), and not by
         stat-ing an entire unbounded library before the first write commits
-        (round 4). A library with more incomplete rows than the cap leaves
-        the rest for the worker's next round: ``_keyset_cursor`` and
-        ``_scan_awaiting_volume`` persist across calls so the next round
-        resumes rather than rescanning from the top.
+        (round 4).
+
+        The candidate next cursor/scan-source and the priority ids taken
+        for this round are returned as a :class:`_RoundCursor`, NOT written
+        to ``self._keyset_cursor`` / ``self._scan_awaiting_volume`` /
+        ``self._priority_ids`` here -- ``_drain_once`` commits that only
+        after this round's guard has passed and its writes have committed
+        (``_commit_round_cursor``), or restores the priority ids
+        (``_requeue_priority_ids``) if the round is refused or raises
+        (round-6 Sol finding: advancing the cursor before a guarded write
+        succeeds could resume PAST rows that were never actually written,
+        skipping them forever once the scan later runs off the end of the
+        table).
         """
         with self._lock:
             take_n = min(len(self._priority_ids), MAX_ROUND_IDS)
@@ -350,10 +385,122 @@ class LibraryAvailabilityWorker:
                         seen.add(stable_id)
                 cursor = rows[-1][0] if rows else ""
 
+        return ids, _RoundCursor(
+            cursor=cursor, scan_awaiting=scan_awaiting, priority_taken=priority
+        )
+
+    def _commit_round_cursor(self, round_cursor: _RoundCursor) -> None:
+        """Advance the resumption state -- ONLY after a round's guard has
+        passed and its writes have committed (see `_collect_round_stable_ids`).
+        """
         with self._lock:
-            self._scan_awaiting_volume = scan_awaiting
-            self._keyset_cursor = cursor
-        return ids
+            self._keyset_cursor = round_cursor.cursor
+            self._scan_awaiting_volume = round_cursor.scan_awaiting
+
+    def _requeue_priority_ids(self, stable_ids: list[str]) -> None:
+        """Restore priority ids a refused/failed round took but never wrote.
+
+        Put back at the FRONT of the queue, in their original order, so a
+        retry re-sees them ahead of anything requested later.
+        """
+        if not stable_ids:
+            return
+        with self._lock:
+            self._priority_ids.extendleft(reversed(stable_ids))
+
+    def _run_capped_round(self, conn: sqlite3.Connection) -> tuple[int, bool]:
+        """Collect, guard, and write one capped round. Returns
+        ``(batches_committed, refused)``.
+
+        Refusal sets ``phase``/``last_error`` itself (the caller only needs
+        to know to stop); every other path leaves phase-setting to the
+        caller's own tail logic.
+        """
+        candidate_ids, round_cursor = self._collect_round_stable_ids(conn)
+        if not candidate_ids:
+            # Nothing to probe or write this round (e.g. the incomplete
+            # scan just exhausted with capacity left over): no guard or
+            # write was attempted that could still fail, so the source
+            # flip / cursor reset is safe to commit immediately.
+            self._commit_round_cursor(round_cursor)
+            return 0, False
+
+        # The mass-missing baseline for the whole SWEEP (not just this
+        # round): captured once, the first time a round in this sweep has
+        # candidates, and reused on every later round of the same sweep. A
+        # library bigger than the round cap needs several rounds to
+        # settle; recomputing the baseline from the ALREADY-REDUCED
+        # present count every round (round-4/5 behavior) let N capped
+        # rounds each stay individually under the 50% LIBM-41 threshold
+        # while cumulatively wiping out far more of the library than that
+        # (round-6 Sol finding, BLOCKING P1). Reset to None when a sweep
+        # completes (`_drain_once`'s tail) or a full probe resets the
+        # world (`_run_full_probe`).
+        if self._sweep_baseline_present is None:
+            with self._lock:
+                self._sweep_baseline_present = present_count(conn)
+        round_start_present = self._sweep_baseline_present
+
+        # LIBM-41 follow-up: decide the whole round's mass-missing question
+        # from a dry-run classification of every candidate BEFORE any of
+        # them is written, so a refusal can never leave earlier batches'
+        # downgrades already committed.
+        try:
+            round_rows = avail.probe_batch(
+                conn, candidate_ids, volumes_root=self._volumes_root
+            )
+            guard_round_present_drop(
+                conn,
+                round_rows,
+                round_start_present=round_start_present,
+                allow_mass_missing=False,
+            )
+        except MassMissingError as exc:
+            conn.rollback()
+            # The round never wrote anything: the priority ids it took
+            # must go back so a retry re-sees them, and the cursor/scan-
+            # source must stay exactly where `_collect_round_stable_ids`
+            # found them (round-6 Sol finding) -- simply never calling
+            # `_commit_round_cursor` achieves that.
+            self._requeue_priority_ids(round_cursor.priority_taken)
+            with self._lock:
+                self._status.phase = "refused"
+                self._status.last_error = str(exc)
+            return 0, True
+        except Exception:
+            conn.rollback()
+            self._requeue_priority_ids(round_cursor.priority_taken)
+            raise
+
+        batches_committed = 0
+        round_completed = True
+        for start in range(0, len(round_rows), self._batch_size):
+            if self._stop.is_set():
+                round_completed = False
+                break
+            chunk = round_rows[start : start + self._batch_size]
+            self._commit_batch(conn, chunk)
+            batches_committed += 1
+            self._refresh_status_counts(conn)
+            if self._on_batch_committed is not None:
+                self._on_batch_committed(self.status())
+
+        if round_completed:
+            # Guard passed AND every row of the round is durably written:
+            # only now may the resumption state advance.
+            self._commit_round_cursor(round_cursor)
+        else:
+            # Stopped mid-round: rows already committed are safe
+            # (idempotent, already have a fresh track_availability row so
+            # a re-scan naturally skips them), but the cursor must not
+            # jump to the round's full tail, or the rows past the last
+            # committed chunk would be silently skipped next time. Any
+            # priority id may already have been written in an earlier
+            # chunk this round; requeueing it anyway is a redundant,
+            # idempotent re-probe next round, never a skip.
+            self._requeue_priority_ids(round_cursor.priority_taken)
+
+        return batches_committed, False
 
     def _commit_batch(
         self,
@@ -392,7 +539,7 @@ class LibraryAvailabilityWorker:
         return report.changed
 
     def _run_full_probe(self, conn: sqlite3.Connection, req: _FullProbeRequest) -> None:
-        rows = avail.probe(conn)
+        rows = avail.probe(conn, volumes_root=self._volumes_root)
         avail.write(
             conn,
             rows,
@@ -405,6 +552,7 @@ class LibraryAvailabilityWorker:
             self._status.processed_total += len(rows)
             self._keyset_cursor = ""
             self._scan_awaiting_volume = False
+            self._sweep_baseline_present = None
             self._full_probe = None
 
     def _run_loop(self) -> None:
@@ -453,39 +601,9 @@ class LibraryAvailabilityWorker:
                 self._status.phase = "running"
                 self._status.last_error = None
 
-            round_start_present = present_count(conn)
-            candidate_ids = self._collect_round_stable_ids(conn)
-            batches_committed = 0
-
-            if candidate_ids:
-                # LIBM-41 follow-up: decide the whole round's mass-missing
-                # question from a dry-run classification of every candidate
-                # BEFORE any of them is written, so a refusal can never leave
-                # earlier batches' downgrades already committed.
-                round_rows = avail.probe_batch(conn, candidate_ids)
-                try:
-                    guard_round_present_drop(
-                        conn,
-                        round_rows,
-                        round_start_present=round_start_present,
-                        allow_mass_missing=False,
-                    )
-                except MassMissingError as exc:
-                    conn.rollback()
-                    with self._lock:
-                        self._status.phase = "refused"
-                        self._status.last_error = str(exc)
-                    return
-
-                for start in range(0, len(round_rows), self._batch_size):
-                    if self._stop.is_set():
-                        break
-                    chunk = round_rows[start : start + self._batch_size]
-                    self._commit_batch(conn, chunk)
-                    batches_committed += 1
-                    self._refresh_status_counts(conn)
-                    if self._on_batch_committed is not None:
-                        self._on_batch_committed(self.status())
+            batches_committed, refused = self._run_capped_round(conn)
+            if refused:
+                return
 
             with self._lock:
                 if self._priority_ids or self._full_probe is not None:
@@ -494,6 +612,7 @@ class LibraryAvailabilityWorker:
                     self._status.phase = "complete"
                     self._scan_awaiting_volume = False
                     self._keyset_cursor = ""
+                    self._sweep_baseline_present = None
                 elif batches_committed == 0:
                     self._status.phase = "idle"
                 else:

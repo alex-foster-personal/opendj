@@ -376,19 +376,31 @@ def test_awaiting_volume_stays_pending_until_reclassified(
 
 
 def test_awaiting_volume_reclassifies_when_volume_is_mounted(
-    data_dir: Path, state_db_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    data_dir: Path, state_db_path: Path, tmp_path: Path
 ) -> None:
-    # P0 (Sol review, PR #2619): this used to mkdir + shutil.rmtree a REAL
-    # /Volumes/<name> path. On any machine that happens to have a real
-    # volume mounted under that literal name, that deleted user data outside
-    # the test sandbox. `apps.mik.availability.VOLUMES_ROOT` is a
-    # module-level constant read by both `_mounted_volumes()` (`os.listdir`)
-    # and `classify_path()` (`path.startswith(...)`) at call time, so
-    # monkeypatching it confines every filesystem touch this test makes to a
-    # fake "/Volumes" tree under `tmp_path`, auto-cleaned by pytest -- no
-    # writes to the real `/Volumes` and no rmtree at all.
+    # P0 (Sol review, PR #2619 round 1): this used to mkdir + shutil.rmtree
+    # a REAL /Volumes/<name> path. On any machine that happens to have a
+    # real volume mounted under that literal name, that deleted user data
+    # outside the test sandbox.
+    #
+    # P1 (Sol review, PR #2619 round 6): the fix for that used
+    # `monkeypatch.setattr(avail, "VOLUMES_ROOT", ...)`, which swaps out a
+    # real production input (the classifier's own contract for what
+    # "/Volumes" means) for a fake one -- a mocked production input that
+    # cannot establish real `/Volumes` paths classify correctly. The
+    # worker now takes `volumes_root` as a constructor parameter (default:
+    # the real `avail.VOLUMES_ROOT`, see
+    # `test_worker_default_volumes_root_is_the_real_production_contract`),
+    # threaded through to `probe`/`probe_batch`/`classify_path` exactly
+    # like the existing `mounted` DI seam and like
+    # `apps.webui.server.routes.usb_volumes`'s own `volumes_root`
+    # parameter -- this test passes a real temp directory tree as that
+    # parameter's VALUE, through the worker's own public constructor, not
+    # by reaching into module internals. Every filesystem touch this test
+    # makes is confined to `fake_volumes_root` under `tmp_path`,
+    # auto-cleaned by pytest -- no writes to the real `/Volumes` and no
+    # rmtree at all.
     fake_volumes_root = tmp_path / "Volumes"
-    monkeypatch.setattr(avail, "VOLUMES_ROOT", str(fake_volumes_root))
 
     volume_name = "MDT2588VOL"
     volume_root = fake_volumes_root / volume_name / "Music"
@@ -401,7 +413,9 @@ def test_awaiting_volume_reclassifies_when_volume_is_mounted(
     finally:
         conn.close()
 
-    worker = LibraryAvailabilityWorker(data_dir, batch_size=10)
+    worker = LibraryAvailabilityWorker(
+        data_dir, batch_size=10, volumes_root=str(fake_volumes_root)
+    )
     worker.start()
     try:
         started = time.monotonic()
@@ -420,7 +434,9 @@ def test_awaiting_volume_reclassifies_when_volume_is_mounted(
     volume_root.mkdir(parents=True, exist_ok=True)
     (volume_root / "a.mp3").write_bytes(b"\x00")
 
-    worker2 = LibraryAvailabilityWorker(data_dir, batch_size=10)
+    worker2 = LibraryAvailabilityWorker(
+        data_dir, batch_size=10, volumes_root=str(fake_volumes_root)
+    )
     worker2.start()
     try:
         _wait_worker_complete(worker2, guard_s=THREAD_HANG_GUARD_S)
@@ -990,8 +1006,13 @@ def test_collect_round_stable_ids_caps_each_round_at_max_round_ids(
         conn.commit()
 
         worker = LibraryAvailabilityWorker(data_dir, batch_size=500)
-        round1 = worker._collect_round_stable_ids(conn)
-        round2 = worker._collect_round_stable_ids(conn)
+        round1, round1_cursor = worker._collect_round_stable_ids(conn)
+        # `_collect_round_stable_ids` no longer commits the cursor itself
+        # (round-6 Sol finding: only after a round's guard passes and its
+        # writes commit) -- do that explicitly here so round 2 resumes
+        # from round 1's true tail, exactly as `_run_capped_round` would.
+        worker._commit_round_cursor(round1_cursor)
+        round2, _round2_cursor = worker._collect_round_stable_ids(conn)
     finally:
         conn.close()
 
@@ -1219,6 +1240,323 @@ def test_status_pending_does_not_double_count_a_stale_awaiting_volume_row(
         "stale and awaiting_volume must be counted once, not summed "
         "across overlapping categories"
     )
+
+
+def _seed_present_then_mass_drop(
+    conn: sqlite3.Connection, audio_dir: Path, prefix: str, track_count: int
+) -> list[Path]:
+    """``track_count`` tracks, all with real audio (so a first round
+    classifies them all ``present``). Returns their paths, unlinked.
+    """
+    paths: list[Path] = []
+    for index in range(track_count):
+        audio = audio_dir / f"{index}.mp3"
+        audio.write_bytes(b"\x00")
+        paths.append(audio)
+        _upsert_track(conn, _stable(f"{prefix}{index:06d}"), str(audio))
+    return paths
+
+
+def test_refused_round_does_not_advance_the_keyset_cursor(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    """Round-6 Sol finding (BLOCKING P1): a round whose guard refuses must
+    leave ``_keyset_cursor``/``_scan_awaiting_volume`` (and any priority
+    ids it took) exactly as ``_collect_round_stable_ids`` found them, so a
+    retry re-sees the same candidate rows instead of silently resuming
+    past them.
+    """
+    audio_dir = tmp_path / "refused-cursor"
+    audio_dir.mkdir()
+    conn = state_db.open_rw(state_db_path)
+    try:
+        paths = _seed_present_then_mass_drop(conn, audio_dir, "rc", 10)
+    finally:
+        conn.close()
+
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=10)
+    worker._drain_once()  # round 1: all 10 present, sweep completes cleanly.
+    conn = state_db.open_rw(state_db_path)
+    try:
+        present = conn.execute(
+            "SELECT COUNT(*) FROM track_availability WHERE state='present'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert present == 10
+
+    # 6 of 10 files disappear (60% drop, past LIBM-41's 50% threshold);
+    # bump updated_at so the incomplete scan re-selects every row.
+    for audio in paths[:6]:
+        audio.unlink()
+    conn = state_db.open_rw(state_db_path)
+    try:
+        now = datetime.now(UTC).isoformat()
+        conn.execute(
+            "UPDATE tracks SET updated_at = ? WHERE deleted_at IS NULL", (now,)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    cursor_before = worker._keyset_cursor
+    scan_awaiting_before = worker._scan_awaiting_volume
+    priority_id = _stable("rc000003")  # one of the about-to-be-refused rows
+    worker.request_probe([priority_id])
+    priority_before = list(worker._priority_ids)
+
+    worker._drain_once()  # round 2: guard must refuse (60% > 50%).
+    status = worker.status()
+    assert status.phase == "refused", f"expected refusal, got {status.phase!r}"
+
+    assert worker._keyset_cursor == cursor_before, (
+        f"cursor moved to {worker._keyset_cursor!r} from {cursor_before!r} "
+        "even though the round never wrote anything"
+    )
+    assert worker._scan_awaiting_volume == scan_awaiting_before, (
+        "scan_awaiting flipped even though the refused round never wrote "
+        "anything -- a later ordinary round would jump straight past the "
+        "incomplete scan and never revisit these rows"
+    )
+    assert list(worker._priority_ids) == priority_before, (
+        "the priority id was popped and lost even though the round that "
+        "took it was refused"
+    )
+
+    # Consequence: force the refusal through, and confirm every row --
+    # including the priority id -- still gets classified. Nothing was
+    # silently skipped by a cursor that had already run past them.
+    worker.request_probe(full=True, allow_mass_missing=True)
+    worker._drain_once()
+    conn = state_db.open_rw(state_db_path)
+    try:
+        classified = conn.execute(
+            "SELECT COUNT(*) FROM track_availability"
+        ).fetchone()[0]
+        absent = conn.execute(
+            "SELECT COUNT(*) FROM track_availability WHERE state='absent'"
+        ).fetchone()[0]
+        priority_state = conn.execute(
+            "SELECT state FROM track_availability WHERE stable_id = ?",
+            (priority_id,),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert classified == 10
+    assert absent == 6
+    assert priority_state == "absent"
+
+
+def test_successful_round_still_advances_the_keyset_cursor(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    """Opposite-direction control for the fix above: a round whose guard
+    PASSES must still advance the cursor once its writes commit -- the fix
+    only defers the commit past a successful write, it must not stop the
+    cursor from ever advancing.
+    """
+    from apps.engine_core.library_availability import MAX_ROUND_IDS
+
+    audio_dir = tmp_path / "successful-cursor"
+    audio_dir.mkdir()
+    track_count = MAX_ROUND_IDS + 400
+    all_ids = [_stable(f"sc{index:06d}") for index in range(track_count)]
+    conn = state_db.open_rw(state_db_path)
+    try:
+        with StateWriter(conn, actor="test-availability") as writer:
+            for index, stable_id in enumerate(all_ids):
+                writer.upsert_track(
+                    stable_id=stable_id,
+                    stable_id_tier="inferred",
+                    title=f"sc{index}",
+                    artists=[],
+                    album=None,
+                    isrc=None,
+                    duration_ms=None,
+                    file_path=str(audio_dir / f"{index}.mp3"),
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=500)
+    assert worker._keyset_cursor == ""
+    worker._drain_once()
+    expected_cursor = all_ids[MAX_ROUND_IDS - 1]
+    assert worker._keyset_cursor == expected_cursor, (
+        f"a successful round left the cursor at {worker._keyset_cursor!r}, "
+        f"expected the scan's own tail {expected_cursor!r}"
+    )
+    assert worker.status().phase in {"queued", "idle", "running"}
+
+
+def test_cumulative_present_loss_is_guarded_across_capped_rounds(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    """Round-6 Sol finding (BLOCKING P1): a mass-missing drop spread
+    across several capped rounds, each individually UNDER the 50% LIBM-41
+    threshold relative to the already-reduced present count, must still
+    be refused once the CUMULATIVE loss since the sweep began exceeds it.
+    """
+    from apps.engine_core.library_availability import MAX_ROUND_IDS
+
+    track_count = 3 * MAX_ROUND_IDS  # 6000: exactly 3 capped rounds.
+    audio_dir = tmp_path / "cumulative-guard"
+    audio_dir.mkdir()
+    conn = state_db.open_rw(state_db_path)
+    try:
+        paths = _seed_present_then_mass_drop(conn, audio_dir, "cg", track_count)
+    finally:
+        conn.close()
+
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=MAX_ROUND_IDS)
+    # First sweep: classify everything present (3 capped rounds; nothing
+    # to guard against yet, round_start_present starts at 0).
+    for _ in range(6):
+        if worker.status().pending == 0:
+            break
+        worker._drain_once()
+    conn = state_db.open_rw(state_db_path)
+    try:
+        present = conn.execute(
+            "SELECT COUNT(*) FROM track_availability WHERE state='present'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert present == track_count
+
+    # The whole volume disconnects: every file gone, every row marked
+    # incomplete again so the next sweep re-scans all of them.
+    for audio in paths:
+        audio.unlink()
+    conn = state_db.open_rw(state_db_path)
+    try:
+        now = datetime.now(UTC).isoformat()
+        conn.execute(
+            "UPDATE tracks SET updated_at = ? WHERE deleted_at IS NULL", (now,)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Round 1 of the new sweep: 2000/6000 = 33% cumulative drop, under the
+    # threshold either way -- must commit.
+    worker._drain_once()
+    status = worker.status()
+    assert status.phase != "refused", f"round 1 refused unexpectedly: {status.last_error}"
+    conn = state_db.open_rw(state_db_path)
+    try:
+        present_after_round1 = conn.execute(
+            "SELECT COUNT(*) FROM track_availability WHERE state='present'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert present_after_round1 == track_count - MAX_ROUND_IDS
+
+    # Round 2: relative to round 1's ALREADY-REDUCED present count
+    # (4000), this round's own drop is exactly 50% -- a round-local
+    # baseline would let it pass. Relative to the SWEEP's original
+    # baseline (6000), the cumulative drop is 4000/6000 = 66.7% -- must
+    # be refused.
+    worker._drain_once()
+    status = worker.status()
+    assert status.phase == "refused", (
+        f"expected the cumulative drop (4000 of 6000, 66.7%) to be "
+        f"refused, got phase={status.phase!r} pending={status.pending}"
+    )
+    conn = state_db.open_rw(state_db_path)
+    try:
+        present_after_round2 = conn.execute(
+            "SELECT COUNT(*) FROM track_availability WHERE state='present'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert present_after_round2 == track_count - MAX_ROUND_IDS, (
+        "round 2 must not have committed any downgrades once refused"
+    )
+
+
+def test_small_cumulative_drop_still_commits_across_capped_rounds(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    """Opposite-direction control: a genuinely small drop (well under the
+    LIBM-41 threshold even against the sweep's ORIGINAL baseline), spread
+    across several capped rounds, must still commit -- the cumulative
+    guard must not block a legitimate sweep just because settling took
+    more than one round.
+    """
+    from apps.engine_core.library_availability import MAX_ROUND_IDS
+
+    track_count = 3 * MAX_ROUND_IDS  # 6000, needs 3 capped rounds either way.
+    drop_count = 300  # 5% of 6000, nowhere near the 50% threshold.
+    audio_dir = tmp_path / "small-cumulative-drop"
+    audio_dir.mkdir()
+    conn = state_db.open_rw(state_db_path)
+    try:
+        paths = _seed_present_then_mass_drop(conn, audio_dir, "sd", track_count)
+    finally:
+        conn.close()
+
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=MAX_ROUND_IDS)
+    for _ in range(6):
+        if worker.status().pending == 0:
+            break
+        worker._drain_once()
+    conn = state_db.open_rw(state_db_path)
+    try:
+        present = conn.execute(
+            "SELECT COUNT(*) FROM track_availability WHERE state='present'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert present == track_count
+
+    for audio in paths[:drop_count]:
+        audio.unlink()
+    conn = state_db.open_rw(state_db_path)
+    try:
+        now = datetime.now(UTC).isoformat()
+        conn.execute(
+            "UPDATE tracks SET updated_at = ? WHERE deleted_at IS NULL", (now,)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    for _ in range(8):
+        if worker.status().pending == 0:
+            break
+        worker._drain_once()
+    status = worker.status()
+    assert status.phase != "refused", (
+        f"a genuinely small ({drop_count} of {track_count}) drop spread "
+        f"across several capped rounds was refused: {status.last_error}"
+    )
+    assert status.pending == 0
+    conn = state_db.open_rw(state_db_path)
+    try:
+        present_final = conn.execute(
+            "SELECT COUNT(*) FROM track_availability WHERE state='present'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert present_final == track_count - drop_count
+
+
+def test_worker_default_volumes_root_is_the_real_production_contract(
+    data_dir: Path,
+) -> None:
+    """Round-6 Sol finding (BLOCKING P1, test quality): the worker's
+    default ``volumes_root`` must be the REAL production ``/Volumes``
+    contract (:data:`apps.mik.availability.VOLUMES_ROOT`), never silently
+    something else -- a test that needs isolation passes an explicit
+    override (see the DI seam threaded through `probe`/`probe_batch`/
+    `classify_path`), it never monkeypatches the module constant.
+    """
+    assert avail.VOLUMES_ROOT == "/Volumes"
+    worker = LibraryAvailabilityWorker(data_dir)
+    assert worker._volumes_root == "/Volumes"
+    assert worker._volumes_root == avail.VOLUMES_ROOT
 
 
 def test_background_round_settles_a_library_larger_than_the_round_cap(
