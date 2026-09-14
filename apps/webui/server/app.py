@@ -44,6 +44,7 @@ from .app_wiring import (
     _resolve_ports,
     _SpaStaticFiles,
 )
+from .request_guard import install_request_guard
 from .backend import StateBackend
 from .cloud_sync import probe_syncthing_status
 from .frontend_build import frontend_build_dir
@@ -156,8 +157,14 @@ def create_app(  # noqa: PLR0913
     app.state.cloudsync_scheduler_armed = cloudsync_scheduler
     app.state.auto_user_jobs = library_jobs_autostart.build(enabled=auto_user_jobs)
     _install_exception_handlers(app)
+    install_request_guard(
+        app,
+        frontend_port=frontend_port,
+        backend_port=port,
+        enable_cors=enable_cors,
+    )
     if enable_cors:
-        _configure_cors(app, frontend_port)
+        _configure_cors(app)
     _configure_http_middleware(app, bind_host)
     _mount_api_routers(app)
     app.include_router(set_share_page_router)
@@ -356,6 +363,7 @@ def _build_default_app() -> FastAPI:
     from apps.shared import platform_paths
     from apps.shared.library_mode import apply_library_env, assert_ready
     from apps.shared.sync_bind_guard import assert_sync_bind_allowed
+    from apps.webui.server.request_guard import assert_request_guard_bind_allowed
     from apps.webui.library_assets import ensure_stem_storage, stem_storage
 
     bind_host = os.environ.get("MUSIC_DJ_BIND_HOST", "127.0.0.1")
@@ -363,6 +371,7 @@ def _build_default_app() -> FastAPI:
     # `uvicorn ...app:app` entry via MUSIC_DJ_BIND_HOST; uvicorn's own --host
     # never reaches the app, so that flag alone is unguarded (sync_bind_guard).
     assert_sync_bind_allowed(bind_host)
+    assert_request_guard_bind_allowed(bind_host)
     apply_library_env()
     platform_paths.refresh_share_root()
     assert_ready()

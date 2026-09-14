@@ -38,8 +38,10 @@
 		action?: Snippet | null;
 		/** Optional mini SVG animation that teaches the control. */
 		demo?: ExplainerDemo | null;
-		/** Prefer above; `auto` flips below when near the top of the viewport. */
-		placement?: 'auto' | 'above' | 'below';
+		/** Prefer above; `auto` flips below when near the top of the viewport.
+		 * `right` sits beside the trigger (flipping left when it would overflow),
+		 * for stacked menus where above/below would cover sibling controls. */
+		placement?: 'auto' | 'above' | 'below' | 'right';
 		/**
 		 * Trailing show debounce in ms. Default 0 = show immediately, which
 		 * preserves every existing caller's current behavior. A caller with a
@@ -75,20 +77,29 @@
 		if (!wrapEl) return;
 		const r = wrapEl.getBoundingClientRect();
 		const size = measured ?? _estimateSize();
-		const preferAbove =
-			placement === 'above' || (placement === 'auto' && r.top > 170);
-		const box = placeFloating({
-			trigger: {
-				left: r.left + r.width / 2 - size.width / 2,
-				top: r.top,
-				width: size.width,
-				height: r.height
-			},
-			size,
-			viewport: { width: window.innerWidth, height: window.innerHeight },
-			preferred: preferAbove ? 'above' : 'below',
-			gap: 6
-		});
+		const viewport = { width: window.innerWidth, height: window.innerHeight };
+		const box =
+			placement === 'right'
+				? placeFloating({
+						trigger: { left: r.left, top: r.top, width: r.width, height: r.height },
+						size,
+						viewport,
+						preferred: 'right',
+						gap: 8
+					})
+				: placeFloating({
+						trigger: {
+							left: r.left + r.width / 2 - size.width / 2,
+							top: r.top,
+							width: size.width,
+							height: r.height
+						},
+						size,
+						viewport,
+						preferred:
+							placement === 'above' || (placement === 'auto' && r.top > 170) ? 'above' : 'below',
+						gap: 6
+					});
 		popStyle = `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px`;
 	}
 

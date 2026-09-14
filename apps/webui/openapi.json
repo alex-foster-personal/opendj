@@ -4098,7 +4098,7 @@
           "status": {
             "anyOf": [
               {
-                "pattern": "^(open|issued|fixed|merged)$",
+                "pattern": "^(open|issued|blocked|fixed|merged)$",
                 "type": "string"
               },
               {
@@ -4957,6 +4957,17 @@
             "title": "Google Oauth Configured",
             "type": "boolean"
           },
+          "process_env_forbidden_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Process Env Forbidden Keys",
+            "type": "array"
+          },
+          "process_env_home_present": {
+            "title": "Process Env Home Present",
+            "type": "boolean"
+          },
           "state_db": {
             "$ref": "#/components/schemas/HealthStateDb"
           },
@@ -4990,6 +5001,8 @@
           "bind_host",
           "version",
           "google_oauth_configured",
+          "process_env_forbidden_keys",
+          "process_env_home_present",
           "contract_rev",
           "engine_version",
           "boot_id"
@@ -8964,6 +8977,104 @@
           "detail"
         ],
         "title": "LyricsUnavailableOut",
+        "type": "object"
+      },
+      "LyricsVerdictBackfillIn": {
+        "description": "Parity for ``python -m apps.lyrics verdicts backfill``.",
+        "properties": {
+          "dry_run": {
+            "description": "NO default on purpose, same reasoning as the purge lever: the caller states which one it wants",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "include_reserved": {
+            "default": false,
+            "description": "also process the 100 stable_ids reserved for in-app ordering QA (refused by default)",
+            "title": "Include Reserved",
+            "type": "boolean"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "max tracks to compute this call (null = no cap)",
+            "title": "Limit"
+          }
+        },
+        "required": [
+          "dry_run"
+        ],
+        "title": "LyricsVerdictBackfillIn",
+        "type": "object"
+      },
+      "LyricsVerdictBackfillOut": {
+        "description": ":class:`apps.lyrics.library_verdicts.VerdictBackfillReport`.",
+        "properties": {
+          "candidates": {
+            "description": "stable_ids with a bundle directory in either root",
+            "title": "Candidates",
+            "type": "integer"
+          },
+          "data_dir": {
+            "title": "Data Dir",
+            "type": "string"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "failed": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "stable_id -> failure reason",
+            "title": "Failed",
+            "type": "object"
+          },
+          "processed": {
+            "description": "written (or, on a dry run, would be written)",
+            "items": {
+              "type": "string"
+            },
+            "title": "Processed",
+            "type": "array"
+          },
+          "reused_cache": {
+            "description": "subset of processed whose coverage came from an existing from-stems vocal-cache entry instead of a fresh decode",
+            "items": {
+              "type": "string"
+            },
+            "title": "Reused Cache",
+            "type": "array"
+          },
+          "skipped": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": "reason -> stable_ids",
+            "title": "Skipped",
+            "type": "object"
+          }
+        },
+        "required": [
+          "dry_run",
+          "data_dir",
+          "candidates",
+          "processed",
+          "reused_cache",
+          "skipped",
+          "failed"
+        ],
+        "title": "LyricsVerdictBackfillOut",
         "type": "object"
       },
       "MachineIdIn": {
@@ -16074,6 +16185,12 @@
       "SyncRunIn": {
         "additionalProperties": false,
         "properties": {
+          "force": {
+            "default": false,
+            "description": "Bypass Gig posture and playing-deck gates for this round only.",
+            "title": "Force",
+            "type": "boolean"
+          },
           "hub_url": {
             "description": "the hub base URL, e.g. http://hub.tailnet:8686 (CLI --hub)",
             "minLength": 1,
@@ -22784,7 +22901,7 @@
                 }
               }
             },
-            "description": "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync before any hub I/O; NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error."
+            "description": "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled (force=true does not bypass this). CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync before any hub I/O when force=false; NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error."
           },
           "422": {
             "content": {
@@ -23575,7 +23692,7 @@
     },
     "/api/v1/feedback/comments/{comment_id}": {
       "patch": {
-        "description": "Agent-native half of the pin lifecycle (issue #858, first slice).\n\nA pin is never deleted by a fix. The agent that acts on it records what it\ndid here so the pin itself shows progress: ``status`` moves\nopen -> issued -> fixed -> merged, ``issue_url`` links the queue item, and\n``agent_note`` is the one-paragraph reply the widget renders under the\noriginal text. Every write is a partial update; unset fields are untouched.\n\nPartial-fix convention (pin 58a16ac781db, follow-on to #907): when only\nPART of a pin's defect is fixed, do NOT invent a new ``status`` value\n(there isn't one, and there is no plan to add one - see that pin's PR\nbody for the sizing call). Leave ``status`` at ``open`` or ``issued`` and\nwrite an ``agent_note`` that starts with the literal prefix ``PARTIAL:``\nand names where the remaining work went (a ``#123`` issue/PR reference,\nor a URL) - e.g. ``\"PARTIAL: markers fixed, remainder tracked in #1150\"``.\nThe frontend (``pinVisualState`` in ``feedback.ts``) recognises that\nconvention and paints the pin's marker half orange/half green instead of\nplain amber. A ``PARTIAL:`` note with nothing to point at is NOT\nrecognised - a partial pin must always say where the rest of the work is.",
+        "description": "Agent-native half of the pin lifecycle (issue #858, first slice).\n\nA pin is never deleted by a fix. The agent that acts on it records what it\ndid here so the pin itself shows progress: ``status`` moves\nopen -> issued -> fixed -> merged, ``issue_url`` links the queue item, and\n``agent_note`` is the one-paragraph reply the widget renders under the\noriginal text. ``blocked`` is deliberately narrow: use it only when the maintainer\nmust supply credentials/auth, make a destructive-action decision, or choose\na genuine product fork. \"I could not work out what you meant\" is a question\nin the note, never blocked. A blocked pin's note starts with one sentence\nsaying exactly what the maintainer needs, before any supporting detail. Its first\nsentence is `auth: the maintainer must ...`, `destructive-action: the maintainer must ...`, or\n`product-fork: the maintainer must ...`. Every write is a partial update; unset fields\nare untouched.\n\nPartial-fix convention (pin 58a16ac781db, follow-on to #907): when only\nPART of a pin's defect is fixed, do NOT invent a new ``status`` value\n(there isn't one, and there is no plan to add one - see that pin's PR\nbody for the sizing call). Leave ``status`` at ``open`` or ``issued`` and\nwrite an ``agent_note`` that starts with the literal prefix ``PARTIAL:``\nand names where the remaining work went (a ``#123`` issue/PR reference,\nor a URL) - e.g. ``\"PARTIAL: markers fixed, remainder tracked in #1150\"``.\nThe frontend (``pinVisualState`` in ``feedback.ts``) recognises that\nconvention and paints the pin's marker half orange/half green instead of\nplain amber. A ``PARTIAL:`` note with nothing to point at is NOT\nrecognised - a partial pin must always say where the rest of the work is.",
         "operationId": "update_comment_api_v1_feedback_comments__comment_id__patch",
         "parameters": [
           {
@@ -25536,6 +25653,48 @@
           }
         },
         "summary": "Get Lyrics Summary",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/verdicts/backfill": {
+      "post": {
+        "description": "Parity for ``python -m apps.lyrics verdicts backfill`` (LYR-06): fill\nor refresh the stem-coverage-only verdict for every loadable bundle,\nagent-native so the library-scale backfill is drivable without the CLI.\n\nA track whose row already carries word-level data (``words_content_hash``)\nis reported skipped, never overwritten - this endpoint only ever fills or\nrefreshes the coverage fields, same contract as the CLI.",
+        "operationId": "post_lyrics_verdicts_backfill_api_v1_lyrics_verdicts_backfill_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LyricsVerdictBackfillIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsVerdictBackfillOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Lyrics Verdicts Backfill",
         "tags": [
           "lyrics"
         ]

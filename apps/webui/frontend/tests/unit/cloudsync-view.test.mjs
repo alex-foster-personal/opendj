@@ -351,12 +351,42 @@ test('chipTitle names the state and links to /cloudsync', () => {
 
 test('Sync now posts the effective hub URL and machine name, and refuses without a hub', () => {
 	/** if Sync now fires with no hub URL, or ignores the effective (env-won) URL, then broken */
-	assert.equal(view.syncNowRequest(null).kind, 'refuse');
-	assert.equal(view.syncNowRequest(config()).kind, 'refuse');
+	const openGate = { appPosture: 'prep', uiMirror: null };
+	assert.equal(view.syncNowRequest(null, openGate).kind, 'refuse');
+	assert.equal(view.syncNowRequest(config(), openGate).kind, 'refuse');
 	const decision = view.syncNowRequest(
-		config({ hub_url: 'http://env-hub:8686', hub_url_source: 'env', machine_name: 'silver' })
+		config({ hub_url: 'http://env-hub:8686', hub_url_source: 'env', machine_name: 'silver' }),
+		openGate
 	);
 	assert.deepEqual(decision, { kind: 'post', body: { hub_url: 'http://env-hub:8686', name: 'silver' } });
+});
+
+test('syncNowRequest refuses when gig posture gates sync', () => {
+	const decision = view.syncNowRequest(
+		config({ hub_url: 'http://hub:8686', configured: true }),
+		{ appPosture: 'gig', uiMirror: null }
+	);
+	assert.equal(decision.kind, 'refuse');
+	assert.match(decision.reason, /gig_posture/);
+});
+
+test('syncNowRequest refuses when a deck is playing', () => {
+	const decision = view.syncNowRequest(
+		config({ hub_url: 'http://hub:8686', configured: true }),
+		{ appPosture: 'prep', uiMirror: { decks: { '1': { playing: true } } } }
+	);
+	assert.equal(decision.kind, 'refuse');
+	assert.match(decision.reason, /deck_playing/);
+});
+
+test('forceSyncNowRequest posts force true and ignores gate', () => {
+	const decision = view.forceSyncNowRequest(
+		config({ hub_url: 'http://hub:8686', machine_name: 'silver', configured: true })
+	);
+	assert.deepEqual(decision, {
+		kind: 'post',
+		body: { hub_url: 'http://hub:8686', name: 'silver', force: true }
+	});
 });
 
 test('the config form mirrors the backend validator', () => {
@@ -379,6 +409,134 @@ test('cloudSyncTabFromUrl maps tab query params to the visible tab', () => {
 	assert.equal(tab('?tab=fleet'), 'fleet');
 	assert.equal(tab(''), 'status');
 	assert.equal(tab('?tab=nope'), 'status');
+});
+
+// ----------------------------------------------------------- status headline
+// requirement: CSSTATUS-05
+// if a raw connection-refused exception ever renders as a bare "error" with
+// no cause and no next step then broken
+
+test('plainSyncFailureCause names common transport failures and never invents unknown ones', () => {
+	/** if an unrecognized message is dropped instead of falling back then broken */
+	assert.match(
+		view.plainSyncFailureCause('POST http://h:1/api/v1/sync/hello failed: [Errno 61] Connection refused'),
+		/could not reach the hub machine \(connection refused\)/
+	);
+	assert.match(view.plainSyncFailureCause('Read timed out'), /did not respond in time \(timeout\)/);
+	assert.match(
+		view.plainSyncFailureCause('getaddrinfo ENOTFOUND hub.example'),
+		/hub address could not be found \(DNS lookup failed\)/
+	);
+	assert.match(view.plainSyncFailureCause('401 Unauthorized'), /rejected the sign-in/);
+	assert.match(view.plainSyncFailureCause('some brand new exception text'), /last sync attempt failed/);
+});
+
+test('statusHeadline leads with a plain sentence and a next step for every state', () => {
+	/** if an error result renders a bare word with no cause and no next step then broken */
+	const errorHeadline = view.statusHeadline(
+		status({
+			configured: true,
+			running: true,
+			last_result: { status: 'error', message: '[Errno 61] Connection refused' }
+		})
+	);
+	assert.equal(errorHeadline.tone, 'error');
+	assert.match(errorHeadline.text, /^Not synced: could not reach the hub machine/);
+	assert.match(errorHeadline.text, /Sync now/);
+
+	/** if "not configured" ever reads as a bare no/off with no next step then broken */
+	const notConfigured = view.statusHeadline(status());
+	assert.equal(notConfigured.tone, 'off');
+	assert.match(notConfigured.text, /not set up/);
+	assert.match(notConfigured.text, /Enter a hub URL/);
+
+	/** if configured-but-not-running collapses into the same text as not-configured then broken */
+	const noHeartbeat = view.statusHeadline(status({ configured: true, running: false }));
+	assert.equal(noHeartbeat.tone, 'warn');
+	assert.match(noHeartbeat.text, /not running automatically/);
+	assert.notEqual(noHeartbeat.text, notConfigured.text);
+
+	/** Sol review, PR #2604: an OK result must win over a stale heartbeat,
+	 * never "not running automatically" -- if this regresses then broken */
+	const okDespiteStaleHeartbeat = view.statusHeadline(
+		status({
+			configured: true,
+			running: false,
+			last_push_at: '2026-09-14T11:00:00.000Z',
+			last_result: { status: 'ok', message: '' }
+		})
+	);
+	assert.equal(okDespiteStaleHeartbeat.tone, 'ok');
+	assert.match(okDespiteStaleHeartbeat.text, /^In sync\./);
+
+	/** Devin review, PR #2604: a saved endpoint with automatic sync off is
+	 * "manual only", never the same "not set up" text as no endpoint at all
+	 * -- if it reads identically to notConfigured then broken */
+	const manualOnly = view.statusHeadline(
+		status({ configured: false, endpoint: 'http://hub:8686', endpoint_source: 'file' })
+	);
+	assert.equal(manualOnly.tone, 'off');
+	assert.match(manualOnly.text, /Automatic sync is off/);
+	assert.match(manualOnly.text, /http:\/\/hub:8686/);
+	assert.notEqual(manualOnly.text, notConfigured.text);
+
+	/** Devin review, PR #2604: disabling CloudSync after a recorded error
+	 * must not leave the headline red -- current config wins over a stale
+	 * journal verdict; if this still reads "Not synced" then broken */
+	const disabledAfterError = view.statusHeadline(
+		status({
+			configured: false,
+			endpoint: null,
+			last_result: { status: 'error', message: 'Connection refused' }
+		})
+	);
+	assert.equal(disabledAfterError.tone, 'off');
+	assert.doesNotMatch(disabledAfterError.text, /Not synced/);
+
+	/** if an inconclusive result reads as ok or as error then broken */
+	const inconclusive = view.statusHeadline(
+		status({ configured: true, running: true, last_result: { status: 'inconclusive', message: '' } })
+	);
+	assert.equal(inconclusive.tone, 'warn');
+	assert.match(inconclusive.text, /could not fully confirm/);
+
+	/** if a genuine ok result still shows jargon instead of "In sync" then broken */
+	const frozenNow = Date.parse('2026-09-14T12:00:00.000Z');
+	const originalNow = Date.now;
+	Date.now = () => frozenNow;
+	try {
+		const ok = view.statusHeadline(
+			status({
+				configured: true,
+				running: true,
+				last_push_at: '2026-09-14T11:48:00.000Z',
+				last_result: { status: 'ok', message: '' }
+			})
+		);
+		assert.equal(ok.tone, 'ok');
+		assert.equal(ok.text, 'In sync. Last synced 12m ago.');
+	} finally {
+		Date.now = originalNow;
+	}
+});
+
+test('identityBacklogNote reports the identity-hold count without a retry suggestion', () => {
+	/** if a zero or missing backlog still shows a note then broken */
+	assert.equal(view.identityBacklogNote(null), null);
+	assert.equal(view.identityBacklogNote(0), null);
+
+	/** if a positive backlog produces no note, or claims retrying the sync
+	 * fixes it (it does nothing for rows held on identity), then broken */
+	const many = view.identityBacklogNote(7331);
+	assert.match(many, /7331 tracks/);
+	assert.match(many, /they lack/);
+	assert.match(many, /retrying Sync now will not change this/);
+
+	/** if singular phrasing is not grammatical for a count of one then broken */
+	const one = view.identityBacklogNote(1);
+	assert.match(one, /1 track /);
+	assert.doesNotMatch(one, /1 tracks/);
+	assert.match(one, /it lacks/);
 });
 
 test('env overrides are named when they mask the saved config', () => {

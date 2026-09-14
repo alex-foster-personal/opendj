@@ -71,7 +71,9 @@
 {/each}
 
 <style>
-	/* #858 pin lifecycle. open = amber (unchanged), issued = amber + link
+	/* #858 pin lifecycle. open = amber (unchanged), issued = amber + link,
+	   blocked = red only when the maintainer must act (auth, destructive decision, or
+	   genuine product fork),
 	   glyph, fixed = green OUTLINE, merged = SOLID green, archived = not
 	   drawn at all (filtered out upstream, never merely hidden). partial
 	   (pin 58a16ac781db, follow-on to #907) is a DERIVED state - never
@@ -94,6 +96,9 @@
 	.fb-fixed,
 	.fb-merged {
 		color: var(--rb-green);
+	}
+	.fb-blocked {
+		color: var(--rb-red);
 	}
 	/* Agent identity is purple while open/issued. Resolved lifecycle states
 	   remain green like operator pins, while the robot shape keeps its source

@@ -1,5 +1,8 @@
 """R2 asset tier: push-then-delete + hydration write-path regressions (ADR 06).
 
+Download hydration pool tests (CLOUDSYNC-09) live in the same file because they
+share ``InMemoryAssetS3`` fixtures from ``conftest.py``.
+
 Split out of ``test_asset_tier.py`` (round 4 quality-gate ratchet: that file
 crossed 1070 lines, well past the 600-line "too long to hold in your head"
 gate). Same contract, same fixtures (``tests/cloudsync/conftest.py``), same
@@ -17,12 +20,15 @@ assertion block each:
 """
 from __future__ import annotations
 
+import hashlib
 import sqlite3
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
-from apps.cloud import asset_store, hydration, transfer_status
+from apps.cloud import asset_store, hydration, hydration_pool, transfer_status
 from apps.cloud.config import CloudConfig
 from apps.shared.state import locations as state_locations
 from apps.shared.state import sync_stamp
@@ -100,6 +106,110 @@ def test_real_hydration_upload_publishes_byte_progress_and_clears_terminally(
     assert transferred[-1] == len(body)
     assert transferred == sorted(transferred)
     assert transfer_status.transfer_for(stable_id) is None
+
+
+class _ObservingDownloadS3(InMemoryAssetS3):
+    """Observe download transfer ledger while serving GET bytes."""
+
+    def __init__(self, stable_id: str, body: bytes, bucket: str) -> None:
+        super().__init__()
+        self.stable_id = stable_id
+        self.snapshots: list[transfer_status.CloudTransfer] = []
+        digest = hashlib.sha256(body).hexdigest()
+        key = asset_store.asset_object_key(digest)
+        self.store[(bucket, key)] = (body, self._etag(body))
+
+    def get_object(self, bucket: str, key: str):
+        first = transfer_status.transfer_for(self.stable_id)
+        assert first is not None
+        self.snapshots.append(first)
+        result = super().get_object(bucket, key)
+        current = transfer_status.transfer_for(self.stable_id)
+        assert current is not None
+        self.snapshots.append(current)
+        return result
+
+
+@pytest.mark.requirement("CLOUDSYNC-09")
+@pytest.mark.requirement("LIBUX-13")
+def test_real_hydration_download_publishes_byte_progress_and_clears_terminally(
+    cfg: CloudConfig,
+    tmp_path: Path,
+) -> None:
+    """[if] real download bytes move [then] TrackTable can read exact progress.
+
+    [if] the production operation returns [then] the in-process entry is gone
+    [else stop]: a stale full bar must never masquerade as active transfer.
+    """
+    stable_id = "t-download-progress"
+    body = b"genuine-download-bytes"
+    s3 = _ObservingDownloadS3(stable_id, body, cfg.audio_bucket)
+    digest = hashlib.sha256(body).hexdigest()
+    dest = tmp_path / "cache" / digest
+
+    hydration.fetch_asset_for_hydration(
+        cfg,
+        s3,
+        digest,
+        dest,
+        stable_id=stable_id,
+        bytes_total=len(body),
+    )
+
+    assert [(item.direction, item.bytes_total) for item in s3.snapshots] == [
+        ("download", len(body)) for _ in s3.snapshots
+    ]
+    transferred = [item.bytes_transferred for item in s3.snapshots]
+    assert transferred[0] == 0
+    assert transferred == sorted(transferred)
+    assert transfer_status.transfer_for(stable_id) is None
+    assert dest.read_bytes() == body
+
+
+@pytest.mark.requirement("CLOUDSYNC-09")
+def test_concurrent_downloads_respect_pool_cap(
+    cfg: CloudConfig,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] cap is 2 [then] a third fetch blocks until a slot frees."""
+    monkeypatch.setenv(hydration_pool.ENV_HYDRATION_MAX_CONCURRENT, "2")
+    hydration_pool.reset_for_tests()
+    body = b"concurrent-download-bytes"
+    digest = hashlib.sha256(body).hexdigest()
+    key = asset_store.asset_object_key(digest)
+    release = threading.Event()
+    entered_count = 0
+    count_lock = threading.Lock()
+
+    class _SlowDownloadS3(InMemoryAssetS3):
+        def get_object(self, bucket: str, key: str):
+            nonlocal entered_count
+            with count_lock:
+                entered_count += 1
+            release.wait(timeout=5.0)
+            return super().get_object(bucket, key)
+
+    s3 = _SlowDownloadS3()
+    s3.store[(cfg.audio_bucket, key)] = (body, s3._etag(body))
+
+    def _fetch(idx: int) -> None:
+        asset_store.fetch_asset(cfg, s3, digest, tmp_path / f"dest-{idx}")
+
+    threads = [threading.Thread(target=_fetch, args=(i,)) for i in range(3)]
+    for t in threads:
+        t.start()
+    for _ in range(50):
+        if entered_count >= 2:
+            break
+        time.sleep(0.01)
+    assert entered_count == 2
+    assert hydration_pool.in_flight() == 2
+
+    release.set()
+    for t in threads:
+        t.join(timeout=5.0)
+    hydration_pool.reset_for_tests()
 
 
 def test_push_then_delete_keeps_a_pinned_local_file(

@@ -86,6 +86,8 @@ def ops_client(
         hostname="cloudsync-ops-test",
         state_db_path=str(db_path),
         mount_frontend=False,
+        port=8686,
+        frontend_port=5173,
         share_config=share_config,
     )
     with TestClient(app, base_url=LOOPBACK_BASE_URL, client=client_addr) as http:
@@ -192,7 +194,10 @@ def test_post_sync_returns_409_when_gig_posture(
     (prefs_dir / "ui-prefs.json").write_text('{"app_posture": "gig"}', encoding="utf-8")
 
     with ops_client(enroll_spoke_dir) as http:
-        response = http.post("/api/v1/cloudsync/sync", json={"hub_url": enroll_live_hub})
+        response = http.post(
+            "/api/v1/cloudsync/sync",
+            json={"hub_url": enroll_live_hub, "force": False},
+        )
         status = http.get("/api/v1/cloudsync/status").json()
 
     assert response.status_code == 409, response.text
@@ -202,12 +207,52 @@ def test_post_sync_returns_409_when_gig_posture(
     assert status["recent_results"] == []
 
 
+def test_post_sync_force_true_completes_under_gig_posture(
+    enroll_live_hub: str, enroll_spoke_dir: Path
+) -> None:
+    """[if] force=true under gig posture [then] POST /sync completes and journals."""
+    prefs_dir = enroll_spoke_dir / "state"
+    prefs_dir.mkdir(parents=True, exist_ok=True)
+    (prefs_dir / "ui-prefs.json").write_text('{"app_posture": "gig"}', encoding="utf-8")
+
+    with ops_client(enroll_spoke_dir) as http:
+        response = http.post(
+            "/api/v1/cloudsync/sync",
+            json={"hub_url": enroll_live_hub, "force": True},
+        )
+        status = http.get("/api/v1/cloudsync/status").json()
+
+    assert response.status_code == 200, response.text
+    assert len(status["recent_results"]) == 1
+    assert status["last_result"]["status"] in {"ok", "inconclusive"}
+
+
+def test_post_sync_force_true_still_busy_when_lock_held(enroll_spoke_dir: Path) -> None:
+    """[if] force=true while sync lock is held [then] 409 CLOUDSYNC_SYNC_IN_PROGRESS."""
+    lock = sync_lock_for(enroll_spoke_dir)
+    with ops_client(enroll_spoke_dir) as http:
+        assert lock.acquire(blocking=False), "control: nothing else holds the lock"
+        try:
+            response = http.post(
+                "/api/v1/cloudsync/sync",
+                json={"hub_url": "http://127.0.0.1:9", "force": True},
+            )
+        finally:
+            lock.release()
+        status = http.get("/api/v1/cloudsync/status").json()
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "CLOUDSYNC_SYNC_IN_PROGRESS"
+    assert status["recent_results"] == []
+
+
 def test_post_sync_returns_409_when_deck_playing(
     enroll_live_hub: str, enroll_spoke_dir: Path
 ) -> None:
     """[if] a deck is playing [then] POST /sync returns 409 CLOUDSYNC_SYNC_DEFERRED."""
     with ops_client(enroll_spoke_dir) as http:
         http.app.state.ui_mirror = {"decks": {"1": {"playing": True}}}
+        http.app.state.machine_pressure = {"available": True}
         response = http.post("/api/v1/cloudsync/sync", json={"hub_url": enroll_live_hub})
         status = http.get("/api/v1/cloudsync/status").json()
 
@@ -534,7 +579,19 @@ def test_operator_routes_refuse_callers_that_are_not_the_local_operator(
             allowed[label] = http.request(method, path, json=payload, headers=headers)
 
     assert {label: r.status_code for label, r in refused.items()} == dict.fromkeys(refused, 403)
-    assert {r.json()["detail"]["code"] for r in refused.values()} == {"CLOUDSYNC_OPS_LOCAL_ONLY"}
+    refused_codes = {
+        "CLOUDSYNC_OPS_LOCAL_ONLY",
+        "HOST_NOT_ALLOWED",
+        "ORIGIN_NOT_ALLOWED",
+    }
+
+    def _refusal_code(response) -> str:
+        body = response.json()
+        if "detail" in body:
+            return body["detail"]["code"]
+        return body["code"]
+
+    assert {_refusal_code(r) for r in refused.values()}.issubset(refused_codes)
     assert all(r.status_code != 403 for r in allowed.values()), {
         label: r.text for label, r in allowed.items() if r.status_code == 403
     }

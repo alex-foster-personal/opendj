@@ -59,13 +59,13 @@ surface it had.
 from __future__ import annotations
 
 import hashlib
-import logging
 import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from apps.sync_hub import sync_set
+from apps.sync_hub.quarantine_log import quarantine_pass, record_quarantine
 from apps.sync_hub.protocol_common import (
     DELETED_AT,
     DIGEST_TABLES,
@@ -97,8 +97,6 @@ from apps.sync_hub.protocol_common import (
     stored_stamp_faults,
     table_columns,
 )
-
-log = logging.getLogger(__name__)
 
 # ----- wire payloads -----------------------------------------------------
 
@@ -367,13 +365,9 @@ def table_digest(
         reason = sync_set.excluded_reason(conn, table, columns, row, spec, tracking)
         if reason is not None:
             quarantined += 1
-            log.error(
-                "digest excludes one %s row: %s. It is not in the sync set on "
-                "this machine. Repair it with `python -m apps.shared.state."
-                "normalize_stamps --live`.",
-                table,
-                reason,
-            )
+            pk_index = {column: index for index, column in enumerate(columns)}
+            pk = [row[pk_index[column]] for column in spec.pk]
+            record_quarantine(table, pk, reason)
             continue
         digest.update(canonical_bytes(canonical_row(table, columns, row)))
     return TableDigest(hash=digest.hexdigest(), quarantined=quarantined)
@@ -396,20 +390,23 @@ def sync_digest(conn: sqlite3.Connection, *, seq: int = 0) -> SyncDigest:
     counts: two peers holding identical eligible content converge even when
     one of them is holding a legacy row back.
     """
-    held = sync_set.HeldKeys(conn)
-    computed = {name: table_digest(conn, name, held) for name in sync_set.FK_ORDER}
-    tables = {name: value.hash for name, value in computed.items()}
-    overall = hashlib.sha256(canonical_bytes(tables)).hexdigest()
-    return SyncDigest(
-        tables=tables,
-        overall=overall,
-        seq=seq,
-        quarantined={
-            name: value.quarantined
-            for name, value in computed.items()
-            if value.quarantined
-        },
-    )
+    with quarantine_pass("digest"):
+        held = sync_set.HeldKeys(conn)
+        computed = {
+            name: table_digest(conn, name, held) for name in sync_set.FK_ORDER
+        }
+        tables = {name: value.hash for name, value in computed.items()}
+        overall = hashlib.sha256(canonical_bytes(tables)).hexdigest()
+        return SyncDigest(
+            tables=tables,
+            overall=overall,
+            seq=seq,
+            quarantined={
+                name: value.quarantined
+                for name, value in computed.items()
+                if value.quarantined
+            },
+        )
 
 
 # ----- small parsing helpers ------------------------------------------------

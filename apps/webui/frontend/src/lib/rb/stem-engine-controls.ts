@@ -37,6 +37,15 @@ export function applyStemControl(
 				`available: ${st.stems.available_controls.join(', ')}`
 		);
 	}
+	if (st.stems.status === 'unavailable') {
+		// A settled "this track has no stem bundle" - not a failure the user
+		// caused or can fix by retrying. The controls that could reach here
+		// are already disabled in the UI; anything else that calls this
+		// (agent orders, replayed commands) gets a silent no-op rather than
+		// a throw that would light up the deck's red error banner for the
+		// normal, permanent state of any track without stems.
+		return;
+	}
 	if (st.stems.status !== 'ready' || !(rt.processor instanceof AlignedStemDeckProcessor)) {
 		throw new Error(
 			`deck ${deck} stems are ${st.stems.status}: ${st.stems.error ?? 'no aligned artifact'}`

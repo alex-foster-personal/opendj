@@ -116,28 +116,45 @@ def _first_artist(artists_json: object, stable_id: str) -> str:
     return artists[0]
 
 
+def _stamp_ms(match: re.Match[str]) -> int:
+    fraction = (match.group("fraction") or "").ljust(3, "0")
+    return (int(match.group("minutes")) * 60 + int(match.group("seconds"))) * 1000 + int(
+        fraction
+    )
+
+
 def parse_lrc_lines(synced: str) -> tuple[LyricLine, ...]:
+    """Line-level LRC to timed lines, in time order.
+
+    Two shapes that are valid LRC and not errors: consecutive lines sharing
+    one stamp (LRCLIB serves them, e.g. a backing vocal doubled at 01:53.97),
+    and one line carrying several stamps, the compressed form of a repeated
+    chorus, whose later stamps land after lines further down the file. So
+    every stamp becomes a line, the result is sorted by time, and a line
+    repeated verbatim at the same stamp is kept once.
+
+    What stays an error is a line whose EARLIEST stamp is before the previous
+    line's earliest stamp: file order and clock disagree, and nothing in the
+    file says which one is right.
+    """
     if _WORD_TIMESTAMP.search(synced):
         raise ValueError("word-level timestamps are not supported")
-    lines: list[LyricLine] = []
+    lines: dict[LyricLine, None] = {}
+    previous_ms = -1
     for raw_line in synced.splitlines():
         matches = list(_TIMESTAMP.finditer(raw_line))
         if not matches or matches[0].start() != 0:
             continue
+        stamps = [_stamp_ms(match) for match in matches]
+        if min(stamps) < previous_ms:
+            raise ValueError(
+                f"synced lyrics jump backwards: a line stamped {min(stamps)} ms "
+                f"follows one stamped {previous_ms} ms"
+            )
+        previous_ms = min(stamps)
         text = raw_line[matches[-1].end() :].strip()
-        if not text:
-            continue
-        for match in matches:
-            fraction = (match.group("fraction") or "").ljust(3, "0")
-            start_ms = (
-                int(match.group("minutes")) * 60 + int(match.group("seconds"))
-            ) * 1000 + int(fraction)
-            lines.append(LyricLine(start_ms, text))
+        if text:
+            lines.update(dict.fromkeys(LyricLine(start_ms, text) for start_ms in stamps))
     if not lines:
         raise ValueError("synced lyrics contain no line-level timestamps")
-    previous_ms = -1
-    for line in lines:
-        if line.start_ms <= previous_ms:
-            raise ValueError("synced lyrics timestamps must be strictly increasing")
-        previous_ms = line.start_ms
-    return tuple(lines)
+    return tuple(sorted(lines, key=lambda line: line.start_ms))

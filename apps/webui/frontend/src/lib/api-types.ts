@@ -1648,7 +1648,14 @@ export interface paths {
          *     did here so the pin itself shows progress: ``status`` moves
          *     open -> issued -> fixed -> merged, ``issue_url`` links the queue item, and
          *     ``agent_note`` is the one-paragraph reply the widget renders under the
-         *     original text. Every write is a partial update; unset fields are untouched.
+         *     original text. ``blocked`` is deliberately narrow: use it only when the maintainer
+         *     must supply credentials/auth, make a destructive-action decision, or choose
+         *     a genuine product fork. "I could not work out what you meant" is a question
+         *     in the note, never blocked. A blocked pin's note starts with one sentence
+         *     saying exactly what the maintainer needs, before any supporting detail. Its first
+         *     sentence is `auth: the maintainer must ...`, `destructive-action: the maintainer must ...`, or
+         *     `product-fork: the maintainer must ...`. Every write is a partial update; unset fields
+         *     are untouched.
          *
          *     Partial-fix convention (pin 58a16ac781db, follow-on to #907): when only
          *     PART of a pin's defect is fixed, do NOT invent a new ``status`` value
@@ -2477,6 +2484,32 @@ export interface paths {
         get: operations["get_lyrics_summary_api_v1_lyrics_summary_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lyrics/verdicts/backfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Lyrics Verdicts Backfill
+         * @description Parity for ``python -m apps.lyrics verdicts backfill`` (LYR-06): fill
+         *     or refresh the stem-coverage-only verdict for every loadable bundle,
+         *     agent-native so the library-scale backfill is drivable without the CLI.
+         *
+         *     A track whose row already carries word-level data (``words_content_hash``)
+         *     is reported skipped, never overwritten - this endpoint only ever fills or
+         *     refreshes the coverage fields, same contract as the CLI.
+         */
+        post: operations["post_lyrics_verdicts_backfill_api_v1_lyrics_verdicts_backfill_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6895,6 +6928,10 @@ export interface components {
             engine_version: string;
             /** Google Oauth Configured */
             google_oauth_configured: boolean;
+            /** Process Env Forbidden Keys */
+            process_env_forbidden_keys: string[];
+            /** Process Env Home Present */
+            process_env_home_present: boolean;
             state_db: components["schemas"]["HealthStateDb"];
             /**
              * Status
@@ -8504,6 +8541,67 @@ export interface components {
         LyricsUnavailableOut: {
             /** Detail */
             detail: string;
+        };
+        /**
+         * LyricsVerdictBackfillIn
+         * @description Parity for ``python -m apps.lyrics verdicts backfill``.
+         */
+        LyricsVerdictBackfillIn: {
+            /**
+             * Dry Run
+             * @description NO default on purpose, same reasoning as the purge lever: the caller states which one it wants
+             */
+            dry_run: boolean;
+            /**
+             * Include Reserved
+             * @description also process the 100 stable_ids reserved for in-app ordering QA (refused by default)
+             * @default false
+             */
+            include_reserved: boolean;
+            /**
+             * Limit
+             * @description max tracks to compute this call (null = no cap)
+             */
+            limit?: number | null;
+        };
+        /**
+         * LyricsVerdictBackfillOut
+         * @description :class:`apps.lyrics.library_verdicts.VerdictBackfillReport`.
+         */
+        LyricsVerdictBackfillOut: {
+            /**
+             * Candidates
+             * @description stable_ids with a bundle directory in either root
+             */
+            candidates: number;
+            /** Data Dir */
+            data_dir: string;
+            /** Dry Run */
+            dry_run: boolean;
+            /**
+             * Failed
+             * @description stable_id -> failure reason
+             */
+            failed: {
+                [key: string]: string;
+            };
+            /**
+             * Processed
+             * @description written (or, on a dry run, would be written)
+             */
+            processed: string[];
+            /**
+             * Reused Cache
+             * @description subset of processed whose coverage came from an existing from-stems vocal-cache entry instead of a fresh decode
+             */
+            reused_cache: string[];
+            /**
+             * Skipped
+             * @description reason -> stable_ids
+             */
+            skipped: {
+                [key: string]: string[];
+            };
         };
         /** MachineIdIn */
         MachineIdIn: {
@@ -11225,6 +11323,12 @@ export interface components {
         };
         /** SyncRunIn */
         SyncRunIn: {
+            /**
+             * Force
+             * @description Bypass Gig posture and playing-deck gates for this round only.
+             * @default false
+             */
+            force: boolean;
             /**
              * Hub Url
              * @description the hub base URL, e.g. http://hub.tailnet:8686 (CLI --hub)
@@ -14999,7 +15103,7 @@ export interface operations {
                     "application/json": components["schemas"]["OpsErrorResponse"];
                 };
             };
-            /** @description CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync before any hub I/O; NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error. */
+            /** @description CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled (force=true does not bypass this). CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync before any hub I/O when force=false; NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -17014,6 +17118,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KaraokeSummaryOut"];
+                };
+            };
+        };
+    };
+    post_lyrics_verdicts_backfill_api_v1_lyrics_verdicts_backfill_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LyricsVerdictBackfillIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsVerdictBackfillOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

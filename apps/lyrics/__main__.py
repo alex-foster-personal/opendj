@@ -42,6 +42,7 @@ from pathlib import Path
 from apps.lyrics.annotations import load_annotations, validate_against_songs
 from apps.lyrics.cli_pipeline import PIPELINE_COMMANDS, add_pipeline_commands, cmd_pipeline
 from apps.lyrics.cli_storage import STORAGE_COMMANDS, add_storage_commands, cmd_storage
+from apps.lyrics.cli_verdicts import VERDICTS_COMMANDS, add_verdicts_commands, cmd_verdicts
 from apps.lyrics.crosscheck import (
     WITNESS_LOCAL_WINDOW_S,
     crosscheck,
@@ -76,6 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="command", required=True)
     add_storage_commands(subcommands)
     add_pipeline_commands(subcommands)
+    add_verdicts_commands(subcommands)
 
     fetch = subcommands.add_parser("fetch", help="fetch and cache line-synced lyrics")
     fetch.add_argument("track", help="stable track id")
@@ -532,7 +534,7 @@ def _print_witness_table(
 #-----------------------------------------------------------------------------
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0911 - one return per subcommand family, explicit elif house style
     args = build_parser().parse_args(argv)
     if args.command == "fetch":
         return _cmd_fetch(args.data_dir, args.track)
@@ -559,6 +561,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cmd_storage(args)
     elif args.command in PIPELINE_COMMANDS:
         return cmd_pipeline(args)
+    elif args.command in VERDICTS_COMMANDS:
+        return cmd_verdicts(args)
     else:
         raise AssertionError(f"unhandled command {args.command!r}")
 

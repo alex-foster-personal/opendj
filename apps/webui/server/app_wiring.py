@@ -131,6 +131,11 @@ from .routes import usb_volumes_sim as usb_volumes_sim_routes
 from .routes import vocals as vocals_routes
 from .routes import voice_probe as voice_probe_routes
 from .routes import worktree_ports as worktree_ports_routes
+from .request_guard import (
+    host_allowlist_middleware,
+    install_request_guard,
+    origin_guard_middleware,
+)
 from .share_gate import ShareConfig, share_gate_middleware
 from .usage_telemetry import UsageStore
 
@@ -393,7 +398,7 @@ def _install_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(BackendError, handle_backend_error)
 
 
-def _configure_cors(app: FastAPI, frontend_port: int | None) -> None:
+def _configure_cors(app: FastAPI) -> None:
     # NOTE: wildcard allow_methods/allow_headers is safe because
     # allow_origins is restricted to the SvelteKit dev server on
     # loopback. If you set MUSIC_DJ_BIND_HOST to expose the daemon
@@ -402,34 +407,12 @@ def _configure_cors(app: FastAPI, frontend_port: int | None) -> None:
     # allow_headers=["Content-Type","If-Match"]. The If-Match header
     # must remain allowed for optimistic-concurrency preflights.
     # See apps/webui/README.md -> "CORS policy" for rationale.
-    worktree_origins = (
-        [
-            f"http://localhost:{frontend_port}",
-            f"http://127.0.0.1:{frontend_port}",
-        ]
-        if frontend_port is not None
-        else []
-    )
-    share_origin = os.environ.get("MUSIC_DJ_SHARE_ORIGIN", "").strip()
-    if not share_origin and app.state.share_config.host:
-        share_origin = f"https://{app.state.share_config.host}"
-    share_origins = [share_origin] if share_origin else []
+    trusted_origins = getattr(app.state, "trusted_origins", ())
+    trusted_origin_regex = getattr(app.state, "trusted_origin_regex", None)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            *worktree_origins,
-            *share_origins,
-            # Isolated e2e verify stacks (loopback-only, see
-            # .planning/rekordbox-parity/e2e*): frontend :5273/:5275
-            # talks to daemons :8686/:8688 via VITE_API_BASE.
-            "http://localhost:5273", "http://127.0.0.1:5273",
-            "http://localhost:5275", "http://127.0.0.1:5275",
-        ],
-        # scripts/bench/serve.py is a loopback static server for the
-        # vocal quality rater; its port is a CLI arg (8791 by default,
-        # 87xx in parallel runs), so it needs a pattern, not a literal.
-        # POST /bench/ratings from that page is preflighted.
-        allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):87\d\d$",
+        allow_origins=list(trusted_origins),
+        allow_origin_regex=trusted_origin_regex,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -444,6 +427,8 @@ def _configure_cors(app: FastAPI, frontend_port: int | None) -> None:
 
 
 def _configure_http_middleware(app: FastAPI, bind_host: str) -> None:
+    app.middleware("http")(host_allowlist_middleware)
+    app.middleware("http")(origin_guard_middleware)
     app.middleware("http")(share_gate_middleware)
 
     @app.middleware("http")

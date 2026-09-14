@@ -342,6 +342,7 @@ def test_scheduler_defers_when_deck_playing(tmp_path: Path, live_hub: str) -> No
         spoke,
         sync_fn=recording_sync,
         ui_mirror_provider=lambda: playing_mirror,
+        pressure_reader=lambda: {"available": True},
     )
     outcome = scheduler.run_round(live_hub, "spoke-playing")
 
