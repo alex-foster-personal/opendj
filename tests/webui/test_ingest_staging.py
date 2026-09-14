@@ -66,7 +66,7 @@ def test_possible_dup_held_as_part(client, app, monkeypatch):
     src = FIXTURES / "src-128.mp3"
     import mutagen
     dur_ms = int(mutagen.File(src).info.length * 1000)
-    other = FIXTURES / "src-256.mp3"
+    other = FIXTURES / "src-320.mp3"
     _seed_track(app, "near01", other, duration_ms=dur_ms)
 
     monkeypatch.setattr(
@@ -95,7 +95,7 @@ def test_decide_accept_renames_part(client, app, monkeypatch):
     src = FIXTURES / "src-128.mp3"
     import mutagen
     dur_ms = int(mutagen.File(src).info.length * 1000)
-    other = FIXTURES / "src-256.mp3"
+    other = FIXTURES / "src-320.mp3"
     _seed_track(app, "near02", other, duration_ms=dur_ms)
 
     monkeypatch.setattr(
@@ -127,7 +127,7 @@ def test_decide_reject_unlinks_part(client, app, monkeypatch):
     src = FIXTURES / "src-128.mp3"
     import mutagen
     dur_ms = int(mutagen.File(src).info.length * 1000)
-    other = FIXTURES / "src-256.mp3"
+    other = FIXTURES / "src-320.mp3"
     _seed_track(app, "near03", other, duration_ms=dur_ms)
 
     monkeypatch.setattr(
