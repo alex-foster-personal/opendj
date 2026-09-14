@@ -288,6 +288,7 @@ jobs:
         # installs. Both are a hard gate in ci.yml's `quality` job instead.
         run: |
           .venv/bin/pytest \
+            --basetemp="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-full-coverage" \
             --collect-floor 3700 \
             --ignore=tests/quality/test_frontend_typing_gate.py \
             --ignore=tests/quality/test_frontend_typing_directives.py \
