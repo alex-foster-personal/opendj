@@ -68,24 +68,48 @@ def test_health_adds_bind_warning_on_non_localhost(insecure_client):
 
 
 @pytest.mark.requirement("OPS-32")
-def test_health_process_env_keys_lists_names_never_values(client, monkeypatch):
-    """if process_env_keys omits a set var's NAME, or leaks its VALUE, then broken.
+def test_health_process_env_forbidden_keys_names_a_leaked_prefix_never_a_value(client, monkeypatch):
+    """if process_env_forbidden_keys omits a forbidden-prefixed var's NAME, or
+    leaks its VALUE, then broken.
 
     OPS-32 round 3: the post-install rollout probe reads this field instead
     of reading procargs2 off the engine's pid directly (measured Mon 14 Sep
     2026 to never see the real bundled engine's env that way). Names only --
     a value here would be the exact leak OPS-32 exists to prevent.
     """
-    monkeypatch.setenv("OPS32_ROUTE_TEST_CANARY", "super-secret-value-should-not-leak")
+    monkeypatch.setenv("R2_OPS32_ROUTE_TEST_CANARY", "super-secret-value-should-not-leak")
     r = client.get("/api/v1/health")
     assert r.status_code == 200
     body = r.json()
-    keys = body["process_env_keys"]
-    assert isinstance(keys, list)
-    assert all(isinstance(k, str) for k in keys)
-    assert "OPS32_ROUTE_TEST_CANARY" in keys
-    assert "HOME" in keys
+    forbidden = body["process_env_forbidden_keys"]
+    assert isinstance(forbidden, list)
+    assert all(isinstance(k, str) for k in forbidden)
+    assert "R2_OPS32_ROUTE_TEST_CANARY" in forbidden
+    assert body["process_env_home_present"] is True
     assert "super-secret-value-should-not-leak" not in r.text
+
+
+@pytest.mark.requirement("OPS-32")
+def test_health_never_discloses_a_benign_non_forbidden_env_name(client, monkeypatch):
+    """if a real, non-forbidden-prefix env var NAME appears anywhere in the
+    health body then broken.
+
+    OPS-32 round 4 (issue #2637/#2638 follow-on, Mon 14 Sep 2026): round 3's
+    `process_env_keys` field listed EVERY env var name, and that field was
+    readable by an UNAUTHENTICATED caller on a token-mode share host
+    (`/api/v1/health` is exempt from apps/webui/server/share_gate.py's auth
+    gate so cloudflared can probe it pre-auth). Narrowed to just the
+    forbidden-prefixed names plus one control bit, so a caller who should
+    never see this install's configuration cannot enumerate it. This is the
+    disclosure regression test: a benign env var name that does NOT match
+    any forbidden prefix must not surface anywhere in the raw response,
+    checked at the raw-text level so a future field cannot reintroduce the
+    leak under a different key name.
+    """
+    monkeypatch.setenv("OPS32_BENIGN_CANARY", "irrelevant-value")
+    r = client.get("/api/v1/health")
+    assert r.status_code == 200
+    assert "OPS32_BENIGN_CANARY" not in r.text
 
 
 @pytest.mark.requirement("CAT-05")
