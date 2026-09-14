@@ -14,6 +14,7 @@
  * (or any mode) from an absent row.
  */
 
+import { readApiErrorStatus } from '$lib/api/client';
 import {
 	SYNC_MODES,
 	type AssetKind,
@@ -208,11 +209,100 @@ export function chipShortLabel(status: CloudSyncStatus | null): string {
 	return 'inc';
 }
 
+// ----------------------------------------------------------- error presentation
+
+export const CLOUDSYNC_LOCAL_LOCK_SUMMARY =
+	'CloudSync conflict: another sync is already running. Wait for it to finish, then refresh status or try again.';
+export const CLOUDSYNC_REMOTE_409_SUMMARY =
+	'CloudSync conflict: the hub rejected this sync. Check the other device or hub, then try again when it is ready.';
+export const CLOUDSYNC_GENERIC_ERROR_SUMMARY =
+	'CloudSync sync failed. See technical details and try again.';
+export const CLOUDSYNC_TECHNICAL_DETAILS_LABEL = 'Technical details';
+
+export interface CloudSyncErrorPresentation {
+	summary: string;
+	ariaLabel: string;
+	details: string;
+	isConflict409: boolean;
+}
+
+function readApiErrorCode(error: unknown): string | null {
+	if (
+		typeof error === 'object' &&
+		error !== null &&
+		(error as { name?: string }).name === 'ApiError' &&
+		typeof (error as { code?: unknown }).code === 'string'
+	) {
+		return (error as { code: string }).code;
+	}
+	return null;
+}
+
+function errorMessage(error: unknown): string {
+	if (error instanceof Error) return error.message;
+	return String(error);
+}
+
+function isLocalLockConflict(code: string | null, raw: string): boolean {
+	return code === 'CLOUDSYNC_SYNC_IN_PROGRESS' || raw.includes('CLOUDSYNC_SYNC_IN_PROGRESS');
+}
+
+function isTransport409Conflict(raw: string): boolean {
+	return raw.includes('HTTP 409');
+}
+
+function isDeclaredSyncRefusal(code: string | null, raw: string): boolean {
+	return code === 'CLOUDSYNC_SYNC_REFUSED' || raw.includes('SyncDigestMismatch');
+}
+
+function buildErrorPresentation(
+	raw: string,
+	httpStatus: number | null,
+	code: string | null
+): CloudSyncErrorPresentation {
+	const localLock = isLocalLockConflict(code, raw);
+	const transport409 = isTransport409Conflict(raw);
+	const declaredRefusal = isDeclaredSyncRefusal(code, raw);
+	const isConflict409 = localLock || transport409 || declaredRefusal || httpStatus === 409;
+
+	let summary: string;
+	if (localLock) {
+		summary = CLOUDSYNC_LOCAL_LOCK_SUMMARY;
+	} else if (transport409 || declaredRefusal || httpStatus === 409) {
+		summary = CLOUDSYNC_REMOTE_409_SUMMARY;
+	} else {
+		summary = CLOUDSYNC_GENERIC_ERROR_SUMMARY;
+	}
+
+	return { summary, ariaLabel: summary, details: raw, isConflict409 };
+}
+
+/** Plain-word summary for a thrown sync error; raw text stays in details only. */
+export function presentCloudSyncError(error: unknown): CloudSyncErrorPresentation {
+	return buildErrorPresentation(errorMessage(error), readApiErrorStatus(error), readApiErrorCode(error));
+}
+
+/** Plain-word summary for a journaled sync result row or chip last_result. */
+export function presentCloudSyncResultError(result: {
+	status: string;
+	message: string;
+}): CloudSyncErrorPresentation {
+	if (result.status !== 'error') {
+		return {
+			summary: result.message,
+			ariaLabel: result.message,
+			details: result.message,
+			isConflict409: false
+		};
+	}
+	return buildErrorPresentation(result.message, null, null);
+}
+
 export function chipTitle(status: CloudSyncStatus | null, loadError: string | null): string {
 	if (status === null) {
 		return loadError === null
 			? 'CloudSync status - still loading from the daemon. Click after it loads to see details.'
-			: `CloudSync status unavailable: ${loadError}. Click to retry details.`;
+			: 'CloudSync status unavailable. Click to retry details.';
 	}
 	const state = chipState(status);
 	const next = 'Click to open CloudSync.';
@@ -220,7 +310,11 @@ export function chipTitle(status: CloudSyncStatus | null, loadError: string | nu
 		return `CloudSync is off${status.reason ? ` (${status.reason})` : ''}. ${next}`;
 	}
 	if (state === 'error') {
-		return `CloudSync error: ${status.last_result?.message ?? 'last sync failed'}. ${next}`;
+		const summary =
+			status.last_result !== null && status.last_result !== undefined
+				? presentCloudSyncResultError(status.last_result).summary
+				: CLOUDSYNC_GENERIC_ERROR_SUMMARY;
+		return `${summary} ${next}`;
 	}
 	if (state === 'inconclusive') {
 		return `CloudSync last run was inconclusive - agreement was not verified. ${next}`;
@@ -229,6 +323,20 @@ export function chipTitle(status: CloudSyncStatus | null, loadError: string | nu
 		return `CloudSync last succeeded ${relativeTime(status.last_push_at)}. ${next}`;
 	}
 	return `CloudSync is syncing${status.rows_pending !== null ? ` (${status.rows_pending} rows pending)` : ''}. ${next}`;
+}
+
+export function chipAriaLabel(status: CloudSyncStatus | null, loadError: string | null): string {
+	if (status === null) {
+		return loadError === null ? 'CloudSync status' : 'CloudSync status unavailable';
+	}
+	if (chipState(status) === 'error') {
+		const summary =
+			status.last_result !== null && status.last_result !== undefined
+				? presentCloudSyncResultError(status.last_result).summary
+				: CLOUDSYNC_GENERIC_ERROR_SUMMARY;
+		return summary;
+	}
+	return 'CloudSync status';
 }
 
 // ----------------------------------------------------------- sync now

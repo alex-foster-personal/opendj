@@ -11,6 +11,8 @@
  * - if enabling does not bring a fresh heartbeat (Running: yes) and light the chip -> broken.
  * - if the chip needs a reload to leave 'off' once the heartbeat is fresh -> broken.
  * - if a cell with no stored policy shows anything but 'unset', or its budget is live -> broken.
+ * - if a real declared 409 does not surface a plain conflict summary with raw text only in
+ *   Technical details -> broken.
  */
 import { expect, test, type Page } from '@playwright/test';
 
@@ -125,5 +127,66 @@ test('config, Sync now, journal row, fleet, then a live heartbeat lights the chi
 	await expect(
 		spokeRow.locator('[data-testid="cloudsync-policy-cell"][data-asset-kind="audio"] select')
 	).toHaveValue('unset');
+	expect(serverErrors).toEqual([]);
+});
+
+// requirement: CSSTATUS-04
+// [if] CloudSync returns a real declared 409 [then] the status UI names the conflict and next step while raw diagnostics appear only under Technical details, [else stop]
+test('a real declared 409 shows a plain conflict summary and technical details only on expand', async ({
+	page,
+	request
+}) => {
+	const spoke409 = `${SPOKE_NAME}-409`;
+	const serverErrors: string[] = [];
+	const syncStatuses: number[] = [];
+	page.on('response', (r) => {
+		if (r.status() >= 500) serverErrors.push(`${r.status()} ${r.request().method()} ${r.url()}`);
+		if (r.url().endsWith('/api/v1/cloudsync/sync') && r.request().method() === 'POST') {
+			syncStatuses.push(r.status());
+		}
+	});
+
+	await page.goto(`${CLOUDSYNC_UI_ORIGIN}/cloudsync`);
+
+	const configured = await request.put(`${CLOUDSYNC_UI_ORIGIN}/api/v1/cloudsync/config`, {
+		data: { enabled: false, hub_url: CLOUDSYNC_UI_HUB_URL, machine_name: spoke409 }
+	});
+	expect(configured.status()).toBe(200);
+	const configBody = await configured.json();
+	expect(configBody.effective.hub_url).toBe(CLOUDSYNC_UI_HUB_URL);
+	await page.reload();
+	const syncNow = page.getByTestId('cloudsync-sync-now');
+	await expect(syncNow).toBeEnabled();
+
+	await page.evaluate(
+		([hubUrl, machineName]) => {
+			void fetch('/api/v1/cloudsync/sync', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ hub_url: hubUrl, name: machineName })
+			});
+		},
+		[CLOUDSYNC_UI_HUB_URL, spoke409] as const
+	);
+
+	const refused = page.waitForResponse(
+		(r) =>
+			r.url().endsWith('/api/v1/cloudsync/sync') &&
+			r.request().method() === 'POST' &&
+			r.status() === 409
+	);
+	await syncNow.click();
+	const refusedResponse = await refused;
+	expect(refusedResponse.status()).toBe(409);
+	await expect.poll(() => syncStatuses.filter((status) => status === 409).length).toBeGreaterThan(0);
+
+	const notice = page.getByTestId('cloudsync-notice');
+	await expect(notice).toContainText('Sync failed:');
+	await expect(notice).toContainText(/another sync is already running/);
+	await expect(notice).not.toContainText('HTTP 409');
+	await expect(notice).not.toContainText(CLOUDSYNC_UI_HUB_URL);
+	await page.getByTestId('cloudsync-notice-details').locator('summary').click();
+	await expect(page.getByTestId('cloudsync-notice-details')).toContainText(/already running against this data dir/);
+
 	expect(serverErrors).toEqual([]);
 });

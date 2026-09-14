@@ -22,6 +22,7 @@
 	} from './track-edit-menu';
 	import { removeFromLibraryMenuItem } from './track-library-menu';
 	import { showInPlaylistsMenuItem } from './track-playlists-menu';
+	import { relocateMenuItem } from './track-relocate-menu';
 
 	type DeckId = 1 | 2 | 3 | 4;
 	const DECKS: DeckId[] = [1, 2, 3, 4];
@@ -38,7 +39,8 @@
 		onremovefromlibrary,
 		onremoverow,
 		removable = false,
-		onshowinplaylists
+		onshowinplaylists,
+		onrelocate
 	}: {
 		selectedIds: string[];
 		selectedOrders: number[];
@@ -52,6 +54,7 @@
 		onremoverow?: ((row: BrowserRow) => void) | undefined;
 		removable?: boolean;
 		onshowinplaylists: (row: BrowserRow, x: number, y: number) => void;
+		onrelocate: (row: BrowserRow, x: number, y: number) => void;
 	} = $props();
 
 	let menu = $state<{
@@ -110,7 +113,7 @@
 			},
 			{ id: 'edit', label: 'Edit' },
 			...trackEditMenuItems(targetIds.length, onopeneditmodal),
-			{ id: 'relocate', label: 'Relocate' },
+			relocateMenuItem(() => onrelocate(row, menuX, menuY)),
 			{
 				id: 'finder',
 				label: 'Show in Finder',
