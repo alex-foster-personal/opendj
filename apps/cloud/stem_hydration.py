@@ -41,9 +41,8 @@ from pathlib import Path
 from typing import Literal
 
 from apps.cloud import asset_store, policy, stem_index
-from apps.cloud.asset_store import AssetS3Client
-from apps.cloud.config import CloudConfig
 from apps.cloud.eviction import BYTES_PER_MB, HydrationError
+from apps.cloud.stem_source import StemHydrationSource, StemSourceError
 from apps.stems.artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
@@ -207,45 +206,11 @@ def _is_local(stable_id: str, stems_dir: Path) -> bool:
     return True
 
 
-def _bundle_remote_size(
-    cfg: CloudConfig,
-    s3: AssetS3Client,
-    file_hashes: dict[str, str],
-) -> int | None:
-    """Sum HEAD sizes for every indexed file, or ``None`` if any object is absent."""
-    total = 0
-    for digest in file_hashes.values():
-        head = asset_store.head_asset(cfg, s3, digest)
-        if head is None:
-            return None
-        total += head.size
-    return total
-
-
-def _fetch_bundle_files(
-    cfg: CloudConfig,
-    s3: AssetS3Client,
-    *,
-    file_hashes: dict[str, str],
-    tmp_dir: Path,
-) -> int:
-    """Fetch every file the index names into ``tmp_dir`` (already created,
-    empty, and unique to this call). Never touches ``bundle_dir`` -- the
-    caller decides when/whether to publish."""
-    total = 0
-    for filename, digest in file_hashes.items():
-        dest = tmp_dir / filename
-        asset_store.fetch_asset(cfg, s3, digest, dest)
-        total += dest.stat().st_size
-    return total
-
-
 def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch, all real states
     stable_id: str,
     *,
     data_dir: Path,
-    cfg: CloudConfig,
-    s3: AssetS3Client,
+    source: StemHydrationSource,
     index: stem_index.StemAssetIndex,
     stems_dir: Path | None = None,
     skip_reserved: bool = False,
@@ -307,7 +272,11 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
         )
         renamed = False
         try:
-            total = _fetch_bundle_files(cfg, s3, file_hashes=file_hashes, tmp_dir=tmp_dir)
+            total = source.fetch_bundle_files(
+                stable_id=stable_id,
+                file_hashes=file_hashes,
+                tmp_dir=tmp_dir,
+            )
             if bundle_dir.exists():
                 # Cross-process race: something else already published a
                 # valid bundle while we were fetching. Keep the winner,
@@ -324,6 +293,7 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
             asset_store.AssetStoreError,
             StemArtifactError,
             StemBundleNotFoundError,
+            StemSourceError,
             OSError,
         ) as exc:
             if renamed:
@@ -348,8 +318,7 @@ def bulk_hydrate(
     stable_ids: Sequence[str],
     *,
     data_dir: Path,
-    cfg: CloudConfig,
-    s3: AssetS3Client,
+    source: StemHydrationSource,
     index: stem_index.StemAssetIndex,
     byte_budget: int,
     include_reserved: bool = False,
@@ -377,7 +346,9 @@ def bulk_hydrate(
         if not _is_local(stable_id, root):
             file_hashes = index.get(stable_id)
             if file_hashes and stem_index.MANIFEST_FILENAME in file_hashes:
-                bundle_size = _bundle_remote_size(cfg, s3, file_hashes)
+                bundle_size = source.bundle_remote_size(
+                    file_hashes, stable_id=stable_id
+                )
                 if bundle_size is not None and bytes_used + bundle_size > byte_budget:
                     remaining = byte_budget - bytes_used
                     skipped.append(
@@ -394,8 +365,7 @@ def bulk_hydrate(
         outcome = hydrate_one(
             stable_id,
             data_dir=data_dir,
-            cfg=cfg,
-            s3=s3,
+            source=source,
             index=index,
             stems_dir=stems_dir,
             skip_reserved=not include_reserved,

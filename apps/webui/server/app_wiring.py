@@ -13,7 +13,7 @@ import threading
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -135,10 +135,6 @@ from .share_gate import ShareConfig, share_gate_middleware
 from .usage_telemetry import UsageStore
 
 log = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from apps.cloud.config import CloudConfig
-
 
 class _SpaStaticFiles(StaticFiles):
     """Serve the SPA shell for extensionless client-side routes.
@@ -331,62 +327,53 @@ def _bind_stem_and_usage(
     app.state.usage_store = usage_store if usage_store is not None else UsageStore()
 
 
-def _startup_stem_index_refresh(cfg: CloudConfig, s3, data_dir: Path) -> None:
-    from apps.cloud import stem_index
-
+def _startup_stem_index_refresh(source, data_dir: Path) -> None:
     with suppress(Exception):
-        # recorded via stem_index.refresh_error(data_dir); startup must not crash on this
-        stem_index.refresh_local_cache_from_r2_throttled(cfg, s3, data_dir, force=True)
+        source.refresh_index(Path(data_dir), force=True)
 
 
 def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None:
-    """Wire on-demand R2 stem hydration deps onto ``app.state`` (ADR-0024),
-    or leave them unset.
+    """Wire on-demand stem hydration onto ``app.state`` (ADR-0024 / ADR-0025),
+    or leave it unset.
 
     Unset is a legitimate machine state, not a failure: local mode, or a
-    machine with no R2 credentials, simply never hydrates on demand.
-    ``apps.webui.server.routes.stems`` checks each attribute for ``None`` and
-    falls back to its pre-hydration behavior rather than raising -- the same
-    "cfg may be omitted" contract ``resolve_playback_source`` already
-    documents in ``apps/cloud/hydration_core.py``.
+    machine with neither R2 credentials nor a configured hub, simply never
+    hydrates on demand. Routes check ``stem_hydration_source`` for ``None``
+    and fall back to pre-hydration behavior.
 
-    Configured but unable to arm (cloud mode, credentials resolve, no boto3)
-    is NOT that legitimate state: the engine still boots, but
-    ``stem_hydration_unarmed_reason`` is set and the stems routes answer a
-    miss with 502 STEM_HYDRATION_NOT_ARMED.
+    Configured but unable to arm (cloud mode with R2 credentials but no boto3,
+    or CloudSync enabled but hub unreachable / no sync credential at boot) is
+    NOT that legitimate state: the engine still boots, but
+    ``stem_hydration_unarmed_reason`` is set and stems misses answer 502
+    ``STEM_HYDRATION_NOT_ARMED``.
     """
-    app.state.stem_hydration_cfg = None
-    app.state.stem_hydration_s3 = None
+    from apps.cloud.stem_source import DirectR2Source, arm_stem_hydration_source
+
+    app.state.stem_hydration_source = None
     app.state.stem_hydration_data_dir = None
     app.state.stem_hydration_unarmed_reason = None
+    # Legacy test injection points; production uses stem_hydration_source.
+    app.state.stem_hydration_cfg = None
+    app.state.stem_hydration_s3 = None
     if not enabled:
         return
-    from apps.cloud import asset_store, policy
-    from apps.cloud.config import CloudConfig, MissingEnvError
-
-    if policy.CFG.mode != "cloud":
+    data_dir = Path(data_dir)
+    armed = arm_stem_hydration_source(data_dir)
+    if armed.unarmed_reason is not None:
+        app.state.stem_hydration_unarmed_reason = armed.unarmed_reason
+        app.state.stem_hydration_data_dir = data_dir
         return
-    try:
-        cfg = CloudConfig.from_env()
-        asset_store.require_credentials(cfg)
-    except MissingEnvError:
+    source = armed.source
+    if source is None:
         return
-    try:
-        s3 = asset_store.boto3_asset_client(cfg)
-    except asset_store.AssetStoreError as exc:
-        # The packaged engine ships without the cloud extra, so boto3 can be
-        # absent even when R2 credentials resolve. Keep the engine up, but
-        # record the reason so every stems miss fails loud with it (502
-        # STEM_HYDRATION_NOT_ARMED), never the ordinary "no bundle" state.
-        log.warning("stem-hydration: R2 credentials resolve but hydration is NOT armed: %s", exc)
-        app.state.stem_hydration_unarmed_reason = str(exc)
-        return
-    app.state.stem_hydration_cfg = cfg
-    app.state.stem_hydration_s3 = s3
-    app.state.stem_hydration_data_dir = Path(data_dir)
+    app.state.stem_hydration_source = source
+    app.state.stem_hydration_data_dir = data_dir
+    if isinstance(source, DirectR2Source):
+        app.state.stem_hydration_cfg = source.cfg
+        app.state.stem_hydration_s3 = source.s3
     threading.Thread(
         target=_startup_stem_index_refresh,
-        args=(cfg, app.state.stem_hydration_s3, Path(data_dir)),
+        args=(source, data_dir),
         name="opendj-stem-index-startup-refresh",
         daemon=True,
     ).start()
