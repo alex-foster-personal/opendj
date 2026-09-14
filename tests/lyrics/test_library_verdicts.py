@@ -36,6 +36,7 @@ from pathlib import Path
 import pytest
 
 from apps.lyrics import library_verdicts, store
+from apps.shared.state import db as state_db
 from apps.vocals import cache as vcache
 from apps.vocals import from_stems as vfrom_stems
 from apps.webui.server.stem_artifacts import (
@@ -73,6 +74,15 @@ requires_mp3_loader = pytest.mark.skipif(
 requires_ffmpeg = pytest.mark.skipif(
     shutil.which("ffmpeg") is None, reason="ffmpeg not on PATH"
 )
+#: mode-000 only blocks reads for a NON-root process -- root bypasses
+#: filesystem permission checks entirely (the kernel, not this project's
+#: code, decides that), so any fixture built on ``os.chmod(0o000)`` cannot
+#: be produced for real under root. Rebutted rather than mocked: skipped in
+#: that one environment, stating why, while sibling real fixtures (a
+#: removed file, a directory where a file is expected) still exercise the
+#: same code path. Defined once here (not per-use-site) so every skipif
+#: below shares the SAME probe.
+_RUNNING_AS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
 #: Tests that render real MP3 fixtures AND run them through the actual
 #: coverage decode (``derive_worker_result``) need all three: ffmpeg to
 #: render the fixture, PR #2593 to load it, and the ``analysis`` extra
@@ -670,6 +680,192 @@ def test_freshness_skips_an_unchanged_bundle(conn, data_dir) -> None:
 
 
 #-----------------------------------------------------------------------------
+# post-load filesystem faults (Sol review round 6, PR #2611): after
+# load_stem_bundle succeeds, _bundle_source_label / _cached_coverage_pct
+# re-stat the manifest and every part file a SECOND time (see
+# bundle_stem_identity's docstring). A part removed or made unreadable in
+# that interval must be reported as a per-track FAILURE, never abort the
+# whole backfill and never be silently skipped. Every fault below is REAL:
+# a genuine successful load followed by a real os.remove()/chmod(0o000) on
+# the same bundle -- no monkeypatching load_stem_bundle, _bundle_source_
+# label, or bundle_stem_identity anywhere in this section. Single-threaded
+# Python has no way to pause a synchronous _scan_candidate/backfill_verdicts
+# call BETWEEN its internal load and its internal re-stat to inject the
+# mutation mid-flight without a timing race (rejected: flaky, and this
+# project's no-mocks rule bars faking the scheduling point instead) -- so
+# these tests call the exact post-load seams _scan_candidate/backfill_
+# verdicts are built from (_classify_loaded_bundle, _write_candidate)
+# directly, with the real mutation performed in between, proving the SAME
+# production code the orchestration calls internally.
+#-----------------------------------------------------------------------------
+def test_classify_loaded_bundle_reports_a_vanished_part_as_a_failure(data_dir) -> None:
+    """P1 BLOCKING fix (Sol review round 6, PR #2611, library_verdicts.py
+    _scan_candidate / _bundle_source_label): a part removed after a real,
+    successful load must come back as _ScanOutcome.fail_reason, never raise
+    and propagate out of the scan phase (which would abort the whole run for
+    every OTHER candidate too)."""
+    stems_root = _stems_root(data_dir)
+    bundle_dir = _write_wav_bundle(stems_root, "sid-vanish-scan-001", source_sha256="1" * 64)
+    # a REAL, successful load
+    bundle = load_stem_bundle("sid-vanish-scan-001", stems_dir=stems_root)
+    (bundle_dir / "vocals.wav").unlink()  # a REAL part gone, in the post-load window
+
+    outcome = library_verdicts._classify_loaded_bundle("sid-vanish-scan-001", None, bundle)
+
+    assert outcome.attempt is None
+    assert outcome.skip_reason is None
+    assert outcome.fail_reason is not None
+    assert "vocals.wav" in outcome.fail_reason
+
+
+@pytest.mark.skipif(
+    _RUNNING_AS_ROOT,
+    reason="root bypasses filesystem permission checks; mode 000 cannot "
+    "produce a real permission failure under root",
+)
+def test_classify_loaded_bundle_reports_an_unreadable_bundle_dir_as_a_failure(
+    data_dir,
+) -> None:
+    """Sibling real fixture: the bundle DIRECTORY made unreadable (mode 000)
+    after a successful load blocks the second stat() pass with a genuine,
+    kernel-enforced ``PermissionError`` -- a different real-fault flavor
+    from a removed part, same code path."""
+    stems_root = _stems_root(data_dir)
+    bundle_dir = _write_wav_bundle(stems_root, "sid-unreadable-scan-001", source_sha256="2" * 64)
+    bundle = load_stem_bundle("sid-unreadable-scan-001", stems_dir=stems_root)
+    bundle_dir.chmod(0o000)
+    try:
+        outcome = library_verdicts._classify_loaded_bundle(
+            "sid-unreadable-scan-001", None, bundle
+        )
+    finally:
+        # Restore so pytest's tmp_path teardown can remove it.
+        bundle_dir.chmod(0o755)
+
+    assert outcome.fail_reason is not None
+    assert outcome.attempt is None
+    assert outcome.skip_reason is None
+
+
+def test_cached_coverage_pct_raises_when_a_part_vanishes_after_load(data_dir) -> None:
+    """Same real fault, the SECOND unguarded call site (Sol review round 6):
+    ``_cached_coverage_pct``'s bundle-identity comparison re-checks
+    ``bundle_stem_identity`` in the WRITE phase, independently of the scan
+    phase's own check. A part removed after load must raise ``RuntimeError``
+    here (matching this function's existing pattern for its OTHER
+    filesystem read, the vocal-cache file itself) so ``backfill_verdicts``'s
+    write loop -- which already catches ``RuntimeError`` -- turns it into a
+    per-track FAILURE instead of an unhandled ``OSError`` aborting the run."""
+    stems_root = _stems_root(data_dir)
+    bundle_dir = _write_wav_bundle(stems_root, "sid-vanish-cache-001", source_sha256="3" * 64)
+    bundle = load_stem_bundle("sid-vanish-cache-001", stems_dir=stems_root)
+    _seed_matching_cache(data_dir, "sid-vanish-cache-001", bundle, coverage_pct=42.0)
+    (bundle_dir / "drums.wav").unlink()  # a REAL part gone, after both the load AND the cache seed
+
+    with pytest.raises(RuntimeError, match="could not be re-checked"):
+        library_verdicts._cached_coverage_pct(data_dir, "sid-vanish-cache-001", bundle)
+
+
+def test_write_candidate_reports_a_vanished_part_as_a_failure_not_an_abort(
+    conn, data_dir
+) -> None:
+    """End-to-end proof for the write-phase seam ``backfill_verdicts`` calls
+    internally: given a candidate whose bundle was scanned and cached
+    successfully, then a real part vanishes before the write step runs,
+    ``_write_candidate`` must return ``_WriteOutcome.fail_reason`` -- never
+    raise -- so the caller's loop can keep going to the next candidate."""
+    seed_track(conn, "sid-vanish-write-001")
+    stems_root = _stems_root(data_dir)
+    bundle_dir = _write_wav_bundle(stems_root, "sid-vanish-write-001", source_sha256="4" * 64)
+    bundle = load_stem_bundle("sid-vanish-write-001", stems_dir=stems_root)
+    expected_source = library_verdicts._bundle_source_label(bundle)  # the SCAN phase's own call
+    _seed_matching_cache(data_dir, "sid-vanish-write-001", bundle, coverage_pct=17.0)
+    (bundle_dir / "bass.wav").unlink()  # real fault, landing AFTER the scan already succeeded
+
+    outcome = library_verdicts._write_candidate(
+        conn, data_dir, "sid-vanish-write-001", bundle, expected_source
+    )
+
+    assert outcome.fail_reason is not None
+    assert outcome.race_lost is False
+    assert store.get_verdict(conn, "sid-vanish-write-001") is None
+
+
+def test_backfill_continues_past_one_candidates_real_filesystem_fault(
+    conn, data_dir
+) -> None:
+    """Full-orchestration proof that a real post-load filesystem fault on
+    ONE candidate is reported as a FAILURE by name while a SIBLING candidate
+    is computed normally in the SAME run -- driven through
+    ``backfill_verdicts``'s own two composable phases (``_scan_candidate``
+    then ``_write_candidate``), in the same shape ``backfill_verdicts``
+    itself uses them, because a single synchronous call to
+    ``backfill_verdicts`` cannot be paused mid-flight to inject the real
+    mutation exactly between its internal scan and write phases without a
+    timing race. Every decision below (skip/fail/attempt, written/race/fail)
+    is made by the SAME production functions ``backfill_verdicts`` calls;
+    nothing here reimplements its logic."""
+    seed_track(conn, "sid-vanish-sibling-victim-001")
+    seed_track(conn, "sid-vanish-sibling-ok-001")
+    stems_root = _stems_root(data_dir)
+    demucs_root, roformer_root = library_verdicts._bundle_roots(data_dir)
+
+    victim_dir = _write_wav_bundle(
+        stems_root, "sid-vanish-sibling-victim-001", source_sha256="5" * 64
+    )
+    _write_wav_bundle(stems_root, "sid-vanish-sibling-ok-001", source_sha256="6" * 64)
+
+    # Scan phase: both candidates load and classify successfully for real,
+    # exactly as backfill_verdicts's own scan loop would do.
+    victim_outcome = library_verdicts._scan_candidate(
+        conn,
+        "sid-vanish-sibling-victim-001",
+        reserved=frozenset(),
+        demucs_root=demucs_root,
+        roformer_root=roformer_root,
+    )
+    ok_outcome = library_verdicts._scan_candidate(
+        conn,
+        "sid-vanish-sibling-ok-001",
+        reserved=frozenset(),
+        demucs_root=demucs_root,
+        roformer_root=roformer_root,
+    )
+    assert victim_outcome.attempt is not None
+    assert ok_outcome.attempt is not None
+    # Both candidates get a matching vocal-cache entry BEFORE the mutation,
+    # exactly as a real prior ``from-stems`` run would have left one -- this
+    # is what routes the write phase through the vulnerable bundle-identity
+    # comparison instead of a real (soundfile-dependent) decode.
+    _seed_matching_cache(
+        data_dir, "sid-vanish-sibling-victim-001", victim_outcome.attempt[1], coverage_pct=71.0
+    )
+    _seed_matching_cache(
+        data_dir, "sid-vanish-sibling-ok-001", ok_outcome.attempt[1], coverage_pct=63.0
+    )
+
+    # The real fault: the victim's part vanishes AFTER its scan already
+    # succeeded, before the write phase reaches it.
+    (victim_dir / "other.wav").unlink()
+
+    # Write phase: same call backfill_verdicts's own write loop makes, for
+    # each scanned candidate in turn.
+    victim_write = library_verdicts._write_candidate(
+        conn, data_dir, *victim_outcome.attempt
+    )
+    ok_write = library_verdicts._write_candidate(conn, data_dir, *ok_outcome.attempt)
+
+    assert victim_write.fail_reason is not None, "the victim must be a FAILURE, not silent"
+    assert ok_write.fail_reason is None and ok_write.race_lost is False, (
+        "the untouched sibling must still be computed normally in the same run"
+    )
+    assert store.get_verdict(conn, "sid-vanish-sibling-victim-001") is None
+    ok_verdict = store.get_verdict(conn, "sid-vanish-sibling-ok-001")
+    assert ok_verdict is not None
+    assert ok_verdict.coverage_pct == 63.0
+
+
+#-----------------------------------------------------------------------------
 # vocal-cache identity guard: fast, stdlib-only (no ffmpeg / no soundfile),
 # so these run in every environment including this repo's dev-only venv.
 #-----------------------------------------------------------------------------
@@ -854,15 +1050,6 @@ def test_cached_coverage_pct_raises_on_a_present_but_corrupt_cache_entry(data_di
 
     with pytest.raises(RuntimeError, match="not valid JSON"):
         library_verdicts._cached_coverage_pct(data_dir, "sid-cache-corrupt-001", bundle)
-
-
-#: mode-000 only blocks reads for a NON-root process -- root bypasses
-#: filesystem permission checks entirely (the kernel, not this project's
-#: code, decides that), so this specific fixture cannot be produced for
-#: real under root. Rebutted rather than mocked: skipped in that one
-#: environment, stating why, while the OTHER two real fixtures (corrupt
-#: JSON, a directory at the path) still exercise the same code path.
-_RUNNING_AS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
 
 
 @pytest.mark.skipif(
@@ -1085,84 +1272,86 @@ def test_stale_vocal_cache_from_a_replaced_bundle_is_not_reused(conn, data_dir) 
 # plus a matching vocal-cache entry means no ffmpeg/soundfile decode either).
 #-----------------------------------------------------------------------------
 def test_backfill_never_clobbers_a_word_row_written_during_the_race(
-    conn, data_dir, monkeypatch
+    conn, data_dir
 ) -> None:
-    """P1 BLOCKING fix (Devin review, PR #2611, library_verdicts.py:304), then
-    strengthened by a Sol follow-up review at 8d2dc8ddb9: the scan phase's
-    ``store.get_verdict`` check for SKIP_HAS_WORDS is not atomic with the
-    write phase's write, so a real ASR/aligner write can land in the gap
-    between them. This drives that exact gap: a concurrent writer sets
-    word-level data on the row from inside ``coverage_pct_for_bundle``
-    (called immediately before this module's own write, after the scan
-    already decided not to skip).
+    """P1 BLOCKING fix (Devin review, PR #2611, library_verdicts.py:304),
+    strengthened by a Sol follow-up review at 8d2dc8ddb9, then REWRITTEN for
+    a Sol round-6 review (PR #2611): the earlier version of this test drove
+    the race by ``monkeypatch.setattr``-ing ``coverage_pct_for_bundle``,
+    fabricating the scheduling point instead of exercising a genuine
+    concurrent writer -- against this project's no-mocks test contract. This
+    version drives the SAME race with REAL SQLite concurrency: the scan
+    phase runs for real and captures its candidate, a SEPARATE
+    ``sqlite3`` connection (:func:`apps.shared.state.db.open_rw` on the SAME
+    on-disk db file -- a genuinely different connection, not a second handle
+    faked in-process) commits a real word-level row, and ONLY THEN does the
+    write step run with that now-stale candidate -- the exact shape
+    ``backfill_verdicts``'s own scan-then-write loop uses, just driven one
+    candidate at a time so the concurrent write can land for real in
+    between.
 
     The first fix (``COALESCE``-preserving n_words/n_lines/words_content_hash
     inside the SHARED ``upsert_verdict``) protected only those three columns
     -- the Sol follow-up pointed out that verdict/coverage_pct/source/
     language_iso3/pct_witness_red/pipeline_version/computed_at were all still
-    silently overwritten with stem-only values. This test now asserts the
-    row that landed mid-race survives WHOLLY intact, every column, and that
-    the backfill's own write is counted as a race loss
-    (``SKIP_PROTECTED_ROW_RACE``), never folded into ``processed``."""
+    silently overwritten with stem-only values. This test asserts the row
+    that landed mid-race survives WHOLLY intact, every column, and that the
+    write step reports the loss as a race
+    (:attr:`library_verdicts._WriteOutcome.race_lost`), never a silent
+    success."""
     seed_track(conn, "sid-race-001")
     stems_root = _stems_root(data_dir)
     _write_wav_bundle(stems_root, "sid-race-001", source_sha256="9" * 64)
     bundle = load_stem_bundle("sid-race-001", stems_dir=stems_root)
-    cache_path = vcache.cache_path(data_dir, "sid-race-001")
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    cache_path.write_text(
-        json.dumps(
-            {
-                "schema": vcache.VOCAL_CACHE_SCHEMA,
-                "coverage_pct": 5.0,
-                "duration_s": library_verdicts._bundle_duration_s(bundle),
-                "params": {
-                    "derived_from_stems": True,
-                    "bundle_layout": bundle.layout,
-                    "bundle_stem_sha256": vfrom_stems.bundle_stem_identity(bundle),
-                },
-            }
-        ),
-        encoding="utf-8",
+    _seed_matching_cache(data_dir, "sid-race-001", bundle, coverage_pct=5.0)
+
+    # Scan phase: a real, unmocked candidate capture -- the row has no
+    # verdict at all yet, so the scan schedules a fresh compute.
+    demucs_root, roformer_root = library_verdicts._bundle_roots(data_dir)
+    scan_outcome = library_verdicts._scan_candidate(
+        conn,
+        "sid-race-001",
+        reserved=frozenset(),
+        demucs_root=demucs_root,
+        roformer_root=roformer_root,
     )
+    assert scan_outcome.attempt is not None, "setup bug: scan must find a fresh candidate"
 
-    real_coverage_pct_for_bundle = library_verdicts.coverage_pct_for_bundle
+    # REAL concurrent writer: a genuinely separate connection to the SAME
+    # on-disk db file, committing a real word-level row for this stable_id
+    # -- not a function call intercepted in-process. Every field a
+    # coverage-only write could otherwise touch gets a distinctive,
+    # non-default value so the assertions below can catch ANY of them
+    # getting overwritten.
+    second_conn = state_db.open_rw(data_dir / "state" / "state.db", apply_schema=False)
+    try:
+        store.upsert_verdict(
+            second_conn,
+            stable_id="sid-race-001",
+            verdict="vocal",
+            coverage_pct=91.0,
+            source="asr-real-run",
+            language_iso3="eng",
+            n_words=42,
+            n_lines=6,
+            pct_witness_red=12.5,
+            pipeline_version="asr-v9",
+            words_content_hash="a" * 64,
+            computed_at="2026-09-14T00:00:00Z",
+            resurrect=False,
+        )
+    finally:
+        second_conn.close()
 
-    def _racing_coverage_pct_for_bundle(data_dir_arg, stable_id, bundle_arg):
-        if stable_id == "sid-race-001":
-            # The real ASR/aligner pipeline writes its own row IN THE GAP
-            # between the scan phase's get_verdict check (already passed,
-            # since it found no row at all) and this module's own write, a
-            # few lines below this return. Every field a coverage-only write
-            # could otherwise touch gets a distinctive, non-default value so
-            # an assertion below can catch ANY of them getting overwritten.
-            store.upsert_verdict(
-                conn,
-                stable_id="sid-race-001",
-                verdict="vocal",
-                coverage_pct=91.0,
-                source="asr-real-run",
-                language_iso3="eng",
-                n_words=42,
-                n_lines=6,
-                pct_witness_red=12.5,
-                pipeline_version="asr-v9",
-                words_content_hash="a" * 64,
-                computed_at="2026-09-14T00:00:00Z",
-                resurrect=False,
-            )
-        return real_coverage_pct_for_bundle(data_dir_arg, stable_id, bundle_arg)
+    # Write step, driven with the STALE candidate captured BEFORE the
+    # concurrent write landed -- the same call backfill_verdicts's own
+    # write loop makes for each scanned candidate.
+    write_outcome = library_verdicts._write_candidate(conn, data_dir, *scan_outcome.attempt)
 
-    monkeypatch.setattr(
-        library_verdicts, "coverage_pct_for_bundle", _racing_coverage_pct_for_bundle
+    assert write_outcome.race_lost is True, (
+        "a race loss must be detected, not silently written over"
     )
-
-    report = library_verdicts.backfill_verdicts(
-        conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False
-    )
-
-    assert report.processed == (), "a race loss must never be counted as processed"
-    assert report.skipped.get(library_verdicts.SKIP_PROTECTED_ROW_RACE) == ("sid-race-001",)
+    assert write_outcome.fail_reason is None
     verdict = store.get_verdict(conn, "sid-race-001")
     assert verdict is not None
     # EVERY field of the word-level row must survive untouched -- not just
@@ -1179,18 +1368,13 @@ def test_backfill_never_clobbers_a_word_row_written_during_the_race(
     assert verdict.computed_at == "2026-09-14T00:00:00Z"
 
 
-def test_backfill_never_clobbers_a_row_overridden_during_the_race(
-    conn, data_dir, monkeypatch
-) -> None:
+def test_backfill_never_clobbers_a_row_overridden_during_the_race(conn, data_dir) -> None:
     """Sibling of the word-level race test above, same defect class (Sol
-    review round 4, PR #2611, library_verdicts.py:308): the scan phase's
-    ``store.get_verdict`` check for SKIP_HAS_OVERRIDE is not atomic with the
-    write phase's write either, so a human ``set_override`` call can land in
-    the exact same gap a real ASR/aligner write can. Drives that gap
-    directly: a concurrent ``set_override`` runs from inside
-    ``coverage_pct_for_bundle``, called immediately before this module's own
-    write, after the scan already decided (found no override) not to skip.
-    """
+    review round 4, PR #2611, library_verdicts.py:308), REWRITTEN the same
+    way for the Sol round-6 review: a genuinely separate
+    :func:`apps.shared.state.db.open_rw` connection on the SAME db file
+    commits a real ``set_override`` call between a real scan capture and the
+    write step, instead of a monkeypatched ``coverage_pct_for_bundle``."""
     seed_track(conn, "sid-override-race-001")
     stems_root = _stems_root(data_dir)
     _write_wav_bundle(stems_root, "sid-override-race-001", source_sha256="8" * 64)
@@ -1198,23 +1382,7 @@ def test_backfill_never_clobbers_a_row_overridden_during_the_race(
     # A matching vocal-cache entry means the write side's coverage lookup is
     # served from cache, not a real audio decode -- fast, stdlib-only, same
     # pattern as the word-level race test above.
-    cache_path = vcache.cache_path(data_dir, "sid-override-race-001")
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    cache_path.write_text(
-        json.dumps(
-            {
-                "schema": vcache.VOCAL_CACHE_SCHEMA,
-                "coverage_pct": 4.0,
-                "duration_s": library_verdicts._bundle_duration_s(bundle),
-                "params": {
-                    "derived_from_stems": True,
-                    "bundle_layout": bundle.layout,
-                    "bundle_stem_sha256": vfrom_stems.bundle_stem_identity(bundle),
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
+    _seed_matching_cache(data_dir, "sid-override-race-001", bundle, coverage_pct=4.0)
 
     # A genuine PRE-EXISTING coverage-only row, stamped stale enough (an old
     # pipeline_version/source pair) that the scan schedules a real recompute
@@ -1232,33 +1400,36 @@ def test_backfill_never_clobbers_a_row_overridden_during_the_race(
     before = store.get_verdict(conn, "sid-override-race-001")
     assert before is not None and before.override is None
 
-    real_coverage_pct_for_bundle = library_verdicts.coverage_pct_for_bundle
-
-    def _racing_coverage_pct_for_bundle(data_dir_arg, stable_id, bundle_arg):
-        if stable_id == "sid-override-race-001":
-            # A human sets the override IN THE GAP between the scan phase's
-            # get_verdict check (already passed, since it found no override)
-            # and this module's own write, a few lines below this return.
-            store.set_override(
-                conn,
-                stable_id="sid-override-race-001",
-                override="vocal",
-                note="race override",
-            )
-        return real_coverage_pct_for_bundle(data_dir_arg, stable_id, bundle_arg)
-
-    monkeypatch.setattr(
-        library_verdicts, "coverage_pct_for_bundle", _racing_coverage_pct_for_bundle
-    )
-
-    report = library_verdicts.backfill_verdicts(
-        conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False
-    )
-
-    assert report.processed == (), "a race loss must never be counted as processed"
-    assert report.skipped.get(library_verdicts.SKIP_PROTECTED_ROW_RACE) == (
+    demucs_root, roformer_root = library_verdicts._bundle_roots(data_dir)
+    scan_outcome = library_verdicts._scan_candidate(
+        conn,
         "sid-override-race-001",
+        reserved=frozenset(),
+        demucs_root=demucs_root,
+        roformer_root=roformer_root,
     )
+    assert scan_outcome.attempt is not None, "setup bug: scan must find a stale-but-live candidate"
+
+    # REAL concurrent human override, via a genuinely separate connection to
+    # the SAME on-disk db file, landing between the scan capture above and
+    # the write step below.
+    second_conn = state_db.open_rw(data_dir / "state" / "state.db", apply_schema=False)
+    try:
+        store.set_override(
+            second_conn,
+            stable_id="sid-override-race-001",
+            override="vocal",
+            note="race override",
+        )
+    finally:
+        second_conn.close()
+
+    write_outcome = library_verdicts._write_candidate(conn, data_dir, *scan_outcome.attempt)
+
+    assert write_outcome.race_lost is True, (
+        "a race loss must be detected, not silently written over"
+    )
+    assert write_outcome.fail_reason is None
     verdict = store.get_verdict(conn, "sid-override-race-001")
     assert verdict is not None
     # The computed fields from BEFORE the race must survive untouched --

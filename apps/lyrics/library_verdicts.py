@@ -315,10 +315,23 @@ def _cached_coverage_pct(data_dir: Path, stable_id: str, bundle: StemBundle) -> 
         or params.get("derived_from_stems") is not True
     ):
         return None
-    if (
-        params.get("bundle_layout") != bundle.layout
-        or params.get("bundle_stem_sha256") != vfrom_stems.bundle_stem_identity(bundle)
-    ):
+    try:
+        live_identity = vfrom_stems.bundle_stem_identity(bundle)
+        stem_identity_matches = params.get("bundle_stem_sha256") == live_identity
+    except OSError as exc:
+        # Same second-stat-pass hazard as ``_bundle_source_label`` (see its
+        # comment in ``_scan_candidate``): the bundle loaded fine earlier,
+        # but a part vanished/became unreadable before this cache-identity
+        # comparison re-stat'd it. Raise, matching this function's existing
+        # pattern for its OTHER filesystem read (the vocal-cache file
+        # itself, above) -- ``backfill_verdicts``'s write loop already
+        # catches ``RuntimeError`` and records a per-track FAILURE instead
+        # of aborting the run.
+        raise RuntimeError(
+            f"stem bundle for {stable_id!r} could not be re-checked for cache "
+            f"identity: {exc}"
+        ) from exc
+    if params.get("bundle_layout") != bundle.layout or not stem_identity_matches:
         return None
     coverage_pct = entry.get("coverage_pct")
     duration_s = entry.get("duration_s")
@@ -405,10 +418,85 @@ def _scan_candidate(
         bundle = load_stem_bundle(stable_id, roots=(demucs_root, roformer_root))
     except (StemArtifactError, StemBundleNotFoundError) as exc:
         return _ScanOutcome(fail_reason=f"bundle load failed: {exc}")
-    expected_source = _bundle_source_label(bundle)
+    return _classify_loaded_bundle(stable_id, row, bundle)
+
+
+def _classify_loaded_bundle(
+    stable_id: str, row: store.LyricVerdict | None, bundle: StemBundle
+) -> _ScanOutcome:
+    """The post-load half of :func:`_scan_candidate`, split out as its own
+    seam: ``load_stem_bundle`` succeeding proves the bundle was loadable AT
+    THAT INSTANT, but ``_bundle_source_label`` below re-stats the manifest
+    plus every part file a SECOND time (see ``bundle_stem_identity``'s
+    docstring), and single-threaded Python offers no way to pause
+    :func:`_scan_candidate` between its own internal load and this step to
+    inject a real filesystem mutation in between. Pulling this out lets a
+    caller (production or test) load a bundle for real, mutate the
+    filesystem for real, then call this directly -- exercising the exact
+    post-load re-stat this function performs without needing to fabricate
+    or mock anything."""
+    try:
+        expected_source = _bundle_source_label(bundle)
+    except OSError as exc:
+        # A part removed, made unreadable, or replaced by a directory in the
+        # interval between the successful load and this re-stat is a genuine
+        # filesystem fault, not a "bundle doesn't exist" case: report it as
+        # a per-track FAILURE (never a silent skip) and let the rest of the
+        # run continue.
+        return _ScanOutcome(fail_reason=f"bundle filesystem check failed: {exc}")
     if _existing_row_is_current(row, expected_source):
         return _ScanOutcome(skip_reason=SKIP_UP_TO_DATE)
     return _ScanOutcome(attempt=(stable_id, bundle, expected_source))
+
+
+@dataclass(frozen=True)
+class _WriteOutcome:
+    """One candidate's write-phase result: exactly one of ``fail_reason`` /
+    ``race_lost`` is set, or neither (a plain successful write). Pulled out
+    of :func:`backfill_verdicts` -- like :class:`_ScanOutcome` on the scan
+    side -- so the single-candidate write step is independently callable: a
+    test can hand it a candidate whose ``(bundle, expected_source)`` was
+    captured BEFORE a real concurrent write landed on the row, without going
+    through the whole scan/plan machinery again."""
+
+    fail_reason: str | None = None
+    race_lost: bool = False
+    reused_cache: bool = False
+
+
+def _write_candidate(
+    conn: sqlite3.Connection,
+    data_dir: Path,
+    stable_id: str,
+    bundle: StemBundle,
+    expected_source: str,
+) -> _WriteOutcome:
+    """Compute coverage for one scanned candidate and write it through the
+    atomic, protected-row-race-aware writer. Never raises for an expected
+    per-track failure (filesystem, store, or malformed-cache) -- those come
+    back as :attr:`_WriteOutcome.fail_reason` so the caller can keep
+    processing the REST of the run instead of aborting it."""
+    try:
+        coverage_pct, reused = coverage_pct_for_bundle(data_dir, stable_id, bundle)
+        written = store.upsert_stem_coverage_verdict(
+            conn,
+            stable_id=stable_id,
+            verdict=coverage_verdict(coverage_pct),
+            coverage_pct=round(coverage_pct, 1),
+            source=expected_source,
+            pipeline_version=STEM_COVERAGE_PIPELINE_VERSION,
+            computed_at=sync_stamp.canonical_now(),
+        )
+    except (store.LyricStoreError, sqlite3.Error, RuntimeError, ValueError) as exc:
+        return _WriteOutcome(fail_reason=f"{type(exc).__name__}: {exc}")
+    if not written:
+        # A real ASR/aligner write OR a fresh human override landed on this
+        # row after the scan passed it (SKIP_HAS_WORDS / SKIP_HAS_OVERRIDE
+        # look stale-but-honest here) and before this write reached it.
+        # upsert_stem_coverage_verdict already left the row wholly untouched;
+        # this is only the bookkeeping for that outcome.
+        return _WriteOutcome(race_lost=True)
+    return _WriteOutcome(reused_cache=reused)
 
 
 def backfill_verdicts(
@@ -457,31 +545,15 @@ def backfill_verdicts(
 
     if not dry_run:
         for stable_id, bundle, expected_source in planned:
-            try:
-                coverage_pct, reused = coverage_pct_for_bundle(data_dir, stable_id, bundle)
-                written = store.upsert_stem_coverage_verdict(
-                    conn,
-                    stable_id=stable_id,
-                    verdict=coverage_verdict(coverage_pct),
-                    coverage_pct=round(coverage_pct, 1),
-                    source=expected_source,
-                    pipeline_version=STEM_COVERAGE_PIPELINE_VERSION,
-                    computed_at=sync_stamp.canonical_now(),
-                )
-            except (store.LyricStoreError, sqlite3.Error, RuntimeError, ValueError) as exc:
-                failed[stable_id] = f"{type(exc).__name__}: {exc}"
+            outcome = _write_candidate(conn, data_dir, stable_id, bundle, expected_source)
+            if outcome.fail_reason is not None:
+                failed[stable_id] = outcome.fail_reason
                 continue
-            if not written:
-                # A real ASR/aligner write OR a fresh human override landed
-                # on this row after the scan passed it (SKIP_HAS_WORDS /
-                # SKIP_HAS_OVERRIDE look stale-but-honest here) and before
-                # this write reached it. upsert_stem_coverage_verdict already
-                # left the row wholly untouched; this is only the bookkeeping
-                # for that outcome.
+            if outcome.race_lost:
                 _skip(skipped, SKIP_PROTECTED_ROW_RACE, stable_id)
                 continue
             processed.append(stable_id)
-            if reused:
+            if outcome.reused_cache:
                 reused_cache.append(stable_id)
     else:
         processed = [stable_id for stable_id, _bundle, _source in planned]
