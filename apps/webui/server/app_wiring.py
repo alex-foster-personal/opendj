@@ -6,12 +6,14 @@ factory stays under the complexity and file-size ratchets.
 """
 from __future__ import annotations
 
+import logging
 import os
 import socket
+import threading
 from collections.abc import AsyncIterator, Callable, Sequence
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -63,7 +65,6 @@ from .routes import autolists as autolists_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes
-from .routes import error_feed as error_feed_routes
 from .routes import client_events as client_events_routes
 from .routes import cloudsync as cloudsync_routes
 from .routes import cloudsync_config as cloudsync_config_routes
@@ -74,6 +75,7 @@ from .routes import cloudsync_status as cloudsync_status_routes
 from .routes import commands as commands_routes
 from .routes import copilot as copilot_routes
 from .routes import dedup_review as dedup_review_routes
+from .routes import error_feed as error_feed_routes
 from .routes import feedback as feedback_routes
 from .routes import feedback_attachments as feedback_attachments_routes
 from .routes import feedback_performance_marks as feedback_performance_marks_routes
@@ -103,8 +105,6 @@ from .routes import playlists as playlists_routes
 from .routes import preflight as preflight_routes
 from .routes import progress as progress_routes
 from .routes import quality as quality_routes
-from .routes import sql_playground as sql_playground_routes
-from .routes import worktree_ports as worktree_ports_routes
 from .routes import queues as queues_routes
 from .routes import rb_assets as rb_assets_routes
 from .routes import rb_hot_cues as rb_hot_cues_routes
@@ -117,6 +117,7 @@ from .routes import settings_ai as settings_ai_routes
 from .routes import share as share_routes
 from .routes import smartlists as smartlists_routes
 from .routes import spotify as spotify_routes
+from .routes import sql_playground as sql_playground_routes
 from .routes import state as state_routes
 from .routes import stem_tiers as stem_tiers_routes
 from .routes import stems as stems_routes
@@ -129,8 +130,14 @@ from .routes import usb_volumes as usb_volumes_routes
 from .routes import usb_volumes_sim as usb_volumes_sim_routes
 from .routes import vocals as vocals_routes
 from .routes import voice_probe as voice_probe_routes
+from .routes import worktree_ports as worktree_ports_routes
 from .share_gate import ShareConfig, share_gate_middleware
 from .usage_telemetry import UsageStore
+
+log = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from apps.cloud.config import CloudConfig
 
 
 class _SpaStaticFiles(StaticFiles):
@@ -322,6 +329,67 @@ def _bind_stem_and_usage(
     # question about now, so a restart honestly resets it to "nobody has
     # checked in yet". Tests inject a store with a fake clock.
     app.state.usage_store = usage_store if usage_store is not None else UsageStore()
+
+
+def _startup_stem_index_refresh(cfg: CloudConfig, s3, data_dir: Path) -> None:
+    from apps.cloud import stem_index
+
+    with suppress(Exception):
+        # recorded via stem_index.refresh_error(data_dir); startup must not crash on this
+        stem_index.refresh_local_cache_from_r2_throttled(cfg, s3, data_dir, force=True)
+
+
+def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None:
+    """Wire on-demand R2 stem hydration deps onto ``app.state`` (ADR-0024),
+    or leave them unset.
+
+    Unset is a legitimate machine state, not a failure: local mode, or a
+    machine with no R2 credentials, simply never hydrates on demand.
+    ``apps.webui.server.routes.stems`` checks each attribute for ``None`` and
+    falls back to its pre-hydration behavior rather than raising -- the same
+    "cfg may be omitted" contract ``resolve_playback_source`` already
+    documents in ``apps/cloud/hydration_core.py``.
+
+    Configured but unable to arm (cloud mode, credentials resolve, no boto3)
+    is NOT that legitimate state: the engine still boots, but
+    ``stem_hydration_unarmed_reason`` is set and the stems routes answer a
+    miss with 502 STEM_HYDRATION_NOT_ARMED.
+    """
+    app.state.stem_hydration_cfg = None
+    app.state.stem_hydration_s3 = None
+    app.state.stem_hydration_data_dir = None
+    app.state.stem_hydration_unarmed_reason = None
+    if not enabled:
+        return
+    from apps.cloud import asset_store, policy
+    from apps.cloud.config import CloudConfig, MissingEnvError
+
+    if policy.CFG.mode != "cloud":
+        return
+    try:
+        cfg = CloudConfig.from_env()
+        asset_store.require_credentials(cfg)
+    except MissingEnvError:
+        return
+    try:
+        s3 = asset_store.boto3_asset_client(cfg)
+    except asset_store.AssetStoreError as exc:
+        # The packaged engine ships without the cloud extra, so boto3 can be
+        # absent even when R2 credentials resolve. Keep the engine up, but
+        # record the reason so every stems miss fails loud with it (502
+        # STEM_HYDRATION_NOT_ARMED), never the ordinary "no bundle" state.
+        log.warning("stem-hydration: R2 credentials resolve but hydration is NOT armed: %s", exc)
+        app.state.stem_hydration_unarmed_reason = str(exc)
+        return
+    app.state.stem_hydration_cfg = cfg
+    app.state.stem_hydration_s3 = s3
+    app.state.stem_hydration_data_dir = Path(data_dir)
+    threading.Thread(
+        target=_startup_stem_index_refresh,
+        args=(cfg, app.state.stem_hydration_s3, Path(data_dir)),
+        name="opendj-stem-index-startup-refresh",
+        daemon=True,
+    ).start()
 
 
 def _install_exception_handlers(app: FastAPI) -> None:

@@ -15,8 +15,10 @@ from typing import Any
 import pytest
 import yaml
 
+from scripts.gh_version_guard import GhVersionError
 from scripts.periodic_window import (
     BOT_LOGIN,
+    Gh,
     GhError,
     WindowDecision,
     cadence_alarm,
@@ -447,3 +449,32 @@ def test_scheduled_workflow_red_more_than_one_cadence_is_p1() -> None:
         }
     ]
     assert cadence_alarm(fresh_red, cadence_seconds=86400, now=NOW) == ""
+
+
+# ----- Gh._load: the actual crash site (agentbox-15, job 103871571683) ----
+#
+# This module's OWN `Gh` class (not the `FakeGh` test seam above) is what
+# shelled out to the real `gh` in production and died with `unknown flag:
+# --slurp` on gh 2.62.0. scripts/gh_version_guard.py is the fix; these tests
+# mutate the guard to prove `Gh._load` actually calls it, the same way
+# tests/scripts/test_review_gh_version_guard.py proves it for `_gh`.
+
+
+def test_gh_load_calls_the_version_guard_before_invoking_the_subprocess(monkeypatch) -> None:
+    """[if] the installed gh is too old [then ⛔️] `Gh()._load` raises
+    GhVersionError naming both versions and never reaches `subprocess.run` --
+    mutate-the-guard: patches this module's own control flow, not `gh`'s API
+    output (AGENTS.md protects the latter, not the former)."""
+    import scripts.periodic_window as periodic_window_module
+
+    def _reject_version(*_args: object, **_kwargs: object) -> None:
+        raise GhVersionError("gh 2.62.0 is older than the minimum 2.64.0 (test double)")
+
+    def _subprocess_should_not_run(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("Gh._load must not shell out once the version guard has failed")
+
+    monkeypatch.setattr(periodic_window_module, "require_gh_min_version", _reject_version)
+    monkeypatch.setattr(periodic_window_module.subprocess, "run", _subprocess_should_not_run)
+
+    with pytest.raises(GhVersionError, match="test double"):
+        Gh()._load(["gh", "api", "--paginate", "--slurp", "repos/x/issues/1/comments"])

@@ -6,13 +6,19 @@ import { recordPerfEvent } from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
 import {
 	diagnoseUnexpectedPause,
+	formatUnexpectedPauseDiagnostic,
 	formatUnexpectedPauseMessage,
 	type PauseOrigin,
 	type UnexpectedPauseCause
 } from '$lib/rb/unexpected-pause';
 import type { DeckId } from '$lib/rb/deck-slots';
 
-type PlayingPosition = { deck: DeckId; position_ms: number };
+type PlayingPosition = {
+	deck: DeckId;
+	position_ms: number;
+	decoded_duration_ms?: number | null;
+	metadata_duration_ms?: number | null;
+};
 
 let _pauseOrigin: PauseOrigin = 'other';
 let _playingPositionReader: (() => readonly PlayingPosition[]) | null = null;
@@ -56,11 +62,14 @@ export function recordUnexpectedPause(input: {
 	deck: DeckId;
 	position_ms: number;
 	context_state?: string;
+	decoded_duration_ms?: number | null;
+	metadata_duration_ms?: number | null;
 }): void {
-	const message = formatUnexpectedPauseMessage(input);
-	recordPerfEvent('audio-unexpected-pause', message, input.deck, 'error');
+	const diagnostic = formatUnexpectedPauseDiagnostic(input);
+	const human = formatUnexpectedPauseMessage(input);
+	recordPerfEvent('audio-unexpected-pause', diagnostic, input.deck, 'error');
 	if (input.cause !== 'context-suspended') {
-		pushToast(message, 'error');
+		pushToast(human, 'error');
 	}
 }
 
@@ -69,6 +78,7 @@ export function notePlayingFallingEdge(input: {
 	deck: DeckId;
 	position_ms: number;
 	duration_ms: number | null;
+	metadata_duration_ms?: number | null;
 	processor_error: string | null;
 	context_state: string;
 }): void {
@@ -88,6 +98,8 @@ export function notePlayingFallingEdge(input: {
 		cause,
 		deck: input.deck,
 		position_ms: input.position_ms,
-		context_state: input.context_state
+		context_state: input.context_state,
+		decoded_duration_ms: input.duration_ms,
+		metadata_duration_ms: input.metadata_duration_ms ?? null
 	});
 }

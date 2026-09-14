@@ -21,6 +21,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
+from scripts.gh_version_guard import require_gh_min_version
+
 BOT_LOGIN = "github-actions[bot]"
 DEFAULT_MARKER = re.compile(
     r"<!-- periodic-checks state sha=([0-9a-f]{40})(?: threshold=(\d+))? -->"
@@ -79,6 +81,16 @@ class Gh:
         return []
 
     def _load(self, argv: list[str]) -> Any:
+        """Run a `gh` argv and parse its stdout as JSON.
+
+        `require_gh_min_version()` runs first: this is the module whose
+        `--paginate --slurp` call (`api_json_paginated`) actually crashed in
+        production (agentbox-15, job 103871571683, Fri 12 Sep 2026 onward,
+        `unknown flag: --slurp` on gh 2.62.0) -- the failure that took down
+        every scheduled `periodic-checks.yml` run. See
+        scripts/gh_version_guard.py for the version floor and citation.
+        """
+        require_gh_min_version()
         proc = subprocess.run(argv, capture_output=True, text=True, check=False)
         if proc.returncode != 0:
             err = (proc.stderr or proc.stdout or "").strip() or f"{' '.join(argv)} failed"

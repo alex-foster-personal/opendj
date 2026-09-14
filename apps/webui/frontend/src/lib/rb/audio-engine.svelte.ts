@@ -486,6 +486,8 @@ interface _DeckRuntime {
 	keySyncBaselineSemitones: number | null;
 	/** Decoded mix buffer retained for short sync-seek crossfades. */
 	audioBuffer: AudioBuffer | null;
+	/** Library-listed track duration; decoded buffer duration lives in deck state. */
+	metadataDurationMs: number | null;
 	/**
 	 * True from the moment a re-anchor tempo ramp begins until its last step
 	 * is registered. Each ramp step's own revision briefly becomes "presented"
@@ -537,6 +539,7 @@ function _emptyRuntime(): _DeckRuntime {
 		slipTempoBoundaries: [],
 		keySyncBaselineSemitones: null,
 		audioBuffer: null,
+		metadataDurationMs: null,
 		reanchorRampActive: false,
 		pendingStemUpgrade: null
 	};
@@ -748,7 +751,9 @@ function _ensureGraph(): AudioContext {
 	setPlayingPositionReader(() =>
 		DECK_IDS.filter((d) => deckStates[d].playing).map((d) => ({
 			deck: d,
-			position_ms: deckStates[d].position_ms
+			position_ms: deckStates[d].position_ms,
+			decoded_duration_ms: deckStates[d].duration_ms,
+			metadata_duration_ms: _rt[d].metadataDurationMs
 		}))
 	);
 	_masterGain = _ctx.createGain();
@@ -1197,6 +1202,8 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	const rt = _rt[deck];
 	const message = error instanceof Error ? error.message : String(error);
 	const positionMs = st.position_ms;
+	const decodedDurationMs = st.duration_ms;
+	const metadataDurationMs = rt.metadataDurationMs;
 	const failedProcessor = rt.processor;
 	rt.processor = null;
 	if (failedProcessor !== null) _retireProcessor(failedProcessor);
@@ -1216,7 +1223,9 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 		cause: 'worklet-error',
 		deck,
 		position_ms: positionMs,
-		context_state: _ctx?.state ?? 'uninitialized'
+		context_state: _ctx?.state ?? 'uninitialized',
+		decoded_duration_ms: decodedDurationMs,
+		metadata_duration_ms: metadataDurationMs
 	});
 	withPauseOrigin('worklet', () => {
 		_clearLoadedTrackState(st);
@@ -1287,6 +1296,7 @@ async function _scheduleDeck(
 			deck,
 			position_ms: st.position_ms,
 			duration_ms: st.duration_ms,
+			metadata_duration_ms: rt.metadataDurationMs,
 			processor_error: st.processor_error,
 			context_state: _ctx?.state ?? 'uninitialized'
 		});
@@ -1961,6 +1971,7 @@ function _clearLoadedTrackState(st: DeckState): void {
 	st.key_shift_semitones = 0;
 	st.key_sync_enabled = false;
 	st.duration_ms = null;
+	_rt[st.deck_id].metadataDurationMs = null;
 	st.position_ms = 0;
 	st.transport_pending = false;
 	st.cue_ms = null;
@@ -3070,6 +3081,7 @@ class RbAudioEngine implements AudioEngine {
 			// The decoded buffer is the audio actually scheduled. Metadata can
 			// differ, so it must not define waveform bounds or transport truth.
 			st.duration_ms = decodedTransportDurationMs(candidateBuffer.duration);
+			rt.metadataDurationMs = candidateTrack.duration_ms ?? null;
 			// Re-reads the shared cache rather than trusting `candidateAnlz` -
 			// see `resolvePublishedAnlz`'s own doc for the race this guards.
 			const latestAnlzEntry = getAnlzEntry(stable_id);

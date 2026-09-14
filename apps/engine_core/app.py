@@ -75,7 +75,7 @@ from apps.stems.live_capability import assess_install_once
 from apps.stems.live_capability_api import router as live_stems_capability_router
 from apps.sync_hub.scheduler import scheduler_lifespan
 from apps.webui.library_assets import ensure_stem_storage, stem_storage
-from apps.webui.server import analysis_autostart
+from apps.webui.server import analysis_autostart, library_jobs_autostart
 from apps.webui.server.app import _SpaStaticFiles
 from apps.webui.server.app import create_app as legacy_create_app
 from apps.webui.server.backend import StateBackend
@@ -263,6 +263,14 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
         # step, so it arms the CloudSync scheduler. Armed is not running: it
         # still waits for MDT_CLOUDSYNC_SCHEDULER=1 and MDT_CLOUDSYNC_HUB_URL.
         cloudsync_scheduler=True,
+        # User-ordered stems and lyrics jobs (/api/v1/library-jobs) only run if
+        # the daemon drains them. Same MUSIC_DJ_LIBRARY_JOBS contract as the
+        # standalone webui daemon; without it the installed app queued jobs
+        # that stayed pending forever.
+        auto_user_jobs=library_jobs_autostart.arm_from_environ(os.environ),
+        # On-demand R2 stem hydration (ADR-0024). Armed is not running: it
+        # stays inert in local mode or when R2 credentials do not resolve.
+        stem_hydration=True,
     )
 
 
