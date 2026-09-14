@@ -47,7 +47,7 @@ sqlalchemy>=2.0,<3
 # that module's tests skip wholesale before importing it. Same shape as the
 # pyobjc gap pyproject records: undeclared, and broken ON macOS, the platform
 # the tool exists for.
-Pillow>=10.0
+Pillow>=12.3.0
 
 # --- Phase 6 -- analysis pipeline (META-01, META-02, META-04) ---
 # numpy floor matches pyproject's core `numpy>=1.26` (PyO3 waveform runtime,
@@ -181,7 +181,7 @@ pyinstrument>=5
 # an unpinned CI resolve diverged from the locally-proven pair and broke the
 # engine boot guard in CI only. Bump deliberately, with the engine tests.
 fastapi==0.136.3
-starlette==1.2.1
+starlette==1.3.1
 uvicorn[standard]>=0.30
 # Activity Monitor and ps identity for the Open DJ daemon and owned workers.
 setproctitle>=1.3,<2
