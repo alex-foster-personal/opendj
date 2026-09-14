@@ -27,6 +27,7 @@ import apps.webui.server.routes.stems as stems_module
 from apps.cloud import stem_index
 from apps.cloud.asset_store import asset_object_key
 from apps.cloud.config import CloudConfig
+from apps.cloud.stem_source import DirectR2Source
 from apps.cloud.stem_index import (
     INDEX_OBJECT_KEY,
     local_index_cache_path,
@@ -95,9 +96,17 @@ def _client(
 ) -> TestClient:
     app = FastAPI()
     app.state.stems_dir = stems_dir
-    app.state.stem_hydration_cfg = hydration_cfg
-    app.state.stem_hydration_s3 = hydration_s3
     app.state.stem_hydration_data_dir = data_dir
+    if hydration_cfg is not None and hydration_s3 is not None:
+        app.state.stem_hydration_source = DirectR2Source(
+            cfg=hydration_cfg, s3=hydration_s3
+        )
+        app.state.stem_hydration_cfg = hydration_cfg
+        app.state.stem_hydration_s3 = hydration_s3
+    else:
+        app.state.stem_hydration_source = None
+        app.state.stem_hydration_cfg = None
+        app.state.stem_hydration_s3 = None
     app.include_router(router, prefix="/api/v1")
     return TestClient(app)
 
@@ -170,10 +179,10 @@ def test_no_hydration_deps_falls_back_to_unchanged_behavior(tmp_path: Path):
     assert part.status_code == 404
 
 
-@pytest.mark.requirement("STEM-15")
-def test_not_in_index_is_ordinary_unavailable_not_hydrating(tmp_path: Path):
-    """No bundle anywhere (not local, not in R2 index) is a settled, cheap
-    'unavailable' -- not confused with 'hydrating'."""
+@pytest.mark.requirement("STEM-31")
+def test_not_in_index_fails_loud_when_hydration_is_armed(tmp_path: Path):
+    """When hydration is configured, a stable_id absent from the index must
+    answer HTTP 502, never the ordinary unavailable envelope."""
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     cfg = _cfg()
@@ -182,9 +191,8 @@ def test_not_in_index_is_ordinary_unavailable_not_hydrating(tmp_path: Path):
 
     with _client(stems_dir, data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
         resp = client.get("/api/v1/tracks/truly-nowhere/stems")
-    body = resp.json()
-    assert body["status"] == "unavailable"
-    assert body["hydrating"] is False
+    assert resp.status_code == 502
+    assert resp.json()["detail"]["code"] == "STEM_BUNDLE_NOT_INDEXED"
 
 
 # --- fail-loud: expected-but-unhydratable must never read as empty ----------
@@ -299,9 +307,17 @@ def _assets_client(
     hydration_s3: InMemoryAssetS3 | None = None,
 ) -> TestClient:
     app = FastAPI()
-    app.state.stem_hydration_cfg = hydration_cfg
-    app.state.stem_hydration_s3 = hydration_s3
     app.state.stem_hydration_data_dir = data_dir
+    if hydration_cfg is not None and hydration_s3 is not None:
+        app.state.stem_hydration_source = DirectR2Source(
+            cfg=hydration_cfg, s3=hydration_s3
+        )
+        app.state.stem_hydration_cfg = hydration_cfg
+        app.state.stem_hydration_s3 = hydration_s3
+    else:
+        app.state.stem_hydration_source = None
+        app.state.stem_hydration_cfg = None
+        app.state.stem_hydration_s3 = None
     app.include_router(stems_assets_router, prefix="/api/v1")
     return TestClient(app)
 
@@ -322,7 +338,8 @@ def test_bulk_hydrate_http_writes_under_request_data_dir(
         "apps.webui.server.stem_artifacts.DEFAULT_STEMS_DIR", default_stems_dir
     )
     monkeypatch.setattr(
-        "apps.lyrics.artifacts.asset_clients_for_mode", lambda *, writing: (s3, cfg)
+        "apps.cloud.stem_source.resolve_stem_hydration_source",
+        lambda _data_dir: DirectR2Source(cfg=cfg, s3=s3),
     )
 
     with _assets_client(data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
@@ -385,7 +402,8 @@ def test_bulk_hydrate_corrupt_index_cache_returns_502(
     cache_path.write_text("not json at all", encoding="utf-8")
 
     monkeypatch.setattr(
-        "apps.lyrics.artifacts.asset_clients_for_mode", lambda *, writing: (s3, cfg)
+        "apps.cloud.stem_source.resolve_stem_hydration_source",
+        lambda _data_dir: DirectR2Source(cfg=cfg, s3=s3),
     )
 
     with _assets_client(data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
@@ -505,10 +523,10 @@ def test_manifest_route_warm_cache_does_not_refetch(tmp_path: Path):
     with _client(stems_dir, data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
         first = client.get("/api/v1/tracks/missing-track/stems")
         second = client.get("/api/v1/tracks/missing-track/stems")
-    assert first.status_code == 200
-    assert first.json()["code"] == "STEM_BUNDLE_NOT_FOUND"
-    assert second.status_code == 200
-    assert second.json()["code"] == "STEM_BUNDLE_NOT_FOUND"
+    assert first.status_code == 502
+    assert first.json()["detail"]["code"] == "STEM_BUNDLE_NOT_INDEXED"
+    assert second.status_code == 502
+    assert second.json()["detail"]["code"] == "STEM_BUNDLE_NOT_INDEXED"
     index_gets = [c for c in s3.get_calls if c[1] == INDEX_OBJECT_KEY]
     assert index_gets == []
 

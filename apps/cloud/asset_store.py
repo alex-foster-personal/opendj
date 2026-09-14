@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import urllib.error
+import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -49,6 +51,7 @@ SHA256_HEX_LEN: int = 64
 #: "short expiry, minted lazily", and the lane contract pins the ceiling here.
 MAX_PRESIGN_EXPIRY_SECONDS: int = 900
 DEFAULT_PRESIGN_EXPIRY_SECONDS: int = MAX_PRESIGN_EXPIRY_SECONDS
+PRESIGNED_FETCH_TIMEOUT_S: float = 120.0
 
 SIGV4_ALGORITHM: str = "AWS4-HMAC-SHA256"
 SIGV4_REGION: str = "auto"  # R2 has one region and it is spelled "auto".
@@ -343,6 +346,44 @@ def delete_asset(cfg: CloudConfig, s3: AssetS3Client, content_hash: str) -> bool
     return s3.delete_object(cfg.audio_bucket, asset_object_key(content_hash))
 
 
+def fetch_presigned_asset(
+    url: str,
+    content_hash: str,
+    dest: Path,
+    *,
+    timeout_s: float = PRESIGNED_FETCH_TIMEOUT_S,
+) -> Path:
+    """Download ``url`` and verify the body matches ``content_hash`` before writing.
+
+    The URL is never persisted. A non-2xx response or digest mismatch raises
+    :class:`AssetStoreError` and leaves ``dest`` untouched.
+    """
+    digest = validate_content_hash(content_hash)
+    request = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+            if response.status >= 400:
+                raise AssetStoreError(
+                    f"presigned GET failed with HTTP {response.status} for {digest}"
+                )
+            body = response.read()
+    except urllib.error.HTTPError as exc:
+        raise AssetStoreError(
+            f"presigned GET failed with HTTP {exc.code} for {digest}"
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise AssetStoreError(f"presigned GET unreachable for {digest}: {exc.reason}") from exc
+    actual = hashlib.sha256(body).hexdigest()
+    if actual != digest:
+        raise AssetStoreError(
+            f"presigned body for {digest} hashes to {actual}, not the requested digest"
+        )
+    target = Path(dest)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(body)
+    return target
+
+
 # --- presigning (SigV4 query auth, stdlib only) --------------------------
 
 
@@ -544,7 +585,9 @@ __all__ = [
     "compute_asset_hash",
     "delete_asset",
     "fetch_asset",
+    "fetch_presigned_asset",
     "head_asset",
+    "PRESIGNED_FETCH_TIMEOUT_S",
     "object_exists",
     "presign_url",
     "push_asset",

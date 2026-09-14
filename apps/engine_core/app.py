@@ -263,6 +263,9 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
         # step, so it arms the CloudSync scheduler. Armed is not running: it
         # still waits for MDT_CLOUDSYNC_SCHEDULER=1 and MDT_CLOUDSYNC_HUB_URL.
         cloudsync_scheduler=True,
+        # STEM-31 / ADR-0025: the packaged engine must arm hub-presigned stem
+        # hydration when CloudSync is configured, even without local R2 creds.
+        stem_hydration=True,
     )
 
 

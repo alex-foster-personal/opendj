@@ -328,46 +328,40 @@ def _bind_stem_and_usage(
     app.state.usage_store = usage_store if usage_store is not None else UsageStore()
 
 
-def _startup_stem_index_refresh(cfg: CloudConfig, s3, data_dir: Path) -> None:
-    from apps.cloud import stem_index
-
+def _startup_stem_index_refresh(source, data_dir: Path) -> None:
     with suppress(Exception):
-        # recorded via stem_index.refresh_error(data_dir); startup must not crash on this
-        stem_index.refresh_local_cache_from_r2_throttled(cfg, s3, data_dir, force=True)
+        source.refresh_index(Path(data_dir), force=True)
 
 
 def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None:
-    """Wire on-demand R2 stem hydration deps onto ``app.state`` (ADR-0024),
-    or leave them unset.
+    """Wire on-demand stem hydration onto ``app.state`` (ADR-0024 / ADR-0025),
+    or leave it unset.
 
     Unset is a legitimate machine state, not a failure: local mode, or a
-    machine with no R2 credentials, simply never hydrates on demand.
-    ``apps.webui.server.routes.stems`` checks each attribute for ``None`` and
-    falls back to its pre-hydration behavior rather than raising -- the same
-    "cfg may be omitted" contract ``resolve_playback_source`` already
-    documents in ``apps/cloud/hydration_core.py``.
+    machine with neither R2 credentials nor a configured hub, simply never
+    hydrates on demand. Routes check ``stem_hydration_source`` for ``None``
+    and fall back to pre-hydration behavior.
     """
+    app.state.stem_hydration_source = None
+    app.state.stem_hydration_data_dir = None
+    # Legacy test injection points; production uses stem_hydration_source.
     app.state.stem_hydration_cfg = None
     app.state.stem_hydration_s3 = None
-    app.state.stem_hydration_data_dir = None
     if not enabled:
         return
-    from apps.cloud import asset_store, policy
-    from apps.cloud.config import CloudConfig, MissingEnvError
+    from apps.cloud.stem_source import DirectR2Source, resolve_stem_hydration_source
 
-    if policy.CFG.mode != "cloud":
+    source = resolve_stem_hydration_source(Path(data_dir))
+    if source is None:
         return
-    try:
-        cfg = CloudConfig.from_env()
-        asset_store.require_credentials(cfg)
-    except MissingEnvError:
-        return
-    app.state.stem_hydration_cfg = cfg
-    app.state.stem_hydration_s3 = asset_store.boto3_asset_client(cfg)
+    app.state.stem_hydration_source = source
     app.state.stem_hydration_data_dir = Path(data_dir)
+    if isinstance(source, DirectR2Source):
+        app.state.stem_hydration_cfg = source.cfg
+        app.state.stem_hydration_s3 = source.s3
     threading.Thread(
         target=_startup_stem_index_refresh,
-        args=(cfg, app.state.stem_hydration_s3, Path(data_dir)),
+        args=(source, Path(data_dir)),
         name="opendj-stem-index-startup-refresh",
         daemon=True,
     ).start()

@@ -52,9 +52,11 @@ from __future__ import annotations
 import json
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import TypeAlias
 
+from apps.cloud.asset_store import AssetStoreError, validate_content_hash
 from apps.cloud.config import CloudConfig
 from apps.cloud.lock import S3Client
 from apps.cloud.r2_keys import R2KeyError, parse_legacy_stem_key
@@ -187,12 +189,24 @@ def _decode(body: bytes) -> StemAssetIndex:
                 f"stem bundle index at {INDEX_OBJECT_KEY} has a non-object entry "
                 f"for stable_id {stable_id!r}"
             )
-        for filename in file_hashes:
+        for filename, digest in file_hashes.items():
             if not is_allowed_stem_filename(filename):
                 raise StemIndexError(
                     f"stem bundle index at {INDEX_OBJECT_KEY} has disallowed "
                     f"filename {filename!r} for stable_id {stable_id!r}"
                 )
+            if not isinstance(digest, str):
+                raise StemIndexError(
+                    f"stem bundle index at {INDEX_OBJECT_KEY} has a non-string "
+                    f"digest for stable_id {stable_id!r} file {filename!r}"
+                )
+            try:
+                validate_content_hash(digest)
+            except AssetStoreError as exc:
+                raise StemIndexError(
+                    f"stem bundle index at {INDEX_OBJECT_KEY} has invalid digest "
+                    f"for stable_id {stable_id!r} file {filename!r}: {exc}"
+                ) from exc
     return stable_ids
 
 
@@ -272,9 +286,10 @@ def load_cached_index(data_dir: Path) -> StemAssetIndex:
 
 
 def save_cached_index(data_dir: Path, index: StemAssetIndex) -> Path:
+    validated = _decode(_encode(index))
     path = local_index_cache_path(data_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(_encode(index) + b"\n")
+    path.write_bytes(_encode(validated) + b"\n")
     return path
 
 
@@ -304,6 +319,30 @@ def refresh_error(data_dir: Path) -> str | None:
     return _last_refresh_error.get(Path(data_dir))
 
 
+def refresh_local_cache_throttled(
+    data_dir: Path,
+    fetch: Callable[[], StemAssetIndex],
+    *,
+    force: bool = False,
+) -> bool:
+    """Backoff-guarded index refresh using ``fetch`` as the network source."""
+    data_dir = Path(data_dir)
+    now = time.monotonic()
+    with _refresh_lock:
+        last = _last_refresh_attempt_mono.get(data_dir)
+        if not force and last is not None and now - last < INDEX_REFRESH_RETRY_INTERVAL_S:
+            return False
+        _last_refresh_attempt_mono[data_dir] = now
+    try:
+        index = fetch()
+        save_cached_index(data_dir, index)
+    except Exception as exc:
+        _last_refresh_error[data_dir] = str(exc)
+        raise
+    _last_refresh_error.pop(data_dir, None)
+    return True
+
+
 def refresh_local_cache_from_r2_throttled(
     cfg: CloudConfig, s3: S3Client, data_dir: Path, *, force: bool = False
 ) -> bool:
@@ -320,20 +359,11 @@ def refresh_local_cache_from_r2_throttled(
     the lock, before the network call, so a second caller arriving
     immediately after sees the stamp and skips rather than racing it.
     """
-    data_dir = Path(data_dir)
-    now = time.monotonic()
-    with _refresh_lock:
-        last = _last_refresh_attempt_mono.get(data_dir)
-        if not force and last is not None and now - last < INDEX_REFRESH_RETRY_INTERVAL_S:
-            return False
-        _last_refresh_attempt_mono[data_dir] = now
-    try:
-        refresh_local_cache_from_r2(cfg, s3, data_dir)
-    except Exception as exc:
-        _last_refresh_error[data_dir] = str(exc)
-        raise
-    _last_refresh_error.pop(data_dir, None)
-    return True
+    return refresh_local_cache_throttled(
+        data_dir,
+        lambda: refresh_local_cache_from_r2(cfg, s3, data_dir),
+        force=force,
+    )
 
 
 __all__ = [
@@ -356,5 +386,6 @@ __all__ = [
     "refresh_error",
     "refresh_local_cache_from_r2",
     "refresh_local_cache_from_r2_throttled",
+    "refresh_local_cache_throttled",
     "save_cached_index",
 ]

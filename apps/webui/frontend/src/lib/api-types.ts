@@ -4137,6 +4137,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/stems/bundle-presign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Bundle Presign
+         * @description Mint short-lived GET URLs for every file in one indexed bundle.
+         */
+        get: operations["get_bundle_presign_api_v1_sync_stems_bundle_presign_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/stems/index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stem Index
+         * @description Return the published stem bundle index for an authenticated spoke.
+         */
+        get: operations["get_stem_index_api_v1_sync_stems_index_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/telemetry/clients": {
         parameters: {
             query?: never;
@@ -10664,6 +10704,18 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** StemBundlePresignResponse */
+        StemBundlePresignResponse: {
+            /**
+             * Expires In Seconds
+             * @default 900
+             */
+            expires_in_seconds: number;
+            /** Files */
+            files: components["schemas"]["StemPresignFileOut"][];
+            /** Stable Id */
+            stable_id: string;
+        };
         /** StemHydrateIn */
         StemHydrateIn: {
             /** Data Dir */
@@ -10696,6 +10748,15 @@ export interface components {
             files: number;
             /** Published */
             published: boolean;
+        };
+        /** StemIndexResponse */
+        StemIndexResponse: {
+            /** Index */
+            index: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
         };
         /**
          * StemManifestOut
@@ -10739,6 +10800,17 @@ export interface components {
         StemPartOut: {
             /** Media Type */
             media_type: string;
+        };
+        /** StemPresignFileOut */
+        StemPresignFileOut: {
+            /** Content Hash */
+            content_hash: string;
+            /** Filename */
+            filename: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Url */
+            url: string;
         };
         /** StemPushMissingIn */
         StemPushMissingIn: {
@@ -19814,6 +19886,114 @@ export interface operations {
             };
         };
     };
+    get_bundle_presign_api_v1_sync_stems_bundle_presign_get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+                /** @description track stable_id */
+                stable_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemBundlePresignResponse"];
+                };
+            };
+            /** @description stems/bundle-presign refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description STEM_BUNDLE_NOT_INDEXED when the stable_id is absent from the published index */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description STEM_BUNDLE_PRESIGN_FAILED when presigning or HEAD failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description stems/bundle-presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_stem_index_api_v1_sync_stems_index_get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemIndexResponse"];
+                };
+            };
+            /** @description stems/index refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description stems/index refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_clients_api_v1_telemetry_clients_get: {
         parameters: {
             query?: never;
@@ -20590,7 +20770,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT when the local index cache is present but unreadable */
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -20693,7 +20873,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT when the local index cache is present but unreadable */
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails */
             502: {
                 headers: {
                     [name: string]: unknown;

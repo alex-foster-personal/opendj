@@ -16,6 +16,7 @@ import threading
 from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
+from dataclasses import dataclass
 from io import BufferedReader
 from pathlib import Path
 from typing import Any, Literal
@@ -25,8 +26,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from apps.cloud import stem_hydration, stem_index
-from apps.cloud.asset_store import AssetS3Client
-from apps.cloud.config import CloudConfig
+from apps.cloud.stem_source import (
+    STEM_BUNDLE_NOT_INDEXED,
+    DirectR2Source,
+    StemHydrationSource,
+    StemSourceError,
+)
 
 from ..stem_artifacts import (
     DEFAULT_STEMS_DIR,
@@ -54,14 +59,23 @@ _INFLIGHT: dict[str, Future] = {}
 #: part requests does not hammer R2 with the same doomed fetch, and so a
 #: request can fail loud immediately instead of waiting out the full timeout
 #: again for an error already known.
-_LAST_HYDRATE_ERROR: dict[str, str] = {}
+@dataclass(frozen=True)
+class _HydrateError:
+    code: str
+    message: str
+
+
+_LAST_HYDRATE_ERROR: dict[str, _HydrateError] = {}
 
 STEM_HYDRATION_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     502: {
         "description": (
             "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when "
-            "the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT "
-            "when the local index cache is present but unreadable"
+            "the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when "
+            "the local index cache is unreadable, STEM_HUB_UNREACHABLE when the "
+            "configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub "
+            "rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub "
+            "index or presign path fails"
         )
     }
 }
@@ -163,20 +177,30 @@ def _unavailable_out(stable_id: str, exc: StemBundleNotFoundError) -> StemUnavai
 # ---------------------------------------------------------------------------
 
 
-def _hydration_deps(request: Request) -> tuple[CloudConfig, AssetS3Client, Path] | None:
-    cfg = getattr(request.app.state, "stem_hydration_cfg", None)
-    s3 = getattr(request.app.state, "stem_hydration_s3", None)
+def _hydration_deps(request: Request) -> tuple[StemHydrationSource, Path] | None:
+    source = getattr(request.app.state, "stem_hydration_source", None)
     data_dir = getattr(request.app.state, "stem_hydration_data_dir", None)
-    if cfg is None or s3 is None or data_dir is None:
+    if source is None and getattr(request.app.state, "stem_hydration_cfg", None) is not None:
+        cfg = request.app.state.stem_hydration_cfg
+        s3 = getattr(request.app.state, "stem_hydration_s3", None)
+        if s3 is not None:
+            source = DirectR2Source(cfg=cfg, s3=s3)
+    if source is None or data_dir is None:
         return None
-    return cfg, s3, Path(data_dir)
+    return source, Path(data_dir)
+
+
+def _raise_source_error(exc: StemSourceError) -> None:
+    raise HTTPException(
+        status_code=502,
+        detail={"code": exc.code, "message": exc.message},
+    ) from exc
 
 
 def _run_hydration(
     stable_id: str,
     *,
-    cfg: CloudConfig,
-    s3: AssetS3Client,
+    source: StemHydrationSource,
     index: stem_index.StemAssetIndex,
     data_dir: Path,
     stems_dir: Path,
@@ -185,19 +209,32 @@ def _run_hydration(
         outcome = stem_hydration.hydrate_one(
             stable_id,
             data_dir=data_dir,
-            cfg=cfg,
-            s3=s3,
+            source=source,
             index=index,
             stems_dir=stems_dir,
             skip_reserved=False,  # on-demand deck load NEVER skips reserved ids (D5)
         )
+    except StemSourceError as exc:
+        with _INFLIGHT_LOCK:
+            _LAST_HYDRATE_ERROR[stable_id] = _HydrateError(exc.code, exc.message)
+        return stem_hydration.HydrationOutcome(
+            stable_id=stable_id,
+            status="error",
+            reason=exc.message,
+        )
     except Exception as exc:
         with _INFLIGHT_LOCK:
-            _LAST_HYDRATE_ERROR[stable_id] = str(exc)
+            _LAST_HYDRATE_ERROR[stable_id] = _HydrateError(
+                "STEM_BUNDLE_HYDRATION_FAILED",
+                str(exc),
+            )
         raise
     with _INFLIGHT_LOCK:
         if outcome.status == "error":
-            _LAST_HYDRATE_ERROR[stable_id] = outcome.reason or "hydration failed"
+            _LAST_HYDRATE_ERROR[stable_id] = _HydrateError(
+                "STEM_BUNDLE_HYDRATION_FAILED",
+                outcome.reason or "hydration failed",
+            )
         else:
             _LAST_HYDRATE_ERROR.pop(stable_id, None)
     return outcome
@@ -215,12 +252,15 @@ def _enqueue_hydration(stable_id: str, request: Request) -> Future | None:
     deps = _hydration_deps(request)
     if deps is None:
         return None
-    cfg, s3, data_dir = deps
+    source, data_dir = deps
     cache_path = stem_index.local_index_cache_path(data_dir)
     if not cache_path.is_file():
-        with contextlib.suppress(Exception):
-            # recorded; consulted below via stem_index.refresh_error
-            stem_index.refresh_local_cache_from_r2_throttled(cfg, s3, data_dir)
+        try:
+            source.refresh_index(data_dir)
+        except StemSourceError as exc:
+            _raise_source_error(exc)
+        except Exception as exc:
+            _raise_index_refresh_failed(str(exc))
     with _INFLIGHT_LOCK:
         existing = _INFLIGHT.get(stable_id)
         if existing is not None and not existing.done():
@@ -233,16 +273,15 @@ def _enqueue_hydration(stable_id: str, request: Request) -> Future | None:
             _raise_stem_index_corrupt(exc, data_dir)
         if stable_id not in index:
             if not cache_path.is_file():
-                refresh_err = stem_index.refresh_error(data_dir)
+                refresh_err = source.refresh_error(data_dir)
                 if refresh_err is not None:
                     _raise_index_refresh_failed(refresh_err)
-            return None
+            _raise_bundle_not_indexed(stable_id)
         stems_dir = _stems_dir(request)
         future = _HYDRATE_EXECUTOR.submit(
             _run_hydration,
             stable_id,
-            cfg=cfg,
-            s3=s3,
+            source=source,
             index=index,
             data_dir=data_dir,
             stems_dir=stems_dir,
@@ -251,19 +290,31 @@ def _enqueue_hydration(stable_id: str, request: Request) -> Future | None:
         return future
 
 
-def _recorded_hydration_error(stable_id: str) -> str | None:
+def _recorded_hydration_error(stable_id: str) -> _HydrateError | None:
     with _INFLIGHT_LOCK:
         return _LAST_HYDRATE_ERROR.get(stable_id)
 
 
-def _raise_hydration_failed(reason: str) -> None:
+def _raise_hydration_failed(error: _HydrateError | str) -> None:
     """Fail LOUD, never silent-empty: the index said this bundle exists, and
     hydration could not produce it. A caller must never read this the same
     as "no bundle anywhere" (HTTP 200 unavailable / 404) -- see the storage
     view's fail-loud requirement (ADR-0024)."""
+    if isinstance(error, str):
+        detail = {"code": "STEM_BUNDLE_HYDRATION_FAILED", "message": error}
+    else:
+        detail = {"code": error.code, "message": error.message}
+    raise HTTPException(status_code=502, detail=detail)
+
+
+def _raise_bundle_not_indexed(stable_id: str) -> None:
+    """Fail loud when hydration is armed but the index has no bundle entry."""
     raise HTTPException(
         status_code=502,
-        detail={"code": "STEM_BUNDLE_HYDRATION_FAILED", "message": reason},
+        detail={
+            "code": STEM_BUNDLE_NOT_INDEXED,
+            "message": f"stable_id {stable_id!r} is not in the published stem index",
+        },
     )
 
 
@@ -425,8 +476,14 @@ def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingRespo
                 },
             ) from None
         except Exception as exc:  # noqa: BLE001 - any escaping exception from the hydration future must still answer the same 502 contract, never an unclassified 500
+            recorded = _recorded_hydration_error(stable_id)
+            if recorded is not None:
+                _raise_hydration_failed(recorded)
             _raise_hydration_failed(str(exc))
         if outcome.status == "error":
+            recorded = _recorded_hydration_error(stable_id)
+            if recorded is not None:
+                _raise_hydration_failed(recorded)
             _raise_hydration_failed(outcome.reason or "hydration failed")
         bundle = _load_or_http_error(stable_id, request)
     if part not in bundle.parts:
