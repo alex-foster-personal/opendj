@@ -108,7 +108,7 @@ def test_compile_without_actool_is_refused(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("INSTALL-19")
 def test_install_sets_icon_name_without_disturbing_other_keys(tmp_path: Path) -> None:
-    """[if] installing where CFBundleIconName is absent [then] only that key changes, [else]."""
+    """[if] installing where CFBundleIconName is absent [then] only that key changes, [else stop]."""
     app = tmp_path / "Open DJ.app"
     (app / "Contents" / "Resources").mkdir(parents=True)
     original = {

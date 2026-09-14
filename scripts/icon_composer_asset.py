@@ -121,14 +121,28 @@ def find_actool() -> Path:
 
     actool ships only with full Xcode (verified empirically: xcrun refuses it
     under /Library/Developer/CommandLineTools), so a missing actool here
-    means "select Xcode 26+", not "skip this step".
+    means "select Xcode 26+", not "skip this step". This also covers a host
+    with no ``xcrun`` at all (e.g. a Linux CI runner): a missing binary is
+    the same "cannot compile here" fact as a resolvable-but-empty xcrun, so
+    both raise the same named-remedy error instead of one of them crashing
+    with an unhandled FileNotFoundError.
     """
-    result = subprocess.run(
-        ["xcrun", "--find", "actool"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["xcrun", "--find", "actool"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        msg = (
+            "actool not found; Icon Composer compilation needs a full Xcode 26+ "
+            "install (command line tools alone do not ship actool, and this host "
+            f"has no xcrun at all: {exc}). Run "
+            "'xcode-select -s /Applications/Xcode.app' on a host that has it, "
+            "or set DEVELOPER_DIR."
+        )
+        raise PayloadBuildError(msg) from exc
     if result.returncode != 0 or not result.stdout.strip():
         msg = (
             "actool not found; Icon Composer compilation needs a full Xcode 26+ "
