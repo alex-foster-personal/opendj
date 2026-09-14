@@ -7777,7 +7777,8 @@
             "enum": [
               "ok",
               "error",
-              "inconclusive"
+              "inconclusive",
+              "deferred"
             ],
             "title": "Status",
             "type": "string"
@@ -13138,7 +13139,8 @@
             "enum": [
               "ok",
               "error",
-              "inconclusive"
+              "inconclusive",
+              "deferred"
             ],
             "title": "Status",
             "type": "string"
@@ -15856,6 +15858,12 @@
       "SyncRunIn": {
         "additionalProperties": false,
         "properties": {
+          "force": {
+            "default": false,
+            "description": "Bypass Gig posture and playing-deck gates for this round only.",
+            "title": "Force",
+            "type": "boolean"
+          },
           "hub_url": {
             "description": "the hub base URL, e.g. http://hub.tailnet:8686 (CLI --hub)",
             "minLength": 1,
@@ -22465,7 +22473,7 @@
                 }
               }
             },
-            "description": "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error."
+            "description": "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled (force=true does not bypass this). CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync before any hub I/O when force=false; NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error."
           },
           "422": {
             "content": {

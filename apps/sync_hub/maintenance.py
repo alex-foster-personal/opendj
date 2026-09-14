@@ -283,6 +283,11 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help="this machine's display name; defaults to the hostname",
     )
+    sync_command.add_argument(
+        "--force",
+        action="store_true",
+        help="Bypass Gig posture and playing-deck gates for this round only.",
+    )
 
     subcommands.add_parser(
         "generation", parents=[common], help="print this hub's generation token"
@@ -588,7 +593,15 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     if args.command == "sync":
         try:
-            return _report_sync(sync(args.data_dir, args.hub, name=args.name, ui_mirror=None))
+            return _report_sync(
+                sync(
+                    args.data_dir,
+                    args.hub,
+                    name=args.name,
+                    ui_mirror=None,
+                    force=args.force,
+                )
+            )
         except SyncDeferredError as exc:
             print(f"DEFERRED: {exc.reason}", file=sys.stderr)
             return EXIT_SYNC_DEFERRED

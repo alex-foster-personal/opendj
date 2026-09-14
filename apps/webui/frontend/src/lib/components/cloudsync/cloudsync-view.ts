@@ -341,10 +341,38 @@ export function chipAriaLabel(status: CloudSyncStatus | null, loadError: string 
 
 // ----------------------------------------------------------- sync now
 
+export const SYNC_DEFER_GIG = 'gig_posture';
+export const SYNC_DEFER_DECK_PLAYING = 'deck_playing';
+
+export type UiMirrorDecks = Record<string, { playing?: boolean } | unknown>;
+
+export function anyDeckPlaying(uiMirror: { decks?: UiMirrorDecks } | null): boolean {
+	if (uiMirror === null) return false;
+	const decks = uiMirror.decks;
+	if (decks === undefined || typeof decks !== 'object') return false;
+	for (const deck of Object.values(decks)) {
+		if (typeof deck === 'object' && deck !== null && deck.playing === true) {
+			return true;
+		}
+	}
+	return false;
+}
+
+export function syncRuntimeGateReason(
+	appPosture: 'prep' | 'gig',
+	uiMirror: { decks?: UiMirrorDecks } | null
+): typeof SYNC_DEFER_GIG | typeof SYNC_DEFER_DECK_PLAYING | null {
+	if (appPosture === 'gig') return SYNC_DEFER_GIG;
+	if (anyDeckPlaying(uiMirror)) return SYNC_DEFER_DECK_PLAYING;
+	return null;
+}
+
+export const FORCE_SYNC_LABEL =
+	"Force sync (oDJ won't sync during performance unless this is clicked)";
+
 export type SyncNowDecision = { kind: 'post'; body: SyncRunBody } | { kind: 'refuse'; reason: string };
 
-/** Sync now runs against the EFFECTIVE hub URL (env override included). */
-export function syncNowRequest(config: CloudSyncConfigOut | null): SyncNowDecision {
+function syncHubUrlDecision(config: CloudSyncConfigOut | null): SyncNowDecision | { hubUrl: string } {
 	if (config === null) {
 		return { kind: 'refuse', reason: 'CloudSync config has not loaded yet.' };
 	}
@@ -352,7 +380,38 @@ export function syncNowRequest(config: CloudSyncConfigOut | null): SyncNowDecisi
 	if (hubUrl === null) {
 		return { kind: 'refuse', reason: 'Set a hub URL in the config form first.' };
 	}
-	return { kind: 'post', body: { hub_url: hubUrl, name: config.effective.machine_name } };
+	return { hubUrl };
+}
+
+/** Sync now runs against the EFFECTIVE hub URL (env override included). */
+export function syncNowRequest(
+	config: CloudSyncConfigOut | null,
+	gate: { appPosture: 'prep' | 'gig'; uiMirror: { decks?: UiMirrorDecks } | null }
+): SyncNowDecision {
+	const hub = syncHubUrlDecision(config);
+	if ('kind' in hub) return hub;
+	const deferReason = syncRuntimeGateReason(gate.appPosture, gate.uiMirror);
+	if (deferReason !== null) {
+		const label = deferReason === SYNC_DEFER_GIG ? 'Gig posture' : 'a playing deck';
+		return {
+			kind: 'refuse',
+			reason: `CloudSync sync deferred (${deferReason}): ${label} is active. Use Force sync to bypass for one round.`
+		};
+	}
+	return {
+		kind: 'post',
+		body: { hub_url: hub.hubUrl, name: config!.effective.machine_name }
+	};
+}
+
+/** Force sync bypasses Gig and playing-deck gates for one round only. */
+export function forceSyncNowRequest(config: CloudSyncConfigOut | null): SyncNowDecision {
+	const hub = syncHubUrlDecision(config);
+	if ('kind' in hub) return hub;
+	return {
+		kind: 'post',
+		body: { hub_url: hub.hubUrl, name: config!.effective.machine_name, force: true }
+	};
 }
 
 // ----------------------------------------------------------- config form

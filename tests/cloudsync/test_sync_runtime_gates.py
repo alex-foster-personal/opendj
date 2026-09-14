@@ -83,3 +83,28 @@ def test_cli_sync_exits_3_when_gig_posture(tmp_path: Path) -> None:
     assert result.returncode == 3
     assert DEFER_REASON_GIG in result.stderr
     assert sync_status.read_results(tmp_path) == ()
+
+
+def test_cli_sync_force_exits_0_under_gig_posture(
+    enroll_live_hub: str, enroll_spoke_dir: Path
+) -> None:
+    """[if] CLI sync --force under gig posture [then] exit 0 and a journal row."""
+    _write_gig_prefs(enroll_spoke_dir)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "apps.sync_hub",
+            "sync",
+            "--data-dir",
+            str(enroll_spoke_dir),
+            "--hub",
+            enroll_live_hub,
+            "--force",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode in {0, 4}, result.stderr
+    assert len(sync_status.read_results(enroll_spoke_dir)) == 1

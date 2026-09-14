@@ -191,13 +191,55 @@ def test_post_sync_returns_409_when_gig_posture(
     (prefs_dir / "ui-prefs.json").write_text('{"app_posture": "gig"}', encoding="utf-8")
 
     with ops_client(enroll_spoke_dir) as http:
-        response = http.post("/api/v1/cloudsync/sync", json={"hub_url": enroll_live_hub})
+        response = http.post(
+            "/api/v1/cloudsync/sync",
+            json={"hub_url": enroll_live_hub, "force": False},
+        )
         status = http.get("/api/v1/cloudsync/status").json()
 
     assert response.status_code == 409, response.text
     detail = response.json()["detail"]
     assert detail["code"] == "CLOUDSYNC_SYNC_DEFERRED"
     assert "gig_posture" in detail["message"]
+    assert status["recent_results"] == []
+
+
+def test_post_sync_force_true_completes_under_gig_posture(
+    enroll_live_hub: str, enroll_spoke_dir: Path
+) -> None:
+    """[if] force=true under gig posture [then] POST /sync completes and journals."""
+    prefs_dir = enroll_spoke_dir / "state"
+    prefs_dir.mkdir(parents=True, exist_ok=True)
+    (prefs_dir / "ui-prefs.json").write_text('{"app_posture": "gig"}', encoding="utf-8")
+
+    with ops_client(enroll_spoke_dir) as http:
+        response = http.post(
+            "/api/v1/cloudsync/sync",
+            json={"hub_url": enroll_live_hub, "force": True},
+        )
+        status = http.get("/api/v1/cloudsync/status").json()
+
+    assert response.status_code == 200, response.text
+    assert len(status["recent_results"]) == 1
+    assert status["last_result"]["status"] in {"ok", "inconclusive"}
+
+
+def test_post_sync_force_true_still_busy_when_lock_held(enroll_spoke_dir: Path) -> None:
+    """[if] force=true while sync lock is held [then] 409 CLOUDSYNC_SYNC_IN_PROGRESS."""
+    lock = sync_lock_for(enroll_spoke_dir)
+    with ops_client(enroll_spoke_dir) as http:
+        assert lock.acquire(blocking=False), "control: nothing else holds the lock"
+        try:
+            response = http.post(
+                "/api/v1/cloudsync/sync",
+                json={"hub_url": "http://127.0.0.1:9", "force": True},
+            )
+        finally:
+            lock.release()
+        status = http.get("/api/v1/cloudsync/status").json()
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "CLOUDSYNC_SYNC_IN_PROGRESS"
     assert status["recent_results"] == []
 
 
