@@ -1,4 +1,8 @@
-"""Autolist group compiler tests (issue #2066)."""
+"""Autolist group compiler tests (issue #2066).
+
+[if] autolist selections span genre, rating, and bpm [then] groups union and intersect, [else stop].
+"""
+
 from __future__ import annotations
 
 import pytest
@@ -17,13 +21,15 @@ pytestmark = pytest.mark.requirement("SMART-05")
 
 @pytest.fixture
 def seeded_library(fixture_library):
-    fixture_library.add_many([
-        {"stable_id": "a", "fields": {"genre": "House", "bpm": 125, "rating": 5}},
-        {"stable_id": "b", "fields": {"genre": "House", "bpm": 118, "rating": 3}},
-        {"stable_id": "c", "fields": {"genre": "Techno", "bpm": 128, "rating": 5}},
-        {"stable_id": "d", "fields": {"genre": "House", "bpm": 124, "rating": 2}},
-        {"stable_id": "e", "fields": {"genre": "House", "bpm": 126, "rating": 5, "energy": 9}},
-    ])
+    fixture_library.add_many(
+        [
+            {"stable_id": "a", "fields": {"genre": "House", "bpm": 125, "rating": 5}},
+            {"stable_id": "b", "fields": {"genre": "House", "bpm": 118, "rating": 3}},
+            {"stable_id": "c", "fields": {"genre": "Techno", "bpm": 128, "rating": 5}},
+            {"stable_id": "d", "fields": {"genre": "House", "bpm": 124, "rating": 2}},
+            {"stable_id": "e", "fields": {"genre": "House", "bpm": 126, "rating": 5, "energy": 9}},
+        ]
+    )
     return fixture_library
 
 
@@ -50,13 +56,15 @@ def test_across_group_intersection(seeded_library, state_conn) -> None:
 
 
 def test_bpm_window_120_129(seeded_library, state_conn) -> None:
-    seeded_library.add_many([
-        {"stable_id": "in1", "fields": {"genre": "X", "bpm": 125, "rating": 1}},
-        {"stable_id": "in2", "fields": {"genre": "X", "bpm": 128, "rating": 1}},
-        {"stable_id": "in3", "fields": {"genre": "X", "bpm": 124, "rating": 1}},
-        {"stable_id": "in4", "fields": {"genre": "X", "bpm": 126, "rating": 1}},
-        {"stable_id": "out1", "fields": {"genre": "X", "bpm": 118, "rating": 1}},
-    ])
+    seeded_library.add_many(
+        [
+            {"stable_id": "in1", "fields": {"genre": "X", "bpm": 125, "rating": 1}},
+            {"stable_id": "in2", "fields": {"genre": "X", "bpm": 128, "rating": 1}},
+            {"stable_id": "in3", "fields": {"genre": "X", "bpm": 124, "rating": 1}},
+            {"stable_id": "in4", "fields": {"genre": "X", "bpm": 126, "rating": 1}},
+            {"stable_id": "out1", "fields": {"genre": "X", "bpm": 118, "rating": 1}},
+        ]
+    )
     rule = selection_to_rule({"genre": [], "rating": [], "bpm": ["120-129"]})
     assert rule is not None
     result = evaluate(rule, state_conn)
@@ -66,10 +74,12 @@ def test_bpm_window_120_129(seeded_library, state_conn) -> None:
 
 
 def test_unrated_includes_zero_and_missing(fixture_library, state_conn) -> None:
-    fixture_library.add_many([
-        {"stable_id": "z0", "fields": {"genre": "X", "bpm": 120, "rating": 0}},
-        {"stable_id": "zm", "fields": {"genre": "X", "bpm": 120}},
-    ])
+    fixture_library.add_many(
+        [
+            {"stable_id": "z0", "fields": {"genre": "X", "bpm": 120, "rating": 0}},
+            {"stable_id": "zm", "fields": {"genre": "X", "bpm": 120}},
+        ]
+    )
     rule = selection_to_rule({"genre": [], "rating": [RATING_UNRATED_ID], "bpm": []})
     assert rule is not None
     result = evaluate(rule, state_conn)
@@ -96,9 +106,11 @@ def test_rating_bucket_key() -> None:
 
 
 def test_genre_unspecified_bucket(seeded_library, state_conn) -> None:
-    seeded_library.add_many([
-        {"stable_id": "nog", "fields": {"bpm": 120, "rating": 1}},
-    ])
+    seeded_library.add_many(
+        [
+            {"stable_id": "nog", "fields": {"bpm": 120, "rating": 1}},
+        ]
+    )
     rule = selection_to_rule({"genre": [GENRE_UNSPECIFIED_ID], "rating": [], "bpm": []})
     assert rule is not None
     result = evaluate(rule, state_conn)

@@ -17,8 +17,12 @@ test('deck controls expose scoped AX names and stable test ids', () => {
 	const loops = source('src/lib/components/rb/deck/LoopCluster.svelte');
 
 	assert.ok(
-		transport.includes("aria-label={`play deck ${deck.deck_id}`}"),
+		transport.includes('`play deck ${deck.deck_id}`'),
 		'if play names stop carrying their deck then an AX-tree agent finds four indistinguishable play buttons'
+	);
+	assert.ok(
+		transport.includes('${QUANTIZED_LAUNCH} deck ${deck.deck_id}'),
+		'if QUANTIZED LAUNCH names stop carrying their deck then an AX-tree agent finds four indistinguishable armed play buttons'
 	);
 	assert.ok(
 		transport.includes('data-testid={`play-deck-${deck.deck_id}`}'),
@@ -66,11 +70,11 @@ test('MCP AX serialization includes pressed and numeric values', () => {
 // landed on trunk. Source-scan, matching this file's existing convention --
 // no jsdom/testing-library exists in this frontend package, so structural
 // position (not a rendered DOM) is what pins the regression.
-test('headphone "+ OUT" button is queryable by its accessible name', () => {
+test('headphone I/O button is queryable by its accessible name', () => {
 	const headphones = source('src/lib/components/rb/mixer/HeadphoneCluster.svelte');
 	assert.ok(
-		headphones.includes('aria-label="ADD OUTPUT"'),
-		'if the +OUT button loses its aria-label then it has no accessible name distinct from its "+ OUT" glyph text'
+		headphones.includes('aria-label="SHOW AUDIO I/O"'),
+		'if the I/O button loses its aria-label then it has no accessible name distinct from its I/O glyph text'
 	);
 });
 

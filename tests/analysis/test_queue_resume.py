@@ -4,6 +4,8 @@ Lane brief `specs/native-analysis-v1-lanes/nav1-queue.md` item 4, requirement
 NATIVE-10 ("[if] a backfill is cancelled and restarted [then] it resumes and
 re-runs idempotently, reporting progress throughout").
 
+[if] a backfill is cancelled and restarted [then] it resumes and reruns idempotently, [else stop].
+
 TWO ARMS, and the brief is explicit that only the second one proves the
 contract:
 
@@ -40,6 +42,7 @@ Single-line intent, one assertion block each:
   installing the missing capability and resuming cannot recover the batch --
   broken.
 """
+
 from __future__ import annotations
 
 import json
@@ -108,6 +111,7 @@ def probe_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 # --- arm (a): same-process cancel and resume ------------------------------
+
 
 def test_same_process_cancel_then_resume_completes_every_item_exactly_once(
     tmp_path: Path, probe_dir: Path
@@ -186,6 +190,7 @@ def test_a_fresh_enqueue_of_analyzed_tracks_skips_them_by_name(
 
 # --- arm (b): a real process kill -----------------------------------------
 
+
 def _spawn_runner(db: Path, batch_id: str, probe_dir: Path, sleep_s: float):
     env = {
         **os.environ,
@@ -196,10 +201,17 @@ def _spawn_runner(db: Path, batch_id: str, probe_dir: Path, sleep_s: float):
     }
     return subprocess.Popen(
         [
-            sys.executable, "-m", "apps.analysis.queue_cli",
-            "--db", str(db), "--json", "run",
-            "--batch-id", batch_id,
-            "--backend", "tests.analysis.queue_probe_backends:BeatgridProbeV1",
+            sys.executable,
+            "-m",
+            "apps.analysis.queue_cli",
+            "--db",
+            str(db),
+            "--json",
+            "run",
+            "--batch-id",
+            batch_id,
+            "--backend",
+            "tests.analysis.queue_probe_backends:BeatgridProbeV1",
         ],
         cwd=str(REPO_ROOT),
         env=env,
@@ -241,9 +253,7 @@ def _kill_group(proc: subprocess.Popen[str]) -> None:
     raise AssertionError(f"process group {pgid} still has members after SIGKILL")
 
 
-def test_killed_runner_resumes_in_a_fresh_process_exactly_once(
-    tmp_path: Path
-) -> None:
+def test_killed_runner_resumes_in_a_fresh_process_exactly_once(tmp_path: Path) -> None:
     """SIGKILL the runner mid-batch; a fresh process finishes the job.
 
     The kill is ``SIGKILL`` on the runner's whole process group, not a
@@ -267,9 +277,7 @@ def test_killed_runner_resumes_in_a_fresh_process_exactly_once(
         if len(list(probe_dir.glob("*.json"))) >= 2:
             break
         if proc.poll() is not None:
-            pytest.fail(
-                f"runner exited early: {proc.returncode}\n{proc.stderr.read()}"
-            )
+            pytest.fail(f"runner exited early: {proc.returncode}\n{proc.stderr.read()}")
         time.sleep(0.1)
     else:  # pragma: no cover - only on a pathologically slow machine
         proc.kill()
@@ -297,9 +305,7 @@ def test_killed_runner_resumes_in_a_fresh_process_exactly_once(
     # item that is not done: no torn record in either direction.
     done_ids = {
         i.stable_id
-        for i in queue_store.list_items(
-            conn, result.batch_id, states=(queue_store.ITEM_DONE,)
-        )
+        for i in queue_store.list_items(conn, result.batch_id, states=(queue_store.ITEM_DONE,))
     }
     assert done_ids == committed_ids
 
@@ -340,6 +346,7 @@ def test_killed_runner_resumes_in_a_fresh_process_exactly_once(
 
 
 # --- machine faults are not track verdicts --------------------------------
+
 
 def test_a_cancel_that_lands_mid_analysis_beats_the_worker_settling_it(
     tmp_path: Path, probe_dir: Path
@@ -394,9 +401,7 @@ def test_a_cancel_that_lands_mid_analysis_beats_the_worker_settling_it(
         )
         is not None
     )
-    assert (
-        queue_store.counts_by_state(conn, result.batch_id)[queue_store.ITEM_DONE] == 1
-    )
+    assert queue_store.counts_by_state(conn, result.batch_id)[queue_store.ITEM_DONE] == 1
     conn.close()
 
 
@@ -414,8 +419,7 @@ def test_a_backend_wide_outage_stops_the_batch_and_keeps_it_retryable(
 
     counts = queue_store.counts_by_state(conn, result.batch_id)
     assert counts[queue_store.ITEM_FAILED] == 0, (
-        "a capability outage recorded as a terminal per-track failure is "
-        "unrecoverable by resume"
+        "a capability outage recorded as a terminal per-track failure is unrecoverable by resume"
     )
     assert counts[queue_store.ITEM_DONE] == 0
     # Everything is still queued: the item that met the outage was released

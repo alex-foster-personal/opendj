@@ -1,11 +1,14 @@
-"""LIBM-22: POST /playlists/{id}/items:move without rewriting neighbors."""
+"""LIBM-22: POST /playlists/{id}/items:move without rewriting neighbors.
+
+[if] a slice of playlist items moves [then] only the moved rows receive new order keys, [else stop].
+"""
+
 from __future__ import annotations
 
 import json
 import sqlite3
-import uuid
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -39,9 +42,14 @@ def db_path(tmp_path: Path) -> Path:
     try:
         for i, sid in enumerate(TRACK_IDS, start=1):
             writer.upsert_track(
-                stable_id=sid, stable_id_tier="inferred",
-                title=f"Track {i}", artists=[f"Artist {i}"], album=None,
-                isrc=None, duration_ms=180_000 + i, file_path=None,
+                stable_id=sid,
+                stable_id_tier="inferred",
+                title=f"Track {i}",
+                artists=[f"Artist {i}"],
+                album=None,
+                isrc=None,
+                duration_ms=180_000 + i,
+                file_path=None,
             )
     finally:
         writer.close()
@@ -52,9 +60,12 @@ def db_path(tmp_path: Path) -> Path:
 @pytest.fixture
 def client(db_path: Path) -> Iterator[TestClient]:
     app = create_app(
-        backend=SqliteBackend(db_path), state_db_path=str(db_path),
-        bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None, mount_frontend=False,
+        backend=SqliteBackend(db_path),
+        state_db_path=str(db_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
     )
     with TestClient(app) as c:
         yield c
@@ -78,7 +89,10 @@ def _put_tracks(client: TestClient, pid: str, etag: str, ids: list[str]) -> str:
 
 
 def _move(
-    client: TestClient, pid: str, etag: str, body: dict,
+    client: TestClient,
+    pid: str,
+    etag: str,
+    body: dict,
 ):
     return client.post(
         f"/api/v1/playlists/{pid}/items:move",
@@ -130,7 +144,8 @@ def _live_order_keys(db_path: Path, playlist_id: str) -> list[str]:
 
 
 def test_move_slice_neighbors_untouched(
-    client: TestClient, db_path: Path,
+    client: TestClient,
+    db_path: Path,
 ) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
@@ -139,12 +154,17 @@ def test_move_slice_neighbors_untouched(
     before = dump_members(db_path, pid)
     ids = _live_item_ids(client, pid)
     old_etag = etag
-    r = _move(client, pid, etag, {
-        "range_start": ids[1],
-        "range_length": 2,
-        "range_end": ids[2],
-        "after_item_id": ids[-1],
-    })
+    r = _move(
+        client,
+        pid,
+        etag,
+        {
+            "range_start": ids[1],
+            "range_length": 2,
+            "range_end": ids[2],
+            "after_item_id": ids[-1],
+        },
+    )
     assert r.status_code == 200, r.text
     payload = r.json()
     assert payload["renumbered"] is False
@@ -167,7 +187,8 @@ def test_move_slice_neighbors_untouched(
 
 
 def test_non_contiguous_slice_refused(
-    client: TestClient, db_path: Path,
+    client: TestClient,
+    db_path: Path,
 ) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
@@ -175,12 +196,17 @@ def test_non_contiguous_slice_refused(
     before = dump_members(db_path, pid)
     ids = _live_item_ids(client, pid)
     kinds_before = _event_kinds(db_path)
-    r = _move(client, pid, etag, {
-        "range_start": ids[0],
-        "range_length": 2,
-        "range_end": ids[2],
-        "after_item_id": ids[3],
-    })
+    r = _move(
+        client,
+        pid,
+        etag,
+        {
+            "range_start": ids[0],
+            "range_length": 2,
+            "range_end": ids[2],
+            "after_item_id": ids[3],
+        },
+    )
     assert r.status_code == 422
     err = r.json()
     assert err["error"] == "slice_not_contiguous"
@@ -193,7 +219,8 @@ def test_non_contiguous_slice_refused(
 
 
 def test_target_inside_slice_refused(
-    client: TestClient, db_path: Path,
+    client: TestClient,
+    db_path: Path,
 ) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
@@ -201,12 +228,17 @@ def test_target_inside_slice_refused(
     before = dump_members(db_path, pid)
     ids = _live_item_ids(client, pid)
     items_before = client.get(f"/api/v1/playlists/{pid}").json()["items"]
-    r = _move(client, pid, etag, {
-        "range_start": ids[1],
-        "range_length": 3,
-        "range_end": ids[3],
-        "before_item_id": ids[2],
-    })
+    r = _move(
+        client,
+        pid,
+        etag,
+        {
+            "range_start": ids[1],
+            "range_length": 3,
+            "range_end": ids[3],
+            "before_item_id": ids[2],
+        },
+    )
     assert r.status_code == 422
     assert r.json()["error"] == "target_inside_slice"
     assert dump_members(db_path, pid) == before
@@ -214,7 +246,9 @@ def test_target_inside_slice_refused(
 
 
 def test_precision_exhaustion_renumbers(
-    client: TestClient, db_path: Path, monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    db_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import apps.shared.state.order_key as order_key_mod
 
@@ -224,20 +258,24 @@ def test_precision_exhaustion_renumbers(
     stable = ["t-001", "t-002", "t-003", "t-004", "t-005"]
     etag = _put_tracks(client, pid, etag, stable)
     ids = _live_item_ids(client, pid)
-    r = _move(client, pid, etag, {
-        "range_start": ids[-1],
-        "range_length": 1,
-        "range_end": ids[-1],
-        "before_item_id": ids[1],
-    })
+    r = _move(
+        client,
+        pid,
+        etag,
+        {
+            "range_start": ids[-1],
+            "range_length": 1,
+            "range_end": ids[-1],
+            "before_item_id": ids[1],
+        },
+    )
     assert r.status_code == 200, r.text
     assert r.json()["renumbered"] is True
     events = [
         json.loads(row[1])
-        for row in sqlite3.connect(str(db_path)).execute(
-            "SELECT kind, payload_json FROM events "
-            "WHERE kind='playlist.memberships.move'"
-        ).fetchall()
+        for row in sqlite3.connect(str(db_path))
+        .execute("SELECT kind, payload_json FROM events WHERE kind='playlist.memberships.move'")
+        .fetchall()
     ]
     assert events[-1]["renumbered"] is True
     after = dump_members(db_path, pid)
@@ -250,7 +288,8 @@ def test_precision_exhaustion_renumbers(
 
 
 def test_five_row_slice_one_call(
-    client: TestClient, db_path: Path,
+    client: TestClient,
+    db_path: Path,
 ) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
@@ -258,12 +297,17 @@ def test_five_row_slice_one_call(
     etag = _put_tracks(client, pid, etag, stable)
     before = dump_members(db_path, pid)
     ids = _live_item_ids(client, pid)
-    r = _move(client, pid, etag, {
-        "range_start": ids[0],
-        "range_length": 5,
-        "range_end": ids[4],
-        "after_item_id": ids[5],
-    })
+    r = _move(
+        client,
+        pid,
+        etag,
+        {
+            "range_start": ids[0],
+            "range_length": 5,
+            "range_end": ids[4],
+            "after_item_id": ids[5],
+        },
+    )
     assert r.status_code == 200, r.text
     moved = set(ids[:5])
     after = dump_members(db_path, pid)
@@ -297,12 +341,17 @@ def test_stale_if_match_409(client: TestClient, db_path: Path) -> None:
     etag = _put_tracks(client, pid, etag, ["t-001", "t-002", "t-003", "t-004"])
     before = dump_members(db_path, pid)
     ids = _live_item_ids(client, pid)
-    r = _move(client, pid, '"stale-etag"', {
-        "range_start": ids[0],
-        "range_length": 1,
-        "range_end": ids[0],
-        "after_item_id": ids[3],
-    })
+    r = _move(
+        client,
+        pid,
+        '"stale-etag"',
+        {
+            "range_start": ids[0],
+            "range_length": 1,
+            "range_end": ids[0],
+            "after_item_id": ids[3],
+        },
+    )
     assert r.status_code == 409
     assert r.json()["error"] == "conflict"
     assert dump_members(db_path, pid) == before
@@ -315,11 +364,16 @@ def test_smartlist_refused(client: TestClient, db_path: Path) -> None:
         conn.commit()
     finally:
         conn.close()
-    r = _move(client, sid, '"x"', {
-        "range_start": "a",
-        "range_length": 1,
-        "after_item_id": "b",
-    })
+    r = _move(
+        client,
+        sid,
+        '"x"',
+        {
+            "range_start": "a",
+            "range_length": 1,
+            "after_item_id": "b",
+        },
+    )
     assert r.status_code == 422
     assert r.json()["error"] == "smartlist_immutable"
     r404 = client.post(
@@ -340,7 +394,8 @@ def test_openapi_documents_move(client: TestClient) -> None:
 
 
 def test_true_no_op_same_position(
-    client: TestClient, db_path: Path,
+    client: TestClient,
+    db_path: Path,
 ) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
@@ -349,12 +404,17 @@ def test_true_no_op_same_position(
     ids = _live_item_ids(client, pid)
     kinds_before = _event_kinds(db_path)
     old_etag = etag
-    r = _move(client, pid, etag, {
-        "range_start": ids[1],
-        "range_length": 2,
-        "range_end": ids[2],
-        "after_item_id": ids[0],
-    })
+    r = _move(
+        client,
+        pid,
+        etag,
+        {
+            "range_start": ids[1],
+            "range_length": 2,
+            "range_end": ids[2],
+            "after_item_id": ids[0],
+        },
+    )
     assert r.status_code == 200, r.text
     assert r.json()["renumbered"] is False
     assert r.headers["ETag"] == old_etag
@@ -363,19 +423,25 @@ def test_true_no_op_same_position(
 
 
 def test_undo_restores_order_keys(
-    client: TestClient, db_path: Path,
+    client: TestClient,
+    db_path: Path,
 ) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
     etag = _put_tracks(client, pid, etag, ["t-001", "t-002", "t-003", "t-004", "t-005"])
     before = dump_members(db_path, pid)
     ids = _live_item_ids(client, pid)
-    r = _move(client, pid, etag, {
-        "range_start": ids[1],
-        "range_length": 2,
-        "range_end": ids[2],
-        "after_item_id": ids[-1],
-    })
+    r = _move(
+        client,
+        pid,
+        etag,
+        {
+            "range_start": ids[1],
+            "range_length": 2,
+            "range_end": ids[2],
+            "after_item_id": ids[-1],
+        },
+    )
     assert r.status_code == 200, r.text
     undo = client.post("/api/v1/playlist-history/undo")
     assert undo.status_code == 200, undo.text
@@ -384,5 +450,8 @@ def test_undo_restores_order_keys(
         live = after[iid]
         pre = before[iid]
         assert (live[0], live[1], live[2], live[3]) == (
-            pre[0], pre[1], pre[2], pre[3],
+            pre[0],
+            pre[1],
+            pre[2],
+            pre[3],
         )

@@ -405,6 +405,27 @@ test('pause still stores a snapped cue when the deck does have a grid', () => {
 	);
 });
 
+test('LATENCY-02 QUANTIZED LAUNCH refuses on a gridless deck while plain play still runs', async () => {
+	const gridless = _deck({ anlz: null });
+	assert.equal(grid.effectiveBeatSync(gridless), false);
+	const plan = await loadTypeScriptModule('src/lib/player/transport/quantized-launch.ts');
+	const refused = plan.planQuantizedLaunch({
+		nowContextTimeSec: 1,
+		processorLeadSec: 0.05,
+		masterPlaying: true,
+		masterBeats: REAL_PQTZ_BEATS,
+		masterPositionSec: 0.2,
+		masterTempoRatio: 1,
+		followerPlaying: false,
+		followerBeats: [],
+		followerPositionSec: 0
+	});
+	assert.equal(refused.kind, 'refuse');
+	assert.match(refused.reason, /QUANTIZED LAUNCH/);
+	const playBody = engineBlockAfter('async play(deck: DeckId, pressT0Ms?: number): Promise<void> {');
+	assert.doesNotMatch(playBody, /requireBeatGrid\(st, 'play'\)/);
+});
+
 //-----------------------------------------------------------------------------
 // helpers
 //-----------------------------------------------------------------------------

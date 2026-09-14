@@ -1,4 +1,7 @@
-"""LATENCY-03 quality ratchet evaluator tests."""
+"""LATENCY-03 quality ratchet evaluator tests.
+
+[if] eq-apply wiring breaks or the floor is missing [then] evaluate fails loudly, [else stop].
+"""
 
 from __future__ import annotations
 

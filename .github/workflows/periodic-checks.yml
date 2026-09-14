@@ -164,9 +164,18 @@ jobs:
           fi
 
       # Depth 1 is enough: the merge count comes from gh api compare, not git.
+      # clean: false, like every other self-hosted checkout in this workflow
+      # (tests/scripts/test_ci_workspace_reuse.py): this job installs nothing
+      # itself, but it shares a persistent runner with every other job here,
+      # and a clean: true checkout wipes node_modules/.venv/target for the
+      # NEXT job regardless of whether THIS one needed them.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          clean: true
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
 
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -963,6 +972,73 @@ jobs:
           exit 1
 
   # ---------------------------------------------------------------------------
+  # Row 7: desktop dmg smoke Linux observe (DEVOPS-04, #2352).
+  # Headed Mac build/launch/attach cannot run here. This job is the fail-fast
+  # wiring Linux can land: the in-repo instrument still refuses zero counts
+  # and never calls ship_dmg.sh, and the ledger reports headed evidence as
+  # OBSERVED or UNOBSERVED/needs:mac. UNKNOWN (exit 2) reds the job. A missing
+  # Mac run is UNOBSERVED, never a silent skip and never a row=7 SHA marker
+  # (that marker is owned by ops/dmg-smoke/run.sh on the Air).
+  # ---------------------------------------------------------------------------
+  dmg-smoke-cadence:
+    name: desktop dmg smoke observe
+    needs: window
+    if: needs.window.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      verdict: ${{ steps.observe.outputs.verdict }}
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ needs.window.outputs.head }}
+          clean: true
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Desktop dmg smoke cadence observe
+        id: observe
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          if python -m scripts.dmg_smoke_cadence_observe \
+               --repo "$GITHUB_REPOSITORY" \
+               --ledger-issue "$LEDGER_ISSUE" > observe.out 2> observe.err; then
+            code=0
+          else
+            code=$?
+          fi
+          cat observe.err >&2
+          cat observe.out
+          declared="$(sed -n 's/^\[dmg-smoke-cadence\] \(.*\)$/\1/p' observe.out | tail -n 1)"
+          if [ "$code" -eq 2 ] || [ -z "$declared" ]; then
+            verdict="UNKNOWN - NOT MEASURED (exit ${code})"
+          else
+            verdict="$declared"
+          fi
+          echo "verdict=${verdict}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Desktop dmg smoke (row 7)"
+            echo ""
+            echo "verdict: \`${verdict}\`"
+            echo ""
+            echo '```'
+            cat observe.out 2>/dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" -eq 0 ] && [ -n "$declared" ]; then
+            exit 0
+          fi
+          exit 1
+
+  # ---------------------------------------------------------------------------
   # Row 14: duplicate-writer / near-duplicate fleet state (DEVOPS-10, #1580).
   # Cheap, no product toolchain: PyYAML plus the committed inventory at
   # ops/fleet/state-files.yaml. Runs every merge window, same as preview-drift
@@ -1342,7 +1418,7 @@ jobs:
   # ---------------------------------------------------------------------------
   report:
     name: ledger comment
-    needs: [window, full-suite, bundle-trend, perf-bench, perf-bench-stem-decode, perf-bench-waveform-render, preview-drift, reqs-drift, duplicate-writer]
+    needs: [window, full-suite, bundle-trend, perf-bench, perf-bench-stem-decode, perf-bench-waveform-render, preview-drift, reqs-drift, dmg-smoke-cadence, duplicate-writer]
     if: always() && needs.window.result == 'success' && needs.window.outputs.run == 'true'
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 10
@@ -1395,9 +1471,15 @@ jobs:
             fi
           fi
 
+      # clean: false, like every other self-hosted checkout in this workflow
+      # (tests/scripts/test_ci_workspace_reuse.py): same runner, same rule.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          clean: true
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
 
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -1424,6 +1506,8 @@ jobs:
           V_DRIFT: ${{ needs.preview-drift.outputs.verdict }}
           R_REQS: ${{ needs.reqs-drift.result }}
           V_REQS: ${{ needs.reqs-drift.outputs.verdict }}
+          R_DMG: ${{ needs.dmg-smoke-cadence.result }}
+          V_DMG: ${{ needs.dmg-smoke-cadence.outputs.verdict }}
           R_DUPES: ${{ needs.duplicate-writer.result }}
         run: |
           set -euo pipefail
@@ -1597,12 +1681,14 @@ jobs:
           | 5 | perf bench (boot burst) | $(mark "$R_PERF") |
           | 6 | perf bench (stem decode) | $(mark "$R_PERF_STEM") |
           | 6 | perf bench (waveform render) | $(mark "$R_PERF_WAVE") |
+          | 7 | desktop dmg smoke (Linux observe; headed attach needs:mac) | $(mark "$R_DMG") verdict \`${V_DMG:-UNKNOWN}\` |
           | 9 | preview drift (remote refs) | $(mark "$R_DRIFT") verdict \`${V_DRIFT:-UNKNOWN}\` |
           | 11 | requirement status drift (cited but unflipped) | $(mark "$R_REQS") verdict \`${V_REQS:-UNKNOWN}\` |
           | 14 | duplicate-writer (fleet state inventory) | $(mark "$R_DUPES") |
 
-          Rows 3 and 8 and the Air-only dmg row: see
-          \`docs/ops/periodic-checks.md\`. Row 10 (Windows parity) posts its
+          Rows 3 and 8: see \`docs/ops/periodic-checks.md\`. Row 7 Linux
+          observe is in this table; headed Mac attach stays needs:mac until
+          \`com.af.dmg-smoke\` is loaded. Row 10 (Windows parity) posts its
           own ledger comment when its merges:100 window fires. A row absent
           from this table did not run and must not be read as passing.
           $( [ -z "$alarm" ] || printf '\n**%s**\n' "$alarm" )

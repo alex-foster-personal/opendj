@@ -1,4 +1,7 @@
-"""PARITY-01 cues_db and cues_anlz lane scoring."""
+"""PARITY-01 cues_db and cues_anlz lane scoring.
+
+[if] own cues vs rekordbox cues within tolerance [then] matches and misses are scored, [else stop].
+"""
 
 from __future__ import annotations
 

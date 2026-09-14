@@ -1,5 +1,6 @@
 """Migration v13: addressable playlist membership rows (LIBM-20).
 
+[if] a v12 database migrates to v13 [then] every membership row gets a unique item_id, [else stop].
 [if] schema v13 is applied [then] memberships gain stable item ids and TEXT order keys, [else stop].
 """
 from __future__ import annotations
@@ -41,8 +42,7 @@ def test_fresh_ladder_has_item_id_and_order_key() -> None:
     indexes = {
         row[0]
         for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='index' "
-            "AND tbl_name='playlist_memberships'"
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='playlist_memberships'"
         )
     }
     assert "idx_playlist_memberships_item_id" in indexes
@@ -112,7 +112,8 @@ def test_v12_db_migrates_memberships_backfill(tmp_path: Path) -> None:
     state_schema.apply_migrations(fresh)
     migrated = sqlite3.connect(str(path))
     assert _columns(migrated, "playlist_memberships") == _columns(
-        fresh, "playlist_memberships",
+        fresh,
+        "playlist_memberships",
     )
     migrated.close()
     fresh.close()
