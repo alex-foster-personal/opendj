@@ -659,6 +659,58 @@ print("OK", pub_id)
     esac
 }
 
+#----- J. Icon Composer compiled asset (actool or verified fallback) -------
+
+# The gap this closes: since #2567 `just dmg` compiles AppIcon.icon with
+# actool after cargo tauri build. actool ships only with full Xcode, not
+# Command Line Tools alone, so silver and the other build hosts used to pay
+# for the full release compile and then die here. This check runs the SAME
+# decision helper as the recipe, in read-only mode, so a host without actool
+# can still proceed when the committed Assets.car matches the source digest.
+check_icon_composer_asset() {
+    section "J. Icon Composer compiled asset (actool or verified fallback)"
+    local icon_source="$ROOT/apps/desktop/src-tauri/icons/AppIcon.icon"
+    if [ ! -d "$icon_source" ]; then
+        fail "Icon Composer asset" \
+             "no Icon Composer source at $icon_source" \
+             "Run the preflight against a full checkout."
+        return
+    fi
+    if ! command -v uv >/dev/null 2>&1; then
+        fail "Icon Composer asset" \
+             "cannot run the Icon Composer readiness check: uv is not on PATH" \
+             "Install uv (see section E). The check is not being skipped, it could not be measured."
+        return
+    fi
+    local status=0
+    local result host
+    host="$(uname -n 2>/dev/null || hostname 2>/dev/null || echo unknown)"
+    result="$(cd "$SELF_ROOT" && uv run --no-project python -m scripts.icon_composer_asset \
+        --check \
+        --source "$icon_source" \
+        --committed-car "$icon_source/Assets.car" \
+        --sidecar "$icon_source/Assets.car.source.sha256" 2>&1)" || status=$?
+    if [ "$status" -ne 0 ]; then
+        fail "Icon Composer asset" \
+             "$result" \
+             "Install full Xcode 26+ and run 'xcode-select -s /Applications/Xcode.app', or regenerate apps/desktop/src-tauri/icons/AppIcon.icon/Assets.car and Assets.car.source.sha256 on a host with actool when the Icon Composer source changes."
+        return
+    fi
+    case "$result" in
+        compile\ actool=*)
+            ok "Icon Composer: actool available on $host; compile required at build time ($result)"
+            ;;
+        reuse-committed\ path=*)
+            ok "Icon Composer: no actool on $host; verified committed fallback ($result)"
+            ;;
+        *)
+            fail "Icon Composer asset" \
+                 "Icon Composer readiness check returned an unrecognised result on $host: $result" \
+                 "Re-run: uv run --no-project python -m scripts.icon_composer_asset --check --source $icon_source"
+            ;;
+    esac
+}
+
 #----- I. Google OAuth client (packaged sign-in) --------------------------
 
 # The gap this closes: every packaged install since Google sign-in shipped
@@ -713,6 +765,7 @@ check_pnpm_pin
 check_spa_built
 check_updater_signing_key
 check_google_oauth_client
+check_icon_composer_asset
 
 section "summary"
 if [ "$FAILURES" -gt 0 ]; then
