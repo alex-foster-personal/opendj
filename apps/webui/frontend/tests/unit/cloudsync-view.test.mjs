@@ -286,6 +286,78 @@ test('cloudSyncTabFromUrl maps tab query params to the visible tab', () => {
 	assert.equal(tab('?tab=nope'), 'status');
 });
 
+// ----------------------------------------------------------- status headline
+// requirement: CSSTATUS-04
+// if a raw connection-refused exception ever renders as a bare "error" with
+// no cause and no next step then broken
+
+test('plainSyncFailureCause names common transport failures and never invents unknown ones', () => {
+	/** if an unrecognized message is dropped instead of falling back then broken */
+	assert.match(
+		view.plainSyncFailureCause('POST http://h:1/api/v1/sync/hello failed: [Errno 61] Connection refused'),
+		/could not reach the hub machine \(connection refused\)/
+	);
+	assert.match(view.plainSyncFailureCause('Read timed out'), /did not respond in time \(timeout\)/);
+	assert.match(
+		view.plainSyncFailureCause('getaddrinfo ENOTFOUND hub.example'),
+		/hub address could not be found \(DNS lookup failed\)/
+	);
+	assert.match(view.plainSyncFailureCause('401 Unauthorized'), /rejected the sign-in/);
+	assert.match(view.plainSyncFailureCause('some brand new exception text'), /last sync attempt failed/);
+});
+
+test('statusHeadline leads with a plain sentence and a next step for every state', () => {
+	/** if an error result renders a bare word with no cause and no next step then broken */
+	const errorHeadline = view.statusHeadline(
+		status({
+			configured: true,
+			running: true,
+			last_result: { status: 'error', message: '[Errno 61] Connection refused' }
+		})
+	);
+	assert.equal(errorHeadline.tone, 'error');
+	assert.match(errorHeadline.text, /^Not synced: could not reach the hub machine/);
+	assert.match(errorHeadline.text, /Sync now/);
+
+	/** if "not configured" ever reads as a bare no/off with no next step then broken */
+	const notConfigured = view.statusHeadline(status());
+	assert.equal(notConfigured.tone, 'off');
+	assert.match(notConfigured.text, /not set up/);
+	assert.match(notConfigured.text, /Enter a hub URL/);
+
+	/** if configured-but-not-running collapses into the same text as not-configured then broken */
+	const noHeartbeat = view.statusHeadline(status({ configured: true, running: false }));
+	assert.equal(noHeartbeat.tone, 'warn');
+	assert.match(noHeartbeat.text, /not running automatically/);
+	assert.notEqual(noHeartbeat.text, notConfigured.text);
+
+	/** if an inconclusive result reads as ok or as error then broken */
+	const inconclusive = view.statusHeadline(
+		status({ configured: true, running: true, last_result: { status: 'inconclusive', message: '' } })
+	);
+	assert.equal(inconclusive.tone, 'warn');
+	assert.match(inconclusive.text, /could not fully confirm/);
+
+	/** if a genuine ok result still shows jargon instead of "In sync" then broken */
+	const frozenNow = Date.parse('2026-09-14T12:00:00.000Z');
+	const originalNow = Date.now;
+	Date.now = () => frozenNow;
+	try {
+		const ok = view.statusHeadline(
+			status({
+				configured: true,
+				running: true,
+				last_push_at: '2026-09-14T11:48:00.000Z',
+				last_result: { status: 'ok', message: '' }
+			})
+		);
+		assert.equal(ok.tone, 'ok');
+		assert.equal(ok.text, 'In sync. Last synced 12m ago.');
+	} finally {
+		Date.now = originalNow;
+	}
+});
+
 test('env overrides are named when they mask the saved config', () => {
 	/** if an env-won field is silently shown as the saved value then broken */
 	assert.deepEqual(view.envOverrideNotes(config()), []);
