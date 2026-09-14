@@ -3419,6 +3419,9 @@ class RbAudioEngine implements AudioEngine {
 		const master = _syncClockMaster();
 		const ctx = await _resumeContext();
 		const masterState = master === null ? null : deckStates[master];
+		if (master !== null && masterState === null) {
+			throw new Error(`armQuantizedLaunch: deck ${master} has no state despite being the sync clock master`);
+		}
 		const { launchAtContextSec, followerStartSec } = computeQuantizedLaunchArm({
 			followerPlaying: st.playing,
 			followerDesiredActive: rt.desiredActive,
@@ -3427,7 +3430,7 @@ class RbAudioEngine implements AudioEngine {
 			masterSameAsFollower: master === deck,
 			masterPlaying: masterState?.playing === true,
 			masterTrustedGrid:
-				masterState?.anlz !== null && masterState.anlz !== undefined && hasTrustedBeatGrid(masterState.anlz),
+				masterState !== null && masterState.anlz !== null && masterState.anlz !== undefined && hasTrustedBeatGrid(masterState.anlz),
 			nowContextTimeSec: ctx.currentTime,
 			processorLeadSec: _transportLeadSec(deck),
 			masterBeats: masterState === null ? [] : requireBeatGrid(masterState, QUANTIZED_LAUNCH),
