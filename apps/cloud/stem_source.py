@@ -237,36 +237,32 @@ def _cloudsync_configured(data_dir: Path) -> bool:
     return effective.configured and effective.hub_url is not None
 
 
-def arm_stem_hydration_source(data_dir: Path) -> StemHydrationArmResult:
-    """Boot-time wiring: arm a source or record why hydration stays unarmed.
+def _arm_direct_r2_source() -> StemHydrationArmResult | None:
+    """Arm direct-R2 hydration when env credentials resolve.
 
-    Local mode and machines with neither R2 credentials nor CloudSync configured
-    are legitimate unconfigured states (``unarmed_reason`` is ``None``). A
-    machine that IS configured for direct R2 or hub hydration but cannot arm
-    records ``unarmed_reason`` so stems misses answer 502
-    ``STEM_HYDRATION_NOT_ARMED`` instead of the ordinary empty state.
+    Returns an armed or unarmed result when R2 is configured; ``None`` when env
+    credentials are absent so the hub path can be tried.
     """
-    from apps.cloud import policy
     from apps.cloud.config import CloudConfig, MissingEnvError
 
-    data_dir = Path(data_dir)
-    if policy.CFG.mode != "cloud":
-        return StemHydrationArmResult(None, None)
     try:
         cfg = CloudConfig.from_env()
         asset_store.require_credentials(cfg)
     except MissingEnvError:
-        cfg = None
-    if cfg is not None:
-        try:
-            s3 = asset_store.boto3_asset_client(cfg)
-        except asset_store.AssetStoreError as exc:
-            log.warning(
-                "stem-hydration: R2 credentials resolve but hydration is NOT armed: %s",
-                exc,
-            )
-            return StemHydrationArmResult(None, str(exc))
-        return StemHydrationArmResult(DirectR2Source(cfg=cfg, s3=s3), None)
+        return None
+    try:
+        s3 = asset_store.boto3_asset_client(cfg)
+    except asset_store.AssetStoreError as exc:
+        log.warning(
+            "stem-hydration: R2 credentials resolve but hydration is NOT armed: %s",
+            exc,
+        )
+        return StemHydrationArmResult(None, str(exc))
+    return StemHydrationArmResult(DirectR2Source(cfg=cfg, s3=s3), None)
+
+
+def _arm_hub_presigned_source(data_dir: Path) -> StemHydrationArmResult:
+    """Arm hub-presigned hydration or record why it stayed unarmed."""
     if not _cloudsync_configured(data_dir):
         return StemHydrationArmResult(None, None)
     effective = sync_config.resolve_config(data_dir)
@@ -302,13 +298,34 @@ def arm_stem_hydration_source(data_dir: Path) -> StemHydrationArmResult:
             exc.message,
         )
         return StemHydrationArmResult(None, exc.message)
-    except Exception as exc:
+    # Boot arming must survive unexpected refresh failures without crashing.
+    except Exception as exc:  # noqa: BLE001
         log.warning(
             "stem-hydration: CloudSync configured but hub index refresh failed: %s",
             exc,
         )
         return StemHydrationArmResult(None, str(exc))
     return StemHydrationArmResult(source, None)
+
+
+def arm_stem_hydration_source(data_dir: Path) -> StemHydrationArmResult:
+    """Boot-time wiring: arm a source or record why hydration stays unarmed.
+
+    Local mode and machines with neither R2 credentials nor CloudSync configured
+    are legitimate unconfigured states (``unarmed_reason`` is ``None``). A
+    machine that IS configured for direct R2 or hub hydration but cannot arm
+    records ``unarmed_reason`` so stems misses answer 502
+    ``STEM_HYDRATION_NOT_ARMED`` instead of the ordinary empty state.
+    """
+    from apps.cloud import policy
+
+    data_dir = Path(data_dir)
+    if policy.CFG.mode != "cloud":
+        return StemHydrationArmResult(None, None)
+    direct = _arm_direct_r2_source()
+    if direct is not None:
+        return direct
+    return _arm_hub_presigned_source(data_dir)
 
 
 def resolve_stem_hydration_source(data_dir: Path) -> StemHydrationSource | None:
