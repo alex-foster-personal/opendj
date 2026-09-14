@@ -229,7 +229,7 @@ def test_presigned_sha256_mismatch_writes_no_partial_bundle(
     )
     stems_dir = spoke_dir / "state" / "stems"
     bodies = _presign_bodies(s3, cfg, entry)
-    bad_digest = next(iter(entry.values()))
+    bad_digest = entry["vocals.wav"]
     bodies = dict(bodies)
     bodies[bad_digest] = b"wrong-bytes-not-a-wav"
     with TestClient(_enroll_hub_app(tmp_path / "hub")) as hub_http:
@@ -252,6 +252,9 @@ def test_presigned_sha256_mismatch_writes_no_partial_bundle(
                 stems_dir=stems_dir,
             )
     assert outcome.status == "error"
+    assert outcome.reason is not None
+    assert "presigned body for" in outcome.reason
+    assert "not the requested digest" in outcome.reason
     assert not (stems_dir / stable_id).exists()
 
 
