@@ -1,0 +1,28 @@
+name: Scratch runs-on expr probe
+# Throwaway verification for the main-fix runner reserve expression syntax.
+# Deleted before the real PR is opened; this commit never ships.
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: case-cond-true-var-unset-falls-through
+        run: |
+          echo "result=${{ (true && vars.CI_RUNS_ON_MAIN_FIX) || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"' }}"
+      - name: case-cond-false-falls-through
+        run: |
+          echo "result=${{ (false && vars.CI_RUNS_ON_MAIN_FIX) || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"' }}"
+      - name: case-cond-true-var-set-literal-wins
+        run: |
+          echo "result=${{ (true && '[\"self-hosted\",\"linux\",\"main-fix\"]') || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"' }}"
+      - name: case-full-expr-on-workflow-dispatch-no-pr-context
+        run: |
+          echo "result=${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair'))) && vars.CI_RUNS_ON_MAIN_FIX || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"' }}"
+      - name: case-label-guard-alone-on-dispatch
+        run: |
+          echo "result=${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair') }}"
+      - name: case-fromjson-resolves-to-object
+        run: |
+          echo "runs-on would be: ${{ toJSON(fromJSON((true && '[\"self-hosted\",\"linux\",\"main-fix\"]') || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"')) }}"
