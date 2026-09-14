@@ -178,6 +178,23 @@ def upsert_verdict(  # noqa: PLR0913 - one keyword per lyric_verdict column, by 
 
     The ``ON CONFLICT`` set list omits ``override`` and ``override_note``:
     that omission IS the override-survives-recompute guarantee.
+
+    ``n_words``/``n_lines``/``words_content_hash`` use ``COALESCE(excluded.*,
+    lyric_verdict.*)`` rather than a bare ``excluded.*`` assignment: a caller
+    passing ``None`` for these (a coverage-only writer, e.g.
+    :mod:`apps.lyrics.library_verdicts`, which never touches word-level data)
+    must never NULL out real word data that another writer already put on the
+    row. This is the atomicity fix a column-scoped read-then-check cannot be:
+    a caller like the backfill checks ``get_verdict(...).words_content_hash``
+    before this call to decide whether to skip a track at all, but that check
+    and this write are two separate statements, so a real ASR/aligner write
+    landing in between them would otherwise get clobbered by this one. Making
+    the UPDATE itself preserve non-NULL word columns closes that window
+    outright, in the one place every writer funnels through, rather than
+    patching each caller's race individually. A caller that legitimately HAS
+    fresh word data (:mod:`apps.lyrics.ingest_state`,
+    :mod:`apps.lyrics.legacy_words`) always passes real values here, so this
+    never blocks a genuine word-data write.
     """
     if verdict not in LYRIC_VERDICTS:
         raise LyricStoreError(f"verdict {verdict!r} not in {list(LYRIC_VERDICTS)}")
@@ -204,11 +221,12 @@ def upsert_verdict(  # noqa: PLR0913 - one keyword per lyric_verdict column, by 
                 coverage_pct = excluded.coverage_pct,
                 source = excluded.source,
                 language_iso3 = excluded.language_iso3,
-                n_words = excluded.n_words,
-                n_lines = excluded.n_lines,
+                n_words = COALESCE(excluded.n_words, lyric_verdict.n_words),
+                n_lines = COALESCE(excluded.n_lines, lyric_verdict.n_lines),
                 pct_witness_red = excluded.pct_witness_red,
                 pipeline_version = excluded.pipeline_version,
-                words_content_hash = excluded.words_content_hash,
+                words_content_hash =
+                    COALESCE(excluded.words_content_hash, lyric_verdict.words_content_hash),
                 computed_at = excluded.computed_at,
                 updated_at = excluded.updated_at,
                 origin_device_id = excluded.origin_device_id,

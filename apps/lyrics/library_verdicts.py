@@ -26,14 +26,22 @@ before. Until then every MP3-part bundle fails to load here exactly as it
 does for ``from-stems``, and reports as a FAILURE line, never silently.
 
 **Never clobbers real work.** A row already carrying ``words_content_hash``
-holds real ASR/aligner word-level data that :func:`apps.lyrics.store.
-upsert_verdict` would otherwise overwrite with ``NULL`` (there is no
-column-scoped update in that store, by design -- see its module docstring).
-This module therefore SKIPS any track whose live row already has
-``words_content_hash`` set, rather than writing through it. A human
-``override`` needs no special case here: ``upsert_verdict``'s ``ON
-CONFLICT`` clause already omits ``override``/``override_note``, so it
-survives every write this module makes.
+holds real ASR/aligner word-level data, so this module SKIPS any track whose
+live row already has it set at scan time, rather than writing through it --
+this is a work-avoidance optimization (and an honest ``SKIP_HAS_WORDS`` line
+in the report), not the only thing standing between this backfill and a
+clobber. The scan's :func:`apps.lyrics.store.get_verdict` check and this
+module's own :func:`apps.lyrics.store.upsert_verdict` call are two separate
+statements, so a real ASR/aligner write can still land in the gap between
+them. :func:`apps.lyrics.store.upsert_verdict` itself closes that window: its
+``ON CONFLICT`` clause ``COALESCE``s ``n_words``/``n_lines``/
+``words_content_hash`` against the row's existing values whenever this
+module's coverage-only call passes ``None`` for them (see that function's
+docstring), so a word row that appears mid-backfill survives even though this
+module never saw it. A human ``override`` needs no special case either:
+``upsert_verdict``'s ``ON CONFLICT`` clause already omits
+``override``/``override_note``, so it survives every write this module
+makes.
 
 **Resumability.** Each write's ``source`` column encodes the bundle's own
 identity (:func:`_bundle_source_label`: layout + the v1/v3 manifest's source
@@ -49,13 +57,17 @@ to process them (reports them skipped, reason "reserved") unless
 **Cheaper than decoding twice.** ``apps.vocals from-stems`` already computes
 this exact coverage number when it fills ``data/state/vocal-cache``. When a
 compatible cache entry exists (schema current, ``params.derived_from_stems``
-True, and its recorded ``duration_s`` matches the ON-DISK bundle's own
-duration within :data:`_CACHE_DURATION_TOL_S`) this module reuses its
-``coverage_pct`` instead of decoding the vocal stem + full mix a second time.
-The duration match is deliberately cheap and audio-free: this module does
-not resolve rekordbox mappings or a source audio path at all, so it works
-purely from the stem bundle -- matching the library scan's own
-``list_bundle_ids`` contract.
+True, its ``params.bundle_layout``/``params.bundle_source_sha256`` matching
+the ON-DISK bundle's own identity, and its recorded ``duration_s`` matching
+that bundle's duration within :data:`_CACHE_DURATION_TOL_S`) this module
+reuses its ``coverage_pct`` instead of decoding the vocal stem + full mix a
+second time. Duration alone is NOT the trust condition: a replaced bundle
+with the same runtime would otherwise pass a duration-only check by
+coincidence and reuse coverage computed from the old stem content, so the
+bundle-identity fields must match too. The whole check stays deliberately
+cheap and audio-free -- this module does not resolve rekordbox mappings or a
+source audio path at all, so it works purely from the stem bundle, matching
+the library scan's own ``list_bundle_ids`` contract.
 """
 
 from __future__ import annotations
@@ -180,9 +192,17 @@ def _cached_coverage_pct(data_dir: Path, stable_id: str, bundle: StemBundle) -> 
     Deliberately audio-free (see module docstring): this module never
     resolves a rekordbox mapping or a source audio path, so it cannot use
     :func:`apps.vocals.cache.load_valid_entry`'s mtime-signature check. A
-    duration match against the ON-DISK bundle is the cheap, self-contained
-    substitute -- good enough to skip a redundant decode, never trusted blind
-    (any mismatch or malformed entry falls through to a real derive).
+    duration match against the ON-DISK bundle is a cheap, self-contained
+    signal, but duration ALONE cannot prove two bundle generations share the
+    same stems -- a replaced bundle with the same runtime would pass it by
+    coincidence and reuse coverage computed from the old stem content. The
+    entry's ``params.bundle_layout``/``params.bundle_source_sha256``
+    (written by :func:`apps.vocals.from_stems.derive_worker_result`) are the
+    bundle-identity check that closes that gap: both must match the ON-DISK
+    bundle's own :attr:`StemBundle.layout` and
+    ``manifest.source.sha256`` exactly. A legacy entry written before this
+    check existed carries neither field, so it never matches and this module
+    falls through to a real derive rather than ever trusting it blind.
     """
     path = vcache.cache_path(data_dir, stable_id)
     if not path.is_file():
@@ -195,6 +215,11 @@ def _cached_coverage_pct(data_dir: Path, stable_id: str, bundle: StemBundle) -> 
         return None
     params = entry.get("params")
     if not isinstance(params, dict) or params.get("derived_from_stems") is not True:
+        return None
+    if (
+        params.get("bundle_layout") != bundle.layout
+        or params.get("bundle_source_sha256") != bundle.manifest.source.sha256
+    ):
         return None
     coverage_pct = entry.get("coverage_pct")
     duration_s = entry.get("duration_s")

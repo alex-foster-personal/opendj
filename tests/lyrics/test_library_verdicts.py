@@ -29,11 +29,13 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import wave
 from pathlib import Path
 
 import pytest
 
 from apps.lyrics import library_verdicts, store
+from apps.vocals import cache as vcache
 from apps.webui.server.stem_artifacts import STEM_PARTS, StemArtifactError, load_stem_bundle
 
 from .conftest import seed_track
@@ -167,6 +169,40 @@ def _write_corrupt_bundle(root: Path, stable_id: str) -> Path:
         "model": {"name": "htdemucs", "version": "4.0.1"},
         "source": {"path": f"/music/{stable_id}.flac", "sha256": "b" * 64},
         "files": {part: f"{part}.mp3" for part in STEM_PARTS},
+    }
+    (bundle_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return bundle_dir
+
+
+def _write_wav_bundle(
+    root: Path, stable_id: str, *, duration_s: float = 1.0, sr: int = 8000,
+    source_sha256: str = "a" * 64,
+) -> Path:
+    """A stdlib-only (``wave`` module) v1 bundle: silence in every part.
+
+    Unlike :func:`_write_bundle`, this never depends on ffmpeg or on PR
+    #2593's MP3/FLAC loader -- WAV parts already load on main -- so tests
+    using it run in every environment, including this repo's ``dev``-extra
+    venv, which has neither ffmpeg nor the ``analysis`` extra installed.
+    Content is irrelevant: these bundles only feed the vocal-cache IDENTITY
+    guard (:func:`apps.lyrics.library_verdicts._cached_coverage_pct`), never
+    a real coverage decode (which needs ``soundfile``, unavailable here).
+    """
+    bundle_dir = root / stable_id
+    bundle_dir.mkdir(parents=True)
+    n_frames = int(duration_s * sr)
+    for part in STEM_PARTS:
+        with wave.open(str(bundle_dir / f"{part}.wav"), "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sr)
+            wav_file.writeframes(b"\x00\x00" * n_frames)
+    manifest = {
+        "schema_version": 1,
+        "stable_id": stable_id,
+        "model": {"name": "htdemucs", "version": "4.0.1"},
+        "source": {"path": f"/music/{stable_id}.flac", "sha256": source_sha256},
+        "files": {part: f"{part}.wav" for part in STEM_PARTS},
     }
     (bundle_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     return bundle_dir
@@ -408,6 +444,231 @@ def test_a_replaced_bundle_forces_recompute(conn, data_dir) -> None:
     second_verdict = store.get_verdict(conn, "sid-replaced-001")
     assert second_verdict is not None
     assert second_verdict.verdict == "no-lyrics"
+
+
+#-----------------------------------------------------------------------------
+# vocal-cache identity guard: fast, stdlib-only (no ffmpeg / no soundfile),
+# so these run in every environment including this repo's dev-only venv.
+#-----------------------------------------------------------------------------
+def test_cached_coverage_pct_reuses_a_matching_bundle_identity(data_dir) -> None:
+    """A cache entry stamped with THIS bundle's own layout + source hash is
+    the shape the coverage-reuse fast path is allowed to serve."""
+    stems_root = _stems_root(data_dir)
+    _write_wav_bundle(stems_root, "sid-cache-match-001", source_sha256="1" * 64)
+    bundle = load_stem_bundle("sid-cache-match-001", stems_dir=stems_root)
+    cache_path = vcache.cache_path(data_dir, "sid-cache-match-001")
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(
+        json.dumps(
+            {
+                "schema": vcache.VOCAL_CACHE_SCHEMA,
+                "coverage_pct": 42.0,
+                "duration_s": library_verdicts._bundle_duration_s(bundle),
+                "params": {
+                    "derived_from_stems": True,
+                    "bundle_layout": bundle.layout,
+                    "bundle_source_sha256": bundle.manifest.source.sha256,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cached = library_verdicts._cached_coverage_pct(data_dir, "sid-cache-match-001", bundle)
+
+    assert cached == 42.0
+
+
+def test_cached_coverage_pct_rejects_a_replaced_bundle(data_dir) -> None:
+    """P1 BLOCKING fix (Sol review, PR #2611, library_verdicts.py:189): a
+    cache entry stamped for a DIFFERENT bundle generation, or carrying no
+    identity at all (the shape every entry on disk has today, before this
+    fix), must never be served -- even when its recorded duration happens
+    to match the on-disk bundle."""
+    stems_root = _stems_root(data_dir)
+    _write_wav_bundle(stems_root, "sid-cache-mismatch-001", source_sha256="2" * 64)
+    bundle = load_stem_bundle("sid-cache-mismatch-001", stems_dir=stems_root)
+    duration_s = library_verdicts._bundle_duration_s(bundle)
+    cache_path = vcache.cache_path(data_dir, "sid-cache-mismatch-001")
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Case 1: identity fields present, but for a DIFFERENT source hash --
+    # the exact "same duration, replaced bundle" scenario the review names.
+    cache_path.write_text(
+        json.dumps(
+            {
+                "schema": vcache.VOCAL_CACHE_SCHEMA,
+                "coverage_pct": 77.0,
+                "duration_s": duration_s,
+                "params": {
+                    "derived_from_stems": True,
+                    "bundle_layout": bundle.layout,
+                    "bundle_source_sha256": "1" * 64,  # a PRIOR generation's hash
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert (
+        library_verdicts._cached_coverage_pct(data_dir, "sid-cache-mismatch-001", bundle)
+        is None
+    )
+
+    # Case 2: legacy entry, no identity fields at all -- duration matches,
+    # nothing else does.
+    cache_path.write_text(
+        json.dumps(
+            {
+                "schema": vcache.VOCAL_CACHE_SCHEMA,
+                "coverage_pct": 77.0,
+                "duration_s": duration_s,
+                "params": {"derived_from_stems": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert (
+        library_verdicts._cached_coverage_pct(data_dir, "sid-cache-mismatch-001", bundle)
+        is None
+    )
+
+
+@requires_ffmpeg
+@requires_mp3_loader
+@pytest.mark.requires_audio_stack
+def test_stale_vocal_cache_from_a_replaced_bundle_is_not_reused(conn, data_dir) -> None:
+    """A vocal-cache entry computed for a PRIOR bundle generation (same
+    on-disk duration, no bundle-identity link) must never be served for a
+    REPLACED bundle -- see apps/lyrics/library_verdicts.py:_cached_coverage_pct.
+
+    Sol review, PR #2611, apps/lyrics/library_verdicts.py:189: "A cache entry
+    is accepted solely by stable ID and duration, so replacing a bundle with
+    a new source.sha256 but the same duration reuses coverage calculated
+    from the old stems."
+    """
+    seed_track(conn, "sid-cache-stale-001")
+    stems_root = _stems_root(data_dir)
+
+    # Generation 1: loud vocal, real high coverage. Simulates a vocal-cache
+    # entry a prior ``python -m apps.vocals from-stems`` run left on disk --
+    # legacy shape, no bundle-identity fields at all.
+    _write_bundle(stems_root, "sid-cache-stale-001", vocal_loud=True, source_sha256="1" * 64)
+    cache_path = vcache.cache_path(data_dir, "sid-cache-stale-001")
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(
+        json.dumps(
+            {
+                "schema": vcache.VOCAL_CACHE_SCHEMA,
+                "coverage_pct": 90.0,
+                "duration_s": DURATION_S,
+                "params": {"derived_from_stems": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # Generation 2 REPLACES it before this backfill ever runs: same duration,
+    # opposite (silent) vocal content, a new source hash.
+    shutil.rmtree(stems_root / "sid-cache-stale-001")
+    _write_bundle(stems_root, "sid-cache-stale-001", vocal_loud=False, source_sha256="2" * 64)
+
+    report = library_verdicts.backfill_verdicts(
+        conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False
+    )
+
+    assert report.processed == ("sid-cache-stale-001",)
+    assert "sid-cache-stale-001" not in report.reused_cache, (
+        "cache entry carries no bundle identity -- must recompute, not reuse"
+    )
+    verdict = store.get_verdict(conn, "sid-cache-stale-001")
+    assert verdict is not None
+    assert verdict.verdict == "no-lyrics", "stale generation-1 cache must not mask generation 2"
+
+
+#-----------------------------------------------------------------------------
+# backfill vs. a concurrent word-data write: fast, stdlib-only (a WAV bundle
+# plus a matching vocal-cache entry means no ffmpeg/soundfile decode either).
+#-----------------------------------------------------------------------------
+def test_backfill_never_clobbers_a_word_row_written_during_the_race(
+    conn, data_dir, monkeypatch
+) -> None:
+    """P1 BLOCKING fix (Devin review, PR #2611, library_verdicts.py:304): the
+    scan phase's ``store.get_verdict`` check for SKIP_HAS_WORDS is not atomic
+    with the write phase's ``upsert_verdict`` call, so a real ASR/aligner
+    write can land in the gap between them. This drives that exact gap: a
+    concurrent writer sets word-level data on the row from inside
+    ``coverage_pct_for_bundle`` (called immediately before this module's own
+    ``upsert_verdict`` call, after the scan already decided not to skip), and
+    the backfill's coverage-only write -- which always passes
+    ``n_words=None, n_lines=None, words_content_hash=None`` -- must not NULL
+    the word columns back out."""
+    seed_track(conn, "sid-race-001")
+    stems_root = _stems_root(data_dir)
+    _write_wav_bundle(stems_root, "sid-race-001", source_sha256="9" * 64)
+    bundle = load_stem_bundle("sid-race-001", stems_dir=stems_root)
+    cache_path = vcache.cache_path(data_dir, "sid-race-001")
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(
+        json.dumps(
+            {
+                "schema": vcache.VOCAL_CACHE_SCHEMA,
+                "coverage_pct": 5.0,
+                "duration_s": library_verdicts._bundle_duration_s(bundle),
+                "params": {
+                    "derived_from_stems": True,
+                    "bundle_layout": bundle.layout,
+                    "bundle_source_sha256": bundle.manifest.source.sha256,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    real_coverage_pct_for_bundle = library_verdicts.coverage_pct_for_bundle
+
+    def _racing_coverage_pct_for_bundle(data_dir_arg, stable_id, bundle_arg):
+        if stable_id == "sid-race-001":
+            # The real ASR/aligner pipeline writes its own row IN THE GAP
+            # between the scan phase's get_verdict check (already passed,
+            # since it found no row at all) and this module's own
+            # upsert_verdict call, a few lines below this return.
+            store.upsert_verdict(
+                conn,
+                stable_id="sid-race-001",
+                verdict="vocal",
+                coverage_pct=91.0,
+                source="asr-real-run",
+                language_iso3="eng",
+                n_words=42,
+                n_lines=6,
+                pct_witness_red=None,
+                pipeline_version="asr-v9",
+                words_content_hash="a" * 64,
+                computed_at="2026-09-14T00:00:00Z",
+                resurrect=False,
+            )
+        return real_coverage_pct_for_bundle(data_dir_arg, stable_id, bundle_arg)
+
+    monkeypatch.setattr(
+        library_verdicts, "coverage_pct_for_bundle", _racing_coverage_pct_for_bundle
+    )
+
+    report = library_verdicts.backfill_verdicts(
+        conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False
+    )
+
+    assert report.processed == ("sid-race-001",)
+    verdict = store.get_verdict(conn, "sid-race-001")
+    assert verdict is not None
+    assert verdict.n_words == 42
+    assert verdict.n_lines == 6
+    assert verdict.words_content_hash == "a" * 64, (
+        "backfill's coverage-only write must never clobber word data that "
+        "landed in the get_verdict-to-upsert_verdict race window"
+    )
+    # The coverage-only write still lands: source/coverage_pct are the
+    # backfill's own values, only the word columns are protected.
+    assert verdict.source == library_verdicts._bundle_source_label(bundle)
 
 
 @requires_ffmpeg
