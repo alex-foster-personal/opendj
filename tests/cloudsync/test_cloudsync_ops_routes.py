@@ -182,6 +182,55 @@ def test_post_sync_maps_a_declared_refusal_to_409_and_journals_it(
     assert [entry["status"] for entry in status["recent_results"]] == ["error", "ok"]
 
 
+def test_post_sync_returns_409_when_gig_posture(
+    enroll_live_hub: str, enroll_spoke_dir: Path
+) -> None:
+    """[if] app_posture is gig [then] POST /sync returns 409 CLOUDSYNC_SYNC_DEFERRED."""
+    prefs_dir = enroll_spoke_dir / "state"
+    prefs_dir.mkdir(parents=True, exist_ok=True)
+    (prefs_dir / "ui-prefs.json").write_text('{"app_posture": "gig"}', encoding="utf-8")
+
+    with ops_client(enroll_spoke_dir) as http:
+        response = http.post("/api/v1/cloudsync/sync", json={"hub_url": enroll_live_hub})
+        status = http.get("/api/v1/cloudsync/status").json()
+
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "CLOUDSYNC_SYNC_DEFERRED"
+    assert "gig_posture" in detail["message"]
+    assert status["recent_results"] == []
+
+
+def test_post_sync_returns_409_when_deck_playing(
+    enroll_live_hub: str, enroll_spoke_dir: Path
+) -> None:
+    """[if] a deck is playing [then] POST /sync returns 409 CLOUDSYNC_SYNC_DEFERRED."""
+    with ops_client(enroll_spoke_dir) as http:
+        http.app.state.ui_mirror = {"decks": {"1": {"playing": True}}}
+        response = http.post("/api/v1/cloudsync/sync", json={"hub_url": enroll_live_hub})
+        status = http.get("/api/v1/cloudsync/status").json()
+
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "CLOUDSYNC_SYNC_DEFERRED"
+    assert "deck_playing" in detail["message"]
+    assert status["recent_results"] == []
+
+
+def test_post_sync_does_not_refuse_when_mirror_absent_and_prep(
+    enroll_live_hub: str, enroll_spoke_dir: Path
+) -> None:
+    """[if] prep posture and no mirror [then] POST /sync still runs."""
+    with ops_client(enroll_spoke_dir) as http:
+        assert getattr(http.app.state, "ui_mirror", None) is None
+        response = http.post(
+            "/api/v1/cloudsync/sync",
+            json={"hub_url": enroll_live_hub, "name": "spoke-a"},
+        )
+
+    assert response.status_code == 200, response.text
+
+
 def test_post_sync_refuses_a_second_run_in_the_same_process(enroll_spoke_dir: Path) -> None:
     """if a sync starts while the run lock is held, or that refusal is journaled, then broken"""
     lock = sync_lock_for(enroll_spoke_dir)
