@@ -42,7 +42,7 @@ from ..models import (
 )
 from ..rb_vendor_pkg.track_rows import _artwork_facts
 from ..reveal_path import RevealPathError, reveal_track_path
-from ..stem_artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
+from apps.stems.artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
 from .ingest_job import valid_lyrics_ids
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])

@@ -32,7 +32,7 @@ from apps.cloud.stem_source import (
     StemSourceError,
 )
 
-from ..stem_artifacts import (
+from apps.stems.artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
     StemBundle,

@@ -33,7 +33,7 @@ from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import upsert_record
 from apps.analysis_waveform import local_waveform
 from apps.shared.state.db import open_rw as open_state_rw
-from apps.webui.server import stem_artifacts
+from apps.stems import artifacts as stem_artifacts
 from apps.webui.server.routes import ingest as ingest_mod
 from apps.webui.server.routes import library as library_mod
 

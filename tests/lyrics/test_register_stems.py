@@ -23,7 +23,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 from apps.lyrics.register_stems import register_pair  # noqa: E402
-from apps.webui.server.stem_artifacts import load_stem_bundle  # noqa: E402
+from apps.stems.artifacts import load_stem_bundle  # noqa: E402
 
 from .conftest import use_local_mode  # noqa: E402
 

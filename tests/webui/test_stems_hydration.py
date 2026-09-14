@@ -335,7 +335,7 @@ def test_bulk_hydrate_http_writes_under_request_data_dir(
     save_cached_index(data_dir, {"http-track": entry})
 
     monkeypatch.setattr(
-        "apps.webui.server.stem_artifacts.DEFAULT_STEMS_DIR", default_stems_dir
+        "apps.stems.artifacts.DEFAULT_STEMS_DIR", default_stems_dir
     )
     monkeypatch.setattr(
         "apps.cloud.stem_source.resolve_stem_hydration_source",

@@ -60,7 +60,7 @@ from apps.cloud.asset_store import AssetStoreError, validate_content_hash
 from apps.cloud.config import CloudConfig
 from apps.cloud.lock import S3Client
 from apps.cloud.r2_keys import R2KeyError, parse_legacy_stem_key
-from apps.webui.server.stem_artifacts import ROFORMER_PARTS, STEM_PARTS
+from apps.stems.artifacts import ROFORMER_PARTS, STEM_PARTS
 
 #: A fixed, mutable pointer key. NOT content-addressed: unlike every other
 #: object under ``assets/``, this one is replaced in place as new bundles
