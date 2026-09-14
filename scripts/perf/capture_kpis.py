@@ -37,10 +37,11 @@ from scripts.perf.capture_kpi_ledger import (
     required_numeric_present,
     session_meta,
 )
+from scripts.perf.capture_boot_library import capture_boot_library
 from scripts.perf.capture_s2 import capture_s2
 from scripts.perf.capture_s13 import capture_s13
 
-KNOWN_SCENARIOS = ("S2", "S5", "S12", "S13")
+KNOWN_SCENARIOS = ("S2", "S5", "S12", "S13", "boot-library")
 HTTP_SCENARIOS = frozenset({"S5", "S12"})
 
 
@@ -320,6 +321,15 @@ def main(argv: list[str] | None = None) -> int:
             frontend=frontend,
             ledger_path=Path(args.ledger),
             google_storage_state=args.google_storage_state,
+            timeout_s=args.timeout_s,
+            dry_run=args.dry_run,
+        )
+        exit_code = max(exit_code, code)
+    if "boot-library" in scenarios:
+        code = capture_boot_library(
+            engine=engine,
+            frontend=frontend,
+            ledger_path=Path(args.ledger),
             timeout_s=args.timeout_s,
             dry_run=args.dry_run,
         )

@@ -25,7 +25,12 @@
 	import { openSetupOverlay, setupOverlay } from '$lib/setup/overlay.svelte';
 	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
-	import { hydrateConfirmPrefsFromDisk, uiPrefs } from '$lib/rb/prefs.svelte';
+	import { startLibraryBootHydration } from '$lib/rb/library-boot-hydration';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
+
+	if (typeof window !== 'undefined') {
+		startLibraryBootHydration();
+	}
 	import { startAppInstruments } from '$lib/rb/app-init';
 	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
 	import { connect as connectEventsBus } from '$lib/api/events-bus';
@@ -105,7 +110,6 @@
 		void entitlements.load();
 		raiseSetupOnFirstRun();
 		refreshHealth();
-		void hydrateConfirmPrefsFromDisk();
 		const uninstallSettings = installSettingsHotkeys();
 		const uninstallHotkeysOverlay = installHotkeysOverlayHotkeys();
 		// Page-lifetime instruments: usage heartbeat + the DevTools perf log
