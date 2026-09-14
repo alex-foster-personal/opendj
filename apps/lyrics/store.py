@@ -35,6 +35,17 @@ filters BOTH the row's own tombstone and the parent ``tracks`` tombstone: hard
 ``DELETE`` of tracks is forbidden repo-wide, so the FK ``ON DELETE CASCADE``
 never fires and a tombstoned track would otherwise keep a live-looking
 verdict.
+
+**Two writers, not one.** :func:`upsert_verdict` is the shared writer every
+caller with REAL data (word-level or coverage-and-words together) uses, and
+it always overwrites every column it is given. :func:`
+upsert_stem_coverage_verdict` is a second, narrower writer for exactly one
+caller (:mod:`apps.lyrics.library_verdicts`'s stem-coverage backfill, which
+computes coverage/verdict alone and never touches word-level data): its
+conflict-update is conditional, in the SAME statement, on the row still
+being coverage-only, so it can never overwrite a row that has gained real
+word-level data since the caller last checked. Do not add a third path;
+extend one of these two instead.
 """
 
 from __future__ import annotations
@@ -178,23 +189,6 @@ def upsert_verdict(  # noqa: PLR0913 - one keyword per lyric_verdict column, by 
 
     The ``ON CONFLICT`` set list omits ``override`` and ``override_note``:
     that omission IS the override-survives-recompute guarantee.
-
-    ``n_words``/``n_lines``/``words_content_hash`` use ``COALESCE(excluded.*,
-    lyric_verdict.*)`` rather than a bare ``excluded.*`` assignment: a caller
-    passing ``None`` for these (a coverage-only writer, e.g.
-    :mod:`apps.lyrics.library_verdicts`, which never touches word-level data)
-    must never NULL out real word data that another writer already put on the
-    row. This is the atomicity fix a column-scoped read-then-check cannot be:
-    a caller like the backfill checks ``get_verdict(...).words_content_hash``
-    before this call to decide whether to skip a track at all, but that check
-    and this write are two separate statements, so a real ASR/aligner write
-    landing in between them would otherwise get clobbered by this one. Making
-    the UPDATE itself preserve non-NULL word columns closes that window
-    outright, in the one place every writer funnels through, rather than
-    patching each caller's race individually. A caller that legitimately HAS
-    fresh word data (:mod:`apps.lyrics.ingest_state`,
-    :mod:`apps.lyrics.legacy_words`) always passes real values here, so this
-    never blocks a genuine word-data write.
     """
     if verdict not in LYRIC_VERDICTS:
         raise LyricStoreError(f"verdict {verdict!r} not in {list(LYRIC_VERDICTS)}")
@@ -221,12 +215,11 @@ def upsert_verdict(  # noqa: PLR0913 - one keyword per lyric_verdict column, by 
                 coverage_pct = excluded.coverage_pct,
                 source = excluded.source,
                 language_iso3 = excluded.language_iso3,
-                n_words = COALESCE(excluded.n_words, lyric_verdict.n_words),
-                n_lines = COALESCE(excluded.n_lines, lyric_verdict.n_lines),
+                n_words = excluded.n_words,
+                n_lines = excluded.n_lines,
                 pct_witness_red = excluded.pct_witness_red,
                 pipeline_version = excluded.pipeline_version,
-                words_content_hash =
-                    COALESCE(excluded.words_content_hash, lyric_verdict.words_content_hash),
+                words_content_hash = excluded.words_content_hash,
                 computed_at = excluded.computed_at,
                 updated_at = excluded.updated_at,
                 origin_device_id = excluded.origin_device_id,
@@ -238,6 +231,104 @@ def upsert_verdict(  # noqa: PLR0913 - one keyword per lyric_verdict column, by 
                 computed_at, stamp.updated_at, stamp.origin_device_id,
             ),
         )
+
+
+def upsert_stem_coverage_verdict(
+    conn: sqlite3.Connection,
+    *,
+    stable_id: str,
+    verdict: str,
+    coverage_pct: float,
+    source: str,
+    pipeline_version: str,
+    computed_at: str,
+) -> bool:
+    """Write a COVERAGE-ONLY verdict -- the one caller is
+    :mod:`apps.lyrics.library_verdicts`'s stem backfill -- as ONE atomic
+    write that never touches a row that has already gained word-level data.
+
+    Why this exists instead of :func:`upsert_verdict`: that is the SHARED
+    writer every other caller uses, and it always overwrites every column it
+    is given. A coverage-only backfill has no word-level data of its own, so
+    it must never overwrite ANY column with a stem-only value once a row has
+    gone word-level -- not just ``n_words``/``n_lines``/``words_content_hash``
+    (an earlier revision tried preserving only those three via ``COALESCE``
+    inside ``upsert_verdict`` itself, which left ``verdict``, ``coverage_pct``,
+    ``source``, ``language_iso3``, ``pct_witness_red``, ``pipeline_version``
+    and ``computed_at`` still exposed to the same race -- a word-level row
+    would keep its words but with a stem-only verdict and coverage number
+    stamped over the real ASR judgement).
+
+    The backfill's own scan-phase ``get_verdict(...).words_content_hash``
+    check is NOT atomic with its write (a real ASR/aligner write can land in
+    the gap between them), so the guard has to live in the write itself:
+
+    1. Inside the SAME ``stamped_transaction`` (``BEGIN IMMEDIATE`` up
+       front, so no other connection can write to this table until this one
+       commits or rolls back), a plain ``SELECT words_content_hash`` decides
+       whether to proceed at all -- checked BEFORE :func:`apps.shared.state.
+       sync_stamp.stamp_and_log`, so a row already gone word-level costs no
+       changelog entry (a changelog append for a write that did not happen
+       would tell every sync peer this row changed here when it did not).
+    2. The write itself is additionally guarded by ``ON CONFLICT ... DO
+       UPDATE ... WHERE lyric_verdict.words_content_hash IS NULL`` in the
+       SAME statement, so even a caller that reached this function through
+       some future path without the step-1 SELECT still cannot clobber a
+       word-level row: SQLite leaves a conflicting row that fails the WHERE
+       wholly untouched (no error, no partial write), never upgrading to a
+       full overwrite.
+
+    Returns True if the row was written (a fresh insert, or an update to a
+    still-coverage-only row), False if a conflicting row already carries
+    ``words_content_hash`` and was left untouched.
+
+    Deliberately narrow: no ``language_iso3``/``n_words``/``n_lines``/
+    ``pct_witness_red``/``words_content_hash`` parameters at all (a
+    coverage-only computation never has real values for any of them -- a
+    caller that does belongs on :func:`upsert_verdict`), and no
+    ``resurrect`` (a coverage backfill never revives a purged track).
+    """
+    if verdict not in LYRIC_VERDICTS:
+        raise LyricStoreError(f"verdict {verdict!r} not in {list(LYRIC_VERDICTS)}")
+    if not pipeline_version:
+        raise LyricStoreError(
+            f"pipeline_version is required for {stable_id!r}: a row whose hash "
+            "cannot be traced to the code that produced it is untraceable."
+        )
+    machine_id = sync_stamp.ensure_local_machine(conn)
+    with sync_stamp.stamped_transaction(conn):
+        _guard_tombstone(conn, stable_id, resurrect=False)
+        existing = conn.execute(
+            f"SELECT words_content_hash FROM {TABLE} WHERE stable_id = ?", (stable_id,)
+        ).fetchone()
+        if existing is not None and existing[0] is not None:
+            return False
+        stamp = sync_stamp.stamp_and_log(conn, TABLE, (stable_id,), machine_id)
+        cursor = conn.execute(
+            f"""
+            INSERT INTO {TABLE} (
+                stable_id, verdict, coverage_pct, source, language_iso3,
+                n_words, n_lines, pct_witness_red, pipeline_version,
+                words_content_hash, computed_at, updated_at, origin_device_id,
+                deleted_at
+            ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, ?, ?, ?, NULL)
+            ON CONFLICT(stable_id) DO UPDATE SET
+                verdict = excluded.verdict,
+                coverage_pct = excluded.coverage_pct,
+                source = excluded.source,
+                pipeline_version = excluded.pipeline_version,
+                computed_at = excluded.computed_at,
+                updated_at = excluded.updated_at,
+                origin_device_id = excluded.origin_device_id,
+                deleted_at = NULL
+            WHERE {TABLE}.words_content_hash IS NULL
+            """,
+            (
+                stable_id, verdict, coverage_pct, source, pipeline_version,
+                computed_at, stamp.updated_at, stamp.origin_device_id,
+            ),
+        )
+        return cursor.rowcount > 0
 
 
 def set_override(

@@ -12,8 +12,10 @@ verdict-computation algorithm of its own, it only drives
 :func:`apps.vocals.from_stems.derive_worker_result` (the same maths
 ``python -m apps.vocals from-stems`` uses) and
 :func:`apps.lyrics.vocal_presence.coverage_verdict` (THE canonical bands),
-then writes through :func:`apps.lyrics.store.upsert_verdict` (the one
-writer).
+then writes through :func:`apps.lyrics.store.upsert_stem_coverage_verdict`
+-- a dedicated, atomically-guarded writer, NOT the shared
+:func:`apps.lyrics.store.upsert_verdict` every other lyrics writer uses (see
+**Never clobbers real work** below for why this module needs its own).
 
 **Dependency on PR #2593** (``fix(stems): v1 bundles load MP3 and FLAC parts
 by their own container``). Today ``apps.webui.server.stem_artifacts`` only
@@ -31,23 +33,43 @@ live row already has it set at scan time, rather than writing through it --
 this is a work-avoidance optimization (and an honest ``SKIP_HAS_WORDS`` line
 in the report), not the only thing standing between this backfill and a
 clobber. The scan's :func:`apps.lyrics.store.get_verdict` check and this
-module's own :func:`apps.lyrics.store.upsert_verdict` call are two separate
-statements, so a real ASR/aligner write can still land in the gap between
-them. :func:`apps.lyrics.store.upsert_verdict` itself closes that window: its
-``ON CONFLICT`` clause ``COALESCE``s ``n_words``/``n_lines``/
-``words_content_hash`` against the row's existing values whenever this
-module's coverage-only call passes ``None`` for them (see that function's
-docstring), so a word row that appears mid-backfill survives even though this
-module never saw it. A human ``override`` needs no special case either:
-``upsert_verdict``'s ``ON CONFLICT`` clause already omits
-``override``/``override_note``, so it survives every write this module
-makes.
+module's own write are two separate statements, so a real ASR/aligner write
+can still land in the gap between them.
 
-**Resumability.** Each write's ``source`` column encodes the bundle's own
-identity (:func:`_bundle_source_label`: layout + the v1/v3 manifest's source
-sha256), and ``pipeline_version`` is :data:`STEM_COVERAGE_PIPELINE_VERSION`.
-A re-run skips any track whose live row already carries both unchanged --
-the coverage is provably still current for that exact bundle generation.
+An earlier revision tried closing that gap inside the SHARED
+:func:`apps.lyrics.store.upsert_verdict` writer, by ``COALESCE``-preserving
+just the three word columns (``n_words``/``n_lines``/``words_content_hash``)
+whenever this module's call passed ``None`` for them. That left every OTHER
+column this module writes -- ``verdict``, ``coverage_pct``, ``source``,
+``language_iso3``, ``pct_witness_red``, ``pipeline_version``,
+``computed_at`` -- still exposed to the exact same race: a word-level row
+would keep its words, but with a stem-only verdict and coverage number
+stamped over the real ASR judgement. This module now writes through
+:func:`apps.lyrics.store.upsert_stem_coverage_verdict` instead, a dedicated
+writer whose conflict update is itself conditional on the row still being
+coverage-only (``WHERE lyric_verdict.words_content_hash IS NULL``, checked
+inside the SAME atomic write, not as a separate prior read) -- so a row that
+has gone word-level in that gap is left WHOLLY untouched, not partially
+protected. The write reports back whether it actually landed; a race loss
+is counted as :data:`SKIP_WORD_LEVEL_RACE`, not silently folded into
+``processed``. ``upsert_verdict`` itself is unchanged -- the shared writer
+every other caller (:mod:`apps.lyrics.ingest_state`,
+:mod:`apps.lyrics.legacy_words`) relies on keeps its original semantics. A
+human ``override`` needs no special case either: neither writer's ``ON
+CONFLICT`` clause touches ``override``/``override_note``, so it survives
+every write this module makes.
+
+**Resumability.** Each write's ``source`` column encodes the STEMS'
+identity (:func:`_bundle_source_label`: layout +
+:func:`apps.vocals.from_stems.bundle_stem_identity`), and
+``pipeline_version`` is :data:`STEM_COVERAGE_PIPELINE_VERSION`. A re-run
+skips any track whose live row already carries both unchanged -- the
+coverage is provably still current for that exact bundle generation. This is
+deliberately NOT keyed on ``bundle.manifest.source.sha256`` alone: that
+identifies only the ORIGINAL track and stays fixed across a re-separation
+with a different model, version, or a single repaired part, which would
+otherwise leave a stale verdict silently unrefreshed forever (see
+``bundle_stem_identity``'s docstring).
 
 **Reserved tracks.** ``<data_dir>/state/stem-order-reserved-100.json`` names
 100 stable_ids held back to test in-app stem ordering; this module refuses
@@ -57,22 +79,24 @@ to process them (reports them skipped, reason "reserved") unless
 **Cheaper than decoding twice.** ``apps.vocals from-stems`` already computes
 this exact coverage number when it fills ``data/state/vocal-cache``. When a
 compatible cache entry exists (schema current, ``params.derived_from_stems``
-True, its ``params.bundle_layout``/``params.bundle_source_sha256`` matching
-the ON-DISK bundle's own identity, and its recorded ``duration_s`` matching
-that bundle's duration within :data:`_CACHE_DURATION_TOL_S`) this module
-reuses its ``coverage_pct`` instead of decoding the vocal stem + full mix a
-second time. Duration alone is NOT the trust condition: a replaced bundle
-with the same runtime would otherwise pass a duration-only check by
-coincidence and reuse coverage computed from the old stem content, so the
-bundle-identity fields must match too. The whole check stays deliberately
-cheap and audio-free -- this module does not resolve rekordbox mappings or a
-source audio path at all, so it works purely from the stem bundle, matching
-the library scan's own ``list_bundle_ids`` contract.
+True, its ``params.bundle_layout``/``params.bundle_stem_sha256`` matching
+the ON-DISK bundle's own identity, its recorded ``duration_s`` matching that
+bundle's duration within :data:`_CACHE_DURATION_TOL_S`, and both values
+finite and in range) this module reuses its ``coverage_pct`` instead of
+decoding the vocal stem + full mix a second time. Duration alone is NOT the
+trust condition: a replaced bundle with the same runtime would otherwise
+pass a duration-only check by coincidence and reuse coverage computed from
+the old stem content, so the bundle-identity fields must match too. The
+whole check stays deliberately cheap and audio-free -- this module does not
+resolve rekordbox mappings or a source audio path at all, so it works purely
+from the stem bundle, matching the library scan's own ``list_bundle_ids``
+contract.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -109,6 +133,14 @@ _CACHE_DURATION_TOL_S: float = 1.0
 SKIP_RESERVED: str = "reserved"
 SKIP_HAS_WORDS: str = "has-word-level-data"
 SKIP_UP_TO_DATE: str = "up-to-date"
+#: The scan-phase :data:`SKIP_HAS_WORDS` check missed this row (it was
+#: coverage-only, or absent, when scanned), but a real ASR/aligner write
+#: landed on it before this module's own write reached it. Distinct from
+#: ``SKIP_HAS_WORDS``: that is the cheap, expected, common case caught up
+#: front; this is the rare race counted separately so it is never silently
+#: folded into ``processed``. See :func:`apps.lyrics.store.
+#: upsert_stem_coverage_verdict`.
+SKIP_WORD_LEVEL_RACE: str = "word-level-race"
 
 
 @dataclass(frozen=True)
@@ -176,10 +208,15 @@ def load_reserved_ids(data_dir: Path) -> frozenset[str]:
 # coverage computation
 #-----------------------------------------------------------------------------
 def _bundle_source_label(bundle: StemBundle) -> str:
-    """Identity string for ``lyric_verdict.source``: changes iff the bundle
-    that produced this coverage number changes (new demucs run, new layout).
-    This is the resumability key alongside ``pipeline_version``."""
-    return f"stem-coverage:{bundle.layout}:{bundle.manifest.source.sha256}"
+    """Identity string for ``lyric_verdict.source``: changes iff the STEMS
+    that produced this coverage number change -- keyed on
+    :func:`apps.vocals.from_stems.bundle_stem_identity`, not
+    ``bundle.manifest.source.sha256`` (which identifies only the ORIGINAL
+    track and stays fixed across a re-separation with a different model,
+    version, or a single repaired part -- see that function's docstring for
+    why that distinction matters here). This is the resumability key
+    alongside ``pipeline_version``."""
+    return f"stem-coverage:{bundle.layout}:{vfrom_stems.bundle_stem_identity(bundle)}"
 
 
 def _bundle_duration_s(bundle: StemBundle) -> float:
@@ -196,13 +233,25 @@ def _cached_coverage_pct(data_dir: Path, stable_id: str, bundle: StemBundle) -> 
     signal, but duration ALONE cannot prove two bundle generations share the
     same stems -- a replaced bundle with the same runtime would pass it by
     coincidence and reuse coverage computed from the old stem content. The
-    entry's ``params.bundle_layout``/``params.bundle_source_sha256``
-    (written by :func:`apps.vocals.from_stems.derive_worker_result`) are the
+    entry's ``params.bundle_layout``/``params.bundle_stem_sha256`` (written
+    by :func:`apps.vocals.from_stems.derive_worker_result`, keyed on
+    :func:`apps.vocals.from_stems.bundle_stem_identity`) are the
     bundle-identity check that closes that gap: both must match the ON-DISK
-    bundle's own :attr:`StemBundle.layout` and
-    ``manifest.source.sha256`` exactly. A legacy entry written before this
-    check existed carries neither field, so it never matches and this module
-    falls through to a real derive rather than ever trusting it blind.
+    bundle's own :attr:`StemBundle.layout` and freshly-computed stem
+    identity exactly, so a re-separation with a new model/version or a
+    single repaired part is caught, not only a fully replaced bundle. A
+    legacy entry written before this check existed carries neither field, so
+    it never matches and this module falls through to a real derive rather
+    than ever trusting it blind.
+
+    Also refuses a malformed or out-of-range entry outright: ``json.loads``
+    happily parses ``NaN``/``Infinity`` (valid JS, invalid JSON) as Python
+    floats that pass a bare ``isinstance(x, (int, float))`` check, and a NaN
+    ``duration_s`` would then pass the tolerance comparison below too
+    (every comparison against NaN is False, so ``> _CACHE_DURATION_TOL_S``
+    is never true). Both values must be finite, ``coverage_pct`` must sit in
+    ``[0, 100]``, and ``duration_s`` must be positive -- anything else falls
+    through to a real derive exactly like a missing or unreadable entry.
     """
     path = vcache.cache_path(data_dir, stable_id)
     if not path.is_file():
@@ -211,23 +260,34 @@ def _cached_coverage_pct(data_dir: Path, stable_id: str, bundle: StemBundle) -> 
         entry = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    if not isinstance(entry, dict) or entry.get("schema") != vcache.VOCAL_CACHE_SCHEMA:
-        return None
-    params = entry.get("params")
-    if not isinstance(params, dict) or params.get("derived_from_stems") is not True:
+    if (
+        not isinstance(entry, dict)
+        or entry.get("schema") != vcache.VOCAL_CACHE_SCHEMA
+        or not isinstance((params := entry.get("params")), dict)
+        or params.get("derived_from_stems") is not True
+    ):
         return None
     if (
         params.get("bundle_layout") != bundle.layout
-        or params.get("bundle_source_sha256") != bundle.manifest.source.sha256
+        or params.get("bundle_stem_sha256") != vfrom_stems.bundle_stem_identity(bundle)
     ):
         return None
     coverage_pct = entry.get("coverage_pct")
     duration_s = entry.get("duration_s")
     if not isinstance(coverage_pct, (int, float)) or not isinstance(duration_s, (int, float)):
         return None
-    if abs(float(duration_s) - _bundle_duration_s(bundle)) > _CACHE_DURATION_TOL_S:
+    coverage_pct = float(coverage_pct)
+    duration_s = float(duration_s)
+    if (
+        not math.isfinite(coverage_pct)
+        or not math.isfinite(duration_s)
+        or not (0.0 <= coverage_pct <= 100.0)
+        or duration_s <= 0.0
+    ):
         return None
-    return float(coverage_pct)
+    if abs(duration_s - _bundle_duration_s(bundle)) > _CACHE_DURATION_TOL_S:
+        return None
+    return coverage_pct
 
 
 def coverage_pct_for_bundle(
@@ -312,23 +372,25 @@ def backfill_verdicts(
         for stable_id, bundle, expected_source in planned:
             try:
                 coverage_pct, reused = coverage_pct_for_bundle(data_dir, stable_id, bundle)
-                store.upsert_verdict(
+                written = store.upsert_stem_coverage_verdict(
                     conn,
                     stable_id=stable_id,
                     verdict=coverage_verdict(coverage_pct),
                     coverage_pct=round(coverage_pct, 1),
                     source=expected_source,
-                    language_iso3=None,
-                    n_words=None,
-                    n_lines=None,
-                    pct_witness_red=None,
                     pipeline_version=STEM_COVERAGE_PIPELINE_VERSION,
-                    words_content_hash=None,
                     computed_at=sync_stamp.canonical_now(),
-                    resurrect=False,
                 )
             except (store.LyricStoreError, sqlite3.Error, RuntimeError, ValueError) as exc:
                 failed[stable_id] = f"{type(exc).__name__}: {exc}"
+                continue
+            if not written:
+                # A real ASR/aligner write landed on this row after the scan
+                # passed it (SKIP_HAS_WORDS looks stale-but-honest here) and
+                # before this write reached it. upsert_stem_coverage_verdict
+                # already left the row wholly untouched; this is only the
+                # bookkeeping for that outcome.
+                _skip(skipped, SKIP_WORD_LEVEL_RACE, stable_id)
                 continue
             processed.append(stable_id)
             if reused:
@@ -384,6 +446,7 @@ __all__ = [
     "SKIP_HAS_WORDS",
     "SKIP_RESERVED",
     "SKIP_UP_TO_DATE",
+    "SKIP_WORD_LEVEL_RACE",
     "STEM_COVERAGE_PIPELINE_VERSION",
     "VerdictBackfillReport",
     "backfill_verdicts",
