@@ -3,6 +3,8 @@ name: Scratch runs-on expr probe
 # Deleted before the real PR is opened; this commit never ships.
 on:
   workflow_dispatch:
+  push:
+    branches: ["af--ci-main-fix-runner-reserve"]
 
 jobs:
   probe:
