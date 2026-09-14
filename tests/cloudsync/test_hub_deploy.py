@@ -31,9 +31,11 @@ from typing import Any
 
 import pytest
 
+from apps.engine_core.__main__ import HUB_MACHINE_NAME_ENV
+from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity, sync_stamp
 from apps.shared.state import schema as state_schema
-from apps.sync_hub import hub_deploy
+from apps.sync_hub import client, hub_deploy
 from tests.waits import wait_for_external_state
 
 pytestmark = pytest.mark.requirement("CAT-04")
@@ -49,6 +51,7 @@ AMBIENT_ENV_TO_DROP: tuple[str, ...] = (
     "WEB_CONCURRENCY",
     "OPENDJ_ENGINE_WARN_LOG",
     "OPENDJ_ENGINE_LOG_BOOT_ID",
+    HUB_MACHINE_NAME_ENV,
 )
 
 
@@ -73,13 +76,19 @@ def _uv() -> str:
     return uv
 
 
-def _hub_env(is_hub_override: str | None) -> dict[str, str]:
+def _hub_env(
+    is_hub_override: str | None,
+    *,
+    machine_name_env: str | None = None,
+) -> dict[str, str]:
     """The launcher env: HUB_ENV alone decides MDT_IS_HUB unless a control overrides it."""
-    dropped = (*AMBIENT_ENV_TO_DROP, machine_identity.IS_HUB_ENV)
+    dropped = (*AMBIENT_ENV_TO_DROP, machine_identity.IS_HUB_ENV, HUB_MACHINE_NAME_ENV)
     env = {k: v for k, v in os.environ.items() if k not in dropped}
     env.update(hub_deploy.HUB_ENV)
     if is_hub_override is not None:
         env[machine_identity.IS_HUB_ENV] = is_hub_override
+    if machine_name_env is not None:
+        env[HUB_MACHINE_NAME_ENV] = machine_name_env
     return env
 
 
@@ -118,22 +127,70 @@ def _answers_health(hub: BootedHub) -> bool:
         return False
 
 
-def _boot(root: Path, name: str, is_hub_override: str | None) -> BootedHub:
+def _boot(
+    root: Path,
+    name: str,
+    is_hub_override: str | None,
+    *,
+    machine_name: str | None = None,
+    machine_name_env: str | None = None,
+) -> BootedHub:
     data_dir = root / name / hub_deploy.CFG.DATA_DIR_NAME
     data_dir.mkdir(parents=True)
     _init_data_dir(data_dir)
     port = _free_loopback_port()
     argv = hub_deploy.hub_serve_argv(uv=_uv(), data_dir=data_dir, port=port)
+    if machine_name is not None:
+        argv.extend(["--machine-name", machine_name])
     log_path = root / f"{name}.log"
     with log_path.open("wb") as log:
         proc = subprocess.Popen(
             argv,
             cwd=REPO_ROOT,
-            env=_hub_env(is_hub_override),
+            env=_hub_env(is_hub_override, machine_name_env=machine_name_env),
             stdout=log,
             stderr=subprocess.STDOUT,
         )
     return BootedHub(f"http://127.0.0.1:{port}", data_dir, argv, proc, log_path)
+
+
+def _wait_for_hub(hub: BootedHub) -> None:
+    wait_for_external_state(
+        functools.partial(_answers_health, hub),
+        what=f"{hub.url} health",
+        guard_s=BOOT_GUARD_S,
+    )
+
+
+def _stop_hub(hub: BootedHub) -> None:
+    hub.proc.terminate()
+    hub.proc.wait(timeout=30)
+
+
+def _machine_name_for_id(data_dir: Path, machine_id: str) -> str:
+    conn = state_db.open_rw(client.state_db_path(data_dir))
+    try:
+        row = conn.execute(
+            "SELECT name FROM machines WHERE machine_id = ?",
+            (machine_id,),
+        ).fetchone()
+        assert row is not None, f"machine_id {machine_id} missing from hub machines"
+        return str(row[0])
+    finally:
+        conn.close()
+
+
+def _machine_names(data_dir: Path) -> set[str]:
+    conn = state_db.open_rw(client.state_db_path(data_dir))
+    try:
+        return {str(row[0]) for row in conn.execute("SELECT name FROM machines")}
+    finally:
+        conn.close()
+
+
+def _init_spoke_data_dir(data_dir: Path) -> None:
+    data_dir.mkdir(parents=True, exist_ok=True)
+    state_db.open_rw(client.state_db_path(data_dir)).close()
 
 
 @pytest.fixture(scope="module")
@@ -144,16 +201,11 @@ def booted_hubs(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str, 
     hubs = {"hub": _boot(root, "hub", None), "not_hub": _boot(root, "not-hub", "0")}
     try:
         for hub in hubs.values():
-            wait_for_external_state(
-                functools.partial(_answers_health, hub),
-                what=f"{hub.url} health",
-                guard_s=BOOT_GUARD_S,
-            )
+            _wait_for_hub(hub)
         yield hubs
     finally:
         for hub in hubs.values():
-            hub.proc.terminate()
-            hub.proc.wait(timeout=30)
+            _stop_hub(hub)
 
 
 # ----- the booted hub ------------------------------------------------------------
@@ -402,6 +454,71 @@ def test_rendered_units_pass_the_service_manager_lint(tool: str, tmp_path: Path)
     )
     result = subprocess.run(argv, capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+# ----- hub machine name (CLOUDSYNC-08) -----------------------------------------
+
+
+@pytest.mark.requirement("CLOUDSYNC-08")
+def test_explicit_machine_name_wins_over_env_and_co_hosts_with_hostname_spoke(
+    tmp_path: Path,
+) -> None:
+    """[if] engine_core serve gets --machine-name while MDT_HUB_MACHINE_NAME differs [then] the hub registers under the flag and a same-host spoke using the hostname syncs without 409."""
+    cli_name = "pytest-cli-hub-name"
+    env_name = "pytest-env-hub-name-wrong"
+    spoke_name = machine_identity.default_machine_name()
+    hub = _boot(
+        tmp_path,
+        "named-hub",
+        None,
+        machine_name=cli_name,
+        machine_name_env=env_name,
+    )
+    spoke_dir = tmp_path / "spoke"
+    try:
+        _wait_for_hub(hub)
+        _init_spoke_data_dir(spoke_dir)
+        client.run_sync(spoke_dir, hub.url, name=spoke_name)
+        hub_id = machine_identity.machine_id_path(hub.data_dir).read_text().strip()
+        assert _machine_name_for_id(hub.data_dir, hub_id) == cli_name
+        names = _machine_names(hub.data_dir)
+        assert cli_name in names
+        assert spoke_name in names
+        assert env_name not in names
+        assert "--machine-name" in hub.argv
+    finally:
+        _stop_hub(hub)
+
+
+@pytest.mark.requirement("CLOUDSYNC-08")
+def test_machine_name_env_fallback_registers_hub_without_cli_flag(tmp_path: Path) -> None:
+    """[if] MDT_HUB_MACHINE_NAME is set and --machine-name is omitted [then] the hub registers under the environment value."""
+    env_name = "pytest-env-only-hub"
+    spoke_name = "pytest-env-spoke"
+    hub = _boot(tmp_path, "env-hub", None, machine_name_env=env_name)
+    try:
+        _wait_for_hub(hub)
+        answer = _hello(hub.url, "pytest-env-spoke-0001", spoke_name)
+        hub_id = machine_identity.machine_id_path(hub.data_dir).read_text().strip()
+        assert _machine_name_for_id(hub.data_dir, hub_id) == env_name
+        assert "--machine-name" not in hub.argv
+        hub_row = next(m for m in answer["machines"] if m["machine_id"] == hub_id)
+        assert hub_row["name"] == env_name
+    finally:
+        _stop_hub(hub)
+
+
+@pytest.mark.requirement("CLOUDSYNC-08")
+def test_default_machine_name_when_no_flag_or_env(booted_hubs: dict[str, BootedHub]) -> None:
+    """[if] neither --machine-name nor MDT_HUB_MACHINE_NAME is set [then] the hub registers under the short hostname."""
+    hub = booted_hubs["hub"]
+    spoke_name = "pytest-default-spoke"
+    answer = _hello(hub.url, "pytest-default-spoke-0001", spoke_name)
+    hub_id = machine_identity.machine_id_path(hub.data_dir).read_text().strip()
+    assert _machine_name_for_id(hub.data_dir, hub_id) == machine_identity.default_machine_name()
+    assert "--machine-name" not in hub.argv
+    hub_row = next(m for m in answer["machines"] if m["machine_id"] == hub_id)
+    assert hub_row["name"] == machine_identity.default_machine_name()
 
 
 # ----- refusals ----------------------------------------------------------------
