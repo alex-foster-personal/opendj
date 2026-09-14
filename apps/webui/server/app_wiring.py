@@ -324,6 +324,37 @@ def _bind_stem_and_usage(
     app.state.usage_store = usage_store if usage_store is not None else UsageStore()
 
 
+def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None:
+    """Wire on-demand R2 stem hydration deps onto ``app.state`` (ADR-0020),
+    or leave them unset.
+
+    Unset is a legitimate machine state, not a failure: local mode, or a
+    machine with no R2 credentials, simply never hydrates on demand.
+    ``apps.webui.server.routes.stems`` checks each attribute for ``None`` and
+    falls back to its pre-hydration behavior rather than raising -- the same
+    "cfg may be omitted" contract ``resolve_playback_source`` already
+    documents in ``apps/cloud/hydration_core.py``.
+    """
+    app.state.stem_hydration_cfg = None
+    app.state.stem_hydration_s3 = None
+    app.state.stem_hydration_data_dir = None
+    if not enabled:
+        return
+    from apps.cloud import asset_store, policy
+    from apps.cloud.config import CloudConfig, MissingEnvError
+
+    if policy.CFG.mode != "cloud":
+        return
+    try:
+        cfg = CloudConfig.from_env()
+        asset_store.require_credentials(cfg)
+    except MissingEnvError:
+        return
+    app.state.stem_hydration_cfg = cfg
+    app.state.stem_hydration_s3 = asset_store.boto3_asset_client(cfg)
+    app.state.stem_hydration_data_dir = Path(data_dir)
+
+
 def _install_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(NotFoundError, handle_not_found)
     app.add_exception_handler(
