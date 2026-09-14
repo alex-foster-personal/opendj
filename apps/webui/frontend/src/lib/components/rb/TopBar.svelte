@@ -13,7 +13,9 @@
 	 */
 	import { onMount, tick } from 'svelte';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
-	import { engine, isMasterMuted, mixerState } from '$lib/rb/audio-engine.svelte';
+	import { DECK_IDS, engine, getDeckState, isMasterMuted, mixerState } from '$lib/rb/audio-engine.svelte';
+	import { openStage } from '$lib/lyrics/stage-store.svelte';
+	import type { StageDeck } from '$lib/lyrics/stage-store.svelte';
 	import { anyDeckPlaying } from '$lib/rb/playing-gate';
 	import type { AudioEngine } from '$lib/rb/audio-engine-types';
 	import {
@@ -297,6 +299,34 @@
 	// armAudioContextWatchdog's arm predicate (anyDeckPlaying is the one
 	// shared source of truth for "is this session live").
 	const masterMeterActive = $derived(anyDeckPlaying());
+
+	/** Stage overlay target: first playing/audible loaded deck, else first loaded deck. */
+	const stageTarget = $derived.by((): { deck: StageDeck; stableId: string } | null => {
+		for (const deck of DECK_IDS) {
+			const st = getDeckState(deck);
+			if (st.stable_id !== null && (st.playing || st.audible)) {
+				return { deck: deck as StageDeck, stableId: st.stable_id };
+			}
+		}
+		for (const deck of DECK_IDS) {
+			const st = getDeckState(deck);
+			if (st.stable_id !== null) {
+				return { deck: deck as StageDeck, stableId: st.stable_id };
+			}
+		}
+		return null;
+	});
+
+	const stageTitle = $derived(
+		stageTarget === null
+			? 'Stage - load a track onto a deck first'
+			: `Open full-screen karaoke stage for deck ${stageTarget.deck}`
+	);
+
+	function _openStageFromTopBar(): void {
+		if (stageTarget === null) return;
+		openStage(stageTarget.stableId, stageTarget.deck);
+	}
 </script>
 
 <svelte:window onpointerdown={_dismissModeMenuOnOutsidePointer} onkeydown={_dismissModeMenuOnEscape} />
@@ -477,6 +507,24 @@
 		onclick={toggleLyricsGlobal}
 	>
 		LYR
+	</button>
+	<span
+		class="lyrics-compact-chip topbar-slot-lyr-compact"
+		title="Waveform word lane hidden at this viewport height - LYR preference stays on; use Stage for full-screen lyrics"
+		aria-label="Waveform lyrics compact - word lane hidden at this height"
+	>
+		WF hidden
+	</span>
+
+	<button
+		type="button"
+		class="bsm-toggle topbar-slot-stage"
+		disabled={stageTarget === null}
+		aria-label="Open karaoke stage"
+		title={stageTitle}
+		onclick={_openStageFromTopBar}
+	>
+		Stage
 	</button>
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -889,6 +937,16 @@
 		.rb-topbar .link-btn,
 		.rb-topbar .topbar-slot-pad { display: none; }
 	}
+	/* Issue #2361: STG beside LYR costs ~30px. Measured on WSL at 1280px width
+	   the command entry stops hit-testing unless the clock yields first; 1320px
+	   leaves the same 25px margin the 1530px pairing+vibe eviction uses. */
+	@media (max-width: 1320px) {
+		.rb-topbar .clock { display: none; }
+	}
+	@media (max-width: 1400px) {
+		.rb-topbar .topbar-slot-stage { font-size: 0; }
+		.rb-topbar .topbar-slot-stage::after { content: 'STG'; font-size: 9px; }
+	}
 	@media (max-width: 980px) {
 		.rb-topbar .topbar-slot-bsm { font-size: 0; }
 		.rb-topbar .topbar-slot-bsm::after { content: 'BSM'; font-size: 9px; }
@@ -1222,6 +1280,29 @@
 	}
 	.bsm-toggle:hover {
 		color: var(--rb-text);
+	}
+	.bsm-toggle:disabled {
+		cursor: not-allowed;
+		opacity: 0.55;
+	}
+	.lyrics-compact-chip {
+		display: none;
+		align-items: center;
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+		background: color-mix(in srgb, var(--rb-orange) 18%, var(--rb-panel-raised));
+		color: var(--rb-orange);
+		font-family: var(--rb-font);
+		font-size: 8px;
+		letter-spacing: 0.04em;
+		line-height: 1.2;
+		padding: 2px 5px;
+		white-space: nowrap;
+	}
+	@media (max-height: 799px) {
+		.lyrics-compact-chip {
+			display: inline-flex;
+		}
 	}
 	/* MIDI label: LIVE status button. grey = unsupported/denied/idle,
 	 * amber pulse = permission prompt pending, green = mapped device up. */
