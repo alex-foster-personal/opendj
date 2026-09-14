@@ -13,7 +13,7 @@ import threading
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from apps.mik import availability as avail
 from apps.shared.scan_mass_missing import MassMissingError
@@ -98,6 +98,7 @@ class LibraryAvailabilityWorker:
         *,
         batch_size: int = DEFAULT_BATCH_SIZE,
         state_db_path: Path | None = None,
+        on_batch_committed: Callable[[AvailabilityWorkerStatus], None] | None = None,
     ) -> None:
         self._data_dir = data_dir
         self._state_db_path = state_db_path or (data_dir / "state" / "state.db")
@@ -111,6 +112,7 @@ class LibraryAvailabilityWorker:
         self._status = AvailabilityWorkerStatus()
         self._keyset_cursor = ""
         self._scan_awaiting_volume = False
+        self._on_batch_committed = on_batch_committed
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -124,9 +126,12 @@ class LibraryAvailabilityWorker:
         self._thread.start()
         self.request_probe()
 
-    def stop(self) -> None:
+    def stop_after_current_batch(self) -> None:
         self._stop.set()
         self._wake.set()
+
+    def stop(self) -> None:
+        self.stop_after_current_batch()
         if self._thread is not None:
             self._thread.join(timeout=30.0)
             self._thread = None
@@ -293,7 +298,10 @@ class LibraryAvailabilityWorker:
         while not self._stop.is_set():
             if not self._wake.wait(timeout=_POLL_IDLE_S):
                 if self._count_pending() > 0:
-                    self._wake.set()
+                    with self._lock:
+                        phase = self._status.phase
+                    if phase not in {"refused", "failed"}:
+                        self._wake.set()
                 continue
             self._wake.clear()
             if self._stop.is_set():
@@ -361,6 +369,8 @@ class LibraryAvailabilityWorker:
                     return
                 batches_committed += 1
                 self._refresh_status_counts(conn)
+                if self._on_batch_committed is not None:
+                    self._on_batch_committed(self.status())
                 if len(batch) < self._batch_size:
                     break
                 self._wake.set()

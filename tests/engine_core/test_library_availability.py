@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import sqlite3
+import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -156,57 +157,59 @@ def test_engine_lifespan_probe_matches_independent_exists_count(
         conn.close()
 
 
-def test_worker_restart_before_completion_preserves_settled_batches(
+def test_worker_restart_mid_run_preserves_settled_rows_byte_identical(
     data_dir: Path, state_db_path: Path, tmp_path: Path
 ) -> None:
-    audio_dir = tmp_path / "resume"
+    audio_dir = tmp_path / "mid-run"
     audio_dir.mkdir()
-    stable_ids: list[str] = []
+    track_count = 20
+    batch_size = 4
     conn = state_db.open_rw(state_db_path)
     try:
-        for index in range(8):
+        for index in range(track_count):
             audio = audio_dir / f"{index}.mp3"
             audio.write_bytes(b"\x00")
-            sid = _stable(f"r{index}")
-            stable_ids.append(sid)
-            _upsert_track(conn, sid, str(audio))
-        first_batch = stable_ids[:3]
-        avail.write(
-            conn,
-            avail.probe_batch(conn, first_batch),
-            apply_mass_missing_guard=False,
-        )
-        conn.commit()
-        stamps_before = dict(
-            conn.execute(
-                "SELECT stable_id, checked_at FROM track_availability ORDER BY stable_id"
-            )
-        )
-        assert len(stamps_before) == 3
+            _upsert_track(conn, _stable(f"m{index:02d}"), str(audio))
     finally:
         conn.close()
 
-    worker = LibraryAvailabilityWorker(data_dir, batch_size=3)
+    interrupted = threading.Event()
+    stop_requested = False
+    worker_holder: list[LibraryAvailabilityWorker] = []
+
+    def on_batch_committed(snapshot) -> None:
+        nonlocal stop_requested
+        if stop_requested or snapshot.processed_total < batch_size:
+            return
+        stop_requested = True
+        worker_holder[0].stop_after_current_batch()
+        interrupted.set()
+
+    worker = LibraryAvailabilityWorker(
+        data_dir,
+        batch_size=batch_size,
+        on_batch_committed=on_batch_committed,
+    )
+    worker_holder.append(worker)
     worker.start()
     try:
-        _wait_worker_complete(worker, guard_s=THREAD_HANG_GUARD_S)
-        assert worker.status().processed_total >= 5
+        assert interrupted.wait(timeout=THREAD_HANG_GUARD_S)
     finally:
         worker.stop()
 
     conn = state_db.open_rw(state_db_path)
     try:
-        for sid, checked_at in stamps_before.items():
-            current = conn.execute(
-                "SELECT checked_at FROM track_availability WHERE stable_id = ?",
-                (sid,),
-            ).fetchone()[0]
-            assert current == checked_at
-        assert conn.execute("SELECT COUNT(*) FROM tracks_available").fetchone()[0] == 8
+        settled = dict(
+            conn.execute(
+                "SELECT stable_id, checked_at FROM track_availability ORDER BY stable_id"
+            )
+        )
+        settled_count = len(settled)
+        assert 0 < settled_count < track_count
     finally:
         conn.close()
 
-    worker2 = LibraryAvailabilityWorker(data_dir, batch_size=3)
+    worker2 = LibraryAvailabilityWorker(data_dir, batch_size=batch_size)
     worker2.start()
     try:
         _wait_worker_complete(worker2, guard_s=THREAD_HANG_GUARD_S)
@@ -215,14 +218,20 @@ def test_worker_restart_before_completion_preserves_settled_batches(
 
     conn = state_db.open_rw(state_db_path)
     try:
-        stamps_after = dict(
-            conn.execute(
-                "SELECT stable_id, checked_at FROM track_availability ORDER BY stable_id"
-            )
+        assert (
+            conn.execute("SELECT COUNT(*) FROM track_availability").fetchone()[0]
+            == track_count
         )
-        assert len(stamps_after) == 8
-        for sid, checked_at in stamps_before.items():
-            assert stamps_after[sid] == checked_at
+        assert (
+            conn.execute("SELECT COUNT(*) FROM tracks_available").fetchone()[0]
+            == track_count
+        )
+        for sid, checked_at in settled.items():
+            current = conn.execute(
+                "SELECT checked_at FROM track_availability WHERE stable_id = ?",
+                (sid,),
+            ).fetchone()[0]
+            assert current == checked_at
     finally:
         conn.close()
 
@@ -446,6 +455,124 @@ def test_background_round_refuses_catastrophic_present_drop(
         assert conn.execute("SELECT COUNT(*) FROM tracks_available").fetchone()[0] == 10
     finally:
         conn.close()
+
+
+def _seed_mass_missing_refusal_fixture(
+    data_dir: Path,
+    state_db_path: Path,
+    tmp_path: Path,
+) -> tuple[LibraryAvailabilityWorker, list[Path]]:
+    audio_dir = tmp_path / "terminal-refused"
+    audio_dir.mkdir()
+    paths: list[Path] = []
+    conn = state_db.open_rw(state_db_path)
+    try:
+        for index in range(10):
+            audio = audio_dir / f"{index}.mp3"
+            audio.write_bytes(b"\x00")
+            paths.append(audio)
+            _upsert_track(conn, _stable(f"t{index}"), str(audio))
+    finally:
+        conn.close()
+
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=10)
+    worker.start()
+    try:
+        _wait_worker_complete(worker, guard_s=THREAD_HANG_GUARD_S)
+    finally:
+        worker.stop()
+
+    for audio in paths[:6]:
+        audio.unlink()
+
+    conn = state_db.open_rw(state_db_path)
+    try:
+        now = datetime.now(UTC).isoformat()
+        conn.execute(
+            "UPDATE tracks SET updated_at = ? WHERE deleted_at IS NULL",
+            (now,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    worker2 = LibraryAvailabilityWorker(data_dir, batch_size=10)
+    worker2.start()
+    started = time.monotonic()
+    while time.monotonic() - started < THREAD_HANG_GUARD_S:
+        snapshot = worker2.status()
+        if snapshot.phase == "refused":
+            return worker2, paths
+        time.sleep(0.05)
+    worker2.stop()
+    raise AssertionError("background round never refused the mass-missing drop")
+
+
+def test_refused_phase_stays_terminal_without_auto_retry(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    worker2, _paths = _seed_mass_missing_refusal_fixture(
+        data_dir, state_db_path, tmp_path
+    )
+    try:
+        snapshot = worker2.status()
+        assert snapshot.phase == "refused"
+        assert snapshot.pending > 0
+        refused_processed = snapshot.processed_total
+
+        # Count real retry rounds directly rather than polling `status()` for a
+        # transient "running" phase: a retry round flips phase to "running" and
+        # back to "refused" fast enough (small in-memory batch, rolled-back
+        # transaction) that a wall-clock poll can miss every occurrence even
+        # when the worker is retrying every idle cycle. Wrapping the real
+        # `_drain_once` still calls the real implementation; it only adds a
+        # counter, so this is a spy, not a mock.
+        drain_calls = {"n": 0}
+        original_drain_once = worker2._drain_once
+
+        def _counting_drain_once() -> None:
+            drain_calls["n"] += 1
+            return original_drain_once()
+
+        worker2._drain_once = _counting_drain_once  # type: ignore[method-assign]
+
+        # _POLL_IDLE_S is 0.25s; wait several multiples of it so a retrying
+        # worker would have attempted multiple rounds.
+        poll_deadline = time.monotonic() + 1.5
+        phases_seen: set[str] = set()
+        while time.monotonic() < poll_deadline:
+            snapshot = worker2.status()
+            phases_seen.add(snapshot.phase)
+            assert snapshot.processed_total == refused_processed
+            time.sleep(0.05)
+
+        assert drain_calls["n"] == 0, (
+            f"expected zero retry rounds while refused, saw {drain_calls['n']}"
+        )
+        assert phases_seen == {"refused"}
+    finally:
+        worker2.stop()
+
+
+def test_explicit_probe_request_clears_refused_phase(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    worker2, _paths = _seed_mass_missing_refusal_fixture(
+        data_dir, state_db_path, tmp_path
+    )
+    try:
+        worker2.request_probe(full=True, allow_mass_missing=True)
+        started = time.monotonic()
+        while time.monotonic() - started < THREAD_HANG_GUARD_S:
+            snapshot = worker2.status()
+            if snapshot.phase not in {"refused"}:
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("explicit probe never cleared refused phase")
+        assert snapshot.phase in {"queued", "running", "complete"}
+    finally:
+        worker2.stop()
 
 
 def test_listing_does_not_wait_for_probe(
