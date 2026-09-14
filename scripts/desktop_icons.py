@@ -15,7 +15,7 @@ Requirements:
   would -> :func:`generate_desktop_icons`
 - ✔︎ ✅ 🎯 The master sits on Apple's macOS icon grid (1024 canvas, transparent
   margin around an 824px tile), so the Dock never draws an inset tile with
-  padding around a full-bleed square (INSTALL-18) -> :func:`_load_master`
+  padding around a full-bleed square (INSTALL-19) -> :func:`_load_master`
 
 Acceptance tests:
 

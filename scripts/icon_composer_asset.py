@@ -1,8 +1,8 @@
-"""Compile and install the macOS 26 Icon Composer asset (INSTALL-19, issue #2566).
+"""Compile and install the macOS 26 Icon Composer asset (INSTALL-20, issue #2566).
 
 macOS 26 (Tahoe) auto-normalizes a legacy ``icon.icns`` that ships without a
 matching Icon Composer catalog: even a master that fills Apple's icon grid
-(INSTALL-18) can still be composited onto the system's own gray Dock plate,
+(INSTALL-19) can still be composited onto the system's own gray Dock plate,
 because the OS has no compiled asset to draw edge-to-edge with its own Liquid
 Glass squircle and specular highlight. The fix Apple ships for this is a
 layered ``.icon`` document compiled with ``actool`` into ``Assets.car`` and
@@ -55,7 +55,7 @@ from scripts.build_engine_payload import PayloadBuildError
 ICON_SET_NAME: str = "AppIcon"
 REPO_ROOT: Path = Path(__file__).resolve().parents[1]
 DEFAULT_ICON_SOURCE: Path = REPO_ROOT / "apps/desktop/src-tauri/icons/AppIcon.icon"
-# Must match app-icon.png's tile fill (INSTALL-18) so the flat area behind the
+# Must match app-icon.png's tile fill (INSTALL-19) so the flat area behind the
 # mark's transparent margin is the same dark as the legacy master.
 EXPECTED_FILL_RGB: tuple[int, int, int] = (0x0D, 0x0F, 0x12)
 FILL_TOLERANCE: float = 0.002  # extended-srgb rounds to 5 decimal places

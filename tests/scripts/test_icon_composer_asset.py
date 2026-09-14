@@ -1,4 +1,4 @@
-"""macOS 26 Icon Composer asset compile/install (INSTALL-19, issue #2566)."""
+"""macOS 26 Icon Composer asset compile/install (INSTALL-20, issue #2566)."""
 
 from __future__ import annotations
 
@@ -42,13 +42,13 @@ def _icon_source(tmp_path: Path, fill: str, layer_png: Image.Image | None) -> Pa
     return source
 
 
-@pytest.mark.requirement("INSTALL-19")
+@pytest.mark.requirement("INSTALL-20")
 def test_committed_icon_composer_source_is_valid() -> None:
     """[if] the committed .icon doc is malformed/mismatched [then] verify raises, [else stop]."""
     verify_icon_composer_source(DEFAULT_ICON_SOURCE)
 
 
-@pytest.mark.requirement("INSTALL-19")
+@pytest.mark.requirement("INSTALL-20")
 def test_fill_mismatch_is_refused(tmp_path: Path) -> None:
     """[if] icon.json fill diverges from the tile color [then] verify raises, [else stop]."""
     mark = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
@@ -58,7 +58,7 @@ def test_fill_mismatch_is_refused(tmp_path: Path) -> None:
         verify_icon_composer_source(source)
 
 
-@pytest.mark.requirement("INSTALL-19")
+@pytest.mark.requirement("INSTALL-20")
 def test_fully_transparent_layer_is_refused(tmp_path: Path) -> None:
     """[if] the mark layer PNG is fully transparent [then] verify raises, [else stop]."""
     blank = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
@@ -67,7 +67,7 @@ def test_fully_transparent_layer_is_refused(tmp_path: Path) -> None:
         verify_icon_composer_source(source)
 
 
-@pytest.mark.requirement("INSTALL-19")
+@pytest.mark.requirement("INSTALL-20")
 def test_missing_layer_asset_is_refused(tmp_path: Path) -> None:
     """[if] icon.json references a missing layer PNG [then] verify raises, [else stop]."""
     source = _icon_source(tmp_path, "extended-srgb:0.05098,0.05882,0.07059,1.00000", None)
@@ -75,7 +75,7 @@ def test_missing_layer_asset_is_refused(tmp_path: Path) -> None:
         verify_icon_composer_source(source)
 
 
-@pytest.mark.requirement("INSTALL-19")
+@pytest.mark.requirement("INSTALL-20")
 def test_actool_absent_without_full_xcode_names_the_remedy() -> None:
     """[if] actool is not resolvable (CLT-only host) [then] it raises naming Xcode, [else stop].
 
@@ -92,7 +92,7 @@ def test_actool_absent_without_full_xcode_names_the_remedy() -> None:
         pytest.skip("this host has a full Xcode install; nothing to refuse")
 
 
-@pytest.mark.requirement("INSTALL-19")
+@pytest.mark.requirement("INSTALL-20")
 def test_compile_without_actool_is_refused(tmp_path: Path) -> None:
     """[if] compiling without actool [then] it raises before touching Assets.car, [else stop]."""
     try:
@@ -106,7 +106,7 @@ def test_compile_without_actool_is_refused(tmp_path: Path) -> None:
         compile_icon_composer_asset(DEFAULT_ICON_SOURCE, out_dir=tmp_path / "out")
 
 
-@pytest.mark.requirement("INSTALL-19")
+@pytest.mark.requirement("INSTALL-20")
 def test_install_sets_icon_name_without_disturbing_other_keys(tmp_path: Path) -> None:
     """[if] installing where CFBundleIconName is absent [then] only that key changes, [else stop]."""
     app = tmp_path / "Open DJ.app"
@@ -135,7 +135,7 @@ def test_install_sets_icon_name_without_disturbing_other_keys(tmp_path: Path) ->
         assert updated[key] == value
 
 
-@pytest.mark.requirement("INSTALL-19")
+@pytest.mark.requirement("INSTALL-20")
 def test_install_refuses_a_path_that_is_not_a_built_app(tmp_path: Path) -> None:
     """[if] app_path has no Contents/Resources [then] install raises, [else stop]."""
     with pytest.raises(PayloadBuildError, match="Resources"):

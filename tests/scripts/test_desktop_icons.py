@@ -81,7 +81,7 @@ def test_generation_embeds_every_iconutil_pixel_size(tmp_path: Path) -> None:
     assert embedded == ICNS_REQUIRED_PIXEL_SIZES
 
 
-@pytest.mark.requirement("INSTALL-18")
+@pytest.mark.requirement("INSTALL-19")
 def test_full_bleed_master_is_refused(tmp_path: Path) -> None:
     """[if] the master is an opaque full-bleed square [then] generation refuses it, [else stop]."""
     master = tmp_path / "master.png"
@@ -90,7 +90,7 @@ def test_full_bleed_master_is_refused(tmp_path: Path) -> None:
         generate_desktop_icons(master, tmp_path / "icons")
 
 
-@pytest.mark.requirement("INSTALL-18")
+@pytest.mark.requirement("INSTALL-19")
 def test_committed_master_sits_on_apple_grid() -> None:
     """[if] a committed-master margin probe is opaque [then] the Dock insets it, [else stop]."""
     with Image.open(ICONS_DIR / "app-icon.png") as image:
