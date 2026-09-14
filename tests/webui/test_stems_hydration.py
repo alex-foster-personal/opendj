@@ -191,8 +191,7 @@ def test_not_in_index_fails_loud_when_hydration_is_armed(tmp_path: Path):
     """When hydration is configured, a stable_id absent from the index must
     answer HTTP 502, never the ordinary unavailable envelope.
 
-    [if] a track is absent locally and not in the cached index while hydration
-    is armed [then] the manifest route answers 502 STEM_BUNDLE_NOT_INDEXED, [else stop].
+    [if] hydration is armed and unindexed [then] the manifest route answers 502, [else stop].
     """
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
