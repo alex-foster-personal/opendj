@@ -44,7 +44,7 @@ export interface AudioEngine {
 	load(deck: DeckId, stable_id: string): Promise<void>;
 	/** Start/resume transport from the current position. Throws if no track
 	 * is loaded on the deck. */
-	play(deck: DeckId): Promise<void>;
+	play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void>;
 	/** Pause transport, keeping position. Throws if no track loaded. */
 	pause(deck: DeckId): Promise<void>;
 	/** Seek to a position in ms (hot-cue click / CUE return). Implemented as

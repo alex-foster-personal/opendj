@@ -176,7 +176,13 @@ export type PerformanceCommand =
 	| { type: 'load'; deck: DeckId; stable_id: string; refuseIfMaster?: boolean }
 	| { type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean }
 	| { type: 'unload'; deck: DeckId; refuseIfMaster?: boolean }
-	| { type: 'play'; deck: DeckId; playing: boolean; quantize?: boolean }
+	| {
+			type: 'play';
+			deck: DeckId;
+			playing: boolean;
+			quantize?: boolean;
+			start_at_context_sec?: number;
+	  }
 	| { type: 'cue'; deck: DeckId }
 	| { type: 'seek'; deck: DeckId; position_ms: number }
 	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null }
@@ -1089,13 +1095,24 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		if (record.lock === undefined) return { type, deck };
 		return { type, deck, lock: _boolean('lock', record.lock) };
 	} else if (type === 'play') {
-		_exactKeys(record, ['type', 'deck', 'playing', 'quantize']);
-		if (record.quantize === undefined) return { type, deck, playing: _boolean('playing', record.playing) };
+		_exactKeys(record, ['type', 'deck', 'playing', 'quantize', 'start_at_context_sec']);
+		const playing = _boolean('playing', record.playing);
+		const start_at_context_sec =
+			record.start_at_context_sec === undefined
+				? undefined
+				: _finite('start_at_context_sec', record.start_at_context_sec);
+		if (start_at_context_sec !== undefined && start_at_context_sec < 0) {
+			throw new RangeError('start_at_context_sec must be >= 0');
+		}
+		if (record.quantize === undefined && start_at_context_sec === undefined) {
+			return { type, deck, playing };
+		}
 		return {
 			type,
 			deck,
-			playing: _boolean('playing', record.playing),
-			quantize: _boolean('quantize', record.quantize)
+			playing,
+			...(record.quantize === undefined ? {} : { quantize: _boolean('quantize', record.quantize) }),
+			...(start_at_context_sec === undefined ? {} : { start_at_context_sec })
 		};
 	} else if (type === 'safety_loop_save' || type === 'safety_loop_clear') {
 		_exactKeys(record, ['type', 'deck']);
@@ -1730,7 +1747,9 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		quantizedLaunchArmed[command.deck] = null;
 	} else if (command.type === 'play') {
 		if (command.playing) {
-			if (quantizedLaunchArmed[command.deck] !== null && command.quantize !== true) {
+			if (command.start_at_context_sec !== undefined) {
+				await engine.play(command.deck, pressT0Ms, command.start_at_context_sec);
+			} else if (quantizedLaunchArmed[command.deck] !== null && command.quantize !== true) {
 				quantizedLaunchArmed[command.deck] = null;
 				_quantizedLaunchDriver.clear(command.deck);
 			} else if (command.quantize === true) {

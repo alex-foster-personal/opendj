@@ -3183,7 +3183,7 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	/** Q1: `pressT0Ms` is the operator's input stamp - see `$lib/rb/press-stamp`. */
-	async play(deck: DeckId, pressT0Ms?: number): Promise<void> {
+	async play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'play');
 		if (rt.desiredActive) return; // transport already running is a valid state
 		// NOT st.beat_sync_enabled: the flag defaults ON, and a track with no
@@ -3218,11 +3218,17 @@ class RbAudioEngine implements AudioEngine {
 			: resumeSec;
 		const syncClock = _syncClockMaster();
 		const owned = _ownedMaster();
-		const schedulePlainTransport = async (): Promise<void> => {
-			const when = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
+		const schedulePlainTransport = async (forcedWhen?: number): Promise<void> => {
+			const minimumWhen = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
+			const when =
+				forcedWhen === undefined ? minimumWhen : Math.max(minimumWhen, forcedWhen);
 			await _schedulePress(deck, when, startSec, true, pressT0Ms);
 			st.sync_error = null;
 		};
+		if (startAtContextSec !== undefined) {
+			await schedulePlainTransport(startAtContextSec);
+			return;
+		}
 		if (_masterMode === 'locked' && owned !== null && owned !== deck) {
 			if (syncClock !== null && syncActive) {
 				await _synchronizeFollowers(syncClock, [deck], {

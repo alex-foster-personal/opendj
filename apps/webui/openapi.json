@@ -14013,6 +14013,154 @@
         "title": "RescueAppendOut",
         "type": "object"
       },
+      "RescueDeckOutcomeOut": {
+        "properties": {
+          "outcome": {
+            "enum": [
+              "resumed",
+              "paused",
+              "missing"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "stable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Id"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "title": "RescueDeckOutcomeOut",
+        "type": "object"
+      },
+      "RescueRestoreIn": {
+        "properties": {
+          "play": {
+            "default": false,
+            "title": "Play",
+            "type": "boolean"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          }
+        },
+        "title": "RescueRestoreIn",
+        "type": "object"
+      },
+      "RescueRestoreOut": {
+        "properties": {
+          "captured_at_ms": {
+            "title": "Captured At Ms",
+            "type": "integer"
+          },
+          "decks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RescueDeckOutcomeOut"
+            },
+            "title": "Decks",
+            "type": "object"
+          },
+          "mode": {
+            "enum": [
+              "layout",
+              "play"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "captured_at_ms",
+          "mode",
+          "payload",
+          "decks"
+        ],
+        "title": "RescueRestoreOut",
+        "type": "object"
+      },
+      "RescueSnapshotMeta": {
+        "properties": {
+          "age_ms": {
+            "title": "Age Ms",
+            "type": "integer"
+          },
+          "captured_at_ms": {
+            "title": "Captured At Ms",
+            "type": "integer"
+          },
+          "deck_count_loaded": {
+            "description": "Decks with a non-empty stable_id at capture",
+            "title": "Deck Count Loaded",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "playlist_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist Id"
+          }
+        },
+        "required": [
+          "id",
+          "captured_at_ms",
+          "age_ms",
+          "deck_count_loaded"
+        ],
+        "title": "RescueSnapshotMeta",
+        "type": "object"
+      },
+      "RescueSnapshotsOut": {
+        "properties": {
+          "snapshots": {
+            "items": {
+              "$ref": "#/components/schemas/RescueSnapshotMeta"
+            },
+            "title": "Snapshots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "snapshots"
+        ],
+        "title": "RescueSnapshotsOut",
+        "type": "object"
+      },
       "RevokeOut": {
         "properties": {
           "changed": {
@@ -28614,6 +28762,68 @@
         "summary": "Apply Relocate",
         "tags": [
           "relocate"
+        ]
+      }
+    },
+    "/api/v1/rescue/restore": {
+      "post": {
+        "operationId": "rescue_restore_api_v1_rescue_restore_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RescueRestoreIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RescueRestoreOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rescue Restore",
+        "tags": [
+          "performance"
+        ]
+      }
+    },
+    "/api/v1/rescue/snapshots": {
+      "get": {
+        "operationId": "rescue_snapshots_list_api_v1_rescue_snapshots_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RescueSnapshotsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rescue Snapshots List",
+        "tags": [
+          "performance"
         ]
       }
     },
