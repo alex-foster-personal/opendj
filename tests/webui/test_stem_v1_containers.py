@@ -6,6 +6,7 @@ import json
 import shutil
 import struct
 import subprocess
+import time
 import wave
 from pathlib import Path
 
@@ -20,9 +21,22 @@ from apps.webui.server.stem_artifacts import (
     WavMetadata,
     _find_mp3_sync,
     _flac_block_size_from_header,
+    _flac_valid_frame_header_at,
     _id3v2_skip_size,
+    _validate_mp3_xing_tail,
     load_stem_bundle,
     read_mp3_metadata,
+)
+
+REAL_MP3_BUNDLE = Path(
+    "/private/tmp/claude-502/-Users-maintainer-code-music-dj-tools-lanes/"
+    "ebd907a5-4922-486d-b381-b825be5f341b/scratchpad/realstems/"
+    "002acb181dceb41f9efc5ceb11b1d16560918f84"
+)
+REAL_FLAC_BUNDLE = Path(
+    "/private/tmp/claude-502/-Users-maintainer-code-music-dj-tools-lanes/"
+    "ebd907a5-4922-486d-b381-b825be5f341b/scratchpad/realstems/"
+    "331f7de0240e1abf924f5f9d0b183ff1f2c86cfa"
 )
 
 FFMPEG = shutil.which("ffmpeg")
@@ -288,6 +302,197 @@ def _client(stems_dir: Path) -> TestClient:
     return TestClient(app)
 
 
+def _require_real_mp3_bundle() -> Path:
+    if not REAL_MP3_BUNDLE.is_dir():
+        pytest.skip(f"real MP3 stem bundle missing at {REAL_MP3_BUNDLE}")
+    return REAL_MP3_BUNDLE
+
+
+def _require_real_flac_bundle() -> Path:
+    if not REAL_FLAC_BUNDLE.is_dir():
+        pytest.skip(f"real FLAC stem bundle missing at {REAL_FLAC_BUNDLE}")
+    return REAL_FLAC_BUNDLE
+
+
+def _copy_real_mp3_bundle(root: Path, stable_id: str) -> Path:
+    source = _require_real_mp3_bundle()
+    bundle = root / stable_id
+    bundle.mkdir(parents=True)
+    for part in ("vocals", "drums", "bass", "other"):
+        shutil.copy2(source / f"{part}.mp3", bundle / f"{part}.mp3")
+    (bundle / "manifest.json").write_text(
+        json.dumps(_manifest(stable_id, ext="mp3")),
+        encoding="utf-8",
+    )
+    return bundle
+
+
+def _encode_mp3_with_duration(dest: Path, *, duration_s: float, sample_rate: int = 44_100) -> None:
+    ffmpeg = _require_ffmpeg()
+    subprocess.run(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=frequency=440:duration={duration_s}:sample_rate={sample_rate}",
+            "-ac",
+            "2",
+            "-codec:a",
+            "libmp3lame",
+            "-b:a",
+            "128k",
+            str(dest),
+        ],
+        check=True,
+    )
+
+
+def _bundle_with_chained_mp3_tolerance(root: Path, stable_id: str) -> Path:
+    """Four MP3 parts whose frame counts step down within tol of the previous part only."""
+    bundle = root / stable_id
+    bundle.mkdir(parents=True)
+    sample_rate = 44_100
+    samples_per_frame = 1152
+    tol_frames = int(FRAME_MISMATCH_TOL_S * sample_rate)
+    step_samples = tol_frames - samples_per_frame
+    assert step_samples > 0
+    base_duration_s = 30.0
+    durations = [
+        base_duration_s,
+        base_duration_s - step_samples / sample_rate,
+        base_duration_s - 2 * step_samples / sample_rate,
+        base_duration_s - 3 * step_samples / sample_rate,
+    ]
+    frame_counts: list[int] = []
+    for part, duration in zip(("vocals", "drums", "bass", "other"), durations, strict=True):
+        dest = bundle / f"{part}.mp3"
+        _encode_mp3_with_duration(dest, duration_s=duration, sample_rate=sample_rate)
+        frame_counts.append(read_mp3_metadata(dest).frame_count)
+    gaps = [
+        frame_counts[index - 1] - frame_counts[index]
+        for index in range(1, len(frame_counts))
+    ]
+    assert all(0 < gap < tol_frames for gap in gaps), gaps
+    assert frame_counts[0] - frame_counts[-1] > tol_frames
+    (bundle / "manifest.json").write_text(
+        json.dumps(_manifest(stable_id, ext="mp3")),
+        encoding="utf-8",
+    )
+    return bundle
+
+
+def _bundle_with_aligned_mp3_tolerance(root: Path, stable_id: str) -> Path:
+    """Four MP3 parts that all stay within tolerance of the reference part."""
+    bundle = root / stable_id
+    bundle.mkdir(parents=True)
+    sample_rate = 44_100
+    tol_frames = int(FRAME_MISMATCH_TOL_S * sample_rate)
+    base_duration_s = 20.0
+    # Small enough that 3 steps plus MP3 frame-boundary rounding (1152 samples per
+    # frame) still lands every part within tol_frames of the reference part.
+    small_step_s = (tol_frames // 6) / sample_rate
+    durations = [
+        base_duration_s,
+        base_duration_s - small_step_s,
+        base_duration_s - 2 * small_step_s,
+        base_duration_s - 3 * small_step_s,
+    ]
+    reference_count: int | None = None
+    for part, duration in zip(("vocals", "drums", "bass", "other"), durations, strict=True):
+        dest = bundle / f"{part}.mp3"
+        _encode_mp3_with_duration(dest, duration_s=duration, sample_rate=sample_rate)
+        count = read_mp3_metadata(dest).frame_count
+        if reference_count is None:
+            reference_count = count
+        else:
+            assert abs(count - reference_count) <= tol_frames
+    (bundle / "manifest.json").write_text(
+        json.dumps(_manifest(stable_id, ext="mp3")),
+        encoding="utf-8",
+    )
+    return bundle
+
+
+def _read_flac_streaminfo(path: Path) -> bytes:
+    data = path.read_bytes()
+    if data[:4] != b"fLaC":
+        raise ValueError(f"{path.name} is not FLAC")
+    offset = 4
+    while True:
+        header = struct.unpack(">I", data[offset : offset + 4])[0]
+        is_last = (header & 0x80000000) != 0
+        block_type = (header & 0x7F000000) >> 24
+        block_len = header & 0x00FFFFFF
+        offset += 4
+        payload = data[offset : offset + block_len]
+        offset += block_len
+        if block_type == 0:
+            return payload
+        if is_last:
+            break
+    raise ValueError(f"{path.name} FLAC missing STREAMINFO block")
+
+
+def _find_flac_final_frame_header_end(path: Path) -> int:
+    """Locate the last frame header end for a FLAC whose tail covers STREAMINFO."""
+    data = path.read_bytes()
+    streaminfo = _read_flac_streaminfo(path)
+    min_blocksize = struct.unpack(">H", streaminfo[0:2])[0]
+    max_blocksize = struct.unpack(">H", streaminfo[2:4])[0]
+    packed = int.from_bytes(streaminfo[10:18], "big")
+    total_samples = packed & 0xFFFFFFFFF
+    file_size = len(data)
+    tail_len = min(file_size, 65_536)
+    tail = data[file_size - tail_len : file_size]
+    for index in range(len(tail) - 1):
+        if tail[index] != 0xFF or tail[index + 1] not in {0xF8, 0xF9}:
+            continue
+        validated = _flac_valid_frame_header_at(
+            tail,
+            index,
+            min_blocksize=min_blocksize,
+            max_blocksize=max_blocksize,
+        )
+        if validated is None or validated[0] != total_samples:
+            continue
+        return file_size - tail_len + validated[1]
+    raise AssertionError(f"{path.name} has no final-frame header in its tail")
+
+
+def _copy_real_flac_bundle(
+    root: Path,
+    stable_id: str,
+    *,
+    corrupt_vocals: Path | None = None,
+) -> Path:
+    source = _require_real_flac_bundle()
+    bundle = root / stable_id
+    bundle.mkdir(parents=True)
+    for part in ("vocals", "drums", "bass", "other"):
+        src = corrupt_vocals if part == "vocals" and corrupt_vocals is not None else source / f"{part}.flac"
+        shutil.copy2(src, bundle / f"{part}.flac")
+    (bundle / "manifest.json").write_text(
+        json.dumps(_manifest(stable_id, ext="flac")),
+        encoding="utf-8",
+    )
+    return bundle
+
+
+def _zero_mp3_tail_in_place(path: Path, *, overwrite_bytes: int = 3000) -> None:
+    data = bytearray(path.read_bytes())
+    id3_end = _id3v2_skip_size(data)
+    sync = _find_mp3_sync(data, id3_end)
+    assert sync >= 0
+    start = max(sync + 4, len(data) - overwrite_bytes)
+    data[start:] = b"\x00" * (len(data) - start)
+    path.write_bytes(data)
+
+
 def test_mp3_v1_bundle_loads_with_audio_mpeg(tmp_path: Path) -> None:
     _bundle_with_codec(tmp_path, "track-mp3", "mp3")
     bundle = load_stem_bundle("track-mp3", stems_dir=tmp_path)
@@ -494,6 +699,72 @@ def test_flac_blocksize_code_table_matches_spec() -> None:
         block_size, offset = result
         assert block_size == want
         assert offset == 0
+
+
+def test_chained_mp3_alignment_tolerance_raises(tmp_path: Path) -> None:
+    """[if] four MP3 parts step down within tol of the previous part only [then] the bundle is rejected."""
+    _bundle_with_chained_mp3_tolerance(tmp_path, "track-chained-mp3")
+    with pytest.raises(StemArtifactError, match="frame_count"):
+        load_stem_bundle("track-chained-mp3", stems_dir=tmp_path)
+
+
+def test_fixed_reference_mp3_alignment_loads_with_min_frames(tmp_path: Path) -> None:
+    """[if] every MP3 part stays within tol of the reference part [then] alignment uses the minimum frame_count."""
+    bundle = _bundle_with_aligned_mp3_tolerance(tmp_path, "track-aligned-mp3")
+    loaded = load_stem_bundle("track-aligned-mp3", stems_dir=tmp_path)
+    counts = [
+        read_mp3_metadata(bundle / f"{part}.mp3").frame_count
+        for part in ("vocals", "drums", "bass", "other")
+    ]
+    assert loaded.alignment.frame_count == min(counts)
+
+
+def test_flac_truncated_after_final_frame_header_raises(tmp_path: Path) -> None:
+    """[if] a FLAC part ends right after its final frame header [then] the bundle is rejected."""
+    source = _require_real_flac_bundle() / "vocals.flac"
+    corrupted = tmp_path / "vocals-trunc.flac"
+    shutil.copy2(source, corrupted)
+    header_end = _find_flac_final_frame_header_end(corrupted)
+    corrupted.write_bytes(corrupted.read_bytes()[:header_end])
+    _copy_real_flac_bundle(
+        tmp_path,
+        "track-flac-header-only",
+        corrupt_vocals=corrupted,
+    )
+    with pytest.raises(StemArtifactError, match="vocals.flac"):
+        load_stem_bundle("track-flac-header-only", stems_dir=tmp_path)
+
+
+def test_zero_padded_real_mp3_tail_raises(tmp_path: Path) -> None:
+    """[if] a real Xing MP3 keeps its length but zeroes its tail audio [then] the bundle is rejected."""
+    bundle = _copy_real_mp3_bundle(tmp_path, "track-zero-tail")
+    _zero_mp3_tail_in_place(bundle / "other.mp3")
+    with pytest.raises(StemArtifactError, match="other.mp3"):
+        load_stem_bundle("track-zero-tail", stems_dir=tmp_path)
+
+
+def test_real_mp3_bundle_still_loads_after_xing_tail_check(tmp_path: Path) -> None:
+    """[if] an unmodified real MP3 v1 bundle is loaded [then] it still validates after the tail check."""
+    _copy_real_mp3_bundle(tmp_path, "track-real-mp3")
+    bundle = load_stem_bundle("track-real-mp3", stems_dir=tmp_path)
+    assert bundle.media_type == "audio/mpeg"
+    assert bundle.alignment.frame_count > 0
+
+
+def test_mp3_xing_tail_check_is_constant_cost(tmp_path: Path) -> None:
+    """[if] the Xing tail check runs on a real MP3 part [then] it completes in under 20ms."""
+    source = _require_real_mp3_bundle() / "other.mp3"
+    part = tmp_path / "other.mp3"
+    shutil.copy2(source, part)
+    data = part.read_bytes()
+    sync = _find_mp3_sync(data, _id3v2_skip_size(data))
+    header = data[sync : sync + 4]
+    version_id = (header[1] >> 3) & 0x03
+    started = time.perf_counter()
+    _validate_mp3_xing_tail(data, file_name=part.name, version_id=version_id)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    print(f"mp3 xing tail check elapsed_ms={elapsed_ms:.3f}")
+    assert elapsed_ms < 20.0
 
 
 pytestmark = pytest.mark.rb_parity

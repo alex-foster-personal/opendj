@@ -357,15 +357,21 @@ def _load_v1_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
     media_type = _MEDIA_TYPES[container]
 
     parts = STEM_LAYOUTS[manifest.layout]
-    alignment = metadata[parts[0]]
+    reference = metadata[parts[0]]
     for part in parts[1:]:
-        alignment = _align_v1_part_metadata(
-            alignment,
+        _validate_v1_part_metadata(
+            reference,
             metadata[part],
             reference_part=parts[0],
             part=part,
             container=container,
         )
+    min_frames = min(metadata[part].frame_count for part in parts)
+    alignment = WavMetadata(
+        sample_rate=reference.sample_rate,
+        frame_count=min_frames,
+        channels=reference.channels,
+    )
     return StemBundle(
         manifest=manifest,
         files=files,
@@ -756,6 +762,20 @@ def _flac_crc8(data: bytes) -> int:
     return crc
 
 
+def _flac_crc16(data: bytes) -> int:
+    """CRC-16/IBM for FLAC frame footers (poly 0x8005, init 0, MSB-first)."""
+    crc = 0
+    for byte in data:
+        crc ^= byte << 8
+        for _ in range(8):
+            crc = (
+                ((crc << 1) ^ 0x8005) & 0xFFFF
+                if crc & 0x8000
+                else (crc << 1) & 0xFFFF
+            )
+    return crc
+
+
 def _flac_read_utf8_number(data: bytes, offset: int) -> tuple[int, int] | None:
     if offset >= len(data):
         return None
@@ -865,6 +885,23 @@ def _flac_valid_frame_header_at(  # noqa: PLR0911
     return end_sample, offset + 1, variable_blocksize
 
 
+def _flac_stream_end(data: bytes) -> int:
+    """End of FLAC audio excluding a trailing ID3v1 tag, if present."""
+    end = len(data)
+    if end >= 128 and data[end - 128 : end - 125] == b"TAG":
+        end -= 128
+    return end
+
+
+def _flac_frame_crc16_valid(data: bytes, frame_start: int, stream_end: int) -> bool:
+    """True when the frame ending at stream_end has a valid CRC-16 footer."""
+    if frame_start >= stream_end or stream_end - frame_start < 2:
+        return False
+    footer = stream_end - 2
+    expected = struct.unpack(">H", data[footer : stream_end])[0]
+    return _flac_crc16(data[frame_start:footer]) == expected
+
+
 def _flac_tail_frame_covers_stream(path: Path, *, streaminfo: bytes) -> None:
     """Require the file tail contains a genuine frame reaching STREAMINFO total_samples."""
     if len(streaminfo) < 18:
@@ -877,10 +914,10 @@ def _flac_tail_frame_covers_stream(path: Path, *, streaminfo: bytes) -> None:
         raise StemArtifactError(f"{path.name} FLAC STREAMINFO has invalid geometry")
     try:
         file_size = path.stat().st_size
+        file_data = path.read_bytes()
+        stream_end = _flac_stream_end(file_data)
         tail_len = min(file_size, 65_536)
-        with path.open("rb") as source:
-            source.seek(file_size - tail_len)
-            tail = source.read(tail_len)
+        tail = file_data[file_size - tail_len : file_size]
     except OSError as exc:
         raise StemArtifactError(
             f"cannot read FLAC tail for {path.name}: {exc}"
@@ -906,18 +943,25 @@ def _flac_tail_frame_covers_stream(path: Path, *, streaminfo: bytes) -> None:
         if validated is None:
             continue
         best_end = validated[0]
-        if best_end == total_samples:
-            found_exact = True
-            break
+        if best_end != total_samples:
+            continue
+        frame_start = file_size - tail_len + index
+        if not _flac_frame_crc16_valid(file_data, frame_start, stream_end):
+            continue
+        found_exact = True
+        break
     if not found_exact:
         found = "no valid frame header found in file tail"
         if best_end is not None:
-            found = f"last tail frame candidate ends at sample {best_end}"
+            found = (
+                f"last tail frame candidate ends at sample {best_end} "
+                "but final-frame CRC-16 footer check failed"
+            )
         raise StemArtifactError(
             f"{path.name} FLAC tail frame check failed: STREAMINFO declares "
             f"{total_samples} total samples but {found} "
             f"(need a frame whose own decoded end sample equals {total_samples} "
-            "exactly)"
+            "exactly with a valid CRC-16 footer)"
         )
 
 
@@ -1053,6 +1097,83 @@ def _mp3_side_info_len(version_id: int, channels: int) -> int:
     if version_id == 3:
         return 17 if channels == 1 else 32
     return 9 if channels == 1 else 17
+
+
+_MP3_XING_TAIL_LOOKBACK = 4 * 2000
+"""Fixed byte window for Xing-path tail validation (~4 max-sized Layer III frames)."""
+
+
+def _mp3_audio_end(data: bytes) -> int:
+    """Byte offset where MPEG audio ends, excluding ID3v1 and APEv2 trailers."""
+    end = len(data)
+    if end >= 128 and data[end - 128 : end - 125] == b"TAG":
+        end -= 128
+    if end >= 32 and data[end - 32 : end - 24] == b"APETAGEX":
+        tag_body_size = struct.unpack("<I", data[end - 20 : end - 16])[0]
+        end -= 32 + tag_body_size
+    return end
+
+
+def _validate_mp3_xing_tail(
+    data: bytes,
+    *,
+    file_name: str,
+    version_id: int,
+    expected_layer: int = 3,
+) -> None:
+    """Reject Xing-trusted MP3s whose tail is not real frame-aligned audio."""
+    audio_end = _mp3_audio_end(data)
+    lookback = _MP3_XING_TAIL_LOOKBACK
+    window_start = max(0, audio_end - lookback)
+    for index in range(audio_end - 1, window_start - 1, -1):
+        if index + 1 >= len(data):
+            continue
+        if data[index] != 0xFF or (data[index + 1] & 0xE0) != 0xE0:
+            continue
+        try:
+            header_version, layer, bitrate_idx, sample_rate_idx, padding, _channels = (
+                _parse_mpeg_frame_header(data[index : index + 4])
+            )
+        except StemArtifactError:
+            continue
+        if layer != expected_layer or header_version != version_id:
+            continue
+        sample_rate = _mpeg_sample_rate(header_version, sample_rate_idx)
+        bitrate_kbps = _mpeg_bitrate_kbps(header_version, layer, bitrate_idx)
+        if sample_rate <= 0 or bitrate_kbps <= 0:
+            continue
+        offset = index
+        while offset < audio_end:
+            if offset + 4 > len(data):
+                break
+            if data[offset] != 0xFF or (data[offset + 1] & 0xE0) != 0xE0:
+                break
+            try:
+                frame_version, frame_layer, frame_bitrate_idx, frame_sr_idx, frame_pad, _ = (
+                    _parse_mpeg_frame_header(data[offset : offset + 4])
+                )
+            except StemArtifactError:
+                break
+            if frame_layer != expected_layer or frame_version != version_id:
+                break
+            frame_sample_rate = _mpeg_sample_rate(frame_version, frame_sr_idx)
+            frame_bitrate_kbps = _mpeg_bitrate_kbps(
+                frame_version, frame_layer, frame_bitrate_idx
+            )
+            if frame_sample_rate <= 0 or frame_bitrate_kbps <= 0:
+                break
+            frame_size = _mpeg_layer3_frame_size(
+                frame_version, frame_bitrate_kbps, frame_sample_rate, frame_pad
+            )
+            if frame_size <= 0 or offset + frame_size > len(data):
+                break
+            offset += frame_size
+        if offset == audio_end:
+            return
+    raise StemArtifactError(
+        f"{file_name} MP3 Xing/Info tail check failed to find a valid frame chain "
+        f"reaching audio end at byte {audio_end} within the last {lookback} bytes"
+    )
 
 
 def _validate_mp3_xing_length(  # noqa: PLR0913
@@ -1210,6 +1331,11 @@ def _mp3_frame_count(  # noqa: PLR0913
                         bitrate_kbps=bitrate_kbps,
                         sample_rate=sample_rate,
                     )
+                    _validate_mp3_xing_tail(
+                        data,
+                        file_name=file_name,
+                        version_id=version_id,
+                    )
                     return frames * samples_per_frame
     scanned = scan_mp3_frames(
         data,
@@ -1220,14 +1346,15 @@ def _mp3_frame_count(  # noqa: PLR0913
     return scanned * samples_per_frame
 
 
-def _align_v1_part_metadata(
+def _validate_v1_part_metadata(
     reference: WavMetadata,
     candidate: WavMetadata,
     *,
     reference_part: str,
     part: str,
     container: str,
-) -> WavMetadata:
+) -> None:
+    """Require one part's geometry to match the fixed reference part."""
     if candidate.sample_rate != reference.sample_rate:
         raise StemArtifactError(
             f"{part} sample_rate {candidate.sample_rate} does not match "
@@ -1238,20 +1365,13 @@ def _align_v1_part_metadata(
             f"{part} channels {candidate.channels} does not match "
             f"{reference_part} channels {reference.channels}"
         )
-    if container == ".wav":
+    if container in {".wav", ".flac"}:
         if candidate.frame_count != reference.frame_count:
             raise StemArtifactError(
                 f"{part} metadata {candidate!r} does not align with "
                 f"{reference_part} metadata {reference!r}"
             )
-        return reference
-    if container == ".flac":
-        if candidate.frame_count != reference.frame_count:
-            raise StemArtifactError(
-                f"{part} metadata {candidate!r} does not align with "
-                f"{reference_part} metadata {reference!r}"
-            )
-        return reference
+        return
     frame_gap = abs(candidate.frame_count - reference.frame_count)
     if frame_gap > FRAME_MISMATCH_TOL_S * reference.sample_rate:
         raise StemArtifactError(
@@ -1259,12 +1379,6 @@ def _align_v1_part_metadata(
             f"{reference_part} frame_count {reference.frame_count} by {frame_gap} "
             f"frames (> {FRAME_MISMATCH_TOL_S}s at {reference.sample_rate} Hz)"
         )
-    min_frames = min(reference.frame_count, candidate.frame_count)
-    return WavMetadata(
-        sample_rate=reference.sample_rate,
-        frame_count=min_frames,
-        channels=reference.channels,
-    )
 
 
 # ---------------------------------------------------------------------------
