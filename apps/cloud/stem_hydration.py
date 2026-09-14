@@ -290,6 +290,7 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
             renamed = True
             load_stem_bundle(stable_id, stems_dir=root)  # strict re-verify, never mocked
         except (
+            HydrationError,
             asset_store.AssetStoreError,
             StemArtifactError,
             StemBundleNotFoundError,
