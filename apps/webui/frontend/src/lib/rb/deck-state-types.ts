@@ -51,6 +51,8 @@ export interface DeckState {
 	deck_id: DeckId;
 	/** Loaded track stable id; null = empty deck (blank wave row, dim panel). */
 	stable_id: string | null;
+	/** Resolved source path from TrackOut.file_path at load time; null when unknown. */
+	source_path: string | null;
 	/** Track title; null until loaded. */
 	title: string | null;
 	/** Track artist; null until loaded. */

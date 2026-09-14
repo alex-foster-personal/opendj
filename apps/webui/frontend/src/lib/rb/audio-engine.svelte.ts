@@ -1963,6 +1963,7 @@ function _clearLoadedTrackState(st: DeckState): void {
 	const stranded = _beatgridResyncPorts.takePending(deck); _resyncTracking.clearForDeck(deck);
 	_beatgridGuards.beforeClear(deck, stranded, 'reload');
 	st.stable_id = null;
+	st.source_path = null;
 	st.title = null;
 	st.artist = null;
 	st.rating = null;
@@ -3071,6 +3072,10 @@ class RbAudioEngine implements AudioEngine {
 			rt.nextScheduleRevision = 0;
 			rt.desiredActive = false;
 			st.stable_id = stable_id;
+			st.source_path =
+				typeof candidateTrack.file_path === 'string' && candidateTrack.file_path.length > 0
+					? candidateTrack.file_path
+					: null;
 			// TrackOut spells every nullable field optional (a pydantic default
 			// becomes a not-required property), so absent and null both land as
 			// the deck's "unknown" null.

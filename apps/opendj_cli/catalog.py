@@ -254,6 +254,9 @@ _VERBS: tuple[Verb, ...] = (
     )),
     Verb("feedback_mark", "feedback_mark",
          (arg("vote", "enum", enum_value(VOTE_VALUES), "bad|good|great"),)),
+    # RESCUE-01 HTTP parity (not command-bus verbs):
+    #   opendj api GET /api/v1/performance/rescue-snapshots/latest
+    #   opendj api POST /api/v1/performance/rescue-snapshots --json @snapshot.json
     # ----- safety loop and hot cues -------------------------------------
     Verb("safety_loop_save", "safety_loop_save", (_DECK,)),
     Verb("safety_loop_arm", "safety_loop_arm",

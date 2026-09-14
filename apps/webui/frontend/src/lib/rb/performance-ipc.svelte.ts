@@ -127,6 +127,11 @@ import { assertHeadphoneOutputMode } from '$lib/player/headphones';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
+import { notifyRescueTransportEvent } from '$lib/rb/rescue-ring-writer.svelte';
+export {
+	installRescueRingWriterHooks,
+	uninstallRescueRingWriterHooks
+} from '$lib/rb/rescue-ring-writer.svelte';
 import { noteRecentDeck } from '$lib/rb/recent-deck';
 import {
 	hoveredEdgeList,
@@ -258,6 +263,8 @@ export type PerformanceCommand =
 export interface PerformanceDeckSnapshot {
 	deck_id: DeckId;
 	stable_id: string | null;
+	/** Resolved source path cached at load time (RESCUE-01). */
+	source_path: string | null;
 	/** Track.has_rb_mapping carried onto the deck (#736); a browser/CLI agent
 	 * driving hot_cue_save checks this before dispatching, the same signal
 	 * HotCueBank reads to go inert-with-tooltip. */
@@ -1320,6 +1327,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 	return {
 		deck_id: deckId,
 		stable_id: deck.stable_id,
+		source_path: deck.source_path,
 		has_rb_mapping: deck.has_rb_mapping,
 		title: deck.title,
 		artist: deck.artist,
@@ -1505,6 +1513,11 @@ function _feedbackMark(vote: 'bad' | 'good' | 'great') {
 
 function _commandDeck(command: PerformanceCommand): DeckId | null {
 	return 'deck' in command ? command.deck : null;
+}
+
+function _completeCommand(command: PerformanceCommand): PerformanceState {
+	notifyRescueTransportEvent(command);
+	return queryPerformanceState();
 }
 
 function _persistenceScope(deck: DeckId): PersistenceScope {
@@ -2383,7 +2396,7 @@ async function _dispatchUnknown(
 		try {
 			const mark = _feedbackMark(command.vote);
 			await recordPerformanceFeedback(mark);
-			return queryPerformanceState();
+			return _completeCommand(command);
 		} catch (error) {
 			_persistCommandError(null, error);
 			throw error;
@@ -2421,7 +2434,7 @@ async function _dispatchUnknown(
 			});
 			await acquired;
 			_assertCommandSession(commandGeneration);
-			return queryPerformanceState();
+			return _completeCommand(command);
 		} catch (error) {
 			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(null, error, command);
 			throw error;
@@ -2436,7 +2449,7 @@ async function _dispatchUnknown(
 			_assertCommandSession(commandGeneration);
 			await _execute(command, pressT0Ms);
 			_assertCommandSession(commandGeneration);
-			return queryPerformanceState();
+			return _completeCommand(command);
 		} catch (error) {
 			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(deck, error, command);
 			throw error;
@@ -2458,7 +2471,7 @@ async function _dispatchUnknown(
 			// exactly the gap press_to_schedule_ms exists to expose.
 			await _execute(command, pressT0Ms);
 			_assertCommandSession(commandGeneration);
-			return queryPerformanceState();
+			return _completeCommand(command);
 		} catch (error) {
 			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(deck, error, command);
 			throw error;
