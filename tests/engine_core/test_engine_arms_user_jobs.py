@@ -54,6 +54,7 @@ with TestClient(app):
     thread_names = sorted(t.name for t in threading.enumerate())
 
 print(json.dumps({
+    "hydration_armed": app.state.stem_hydration_s3 is not None,
     "jobs_enabled": app.state.auto_user_jobs.enabled,
     "drain_alive": drain_alive,
     "thread_names": thread_names,
@@ -124,6 +125,34 @@ def test_library_jobs_off_starts_no_drain(tmp_path: Path) -> None:
     assert payload["jobs_enabled"] is False
     assert payload["drain_alive"] is False
     assert DRAIN_THREAD_NAME not in payload["thread_names"]
+
+
+@pytest.mark.requirement("STEM-15")
+def test_cloud_mode_without_boto3_still_boots(tmp_path: Path) -> None:
+    """Regression, Mon 14 Sep 2026: the installed app (cloud mode, R2
+    credentials resolving, no boto3 in the packaged closure) crashed at boot
+    with AssetStoreError from _bind_stem_hydration. The engine must boot,
+    run the drain, and leave hydration unarmed with a loud warning."""
+    shim = tmp_path / "no-boto3"
+    (shim / "boto3").mkdir(parents=True)
+    (shim / "boto3" / "__init__.py").write_text(
+        'raise ImportError("simulated: boto3 is absent from the packaged closure")\n',
+        encoding="utf-8",
+    )
+    result = _run_probe(
+        tmp_path,
+        {
+            "PYTHONPATH": f"{shim}{os.pathsep}{REPO_ROOT}",
+            "MUSIC_DJ_CLOUDSYNC_MODE": "cloud",
+            "R2_ACCOUNT_ID": "test-account",
+            "R2_ACCESS_KEY_ID": "test-key-id",
+            "R2_SECRET_ACCESS_KEY": "test-secret",
+        },
+    )
+    payload = _probe_payload(result)
+    assert payload["drain_alive"] is True
+    assert payload["hydration_armed"] is False
+    assert "stem-hydration: R2 credentials resolve but hydration is NOT armed" in result.stderr
 
 
 @pytest.mark.requirement("PERFBATCH-05")

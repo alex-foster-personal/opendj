@@ -6,6 +6,7 @@ factory stays under the complexity and file-size ratchets.
 """
 from __future__ import annotations
 
+import logging
 import os
 import socket
 import threading
@@ -132,6 +133,8 @@ from .routes import voice_probe as voice_probe_routes
 from .routes import worktree_ports as worktree_ports_routes
 from .share_gate import ShareConfig, share_gate_middleware
 from .usage_telemetry import UsageStore
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from apps.cloud.config import CloudConfig
@@ -362,8 +365,16 @@ def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None
         asset_store.require_credentials(cfg)
     except MissingEnvError:
         return
+    try:
+        s3 = asset_store.boto3_asset_client(cfg)
+    except asset_store.AssetStoreError as exc:
+        # The packaged engine ships without the cloud extra, so boto3 can be
+        # absent even when R2 credentials resolve. Decline to arm, loudly,
+        # rather than take the whole engine boot down with it.
+        log.warning("stem-hydration: R2 credentials resolve but hydration is NOT armed: %s", exc)
+        return
     app.state.stem_hydration_cfg = cfg
-    app.state.stem_hydration_s3 = asset_store.boto3_asset_client(cfg)
+    app.state.stem_hydration_s3 = s3
     app.state.stem_hydration_data_dir = Path(data_dir)
     threading.Thread(
         target=_startup_stem_index_refresh,
