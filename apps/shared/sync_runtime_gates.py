@@ -56,7 +56,7 @@ def read_pressure_elevated(
     if reader is not None:
         return _pressure_is_elevated_from_payload(reader())
     try:
-        from apps.webui.server.machine_pressure import pressure_is_elevated, read_machine_pressure
+        from apps.shared.machine_pressure import pressure_is_elevated, read_machine_pressure
 
         return pressure_is_elevated(read_machine_pressure())
     except ImportError:
@@ -65,7 +65,7 @@ def read_pressure_elevated(
 
 def _pressure_is_elevated_from_payload(payload: Mapping[str, Any]) -> bool:
     try:
-        from apps.webui.server.machine_pressure import pressure_is_elevated
+        from apps.shared.machine_pressure import pressure_is_elevated
 
         return pressure_is_elevated(payload)
     except ImportError:
