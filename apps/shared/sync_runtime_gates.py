@@ -28,10 +28,10 @@ def any_deck_playing(ui_mirror: Mapping[str, Any] | None) -> bool:
     decks = ui_mirror.get("decks")
     if not isinstance(decks, dict):
         return False
-    for deck in decks.values():
-        if isinstance(deck, dict) and deck.get("playing") is True:
-            return True
-    return False
+    return any(
+        isinstance(deck, dict) and deck.get("playing") is True
+        for deck in decks.values()
+    )
 
 
 def session_xruns_elevated(ui_mirror: Mapping[str, Any] | None) -> bool:
@@ -50,26 +50,14 @@ def read_pressure_elevated(
     *,
     reader: Callable[[], Mapping[str, Any]] | None = None,
 ) -> bool:
-    """Adapter over machine_pressure.pressure_is_elevated; inject reader in tests."""
+    """True when a supplied or reader-provided pressure payload is elevated."""
+    from apps.shared.machine_pressure_signal import pressure_is_elevated
+
     if payload is not None:
-        return _pressure_is_elevated_from_payload(payload)
-    if reader is not None:
-        return _pressure_is_elevated_from_payload(reader())
-    try:
-        from apps.webui.server.machine_pressure import pressure_is_elevated, read_machine_pressure
-
-        return pressure_is_elevated(read_machine_pressure())
-    except ImportError:
-        return False
-
-
-def _pressure_is_elevated_from_payload(payload: Mapping[str, Any]) -> bool:
-    try:
-        from apps.webui.server.machine_pressure import pressure_is_elevated
-
         return pressure_is_elevated(payload)
-    except ImportError:
-        return False
+    if reader is not None:
+        return pressure_is_elevated(reader())
+    return False
 
 
 def refuse_sync_round(

@@ -18,6 +18,7 @@ Endpoints (all under /api/v1/feedback):
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -46,7 +47,10 @@ router = APIRouter(prefix="/feedback", tags=["feedback"])
 # performs the archive-file transaction alongside the removal. Allowing it
 # here would let a plain PATCH make a pin vanish from the board with no
 # corresponding archive-file entry.
-_PATCHABLE_STATUSES = "^(open|issued|fixed|merged)$"
+_PATCHABLE_STATUSES = "^(open|issued|blocked|fixed|merged)$"
+_BLOCKED_REQUEST = re.compile(
+    r"^(auth|destructive-action|product-fork): the maintainer must .+[.!?](?:\s|$)"
+)
 
 
 # ----- models -------------------------------------------------------------
@@ -111,6 +115,11 @@ def _append_to_archive(root: Path, comment: dict[str, Any]) -> Path:
 
 
 # ----- pin lifecycle ------------------------------------------------------
+def _has_actionable_blocked_request(agent_note: object) -> bool:
+    """Require a permitted category and a first sentence naming the maintainer's action."""
+    return isinstance(agent_note, str) and _BLOCKED_REQUEST.match(agent_note) is not None
+
+
 @router.patch("/comments/{comment_id}", response_model=CommentOut)
 def update_comment(comment_id: str, body: CommentUpdateIn, request: Request) -> CommentOut:
     """Agent-native half of the pin lifecycle (issue #858, first slice).
@@ -119,7 +128,14 @@ def update_comment(comment_id: str, body: CommentUpdateIn, request: Request) -> 
     did here so the pin itself shows progress: ``status`` moves
     open -> issued -> fixed -> merged, ``issue_url`` links the queue item, and
     ``agent_note`` is the one-paragraph reply the widget renders under the
-    original text. Every write is a partial update; unset fields are untouched.
+    original text. ``blocked`` is deliberately narrow: use it only when the maintainer
+    must supply credentials/auth, make a destructive-action decision, or choose
+    a genuine product fork. "I could not work out what you meant" is a question
+    in the note, never blocked. A blocked pin's note starts with one sentence
+    saying exactly what the maintainer needs, before any supporting detail. Its first
+    sentence is `auth: the maintainer must ...`, `destructive-action: the maintainer must ...`, or
+    `product-fork: the maintainer must ...`. Every write is a partial update; unset fields
+    are untouched.
 
     Partial-fix convention (pin 58a16ac781db, follow-on to #907): when only
     PART of a pin's defect is fixed, do NOT invent a new ``status`` value
@@ -151,6 +167,22 @@ def update_comment(comment_id: str, body: CommentUpdateIn, request: Request) -> 
             # would make GET /comments fail for every pin, not just this one.
             now = _now()
             merged = {**item, **changes, "updated_at": now}
+            requested_blocked = changes.get("status") == "blocked"
+            blocked_note = (
+                changes.get("agent_note") if requested_blocked else merged.get("agent_note")
+            )
+            blocked_without_request = (
+                merged.get("status") == "blocked"
+                and not _has_actionable_blocked_request(blocked_note)
+            )
+            if blocked_without_request:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "BLOCKED_PIN_NEEDS_REQUEST",
+                        "message": "blocked pins need an agent_note naming what the maintainer must provide",
+                    },
+                )
             agent_note = changes.get("agent_note")
             if isinstance(agent_note, str) and agent_note.strip() != "":
                 append_agent_note_to_replies(merged, agent_note, now)

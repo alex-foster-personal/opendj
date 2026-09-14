@@ -1648,7 +1648,14 @@ export interface paths {
          *     did here so the pin itself shows progress: ``status`` moves
          *     open -> issued -> fixed -> merged, ``issue_url`` links the queue item, and
          *     ``agent_note`` is the one-paragraph reply the widget renders under the
-         *     original text. Every write is a partial update; unset fields are untouched.
+         *     original text. ``blocked`` is deliberately narrow: use it only when the maintainer
+         *     must supply credentials/auth, make a destructive-action decision, or choose
+         *     a genuine product fork. "I could not work out what you meant" is a question
+         *     in the note, never blocked. A blocked pin's note starts with one sentence
+         *     saying exactly what the maintainer needs, before any supporting detail. Its first
+         *     sentence is `auth: the maintainer must ...`, `destructive-action: the maintainer must ...`, or
+         *     `product-fork: the maintainer must ...`. Every write is a partial update; unset fields
+         *     are untouched.
          *
          *     Partial-fix convention (pin 58a16ac781db, follow-on to #907): when only
          *     PART of a pin's defect is fixed, do NOT invent a new ``status`` value
