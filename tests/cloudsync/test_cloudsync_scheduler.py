@@ -300,6 +300,60 @@ def test_unconfigured_idles_then_picks_up_config_without_restart(
     assert sync_status.read_results(spoke)[0].status == "ok"
 
 
+def test_scheduler_defers_when_gig_posture(tmp_path: Path, live_hub: str) -> None:
+    """[if] app_posture is gig [then] the scheduler skips the round and journals deferred."""
+    spoke = _spoke(tmp_path, "spoke-gig", live_hub)
+    prefs_dir = spoke / "state"
+    prefs_dir.mkdir(parents=True, exist_ok=True)
+    (prefs_dir / "ui-prefs.json").write_text('{"app_posture": "gig"}', encoding="utf-8")
+    calls: list[str] = []
+
+    def recording_sync(data_dir: Path, hub_url: str, name: str | None) -> client.SyncResult:
+        calls.append(hub_url)
+        return maintenance.sync(data_dir, hub_url, name=name)
+
+    scheduler = _scheduler(spoke, sync_fn=recording_sync)
+    outcome = scheduler.run_round(live_hub, "spoke-gig")
+
+    assert outcome == "deferred"
+    assert calls == []
+    assert scheduler.deferred_gig == 1
+    assert scheduler.deferred_deck_playing == 0
+    assert scheduler.consecutive_failures == 0
+    assert scheduler.rounds_started == 0
+    journal = sync_status.read_results(spoke)
+    assert journal and journal[0].status == "deferred"
+    assert "gig_posture" in journal[0].message
+
+
+def test_scheduler_defers_when_deck_playing(tmp_path: Path, live_hub: str) -> None:
+    """[if] a deck is playing [then] the scheduler skips and journals deck_playing."""
+    spoke = _spoke(tmp_path, "spoke-playing", live_hub)
+    playing_mirror = {"decks": {"1": {"playing": True}}}
+    calls: list[str] = []
+
+    def recording_sync(data_dir: Path, hub_url: str, name: str | None) -> client.SyncResult:
+        calls.append(hub_url)
+        return maintenance.sync(data_dir, hub_url, name=name)
+
+    scheduler = _scheduler(
+        spoke,
+        sync_fn=recording_sync,
+        ui_mirror_provider=lambda: playing_mirror,
+    )
+    outcome = scheduler.run_round(live_hub, "spoke-playing")
+
+    assert outcome == "deferred"
+    assert calls == []
+    assert scheduler.deferred_deck_playing == 1
+    assert scheduler.deferred_gig == 0
+    assert scheduler.consecutive_failures == 0
+    assert scheduler.rounds_started == 0
+    journal = sync_status.read_results(spoke)
+    assert journal and journal[0].status == "deferred"
+    assert "deck_playing" in journal[0].message
+
+
 def test_lifespan_never_starts_on_the_hub_and_stops_cleanly(tmp_path: Path) -> None:
     """[if] the hub gets a scheduler or exit leaves one running [then] broken, [else stop]."""
     spoke = _spoke(tmp_path, "spoke-lifespan", None)

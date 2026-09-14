@@ -41,39 +41,24 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 
-from apps.shared.scan_mass_missing import guard_scan_count
-from apps.shared.state.locations import list_location_paths
-from apps.shared.state.schema import AVAILABILITY_STATES
+from apps.shared.state.availability_write import (
+    AvailabilityReport,
+    AvailabilityRow,
+    guard_present_drop,
+)
+from apps.shared.state.events import FakeEventBus
+from apps.shared.state.locations import ID_BIND_BATCH, list_location_paths
+from apps.shared.state.writer import StateWriter
 
 VOLUMES_ROOT = "/Volumes"
 
 
-@dataclass(frozen=True)
-class AvailabilityRow:
-    stable_id: str
-    state: str
-    checked_path: str | None
-
-
-@dataclass
-class AvailabilityReport:
-    counts: dict[str, int] = field(default_factory=dict)
-    changed: int = 0
-    unchanged: int = 0
-    total: int = 0
-
-    def bump(self, state: str) -> None:
-        self.counts[state] = self.counts.get(state, 0) + 1
-
-
-def _mounted_volumes() -> set[str]:
-    """Names under ``/Volumes``. Empty set if the directory is unreadable."""
+def _mounted_volumes(volumes_root: str = VOLUMES_ROOT) -> set[str]:
+    """Names under ``volumes_root``. Empty set if the directory is unreadable."""
     try:
-        return set(os.listdir(VOLUMES_ROOT))
+        return set(os.listdir(volumes_root))
     except OSError:
         return set()
 
@@ -94,12 +79,20 @@ def _looks_like_uri(path: str) -> bool:
 
 
 def classify_path(
-    file_path: str | None, *, mounted: set[str] | None = None
+    file_path: str | None,
+    *,
+    mounted: set[str] | None = None,
+    volumes_root: str = VOLUMES_ROOT,
 ) -> tuple[str, str | None]:
     """Classify one ``tracks.file_path``. Returns ``(state, checked_path)``.
 
     Pure apart from the ``os.path.exists`` probe, so it is unit-testable
-    against a tmp_path without touching the real library.
+    against a tmp_path without touching the real library. ``volumes_root``
+    defaults to the real production contract (:data:`VOLUMES_ROOT`,
+    ``/Volumes``); a caller that needs a fully isolated volume-root tree for
+    a test passes an explicit override here (or through :func:`probe_batch`/
+    :func:`probe`) rather than monkeypatching the module constant, which
+    would silently stop exercising the real ``/Volumes`` prefix contract.
     """
     if file_path is None or not file_path.strip():
         return "absent", None
@@ -108,16 +101,93 @@ def classify_path(
         return "streaming", path
     if os.path.exists(path):
         return "present", path
-    if path.startswith(VOLUMES_ROOT + "/"):
-        remainder = path[len(VOLUMES_ROOT) + 1 :]
+    if path.startswith(volumes_root + "/"):
+        remainder = path[len(volumes_root) + 1 :]
         volume = remainder.split("/", 1)[0]
-        names = _mounted_volumes() if mounted is None else mounted
+        names = _mounted_volumes(volumes_root) if mounted is None else mounted
         if volume and volume not in names:
             return "awaiting_volume", path
     return "absent", path
 
 
-def probe(conn: sqlite3.Connection) -> list[AvailabilityRow]:
+def _classify_track_row(
+    stable_id: str,
+    file_path: str | None,
+    alt_paths: dict[str, list[str]],
+    *,
+    mounted: set[str],
+    volumes_root: str = VOLUMES_ROOT,
+) -> AvailabilityRow:
+    state, checked = classify_path(file_path, mounted=mounted, volumes_root=volumes_root)
+    if state != "present":
+        awaiting: tuple[str, str | None] | None = None
+        for alt in alt_paths.get(stable_id, []):
+            alt_state, alt_checked = classify_path(
+                alt, mounted=mounted, volumes_root=volumes_root
+            )
+            if alt_state == "present":
+                state, checked = alt_state, alt_checked
+                awaiting = None
+                break
+            if alt_state == "awaiting_volume" and awaiting is None:
+                awaiting = (alt_state, alt_checked)
+        if state == "absent" and awaiting is not None:
+            state, checked = awaiting
+    return AvailabilityRow(stable_id=stable_id, state=state, checked_path=checked)
+
+
+def probe_batch(
+    conn: sqlite3.Connection,
+    stable_ids: list[str],
+    *,
+    volumes_root: str = VOLUMES_ROOT,
+) -> list[AvailabilityRow]:
+    """Classify a batch of live tracks. Read-only; does not write.
+
+    ``stable_ids`` can be an arbitrarily large caller-supplied list (a round
+    collected up front for the LIBM-41 round-level guard, for instance), so
+    the ``stable_id IN (...)`` lookup is chunked at :data:`ID_BIND_BATCH`
+    like every other bulk id lookup in this codebase
+    (:func:`apps.shared.state.locations.list_location_paths`,
+    :func:`apps.shared.remote_status.sids_with_remote_copy`) -- one query
+    binding one placeholder per id past SQLite's compiled variable limit
+    (999 on many builds, 32766 on others) raises "too many SQL variables"
+    instead of classifying anything.
+
+    ``volumes_root`` defaults to the real production ``/Volumes`` contract
+    (:data:`VOLUMES_ROOT`). Callers that need a fully isolated volume tree
+    for a test (rather than monkeypatching the module constant, a mocked
+    production input Sol flagged on PR #2619 round 6) pass an explicit
+    override, mirroring the same DI seam already used by
+    :func:`apps.webui.server.routes.usb_volumes` for its own volume root.
+    """
+    if not stable_ids:
+        return []
+    mounted = _mounted_volumes(volumes_root)
+    tracks: list[tuple[str, str | None]] = []
+    for start in range(0, len(stable_ids), ID_BIND_BATCH):
+        chunk = stable_ids[start : start + ID_BIND_BATCH]
+        placeholders = ",".join("?" * len(chunk))
+        tracks.extend(
+            conn.execute(
+                f"SELECT stable_id, file_path FROM tracks "
+                f"WHERE deleted_at IS NULL AND stable_id IN ({placeholders})",
+                chunk,
+            )
+        )
+    tracks.sort(key=lambda row: row[0])
+    alt_paths = list_location_paths(conn, [stable_id for stable_id, _ in tracks])
+    return [
+        _classify_track_row(
+            stable_id, file_path, alt_paths, mounted=mounted, volumes_root=volumes_root
+        )
+        for stable_id, file_path in tracks
+    ]
+
+
+def probe(
+    conn: sqlite3.Connection, *, volumes_root: str = VOLUMES_ROOT
+) -> list[AvailabilityRow]:
     """Classify every ``tracks`` row. Read-only; does not write.
 
     ``tracks.file_path`` is the legacy primary path, but a track can also
@@ -129,58 +199,13 @@ def probe(conn: sqlite3.Connection) -> list[AvailabilityRow]:
     track absent or awaiting_volume, so a genuinely playable track is not
     excluded from the safe-default availability views.
     """
-    mounted = _mounted_volumes()
-    tracks = list(
-        conn.execute(
-            "SELECT stable_id, file_path FROM tracks "
-            "WHERE deleted_at IS NULL ORDER BY stable_id"
+    stable_ids = [
+        row[0]
+        for row in conn.execute(
+            "SELECT stable_id FROM tracks WHERE deleted_at IS NULL ORDER BY stable_id"
         )
-    )
-    alt_paths = list_location_paths(conn, [stable_id for stable_id, _ in tracks])
-    rows: list[AvailabilityRow] = []
-    for stable_id, file_path in tracks:
-        state, checked = classify_path(file_path, mounted=mounted)
-        if state != "present":
-            awaiting: tuple[str, str | None] | None = None
-            for alt in alt_paths.get(stable_id, []):
-                alt_state, alt_checked = classify_path(alt, mounted=mounted)
-                if alt_state == "present":
-                    state, checked = alt_state, alt_checked
-                    awaiting = None
-                    break
-                if alt_state == "awaiting_volume" and awaiting is None:
-                    awaiting = (alt_state, alt_checked)
-            # No alternate is mounted right now, but one points under an
-            # unplugged volume: prefer awaiting_volume over an outright
-            # absent so a re-acquisition query does not treat a track that
-            # will come back with its volume as genuinely gone.
-            if state == "absent" and awaiting is not None:
-                state, checked = awaiting
-        rows.append(
-            AvailabilityRow(stable_id=stable_id, state=state, checked_path=checked)
-        )
-    return rows
-
-
-def guard_present_drop(
-    conn: sqlite3.Connection,
-    rows: list[AvailabilityRow],
-    *,
-    allow_mass_missing: bool = False,
-) -> None:
-    """Refuse a probe that would wipe a previously present library (LIBM-41)."""
-    prior = conn.execute(
-        "SELECT COUNT(*) FROM track_availability "
-        "JOIN tracks ON tracks.stable_id = track_availability.stable_id "
-        "WHERE tracks.deleted_at IS NULL AND track_availability.state = 'present'"
-    ).fetchone()[0]
-    current = sum(1 for row in rows if row.state == "present")
-    guard_scan_count(
-        "library",
-        current,
-        prior if prior else None,
-        allow_mass_missing=allow_mass_missing,
-    )
+    ]
+    return probe_batch(conn, stable_ids, volumes_root=volumes_root)
 
 
 def write(
@@ -189,46 +214,31 @@ def write(
     *,
     now: str | None = None,
     allow_mass_missing: bool = False,
+    apply_mass_missing_guard: bool = True,
+    always_refresh_checked_at: bool = False,
 ) -> AvailabilityReport:
     """Upsert ``rows`` into ``track_availability``. Idempotent.
 
-    A row whose state and path are unchanged keeps its original
-    ``checked_at``, so the timestamp answers "when did this state last change"
-    rather than "when did the probe last run".
+    By default (``always_refresh_checked_at=False``), a row whose state and
+    path are unchanged keeps its original ``checked_at``, so the timestamp
+    answers "when did this state last change" rather than "when did the
+    probe last run". Callers that re-select rows off ``checked_at`` staleness
+    (the engine's background worker) pass ``always_refresh_checked_at=True``
+    so a re-probed row that comes back unchanged still settles instead of
+    being re-selected as stale on every future pass.
 
     LIBM-41: a library that was present and is now empty (or dropped by more
     than 50%) is refused unless ``allow_mass_missing`` is set. The check
-    runs before any row is written.
+    runs before any row is written when ``apply_mass_missing_guard`` is True.
     """
-    guard_present_drop(conn, rows, allow_mass_missing=allow_mass_missing)
-    stamp = now or datetime.now(UTC).isoformat()
-    report = AvailabilityReport()
-    existing: dict[str, tuple[str, str | None]] = {
-        stable_id: (state, checked_path)
-        for stable_id, state, checked_path in conn.execute(
-            "SELECT stable_id, state, checked_path FROM track_availability"
+    with StateWriter(conn, bus=FakeEventBus()) as writer:
+        return writer.upsert_availability(
+            rows,
+            now=now,
+            allow_mass_missing=allow_mass_missing,
+            apply_mass_missing_guard=apply_mass_missing_guard,
+            always_refresh_checked_at=always_refresh_checked_at,
         )
-    }
-    for row in rows:
-        if row.state not in AVAILABILITY_STATES:
-            raise ValueError(
-                f"state {row.state!r} not in {AVAILABILITY_STATES}"
-            )
-        report.total += 1
-        report.bump(row.state)
-        prior = existing.get(row.stable_id)
-        if prior == (row.state, row.checked_path):
-            report.unchanged += 1
-            continue
-        conn.execute(
-            "INSERT INTO track_availability(stable_id, state, checked_path, "
-            "checked_at) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(stable_id) DO UPDATE SET state=excluded.state, "
-            "checked_path=excluded.checked_path, checked_at=excluded.checked_at",
-            (row.stable_id, row.state, row.checked_path, stamp),
-        )
-        report.changed += 1
-    return report
 
 
 def refresh(
@@ -287,6 +297,7 @@ __all__ = [
     "counts",
     "guard_present_drop",
     "probe",
+    "probe_batch",
     "refresh",
     "resolve_data_dir",
     "write",

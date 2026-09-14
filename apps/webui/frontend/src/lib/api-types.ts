@@ -757,6 +757,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/availability/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Availability Probe */
+        post: operations["availability_probe_api_v1_availability_probe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/availability/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Availability Status */
+        get: operations["availability_status_api_v1_availability_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bench/kpi": {
         parameters: {
             query?: never;
@@ -5443,6 +5477,79 @@ export interface components {
             genre?: string[];
             /** Rating */
             rating?: string[];
+        };
+        /** AvailabilityProbeIn */
+        AvailabilityProbeIn: {
+            /**
+             * Allow Mass Missing
+             * @default false
+             */
+            allow_mass_missing: boolean;
+            /**
+             * Full
+             * @default false
+             */
+            full: boolean;
+            /** Stable Ids */
+            stable_ids?: string[] | null;
+        };
+        /** AvailabilityProbeOut */
+        AvailabilityProbeOut: {
+            /**
+             * Accepted
+             * @default true
+             */
+            accepted: boolean;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "idle" | "queued" | "running" | "complete" | "refused" | "failed";
+        };
+        /** AvailabilityStatusOut */
+        AvailabilityStatusOut: {
+            /**
+             * Awaiting Volume
+             * @description Rows under an unmounted /Volumes path to re-check
+             */
+            awaiting_volume: number;
+            /**
+             * Complete
+             * @description True when no unknown/stale/awaiting_volume rows remain
+             */
+            complete: boolean;
+            /** Last Error */
+            last_error?: string | null;
+            /**
+             * Pending
+             * @description Tracks still needing a probe pass
+             */
+            pending: number;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "idle" | "queued" | "running" | "complete" | "refused" | "failed";
+            /**
+             * Present
+             * @description Current present count in track_availability
+             */
+            present: number;
+            /**
+             * Processed Total
+             * @description Rows classified across this worker lifetime
+             */
+            processed_total: number;
+            /**
+             * Stale
+             * @description Rows whose tracks.updated_at is newer than checked_at
+             */
+            stale: number;
+            /**
+             * Unknown
+             * @description Live tracks with no availability row
+             */
+            unknown: number;
         };
         /** BackfillBatchIn */
         BackfillBatchIn: {
@@ -13586,6 +13693,59 @@ export interface operations {
             };
         };
     };
+    availability_probe_api_v1_availability_probe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AvailabilityProbeIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailabilityProbeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    availability_status_api_v1_availability_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailabilityStatusOut"];
+                };
+            };
+        };
+    };
     get_kpi_ledger_api_v1_bench_kpi_get: {
         parameters: {
             query?: never;
@@ -20590,7 +20750,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT when the local index cache is present but unreadable */
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is present but unreadable, or STEM_HYDRATION_NOT_ARMED when this engine is configured for R2 hydration but could not arm it (for example boto3 is absent) */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -20693,7 +20853,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT when the local index cache is present but unreadable */
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is present but unreadable, or STEM_HYDRATION_NOT_ARMED when this engine is configured for R2 hydration but could not arm it (for example boto3 is absent) */
             502: {
                 headers: {
                     [name: string]: unknown;

@@ -11,7 +11,7 @@ import soundfile as sf
 
 from apps.vocals import cache as vcache
 from apps.vocals import from_stems as vfrom_stems
-from apps.webui.server.stem_artifacts import STEM_PARTS, load_stem_bundle
+from apps.stems.artifacts import STEM_PARTS, load_stem_bundle
 
 pytestmark = [
     pytest.mark.requirement("CAT-05"),

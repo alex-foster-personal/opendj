@@ -28,7 +28,7 @@ from apps.cloud import stem_hydration, stem_index
 from apps.cloud.asset_store import AssetS3Client
 from apps.cloud.config import CloudConfig
 
-from ..stem_artifacts import (
+from apps.stems.artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
     StemBundle,
@@ -60,8 +60,10 @@ STEM_HYDRATION_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     502: {
         "description": (
             "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when "
-            "the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT "
-            "when the local index cache is present but unreadable"
+            "the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT "
+            "when the local index cache is present but unreadable, or "
+            "STEM_HYDRATION_NOT_ARMED when this engine is configured for R2 "
+            "hydration but could not arm it (for example boto3 is absent)"
         )
     }
 }
@@ -168,6 +170,15 @@ def _hydration_deps(request: Request) -> tuple[CloudConfig, AssetS3Client, Path]
     s3 = getattr(request.app.state, "stem_hydration_s3", None)
     data_dir = getattr(request.app.state, "stem_hydration_data_dir", None)
     if cfg is None or s3 is None or data_dir is None:
+        unarmed_reason = getattr(request.app.state, "stem_hydration_unarmed_reason", None)
+        if unarmed_reason is not None:
+            # Configured for R2 but could not arm (app_wiring): a miss here
+            # cannot say whether R2 has the bundle, so it must not read as
+            # the ordinary "no bundle anywhere" empty state.
+            raise HTTPException(
+                status_code=502,
+                detail={"code": "STEM_HYDRATION_NOT_ARMED", "message": unarmed_reason},
+            )
         return None
     return cfg, s3, Path(data_dir)
 

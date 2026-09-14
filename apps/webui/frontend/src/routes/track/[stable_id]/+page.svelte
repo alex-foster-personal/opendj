@@ -12,6 +12,7 @@
 	import { lyricEntry, loadLyrics } from '$lib/lyrics/lyrics-cache.svelte';
 	import { openStage } from '$lib/lyrics/stage-store.svelte';
 	import type { TrackQuality } from '$lib/rb/library-types';
+	import TrackActions from '$lib/components/TrackActions.svelte';
 
 	let track = $state<Track | null>(null);
 	let etag = $state<string>('');
@@ -123,8 +124,8 @@
 	{/if}
 	<LyricsPanel stableId={track.stable_id} />
 
-	<h3>Actions (coming in Phase 17)</h3>
-	<p style="color: var(--muted);">Open in Rekordbox · Open in djay · Show in Finder</p>
+	<h3>Actions</h3>
+	<TrackActions stableId={track.stable_id} />
 
 	{#if conflictServer}
 		<ConflictDialog

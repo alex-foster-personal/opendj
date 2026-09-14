@@ -119,6 +119,20 @@ def test_setup_sh_does_not_implement_testmac_08() -> None:
     assert "osascript" not in script_text
 
 
+def test_verify_sh_resolves_reverse_targets_live_not_via_literal_ip() -> None:
+    """OSSPUB-01/02 (issue #1808): a literal tailnet CGNAT address baked into
+    the tracked tree is a real-identity leak, and it also goes stale the
+    moment a device re-enrolls. verify.sh must resolve silver/air's addresses
+    LIVE via `tailscale ip -4 <node>` on $HOST, never a hardcoded 100.x.x.x
+    literal."""
+    script_text = VERIFY_SH.read_text()
+    assert not re.search(r"\b100\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", script_text), (
+        "verify.sh contains a literal tailnet CGNAT address"
+    )
+    assert "tailscale ip -4 silver" in script_text
+    assert "tailscale ip -4 air" in script_text
+
+
 def test_readme_documents_all_testmac_ids() -> None:
     readme = (TESTMAC_DIR / "README.md").read_text()
     for req_id in [f"{n:02d}" for n in range(1, 11)]:

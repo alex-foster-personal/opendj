@@ -4,7 +4,7 @@ Composes existing primitives rather than duplicating them: content-address
 fetch is :func:`apps.cloud.asset_store.fetch_asset`, the mapping is
 :mod:`apps.cloud.stem_index`, the budget comes from
 :data:`apps.cloud.policy.CFG`, and the strict re-verify after writing is
-:func:`apps.webui.server.stem_artifacts.load_stem_bundle` -- ``_load_v1_bundle``
+:func:`apps.stems.artifacts.load_stem_bundle` -- ``_load_v1_bundle``
 itself is never touched; this module only ever calls the public loader.
 
 Two entry points:
@@ -44,7 +44,7 @@ from apps.cloud import asset_store, policy, stem_index
 from apps.cloud.asset_store import AssetS3Client
 from apps.cloud.config import CloudConfig
 from apps.cloud.eviction import BYTES_PER_MB, HydrationError
-from apps.webui.server.stem_artifacts import (
+from apps.stems.artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
     StemBundleNotFoundError,

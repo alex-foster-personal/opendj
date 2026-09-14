@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from apps.webui.server import stem_artifacts
-from apps.webui.server.stem_artifacts import (
+from apps.stems import artifacts as stem_artifacts
+from apps.stems.artifacts import (
     bulk_stem_summaries,
     summarize_stem_bundle,
 )

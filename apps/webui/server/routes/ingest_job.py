@@ -34,7 +34,7 @@ from apps.webui.soft_deletes import has_soft_deletes
 from apps.shared.paths import PROJECT_ROOT
 from apps.vocals import cache as vocals_cache
 from apps.webui.server.routes.ingest_analysis_argv import CliFailed
-from apps.webui.server.stem_artifacts import (
+from apps.stems.artifacts import (
     StemArtifactError,
     StemBundleNotFoundError,
     load_stem_bundle,

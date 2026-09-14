@@ -22,7 +22,7 @@ class LastResultOut(BaseModel):
     #: that completed while its digest compare EXCLUDED rows on one side, so
     #: agreement was never verified. See
     #: :data:`apps.sync_hub.status.ResultStatus`.
-    status: Literal["ok", "error", "inconclusive"]
+    status: Literal["ok", "error", "inconclusive", "deferred"]
     message: str
 
 

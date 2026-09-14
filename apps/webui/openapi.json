@@ -1414,6 +1414,136 @@
         "title": "AutolistSelectionIn",
         "type": "object"
       },
+      "AvailabilityProbeIn": {
+        "properties": {
+          "allow_mass_missing": {
+            "default": false,
+            "title": "Allow Mass Missing",
+            "type": "boolean"
+          },
+          "full": {
+            "default": false,
+            "title": "Full",
+            "type": "boolean"
+          },
+          "stable_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Ids"
+          }
+        },
+        "title": "AvailabilityProbeIn",
+        "type": "object"
+      },
+      "AvailabilityProbeOut": {
+        "properties": {
+          "accepted": {
+            "default": true,
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "phase": {
+            "enum": [
+              "idle",
+              "queued",
+              "running",
+              "complete",
+              "refused",
+              "failed"
+            ],
+            "title": "Phase",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phase"
+        ],
+        "title": "AvailabilityProbeOut",
+        "type": "object"
+      },
+      "AvailabilityStatusOut": {
+        "properties": {
+          "awaiting_volume": {
+            "description": "Rows under an unmounted /Volumes path to re-check",
+            "title": "Awaiting Volume",
+            "type": "integer"
+          },
+          "complete": {
+            "description": "True when no unknown/stale/awaiting_volume rows remain",
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "pending": {
+            "description": "Tracks still needing a probe pass",
+            "title": "Pending",
+            "type": "integer"
+          },
+          "phase": {
+            "enum": [
+              "idle",
+              "queued",
+              "running",
+              "complete",
+              "refused",
+              "failed"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "present": {
+            "description": "Current present count in track_availability",
+            "title": "Present",
+            "type": "integer"
+          },
+          "processed_total": {
+            "description": "Rows classified across this worker lifetime",
+            "title": "Processed Total",
+            "type": "integer"
+          },
+          "stale": {
+            "description": "Rows whose tracks.updated_at is newer than checked_at",
+            "title": "Stale",
+            "type": "integer"
+          },
+          "unknown": {
+            "description": "Live tracks with no availability row",
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "phase",
+          "pending",
+          "unknown",
+          "stale",
+          "awaiting_volume",
+          "processed_total",
+          "present",
+          "complete"
+        ],
+        "title": "AvailabilityStatusOut",
+        "type": "object"
+      },
       "BackfillBatchIn": {
         "properties": {
           "batch_id": {
@@ -21102,6 +21232,75 @@
         ]
       }
     },
+    "/api/v1/availability/probe": {
+      "post": {
+        "operationId": "availability_probe_api_v1_availability_probe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AvailabilityProbeIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailabilityProbeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Availability Probe",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/api/v1/availability/status": {
+      "get": {
+        "operationId": "availability_status_api_v1_availability_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailabilityStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Availability Status",
+        "tags": [
+          "library"
+        ]
+      }
+    },
     "/api/v1/bench/kpi": {
       "get": {
         "operationId": "get_kpi_ledger_api_v1_bench_kpi_get",
@@ -31286,7 +31485,7 @@
             "description": "Validation Error"
           },
           "502": {
-            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT when the local index cache is present but unreadable"
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is present but unreadable, or STEM_HYDRATION_NOT_ARMED when this engine is configured for R2 hydration but could not arm it (for example boto3 is absent)"
           }
         },
         "summary": "Get Stem Manifest",
@@ -31428,7 +31627,7 @@
             "description": "Validation Error"
           },
           "502": {
-            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT when the local index cache is present but unreadable"
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is present but unreadable, or STEM_HYDRATION_NOT_ARMED when this engine is configured for R2 hydration but could not arm it (for example boto3 is absent)"
           },
           "503": {
             "description": "STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request"
