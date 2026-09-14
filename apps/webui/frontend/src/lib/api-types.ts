@@ -757,6 +757,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/availability/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Availability Probe */
+        post: operations["availability_probe_api_v1_availability_probe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/availability/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Availability Status */
+        get: operations["availability_status_api_v1_availability_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bench/kpi": {
         parameters: {
             query?: never;
@@ -1240,6 +1274,26 @@ export interface paths {
          * @description Unset one cell: a synced tombstone (``policy unset --live`` twin).
          */
         delete: operations["delete_policy_api_v1_cloudsync_policies__machine_id___asset_kind__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/scheduler/resume-owed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Scheduler Owed
+         * @description Mark a deferred scheduler round owed and wake the in-process scheduler.
+         */
+        post: operations["resume_scheduler_owed_api_v1_cloudsync_scheduler_resume_owed_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2423,6 +2477,32 @@ export interface paths {
         get: operations["get_lyrics_summary_api_v1_lyrics_summary_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lyrics/verdicts/backfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Lyrics Verdicts Backfill
+         * @description Parity for ``python -m apps.lyrics verdicts backfill`` (LYR-06): fill
+         *     or refresh the stem-coverage-only verdict for every loadable bundle,
+         *     agent-native so the library-scale backfill is drivable without the CLI.
+         *
+         *     A track whose row already carries word-level data (``words_content_hash``)
+         *     is reported skipped, never overwritten - this endpoint only ever fills or
+         *     refreshes the coverage fields, same contract as the CLI.
+         */
+        post: operations["post_lyrics_verdicts_backfill_api_v1_lyrics_verdicts_backfill_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4137,6 +4217,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/stems/bundle-presign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Bundle Presign
+         * @description Mint short-lived GET URLs for every file in one indexed bundle.
+         */
+        get: operations["get_bundle_presign_api_v1_sync_stems_bundle_presign_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/stems/index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stem Index
+         * @description Return the published stem bundle index for an authenticated spoke.
+         */
+        get: operations["get_stem_index_api_v1_sync_stems_index_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/telemetry/clients": {
         parameters: {
             query?: never;
@@ -5443,6 +5563,79 @@ export interface components {
             genre?: string[];
             /** Rating */
             rating?: string[];
+        };
+        /** AvailabilityProbeIn */
+        AvailabilityProbeIn: {
+            /**
+             * Allow Mass Missing
+             * @default false
+             */
+            allow_mass_missing: boolean;
+            /**
+             * Full
+             * @default false
+             */
+            full: boolean;
+            /** Stable Ids */
+            stable_ids?: string[] | null;
+        };
+        /** AvailabilityProbeOut */
+        AvailabilityProbeOut: {
+            /**
+             * Accepted
+             * @default true
+             */
+            accepted: boolean;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "idle" | "queued" | "running" | "complete" | "refused" | "failed";
+        };
+        /** AvailabilityStatusOut */
+        AvailabilityStatusOut: {
+            /**
+             * Awaiting Volume
+             * @description Rows under an unmounted /Volumes path to re-check
+             */
+            awaiting_volume: number;
+            /**
+             * Complete
+             * @description True when no unknown/stale/awaiting_volume rows remain
+             */
+            complete: boolean;
+            /** Last Error */
+            last_error?: string | null;
+            /**
+             * Pending
+             * @description Tracks still needing a probe pass
+             */
+            pending: number;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "idle" | "queued" | "running" | "complete" | "refused" | "failed";
+            /**
+             * Present
+             * @description Current present count in track_availability
+             */
+            present: number;
+            /**
+             * Processed Total
+             * @description Rows classified across this worker lifetime
+             */
+            processed_total: number;
+            /**
+             * Stale
+             * @description Rows whose tracks.updated_at is newer than checked_at
+             */
+            stale: number;
+            /**
+             * Unknown
+             * @description Live tracks with no availability row
+             */
+            unknown: number;
         };
         /** BackfillBatchIn */
         BackfillBatchIn: {
@@ -7888,7 +8081,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "ok" | "error" | "inconclusive";
+            status: "ok" | "error" | "inconclusive" | "deferred";
         };
         /**
          * LevelCalibrationOut
@@ -8337,6 +8530,67 @@ export interface components {
         LyricsUnavailableOut: {
             /** Detail */
             detail: string;
+        };
+        /**
+         * LyricsVerdictBackfillIn
+         * @description Parity for ``python -m apps.lyrics verdicts backfill``.
+         */
+        LyricsVerdictBackfillIn: {
+            /**
+             * Dry Run
+             * @description NO default on purpose, same reasoning as the purge lever: the caller states which one it wants
+             */
+            dry_run: boolean;
+            /**
+             * Include Reserved
+             * @description also process the 100 stable_ids reserved for in-app ordering QA (refused by default)
+             * @default false
+             */
+            include_reserved: boolean;
+            /**
+             * Limit
+             * @description max tracks to compute this call (null = no cap)
+             */
+            limit?: number | null;
+        };
+        /**
+         * LyricsVerdictBackfillOut
+         * @description :class:`apps.lyrics.library_verdicts.VerdictBackfillReport`.
+         */
+        LyricsVerdictBackfillOut: {
+            /**
+             * Candidates
+             * @description stable_ids with a bundle directory in either root
+             */
+            candidates: number;
+            /** Data Dir */
+            data_dir: string;
+            /** Dry Run */
+            dry_run: boolean;
+            /**
+             * Failed
+             * @description stable_id -> failure reason
+             */
+            failed: {
+                [key: string]: string;
+            };
+            /**
+             * Processed
+             * @description written (or, on a dry run, would be written)
+             */
+            processed: string[];
+            /**
+             * Reused Cache
+             * @description subset of processed whose coverage came from an existing from-stems vocal-cache entry instead of a fresh decode
+             */
+            reused_cache: string[];
+            /**
+             * Skipped
+             * @description reason -> stable_ids
+             */
+            skipped: {
+                [key: string]: string[];
+            };
         };
         /** MachineIdIn */
         MachineIdIn: {
@@ -9963,7 +10217,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "ok" | "error" | "inconclusive";
+            status: "ok" | "error" | "inconclusive" | "deferred";
         };
         /** ReconcileSummary */
         ReconcileSummary: {
@@ -10188,6 +10442,11 @@ export interface components {
             values: {
                 [key: string]: unknown;
             };
+        };
+        /** SchedulerResumeOut */
+        SchedulerResumeOut: {
+            /** Ok */
+            ok: boolean;
         };
         /**
          * SearchHit
@@ -10664,6 +10923,18 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** StemBundlePresignResponse */
+        StemBundlePresignResponse: {
+            /**
+             * Expires In Seconds
+             * @default 900
+             */
+            expires_in_seconds: number;
+            /** Files */
+            files: components["schemas"]["StemPresignFileOut"][];
+            /** Stable Id */
+            stable_id: string;
+        };
         /** StemHydrateIn */
         StemHydrateIn: {
             /** Data Dir */
@@ -10696,6 +10967,15 @@ export interface components {
             files: number;
             /** Published */
             published: boolean;
+        };
+        /** StemIndexResponse */
+        StemIndexResponse: {
+            /** Index */
+            index: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
         };
         /**
          * StemManifestOut
@@ -10739,6 +11019,17 @@ export interface components {
         StemPartOut: {
             /** Media Type */
             media_type: string;
+        };
+        /** StemPresignFileOut */
+        StemPresignFileOut: {
+            /** Content Hash */
+            content_hash: string;
+            /** Filename */
+            filename: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Url */
+            url: string;
         };
         /** StemPushMissingIn */
         StemPushMissingIn: {
@@ -11021,6 +11312,12 @@ export interface components {
         };
         /** SyncRunIn */
         SyncRunIn: {
+            /**
+             * Force
+             * @description Bypass Gig posture and playing-deck gates for this round only.
+             * @default false
+             */
+            force: boolean;
             /**
              * Hub Url
              * @description the hub base URL, e.g. http://hub.tailnet:8686 (CLI --hub)
@@ -13586,6 +13883,59 @@ export interface operations {
             };
         };
     };
+    availability_probe_api_v1_availability_probe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AvailabilityProbeIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailabilityProbeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    availability_status_api_v1_availability_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailabilityStatusOut"];
+                };
+            };
+        };
+    };
     get_kpi_ledger_api_v1_bench_kpi_get: {
         parameters: {
             query?: never;
@@ -14655,6 +15005,35 @@ export interface operations {
             };
         };
     };
+    resume_scheduler_owed_api_v1_cloudsync_scheduler_resume_owed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchedulerResumeOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+        };
+    };
     get_status_api_v1_cloudsync_status_get: {
         parameters: {
             query?: never;
@@ -14713,7 +15092,7 @@ export interface operations {
                     "application/json": components["schemas"]["OpsErrorResponse"];
                 };
             };
-            /** @description CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error. */
+            /** @description CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled (force=true does not bypass this). CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync before any hub I/O when force=false; NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -16728,6 +17107,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KaraokeSummaryOut"];
+                };
+            };
+        };
+    };
+    post_lyrics_verdicts_backfill_api_v1_lyrics_verdicts_backfill_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LyricsVerdictBackfillIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsVerdictBackfillOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -19814,6 +20226,114 @@ export interface operations {
             };
         };
     };
+    get_bundle_presign_api_v1_sync_stems_bundle_presign_get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+                /** @description track stable_id */
+                stable_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemBundlePresignResponse"];
+                };
+            };
+            /** @description stems/bundle-presign refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description STEM_BUNDLE_NOT_INDEXED when the stable_id is absent from the published index */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description STEM_BUNDLE_PRESIGN_FAILED when presigning or HEAD failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description stems/bundle-presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_stem_index_api_v1_sync_stems_index_get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemIndexResponse"];
+                };
+            };
+            /** @description stems/index refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description stems/index refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_clients_api_v1_telemetry_clients_get: {
         parameters: {
             query?: never;
@@ -20590,7 +21110,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is present but unreadable, or STEM_HYDRATION_NOT_ARMED when this engine is configured for R2 hydration but could not arm it (for example boto3 is absent) */
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable), STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -20693,7 +21213,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is present but unreadable, or STEM_HYDRATION_NOT_ARMED when this engine is configured for R2 hydration but could not arm it (for example boto3 is absent) */
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable), STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails */
             502: {
                 headers: {
                     [name: string]: unknown;

@@ -39,7 +39,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from apps.cloud.eviction import HydrationError
-from apps.lyrics import artifacts, karaoke_cache, sources_config, store
+from apps.lyrics import artifacts, karaoke_cache, library_verdicts, sources_config, store
 from apps.lyrics import jobs as lyric_jobs
 from apps.lyrics import lines as lyric_lines
 from apps.lyrics import purge as lyric_purge
@@ -60,6 +60,8 @@ from .lyrics_words_models import (
     LyricsKpiOut,
     LyricsPurgeIn,
     LyricsPurgeOut,
+    LyricsVerdictBackfillIn,
+    LyricsVerdictBackfillOut,
     OverrideIn,
 )
 
@@ -458,6 +460,33 @@ def post_lyrics_purge(
     except store.LyricStoreError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return LyricsPurgeOut(**report.__dict__)
+
+
+@router.post("/lyrics/verdicts/backfill", response_model=LyricsVerdictBackfillOut)
+def post_lyrics_verdicts_backfill(
+    request: Request,
+    body: LyricsVerdictBackfillIn,
+    conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),  # noqa: B008
+) -> LyricsVerdictBackfillOut:
+    """Parity for ``python -m apps.lyrics verdicts backfill`` (LYR-06): fill
+    or refresh the stem-coverage-only verdict for every loadable bundle,
+    agent-native so the library-scale backfill is drivable without the CLI.
+
+    A track whose row already carries word-level data (``words_content_hash``)
+    is reported skipped, never overwritten - this endpoint only ever fills or
+    refreshes the coverage fields, same contract as the CLI.
+    """
+    try:
+        report = library_verdicts.backfill_verdicts(
+            conn,
+            data_dir=_data_dir(request),
+            dry_run=body.dry_run,
+            limit=body.limit,
+            include_reserved=body.include_reserved,
+        )
+    except (store.LyricStoreError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return LyricsVerdictBackfillOut(**library_verdicts.report_to_dict(report))
 
 
 @router.get("/bench/lyrics-kpi", response_model=LyricsKpiOut)

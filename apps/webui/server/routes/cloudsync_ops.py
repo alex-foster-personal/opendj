@@ -28,6 +28,7 @@ a stored default; the field stays so an explicit URL always wins.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -37,8 +38,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from apps.shared.state.machine_identity import MachineIdentityError, is_hub_from_env
+from apps.shared.sync_runtime_gates import refuse_sync_round
 from apps.sync_hub import client as sync_client
 from apps.sync_hub import enrollment_credentials, maintenance, maintenance_enroll
+from apps.sync_hub.scheduler_owed import mark_scheduler_owed
 from apps.sync_hub.single_flight import sync_lock_for
 from apps.webui.server.local_operator import local_operator_refusal
 
@@ -91,6 +94,10 @@ class SyncRunIn(BaseModel):
         default=None,
         min_length=1,
         description="this machine's display name; the hostname when omitted (CLI --name)",
+    )
+    force: bool = Field(
+        default=False,
+        description="Bypass Gig posture and playing-deck gates for this round only.",
     )
 
 
@@ -161,6 +168,12 @@ class GrantIn(BaseModel):
     )
 
 
+class SchedulerResumeOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    ok: bool
+
+
 class GrantOut(BaseModel):
     """The raw token exists in this response and nowhere else; only its
     sha256 is stored. Redeem with ``python -m apps.sync_hub enroll``."""
@@ -189,7 +202,10 @@ SYNC_RESPONSES: dict[int | str, dict[str, Any]] = {
     **LOCAL_ONLY_RESPONSE,
     409: _declared(
         "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this "
-        "process; refused before syncing, so NOT journaled. "
+        "process; refused before syncing, so NOT journaled (force=true does "
+        "not bypass this). "
+        "CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync "
+        "before any hub I/O when force=false; NOT journaled. "
         "CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared "
         "refusals (digest mismatch, still moving, schema version mismatch, "
         "apply or protocol error); journaled as error."
@@ -296,6 +312,22 @@ def _sync_out(result: sync_client.SyncResult) -> SyncRunOut:
 
 
 @router.post(
+    "/scheduler/resume-owed",
+    response_model=SchedulerResumeOut,
+    responses=LOCAL_ONLY_RESPONSE,
+    dependencies=[Depends(require_local_operator)],
+)
+def resume_scheduler_owed(request: Request) -> SchedulerResumeOut:
+    """Mark a deferred scheduler round owed and wake the in-process scheduler."""
+    data_dir = data_dir_for_request(request)
+    mark_scheduler_owed(data_dir)
+    sched = getattr(request.app.state, "sync_hub_scheduler", None)
+    if sched is not None:
+        sched._next_due = time.monotonic()
+    return SchedulerResumeOut(ok=True)
+
+
+@router.post(
     "/sync",
     response_model=SyncRunOut,
     responses=SYNC_RESPONSES,
@@ -304,10 +336,22 @@ def _sync_out(result: sync_client.SyncResult) -> SyncRunOut:
 def run_sync_round(body: SyncRunIn, request: Request) -> SyncRunOut:
     """One spoke round trip against ``hub_url``, journaled for ``/status``."""
     data_dir: Path = data_dir_for_request(request)
+    mirror = getattr(request.app.state, "ui_mirror", None)
+    if mirror is not None and not isinstance(mirror, dict):
+        mirror = None
+    reason = refuse_sync_round(data_dir, mirror, force=body.force)
+    if reason is not None:
+        raise _refuse(409, "CLOUDSYNC_SYNC_DEFERRED", f"CloudSync sync deferred: {reason}")
     with _one_sync_at_a_time(data_dir):
 
         try:
-            result = maintenance.sync(data_dir, body.hub_url, name=body.name)
+            result = maintenance.sync(
+                data_dir,
+                body.hub_url,
+                name=body.name,
+                ui_mirror=mirror,
+                force=body.force,
+            )
         except sync_client.SyncTransportError as exc:
             raise _refuse(502, "CLOUDSYNC_HUB_UNREACHABLE", str(exc)) from exc
         except DECLARED_SYNC_REFUSALS as exc:

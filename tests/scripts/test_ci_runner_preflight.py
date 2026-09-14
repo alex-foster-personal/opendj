@@ -15,7 +15,12 @@ REAL SCRIPT, REAL PATH MANIPULATION. Nothing here is mocked: the "missing
 executable" case is produced by handing the real script a PATH that
 genuinely does not contain the tool, the same shape as
 tests/scripts/test_dmg_preflight.py uses for the same reason (AGENTS.md,
-"No mocks and locked real fixtures").
+"No mocks and locked real fixtures"). The tool is hidden with
+`path_hiding` (tests/scripts/_hermetic_path.py), not by dropping its whole
+PATH directory: python often shares /usr/bin with bash, env and coreutils,
+and dropping that entire directory to hide python would also hide whatever
+else lives there, depending on the runner's own layout rather than on the
+code under test (the same class PR #2624 fixed for doppler).
 
 Regression lines:
   - if every named executable is present and the script still exits nonzero
@@ -26,6 +31,9 @@ Regression lines:
   - if an executable is absent and the failure message does not name which
     executable is missing then broken
   - if called with no executables named and it exits 0 then broken
+  - if hiding python also hides a tool that shares its directory (bash,
+    env, coreutils) then the run fails for the wrong reason, not the one
+    under test
 """
 from __future__ import annotations
 
@@ -35,18 +43,10 @@ from pathlib import Path
 
 import pytest
 
+from tests.scripts._hermetic_path import path_hiding
+
 REPO = Path(__file__).resolve().parents[2]
 PREFLIGHT = REPO / "scripts" / "ci_runner_preflight.sh"
-
-
-def _path_without(tool: str) -> str:
-    """The real PATH minus every directory that provides ``tool``."""
-    kept = [
-        part
-        for part in os.environ.get("PATH", "").split(os.pathsep)
-        if part and not (Path(part) / tool).exists()
-    ]
-    return os.pathsep.join(kept)
 
 
 def _run(args: list[str], *, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -75,11 +75,19 @@ def test_missing_executable_fails_naming_runner_and_tool() -> None:
     assert tool in result.stderr
 
 
-def test_missing_python_on_a_real_stripped_path_fails_for_the_right_reason() -> None:
-    """The exact shape of #1041: `python` absent from a real, unmodified PATH."""
+def test_missing_python_on_a_real_stripped_path_fails_for_the_right_reason(
+    tmp_path: Path,
+) -> None:
+    """The exact shape of #1041: `python` absent from a real, unmodified PATH.
+
+    Every other PATH entry (and every other executable in the directories
+    that do provide python) is left intact by path_hiding, so this stays a
+    real, close-to-unmodified PATH minus exactly python -- not a synthetic
+    minimal one.
+    """
     if (Path("/usr/bin") / "python").exists():
         pytest.skip("this host has /usr/bin/python; cannot exercise the missing case for real")
-    env = {**os.environ, "RUNNER_NAME": "agentbox-1", "PATH": _path_without("python")}
+    env = {**os.environ, "RUNNER_NAME": "agentbox-1", "PATH": path_hiding(tmp_path, "python")}
     result = _run(["python"], env=env)
     assert result.returncode == 1
     assert "agentbox-1" in result.stderr

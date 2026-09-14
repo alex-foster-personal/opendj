@@ -15,6 +15,10 @@ import { bootScheduler, type BootScheduler } from './boot-scheduler';
 import { applyExplicitPerfTierPref, fetchPerfTier } from './perf-tier-client';
 import { pressureIsElevated, readMachinePressure, startMachinePressurePolling } from './machine-pressure';
 import { installPerfEventLogGlobal } from './perf-event-log';
+import {
+	armCloudsyncSchedulerShed,
+	resumeCloudsyncSchedulerOwedJob
+} from './cloudsync-scheduler-shed';
 import { anyDeckPlaying, startBackgroundDemandShed } from './playing-gate';
 import { installReloadCountdown } from './reload-countdown';
 import { readXrunSessionCounter } from './xrun-sentinel';
@@ -96,12 +100,19 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	const stopReloadCountdown = installReloadCountdown();
 	const stopMachinePressurePolling = startMachinePressurePolling(scheduler);
 	const stopClientPerformanceSampling = startClientPerformanceSampling(scheduler);
+	let stopCloudsyncSchedulerShed: (() => void) | undefined;
 	const stopBackgroundDemandShed = startBackgroundDemandShed({
 		isPlaying: anyDeckPlaying,
 		pressureElevated: () => pressureIsElevated(readMachinePressure()),
 		readXruns: () => readXrunSessionCounter().xruns,
 		notify: (suggestion) => pushToast(suggestion.message, 'warn'),
-		jobs: []
+		jobs: [{ id: 'cloudsync-scheduler', run: resumeCloudsyncSchedulerOwedJob }],
+		onShed: (shed) => {
+			stopCloudsyncSchedulerShed = armCloudsyncSchedulerShed(
+				shed,
+				() => readXrunSessionCounter().xruns
+			);
+		}
 	});
 	_xrunsAtPrevious = readXrunSessionCounter().xruns;
 	setSilenceDropoutHandler(handleSilenceDropoutPlan);
@@ -126,6 +137,7 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 		setSilenceDropoutHandler(null);
 		setUnexpectedPauseAutoPlayReader(null);
 		setSilenceDropoutContextReader(null);
+		stopCloudsyncSchedulerShed?.();
 		stopBackgroundDemandShed();
 		stopMachinePressurePolling();
 		stopClientPerformanceSampling();

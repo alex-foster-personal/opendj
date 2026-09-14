@@ -222,7 +222,7 @@
 
 {#snippet outputMenu()}
 	<div class="hp-menu">
-		<ControlExplainer title="MASTER / MAIN" bullets={masterPickBullets} showDelayMs={40}>
+		<ControlExplainer title="MASTER / MAIN" bullets={masterPickBullets} showDelayMs={40} placement="right">
 			<label class="hp-pick">
 				<span>MASTER / MAIN</span>
 				<select
@@ -238,7 +238,7 @@
 				</select>
 			</label>
 		</ControlExplainer>
-		<ControlExplainer title="HEADPHONE CUE" bullets={cuePickBullets} showDelayMs={40}>
+		<ControlExplainer title="HEADPHONE CUE" bullets={cuePickBullets} showDelayMs={40} placement="right">
 			<label class="hp-pick">
 				<span>HEADPHONE CUE</span>
 				<select
@@ -254,7 +254,7 @@
 				</select>
 			</label>
 		</ControlExplainer>
-		<ControlExplainer title="AUDIO IN" bullets={inputPickBullets} showDelayMs={40}>
+		<ControlExplainer title="AUDIO IN" bullets={inputPickBullets} showDelayMs={40} placement="right">
 			<label class="hp-pick">
 				<span>AUDIO IN</span>
 				<select

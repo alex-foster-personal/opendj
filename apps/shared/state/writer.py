@@ -43,13 +43,14 @@ from .writer_common import (
     immediate_transaction,
     next_playlist_revision,
 )
+from .writer_availability import _AvailabilityWriterMixin
 from .writer_playlists import _PlaylistWriterMixin
 from .writer_tracks import _TrackWriterMixin
 
 _Clock = Callable[[], datetime]
 
 
-class StateWriter(_TrackWriterMixin, _PlaylistWriterMixin):
+class StateWriter(_TrackWriterMixin, _PlaylistWriterMixin, _AvailabilityWriterMixin):
     """Write-serialised facade over the state DB.
 
     Owns its own event bus unless one is injected. Tests can pass in a

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -98,11 +99,24 @@ class _WarningJsonHandler(logging.Handler):
             "timestamp": datetime.now(UTC).isoformat(timespec="milliseconds"),
             **identity,
         }
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        encoded = json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n"
-        _rotate_if_needed(self.path, len(encoded.encode("utf-8")))
-        with self.path.open("a", encoding="utf-8") as output:
-            output.write(encoded)
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            encoded = json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n"
+            _rotate_if_needed(self.path, len(encoded.encode("utf-8")))
+            with self.path.open("a", encoding="utf-8") as output:
+                output.write(encoded)
+        except OSError as exc:
+            if exc.errno == 28:
+                print(
+                    "opendj warning_log: no space left on device; record dropped",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"opendj warning_log: write failed ({exc}); record dropped",
+                    file=sys.stderr,
+                )
+            return
 
 
 def configure_warning_log(path: Path, boot_id: str) -> logging.Handler:

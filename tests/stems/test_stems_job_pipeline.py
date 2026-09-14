@@ -325,3 +325,4 @@ def test_the_worker_refuses_both_ids_and_a_scope(tmp_path: Path) -> None:
     )
     assert result.returncode != 0
     assert "exactly one of" in result.stderr
+
