@@ -4219,6 +4219,43 @@ class RbAudioEngine implements AudioEngine {
 			_setParam(_masterGain.gain, mixerState.master * _ceilingGainMultiplier());
 		}
 	}
+
+	/** RESCUE-02: batch resume with one shared schedule instant for every deck. */
+	async rescueResumeTogether(
+		plans: ReadonlyArray<{ deck: DeckId; positionSec: number }>
+	): Promise<void> {
+		if (plans.length === 0) return;
+		const ctx = await _resumeContext();
+		let sharedWhen = ctx.currentTime;
+		for (const plan of plans) {
+			const minimum = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(plan.deck));
+			sharedWhen = Math.max(sharedWhen, minimum);
+		}
+		await Promise.all(
+			plans.map((plan) => _scheduleDeck(plan.deck, sharedWhen, plan.positionSec, true))
+		);
+	}
+
+	/** RESCUE-02 Undo: stop every rescued deck at one shared schedule instant. */
+	async rescueStopAllTogether(decks: readonly DeckId[]): Promise<void> {
+		if (decks.length === 0) return;
+		const ctx = await _resumeContext();
+		let sharedWhen = ctx.currentTime;
+		for (const deck of decks) {
+			const minimum = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
+			sharedWhen = Math.max(sharedWhen, minimum);
+		}
+		await Promise.all(
+			decks.map((deck) =>
+				_scheduleDeck(
+					deck,
+					sharedWhen,
+					(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
+					false
+				)
+			)
+		);
+	}
 }
 
 /** The singleton engine every /performance unit imports. */

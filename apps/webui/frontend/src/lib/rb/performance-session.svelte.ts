@@ -16,6 +16,8 @@ import {
 	type PerformanceCommand,
 	type PerformanceState
 } from '$lib/rb/performance-ipc.svelte';
+import { gigPlaybackEligible, playbackEligible } from '$lib/rb/performance-rescue-math';
+import { runRescuePlaybackRestore } from '$lib/rb/performance-rescue-restore';
 import {
 	PERFORMANCE_SESSION_STORAGE_KEY,
 	parsePerformanceSession,
@@ -24,7 +26,6 @@ import {
 	type PerformanceSessionSnapshotInput
 } from '$lib/rb/performance-session-snapshot';
 import type { StemControl } from '$lib/rb/stem-types';
-import { decodeBeatStamp } from '$lib/rb/rescue-beat-stamp';
 import type { RescueSnapshot } from '$lib/rb/rescue-snapshot';
 import { API_BASE } from '$lib/api';
 import { pushToast } from '$lib/stores.svelte';
@@ -209,11 +210,12 @@ async function _restoreDeck(
 	deckId: DeckId,
 	stable_id: string,
 	position_ms: number,
-	snapshot: PerformanceSessionSnapshot | null
+	snapshot: PerformanceSessionSnapshot | null,
+	skipSeek = false
 ): Promise<void> {
 	try {
 		await dispatch({ type: 'load', deck: deckId, stable_id });
-		if (position_ms > 0) {
+		if (!skipSeek && position_ms > 0) {
 			await dispatch({ type: 'seek', deck: deckId, position_ms });
 		}
 		if (snapshot === null) return;
@@ -258,95 +260,80 @@ async function _fetchLatestRescueSnapshot(
 	return fetchRescue(`${API_BASE}/api/v1/performance/rescue-snapshots/latest`);
 }
 
-function _rescueSeekMs(
-	query: typeof queryPerformanceState,
-	deckId: DeckId,
-	rescueDeck: RescueSnapshot['decks'][DeckId]
-): number {
-	const beats =
-		query().decks[deckId].beatgrid.map((beat) => ({ t: beat.time_ms / 1000 })) ?? [];
-	const decoded = decodeBeatStamp(rescueDeck.beat_stamp, beats);
-	return decoded ?? rescueDeck.position_ms;
-}
-
-async function _restoreFromRescueSnapshot(
-	dispatch: typeof dispatchPerformanceCommand,
-	query: typeof queryPerformanceState,
-	snapshot: RescueSnapshot,
-	now: number
-): Promise<void> {
-	const ageMs = now - snapshot.captured_at_ms;
-	const restorePlaying = ageMs >= 0 && ageMs <= RESCUE_RESTORE_MAX_AGE_MS;
-	await dispatch({ type: 'crossfader', value: snapshot.mixer.crossfader });
-	await dispatch({ type: 'master_volume', value: snapshot.mixer.master });
-	const playingDecks: DeckId[] = [];
+function _layoutSnapshotFromRescue(rescue: RescueSnapshot): PerformanceSessionSnapshot {
+	const decks = {} as PerformanceSessionSnapshot['decks'];
+	const channels = {} as PerformanceSessionSnapshot['mixer']['channels'];
+	const stems = {} as PerformanceSessionSnapshot['stems'];
 	for (const deckId of DECK_IDS) {
-		const deck = snapshot.decks[deckId];
-		if (deck.stable_id === null || deck.stable_id.length === 0) continue;
-		try {
-			await dispatch({ type: 'load', deck: deckId, stable_id: deck.stable_id });
-			const seekMs = _rescueSeekMs(query, deckId, deck);
-			if (seekMs > 0) await dispatch({ type: 'seek', deck: deckId, position_ms: seekMs });
-			const channel = deck.mixer_channel;
-			const commands: PerformanceCommand[] = [
-				{ type: 'pitch_range', deck: deckId, range: deck.pitch_range },
-				{ type: 'tempo', deck: deckId, ratio: deck.pitch },
-				{ type: 'quantize', deck: deckId, enabled: deck.quantize_enabled },
-				{ type: 'beat_sync', deck: deckId, enabled: deck.beat_sync_enabled },
-				{ type: 'master_tempo', deck: deckId, enabled: deck.master_tempo_enabled },
-				{ type: 'key_sync', deck: deckId, enabled: deck.key_sync_enabled },
-				{ type: 'trim', deck: deckId, value: channel.trim },
-				{ type: 'eq', deck: deckId, band: 'high', value: channel.eq_high },
-				{ type: 'eq', deck: deckId, band: 'mid', value: channel.eq_mid },
-				{ type: 'eq', deck: deckId, band: 'low', value: channel.eq_low },
-				{ type: 'filter', deck: deckId, value: channel.filter },
-				{ type: 'fader', deck: deckId, value: channel.fader },
-				{ type: 'assign', deck: deckId, assign: channel.assign },
-				{ type: 'channel_cue', deck: deckId, enabled: channel.cue_enabled }
-			];
-			for (const stem of STEM_CONTROLS) {
-				const control = deck.stems[stem];
-				commands.push({ type: 'stem_mute', deck: deckId, stem, muted: control.muted });
-				commands.push({ type: 'stem_solo', deck: deckId, stem, solo: control.solo });
-				commands.push({ type: 'stem_gain', deck: deckId, stem, value: control.gain });
-			}
-			for (const command of commands) {
-				await dispatch(command);
-			}
-			if (restorePlaying && deck.playing) playingDecks.push(deckId);
-		} catch (exc) {
-			const message = exc instanceof Error ? exc.message : String(exc);
-			pushToast(`rescue restore deck ${deckId} failed: ${message}`, 'error');
-		}
+		const deck = rescue.decks[deckId];
+		decks[deckId] = {
+			stable_id: deck.stable_id,
+			position_ms: deck.position_ms,
+			pitch: deck.pitch,
+			pitch_range: deck.pitch_range,
+			quantize_enabled: deck.quantize_enabled,
+			beat_sync_enabled: deck.beat_sync_enabled,
+			master_tempo_enabled: deck.master_tempo_enabled,
+			key_sync_enabled: deck.key_sync_enabled
+		};
+		const channel = deck.mixer_channel;
+		channels[deckId] = {
+			trim: channel.trim,
+			eq_high: channel.eq_high,
+			eq_mid: channel.eq_mid,
+			eq_low: channel.eq_low,
+			filter: channel.filter,
+			fader: channel.fader,
+			assign: channel.assign
+		};
+		stems[deckId] = {
+			vocal: { ...deck.stems.vocal },
+			instrumental: { ...deck.stems.instrumental },
+			drums: { ...deck.stems.drums }
+		};
 	}
-	if (playingDecks.length > 0) {
-		await Promise.all(
-			playingDecks.map((deckId) => dispatch({ type: 'play', deck: deckId, playing: true }))
-		);
-		pushToast('rescue restored playing decks together', 'warn');
-	}
+	return {
+		version: 1,
+		captured_at_ms: rescue.captured_at_ms,
+		playlist_id: rescue.playlist_id,
+		decks,
+		mixer: {
+			crossfader: rescue.mixer.crossfader,
+			master: rescue.mixer.master,
+			channels
+		},
+		stems
+	};
 }
 
 async function _restoreSession(
 	dispatch: typeof dispatchPerformanceCommand,
 	snapshot: PerformanceSessionSnapshot | null,
-	urlDeckIds: Partial<Record<DeeplinkDeckId, string>>
+	urlDeckIds: Partial<Record<DeeplinkDeckId, string>>,
+	rescueSnapshot: RescueSnapshot | null = null,
+	playbackResume = false
 ): Promise<void> {
-	if (snapshot !== null) {
-		await dispatch({ type: 'crossfader', value: snapshot.mixer.crossfader });
-		await dispatch({ type: 'master_volume', value: snapshot.mixer.master });
+	const layoutSnapshot =
+		rescueSnapshot !== null ? _layoutSnapshotFromRescue(rescueSnapshot) : snapshot;
+	if (layoutSnapshot !== null) {
+		await dispatch({ type: 'crossfader', value: layoutSnapshot.mixer.crossfader });
+		await dispatch({ type: 'master_volume', value: layoutSnapshot.mixer.master });
 	}
 
 	for (const deckId of DECK_IDS) {
 		const urlId = urlDeckIds[deckId] ?? null;
-		const snapshotDeck = snapshot?.decks[deckId] ?? null;
-		const stable_id = urlId ?? snapshotDeck?.stable_id ?? null;
+		const layoutDeck = layoutSnapshot?.decks[deckId] ?? null;
+		const rescueDeck = rescueSnapshot?.decks[deckId] ?? null;
+		const stable_id = urlId ?? layoutDeck?.stable_id ?? null;
 		if (stable_id === null || stable_id.length === 0) continue;
 		const position_ms =
-			snapshotDeck !== null && snapshotDeck.stable_id === stable_id
-				? snapshotDeck.position_ms
-				: 0;
-		await _restoreDeck(dispatch, deckId, stable_id, position_ms, snapshot);
+			layoutDeck !== null && layoutDeck.stable_id === stable_id ? layoutDeck.position_ms : 0;
+		const skipSeek =
+			playbackResume &&
+			rescueDeck !== null &&
+			rescueDeck.playing &&
+			rescueDeck.beat_stamp.kind === 'beatgrid';
+		await _restoreDeck(dispatch, deckId, stable_id, position_ms, layoutSnapshot, skipSeek);
 	}
 }
 
@@ -398,10 +385,7 @@ export function installPerformanceSessionRestore(
 	const restore = async (): Promise<void> => {
 		const now = nowFn();
 		const rescue = await _fetchLatestRescueSnapshot(fetchRescue);
-		const rescueFresh =
-			rescue !== null &&
-			now - rescue.captured_at_ms >= 0 &&
-			now - rescue.captured_at_ms <= RESCUE_RESTORE_MAX_AGE_MS;
+		const rescueFresh = rescue !== null && playbackEligible(rescue, now);
 		const localFresh =
 			snapshot !== null &&
 			now - snapshot.captured_at_ms >= 0 &&
@@ -409,9 +393,13 @@ export function installPerformanceSessionRestore(
 		const preferRescue =
 			rescueFresh &&
 			(!localFresh ||
-				(snapshot !== null ? rescue.captured_at_ms > snapshot.captured_at_ms : true));
+				(snapshot !== null ? rescue!.captured_at_ms > snapshot.captured_at_ms : true));
 		if (preferRescue && rescue !== null) {
-			await _restoreFromRescueSnapshot(dispatch, query, rescue, now);
+			const playbackResume = gigPlaybackEligible(rescue, now);
+			await _restoreSession(dispatch, snapshot, urlDeckIds, rescue, playbackResume);
+			if (playbackResume) {
+				await runRescuePlaybackRestore(rescue, { now: nowFn, dispatch, query });
+			}
 			return;
 		}
 		await _restoreSession(dispatch, snapshot, urlDeckIds);

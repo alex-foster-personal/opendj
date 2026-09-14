@@ -36,7 +36,7 @@ from tests.opendj_cli import ts_contract
 # Derived by asking the verb's own parser rather than by restating the domain,
 # so a narrowed domain cannot leave this list quietly wrong.
 _SAMPLE_TOKENS = (
-    "1", "8", "true", "0.5", "sample", "0 1000",
+    "1", "8", "true", "0.5", "sample", "0 1000", "1:5000",
     "A", "bad", "beat", "low", "next", "top", "vocal",
     "beatgrid", "own", "practice",
 )

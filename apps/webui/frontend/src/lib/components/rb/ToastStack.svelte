@@ -75,6 +75,19 @@
 						>{copyState[toast.logId]}</span
 					>
 				{/if}
+				{#if toast.action !== undefined}
+					<span class="toast-action-row">
+						<button
+							type="button"
+							class="toast-action"
+							data-toast-action={toast.logId}
+							onclick={(event) => {
+								event.stopPropagation();
+								toast.action?.handler();
+							}}>{toast.action.label}</button
+						>
+					</span>
+				{/if}
 			</button>
 			<button
 				type="button"
@@ -136,6 +149,22 @@
 	}
 	.toast-dismiss:hover {
 		background: var(--danger);
+		color: #fff;
+	}
+	.toast-action-row {
+		margin-top: 0.25rem;
+	}
+	.toast-action {
+		border: 1px solid var(--border);
+		border-radius: 3px;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		padding: 0.1rem 0.45rem;
+		cursor: pointer;
+	}
+	.toast-action:hover {
+		background: var(--accent);
 		color: #fff;
 	}
 </style>
