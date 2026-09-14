@@ -307,7 +307,7 @@ requests==2.34.2
     # via pyacoustid
 standard-aifc==3.13.0 ; python_full_version >= '3.13'
     # via audioread
-starlette==1.2.1
+starlette==1.3.1
     # via fastapi
 idna==3.18
     # via
