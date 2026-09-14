@@ -20700,6 +20700,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     remove_track_from_library_api_v1_tracks__stable_id__remove_post: {

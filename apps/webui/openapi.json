@@ -31429,6 +31429,9 @@
           },
           "502": {
             "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT when the local index cache is present but unreadable"
+          },
+          "503": {
+            "description": "STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request"
           }
         },
         "summary": "Get Stem File",

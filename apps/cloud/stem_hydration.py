@@ -273,9 +273,11 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
     if not file_hashes:
         return HydrationOutcome(stable_id, "unavailable", reason="not in R2 stem index")
     if stem_index.MANIFEST_FILENAME not in file_hashes:
+        # Indexed but unproducible: an error, never "unavailable", so callers
+        # keep the loud 502 surface instead of reading it as "no bundle".
         return HydrationOutcome(
             stable_id,
-            "unavailable",
+            "error",
             reason="index has no manifest.json hash for this bundle",
         )
     bad_filenames = sorted(

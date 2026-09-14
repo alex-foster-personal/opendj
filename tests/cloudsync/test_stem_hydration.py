@@ -178,6 +178,25 @@ def test_hydrate_one_not_in_index_is_unavailable(tmp_path: Path, fake_s3, cfg: C
     assert outcome.status == "unavailable"
 
 
+@pytest.mark.requirement("STEM-16")
+def test_hydrate_one_indexed_without_manifest_is_error(
+    tmp_path: Path, fake_s3, cfg: CloudConfig
+):
+    """Indexed but unproducible is an error, not 'unavailable' (the index
+    claimed the bundle exists)."""
+    outcome = hydrate_one(
+        "headless",
+        data_dir=tmp_path / "data",
+        cfg=cfg,
+        s3=fake_s3,
+        index={"headless": {"vocals.wav": "a" * 64}},
+        stems_dir=tmp_path / "stems",
+    )
+    assert outcome.status == "error"
+    assert outcome.reason is not None
+    assert "manifest.json" in outcome.reason
+
+
 @pytest.mark.requirement("STEM-22")
 def test_hydrate_one_rejects_disallowed_index_filename(
     tmp_path: Path, fake_s3, cfg: CloudConfig

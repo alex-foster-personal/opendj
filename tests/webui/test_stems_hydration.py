@@ -249,6 +249,39 @@ def test_part_route_fails_loud_on_hydration_error(tmp_path: Path):
     assert resp.json()["detail"]["code"] == "STEM_BUNDLE_HYDRATION_FAILED"
 
 
+@pytest.mark.requirement("STEM-16")
+def test_incomplete_index_entry_fails_loud_on_both_routes(tmp_path: Path):
+    """An index entry with no manifest.json hash cannot be hydrated. Both
+    routes must answer 502, never hydrating-forever or an ordinary 404.
+
+    MUTATION TARGET: return "unavailable" for this case in hydrate_one and
+    the manifest poll never leaves hydrating=True, the part route answers 404.
+    """
+    stems_dir = tmp_path / "stems"
+    data_dir = tmp_path / "data"
+    cfg = _cfg()
+    s3 = InMemoryAssetS3()
+    entry = _seed_bundle(s3, cfg, "headless-track")
+    del entry["manifest.json"]
+    save_cached_index(data_dir, {"headless-track": entry})
+
+    with _client(stems_dir, data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
+        part = client.get("/api/v1/tracks/headless-track/stems/vocals")
+        manifest = client.get("/api/v1/tracks/headless-track/stems")
+    assert part.status_code == 502
+    assert part.json()["detail"]["code"] == "STEM_BUNDLE_HYDRATION_FAILED"
+    assert manifest.status_code == 502
+    assert manifest.json()["detail"]["code"] == "STEM_BUNDLE_HYDRATION_FAILED"
+
+
+@pytest.mark.requirement("STEM-17")
+def test_openapi_part_route_declares_hydration_timeout_503() -> None:
+    openapi = json.loads(Path("apps/webui/openapi.json").read_text(encoding="utf-8"))
+    part_route = openapi["paths"]["/api/v1/tracks/{stable_id}/stems/{part}"]["get"]
+    assert "503" in part_route["responses"]
+    assert "502" in part_route["responses"]
+
+
 # --- deck-open/close parity endpoints ----------------------------------------
 
 

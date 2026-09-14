@@ -66,6 +66,16 @@ STEM_HYDRATION_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     }
 }
 
+STEM_PART_RESPONSES: dict[int | str, dict[str, Any]] = {
+    **STEM_HYDRATION_ERROR_RESPONSES,
+    503: {
+        "description": (
+            "STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within "
+            "STEM_PART_HYDRATE_WAIT_S; retry the request"
+        )
+    },
+}
+
 
 class StemPartOut(BaseModel):
     """A validated standard part, available from the paired file endpoint."""
@@ -381,7 +391,7 @@ def get_stem_manifest(
 @router.get(
     "/{stable_id}/stems/{part}",
     response_class=StreamingResponse,
-    responses=STEM_HYDRATION_ERROR_RESPONSES,
+    responses=STEM_PART_RESPONSES,
 )
 def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingResponse:
     """Stream one validated stem part using the bundle's container media type.
