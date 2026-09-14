@@ -113,6 +113,7 @@ def default_probe(tmp_path_factory: pytest.TempPathFactory) -> dict:
 
 @pytest.mark.requirement("PERFBATCH-05")
 def test_engine_runs_the_library_jobs_drain_by_default(default_probe: dict) -> None:
+    """[if] library jobs is left unset [then] the engine boots the drain thread, [else stop]."""
     assert default_probe["jobs_enabled"] is True
     assert default_probe["drain_alive"] is True
     assert DRAIN_THREAD_NAME in default_probe["thread_names"]
@@ -120,11 +121,13 @@ def test_engine_runs_the_library_jobs_drain_by_default(default_probe: dict) -> N
 
 @pytest.mark.requirement("STEM-15")
 def test_engine_requests_stem_hydration(default_probe: dict) -> None:
+    """[if] the packaged engine boots [then] it requests stem hydration once, [else stop]."""
     assert default_probe["hydration_requests"] == [True]
 
 
 @pytest.mark.requirement("PERFBATCH-05")
 def test_library_jobs_off_starts_no_drain(tmp_path: Path) -> None:
+    """[if] MUSIC_DJ_LIBRARY_JOBS=off [then] the engine boots with no drain thread, [else stop]."""
     payload = _probe_payload(_run_probe(tmp_path, {"MUSIC_DJ_LIBRARY_JOBS": "off"}))
     assert payload["jobs_enabled"] is False
     assert payload["drain_alive"] is False
@@ -136,7 +139,10 @@ def test_cloud_mode_without_boto3_still_boots(tmp_path: Path) -> None:
     """Regression, Mon 14 Sep 2026: the installed app (cloud mode, R2
     credentials resolving, no boto3 in the packaged closure) crashed at boot
     with AssetStoreError from _bind_stem_hydration. The engine must boot,
-    run the drain, and leave hydration unarmed with a loud warning."""
+    run the drain, and leave hydration unarmed with a loud warning.
+
+    [if] R2 resolves but boto3 is absent [then] the engine boots unarmed, not crashed, [else stop].
+    """
     shim = tmp_path / "no-boto3"
     (shim / "boto3").mkdir(parents=True)
     (shim / "boto3" / "__init__.py").write_text(
@@ -166,13 +172,17 @@ def test_cloud_mode_without_boto3_still_boots(tmp_path: Path) -> None:
 @pytest.mark.requirement("STEM-15")
 def test_local_mode_stems_miss_stays_the_ordinary_empty_state(default_probe: dict) -> None:
     """Opposite-direction control: with hydration legitimately unconfigured
-    (local mode), a miss is still the HTTP 200 unavailable empty state."""
+    (local mode), a miss is still the HTTP 200 unavailable empty state.
+
+    [if] hydration is legitimately unconfigured [then] a stems miss stays HTTP 200, [else stop].
+    """
     assert default_probe["stems_miss_status"] == 200
     assert default_probe["stems_miss_code"] == "STEM_BUNDLE_NOT_FOUND"
 
 
 @pytest.mark.requirement("PERFBATCH-05")
 def test_invalid_library_jobs_value_refuses_to_boot(tmp_path: Path) -> None:
+    """[if] MUSIC_DJ_LIBRARY_JOBS is invalid [then] the engine refuses to boot, [else stop]."""
     result = _run_probe(tmp_path, {"MUSIC_DJ_LIBRARY_JOBS": "maybe"})
     assert result.returncode != 0
     assert "MUSIC_DJ_LIBRARY_JOBS='maybe' is not a member of" in result.stderr
