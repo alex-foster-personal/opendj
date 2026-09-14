@@ -29,7 +29,8 @@ merged to a side branch and never to main), fitted to main:
 
 Not carried over from 9a1438b8: cache eviction, which belongs to the
 ``apps.cloud`` policy work (PR #1462), and nothing here pauses for a playing
-deck yet (see the PR's Remaining list).
+deck yet (CLOUDSYNC-08: refuse while ``app_posture=gig`` or any deck is
+playing unless Force sync; CLOUDSYNC-09: join the PERFMODE-04 shed list).
 """
 
 from __future__ import annotations

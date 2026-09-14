@@ -2,7 +2,7 @@
 
 The application integrator mounts :data:`router` at ``/api/v1``.  The router
 does not run Demucs or mutate files: every request reloads and validates the
-stored artifact before it exposes either the manifest or a WAV response.
+stored artifact before it exposes either the manifest or a container-typed audio response.
 The manifest GET answers HTTP 200 unavailable when no bundle exists; the
 part GET still 404s when there is no file to stream.
 """
@@ -384,7 +384,7 @@ def get_stem_manifest(
     responses=STEM_HYDRATION_ERROR_RESPONSES,
 )
 def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingResponse:
-    """Stream one validated stem from its already-verified file handle.
+    """Stream one validated stem part using the bundle's container media type.
 
     Unlike the manifest route, this one DOES wait (bounded) for an in-flight
     hydration: a part request means the caller already decided it wants

@@ -4643,7 +4643,7 @@ export interface paths {
         };
         /**
          * Get Stem File
-         * @description Stream one validated stem from its already-verified file handle.
+         * @description Stream one validated stem part using the bundle's container media type.
          *
          *     Unlike the manifest route, this one DOES wait (bounded) for an in-flight
          *     hydration: a part request means the caller already decided it wants

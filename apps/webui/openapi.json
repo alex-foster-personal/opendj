@@ -31391,7 +31391,7 @@
     },
     "/api/v1/tracks/{stable_id}/stems/{part}": {
       "get": {
-        "description": "Stream one validated stem from its already-verified file handle.\n\nUnlike the manifest route, this one DOES wait (bounded) for an in-flight\nhydration: a part request means the caller already decided it wants\nthese bytes. A prior failure is surfaced immediately as HTTP 502; a\nfresh attempt that does not finish within\n:data:`STEM_PART_HYDRATE_WAIT_S` answers HTTP 503 so the caller can\nretry rather than hang forever on this one request.",
+        "description": "Stream one validated stem part using the bundle's container media type.\n\nUnlike the manifest route, this one DOES wait (bounded) for an in-flight\nhydration: a part request means the caller already decided it wants\nthese bytes. A prior failure is surfaced immediately as HTTP 502; a\nfresh attempt that does not finish within\n:data:`STEM_PART_HYDRATE_WAIT_S` answers HTTP 503 so the caller can\nretry rather than hang forever on this one request.",
         "operationId": "get_stem_file_api_v1_tracks__stable_id__stems__part__get",
         "parameters": [
           {

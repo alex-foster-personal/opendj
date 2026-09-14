@@ -19,10 +19,13 @@
 	} from '$lib/api-cloudsync-ops';
 
 	import {
+		CLOUDSYNC_TECHNICAL_DETAILS_LABEL,
 		STATUS_CHANGED_EVENT,
 		configPutBody,
 		envOverrideNotes,
 		formFromConfig,
+		presentCloudSyncError,
+		presentCloudSyncResultError,
 		syncNowRequest,
 		type ConfigFormFields
 	} from './cloudsync-view';
@@ -32,6 +35,8 @@
 		text: string;
 		/** Hover explanation, required whenever the text carries counts. */
 		title?: string;
+		/** Raw error text for the technical-details disclosure only. */
+		details?: string;
 	}
 
 	/** Tell the status chip to re-read now instead of on its next poll. */
@@ -104,7 +109,12 @@
 			};
 		} catch (exc) {
 			// The failure was journaled server-side; the refresh below shows it.
-			notice = { kind: 'error', text: `Sync failed: ${message(exc)}` };
+			const presented = presentCloudSyncError(exc);
+			notice = {
+				kind: 'error',
+				text: `Sync failed: ${presented.summary}`,
+				details: presented.details
+			};
 		} finally {
 			syncing = false;
 			await refresh();
@@ -122,15 +132,21 @@
 		<p class="err" role="alert">Failed to load CloudSync status: {loadError}</p>
 	{/if}
 	{#if notice !== null}
-		<p
+		<div
 			class:err={notice.kind === 'error'}
 			class:ok={notice.kind === 'ok'}
 			role="status"
 			title={notice.title}
 			data-testid="cloudsync-notice"
 		>
-			{notice.text}
-		</p>
+			<p class="notice-text">{notice.text}</p>
+			{#if notice.details !== undefined}
+				<details data-testid="cloudsync-notice-details">
+					<summary>{CLOUDSYNC_TECHNICAL_DETAILS_LABEL}</summary>
+					<pre class="technical-details">{notice.details}</pre>
+				</details>
+			{/if}
+		</div>
 	{/if}
 
 	<div class="panel" data-testid="cloudsync-status-panel">
@@ -159,7 +175,18 @@
 				<dd title={`Effective hub URL, from ${status.endpoint_source}`}>{status.endpoint ?? 'none'}</dd>
 				<dt>Last result</dt>
 				<dd data-testid="cloudsync-status-last-result">
-					{status.last_result ? `${status.last_result.status}: ${status.last_result.message}` : 'none yet'}
+					{#if status.last_result === null}
+						none yet
+					{:else if status.last_result.status === 'error'}
+						{status.last_result.status}:
+						{presentCloudSyncResultError(status.last_result).summary}
+						<details data-testid="cloudsync-last-result-details">
+							<summary>{CLOUDSYNC_TECHNICAL_DETAILS_LABEL}</summary>
+							<pre class="technical-details">{status.last_result.message}</pre>
+						</details>
+					{:else}
+						{status.last_result.status}: {status.last_result.message}
+					{/if}
 				</dd>
 				<dt>Rows pending</dt>
 				<dd title="Local changelog rows not yet pushed to the hub; blank when not measured">
@@ -212,7 +239,17 @@
 							<td>{row.status}</td>
 							<td title="Rows this attempt pushed to the hub">{row.pushed}</td>
 							<td title="Rows this attempt pulled from the hub">{row.pulled}</td>
-							<td>{row.message}</td>
+							<td>
+								{#if row.status === 'error'}
+									{presentCloudSyncResultError(row).summary}
+									<details>
+										<summary>{CLOUDSYNC_TECHNICAL_DETAILS_LABEL}</summary>
+										<pre class="technical-details">{row.message}</pre>
+									</details>
+								{:else}
+									{row.message}
+								{/if}
+							</td>
 						</tr>
 					{/each}
 				</tbody>
@@ -337,5 +374,15 @@
 	}
 	.err {
 		color: var(--danger);
+	}
+	.notice-text {
+		margin: 0;
+	}
+	.technical-details {
+		margin: 0.35rem 0 0;
+		white-space: pre-wrap;
+		word-break: break-word;
+		font-size: 0.75rem;
+		color: var(--muted);
 	}
 </style>
