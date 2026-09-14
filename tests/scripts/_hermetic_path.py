@@ -63,7 +63,15 @@ def path_hiding(tmp_path: Path, *hidden_tools: str) -> str:
             if entry.name in hidden_here:
                 continue
             try:
-                (shadow_dir / entry.name).symlink_to(entry)
+                target = entry.resolve()
+            except OSError:
+                continue
+            try:
+                link = shadow_dir / entry.name
+                if entry.is_dir() and not entry.is_symlink():
+                    link.symlink_to(target, target_is_directory=True)
+                else:
+                    link.symlink_to(target)
             except OSError:
                 # A duplicate name or a permission wrinkle on one entry must
                 # not take the whole directory down with it.
