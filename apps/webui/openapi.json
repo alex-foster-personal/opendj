@@ -7907,7 +7907,8 @@
             "enum": [
               "ok",
               "error",
-              "inconclusive"
+              "inconclusive",
+              "deferred"
             ],
             "title": "Status",
             "type": "string"
@@ -13268,7 +13269,8 @@
             "enum": [
               "ok",
               "error",
-              "inconclusive"
+              "inconclusive",
+              "deferred"
             ],
             "title": "Status",
             "type": "string"
@@ -13934,6 +13936,19 @@
           "values"
         ],
         "title": "RowModel",
+        "type": "object"
+      },
+      "SchedulerResumeOut": {
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "SchedulerResumeOut",
         "type": "object"
       },
       "SearchHit": {
@@ -22597,6 +22612,38 @@
         ]
       }
     },
+    "/api/v1/cloudsync/scheduler/resume-owed": {
+      "post": {
+        "description": "Mark a deferred scheduler round owed and wake the in-process scheduler.",
+        "operationId": "resume_scheduler_owed_api_v1_cloudsync_scheduler_resume_owed_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchedulerResumeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          }
+        },
+        "summary": "Resume Scheduler Owed",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
     "/api/v1/cloudsync/status": {
       "get": {
         "operationId": "get_status_api_v1_cloudsync_status_get",
@@ -22664,7 +22711,7 @@
                 }
               }
             },
-            "description": "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error."
+            "description": "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync before any hub I/O; NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error."
           },
           "422": {
             "content": {

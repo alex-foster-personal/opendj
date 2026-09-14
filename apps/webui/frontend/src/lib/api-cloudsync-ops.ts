@@ -37,3 +37,7 @@ export async function runCloudSyncNow(body: SyncRunBody): Promise<SyncRunOut> {
 export async function getCloudSyncFleet(): Promise<FleetOut> {
 	return unwrap(api.GET('/api/v1/cloudsync/fleet', {}));
 }
+
+export async function resumeCloudsyncSchedulerOwed(): Promise<{ ok: boolean }> {
+	return unwrap(api.POST('/api/v1/cloudsync/scheduler/resume-owed', {}));
+}

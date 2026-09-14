@@ -1279,6 +1279,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cloudsync/scheduler/resume-owed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Scheduler Owed
+         * @description Mark a deferred scheduler round owed and wake the in-process scheduler.
+         */
+        post: operations["resume_scheduler_owed_api_v1_cloudsync_scheduler_resume_owed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cloudsync/status": {
         parameters: {
             query?: never;
@@ -7995,7 +8015,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "ok" | "error" | "inconclusive";
+            status: "ok" | "error" | "inconclusive" | "deferred";
         };
         /**
          * LevelCalibrationOut
@@ -10070,7 +10090,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "ok" | "error" | "inconclusive";
+            status: "ok" | "error" | "inconclusive" | "deferred";
         };
         /** ReconcileSummary */
         ReconcileSummary: {
@@ -10295,6 +10315,11 @@ export interface components {
             values: {
                 [key: string]: unknown;
             };
+        };
+        /** SchedulerResumeOut */
+        SchedulerResumeOut: {
+            /** Ok */
+            ok: boolean;
         };
         /**
          * SearchHit
@@ -14815,6 +14840,35 @@ export interface operations {
             };
         };
     };
+    resume_scheduler_owed_api_v1_cloudsync_scheduler_resume_owed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchedulerResumeOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+        };
+    };
     get_status_api_v1_cloudsync_status_get: {
         parameters: {
             query?: never;
@@ -14873,7 +14927,7 @@ export interface operations {
                     "application/json": components["schemas"]["OpsErrorResponse"];
                 };
             };
-            /** @description CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error. */
+            /** @description CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync before any hub I/O; NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error. */
             409: {
                 headers: {
                     [name: string]: unknown;

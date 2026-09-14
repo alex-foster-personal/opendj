@@ -416,7 +416,11 @@ def _wrap_lifespan(
             # The CloudSync scheduler idles until cloudsync-config.json (or
             # its env overrides) turns it on, and never starts on the hub.
             cloudsync_dir = Path(str(instance.state.state_db_path)).resolve().parent.parent
-            async with legacy_lifespan(instance), scheduler_lifespan(cloudsync_dir):
+            async with legacy_lifespan(instance), scheduler_lifespan(
+                cloudsync_dir,
+                ui_mirror_provider=lambda: getattr(instance.state, "ui_mirror", None),
+            ) as sched:
+                instance.state.sync_hub_scheduler = sched
                 availability_worker.start()
                 try:
                     yield
