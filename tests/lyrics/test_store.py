@@ -218,3 +218,134 @@ def test_store_never_hardcodes_a_database_path() -> None:
     source = Path(store.__file__).read_text(encoding="utf-8")
     assert "data/state/state.db" in source, "the docstring must name the trap"
     assert "open_rw(" not in source, "store.py opens no connection of its own"
+
+
+#-----------------------------------------------------------------------------
+# upsert_stem_coverage_verdict: the stem-coverage backfill's dedicated,
+# atomically-guarded writer (LYR-06, PR #2611 P1 BLOCKING fix,
+# CLAUDE-review round 7, store.py:336)
+#
+# - if the guard treats "NULL words_content_hash and NULL override" alone as
+#   proof a row is coverage-only, then an ASR/karaoke no-lyrics verdict, a
+#   line-synced fetch with no word alignment, or a legacy-migrated row all
+#   get silently clobbered by a coverage-only recompute -- broken
+#-----------------------------------------------------------------------------
+def _stem_coverage_upsert(conn: sqlite3.Connection, stable_id: str, **overrides) -> bool:
+    fields: dict[str, object] = {
+        "verdict": "no-lyrics",
+        "coverage_pct": 3.0,
+        "source": "stem-coverage:v1:" + "b" * 64,
+        "pipeline_version": "2026.09.14-stem-coverage-v1",
+        "computed_at": "2026-09-14T00:00:00.000000+00:00",
+    }
+    fields.update(overrides)
+    return store.upsert_stem_coverage_verdict(conn, stable_id=stable_id, **fields)  # type: ignore[arg-type]
+
+
+def test_upsert_stem_coverage_verdict_writes_a_fresh_absent_row(
+    conn: sqlite3.Connection,
+) -> None:
+    seed_track(conn, "sid-fresh")
+    written = _stem_coverage_upsert(conn, "sid-fresh")
+    assert written is True
+    verdict = store.get_verdict(conn, "sid-fresh")
+    assert verdict is not None
+    assert verdict.verdict == "no-lyrics"
+    assert verdict.source == "stem-coverage:v1:" + "b" * 64
+    assert verdict.words_content_hash is None
+    assert verdict.override is None
+
+
+def test_upsert_stem_coverage_verdict_overwrites_its_own_prior_write(
+    conn: sqlite3.Connection,
+) -> None:
+    """Opposite-direction control for the clobber fix below: a row THIS
+    backfill wrote (``source`` already starts with
+    ``STEM_COVERAGE_SOURCE_PREFIX``) must still be refreshed by a later
+    call -- the ownership guard must never turn into a guard against the
+    backfill updating its own rows."""
+    seed_track(conn, "sid-self-update")
+    _stem_coverage_upsert(conn, "sid-self-update", coverage_pct=3.0)
+
+    written = _stem_coverage_upsert(
+        conn,
+        "sid-self-update",
+        coverage_pct=91.0,
+        verdict="vocal",
+        source="stem-coverage:v1:" + "c" * 64,
+        computed_at="2026-09-14T01:00:00.000000+00:00",
+    )
+
+    assert written is True
+    verdict = store.get_verdict(conn, "sid-self-update")
+    assert verdict is not None
+    assert verdict.coverage_pct == 91.0
+    assert verdict.verdict == "vocal"
+    assert verdict.source == "stem-coverage:v1:" + "c" * 64
+
+
+def test_upsert_stem_coverage_verdict_never_clobbers_a_foreign_producer_row(
+    conn: sqlite3.Connection,
+) -> None:
+    """LYR-06 P1 BLOCKING fix (CLAUDE-review round 7, PR #2611,
+    store.py:336): NULL ``words_content_hash`` and NULL ``override`` are NOT
+    proof a row is coverage-only. An ASR/karaoke "no-lyrics" verdict with no
+    words fits that same test -- it has no words to hash and was never
+    overridden -- but it is a REAL judgement from a different producer, not
+    a stem-coverage placeholder. Its ``source`` never starts with
+    ``STEM_COVERAGE_SOURCE_PREFIX``, so the guard must refuse the write and
+    leave every column of the row untouched, not just ``words_content_hash``
+    and ``override``."""
+    seed_track(conn, "sid-foreign-source")
+    _upsert(
+        conn,
+        "sid-foreign-source",
+        verdict="no-lyrics",
+        coverage_pct=2.0,
+        source="asr:no-lyrics-v2",
+        language_iso3=None,
+        n_words=None,
+        n_lines=None,
+        pct_witness_red=None,
+        pipeline_version="asr-v2",
+        words_content_hash=None,
+        computed_at="2026-09-01T00:00:00.000000+00:00",
+    )
+    before = store.get_verdict(conn, "sid-foreign-source")
+    assert before is not None
+    assert before.words_content_hash is None
+    assert before.override is None
+
+    written = _stem_coverage_upsert(
+        conn,
+        "sid-foreign-source",
+        coverage_pct=91.0,
+        verdict="vocal",
+        computed_at="2026-09-14T00:00:00.000000+00:00",
+    )
+
+    assert written is False, "a foreign-source row must be reported untouched, not written"
+    after = store.get_verdict(conn, "sid-foreign-source")
+    assert after is not None
+    assert after.verdict == before.verdict
+    assert after.coverage_pct == before.coverage_pct
+    assert after.source == before.source
+    assert after.pipeline_version == before.pipeline_version
+    assert after.computed_at == before.computed_at
+
+
+def test_upsert_stem_coverage_verdict_requires_a_stem_coverage_source() -> None:
+    """The writer's own ``source`` argument is validated up front: it is the
+    ownership marker every future conflict-update relies on, so a caller
+    that passed something else would silently poison the guard for every
+    later write to that row."""
+    with pytest.raises(LyricStoreError, match="stem-coverage:"):
+        store.upsert_stem_coverage_verdict(
+            sqlite3.connect(":memory:"),  # never reached: raises before any query
+            stable_id="sid-bad-source",
+            verdict="vocal",
+            coverage_pct=1.0,
+            source="not-a-stem-coverage-source",
+            pipeline_version="x",
+            computed_at="2026-09-14T00:00:00.000000+00:00",
+        )

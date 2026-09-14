@@ -29,7 +29,16 @@ does for ``from-stems``, and reports as a FAILURE line, never silently.
 
 **Never clobbers real work.** A row already carrying ``words_content_hash``
 (real ASR/aligner word-level data) OR a human ``override`` is excluded from
-this backfill ENTIRELY -- not merely protected column-by-column. LYR-06's
+this backfill ENTIRELY -- not merely protected column-by-column. Neither
+condition alone is sufficient to prove a row IS coverage-only, though: an
+ASR "no-lyrics" verdict with no words, a line-synced fetch with no word
+alignment, and a legacy-migrated row all have NULL ``words_content_hash``
+and NULL ``override`` without ever having been written by this module, so a
+row is additionally required to have a ``source`` starting with
+:data:`apps.lyrics.store.STEM_COVERAGE_SOURCE_PREFIX` before this backfill
+will touch it -- :data:`SKIP_HAS_OTHER_SOURCE` at scan time, and the same
+check again inside :func:`apps.lyrics.store.upsert_stem_coverage_verdict`'s
+own atomic write. LYR-06's
 own acceptance criterion groups the two together: "the backfill never
 overwrites it, only fills/refreshes coverage-only rows." A row is SKIPPED at
 scan time (``SKIP_HAS_WORDS`` / ``SKIP_HAS_OVERRIDE``) the moment either
@@ -82,7 +91,13 @@ otherwise leave a stale verdict silently unrefreshed forever (see
 **Reserved tracks.** ``<data_dir>/state/stem-order-reserved-100.json`` names
 100 stable_ids held back to test in-app stem ordering; this module refuses
 to process them (reports them skipped, reason "reserved") unless
-``include_reserved=True`` is passed explicitly.
+``include_reserved=True`` is passed explicitly. That guard is fail-closed:
+when it is active (``include_reserved=False``), a missing, unreadable, or
+malformed reserved-ids file is a hard :class:`ReservedIdsError`, never a
+silent empty set -- the file being absent is the likely case the FIRST time
+this runs against a real ``--data-dir``, and treating that as "nothing
+reserved" would compute automated verdicts for all 100 QA-held tracks with
+no trace in the report. See :func:`load_reserved_ids`.
 
 **Cheaper than decoding twice.** ``apps.vocals from-stems`` already computes
 this exact coverage number when it fills ``data/state/vocal-cache``. When a
@@ -147,6 +162,18 @@ SKIP_HAS_WORDS: str = "has-word-level-data"
 #: a computed verdict, so this check (like ``SKIP_HAS_WORDS``) is always
 #: scanning a real, pre-existing row.
 SKIP_HAS_OVERRIDE: str = "has-human-override"
+#: A row that is neither word-level nor overridden, but ALSO was never
+#: written by this backfill (``source`` does not start with
+#: :data:`apps.lyrics.store.STEM_COVERAGE_SOURCE_PREFIX`): an ASR/karaoke
+#: "no-lyrics" verdict with no words, a line-synced fetch with no word
+#: alignment, and a legacy-migrated row all satisfy NULL
+#: ``words_content_hash`` / NULL ``override`` without being coverage-only in
+#: the sense this module means. Skipped, never attempted -- writing through
+#: it would lose that row's real judgement and provenance. Mirrors the same
+#: ownership check :func:`apps.lyrics.store.upsert_stem_coverage_verdict`
+#: enforces at write time, so a scan-time skip and a write-time refusal never
+#: disagree about which rows are this backfill's to touch.
+SKIP_HAS_OTHER_SOURCE: str = "has-other-source"
 SKIP_UP_TO_DATE: str = "up-to-date"
 #: The scan-phase :data:`SKIP_HAS_WORDS` / :data:`SKIP_HAS_OVERRIDE` checks
 #: missed this row (it was coverage-only, or absent, when scanned), but a
@@ -210,13 +237,54 @@ def candidate_stable_ids(data_dir: Path) -> list[str]:
     return sorted(_list_ids(demucs_root) | _list_ids(roformer_root))
 
 
+class ReservedIdsError(ValueError):
+    """The reserved-100 guard could not be loaded. Never swallowed: a
+    silently-empty reserved set means all 100 QA-held-back tracks get
+    automated verdicts with no "reserved" line in the report. A
+    :class:`ValueError` so it surfaces the same way this module's other
+    caller-input faults do (``backfill_verdicts``'s ``limit`` check) --
+    ``apps/webui/server/routes/lyrics_words.py`` already turns a
+    :class:`ValueError` from this backfill into a 422 with the message
+    intact, and the CLI needs no new handling either."""
+
+
 def load_reserved_ids(data_dir: Path) -> frozenset[str]:
-    """The 100 stable_ids held back for in-app ordering QA, or empty if unset."""
+    """The 100 stable_ids held back for in-app ordering QA.
+
+    Fails closed, not open: this is only ever called when the reserved guard
+    is ACTIVE (``backfill_verdicts`` calls it exactly when
+    ``include_reserved`` is False), so a file that is missing, unreadable, or
+    malformed must never read as "nothing reserved" -- that is exactly the
+    silent-disappearance failure mode this guard exists to prevent. Checked
+    with :meth:`Path.exists`, not :meth:`Path.is_file`: the latter would ALSO
+    return False for a directory sitting where the file is expected, folding
+    that anomaly into the same "absent" path instead of surfacing it -- the
+    same distinction :func:`_cached_coverage_pct` already draws for the
+    vocal-cache read.
+    """
     path = data_dir / "state" / RESERVED_FILENAME
-    if not path.is_file():
-        return frozenset()
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return frozenset(str(row["stable_id"]) for row in payload["tracks"])
+    if not path.exists():
+        raise ReservedIdsError(
+            f"{path} is missing. The reserved-100 guard cannot be silently "
+            "skipped: pass include_reserved=True to deliberately process the "
+            "QA-held-back tracks, or restore the file."
+        )
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ReservedIdsError(f"{path} could not be read: {exc}") from exc
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ReservedIdsError(f"{path} is not valid JSON: {exc}") from exc
+    try:
+        ids = frozenset(str(row["stable_id"]) for row in payload["tracks"])
+    except (KeyError, TypeError) as exc:
+        raise ReservedIdsError(
+            f"{path} is malformed: expected {{'tracks': [{{'stable_id': ...}}, "
+            f"...]}}, got {payload!r} ({exc})"
+        ) from exc
+    return ids
 
 
 #-----------------------------------------------------------------------------
@@ -230,8 +298,13 @@ def _bundle_source_label(bundle: StemBundle) -> str:
     track and stays fixed across a re-separation with a different model,
     version, or a single repaired part -- see that function's docstring for
     why that distinction matters here). This is the resumability key
-    alongside ``pipeline_version``."""
-    return f"stem-coverage:{bundle.layout}:{vfrom_stems.bundle_stem_identity(bundle)}"
+    alongside ``pipeline_version``, AND the ownership marker
+    :func:`apps.lyrics.store.upsert_stem_coverage_verdict` guards its
+    conflict-update on -- always built from
+    :data:`apps.lyrics.store.STEM_COVERAGE_SOURCE_PREFIX`, never a
+    hardcoded literal, so the two never drift apart."""
+    identity = vfrom_stems.bundle_stem_identity(bundle)
+    return f"{store.STEM_COVERAGE_SOURCE_PREFIX}{bundle.layout}:{identity}"
 
 
 def _bundle_duration_s(bundle: StemBundle) -> float:
@@ -403,10 +476,11 @@ def _scan_candidate(
     demucs_root: Path,
     roformer_root: Path,
 ) -> _ScanOutcome:
-    """Classify one candidate stable_id: reserved / protected (override or
-    word-level) / a failed bundle load / already current / needs a real
-    recompute. Never loads a bundle for a reserved or protected row -- both
-    checks are cheap and must fire before the more expensive load."""
+    """Classify one candidate stable_id: reserved / protected (override,
+    word-level, or a foreign source) / a failed bundle load / already
+    current / needs a real recompute. Never loads a bundle for a reserved or
+    protected row -- all three checks are cheap and must fire before the
+    more expensive load."""
     if stable_id in reserved:
         return _ScanOutcome(skip_reason=SKIP_RESERVED)
     row = store.get_verdict(conn, stable_id)
@@ -414,6 +488,10 @@ def _scan_candidate(
         return _ScanOutcome(skip_reason=SKIP_HAS_OVERRIDE)
     if row is not None and row.words_content_hash is not None:
         return _ScanOutcome(skip_reason=SKIP_HAS_WORDS)
+    if row is not None and not (row.source or "").startswith(
+        store.STEM_COVERAGE_SOURCE_PREFIX
+    ):
+        return _ScanOutcome(skip_reason=SKIP_HAS_OTHER_SOURCE)
     try:
         bundle = load_stem_bundle(stable_id, roots=(demucs_root, roformer_root))
     except (StemArtifactError, StemBundleNotFoundError) as exc:
@@ -603,12 +681,14 @@ def report_to_dict(report: VerdictBackfillReport) -> dict[str, Any]:
 
 __all__ = [
     "RESERVED_FILENAME",
+    "SKIP_HAS_OTHER_SOURCE",
     "SKIP_HAS_OVERRIDE",
     "SKIP_HAS_WORDS",
     "SKIP_PROTECTED_ROW_RACE",
     "SKIP_RESERVED",
     "SKIP_UP_TO_DATE",
     "STEM_COVERAGE_PIPELINE_VERSION",
+    "ReservedIdsError",
     "VerdictBackfillReport",
     "backfill_verdicts",
     "candidate_stable_ids",

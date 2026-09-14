@@ -93,6 +93,26 @@ _RUNNING_AS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
 #: runnable guard test behind an unrelated skip.
 
 
+@pytest.fixture
+def data_dir(tmp_path: Path) -> Path:
+    """Shadows ``tests.lyrics.conftest.data_dir`` for every test in this
+    file: ``load_reserved_ids``'s LYR-06 P1 fix (CLAUDE-review round 7, PR
+    #2611, library_verdicts.py:216) makes a MISSING reserved-100 file a hard
+    ``ReservedIdsError`` instead of a silent empty set, so a stub file with
+    zero reserved ids is written here up front -- otherwise every test in
+    this suite that has nothing to do with the reserved guard would break on
+    that error. Tests exercising a genuinely reserved track write their OWN
+    content over this stub (fixture setup runs before the test body); tests
+    exercising the guard's own absent/malformed-file behaviour build their
+    directory straight from ``tmp_path`` instead of depending on this
+    fixture, so the file stays genuinely absent."""
+    path = tmp_path / "data"
+    reserved = path / "state" / library_verdicts.RESERVED_FILENAME
+    reserved.parent.mkdir(parents=True, exist_ok=True)
+    reserved.write_text(json.dumps({"tracks": []}), encoding="utf-8")
+    return path
+
+
 #-----------------------------------------------------------------------------
 # fixtures: real ffmpeg-rendered MP3 stem bundles
 #-----------------------------------------------------------------------------
@@ -466,6 +486,52 @@ def test_backfill_never_clobbers_an_overridden_row(conn, data_dir) -> None:
     assert verdict.computed_at == before.computed_at
     assert verdict.override == "vocal"
     assert verdict.effective == "vocal"
+
+
+def test_backfill_never_clobbers_a_row_from_another_producer(conn, data_dir) -> None:
+    """LYR-06 P1 BLOCKING fix (CLAUDE-review round 7, PR #2611,
+    library_verdicts.py:216... store.py:336): a row with NULL
+    ``words_content_hash`` and NULL ``override`` is NOT proof it is
+    coverage-only. An ASR/karaoke "no-lyrics" verdict with no words fits
+    that same test -- no words to hash, never overridden -- but it is a
+    REAL judgement from a different producer. No ffmpeg / MP3-loader
+    dependency: the source guard fires before the bundle is ever loaded,
+    symmetric with ``test_backfill_never_clobbers_word_level_data`` and
+    ``test_backfill_never_clobbers_an_overridden_row`` above."""
+    seed_track(conn, "sid-other-source-001")
+    _write_bundle_dir_stub(_stems_root(data_dir), "sid-other-source-001")
+    store.upsert_verdict(
+        conn,
+        stable_id="sid-other-source-001",
+        verdict="no-lyrics",
+        coverage_pct=2.0,
+        source="asr:no-lyrics-v2",
+        language_iso3=None,
+        n_words=None,
+        n_lines=None,
+        pct_witness_red=None,
+        pipeline_version="asr-v2",
+        words_content_hash=None,
+        computed_at="2026-09-01T00:00:00.000000+00:00",
+        resurrect=False,
+    )
+    before = store.get_verdict(conn, "sid-other-source-001")
+    assert before is not None
+
+    report = library_verdicts.backfill_verdicts(
+        conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False
+    )
+
+    assert report.processed == ()
+    assert report.skipped.get(library_verdicts.SKIP_HAS_OTHER_SOURCE) == (
+        "sid-other-source-001",
+    )
+    verdict = store.get_verdict(conn, "sid-other-source-001")
+    assert verdict is not None
+    assert verdict.verdict == before.verdict
+    assert verdict.coverage_pct == before.coverage_pct
+    assert verdict.source == before.source
+    assert verdict.computed_at == before.computed_at
 
 
 @requires_ffmpeg
@@ -1524,8 +1590,56 @@ def test_limit_caps_the_computed_set_not_the_skips(conn, data_dir) -> None:
     assert report.candidates == 3
 
 
-def test_reserved_ids_load_empty_set_when_file_absent(data_dir: Path) -> None:
-    assert library_verdicts.load_reserved_ids(data_dir) == frozenset()
+def test_reserved_ids_raises_when_file_absent(tmp_path: Path) -> None:
+    """LYR-06 P1 BLOCKING fix (CLAUDE-review round 7, PR #2611,
+    library_verdicts.py:216), replacing
+    ``test_reserved_ids_load_empty_set_when_file_absent``: a missing
+    reserved-100 file must fail closed, not silently read as "nothing
+    reserved" -- that is the likely case the first time this points at a
+    real ``--data-dir``, and it would let all 100 QA-held tracks get
+    automated verdicts with no trace in the report. Built straight from
+    ``tmp_path``, not the file-level ``data_dir`` fixture (which stubs a
+    reserved file for every OTHER test in this suite), so the file is
+    genuinely absent here."""
+    missing_data_dir = tmp_path / "data"
+    with pytest.raises(library_verdicts.ReservedIdsError, match="missing"):
+        library_verdicts.load_reserved_ids(missing_data_dir)
+
+
+def test_reserved_ids_raises_when_path_is_a_directory(tmp_path: Path) -> None:
+    """``Path.is_file()`` (the pre-fix check) reads False for a directory
+    sitting where the reserved file is expected too, silently folding that
+    anomaly into the same "unset" path this fix closes -- the identical
+    pattern this module already rejects for the vocal-cache read in
+    ``_cached_coverage_pct``."""
+    a_data_dir = tmp_path / "data"
+    (a_data_dir / "state" / library_verdicts.RESERVED_FILENAME).mkdir(parents=True)
+    with pytest.raises(library_verdicts.ReservedIdsError):
+        library_verdicts.load_reserved_ids(a_data_dir)
+
+
+def test_reserved_ids_raises_on_malformed_json(tmp_path: Path) -> None:
+    a_data_dir = tmp_path / "data"
+    reserved = a_data_dir / "state" / library_verdicts.RESERVED_FILENAME
+    reserved.parent.mkdir(parents=True)
+    reserved.write_text("not valid json", encoding="utf-8")
+    with pytest.raises(library_verdicts.ReservedIdsError):
+        library_verdicts.load_reserved_ids(a_data_dir)
+
+
+def test_reserved_ids_loads_ids_from_a_present_file(tmp_path: Path) -> None:
+    """Opposite-direction control for the three tests above: a genuinely
+    PRESENT, well-formed reserved file still loads its ids -- the fail-
+    closed fix must not overshoot into refusing every reserved file, only a
+    missing/unreadable/malformed one."""
+    a_data_dir = tmp_path / "data"
+    reserved = a_data_dir / "state" / library_verdicts.RESERVED_FILENAME
+    reserved.parent.mkdir(parents=True)
+    reserved.write_text(
+        json.dumps({"tracks": [{"stable_id": "sid-a"}, {"stable_id": "sid-b"}]}),
+        encoding="utf-8",
+    )
+    assert library_verdicts.load_reserved_ids(a_data_dir) == frozenset({"sid-a", "sid-b"})
 
 
 def test_negative_limit_is_rejected(conn, data_dir) -> None:

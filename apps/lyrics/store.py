@@ -60,6 +60,14 @@ from apps.shared.state.schema import LYRIC_OVERRIDES, LYRIC_VERDICTS
 
 TABLE: str = "lyric_verdict"
 
+#: The one prefix every ``source`` value :func:`upsert_stem_coverage_verdict`
+#: ever writes starts with (see ``library_verdicts._bundle_source_label``,
+#: which imports this constant rather than hardcoding its own copy). Used to
+#: recognize a row this backfill itself produced, across every past
+#: ``pipeline_version`` -- the ownership marker that decides whether the
+#: backfill is allowed to overwrite an existing row at all.
+STEM_COVERAGE_SOURCE_PREFIX: str = "stem-coverage:"
+
 #: The 16 columns, in DDL order. Explicit everywhere: ``SELECT *`` would drop
 #: a new column on the floor until somebody noticed the dataclass was narrow.
 COLUMNS: tuple[str, ...] = (
@@ -145,6 +153,32 @@ def _validated_hash(words_content_hash: str | None, stable_id: str) -> str | Non
             f"lowercase hex chars (a sha256 digest); got {words_content_hash!r}"
         )
     return candidate
+
+
+def _row_is_coverage_only(
+    words_content_hash: str | None, override: str | None, source: str | None
+) -> bool:
+    """True iff an EXISTING ``lyric_verdict`` row is fair game for
+    :func:`upsert_stem_coverage_verdict` to overwrite.
+
+    NULL ``words_content_hash`` and NULL ``override`` are NOT enough on
+    their own: an ASR/karaoke "no-lyrics" verdict with no words, a
+    line-synced fetch that has ``n_lines`` but no word alignment, or a
+    legacy-migrated row all fit that test too, and none of them were
+    produced by the stem-coverage backfill. Overwriting one of those loses a
+    real judgement and its provenance, and leaves the row mixing provenance
+    (a ``stem-coverage:`` source next to another pipeline's
+    ``language_iso3``/``n_lines``/``pct_witness_red``). The third condition
+    -- ``source`` starting with :data:`STEM_COVERAGE_SOURCE_PREFIX` -- is
+    what actually proves the row was written by this backfill, across every
+    past ``pipeline_version``.
+    """
+    return (
+        words_content_hash is None
+        and override is None
+        and source is not None
+        and source.startswith(STEM_COVERAGE_SOURCE_PREFIX)
+    )
 
 
 def _guard_tombstone(
@@ -264,7 +298,15 @@ def upsert_stem_coverage_verdict(
     carrying a human override to be excluded from this backfill just like a
     word-level row, not merely have the ``override``/``override_note``
     columns themselves survive underneath an otherwise-refreshed computed
-    verdict. Both conditions are now guarded together, in the SAME
+    verdict. A CLAUDE-review follow-up then pointed out that NULL
+    ``words_content_hash`` and NULL ``override`` together are still not proof
+    a row is coverage-only: an ASR "no-lyrics" verdict, a line-synced fetch
+    with no word alignment, or a legacy-migrated row all pass that same test
+    without ever having been written by this backfill. The guard now also
+    requires ``source`` to start with :data:`STEM_COVERAGE_SOURCE_PREFIX`
+    (see :func:`_row_is_coverage_only`) -- absence of word-level data/override
+    is necessary but not sufficient; ownership of the row is what makes it
+    overwritable. All three conditions are guarded together, in the SAME
     statement.
 
     The backfill's own scan-phase ``get_verdict(...)`` check is NOT atomic
@@ -274,23 +316,26 @@ def upsert_stem_coverage_verdict(
 
     1. Inside the SAME ``stamped_transaction`` (``BEGIN IMMEDIATE`` up
        front, so no other connection can write to this table until this one
-       commits or rolls back), a plain ``SELECT words_content_hash, override``
-       decides whether to proceed at all -- checked BEFORE
-       :func:`apps.shared.state.sync_stamp.stamp_and_log`, so a row already
-       protected costs no changelog entry (a changelog append for a write
-       that did not happen would tell every sync peer this row changed here
-       when it did not).
+       commits or rolls back), a plain
+       ``SELECT words_content_hash, override, source`` plus
+       :func:`_row_is_coverage_only` decides whether to proceed at all --
+       checked BEFORE :func:`apps.shared.state.sync_stamp.stamp_and_log`, so
+       a row already protected costs no changelog entry (a changelog append
+       for a write that did not happen would tell every sync peer this row
+       changed here when it did not).
     2. The write itself is additionally guarded by ``ON CONFLICT ... DO
        UPDATE ... WHERE lyric_verdict.words_content_hash IS NULL AND
-       lyric_verdict.override IS NULL`` in the SAME statement, so even a
-       caller that reached this function through some future path without
-       the step-1 SELECT still cannot clobber a protected row: SQLite leaves
-       a conflicting row that fails the WHERE wholly untouched (no error, no
-       partial write), never upgrading to a full overwrite.
+       lyric_verdict.override IS NULL AND lyric_verdict.source LIKE
+       'stem-coverage:%'`` in the SAME statement, so even a caller that
+       reached this function through some future path without the step-1
+       SELECT still cannot clobber a protected OR foreign-source row: SQLite
+       leaves a conflicting row that fails the WHERE wholly untouched (no
+       error, no partial write), never upgrading to a full overwrite.
 
     Returns True if the row was written (a fresh insert, or an update to a
-    still-coverage-only, still-unoverridden row), False if a conflicting row
-    already carries ``words_content_hash`` or ``override`` and was left
+    still-coverage-only, still-unoverridden, backfill-owned row), False if a
+    conflicting row already carries ``words_content_hash`` or ``override``,
+    or was never written by this backfill in the first place, and was left
     untouched.
 
     Deliberately narrow: no ``language_iso3``/``n_words``/``n_lines``/
@@ -306,14 +351,22 @@ def upsert_stem_coverage_verdict(
             f"pipeline_version is required for {stable_id!r}: a row whose hash "
             "cannot be traced to the code that produced it is untraceable."
         )
+    if not source.startswith(STEM_COVERAGE_SOURCE_PREFIX):
+        raise LyricStoreError(
+            f"source for {stable_id!r} must start with "
+            f"{STEM_COVERAGE_SOURCE_PREFIX!r} (the ownership marker the "
+            f"conflict guard in this writer relies on to recognize a row it "
+            f"is allowed to overwrite later); got {source!r}"
+        )
     machine_id = sync_stamp.ensure_local_machine(conn)
     with sync_stamp.stamped_transaction(conn):
         _guard_tombstone(conn, stable_id, resurrect=False)
         existing = conn.execute(
-            f"SELECT words_content_hash, override FROM {TABLE} WHERE stable_id = ?",
+            f"SELECT words_content_hash, override, source FROM {TABLE} "
+            "WHERE stable_id = ?",
             (stable_id,),
         ).fetchone()
-        if existing is not None and (existing[0] is not None or existing[1] is not None):
+        if existing is not None and not _row_is_coverage_only(*existing):
             return False
         stamp = sync_stamp.stamp_and_log(conn, TABLE, (stable_id,), machine_id)
         cursor = conn.execute(
@@ -333,11 +386,14 @@ def upsert_stem_coverage_verdict(
                 updated_at = excluded.updated_at,
                 origin_device_id = excluded.origin_device_id,
                 deleted_at = NULL
-            WHERE {TABLE}.words_content_hash IS NULL AND {TABLE}.override IS NULL
+            WHERE {TABLE}.words_content_hash IS NULL
+              AND {TABLE}.override IS NULL
+              AND {TABLE}.source LIKE ?
             """,
             (
                 stable_id, verdict, coverage_pct, source, pipeline_version,
                 computed_at, stamp.updated_at, stamp.origin_device_id,
+                f"{STEM_COVERAGE_SOURCE_PREFIX}%",
             ),
         )
         return cursor.rowcount > 0
@@ -504,6 +560,7 @@ def verdicts_by_source(
 
 __all__ = [
     "COLUMNS",
+    "STEM_COVERAGE_SOURCE_PREFIX",
     "TABLE",
     "LyricStoreError",
     "LyricVerdict",
@@ -513,6 +570,7 @@ __all__ = [
     "list_verdicts",
     "set_override",
     "tombstone",
+    "upsert_stem_coverage_verdict",
     "upsert_verdict",
     "verdict_absence_detail",
     "verdicts_by_source",
