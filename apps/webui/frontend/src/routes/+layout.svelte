@@ -12,6 +12,7 @@
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import SetupOverlay from '$lib/components/setup/SetupOverlay.svelte';
 	import AccountOverlay from '$lib/components/account/AccountOverlay.svelte';
+	import SignInOverlay from '$lib/components/account/SignInOverlay.svelte';
 	import HotkeysOverlay from '$lib/components/rb/hotkeys/HotkeysOverlay.svelte';
 	import { installHotkeysOverlayHotkeys } from '$lib/components/rb/hotkeys/install-hotkeys-overlay';
 	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
@@ -211,6 +212,7 @@
      above: the user bauble is drawn on /performance too, and its Account door
      must open something there. -->
 <AccountOverlay />
+<SignInOverlay />
 <!-- Hotkeys overlay (LIBUX-04): "/" hold and "?" toggle. Mounted at the root
      for the same reason SettingsOverlay is: /performance bypasses the app
      shell, and the cheatsheet has to work there too. -->
