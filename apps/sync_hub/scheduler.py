@@ -31,8 +31,9 @@ Not carried over from 9a1438b8: cache eviction, which belongs to the
 ``apps.cloud`` policy work (PR #1462).
 
 CLOUDSYNC-14 (issue #2656 part 1): refuse while ``app_posture=gig`` or any
-deck is playing unless Force sync (part 2). CLOUDSYNC-09: join the
-PERFMODE-04 shed list.
+deck is playing unless Force sync (part 2). CLOUDSYNC-09 part 1 (issue
+#2658): refuse under elevated machine pressure or session xruns while a deck
+is playing; coalesce owed rounds via ``scheduler_owed`` and PERFMODE-04 shed.
 """
 
 from __future__ import annotations
@@ -49,7 +50,13 @@ from typing import Any, Literal
 from apps.shared.state import machine_identity
 from apps.shared.sync_runtime_gates import (
     DEFER_REASON_GIG,
+    DEFER_REASON_PRESSURE_SHED,
     refuse_sync_round,
+)
+from apps.sync_hub.scheduler_owed import (
+    clear_scheduler_owed,
+    mark_scheduler_owed,
+    scheduler_owed,
 )
 from apps.sync_hub import client as sync_client
 from apps.sync_hub import config as sync_config
@@ -86,6 +93,13 @@ RoundOutcome = Literal["ok", "inconclusive", "error", "halted", "busy", "deferre
 SyncFn = Callable[[Path, str, "str | None"], sync_client.SyncResult]
 
 UiMirrorProvider = Callable[[], Mapping[str, Any] | None]
+PressureReader = Callable[[], Mapping[str, Any]]
+
+
+def _default_pressure_reader() -> Mapping[str, Any]:
+    from apps.webui.server.machine_pressure import read_machine_pressure
+
+    return read_machine_pressure()
 
 
 def next_delay_s(interval_s: float, consecutive_failures: int, max_backoff_s: float) -> float:
@@ -108,12 +122,14 @@ class CloudSyncScheduler:
         sync_fn: SyncFn = _production_sync,
         env: Mapping[str, str] | None = None,
         ui_mirror_provider: UiMirrorProvider | None = None,
+        pressure_reader: PressureReader | None = None,
     ) -> None:
         self._data_dir = Path(data_dir)
         self._cfg = cfg
         self._sync_fn = sync_fn
         self._env = env
         self._ui_mirror_provider = ui_mirror_provider or (lambda: None)
+        self._pressure_reader = pressure_reader or _default_pressure_reader
         # Shared with POST /cloudsync/sync (Sync now): one sync per data dir.
         self._round_lock = sync_lock_for(self._data_dir)
         self._next_due = 0.0
@@ -126,17 +142,26 @@ class CloudSyncScheduler:
         self.busy_refusals = 0
         self.deferred_gig = 0
         self.deferred_deck_playing = 0
+        self.deferred_pressure_shed = 0
         self.halted_reason: str | None = None
 
     # ----- one round (worker thread) --------------------------------------
 
     def run_round(self, hub_url: str, name: str | None) -> RoundOutcome:
         """Run one journaled sync, unless one is already in flight."""
-        reason = refuse_sync_round(self._data_dir, self._ui_mirror_provider(), force=False)
+        reason = refuse_sync_round(
+            self._data_dir,
+            self._ui_mirror_provider(),
+            force=False,
+            pressure_payload=self._pressure_reader(),
+        )
         if reason is not None:
             sync_status.journal_deferred(self._data_dir, reason)
             if reason == DEFER_REASON_GIG:
                 self.deferred_gig += 1
+            elif reason == DEFER_REASON_PRESSURE_SHED:
+                self.deferred_pressure_shed += 1
+                mark_scheduler_owed(self._data_dir)
             else:
                 self.deferred_deck_playing += 1
             self._next_due = time.monotonic() + self._cfg.INTERVAL_S
@@ -146,7 +171,10 @@ class CloudSyncScheduler:
             return "busy"
         try:
             self.rounds_started += 1
-            return self._sync_once(hub_url, name)
+            outcome = self._sync_once(hub_url, name)
+            if outcome in ("ok", "inconclusive"):
+                clear_scheduler_owed(self._data_dir)
+            return outcome
         finally:
             self.rounds_completed += 1
             self._next_due = time.monotonic() + next_delay_s(
@@ -219,6 +247,14 @@ class CloudSyncScheduler:
                     if in_flight is not None and in_flight.done():
                         in_flight.result()
                         in_flight = None
+                    if scheduler_owed(self._data_dir):
+                        wake_reason = refuse_sync_round(
+                            self._data_dir,
+                            self._ui_mirror_provider(),
+                            pressure_payload=self._pressure_reader(),
+                        )
+                        if wake_reason is None:
+                            self._next_due = time.monotonic()
                     if in_flight is None and time.monotonic() >= self._next_due:
                         in_flight = asyncio.create_task(
                             asyncio.to_thread(self.run_round, hub_url, effective.machine_name)

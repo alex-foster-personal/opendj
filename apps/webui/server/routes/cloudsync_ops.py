@@ -28,6 +28,7 @@ a stored default; the field stays so an explicit URL always wins.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -40,6 +41,7 @@ from apps.shared.state.machine_identity import MachineIdentityError, is_hub_from
 from apps.shared.sync_runtime_gates import refuse_sync_round
 from apps.sync_hub import client as sync_client
 from apps.sync_hub import enrollment_credentials, maintenance, maintenance_enroll
+from apps.sync_hub.scheduler_owed import mark_scheduler_owed
 from apps.sync_hub.single_flight import sync_lock_for
 from apps.webui.server.local_operator import local_operator_refusal
 
@@ -160,6 +162,12 @@ class GrantIn(BaseModel):
         le=enrollment_credentials.GRANT_TTL_MAX_S,
         description="how long the grant stays redeemable (CLI --ttl-seconds)",
     )
+
+
+class SchedulerResumeOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    ok: bool
 
 
 class GrantOut(BaseModel):
@@ -296,6 +304,22 @@ def _sync_out(result: sync_client.SyncResult) -> SyncRunOut:
 
 
 # ----- routes --------------------------------------------------------------
+
+
+@router.post(
+    "/scheduler/resume-owed",
+    response_model=SchedulerResumeOut,
+    responses=LOCAL_ONLY_RESPONSE,
+    dependencies=[Depends(require_local_operator)],
+)
+def resume_scheduler_owed(request: Request) -> SchedulerResumeOut:
+    """Mark a deferred scheduler round owed and wake the in-process scheduler."""
+    data_dir = data_dir_for_request(request)
+    mark_scheduler_owed(data_dir)
+    sched = getattr(request.app.state, "sync_hub_scheduler", None)
+    if sched is not None:
+        sched._next_due = time.monotonic()
+    return SchedulerResumeOut(ok=True)
 
 
 @router.post(
