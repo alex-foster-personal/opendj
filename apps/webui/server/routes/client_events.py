@@ -18,7 +18,9 @@ from ..client_logs import DEFAULT_LOG_DIR, append_json_record, daily_log_path
 router = APIRouter(prefix="/client-events", tags=["client-events"])
 log = logging.getLogger(__name__)
 
-_PERF_SPAN_NAMES: frozenset[str] = frozenset({"login-submit-to-library-usable"})
+_PERF_SPAN_NAMES: frozenset[str] = frozenset(
+    {"login-submit-to-library-usable", "open-to-library-rows"}
+)
 
 
 class PageViewIn(BaseModel):
