@@ -8,6 +8,7 @@
 		CHIP_HREF,
 		CHIP_POLL_MS,
 		STATUS_CHANGED_EVENT,
+		chipAriaLabel,
 		chipFullLabel,
 		chipShortLabel,
 		chipState as chipStateOf,
@@ -24,6 +25,7 @@
 	const fullLabel = $derived(chipFullLabel(status));
 	const shortLabel = $derived(chipShortLabel(status));
 	const title = $derived(chipTitle(status, loadError));
+	const ariaLabel = $derived(chipAriaLabel(status, loadError));
 
 	async function load(): Promise<void> {
 		try {
@@ -58,7 +60,7 @@
 		class:ok={chipState() === 'ok'}
 		class:inconclusive={chipState() === 'inconclusive'}
 		title={title}
-		aria-label="CloudSync status"
+		aria-label={ariaLabel}
 	>
 		<svg
 			class="chip-icon"

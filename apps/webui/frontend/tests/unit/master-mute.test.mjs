@@ -301,3 +301,90 @@ test('teardown releases the mute node but keeps the mute engaged', () => {
 		'if dispose unmutes then a route remount hands a headless agent its audio back'
 	);
 });
+
+//-----------------------------------------------------------------------------
+// stored choice (UXR-01): a user's mute survives a reload
+//-----------------------------------------------------------------------------
+
+function fakeStorage(initial = {}) {
+	const data = { ...initial };
+	return {
+		data,
+		getItem: (key) => (key in data ? data[key] : null),
+		setItem: (key, value) => {
+			data[key] = String(value);
+		},
+		removeItem: (key) => {
+			delete data[key];
+		}
+	};
+}
+
+async function freshModuleWith(search, storage) {
+	globalThis.window = { location: { search }, localStorage: storage };
+	return loadTypeScriptModule('src/lib/player/master-mute.svelte.ts');
+}
+
+test('a mute stored before a reload is still engaged after it, with no URL param', async () => {
+	try {
+		const fresh = await freshModuleWith('', fakeStorage({ [mute.MASTER_MUTE_STORAGE_KEY]: '1' }));
+		assert.equal(fresh.isMasterMuted(), true, 'if a stored mute is dropped then a reload brings the audio back unasked');
+	} finally {
+		delete globalThis.window;
+	}
+});
+
+test('muting stores exactly 1 and unmuting removes the key, so a reload after unmute is audible', async () => {
+	const storage = fakeStorage();
+	try {
+		const fresh = await freshModuleWith('', storage);
+		fresh.setMasterMuted(true);
+		assert.deepEqual(storage.data, { [fresh.MASTER_MUTE_STORAGE_KEY]: '1' });
+		fresh.setMasterMuted(false);
+		assert.deepEqual(storage.data, {}, 'if unmute leaves a value behind then a later reload can come back muted');
+		const reloaded = await freshModuleWith('', storage);
+		assert.equal(reloaded.isMasterMuted(), false);
+	} finally {
+		delete globalThis.window;
+	}
+});
+
+test('only a stored exact 1 mutes; any other stored value starts audible', () => {
+	for (const raw of ['0', 'true', 'TRUE', '', ' 1', '1x', 'null']) {
+		assert.equal(
+			mute.readStoredMasterMuted(fakeStorage({ [mute.MASTER_MUTE_STORAGE_KEY]: raw })),
+			false,
+			`if a stored ${JSON.stringify(raw)} mutes then a corrupt value silences the headed client`
+		);
+	}
+	assert.equal(mute.readStoredMasterMuted(fakeStorage()), false);
+	assert.equal(mute.readStoredMasterMuted(null), false);
+});
+
+test('a stored unmute never overrides the ?muted=1 belt', async () => {
+	try {
+		const fresh = await freshModuleWith('?muted=1', fakeStorage());
+		assert.equal(fresh.isMasterMuted(), true, 'if storage can veto ?muted=1 then headless agents play out loud');
+	} finally {
+		delete globalThis.window;
+	}
+});
+
+test('storage that throws starts audible, keeps the in-memory mute, and says so', async () => {
+	const boom = () => {
+		throw new Error('SecurityError');
+	};
+	const warnings = [];
+	const warn = console.warn;
+	console.warn = (message) => warnings.push(message);
+	try {
+		const fresh = await freshModuleWith('', { getItem: boom, setItem: boom, removeItem: boom });
+		assert.equal(fresh.isMasterMuted(), false);
+		fresh.setMasterMuted(true);
+		assert.equal(fresh.isMasterMuted(), true, 'if a storage failure blocks the mute then private mode cannot mute at all');
+		assert.equal(warnings.length, 2, `expected a read and a write warning, got ${JSON.stringify(warnings)}`);
+	} finally {
+		console.warn = warn;
+		delete globalThis.window;
+	}
+});

@@ -2,23 +2,31 @@
 
 The application integrator mounts :data:`router` at ``/api/v1``.  The router
 does not run Demucs or mutate files: every request reloads and validates the
-stored artifact before it exposes either the manifest or a WAV response.
+stored artifact before it exposes either the manifest or a container-typed audio response.
 The manifest GET answers HTTP 200 unavailable when no bundle exists; the
 part GET still 404s when there is no file to stream.
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
 import stat
+import threading
 from collections.abc import Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from io import BufferedReader
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
+
+from apps.cloud import stem_hydration, stem_index
+from apps.cloud.asset_store import AssetS3Client
+from apps.cloud.config import CloudConfig
 
 from ..stem_artifacts import (
     DEFAULT_STEMS_DIR,
@@ -29,6 +37,44 @@ from ..stem_artifacts import (
 )
 
 router = APIRouter(prefix="/tracks", tags=["stems"])
+
+#: How long the PART route waits for an in-flight hydration before answering
+#: "still fetching" instead of the bytes. The MANIFEST route never waits at
+#: all (D2): it only enqueues and returns, so a deck load's probe is never
+#: held for a 4-part R2 fetch. A part request means the caller already
+#: decided it wants stem bytes for THIS track, so waiting here (bounded) is
+#: the right tradeoff -- see PR body "which request waits on what".
+STEM_PART_HYDRATE_WAIT_S: float = 30.0
+
+_HYDRATE_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="stem-hydrate")
+_INFLIGHT_LOCK = threading.Lock()
+_INFLIGHT: dict[str, Future] = {}
+#: stable_id -> reason, for a bundle the index says exists but whose last
+#: hydration attempt failed. Consulted BEFORE re-enqueueing so a hot loop of
+#: part requests does not hammer R2 with the same doomed fetch, and so a
+#: request can fail loud immediately instead of waiting out the full timeout
+#: again for an error already known.
+_LAST_HYDRATE_ERROR: dict[str, str] = {}
+
+STEM_HYDRATION_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
+    502: {
+        "description": (
+            "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when "
+            "the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT "
+            "when the local index cache is present but unreadable"
+        )
+    }
+}
+
+STEM_PART_RESPONSES: dict[int | str, dict[str, Any]] = {
+    **STEM_HYDRATION_ERROR_RESPONSES,
+    503: {
+        "description": (
+            "STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within "
+            "STEM_PART_HYDRATE_WAIT_S; retry the request"
+        )
+    },
+}
 
 
 class StemPartOut(BaseModel):
@@ -61,9 +107,14 @@ class StemUnavailableOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     status: Literal["unavailable"] = "unavailable"
-    code: Literal["STEM_BUNDLE_NOT_FOUND"] = "STEM_BUNDLE_NOT_FOUND"
+    code: Literal["STEM_BUNDLE_NOT_FOUND", "STEM_BUNDLE_HYDRATING"] = "STEM_BUNDLE_NOT_FOUND"
     stable_id: str
     message: str
+    #: True while a background R2 hydration for this bundle is in flight.
+    #: Distinct from a genuinely absent bundle (``hydrating=False``): a
+    #: client that cares can poll again shortly rather than treating this
+    #: the same as "no stems exist for this track".
+    hydrating: bool = False
 
 
 def _stems_dir(request: Request) -> Path:
@@ -102,6 +153,145 @@ def _load_or_http_error(stable_id: str, request: Request) -> StemBundle:
 
 def _unavailable_out(stable_id: str, exc: StemBundleNotFoundError) -> StemUnavailableOut:
     return StemUnavailableOut(stable_id=stable_id, message=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# On-demand R2 hydration (ADR-0024). Wiring is OPTIONAL: a machine with no
+# CloudConfig / S3 client bound to app.state (local mode, or no R2 creds)
+# simply never enqueues -- the routes fall back to the pre-existing
+# unavailable/404 behavior unchanged. See apps.webui.server.app_wiring.
+# ---------------------------------------------------------------------------
+
+
+def _hydration_deps(request: Request) -> tuple[CloudConfig, AssetS3Client, Path] | None:
+    cfg = getattr(request.app.state, "stem_hydration_cfg", None)
+    s3 = getattr(request.app.state, "stem_hydration_s3", None)
+    data_dir = getattr(request.app.state, "stem_hydration_data_dir", None)
+    if cfg is None or s3 is None or data_dir is None:
+        return None
+    return cfg, s3, Path(data_dir)
+
+
+def _run_hydration(
+    stable_id: str,
+    *,
+    cfg: CloudConfig,
+    s3: AssetS3Client,
+    index: stem_index.StemAssetIndex,
+    data_dir: Path,
+    stems_dir: Path,
+) -> stem_hydration.HydrationOutcome:
+    try:
+        outcome = stem_hydration.hydrate_one(
+            stable_id,
+            data_dir=data_dir,
+            cfg=cfg,
+            s3=s3,
+            index=index,
+            stems_dir=stems_dir,
+            skip_reserved=False,  # on-demand deck load NEVER skips reserved ids (D5)
+        )
+    except Exception as exc:
+        with _INFLIGHT_LOCK:
+            _LAST_HYDRATE_ERROR[stable_id] = str(exc)
+        raise
+    with _INFLIGHT_LOCK:
+        if outcome.status == "error":
+            _LAST_HYDRATE_ERROR[stable_id] = outcome.reason or "hydration failed"
+        else:
+            _LAST_HYDRATE_ERROR.pop(stable_id, None)
+    return outcome
+
+
+def _enqueue_hydration(stable_id: str, request: Request) -> Future | None:
+    """Start background hydration if R2 has this bundle indexed.
+
+    Returns the in-flight future, or ``None`` when there is nothing to
+    hydrate -- either hydration is not configured on this machine, or the
+    bundle is not in the (local-cache copy of the) R2 index. The index
+    lookup here reads ONLY the local cache file (no network), so this is
+    always cheap enough to call from the manifest route without blocking it.
+    """
+    deps = _hydration_deps(request)
+    if deps is None:
+        return None
+    cfg, s3, data_dir = deps
+    cache_path = stem_index.local_index_cache_path(data_dir)
+    if not cache_path.is_file():
+        with contextlib.suppress(Exception):
+            # recorded; consulted below via stem_index.refresh_error
+            stem_index.refresh_local_cache_from_r2_throttled(cfg, s3, data_dir)
+    with _INFLIGHT_LOCK:
+        existing = _INFLIGHT.get(stable_id)
+        if existing is not None and not existing.done():
+            return existing
+        # Corrupt cache must fail loud on the index-dependent miss path only.
+        # A bundle that already loads locally never reaches this code.
+        try:
+            index = stem_index.load_cached_index(data_dir)
+        except stem_index.StemIndexError as exc:
+            _raise_stem_index_corrupt(exc, data_dir)
+        if stable_id not in index:
+            if not cache_path.is_file():
+                refresh_err = stem_index.refresh_error(data_dir)
+                if refresh_err is not None:
+                    _raise_index_refresh_failed(refresh_err)
+            return None
+        stems_dir = _stems_dir(request)
+        future = _HYDRATE_EXECUTOR.submit(
+            _run_hydration,
+            stable_id,
+            cfg=cfg,
+            s3=s3,
+            index=index,
+            data_dir=data_dir,
+            stems_dir=stems_dir,
+        )
+        _INFLIGHT[stable_id] = future
+        return future
+
+
+def _recorded_hydration_error(stable_id: str) -> str | None:
+    with _INFLIGHT_LOCK:
+        return _LAST_HYDRATE_ERROR.get(stable_id)
+
+
+def _raise_hydration_failed(reason: str) -> None:
+    """Fail LOUD, never silent-empty: the index said this bundle exists, and
+    hydration could not produce it. A caller must never read this the same
+    as "no bundle anywhere" (HTTP 200 unavailable / 404) -- see the storage
+    view's fail-loud requirement (ADR-0024)."""
+    raise HTTPException(
+        status_code=502,
+        detail={"code": "STEM_BUNDLE_HYDRATION_FAILED", "message": reason},
+    )
+
+
+def _raise_stem_index_corrupt(exc: stem_index.StemIndexError, data_dir: Path) -> None:
+    """Fail loud when the local index cache exists but cannot be read.
+
+    Only reached on the index-dependent miss path (no local bundle yet).
+    A bundle that already loads locally never consults the index cache.
+    """
+    raise HTTPException(
+        status_code=502,
+        detail={
+            "code": "STEM_INDEX_CORRUPT",
+            "message": str(exc),
+            "path": str(stem_index.local_index_cache_path(data_dir)),
+        },
+    ) from exc
+
+
+def _raise_index_refresh_failed(reason: str) -> None:
+    """Fail loud when a cold-cache single-flight refresh from R2 failed: the
+    caller cannot tell 'nothing published yet' from 'refresh error' unless
+    this is surfaced explicitly, never silently folded into the ordinary
+    unavailable/404 empty state."""
+    raise HTTPException(
+        status_code=502,
+        detail={"code": "STEM_INDEX_REFRESH_FAILED", "message": reason},
+    )
 
 
 def _manifest_out(bundle: StemBundle) -> StemManifestOut:
@@ -157,11 +347,19 @@ def _stream_file(source: BufferedReader) -> Iterator[bytes]:
 @router.get(
     "/{stable_id}/stems",
     response_model=StemManifestOut | StemUnavailableOut,
+    responses=STEM_HYDRATION_ERROR_RESPONSES,
 )
 def get_stem_manifest(
     stable_id: str, request: Request
 ) -> StemManifestOut | StemUnavailableOut:
-    """Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists."""
+    """Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.
+
+    Never blocks on R2: if the bundle is missing locally but the R2 index
+    has it, this ENQUEUES a background hydration and returns immediately
+    with ``hydrating=True`` (D2). A prior hydration attempt that already
+    failed is reported LOUD as HTTP 502, never silently folded into the
+    ordinary "no bundle" empty state.
+    """
     try:
         bundle = load_stem_bundle(
             stable_id,
@@ -169,19 +367,68 @@ def get_stem_manifest(
             roots=_stem_roots(request),
         )
     except StemBundleNotFoundError as exc:
+        recorded_error = _recorded_hydration_error(stable_id)
+        if recorded_error is not None:
+            _raise_hydration_failed(recorded_error)
+        future = _enqueue_hydration(stable_id, request)
+        if future is not None:
+            return StemUnavailableOut(
+                stable_id=stable_id,
+                code="STEM_BUNDLE_HYDRATING",
+                message="bundle not local yet; fetching from R2",
+                hydrating=True,
+            )
         return _unavailable_out(stable_id, exc)
     except StemArtifactError as exc:
         raise HTTPException(
             status_code=422,
             detail={"code": "STEM_ARTIFACT_INVALID", "message": str(exc)},
         ) from exc
+    stem_hydration.OPEN_DECKS.mark_served(stable_id)
     return _manifest_out(bundle)
 
 
-@router.get("/{stable_id}/stems/{part}", response_class=StreamingResponse)
+@router.get(
+    "/{stable_id}/stems/{part}",
+    response_class=StreamingResponse,
+    responses=STEM_PART_RESPONSES,
+)
 def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingResponse:
-    """Stream one validated WAV stem from its already-verified file handle."""
-    bundle = _load_or_http_error(stable_id, request)
+    """Stream one validated stem part using the bundle's container media type.
+
+    Unlike the manifest route, this one DOES wait (bounded) for an in-flight
+    hydration: a part request means the caller already decided it wants
+    these bytes. A prior failure is surfaced immediately as HTTP 502; a
+    fresh attempt that does not finish within
+    :data:`STEM_PART_HYDRATE_WAIT_S` answers HTTP 503 so the caller can
+    retry rather than hang forever on this one request.
+    """
+    try:
+        bundle = _load_or_http_error(stable_id, request)
+    except HTTPException as http_exc:
+        if http_exc.status_code != 404:
+            raise
+        recorded_error = _recorded_hydration_error(stable_id)
+        if recorded_error is not None:
+            _raise_hydration_failed(recorded_error)
+        future = _enqueue_hydration(stable_id, request)
+        if future is None:
+            raise
+        try:
+            outcome = future.result(timeout=STEM_PART_HYDRATE_WAIT_S)
+        except FutureTimeoutError:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "STEM_BUNDLE_HYDRATING",
+                    "message": "still fetching from R2; retry shortly",
+                },
+            ) from None
+        except Exception as exc:  # noqa: BLE001 - any escaping exception from the hydration future must still answer the same 502 contract, never an unclassified 500
+            _raise_hydration_failed(str(exc))
+        if outcome.status == "error":
+            _raise_hydration_failed(outcome.reason or "hydration failed")
+        bundle = _load_or_http_error(stable_id, request)
     if part not in bundle.parts:
         raise HTTPException(
             status_code=404,
@@ -200,6 +447,7 @@ def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingRespo
             status_code=422,
             detail={"code": "STEM_ARTIFACT_INVALID", "message": str(exc)},
         ) from exc
+    stem_hydration.OPEN_DECKS.mark_served(stable_id)
     return StreamingResponse(
         _stream_file(source),
         media_type=bundle.media_type,
@@ -210,4 +458,32 @@ def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingRespo
     )
 
 
-__all__ = ["StemManifestOut", "StemPartOut", "StemUnavailableOut", "router"]
+@router.post("/{stable_id}/stems/deck-open")
+def mark_stem_deck_open(stable_id: str) -> dict[str, str]:
+    """A deck has this bundle open. Protects it from eviction until closed.
+
+    Agent-native parity for the deck-load lifecycle: there is no other
+    request boundary that tells the eviction path "a deck is playing this
+    right now, do not free its bundle regardless of recency" (D3). Refcounted
+    (:class:`apps.cloud.stem_hydration.OpenDeckRegistry`), so two open
+    references (e.g. two decks on the same track) both need closing.
+    """
+    stem_hydration.OPEN_DECKS.mark_open(stable_id)
+    return {"status": "ok", "stable_id": stable_id, "open": "true"}
+
+
+@router.post("/{stable_id}/stems/deck-close")
+def mark_stem_deck_closed(stable_id: str) -> dict[str, str]:
+    """Release one deck-open reference. See :func:`mark_stem_deck_open`."""
+    stem_hydration.OPEN_DECKS.mark_closed(stable_id)
+    return {"status": "ok", "stable_id": stable_id, "open": "false"}
+
+
+__all__ = [
+    "STEM_HYDRATION_ERROR_RESPONSES",
+    "STEM_PART_HYDRATE_WAIT_S",
+    "StemManifestOut",
+    "StemPartOut",
+    "StemUnavailableOut",
+    "router",
+]

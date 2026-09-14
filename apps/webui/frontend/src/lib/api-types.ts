@@ -3761,6 +3761,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stems/bulk-hydrate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk Hydrate Stems
+         * @description Agent-native parity for ``python -m apps.stems bulk-hydrate`` (ADR-0024).
+         *
+         *     Hydrates as many bundles as fit ``budget_bytes``, skipping the
+         *     reservation guard unless ``include_reserved`` is explicitly true.
+         */
+        post: operations["bulk_hydrate_stems_api_v1_stems_bulk_hydrate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stems/estimate": {
         parameters: {
             query?: never;
@@ -3826,6 +3849,26 @@ export interface paths {
          *     the identical flow (AGENT-NATIVE PARITY).
          */
         post: operations["generate_api_v1_stems_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stems/index/build": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Build Stem Index
+         * @description Agent-native parity for ``python -m apps.stems build-index`` (ADR-0024).
+         */
+        post: operations["build_stem_index_api_v1_stems_index_build_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4555,10 +4598,62 @@ export interface paths {
         /**
          * Get Stem Manifest
          * @description Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.
+         *
+         *     Never blocks on R2: if the bundle is missing locally but the R2 index
+         *     has it, this ENQUEUES a background hydration and returns immediately
+         *     with ``hydrating=True`` (D2). A prior hydration attempt that already
+         *     failed is reported LOUD as HTTP 502, never silently folded into the
+         *     ordinary "no bundle" empty state.
          */
         get: operations["get_stem_manifest_api_v1_tracks__stable_id__stems_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/stems/deck-close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Stem Deck Closed
+         * @description Release one deck-open reference. See :func:`mark_stem_deck_open`.
+         */
+        post: operations["mark_stem_deck_closed_api_v1_tracks__stable_id__stems_deck_close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/stems/deck-open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Stem Deck Open
+         * @description A deck has this bundle open. Protects it from eviction until closed.
+         *
+         *     Agent-native parity for the deck-load lifecycle: there is no other
+         *     request boundary that tells the eviction path "a deck is playing this
+         *     right now, do not free its bundle regardless of recency" (D3). Refcounted
+         *     (:class:`apps.cloud.stem_hydration.OpenDeckRegistry`), so two open
+         *     references (e.g. two decks on the same track) both need closing.
+         */
+        post: operations["mark_stem_deck_open_api_v1_tracks__stable_id__stems_deck_open_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4574,7 +4669,14 @@ export interface paths {
         };
         /**
          * Get Stem File
-         * @description Stream one validated WAV stem from its already-verified file handle.
+         * @description Stream one validated stem part using the bundle's container media type.
+         *
+         *     Unlike the manifest route, this one DOES wait (bounded) for an in-flight
+         *     hydration: a part request means the caller already decided it wants
+         *     these bytes. A prior failure is surfaced immediately as HTTP 502; a
+         *     fresh attempt that does not finish within
+         *     :data:`STEM_PART_HYDRATE_WAIT_S` answers HTTP 503 so the caller can
+         *     retry rather than hang forever on this one request.
          */
         get: operations["get_stem_file_api_v1_tracks__stable_id__stems__part__get"];
         put?: never;
@@ -10602,6 +10704,53 @@ export interface components {
             /** Wire Version */
             wire_version: number;
         };
+        /**
+         * StemBulkHydrateIn
+         * @description Agent-native parity body for ``python -m apps.stems bulk-hydrate``.
+         */
+        StemBulkHydrateIn: {
+            /** Budget Bytes */
+            budget_bytes: number;
+            /** Data Dir */
+            data_dir?: string | null;
+            /**
+             * Include Reserved
+             * @default false
+             */
+            include_reserved: boolean;
+            /** Playlist */
+            playlist?: string | null;
+            /**
+             * Refresh Index
+             * @default false
+             */
+            refresh_index: boolean;
+            /** Stable Ids */
+            stable_ids?: string[] | null;
+        };
+        /** StemBulkHydrateOut */
+        StemBulkHydrateOut: {
+            /** Bytes Fetched */
+            bytes_fetched: number;
+            /** Fetched */
+            fetched: components["schemas"]["StemBulkHydrateOutcomeOut"][];
+            /** Skipped */
+            skipped: components["schemas"]["StemBulkHydrateOutcomeOut"][];
+        };
+        /** StemBulkHydrateOutcomeOut */
+        StemBulkHydrateOutcomeOut: {
+            /**
+             * Bytes Fetched
+             * @default 0
+             */
+            bytes_fetched: number;
+            /** Reason */
+            reason?: string | null;
+            /** Stable Id */
+            stable_id: string;
+            /** Status */
+            status: string;
+        };
         /** StemHydrateIn */
         StemHydrateIn: {
             /** Data Dir */
@@ -10613,6 +10762,27 @@ export interface components {
             dry_run: boolean;
             /** Manifest Path */
             manifest_path: string;
+        };
+        /** StemIndexBuildIn */
+        StemIndexBuildIn: {
+            /** Data Dir */
+            data_dir?: string | null;
+            /** Journal Path */
+            journal_path?: string | null;
+            /**
+             * Publish
+             * @default false
+             */
+            publish: boolean;
+        };
+        /** StemIndexBuildOut */
+        StemIndexBuildOut: {
+            /** Bundles */
+            bundles: number;
+            /** Files */
+            files: number;
+            /** Published */
+            published: boolean;
         };
         /**
          * StemManifestOut
@@ -10691,9 +10861,14 @@ export interface components {
             /**
              * Code
              * @default STEM_BUNDLE_NOT_FOUND
-             * @constant
+             * @enum {string}
              */
-            code: "STEM_BUNDLE_NOT_FOUND";
+            code: "STEM_BUNDLE_NOT_FOUND" | "STEM_BUNDLE_HYDRATING";
+            /**
+             * Hydrating
+             * @default false
+             */
+            hydrating: boolean;
             /** Message */
             message: string;
             /** Stable Id */
@@ -19034,6 +19209,53 @@ export interface operations {
             };
         };
     };
+    bulk_hydrate_stems_api_v1_stems_bulk_hydrate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StemBulkHydrateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemBulkHydrateOut"];
+                };
+            };
+            /** @description Invalid request, missing R2 credentials, or no published stem bundle index in R2 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Local stem bundle index cache is present but unreadable (STEM_INDEX_CORRUPT) */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     estimate_api_v1_stems_estimate_get: {
         parameters: {
             query: {
@@ -19126,6 +19348,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    build_stem_index_api_v1_stems_index_build_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StemIndexBuildIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemIndexBuildOut"];
                 };
             };
             /** @description Validation Error */
@@ -20455,6 +20710,79 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT when the local index cache is present but unreadable */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mark_stem_deck_closed_api_v1_tracks__stable_id__stems_deck_close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_stem_deck_open_api_v1_tracks__stable_id__stems_deck_open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     get_stem_file_api_v1_tracks__stable_id__stems__part__get: {
@@ -20484,6 +20812,20 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, or STEM_INDEX_CORRUPT when the local index cache is present but unreadable */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

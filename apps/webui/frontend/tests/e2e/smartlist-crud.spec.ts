@@ -90,7 +90,7 @@ test.describe('smartlist tree CRUD', () => {
 			expect(afterRename.some((row) => row.name === base)).toBeFalsy();
 
 			await _smartlistRow(page, renamed).click({ button: 'right' });
-			await page.getByRole('menuitem', { name: 'Duplicate' }).click();
+			await page.getByRole('menuitem', { name: 'Duplicate', exact: true }).click();
 			await expect(page.locator(ROW)).toHaveCount(2, { timeout: 30_000 });
 			const afterDup = await _smartlists(page);
 			expect(afterDup).toHaveLength(2);
