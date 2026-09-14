@@ -20,6 +20,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_LAUNCH_JSON = REPO_ROOT / ".claude" / "launch.json"
@@ -30,6 +31,8 @@ EXIT_UNKNOWN = 2
 
 _SUBSTITUTION = re.compile(r"\$\{(?P<kind>[^:}]+)(?::(?P<name>[^}]+))?\}")
 _DECIMAL_INTEGER = re.compile(r"^[0-9]+$")
+_SCRIPT_EXTENSIONS = (".py", ".js", ".mjs", ".ts", ".sh")
+_MODULE_FLAGS = frozenset({"-m", "--module"})
 
 
 class LaunchJsonGuardError(ValueError):
@@ -56,6 +59,51 @@ def _executable_is_resolvable(raw_executable: str, *, repo_root: Path) -> bool:
     return shutil.which(resolved) is not None
 
 
+def _script_entrypoint_findings(
+    runtime_args: list[str],
+    *,
+    label: str,
+    repo_root: Path,
+) -> list[str]:
+    """Check every script-like argument exists, not just the interpreter.
+
+    A ``-m``/``--module`` flag's following value is a module name, not a
+    file path, and is skipped. Anything else ending in a recognized script
+    extension is treated as an entrypoint the interpreter will try to open.
+    """
+    findings: list[str] = []
+    skip_next = False
+    for arg in runtime_args:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in _MODULE_FLAGS:
+            skip_next = True
+            continue
+        if arg.endswith(_SCRIPT_EXTENSIONS):
+            resolved = _substitute(arg, repo_root=repo_root)
+            if not Path(resolved).is_file():
+                findings.append(
+                    f"{label}: script entrypoint {arg!r} does not exist at {resolved!r}"
+                )
+    return findings
+
+
+def _localhost_url_findings(raw_url: str, *, label: str) -> tuple[list[str], int | None]:
+    """Validate a ``url`` is an origin-only localhost URL. Returns (findings, port)."""
+    parsed = urlparse(raw_url)
+    findings: list[str] = []
+    if parsed.scheme not in ("http", "https"):
+        findings.append(f'{label}: url {raw_url!r} must use http or https')
+    if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+        findings.append(
+            f"{label}: url {raw_url!r} must be just the server origin, no path or query"
+        )
+    if parsed.port is None:
+        findings.append(f'{label}: url {raw_url!r} must carry an explicit port')
+    return findings, parsed.port
+
+
 def load_config(launch_json_path: Path) -> dict:
     """Parse ``launch_json_path``. Raises LaunchJsonGuardError, never a verdict."""
     try:
@@ -69,6 +117,54 @@ def load_config(launch_json_path: Path) -> dict:
     if not isinstance(config, dict) or not isinstance(config.get("configurations"), list):
         raise LaunchJsonGuardError(f"{launch_json_path} has no configurations array")
     return config
+
+
+def _validate_command_entry(
+    entry: dict,
+    runtime_executable: str,
+    *,
+    label: str,
+    repo_root: Path,
+) -> tuple[list[str], int | None]:
+    """Validate an entry that starts its own server process."""
+    findings: list[str] = []
+    if not _executable_is_resolvable(runtime_executable, repo_root=repo_root):
+        findings.append(
+            f"{label}: runtimeExecutable {runtime_executable!r} does not exist and is not on PATH"
+        )
+
+    runtime_args = entry.get("runtimeArgs", [])
+    if not isinstance(runtime_args, list) or not all(isinstance(arg, str) for arg in runtime_args):
+        findings.append(f'{label}: "runtimeArgs" must be a list of strings')
+        runtime_args = []
+    findings.extend(_script_entrypoint_findings(runtime_args, label=label, repo_root=repo_root))
+
+    port = entry.get("port")
+    if not isinstance(port, int) or isinstance(port, bool):
+        findings.append(f'{label}: missing an integer "port"')
+        port = None
+    else:
+        findings.extend(
+            f'{label}: runtimeArgs port {arg} does not match "port" field {port}'
+            for arg in runtime_args
+            if _DECIMAL_INTEGER.match(arg) and int(arg) != port
+        )
+
+    raw_url = entry.get("url")
+    if isinstance(raw_url, str) and raw_url:
+        url_findings, url_port = _localhost_url_findings(raw_url, label=label)
+        findings.extend(url_findings)
+        if port is not None and url_port is not None and url_port != port:
+            findings.append(f'{label}: url port {url_port} does not match "port" field {port}')
+
+    return findings, port
+
+
+def _validate_attach_only_entry(raw_url: str, *, label: str) -> tuple[list[str], int | None]:
+    """Validate an entry that attaches to a server owned by something else
+    (a launchd job, a service manager) instead of starting one itself."""
+    findings, port = _localhost_url_findings(raw_url, label=label)
+    return findings, port
 
 
 def _validate_entry(
@@ -86,28 +182,18 @@ def _validate_entry(
         findings.append(f'{label}: missing a non-empty "name"')
 
     runtime_executable = entry.get("runtimeExecutable")
-    if not isinstance(runtime_executable, str) or not runtime_executable:
-        findings.append(f'{label}: missing a non-empty "runtimeExecutable"')
-    elif not _executable_is_resolvable(runtime_executable, repo_root=repo_root):
-        findings.append(
-            f"{label}: runtimeExecutable {runtime_executable!r} does not exist and is not on PATH"
+    raw_url = entry.get("url")
+    if isinstance(runtime_executable, str) and runtime_executable:
+        entry_findings, port = _validate_command_entry(
+            entry, runtime_executable, label=label, repo_root=repo_root
         )
+    elif isinstance(raw_url, str) and raw_url:
+        entry_findings, port = _validate_attach_only_entry(raw_url, label=label)
+    else:
+        entry_findings = [f'{label}: needs a non-empty "runtimeExecutable" or an attach-only "url"']
+        port = None
 
-    runtime_args = entry.get("runtimeArgs", [])
-    if not isinstance(runtime_args, list) or not all(isinstance(arg, str) for arg in runtime_args):
-        findings.append(f'{label}: "runtimeArgs" must be a list of strings')
-        runtime_args = []
-
-    port = entry.get("port")
-    if not isinstance(port, int) or isinstance(port, bool):
-        findings.append(f'{label}: missing an integer "port"')
-        return findings, None, label
-
-    findings.extend(
-        f'{label}: runtimeArgs port {arg} does not match "port" field {port}'
-        for arg in runtime_args
-        if _DECIMAL_INTEGER.match(arg) and int(arg) != port
-    )
+    findings.extend(entry_findings)
     return findings, port, label
 
 
