@@ -12,10 +12,7 @@
 	import { lyricEntry, loadLyrics } from '$lib/lyrics/lyrics-cache.svelte';
 	import { openStage } from '$lib/lyrics/stage-store.svelte';
 	import type { TrackQuality } from '$lib/rb/library-types';
-	import { REVEAL_TRACK_TITLE, runRevealTracks } from '$lib/components/rb/browser/track-context-menu';
-
-	// Open in Rekordbox / djay have no backend yet (UXR-02): inert, never a dead click.
-	const INERT_TITLE = 'not implemented - see PARITY-TODO';
+	import TrackActions from '$lib/components/TrackActions.svelte';
 
 	let track = $state<Track | null>(null);
 	let etag = $state<string>('');
@@ -128,14 +125,7 @@
 	<LyricsPanel stableId={track.stable_id} />
 
 	<h3>Actions</h3>
-	<p class="track-actions">
-		<button type="button" title={REVEAL_TRACK_TITLE} onclick={() => track !== null && void runRevealTracks([track.stable_id])}>
-			Show in Finder
-		</button>
-		{#each ['Open in Rekordbox', 'Open in djay'] as label}
-			<button type="button" disabled title={INERT_TITLE} aria-label={`${label} - ${INERT_TITLE}`}>{label}</button>
-		{/each}
-	</p>
+	<TrackActions stableId={track.stable_id} />
 
 	{#if conflictServer}
 		<ConflictDialog
