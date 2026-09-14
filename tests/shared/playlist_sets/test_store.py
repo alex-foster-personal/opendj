@@ -17,6 +17,8 @@ from apps.shared.playlist_sets import (
 )
 from apps.shared.playlist_sets.schema import apply_playlist_set_migrations
 
+from tests.shared.playlist_sets.conftest import seed_playlist_and_tracks
+
 pytestmark = pytest.mark.requirement("SET-05")
 
 
@@ -34,6 +36,7 @@ def test_performance_increments_without_mutating_membership(
 ) -> None:
     """[if] a set is performed [then] play_count is 1 and memberships unchanged."""
     conn = ps_conn_with_memberships
+    seed_playlist_and_tracks(conn, "pl1", ["t-a", "t-b"])
     conn.executemany(
         "INSERT INTO playlist_memberships(playlist_id, stable_id, position) "
         "VALUES (?, ?, ?)",
@@ -79,6 +82,7 @@ def test_create_from_play_order_snapshot_is_independent(
     ps_conn_with_memberships: sqlite3.Connection,
 ) -> None:
     conn = ps_conn_with_memberships
+    seed_playlist_and_tracks(conn, "pl1", ["t-a", "t-b"])
     conn.executemany(
         "INSERT INTO playlist_memberships(playlist_id, stable_id, position) "
         "VALUES (?, ?, ?)",
