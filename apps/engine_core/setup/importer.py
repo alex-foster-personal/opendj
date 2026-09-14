@@ -31,6 +31,7 @@ from typing import Any
 
 from apps.engine_core.setup import detect, record
 from apps.shared.scan_mass_missing import MassMissingError
+from apps.shared.state.ingest.path_collisions import PathCollisionError
 
 Emit = Callable[[float, str], None]
 
@@ -231,6 +232,8 @@ def run_folder_import(
             on_progress=_folder_progress(emit),
         )
     except MassMissingError as exc:
+        raise SetupImportError(detect.CODE_INGEST_FAILED, str(exc)) from exc
+    except PathCollisionError as exc:
         raise SetupImportError(detect.CODE_INGEST_FAILED, str(exc)) from exc
     finally:
         writer.close()

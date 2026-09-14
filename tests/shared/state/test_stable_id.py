@@ -12,6 +12,7 @@ actual algorithm is the regression anchor.
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 
 import pytest
 
@@ -149,3 +150,27 @@ def test_all_missing_raises() -> None:
             isrc=None, fingerprint=None, duration_ms=None,
             size_bytes=None, abs_path=None, mtime=None,
         )
+
+
+def test_tier3_uses_raw_path_not_nfc_nfd_normalized() -> None:
+    nfc = "/music/caf\u00e9.wav"
+    nfd = unicodedata.normalize("NFD", nfc)
+    digest_nfc, tier_nfc = ids.stable_id(isrc=None, abs_path=nfc, mtime=1.0)
+    digest_nfd, tier_nfd = ids.stable_id(isrc=None, abs_path=nfd, mtime=1.0)
+    assert tier_nfc == tier_nfd == "inferred"
+    assert digest_nfc == hashlib.sha1(f"{nfc}|1.0".encode()).hexdigest()
+    assert digest_nfd == hashlib.sha1(f"{nfd}|1.0".encode()).hexdigest()
+    assert digest_nfc != digest_nfd
+
+
+def test_tier3_uses_raw_path_not_casefolded() -> None:
+    upper_digest, tier_upper = ids.stable_id(
+        isrc=None, abs_path="/music/Song.wav", mtime=2.0
+    )
+    lower_digest, tier_lower = ids.stable_id(
+        isrc=None, abs_path="/music/song.wav", mtime=2.0
+    )
+    assert tier_upper == tier_lower == "inferred"
+    assert upper_digest == hashlib.sha1(b"/music/Song.wav|2.0").hexdigest()
+    assert lower_digest == hashlib.sha1(b"/music/song.wav|2.0").hexdigest()
+    assert upper_digest != lower_digest
