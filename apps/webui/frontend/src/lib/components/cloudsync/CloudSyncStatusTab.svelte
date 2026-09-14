@@ -10,6 +10,8 @@
 	 */
 	import { onMount } from 'svelte';
 
+	import { readApiErrorStatus } from '$lib/api/client';
+	import { api } from '$lib/api/client';
 	import { getStatus, type CloudSyncStatus } from '$lib/api-cloudsync';
 	import {
 		getCloudSyncConfig,
@@ -17,18 +19,24 @@
 		runCloudSyncNow,
 		type CloudSyncConfigOut
 	} from '$lib/api-cloudsync-ops';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { pushToast } from '$lib/stores.svelte';
 
 	import {
 		CLOUDSYNC_TECHNICAL_DETAILS_LABEL,
+		FORCE_SYNC_LABEL,
 		STATUS_CHANGED_EVENT,
 		configPutBody,
 		envOverrideNotes,
+		forceSyncNowRequest,
 		formFromConfig,
 		presentCloudSyncError,
 		presentCloudSyncResultError,
 		statusHeadline,
 		syncNowRequest,
-		type ConfigFormFields
+		syncRuntimeGateReason,
+		type ConfigFormFields,
+		type UiMirrorDecks
 	} from './cloudsync-view';
 
 	interface Notice {
@@ -52,18 +60,47 @@
 	let saving = $state(false);
 	let syncing = $state(false);
 	let notice = $state<Notice | null>(null);
+	let uiMirror = $state<{ decks?: UiMirrorDecks } | null>(null);
 
-	const syncDecision = $derived(syncNowRequest(config));
+	const syncGate = $derived({
+		appPosture: uiPrefs.app_posture,
+		uiMirror
+	});
+	const syncDecision = $derived(syncNowRequest(config, syncGate));
+	const forceSyncDecision = $derived(forceSyncNowRequest(config));
+	const showForceSync = $derived(
+		config?.effective.hub_url !== null &&
+			config?.effective.hub_url !== undefined &&
+			syncRuntimeGateReason(syncGate.appPosture, syncGate.uiMirror) !== null
+	);
 
 	function message(exc: unknown): string {
 		return exc instanceof Error ? exc.message : String(exc);
 	}
 
+	async function fetchUiMirrorForGate(): Promise<{ decks?: UiMirrorDecks } | null> {
+		try {
+			const { data } = await api.GET('/api/v1/state/ui-mirror', {});
+			if (data !== undefined && typeof data === 'object') {
+				return data as { decks?: UiMirrorDecks };
+			}
+			return null;
+		} catch (exc) {
+			if (readApiErrorStatus(exc) === 409) return null;
+			return null;
+		}
+	}
+
 	async function refresh(): Promise<void> {
 		try {
-			const [nextStatus, nextConfig] = await Promise.all([getStatus(), getCloudSyncConfig()]);
+			const [nextStatus, nextConfig, nextMirror] = await Promise.all([
+				getStatus(),
+				getCloudSyncConfig(),
+				fetchUiMirrorForGate()
+			]);
 			status = nextStatus;
 			config = nextConfig;
+			uiMirror = nextMirror;
 			loadError = null;
 		} catch (exc) {
 			loadError = message(exc);
@@ -110,6 +147,37 @@
 			};
 		} catch (exc) {
 			// The failure was journaled server-side; the refresh below shows it.
+			const presented = presentCloudSyncError(exc);
+			notice = {
+				kind: 'error',
+				text: `Sync failed: ${presented.summary}`,
+				details: presented.details
+			};
+		} finally {
+			syncing = false;
+			await refresh();
+			announceStatusChanged();
+		}
+	}
+
+	async function forceSyncNow(): Promise<void> {
+		if (forceSyncDecision.kind === 'refuse') {
+			notice = { kind: 'error', text: forceSyncDecision.reason };
+			return;
+		}
+		pushToast(
+			'Force sync bypasses Gig and playing-deck protection for one round.',
+			'warn'
+		);
+		syncing = true;
+		try {
+			const result = await runCloudSyncNow(forceSyncDecision.body);
+			notice = {
+				kind: 'ok',
+				text: `Sync ${result.digest_inconclusive ? 'inconclusive' : 'ok'}: pushed ${result.pushed}, pulled ${result.pulled}.`,
+				title: `Rows this Force sync pushed to the hub (${result.pushed}) and pulled from it (${result.pulled}); ${result.rounds} round(s), hub sequence ${result.hub_seq}`
+			};
+		} catch (exc) {
 			const presented = presentCloudSyncError(exc);
 			notice = {
 				kind: 'error',
@@ -220,6 +288,17 @@
 			>
 				{syncing ? 'Syncing...' : 'Sync now'}
 			</button>
+			{#if showForceSync}
+				<button
+					type="button"
+					data-testid="cloudsync-force-sync"
+					disabled={syncing || forceSyncDecision.kind === 'refuse'}
+					title={`${FORCE_SYNC_LABEL} (POST /api/v1/cloudsync/sync with force=true)`}
+					onclick={() => forceSyncNow()}
+				>
+					{syncing ? 'Syncing...' : FORCE_SYNC_LABEL}
+				</button>
+			{/if}
 			<button type="button" title="Re-read status and config from the daemon" onclick={() => refresh()}>
 				Refresh
 			</button>

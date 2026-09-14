@@ -95,6 +95,10 @@ class SyncRunIn(BaseModel):
         min_length=1,
         description="this machine's display name; the hostname when omitted (CLI --name)",
     )
+    force: bool = Field(
+        default=False,
+        description="Bypass Gig posture and playing-deck gates for this round only.",
+    )
 
 
 class SyncRunOut(BaseModel):
@@ -198,9 +202,10 @@ SYNC_RESPONSES: dict[int | str, dict[str, Any]] = {
     **LOCAL_ONLY_RESPONSE,
     409: _declared(
         "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this "
-        "process; refused before syncing, so NOT journaled. "
+        "process; refused before syncing, so NOT journaled (force=true does "
+        "not bypass this). "
         "CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync "
-        "before any hub I/O; NOT journaled. "
+        "before any hub I/O when force=false; NOT journaled. "
         "CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared "
         "refusals (digest mismatch, still moving, schema version mismatch, "
         "apply or protocol error); journaled as error."
@@ -334,14 +339,18 @@ def run_sync_round(body: SyncRunIn, request: Request) -> SyncRunOut:
     mirror = getattr(request.app.state, "ui_mirror", None)
     if mirror is not None and not isinstance(mirror, dict):
         mirror = None
-    reason = refuse_sync_round(data_dir, mirror, force=False)
+    reason = refuse_sync_round(data_dir, mirror, force=body.force)
     if reason is not None:
         raise _refuse(409, "CLOUDSYNC_SYNC_DEFERRED", f"CloudSync sync deferred: {reason}")
     with _one_sync_at_a_time(data_dir):
 
         try:
             result = maintenance.sync(
-                data_dir, body.hub_url, name=body.name, ui_mirror=mirror
+                data_dir,
+                body.hub_url,
+                name=body.name,
+                ui_mirror=mirror,
+                force=body.force,
             )
         except sync_client.SyncTransportError as exc:
             raise _refuse(502, "CLOUDSYNC_HUB_UNREACHABLE", str(exc)) from exc

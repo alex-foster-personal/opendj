@@ -84,8 +84,8 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.state import db as state_db
-from apps.shared.sync_runtime_gates import SyncDeferredError, refuse_sync_round
 from apps.shared.state import sync_stamp
+from apps.shared.sync_runtime_gates import SyncDeferredError, refuse_sync_round
 from apps.sync_hub import (
     client,
     config_cli,
@@ -282,6 +282,11 @@ def _parser() -> argparse.ArgumentParser:
         "--name",
         default=None,
         help="this machine's display name; defaults to the hostname",
+    )
+    sync_command.add_argument(
+        "--force",
+        action="store_true",
+        help="Bypass Gig posture and playing-deck gates for this round only.",
     )
 
     subcommands.add_parser(
@@ -588,7 +593,15 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     if args.command == "sync":
         try:
-            return _report_sync(sync(args.data_dir, args.hub, name=args.name, ui_mirror=None))
+            return _report_sync(
+                sync(
+                    args.data_dir,
+                    args.hub,
+                    name=args.name,
+                    ui_mirror=None,
+                    force=args.force,
+                )
+            )
         except SyncDeferredError as exc:
             print(f"DEFERRED: {exc.reason}", file=sys.stderr)
             return EXIT_SYNC_DEFERRED

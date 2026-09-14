@@ -11226,6 +11226,12 @@ export interface components {
         /** SyncRunIn */
         SyncRunIn: {
             /**
+             * Force
+             * @description Bypass Gig posture and playing-deck gates for this round only.
+             * @default false
+             */
+            force: boolean;
+            /**
              * Hub Url
              * @description the hub base URL, e.g. http://hub.tailnet:8686 (CLI --hub)
              */
@@ -14999,7 +15005,7 @@ export interface operations {
                     "application/json": components["schemas"]["OpsErrorResponse"];
                 };
             };
-            /** @description CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync before any hub I/O; NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error. */
+            /** @description CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled (force=true does not bypass this). CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync before any hub I/O when force=false; NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error. */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -351,12 +351,42 @@ test('chipTitle names the state and links to /cloudsync', () => {
 
 test('Sync now posts the effective hub URL and machine name, and refuses without a hub', () => {
 	/** if Sync now fires with no hub URL, or ignores the effective (env-won) URL, then broken */
-	assert.equal(view.syncNowRequest(null).kind, 'refuse');
-	assert.equal(view.syncNowRequest(config()).kind, 'refuse');
+	const openGate = { appPosture: 'prep', uiMirror: null };
+	assert.equal(view.syncNowRequest(null, openGate).kind, 'refuse');
+	assert.equal(view.syncNowRequest(config(), openGate).kind, 'refuse');
 	const decision = view.syncNowRequest(
-		config({ hub_url: 'http://env-hub:8686', hub_url_source: 'env', machine_name: 'silver' })
+		config({ hub_url: 'http://env-hub:8686', hub_url_source: 'env', machine_name: 'silver' }),
+		openGate
 	);
 	assert.deepEqual(decision, { kind: 'post', body: { hub_url: 'http://env-hub:8686', name: 'silver' } });
+});
+
+test('syncNowRequest refuses when gig posture gates sync', () => {
+	const decision = view.syncNowRequest(
+		config({ hub_url: 'http://hub:8686', configured: true }),
+		{ appPosture: 'gig', uiMirror: null }
+	);
+	assert.equal(decision.kind, 'refuse');
+	assert.match(decision.reason, /gig_posture/);
+});
+
+test('syncNowRequest refuses when a deck is playing', () => {
+	const decision = view.syncNowRequest(
+		config({ hub_url: 'http://hub:8686', configured: true }),
+		{ appPosture: 'prep', uiMirror: { decks: { '1': { playing: true } } } }
+	);
+	assert.equal(decision.kind, 'refuse');
+	assert.match(decision.reason, /deck_playing/);
+});
+
+test('forceSyncNowRequest posts force true and ignores gate', () => {
+	const decision = view.forceSyncNowRequest(
+		config({ hub_url: 'http://hub:8686', machine_name: 'silver', configured: true })
+	);
+	assert.deepEqual(decision, {
+		kind: 'post',
+		body: { hub_url: 'http://hub:8686', name: 'silver', force: true }
+	});
 });
 
 test('the config form mirrors the backend validator', () => {
