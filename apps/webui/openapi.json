@@ -6466,6 +6466,213 @@
         "title": "IdentityBacklogOut",
         "type": "object"
       },
+      "JobIn": {
+        "properties": {
+          "external_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "JobIn",
+        "type": "object"
+      },
+      "JobKindsOut": {
+        "properties": {
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kinds"
+        ],
+        "title": "JobKindsOut",
+        "type": "object"
+      },
+      "JobOut": {
+        "properties": {
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "external_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "owner_boot_id": {
+            "title": "Owner Boot Id",
+            "type": "string"
+          },
+          "owner_pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Pid"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "number"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "worker_argv": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Argv"
+          },
+          "worker_pgid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Pgid"
+          },
+          "worker_pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Pid"
+          },
+          "worker_started_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Started At"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "payload",
+          "status",
+          "progress",
+          "attempt",
+          "created_at",
+          "owner_boot_id"
+        ],
+        "title": "JobOut",
+        "type": "object"
+      },
       "KaraokeLineOut": {
         "description": "One derived line (:mod:`apps.lyrics.lines`, the canonical grouping).\n\nServed rather than client-derived so every surface agrees and an agent can\ncurl exactly what the deck renders.",
         "properties": {
@@ -12767,6 +12974,29 @@
           "triple_validated"
         ],
         "title": "RelocateCandidateOut",
+        "type": "object"
+      },
+      "RescueAppendOut": {
+        "properties": {
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "captured_at_ms": {
+            "title": "Captured At Ms",
+            "type": "integer"
+          },
+          "slot": {
+            "title": "Slot",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "slot",
+          "captured_at_ms",
+          "bytes"
+        ],
+        "title": "RescueAppendOut",
         "type": "object"
       },
       "RevokeOut": {
@@ -24532,6 +24762,95 @@
         "summary": "Post Headphone Output Select",
         "tags": [
           "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/rescue-snapshots": {
+      "post": {
+        "operationId": "post_rescue_snapshot_api_v1_performance_rescue_snapshots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RescueAppendOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Rescue Snapshot",
+        "tags": [
+          "performance-rescue"
+        ]
+      }
+    },
+    "/api/v1/performance/rescue-snapshots/index": {
+      "get": {
+        "operationId": "get_rescue_snapshot_index_api_v1_performance_rescue_snapshots_index_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Rescue Snapshot Index Api V1 Performance Rescue Snapshots Index Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Rescue Snapshot Index",
+        "tags": [
+          "performance-rescue"
+        ]
+      }
+    },
+    "/api/v1/performance/rescue-snapshots/latest": {
+      "get": {
+        "operationId": "get_latest_rescue_snapshot_api_v1_performance_rescue_snapshots_latest_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Latest Rescue Snapshot Api V1 Performance Rescue Snapshots Latest Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Latest Rescue Snapshot",
+        "tags": [
+          "performance-rescue"
         ]
       }
     },

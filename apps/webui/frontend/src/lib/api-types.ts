@@ -2544,6 +2544,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/performance/rescue-snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Rescue Snapshot */
+        post: operations["post_rescue_snapshot_api_v1_performance_rescue_snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/rescue-snapshots/index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rescue Snapshot Index */
+        get: operations["get_rescue_snapshot_index_api_v1_performance_rescue_snapshots_index_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/rescue-snapshots/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Latest Rescue Snapshot */
+        get: operations["get_latest_rescue_snapshot_api_v1_performance_rescue_snapshots_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/performance/telemetry/client-samples": {
         parameters: {
             query?: never;
@@ -6970,6 +7021,63 @@ export interface components {
              */
             unsyncable_inferred: number;
         };
+        /** JobIn */
+        JobIn: {
+            /** External Ref */
+            external_ref?: string | null;
+            /** Kind */
+            kind: string;
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            };
+        };
+        /** JobKindsOut */
+        JobKindsOut: {
+            /** Kinds */
+            kinds: string[];
+        };
+        /** JobOut */
+        JobOut: {
+            /** Attempt */
+            attempt: number;
+            /** Created At */
+            created_at: string;
+            /** Error */
+            error?: string | null;
+            /** External Ref */
+            external_ref?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Message */
+            message?: string | null;
+            /** Owner Boot Id */
+            owner_boot_id: string;
+            /** Owner Pid */
+            owner_pid?: number | null;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Progress */
+            progress: number;
+            /** Started At */
+            started_at?: string | null;
+            /** Status */
+            status: string;
+            /** Worker Argv */
+            worker_argv?: string[] | null;
+            /** Worker Pgid */
+            worker_pgid?: number | null;
+            /** Worker Pid */
+            worker_pid?: number | null;
+            /** Worker Started At */
+            worker_started_at?: number | null;
+        };
         /**
          * KaraokeLineOut
          * @description One derived line (:mod:`apps.lyrics.lines`, the canonical grouping).
@@ -9438,6 +9546,15 @@ export interface components {
             signals: string[];
             /** Triple Validated */
             triple_validated: boolean;
+        };
+        /** RescueAppendOut */
+        RescueAppendOut: {
+            /** Bytes */
+            bytes: number;
+            /** Captured At Ms */
+            captured_at_ms: number;
+            /** Slot */
+            slot: number;
         };
         /** RevokeOut */
         RevokeOut: {
@@ -15964,6 +16081,85 @@ export interface operations {
         };
     };
     post_headphone_output_select_api_v1_performance_headphones_outputs_select_post: _HeadphoneJsonPost;
+    post_rescue_snapshot_api_v1_performance_rescue_snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RescueAppendOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rescue_snapshot_index_api_v1_performance_rescue_snapshots_index_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_latest_rescue_snapshot_api_v1_performance_rescue_snapshots_latest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     latest_client_performance_sample_api_v1_performance_telemetry_client_samples_get: {
         parameters: {
             query?: never;
