@@ -1414,6 +1414,136 @@
         "title": "AutolistSelectionIn",
         "type": "object"
       },
+      "AvailabilityProbeIn": {
+        "properties": {
+          "allow_mass_missing": {
+            "default": false,
+            "title": "Allow Mass Missing",
+            "type": "boolean"
+          },
+          "full": {
+            "default": false,
+            "title": "Full",
+            "type": "boolean"
+          },
+          "stable_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Ids"
+          }
+        },
+        "title": "AvailabilityProbeIn",
+        "type": "object"
+      },
+      "AvailabilityProbeOut": {
+        "properties": {
+          "accepted": {
+            "default": true,
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "phase": {
+            "enum": [
+              "idle",
+              "queued",
+              "running",
+              "complete",
+              "refused",
+              "failed"
+            ],
+            "title": "Phase",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phase"
+        ],
+        "title": "AvailabilityProbeOut",
+        "type": "object"
+      },
+      "AvailabilityStatusOut": {
+        "properties": {
+          "awaiting_volume": {
+            "description": "Rows under an unmounted /Volumes path to re-check",
+            "title": "Awaiting Volume",
+            "type": "integer"
+          },
+          "complete": {
+            "description": "True when no unknown/stale/awaiting_volume rows remain",
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "pending": {
+            "description": "Tracks still needing a probe pass",
+            "title": "Pending",
+            "type": "integer"
+          },
+          "phase": {
+            "enum": [
+              "idle",
+              "queued",
+              "running",
+              "complete",
+              "refused",
+              "failed"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "present": {
+            "description": "Current present count in track_availability",
+            "title": "Present",
+            "type": "integer"
+          },
+          "processed_total": {
+            "description": "Rows classified across this worker lifetime",
+            "title": "Processed Total",
+            "type": "integer"
+          },
+          "stale": {
+            "description": "Rows whose tracks.updated_at is newer than checked_at",
+            "title": "Stale",
+            "type": "integer"
+          },
+          "unknown": {
+            "description": "Live tracks with no availability row",
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "phase",
+          "pending",
+          "unknown",
+          "stale",
+          "awaiting_volume",
+          "processed_total",
+          "present",
+          "complete"
+        ],
+        "title": "AvailabilityStatusOut",
+        "type": "object"
+      },
       "BackfillBatchIn": {
         "properties": {
           "batch_id": {
@@ -21114,6 +21244,75 @@
         "summary": "Query Autolists",
         "tags": [
           "autolists"
+        ]
+      }
+    },
+    "/api/v1/availability/probe": {
+      "post": {
+        "operationId": "availability_probe_api_v1_availability_probe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AvailabilityProbeIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailabilityProbeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Availability Probe",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/api/v1/availability/status": {
+      "get": {
+        "operationId": "availability_status_api_v1_availability_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailabilityStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Availability Status",
+        "tags": [
+          "library"
         ]
       }
     },
