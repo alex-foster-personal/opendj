@@ -49,7 +49,7 @@ from apps.shared.state.availability_write import (
     guard_present_drop,
 )
 from apps.shared.state.events import FakeEventBus
-from apps.shared.state.locations import list_location_paths
+from apps.shared.state.locations import ID_BIND_BATCH, list_location_paths
 from apps.shared.state.writer import StateWriter
 
 VOLUMES_ROOT = "/Volumes"
@@ -128,19 +128,33 @@ def _classify_track_row(
 def probe_batch(
     conn: sqlite3.Connection, stable_ids: list[str]
 ) -> list[AvailabilityRow]:
-    """Classify a batch of live tracks. Read-only; does not write."""
+    """Classify a batch of live tracks. Read-only; does not write.
+
+    ``stable_ids`` can be an arbitrarily large caller-supplied list (a round
+    collected up front for the LIBM-41 round-level guard, for instance), so
+    the ``stable_id IN (...)`` lookup is chunked at :data:`ID_BIND_BATCH`
+    like every other bulk id lookup in this codebase
+    (:func:`apps.shared.state.locations.list_location_paths`,
+    :func:`apps.shared.remote_status.sids_with_remote_copy`) -- one query
+    binding one placeholder per id past SQLite's compiled variable limit
+    (999 on many builds, 32766 on others) raises "too many SQL variables"
+    instead of classifying anything.
+    """
     if not stable_ids:
         return []
     mounted = _mounted_volumes()
-    placeholders = ",".join("?" * len(stable_ids))
-    tracks = list(
-        conn.execute(
-            f"SELECT stable_id, file_path FROM tracks "
-            f"WHERE deleted_at IS NULL AND stable_id IN ({placeholders}) "
-            f"ORDER BY stable_id",
-            stable_ids,
+    tracks: list[tuple[str, str | None]] = []
+    for start in range(0, len(stable_ids), ID_BIND_BATCH):
+        chunk = stable_ids[start : start + ID_BIND_BATCH]
+        placeholders = ",".join("?" * len(chunk))
+        tracks.extend(
+            conn.execute(
+                f"SELECT stable_id, file_path FROM tracks "
+                f"WHERE deleted_at IS NULL AND stable_id IN ({placeholders})",
+                chunk,
+            )
         )
-    )
+    tracks.sort(key=lambda row: row[0])
     alt_paths = list_location_paths(conn, [stable_id for stable_id, _ in tracks])
     return [
         _classify_track_row(stable_id, file_path, alt_paths, mounted=mounted)

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import sqlite3
 import threading
 import time
@@ -884,6 +885,79 @@ def test_background_round_settles_a_genuine_reclassification(
         assert checked_at_after > checked_at_before
     finally:
         conn.close()
+
+
+def test_probe_batch_chunks_the_in_clause_at_id_bind_batch(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    """A large round must never build one unbounded ``stable_id IN (...)``.
+
+    ``_collect_round_stable_ids`` (round-2's LIBM-41 fix) gathers the WHOLE
+    round's candidate ids up front and hands them to ``avail.probe_batch``
+    in one call. If that call binds one SQL placeholder per id in a SINGLE
+    query, a library bigger than SQLite's compiled
+    ``SQLITE_MAX_VARIABLE_NUMBER`` -- 999 on many builds, including the
+    packaged desktop build (see ``apps/shared/state/locations.py``'s own
+    ``ID_BIND_BATCH`` comment), 32766 on others -- raises "too many SQL
+    variables" and the worker fails instead of classifying anything.
+
+    Sized at the codebase's own established bound for this exact class of
+    query (``ID_BIND_BATCH``, already used by ``list_location_paths`` and
+    ``sids_with_remote_copy``) plus a margin, and verified via SQLite's
+    trace callback rather than by trying to exceed the REAL compiled limit
+    (which ranges from 999 to 32766 depending on the machine running the
+    test) -- so this stays fast and portable instead of needing tens of
+    thousands of seeded rows on a high-limit build.
+    """
+    from apps.shared.state.locations import ID_BIND_BATCH
+
+    audio_dir = tmp_path / "bind-count"
+    audio_dir.mkdir()
+    track_count = ID_BIND_BATCH + 100
+    conn = state_db.open_rw(state_db_path)
+    try:
+        with StateWriter(conn, actor="test-availability") as writer:
+            for index in range(track_count):
+                writer.upsert_track(
+                    stable_id=_stable(f"bc{index:06d}"),
+                    stable_id_tier="inferred",
+                    title=f"bc{index}",
+                    artists=[],
+                    album=None,
+                    isrc=None,
+                    duration_ms=None,
+                    file_path=str(audio_dir / f"{index}.mp3"),
+                )
+        conn.commit()
+
+        traced_sql: list[str] = []
+        conn.set_trace_callback(traced_sql.append)
+        try:
+            candidate_ids = [
+                row[0]
+                for row in conn.execute(
+                    "SELECT stable_id FROM tracks ORDER BY stable_id"
+                )
+            ]
+            assert len(candidate_ids) == track_count
+            rows = avail.probe_batch(conn, candidate_ids)
+            assert len(rows) == track_count
+        finally:
+            conn.set_trace_callback(None)
+    finally:
+        conn.close()
+
+    max_bound = 0
+    for sql in traced_sql:
+        match = re.search(r"stable_id IN \(([^)]*)\)", sql)
+        if match:
+            max_bound = max(max_bound, match.group(1).count(",") + 1)
+    assert max_bound <= ID_BIND_BATCH, (
+        f"a single query bound {max_bound} stable_id values into one "
+        f"IN (...) clause -- probe_batch must chunk at ID_BIND_BATCH "
+        f"({ID_BIND_BATCH}) like every other bulk id lookup, or a library "
+        "over SQLite's compiled variable limit fails outright"
+    )
 
 
 def _seed_mass_missing_refusal_fixture(
