@@ -74,6 +74,7 @@ from apps.shared import events, platform_paths
 from apps.shared.library_mode import apply_library_env, assert_ready
 from apps.shared.paths import STATE_DB
 from apps.shared.sync_bind_guard import assert_sync_bind_allowed
+from apps.webui.server.request_guard import assert_request_guard_bind_allowed
 from apps.stems import job as stems_job
 from apps.stems.api import router as stems_plan_router
 from apps.stems.live_capability import assess_install_once
@@ -117,6 +118,7 @@ def create_app(
     """Build the engine app. No import-time construction, no globals."""
     assert_no_progress_ledger(cfg.data_dir)
     assert_sync_bind_allowed(cfg.host)
+    assert_request_guard_bind_allowed(cfg.host)
     prepare_layout(cfg)
 
     boot_id = lock.boot_id if lock is not None else str(uuid.uuid4())

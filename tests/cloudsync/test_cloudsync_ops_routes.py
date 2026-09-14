@@ -86,6 +86,8 @@ def ops_client(
         hostname="cloudsync-ops-test",
         state_db_path=str(db_path),
         mount_frontend=False,
+        port=8686,
+        frontend_port=5173,
         share_config=share_config,
     )
     with TestClient(app, base_url=LOOPBACK_BASE_URL, client=client_addr) as http:
@@ -576,7 +578,19 @@ def test_operator_routes_refuse_callers_that_are_not_the_local_operator(
             allowed[label] = http.request(method, path, json=payload, headers=headers)
 
     assert {label: r.status_code for label, r in refused.items()} == dict.fromkeys(refused, 403)
-    assert {r.json()["detail"]["code"] for r in refused.values()} == {"CLOUDSYNC_OPS_LOCAL_ONLY"}
+    refused_codes = {
+        "CLOUDSYNC_OPS_LOCAL_ONLY",
+        "HOST_NOT_ALLOWED",
+        "ORIGIN_NOT_ALLOWED",
+    }
+
+    def _refusal_code(response) -> str:
+        body = response.json()
+        if "detail" in body:
+            return body["detail"]["code"]
+        return body["code"]
+
+    assert {_refusal_code(r) for r in refused.values()}.issubset(refused_codes)
     assert all(r.status_code != 403 for r in allowed.values()), {
         label: r.text for label, r in allowed.items() if r.status_code == 403
     }
