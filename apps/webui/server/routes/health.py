@@ -73,4 +73,8 @@ def health(
         bind_host=bind_host,
         version=version,
         google_oauth_configured=GoogleOAuthConfig.is_configured(dict(os.environ)),
+        # OPS-32 round 3: names only, sorted for a stable diff. Never values --
+        # this field exists so an external probe can verify the leak-scrub
+        # without ever seeing what would have leaked.
+        process_env_keys=sorted(os.environ.keys()),
     )

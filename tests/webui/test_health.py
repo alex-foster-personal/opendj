@@ -67,6 +67,27 @@ def test_health_adds_bind_warning_on_non_localhost(insecure_client):
     assert "X-Bind-Warning" in r.headers
 
 
+@pytest.mark.requirement("OPS-32")
+def test_health_process_env_keys_lists_names_never_values(client, monkeypatch):
+    """if process_env_keys omits a set var's NAME, or leaks its VALUE, then broken.
+
+    OPS-32 round 3: the post-install rollout probe reads this field instead
+    of reading procargs2 off the engine's pid directly (measured Mon 14 Sep
+    2026 to never see the real bundled engine's env that way). Names only --
+    a value here would be the exact leak OPS-32 exists to prevent.
+    """
+    monkeypatch.setenv("OPS32_ROUTE_TEST_CANARY", "super-secret-value-should-not-leak")
+    r = client.get("/api/v1/health")
+    assert r.status_code == 200
+    body = r.json()
+    keys = body["process_env_keys"]
+    assert isinstance(keys, list)
+    assert all(isinstance(k, str) for k in keys)
+    assert "OPS32_ROUTE_TEST_CANARY" in keys
+    assert "HOME" in keys
+    assert "super-secret-value-should-not-leak" not in r.text
+
+
 @pytest.mark.requirement("CAT-05")
 def test_openapi_schema_generated(client):
     r = client.get("/openapi.json")

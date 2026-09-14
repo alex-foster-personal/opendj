@@ -6895,6 +6895,8 @@ export interface components {
             engine_version: string;
             /** Google Oauth Configured */
             google_oauth_configured: boolean;
+            /** Process Env Keys */
+            process_env_keys: string[];
             state_db: components["schemas"]["HealthStateDb"];
             /**
              * Status

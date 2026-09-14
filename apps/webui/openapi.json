@@ -4957,6 +4957,13 @@
             "title": "Google Oauth Configured",
             "type": "boolean"
           },
+          "process_env_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Process Env Keys",
+            "type": "array"
+          },
           "state_db": {
             "$ref": "#/components/schemas/HealthStateDb"
           },
@@ -4990,6 +4997,7 @@
           "bind_host",
           "version",
           "google_oauth_configured",
+          "process_env_keys",
           "contract_rev",
           "engine_version",
           "boot_id"

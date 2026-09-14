@@ -448,6 +448,15 @@ class HealthOut(BaseModel):
     bind_host: str
     version: str
     google_oauth_configured: bool
+    #: OPS-32 round 3: the sorted NAMES (never values) of this process's own
+    #: ``os.environ`` at request time. Exists so a post-install rollout probe
+    #: can verify the RUNNING engine's own environment via its self-report
+    #: rather than reading it off the pid via KERN_PROCARGS2 -- measured
+    #: Mon 14 Sep 2026 to read back zero env strings for the bundled
+    #: Developer-ID signed python3, so procargs2 never actually measured the
+    #: real packaged engine. Names only: a value here is a leak, not a
+    #: diagnostic (.claude/rules/verification.md).
+    process_env_keys: list[str]
 
 
 class PreflightCheckOut(BaseModel):
