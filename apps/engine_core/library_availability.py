@@ -171,6 +171,13 @@ class LibraryAvailabilityWorker:
         with self._lock:
             snapshot = AvailabilityWorkerStatus(**self._status.__dict__)
         snapshot.pending = self._count_pending()
+        # Recomputed fresh from the database on every call, exactly like
+        # `pending` above: `self._status.present` is only ever written inside
+        # `_refresh_status_counts`, which a round that finds nothing pending
+        # (every row already settled, e.g. a later engine boot) never calls,
+        # so relying on the cached field left `present` stuck at the
+        # dataclass default of 0 even though the database held present rows.
+        snapshot.present = self._count_present()
         snapshot.complete = snapshot.pending == 0 and snapshot.phase not in {
             "queued",
             "running",
@@ -179,6 +186,15 @@ class LibraryAvailabilityWorker:
 
     def _open_conn(self) -> sqlite3.Connection:
         return state_db.open_rw(self._state_db_path)
+
+    def _count_present(self) -> int:
+        if not self._state_db_path.is_file():
+            return 0
+        conn = self._open_conn()
+        try:
+            return present_count(conn)
+        finally:
+            conn.close()
 
     def _count_pending(self) -> int:
         if not self._state_db_path.is_file():

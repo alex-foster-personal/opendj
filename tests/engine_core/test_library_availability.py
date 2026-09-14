@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import os
 import queue
-import shutil
 import sqlite3
 import threading
 import time
@@ -20,6 +19,7 @@ from apps.engine_core.app import create_app
 from apps.engine_core.availability_api import PROBE_PATH, STATUS_PATH
 from apps.engine_core.config import EngineConfig
 from apps.engine_core.library_availability import LibraryAvailabilityWorker
+from apps.mik import availability as avail
 from apps.shared.events import publish
 from apps.shared.state import db as state_db
 from apps.shared.state.writer import StateWriter
@@ -375,10 +375,22 @@ def test_awaiting_volume_stays_pending_until_reclassified(
 
 
 def test_awaiting_volume_reclassifies_when_volume_is_mounted(
-    data_dir: Path, state_db_path: Path
+    data_dir: Path, state_db_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # P0 (Sol review, PR #2619): this used to mkdir + shutil.rmtree a REAL
+    # /Volumes/<name> path. On any machine that happens to have a real
+    # volume mounted under that literal name, that deleted user data outside
+    # the test sandbox. `apps.mik.availability.VOLUMES_ROOT` is a
+    # module-level constant read by both `_mounted_volumes()` (`os.listdir`)
+    # and `classify_path()` (`path.startswith(...)`) at call time, so
+    # monkeypatching it confines every filesystem touch this test makes to a
+    # fake "/Volumes" tree under `tmp_path`, auto-cleaned by pytest -- no
+    # writes to the real `/Volumes` and no rmtree at all.
+    fake_volumes_root = tmp_path / "Volumes"
+    monkeypatch.setattr(avail, "VOLUMES_ROOT", str(fake_volumes_root))
+
     volume_name = "MDT2588VOL"
-    volume_root = Path("/Volumes") / volume_name / "Music"
+    volume_root = fake_volumes_root / volume_name / "Music"
     sid = _stable("mount")
     volume_path = str(volume_root / "a.mp3")
 
@@ -402,10 +414,9 @@ def test_awaiting_volume_reclassifies_when_volume_is_mounted(
     finally:
         worker.stop()
 
-    try:
-        volume_root.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        pytest.skip(f"/Volumes is not writable in this environment: {exc}")
+    # Always writable: `fake_volumes_root` lives entirely under `tmp_path`,
+    # so no OSError/skip branch is needed here any more either.
+    volume_root.mkdir(parents=True, exist_ok=True)
     (volume_root / "a.mp3").write_bytes(b"\x00")
 
     worker2 = LibraryAvailabilityWorker(data_dir, batch_size=10)
@@ -426,7 +437,91 @@ def test_awaiting_volume_reclassifies_when_volume_is_mounted(
         assert conn.execute("SELECT COUNT(*) FROM tracks_available").fetchone()[0] == 1
     finally:
         conn.close()
-    shutil.rmtree(volume_root.parent, ignore_errors=True)
+    # No cleanup call here on purpose: `volume_root` lives entirely under
+    # `tmp_path`, which pytest already removes -- see the P0 note above for
+    # why this test must never itself rmtree a volume-shaped path.
+
+
+def test_status_reports_present_count_when_boot_finds_nothing_pending(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    # P1 (Sol review, PR #2619): `status()` only refreshed `present` inside
+    # `_refresh_status_counts`, which a round that finds nothing pending
+    # (every row already settled -- e.g. a later engine boot) never calls, so
+    # `present` stayed stuck at the `AvailabilityWorkerStatus` dataclass
+    # default of 0 even though the database already held present rows. Seed
+    # rows as already settled (not via the worker) so the worker's own first
+    # round has nothing to do and never commits a batch, which is exactly
+    # the path that skipped the refresh.
+    audio_dir = tmp_path / "already-settled"
+    audio_dir.mkdir()
+    stable_ids: list[str] = []
+    conn = state_db.open_rw(state_db_path)
+    try:
+        for index in range(3):
+            audio = audio_dir / f"{index}.mp3"
+            audio.write_bytes(b"\x00")
+            sid = _stable(f"s{index}")
+            stable_ids.append(sid)
+            _upsert_track(conn, sid, str(audio))
+        avail.write(
+            conn,
+            avail.probe_batch(conn, stable_ids),
+            apply_mass_missing_guard=False,
+        )
+        conn.commit()
+        still_pending = conn.execute(
+            "SELECT COUNT(*) FROM tracks t "
+            "LEFT JOIN track_availability a ON a.stable_id = t.stable_id "
+            "WHERE t.deleted_at IS NULL "
+            "AND (a.stable_id IS NULL OR t.updated_at > a.checked_at)"
+        ).fetchone()[0]
+        assert still_pending == 0, "seed must already be fully settled"
+    finally:
+        conn.close()
+
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=10)
+    worker.start()
+    try:
+        _wait_worker_complete(worker, guard_s=THREAD_HANG_GUARD_S)
+        snapshot = worker.status()
+        # Confirms this run really did take the boot-finds-nothing-pending
+        # path (the one `_refresh_status_counts` never runs on), not some
+        # other path that would make this assertion pass for the wrong
+        # reason.
+        assert snapshot.processed_total == 0
+        assert snapshot.present == 3
+    finally:
+        worker.stop()
+
+
+def test_status_present_count_does_not_double_count_after_batch_commit(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    # P1 opposite direction (Sol review, PR #2619): `present` must be a real
+    # database COUNT recomputed on every `status()` call, not an accumulator
+    # that grows every time a batch commits or every time `status()` is
+    # polled. Read it several times after the same batch commit and confirm
+    # it stays exactly the seeded count.
+    audio_dir = tmp_path / "present-count"
+    audio_dir.mkdir()
+    conn = state_db.open_rw(state_db_path)
+    try:
+        for index in range(5):
+            audio = audio_dir / f"{index}.mp3"
+            audio.write_bytes(b"\x00")
+            _upsert_track(conn, _stable(f"pc{index}"), str(audio))
+    finally:
+        conn.close()
+
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=10)
+    worker.start()
+    try:
+        _wait_worker_complete(worker, guard_s=THREAD_HANG_GUARD_S)
+        readings = [worker.status().present for _ in range(4)]
+        assert readings == [5, 5, 5, 5]
+    finally:
+        worker.stop()
 
 
 def test_background_round_refuses_catastrophic_present_drop(
