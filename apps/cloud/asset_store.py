@@ -302,7 +302,12 @@ def fetch_asset(
     require_credentials(cfg)
     digest = validate_content_hash(content_hash)
     key = asset_object_key(digest)
-    got = s3.get_object(cfg.audio_bucket, key)
+    try:
+        got = s3.get_object(cfg.audio_bucket, key)
+    except AssetStoreError:
+        raise
+    except Exception as exc:
+        raise AssetStoreError(f"failed to fetch {key} from {cfg.audio_bucket}: {exc}") from exc
     if got is None:
         raise AssetStoreError(
             f"asset {digest} is not in {cfg.audio_bucket} (key {key})"
@@ -317,6 +322,19 @@ def fetch_asset(
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(body)
     return target
+
+
+def head_asset(cfg: CloudConfig, s3: AssetS3Client, content_hash: str) -> AssetHead | None:
+    """HEAD the object for ``content_hash``, wrapping transport/service
+    failures into :class:`AssetStoreError` so callers never see a raw
+    client exception -- the same boundary contract as :func:`fetch_asset`."""
+    require_credentials(cfg)
+    digest = validate_content_hash(content_hash)
+    key = asset_object_key(digest)
+    try:
+        return s3.head_object(cfg.audio_bucket, key)
+    except Exception as exc:
+        raise AssetStoreError(f"failed to HEAD {key} in {cfg.audio_bucket}: {exc}") from exc
 
 
 def delete_asset(cfg: CloudConfig, s3: AssetS3Client, content_hash: str) -> bool:
@@ -526,6 +544,7 @@ __all__ = [
     "compute_asset_hash",
     "delete_asset",
     "fetch_asset",
+    "head_asset",
     "object_exists",
     "presign_url",
     "push_asset",

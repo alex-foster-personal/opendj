@@ -47,6 +47,15 @@
 #   TAURI_SIGNING_PRIVATE_KEY           updater minisign key (never printed)
 #   OPENDJ_GOOGLE_OAUTH_CLIENT_ID       Desktop-app client baked into payload
 #   OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET   non-confidential installed-app secret
+#   MDT_DOPPLER_BIN                     doppler executable to resolve the
+#                                        OAuth client from (default: "doppler",
+#                                        resolved via PATH as before). Lets a
+#                                        caller point at an explicit path
+#                                        instead of hiding doppler by editing
+#                                        PATH, which is host-layout-dependent:
+#                                        stripping doppler's PATH directory can
+#                                        also strip an unrelated tool that
+#                                        happens to share it.
 #
 # -Claude
 set -euo pipefail
@@ -666,15 +675,19 @@ check_google_oauth_client() {
         ok "Google OAuth client id and secret are present in the environment (values not printed)"
         return
     fi
-    if command -v doppler >/dev/null 2>&1; then
+    # MDT_DOPPLER_BIN lets a caller (tests, an alternate install layout)
+    # point at an explicit doppler executable instead of relying on PATH.
+    # Defaults to the bare name, resolved via PATH exactly as before.
+    local doppler_bin="${MDT_DOPPLER_BIN:-doppler}"
+    if command -v "$doppler_bin" >/dev/null 2>&1; then
         local got_id="" got_secret=""
-        got_id="$(doppler secrets get OPENDJ_GOOGLE_OAUTH_CLIENT_ID --project general --config dev_personal --plain 2>/dev/null || true)"
+        got_id="$("$doppler_bin" secrets get OPENDJ_GOOGLE_OAUTH_CLIENT_ID --project general --config dev_personal --plain 2>/dev/null || true)"
         if [ -z "$got_id" ]; then
-            got_id="$(doppler secrets get GOOGLE_OAUTH_CLIENT_ID --project general --config dev_personal --plain 2>/dev/null || true)"
+            got_id="$("$doppler_bin" secrets get GOOGLE_OAUTH_CLIENT_ID --project general --config dev_personal --plain 2>/dev/null || true)"
         fi
-        got_secret="$(doppler secrets get OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET --project general --config dev_personal --plain 2>/dev/null || true)"
+        got_secret="$("$doppler_bin" secrets get OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET --project general --config dev_personal --plain 2>/dev/null || true)"
         if [ -z "$got_secret" ]; then
-            got_secret="$(doppler secrets get GOOGLE_OAUTH_CLIENT_SECRET --project general --config dev_personal --plain 2>/dev/null || true)"
+            got_secret="$("$doppler_bin" secrets get GOOGLE_OAUTH_CLIENT_SECRET --project general --config dev_personal --plain 2>/dev/null || true)"
         fi
         if [ -n "$got_id" ] && [ -n "$got_secret" ]; then
             ok "Google OAuth client id and secret are available from Doppler (values not printed)"

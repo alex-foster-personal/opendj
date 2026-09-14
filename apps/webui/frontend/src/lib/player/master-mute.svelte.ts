@@ -22,7 +22,18 @@
  *   outside, where the ES module scope is unreachable (same shape as the
  *   existing `__mdtPerfLog` / `__jobProgressSimulate` bridges).
  *
+ * The user's own mute survives a reload (UXR-01, adversarial UX round 1, Mon 14
+ * Sep 2026): every setMasterMuted call stores the choice in localStorage under
+ * MASTER_MUTE_STORAGE_KEY, and startup mutes when EITHER the URL says `muted=1`
+ * OR the stored value is exactly '1'. Before this, muting and then reloading
+ * brought the audio back unannounced, which is the unsafe direction for a mute.
+ * The stored value only ever comes from an explicit mute in this browser
+ * profile, so it cannot silence a headed client by accident the way a stray
+ * query value could, and a stored unmute can never override `?muted=1`.
+ *
  * Regression lines:
+ * - if a mute made before a reload is lost after it then the page comes back
+ *   audible without the user asking
  * - if `?muted=1` does not drive the master mute gain to exactly 0 then the
  *   headless silence belt is off and a fan-out of agents plays audio out loud
  * - if unmuting does not restore exactly 1 then the mute is lossy and the
@@ -49,13 +60,56 @@ export function parseMasterMutedParam(search: string): boolean {
 	return new URLSearchParams(search).get(MASTER_MUTE_PARAM) === '1';
 }
 
-/** The startup value for this document. False under SSR, where there is no
- * location and no audio graph to mute. */
+/** The startup value for this document: the URL belt OR the user's stored
+ * mute. False under SSR, where there is no location and no audio graph. */
 export function startupMasterMuted(): boolean {
 	if (typeof window === 'undefined') return false;
 	const search = window.location?.search;
-	if (typeof search !== 'string') return false;
-	return parseMasterMutedParam(search);
+	const fromUrl = typeof search === 'string' && parseMasterMutedParam(search);
+	return fromUrl || readStoredMasterMuted(_browserStorage());
+}
+
+//-----------------------------------------------------------------------------
+// stored choice
+//-----------------------------------------------------------------------------
+
+/** localStorage key for the user's last mute: exactly '1', or absent. */
+export const MASTER_MUTE_STORAGE_KEY = 'odj.master-muted.v1';
+
+type MuteStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+/** Strictly '1', like the query param. Storage that throws (private mode, a
+ * locked-down webview) reads as not stored and says so in the console. */
+export function readStoredMasterMuted(storage: MuteStorage | null): boolean {
+	if (storage === null) return false;
+	try {
+		return storage.getItem(MASTER_MUTE_STORAGE_KEY) === '1';
+	} catch (exc) {
+		console.warn(`master mute: stored choice unreadable, starting audible: ${String(exc)}`);
+		return false;
+	}
+}
+
+/** Store '1' for muted and remove the key for unmuted, so nothing but an
+ * explicit mute can ever read back as one. */
+export function writeStoredMasterMuted(storage: MuteStorage | null, muted: boolean): void {
+	if (storage === null) return;
+	try {
+		if (muted) storage.setItem(MASTER_MUTE_STORAGE_KEY, '1');
+		else storage.removeItem(MASTER_MUTE_STORAGE_KEY);
+	} catch (exc) {
+		console.warn(`master mute: could not store the choice, it will not survive a reload: ${String(exc)}`);
+	}
+}
+
+function _browserStorage(): MuteStorage | null {
+	if (typeof window === 'undefined') return null;
+	try {
+		return window.localStorage ?? null;
+	} catch (exc) {
+		console.warn(`master mute: localStorage unavailable: ${String(exc)}`);
+		return null;
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -90,6 +144,7 @@ export function setMasterMuted(muted: boolean): void {
 	if (typeof muted !== 'boolean') throw new TypeError('setMasterMuted: muted must be boolean');
 	_muted = muted;
 	_applyMasterMute();
+	writeStoredMasterMuted(_browserStorage(), muted);
 }
 
 function _applyMasterMute(): void {
