@@ -148,7 +148,7 @@ hypothesis>=6.100,<7
 # present and only PyPI was unreachable. It is ALSO a core runtime dependency
 # now (RS256 for Google id_token enrollment, ADR 12), declared in
 # [project].dependencies next to pyjwt[crypto].
-cryptography>=42,<47
+cryptography>=50.0.0,<51
 # The type checker. Exact pin, matching ops/quality/mypy-requirements.txt and
 # the copy in pyproject.toml's `dev` extra, because the quality ratchet records
 # a mypy error count and mypy adds and removes checks between versions exactly
