@@ -448,6 +448,31 @@ class HealthOut(BaseModel):
     bind_host: str
     version: str
     google_oauth_configured: bool
+    #: OPS-32 round 4: this used to be `process_env_keys`, every name in this
+    #: process's own `os.environ`. Round 4 (issue #2637/#2638 follow-on,
+    #: Mon 14 Sep 2026) found that field readable by an UNAUTHENTICATED
+    #: caller on a token-mode share host (`/health` is in
+    #: `share_gate.EXEMPT_SUFFIXES` so cloudflared can probe it before a
+    #: token is presented), which handed a public caller the full list of
+    #: which services/secrets this install has configured. Narrowed to two
+    #: fields, neither of which discloses anything beyond the OPS-32 gate's
+    #: own need: which of the FORBIDDEN prefixes leaked (never the harmless
+    #: majority of the environment), and one positive-control bit. Both
+    #: required (no default) so a missing field still fails the gate fast
+    #: rather than rendering as an empty/false pass.
+    #:
+    #: Sorted NAMES ONLY (never values) matching
+    #: :data:`apps.webui.server.ops32_env_guard.OPS32_FORBIDDEN_ENV_PREFIXES`
+    #: -- exists so a post-install rollout probe can verify the RUNNING
+    #: engine's own environment via its self-report rather than reading it
+    #: off the pid via KERN_PROCARGS2 -- measured Mon 14 Sep 2026 to read
+    #: back zero env strings for the bundled Developer-ID signed python3, so
+    #: procargs2 never actually measured the real packaged engine.
+    process_env_forbidden_keys: list[str]
+    #: Positive control: a real launchd-started app always has HOME, so its
+    #: absence means this field was never a real environment read (a stub, a
+    #: pre-OPS-32 engine with no field at all, or a malformed body).
+    process_env_home_present: bool
 
 
 class PreflightCheckOut(BaseModel):

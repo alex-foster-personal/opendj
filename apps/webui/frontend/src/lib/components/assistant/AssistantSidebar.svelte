@@ -19,7 +19,6 @@
 	import {
 		AssistantError,
 		getAssistantStatus,
-		KEY_ENV_VAR,
 		streamChat,
 		type AssistantStatus,
 		type ChatMessage
@@ -140,10 +139,8 @@
 		{:else if status === null}
 			<p class="notice muted">Checking whether the assistant is configured...</p>
 		{:else if !status.configured}
-			<p class="notice danger" role="alert">
-				No API key, so nothing here can answer you. Set
-				<code>{KEY_ENV_VAR}</code> in the engine's environment and restart it. Until then
-				this panel stays inert rather than inventing replies.
+			<p class="notice muted">
+				The assistant is not set up yet. You can finish setup without it.
 			</p>
 		{:else}
 			<div class="log" role="log" aria-live="polite" aria-label="Conversation" bind:this={log}>
@@ -242,10 +239,6 @@
 	.notice.muted,
 	.muted {
 		color: var(--muted);
-	}
-	code {
-		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-		font-size: 0.75rem;
 	}
 	.log {
 		flex: 1;

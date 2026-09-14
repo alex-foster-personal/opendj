@@ -421,6 +421,23 @@
       "capture_method": "run_sync PhaseTimer (hello, push, pull, digest, total); first vs no-op classified on the result",
       "absent_verdict": "UNKNOWN"
     },
+    "BOOT-LIB": {
+      "title": "App open to library rows",
+      "class": "P1",
+      "kpis": [
+        "open_to_library_rows_ms"
+      ],
+      "required": [
+        "open_to_library_rows_ms"
+      ],
+      "unit": "ms",
+      "budget": 2900,
+      "acceptable": 4000,
+      "breaking": 8000,
+      "lower_is_better": true,
+      "capture_method": "client perf-span open-to-library-rows from navigationStart to first track row paint",
+      "absent_verdict": "UNKNOWN"
+    },
     "S13": {
       "title": "Login: submit to library usable",
       "class": "P1",
