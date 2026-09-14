@@ -567,3 +567,58 @@ def test_route_level_hub_hydration_manifest_part_and_track_list(
                 part_resp = client.get(f"/api/v1/tracks/{stable_id}/stems/vocals")
                 assert part_resp.status_code == 200
                 assert part_resp.headers["content-type"].startswith("audio/")
+
+
+def test_r2_first_worker_indexed_fetch_failure_never_falls_through_to_compute(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MUTATION TARGET: an indexed track whose presigned fetch fails must not
+    spawn the Modal/local compute worker for that id."""
+    from scripts import stems_r2_first_worker as worker
+
+    stable_id = "indexed-fetch-fail"
+    spoke_dir, hub_dir, _cfg, _s3, entry, machine_id = _hub_spoke_setup(
+        tmp_path, monkeypatch, stable_id=stable_id
+    )
+    stem_index.save_cached_index(spoke_dir, {stable_id: entry})
+    compute_calls: list[list[str]] = []
+
+    def _spy_compute(stable_ids: list[str], **kwargs: object) -> int:
+        compute_calls.append(list(stable_ids))
+        return 0
+
+    monkeypatch.setattr(worker, "_run_compute", _spy_compute)
+    with TestClient(_enroll_hub_app(hub_dir)) as hub_http:
+        transport = TestClientTransport(hub_http)
+        hub_source = HubPresignedSource(
+            data_dir=spoke_dir,
+            hub_url="http://hub.invalid",
+            machine_id=machine_id,
+            bearer=None,
+            transport=transport,
+        )
+        monkeypatch.setattr(
+            worker,
+            "resolve_stem_hydration_source",
+            lambda _data_dir: hub_source,
+        )
+        monkeypatch.setattr(
+            "apps.stems.hydrate_runner.resolve_stem_hydration_source",
+            lambda _data_dir: hub_source,
+        )
+        # Real presign from hub, but presigned GET targets R2 with no loopback server.
+        with pytest.raises(SystemExit) as exc_info:
+            worker.main(
+                [
+                    "--data-dir",
+                    str(spoke_dir),
+                    "--stable-id",
+                    stable_id,
+                    "--tier",
+                    "M",
+                ]
+            )
+    assert exc_info.value.code != 0
+    assert compute_calls == []
+    assert not (spoke_dir / "state" / "stems" / stable_id).exists()

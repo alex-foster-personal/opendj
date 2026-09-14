@@ -312,19 +312,62 @@ def arm_stem_hydration_source(data_dir: Path) -> StemHydrationArmResult:
 
 
 def resolve_stem_hydration_source(data_dir: Path) -> StemHydrationSource | None:
-    """Runtime source selection for workers and one-off callers."""
-    return arm_stem_hydration_source(data_dir).source
+    """Runtime source selection for workers and one-off callers.
+
+    Unlike :func:`arm_stem_hydration_source`, this does not force a boot-style
+    index refresh or record ``unarmed_reason``: callers own refresh/hydrate
+    failures. It only answers whether this machine has a hydration transport
+    configured (direct R2 credentials or an enrolled CloudSync hub).
+    """
+    from apps.cloud import policy
+    from apps.cloud.config import CloudConfig, MissingEnvError
+
+    data_dir = Path(data_dir)
+    if policy.CFG.mode != "cloud":
+        return None
+    try:
+        cfg = CloudConfig.from_env()
+        asset_store.require_credentials(cfg)
+    except MissingEnvError:
+        cfg = None
+    if cfg is not None:
+        try:
+            s3 = asset_store.boto3_asset_client(cfg)
+        except asset_store.AssetStoreError:
+            return None
+        return DirectR2Source(cfg=cfg, s3=s3)
+    if not _cloudsync_configured(data_dir):
+        return None
+    effective = sync_config.resolve_config(data_dir)
+    hub_url = effective.hub_url
+    if hub_url is None:
+        return None
+    machine_id = get_or_create_machine_id(data_dir)
+    try:
+        bearer = spoke_credential.read_credential(data_dir)
+    except spoke_credential.SpokeCredentialError:
+        return None
+    from apps.sync_hub import machine_credentials
+
+    if bearer is None and machine_credentials.configured_mode() == "enforce":
+        return None
+    return HubPresignedSource(
+        data_dir=data_dir,
+        hub_url=hub_url,
+        machine_id=machine_id,
+        bearer=bearer,
+    )
 
 
 __all__ = [
-    "DirectR2Source",
-    "HubPresignedSource",
     "STEM_BUNDLE_NOT_INDEXED",
     "STEM_BUNDLE_PRESIGN_FAILED",
     "STEM_HUB_AUTH_REFUSED",
     "STEM_HUB_INDEX_FAILED",
     "STEM_HUB_UNREACHABLE",
     "STEM_HYDRATION_NOT_ARMED",
+    "DirectR2Source",
+    "HubPresignedSource",
     "StemHydrationArmResult",
     "StemHydrationSource",
     "StemSourceError",

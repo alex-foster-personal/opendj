@@ -9,7 +9,6 @@ part GET still 404s when there is no file to stream.
 
 from __future__ import annotations
 
-import contextlib
 import os
 import stat
 import threading

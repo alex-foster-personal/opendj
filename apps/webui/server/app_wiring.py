@@ -13,7 +13,7 @@ import threading
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -135,10 +135,6 @@ from .share_gate import ShareConfig, share_gate_middleware
 from .usage_telemetry import UsageStore
 
 log = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from apps.cloud.config import CloudConfig
-
 
 class _SpaStaticFiles(StaticFiles):
     """Serve the SPA shell for extensionless client-side routes.
