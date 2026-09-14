@@ -26,6 +26,7 @@ class StemBulkHydrateIn(BaseModel):
     playlist: str | None = None
     budget_bytes: int = Field(gt=0)
     include_reserved: bool = False
+    refresh_index: bool = False
     data_dir: str | None = None
 
 
@@ -128,6 +129,7 @@ def bulk_hydrate_stems(body: StemBulkHydrateIn) -> StemBulkHydrateOut:
     from apps.cloud.eviction import HydrationError
     from apps.lyrics.artifacts import asset_clients_for_mode
     from apps.shared.paths import DATA_DIR
+    from apps.stems.cli import stems_dir as _stems_dir_for
 
     data_dir = Path(body.data_dir) if body.data_dir else DATA_DIR
     if body.stable_ids:
@@ -147,6 +149,18 @@ def bulk_hydrate_stems(body: StemBulkHydrateIn) -> StemBulkHydrateOut:
             detail="bulk-hydrate needs cloudsync mode 'cloud' with R2 credentials",
         )
     index = stem_index.load_cached_index(data_dir)
+    # Parity with CLI ``bulk-hydrate``: refresh from R2 when the local cache
+    # is empty or the caller passes ``refresh_index=True`` explicitly.
+    if body.refresh_index or not index:
+        index = stem_index.refresh_local_cache_from_r2(cfg, s3, data_dir)
+    if not index:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "no stem bundle index published in R2 "
+                "(run build-index --publish after the push rail has journaled bundles)"
+            ),
+        )
     try:
         report = stem_hydration.bulk_hydrate(
             stable_ids,
@@ -156,6 +170,7 @@ def bulk_hydrate_stems(body: StemBulkHydrateIn) -> StemBulkHydrateOut:
             index=index,
             byte_budget=body.budget_bytes,
             include_reserved=body.include_reserved,
+            stems_dir=_stems_dir_for(data_dir),
         )
     except HydrationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

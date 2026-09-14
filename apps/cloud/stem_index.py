@@ -38,6 +38,10 @@ instead of the asset tier's conditional create.
 * [if] no index object exists in R2 [then] :func:`fetch_index` returns an
   empty index, not an error -- a fleet with no stem push run yet has
   nothing to hydrate from, which is a fact, not a failure.
+* [if] the local cache file is missing [then] :func:`load_cached_index`
+  returns an empty index; [if] the file exists but is corrupt or the wrong
+  shape [then] it raises :class:`StemIndexError` rather than silently
+  reading as empty.
 """
 
 from __future__ import annotations
@@ -196,16 +200,19 @@ def local_index_cache_path(data_dir: Path) -> Path:
 
 
 def load_cached_index(data_dir: Path) -> StemAssetIndex:
-    """Read the local cache copy. Missing or unreadable = empty index; the
-    on-demand deck-load path calls this and must never block or raise on a
-    cold cache -- it just means nothing hydrates until a refresh runs."""
+    """Read the local cache copy.
+
+    Missing file = empty index (cold cache, nothing to hydrate yet).
+    Present but unreadable = :class:`StemIndexError` (real corruption, must
+    not be silently treated as "nothing indexed").
+    """
     path = local_index_cache_path(data_dir)
     if not path.is_file():
         return {}
     try:
         return _decode(path.read_bytes())
-    except StemIndexError:
-        return {}
+    except StemIndexError as exc:
+        raise StemIndexError(f"{path} is unreadable: {exc}") from exc
 
 
 def save_cached_index(data_dir: Path, index: StemAssetIndex) -> Path:

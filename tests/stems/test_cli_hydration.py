@@ -16,7 +16,7 @@ import pytest
 
 from apps.cloud.asset_store import AssetHead, asset_object_key
 from apps.cloud.config import CloudConfig
-from apps.cloud.stem_index import fetch_index, load_cached_index
+from apps.cloud.stem_index import INDEX_OBJECT_KEY, fetch_index, load_cached_index, publish_index
 from apps.stems.cli import _default_journal_path, build_parser
 
 
@@ -64,12 +64,14 @@ class _InMemoryAssetS3:
 
     def __init__(self) -> None:
         self.store: dict[tuple[str, str], bytes] = {}
+        self.get_calls: list[tuple[str, str]] = []
 
     def head_object(self, bucket, key):
         body = self.store.get((bucket, key))
         return None if body is None else AssetHead(size=len(body), etag="x")
 
     def get_object(self, bucket, key):
+        self.get_calls.append((bucket, key))
         body = self.store.get((bucket, key))
         return None if body is None else (body, "x")
 
@@ -256,6 +258,11 @@ def test_bulk_hydrate_json_output_reports_skip_reason(
     data_dir = tmp_path / "data"
     cfg = _cfg()
     s3 = _InMemoryAssetS3()
+    from apps.cloud.stem_index import save_cached_index
+
+    # Warm cache: skip the auto-refresh-on-empty path so an absent id is a
+    # reported skip rather than a "no index in R2" refusal.
+    save_cached_index(data_dir, {"other-track": {"manifest.json": "x" * 64}})
     monkeypatch.setattr(
         "apps.lyrics.artifacts.asset_clients_for_mode", lambda *, writing: (s3, cfg)
     )
@@ -271,3 +278,79 @@ def test_bulk_hydrate_json_output_reports_skip_reason(
     assert payload["fetched"] == []
     assert payload["skipped"][0]["stable_id"] == "nowhere-track"
     assert payload["skipped"][0]["reason"]
+
+
+def test_bulk_hydrate_refresh_index_fetches_from_r2_on_empty_cache(
+    tmp_path: Path, monkeypatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fresh machine with no local cache must pull the published R2 index
+    before hydrating, not silently treat the cache as empty."""
+    data_dir = tmp_path / "data"
+    cfg = _cfg()
+    s3 = _InMemoryAssetS3()
+
+    files = {
+        "manifest.json": _manifest_bytes("fresh-track"),
+        "vocals.wav": _wav_bytes(), "drums.wav": _wav_bytes(),
+        "bass.wav": _wav_bytes(), "other.wav": _wav_bytes(),
+    }
+    entry: dict[str, str] = {}
+    for filename, body in files.items():
+        digest = hashlib.sha256(body).hexdigest()
+        s3.put_object_if_none_match(cfg.audio_bucket, asset_object_key(digest), body)
+        entry[filename] = digest
+    publish_index(cfg, s3, {"fresh-track": entry})
+
+    monkeypatch.setattr(
+        "apps.lyrics.artifacts.asset_clients_for_mode", lambda *, writing: (s3, cfg)
+    )
+
+    rc = _run(
+        [
+            "bulk-hydrate", "--data-dir", str(data_dir),
+            "--ids", "fresh-track", "--budget-bytes", str(10**9),
+            "--refresh-index",
+        ]
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "fetched fresh-track" in out
+    assert (data_dir / "state" / "stems" / "fresh-track" / "manifest.json").exists()
+    assert (cfg.audio_bucket, INDEX_OBJECT_KEY) in s3.get_calls
+
+
+def test_bulk_hydrate_with_warm_cache_does_not_refetch_index(
+    tmp_path: Path, monkeypatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A valid non-empty local cache must not hit R2 for the index on every run."""
+    data_dir = tmp_path / "data"
+    cfg = _cfg()
+    s3 = _InMemoryAssetS3()
+
+    files = {
+        "manifest.json": _manifest_bytes("cached-track"),
+        "vocals.wav": _wav_bytes(), "drums.wav": _wav_bytes(),
+        "bass.wav": _wav_bytes(), "other.wav": _wav_bytes(),
+    }
+    entry: dict[str, str] = {}
+    for filename, body in files.items():
+        digest = hashlib.sha256(body).hexdigest()
+        s3.put_object_if_none_match(cfg.audio_bucket, asset_object_key(digest), body)
+        entry[filename] = digest
+    from apps.cloud.stem_index import save_cached_index
+
+    save_cached_index(data_dir, {"cached-track": entry})
+    publish_index(cfg, s3, {"other-track": {"manifest.json": "z" * 64}})
+
+    monkeypatch.setattr(
+        "apps.lyrics.artifacts.asset_clients_for_mode", lambda *, writing: (s3, cfg)
+    )
+
+    rc = _run(
+        [
+            "bulk-hydrate", "--data-dir", str(data_dir),
+            "--ids", "cached-track", "--budget-bytes", str(10**9),
+        ]
+    )
+    assert rc == 0
+    assert (cfg.audio_bucket, INDEX_OBJECT_KEY) not in s3.get_calls

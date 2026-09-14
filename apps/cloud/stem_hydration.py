@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Literal
 
 from apps.cloud import asset_store, policy, stem_index
-from apps.cloud.asset_store import AssetS3Client
+from apps.cloud.asset_store import AssetS3Client, asset_object_key
 from apps.cloud.config import CloudConfig
 from apps.cloud.eviction import BYTES_PER_MB, HydrationError
 from apps.webui.server.stem_artifacts import (
@@ -167,6 +167,21 @@ def _is_local(stable_id: str, stems_dir: Path) -> bool:
     return True
 
 
+def _bundle_remote_size(
+    cfg: CloudConfig,
+    s3: AssetS3Client,
+    file_hashes: dict[str, str],
+) -> int | None:
+    """Sum HEAD sizes for every indexed file, or ``None`` if any object is absent."""
+    total = 0
+    for digest in file_hashes.values():
+        head = s3.head_object(cfg.audio_bucket, asset_object_key(digest))
+        if head is None:
+            return None
+        total += head.size
+    return total
+
+
 def _fetch_bundle_files(
     cfg: CloudConfig,
     s3: AssetS3Client,
@@ -283,12 +298,30 @@ def bulk_hydrate(
     fetched: list[HydrationOutcome] = []
     skipped: list[HydrationOutcome] = []
     bytes_used = 0
+    root = stems_dir or DEFAULT_STEMS_DIR
     for stable_id in stable_ids:
         if bytes_used >= byte_budget:
             skipped.append(
                 HydrationOutcome(stable_id, "unavailable", reason="byte_budget exhausted")
             )
             continue
+        if not _is_local(stable_id, root):
+            file_hashes = index.get(stable_id)
+            if file_hashes and stem_index.MANIFEST_FILENAME in file_hashes:
+                bundle_size = _bundle_remote_size(cfg, s3, file_hashes)
+                if bundle_size is not None and bytes_used + bundle_size > byte_budget:
+                    remaining = byte_budget - bytes_used
+                    skipped.append(
+                        HydrationOutcome(
+                            stable_id,
+                            "unavailable",
+                            reason=(
+                                f"byte_budget exhausted (bundle needs {bundle_size} bytes, "
+                                f"{remaining} remaining)"
+                            ),
+                        )
+                    )
+                    continue
         outcome = hydrate_one(
             stable_id,
             data_dir=data_dir,

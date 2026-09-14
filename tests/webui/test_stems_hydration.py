@@ -29,6 +29,7 @@ from apps.cloud.config import CloudConfig
 from apps.cloud.lock import FakeS3Client as _UnusedFakeS3  # noqa: F401 (documents the sibling fake)
 from apps.cloud.stem_index import save_cached_index
 from apps.webui.server.routes.stems import router
+from apps.webui.server.routes.stems_assets import router as stems_assets_router
 
 
 def _wav_bytes(*, frames: int = 8, sample_rate: int = 44_100, channels: int = 2) -> bytes:
@@ -264,6 +265,60 @@ def test_part_route_fails_loud_on_hydration_error(tmp_path: Path):
 
 
 # --- deck-open/close parity endpoints ----------------------------------------
+
+
+@pytest.mark.requirement("STEM-17")
+def test_openapi_stem_unavailable_includes_hydrating_field() -> None:
+    openapi = json.loads(Path("apps/webui/openapi.json").read_text(encoding="utf-8"))
+    schema = openapi["components"]["schemas"]["StemUnavailableOut"]
+    assert "hydrating" in schema["properties"]
+
+
+def _assets_client(
+    *,
+    data_dir: Path,
+    hydration_cfg: CloudConfig | None = None,
+    hydration_s3: _InMemoryAssetS3 | None = None,
+) -> TestClient:
+    app = FastAPI()
+    app.state.stem_hydration_cfg = hydration_cfg
+    app.state.stem_hydration_s3 = hydration_s3
+    app.state.stem_hydration_data_dir = data_dir
+    app.include_router(stems_assets_router, prefix="/api/v1")
+    return TestClient(app)
+
+
+@pytest.mark.requirement("STEM-20")
+def test_bulk_hydrate_http_writes_under_request_data_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """POST /stems/bulk-hydrate must honor the request body's data_dir stems path."""
+    data_dir = tmp_path / "custom-data"
+    default_stems_dir = tmp_path / "must-stay-empty"
+    cfg = _cfg()
+    s3 = _InMemoryAssetS3()
+    entry = _seed_bundle(s3, cfg, "http-track")
+    save_cached_index(data_dir, {"http-track": entry})
+
+    monkeypatch.setattr(
+        "apps.webui.server.stem_artifacts.DEFAULT_STEMS_DIR", default_stems_dir
+    )
+    monkeypatch.setattr(
+        "apps.lyrics.artifacts.asset_clients_for_mode", lambda *, writing: (s3, cfg)
+    )
+
+    with _assets_client(data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
+        resp = client.post(
+            "/api/v1/stems/bulk-hydrate",
+            json={
+                "stable_ids": ["http-track"],
+                "budget_bytes": 10**9,
+                "data_dir": str(data_dir),
+            },
+        )
+    assert resp.status_code == 200
+    assert (data_dir / "state" / "stems" / "http-track" / "manifest.json").exists()
+    assert not (default_stems_dir / "http-track" / "manifest.json").exists()
 
 
 @pytest.mark.requirement("STEM-14")

@@ -535,6 +535,13 @@ def cmd_bulk_hydrate(args: argparse.Namespace) -> int:
             "(doppler run -p general -c dev_personal -- ...)"
         )
     index = stem_index.load_cached_index(args.data_dir)
+    if args.refresh_index or not index:
+        index = stem_index.refresh_local_cache_from_r2(cfg, s3, args.data_dir)
+    if not index:
+        raise SystemExit(
+            "error: no stem bundle index published in R2 "
+            "(run build-index --publish after the push rail has journaled bundles)"
+        )
     report = stem_hydration.bulk_hydrate(
         stable_ids,
         data_dir=args.data_dir,
@@ -666,6 +673,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--include-reserved", action="store_true",
         help="also hydrate stable_ids in the reservation guard file "
              "(state/stem-order-reserved-100.json) -- off by default",
+    )
+    bulk_hydrate.add_argument(
+        "--refresh-index", action="store_true",
+        help="fetch the published R2 index into the local cache before hydrating",
     )
     bulk_hydrate.add_argument("--json", action="store_true")
     bulk_hydrate.set_defaults(func=cmd_bulk_hydrate)

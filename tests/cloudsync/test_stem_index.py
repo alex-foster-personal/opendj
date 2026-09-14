@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -166,3 +167,23 @@ def test_local_cache_round_trips(tmp_path: Path):
 @pytest.mark.requirement("STEM-11")
 def test_local_cache_missing_is_empty_not_error(tmp_path: Path):
     assert load_cached_index(tmp_path / "data") == {}
+
+
+@pytest.mark.requirement("STEM-19")
+def test_local_cache_corrupt_json_raises(tmp_path: Path):
+    data_dir = tmp_path / "data"
+    path = tmp_path / "data" / "state" / "stem-bundle-index.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("not json at all", encoding="utf-8")
+    with pytest.raises(StemIndexError, match=re.escape("stem-bundle-index.json")):
+        load_cached_index(data_dir)
+
+
+@pytest.mark.requirement("STEM-19")
+def test_local_cache_missing_stable_ids_key_raises(tmp_path: Path):
+    data_dir = tmp_path / "data"
+    path = tmp_path / "data" / "state" / "stem-bundle-index.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"schema_version": 1}), encoding="utf-8")
+    with pytest.raises(StemIndexError, match=re.escape("stem-bundle-index.json")):
+        load_cached_index(data_dir)

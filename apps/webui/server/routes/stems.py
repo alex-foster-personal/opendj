@@ -194,7 +194,13 @@ def _enqueue_hydration(stable_id: str, request: Request) -> Future | None:
         existing = _INFLIGHT.get(stable_id)
         if existing is not None and not existing.done():
             return existing
-        index = stem_index.load_cached_index(data_dir)
+        # Corrupt cache must not crash deck-load: treat as "nothing indexed
+        # this request" and fall back to ordinary unavailable. The shared
+        # loader raises on corrupt files; callers that need repair must catch.
+        try:
+            index = stem_index.load_cached_index(data_dir)
+        except stem_index.StemIndexError:
+            return None
         if stable_id not in index:
             return None
         stems_dir = _stems_dir(request)

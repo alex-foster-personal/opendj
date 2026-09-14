@@ -303,6 +303,54 @@ def test_enforce_budget_never_evicts_an_open_deck():
         assert (stems_dir / "oldest-but-open").exists()
 
 
+@pytest.mark.requirement("STEM-21")
+def test_bulk_hydrate_skips_oversized_bundle_before_download(
+    tmp_path: Path, fake_s3, cfg: CloudConfig
+):
+    """A bundle larger than the remaining byte budget must never start downloading."""
+    data_dir = tmp_path / "data"
+    stems_dir = tmp_path / "stems"
+    entry = _seed_bundle(fake_s3, cfg, "big-track")
+
+    report = bulk_hydrate(
+        ["big-track"],
+        data_dir=data_dir,
+        cfg=cfg,
+        s3=fake_s3,
+        index={"big-track": entry},
+        byte_budget=10,
+        stems_dir=stems_dir,
+    )
+    assert len(report.fetched) == 0
+    assert report.skipped[0].status == "unavailable"
+    assert report.skipped[0].reason is not None
+    assert "byte_budget" in report.skipped[0].reason
+    assert not (stems_dir / "big-track").exists()
+
+
+@pytest.mark.requirement("STEM-21")
+def test_bulk_hydrate_fits_bundle_within_budget_still_hydrates(
+    tmp_path: Path, fake_s3, cfg: CloudConfig
+):
+    """HEAD-based budget gating must not block a bundle that legitimately fits."""
+    data_dir = tmp_path / "data"
+    stems_dir = tmp_path / "stems"
+    entry = _seed_bundle(fake_s3, cfg, "fits-track")
+
+    report = bulk_hydrate(
+        ["fits-track"],
+        data_dir=data_dir,
+        cfg=cfg,
+        s3=fake_s3,
+        index={"fits-track": entry},
+        byte_budget=10**9,
+        stems_dir=stems_dir,
+    )
+    assert len(report.fetched) == 1
+    assert report.fetched[0].status == "hydrated"
+    assert (stems_dir / "fits-track" / "manifest.json").exists()
+
+
 @pytest.mark.requirement("STEM-14")
 def test_open_deck_registry_is_refcounted():
     registry = OpenDeckRegistry()
