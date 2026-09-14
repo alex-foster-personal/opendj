@@ -50,8 +50,20 @@
 
 	let {
 		mode = 'boot',
+		blocking = true,
+		hideCheckIds = [],
 		navigate
-	}: { mode?: 'boot' | 'admin'; navigate?: (path: string) => unknown } = $props();
+	}: {
+		mode?: 'boot' | 'admin';
+		blocking?: boolean;
+		hideCheckIds?: string[];
+		navigate?: (path: string) => unknown;
+	} = $props();
+
+	const hiddenIds = $derived(new Set(hideCheckIds));
+	const visibleChecks = $derived(
+		preflightGate.checks.filter((check) => !hiddenIds.has(check.id))
+	);
 
 	let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -87,21 +99,31 @@
 	});
 
 	onDestroy(stopPolling);
+
+	const showSurface = $derived(
+		mode === 'admin' ||
+			blocking ||
+			visibleChecks.length > 0 ||
+			preflightGate.error !== null
+	);
 </script>
 
+{#if showSurface}
 <section
 	class="preflight"
-	class:preflight-boot={mode === 'boot'}
+	class:preflight-boot={mode === 'boot' && blocking}
+	class:preflight-boot-strip={mode === 'boot' && !blocking}
 	class:preflight-admin={mode === 'admin'}
 	data-preflight-mode={mode}
 	data-preflight-status={preflightGate.status}
+	data-preflight-blocking={blocking ? 'true' : 'false'}
 >
-	<h2>{mode === 'boot' ? 'Starting up' : 'Preflight'}</h2>
+	<h2>{mode === 'boot' ? (blocking ? 'Starting up' : 'Startup checks') : 'Preflight'}</h2>
 	{#if preflightGate.error}
 		<p class="preflight-error">Could not reach the engine: {preflightGate.error}</p>
 	{/if}
 	<ul class="preflight-checks">
-		{#each preflightGate.checks as check (check.id)}
+		{#each visibleChecks as check (check.id)}
 			<PreflightCheckRow {check} {navigate} />
 		{/each}
 	</ul>
@@ -115,10 +137,11 @@
 			Re-request permissions
 		</button>
 	</div>
-	{#if mode === 'boot'}
+	{#if mode === 'boot' && blocking}
 		<p class="note">This screen clears itself automatically once every check passes.</p>
 	{/if}
 </section>
+{/if}
 
 <style>
 	/* No success/positive token exists in app.css yet; scoped here rather
@@ -149,6 +172,31 @@
 		margin: 10vh auto;
 		height: fit-content;
 		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+	}
+	.preflight-boot-strip {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 360;
+		max-width: none;
+		margin: 0;
+		border-radius: 0;
+		border-top: none;
+		border-left: none;
+		border-right: none;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+	}
+	.preflight-boot-strip h2 {
+		font-size: 0.95rem;
+	}
+	.preflight-boot-strip .preflight-checks {
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 0.75rem 1.25rem;
+	}
+	.preflight-boot-strip .note {
+		display: none;
 	}
 	.preflight-error {
 		color: var(--danger);

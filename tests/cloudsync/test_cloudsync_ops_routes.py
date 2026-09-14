@@ -252,6 +252,7 @@ def test_post_sync_returns_409_when_deck_playing(
     """[if] a deck is playing [then] POST /sync returns 409 CLOUDSYNC_SYNC_DEFERRED."""
     with ops_client(enroll_spoke_dir) as http:
         http.app.state.ui_mirror = {"decks": {"1": {"playing": True}}}
+        http.app.state.machine_pressure = {"available": True}
         response = http.post("/api/v1/cloudsync/sync", json={"hub_url": enroll_live_hub})
         status = http.get("/api/v1/cloudsync/status").json()
 

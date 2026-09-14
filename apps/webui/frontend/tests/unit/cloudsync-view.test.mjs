@@ -520,6 +520,25 @@ test('statusHeadline leads with a plain sentence and a next step for every state
 	}
 });
 
+test('identityBacklogNote reports the identity-hold count without a retry suggestion', () => {
+	/** if a zero or missing backlog still shows a note then broken */
+	assert.equal(view.identityBacklogNote(null), null);
+	assert.equal(view.identityBacklogNote(0), null);
+
+	/** if a positive backlog produces no note, or claims retrying the sync
+	 * fixes it (it does nothing for rows held on identity), then broken */
+	const many = view.identityBacklogNote(7331);
+	assert.match(many, /7331 tracks/);
+	assert.match(many, /they lack/);
+	assert.match(many, /retrying Sync now will not change this/);
+
+	/** if singular phrasing is not grammatical for a count of one then broken */
+	const one = view.identityBacklogNote(1);
+	assert.match(one, /1 track /);
+	assert.doesNotMatch(one, /1 tracks/);
+	assert.match(one, /it lacks/);
+});
+
 test('env overrides are named when they mask the saved config', () => {
 	/** if an env-won field is silently shown as the saved value then broken */
 	assert.deepEqual(view.envOverrideNotes(config()), []);

@@ -15,8 +15,8 @@ from typing import Any
 
 import pytest
 
-from apps.webui.server import machine_pressure
-from apps.webui.server.machine_pressure import (
+from apps.shared import machine_pressure
+from apps.shared.machine_pressure import (
     CACHE_TTL_SECONDS,
     PRESSURE_CHURN_WEIGHT_SWAP,
     PRESSURE_SAMPLE_P95_WALL_MS,

@@ -119,6 +119,33 @@ def test_perf_span_stores_and_page_view_still_stores(tmp_path: Path) -> None:
     assert kinds == {"page-view", "perf-span"}
 
 
+def test_open_to_library_rows_perf_span_stores(tmp_path: Path) -> None:
+    app = create_app(
+        backend=InMemoryBackend(),
+        mount_frontend=False,
+        enable_cors=False,
+        client_event_log_dir=tmp_path,
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/client-events",
+            json={
+                "client_event_id": "perf-boot-1",
+                "kind": "perf-span",
+                "name": "open-to-library-rows",
+                "duration_ms": 2100.0,
+                "method": "navigationStart to first track row first paint",
+                "client_timestamp": "2026-09-14T21:00:00.000Z",
+            },
+        )
+    assert response.status_code == 202
+    paths = list(tmp_path.glob("webui-visitors-*.log"))
+    assert len(paths) == 1
+    record = json.loads(paths[0].read_text(encoding="utf-8").strip())
+    assert record["kind"] == "perf-span"
+    assert record["name"] == "open-to-library-rows"
+
+
 def test_perf_span_rejects_unknown_name(tmp_path: Path) -> None:
     app = create_app(
         backend=InMemoryBackend(),

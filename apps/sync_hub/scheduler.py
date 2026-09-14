@@ -97,7 +97,7 @@ PressureReader = Callable[[], Mapping[str, Any]]
 
 
 def _default_pressure_reader() -> Mapping[str, Any]:
-    from apps.webui.server.machine_pressure import read_machine_pressure
+    from apps.shared.machine_pressure import read_machine_pressure
 
     return read_machine_pressure()
 
