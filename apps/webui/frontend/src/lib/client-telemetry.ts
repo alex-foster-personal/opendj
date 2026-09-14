@@ -4,6 +4,7 @@ let fallbackId = 0;
 
 const LOGIN_SUBMIT_KEY = 'mdt.loginSubmitAt';
 const PERF_SPAN_LOGIN = 'login-submit-to-library-usable';
+export const PERF_SPAN_OPEN_TO_LIBRARY_ROWS = 'open-to-library-rows';
 
 type TelemetryWindow = Window & {
 	__musicDjToolsVisitorTelemetryInstalled?: boolean;
@@ -105,6 +106,32 @@ export async function recordPerfSpan(args: {
 		.catch(() => {
 			// Perf telemetry must never interfere with the application path.
 		});
+}
+
+let openToLibraryRowsRecorded = false;
+
+export function recordOpenToLibraryRows(args: {
+	source: 'all-tracks' | 'playlist';
+	now?: number;
+}): void {
+	if (openToLibraryRowsRecorded) return;
+	openToLibraryRowsRecorded = true;
+	const now = args.now ?? Date.now();
+	const navStart = navigationStartMs();
+	const durationMs = now - navStart;
+	void recordPerfSpan({
+		name: PERF_SPAN_OPEN_TO_LIBRARY_ROWS,
+		duration_ms: durationMs,
+		method: 'navigationStart to first track row first paint',
+		stages: {
+			boot_source: args.source === 'all-tracks' ? 1 : 2
+		}
+	});
+}
+
+/** Test-only reset for idempotent open-to-library-rows recording. */
+export function resetOpenToLibraryRowsRecordedForTests(): void {
+	openToLibraryRowsRecorded = false;
 }
 
 export function completeLibraryUsable(args: {

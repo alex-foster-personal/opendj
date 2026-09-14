@@ -39,7 +39,9 @@ def client(tmp_path: Path) -> TestClient:
 
     app = create_app(mount_frontend=False)
     app.state.data_dir = tmp_path
-    return TestClient(app)
+    # TestClient's default Host is ``testserver``; the request guard allows
+    # loopback names only, so drive requests through 127.0.0.1 (issue #2689).
+    return TestClient(app, base_url="http://127.0.0.1")
 
 
 def _create(client: TestClient, text: str = "the header icon is misaligned") -> dict:
@@ -221,7 +223,53 @@ def test_declared_content_type_mismatched_with_the_decoded_format_is_refused(
         files={"file": ("shot.png", gif_bytes_declared_as_png, "image/png")},
     )
     assert r.status_code == 422, r.text
-    assert r.json()["detail"]["code"] == "ATTACHMENT_TYPE_MISMATCH"
+    # With formats= restricted to the declared plugin, cross-format bytes fail
+    # at decode time (ATTACHMENT_NOT_AN_IMAGE) rather than after decode
+    # (ATTACHMENT_TYPE_MISMATCH).
+    assert r.json()["detail"]["code"] in {
+        "ATTACHMENT_NOT_AN_IMAGE",
+        "ATTACHMENT_TYPE_MISMATCH",
+    }
+    assert _attachment_files(tmp_path) == []
+    assert _comments(tmp_path)[0].get("attachment") is None
+
+
+def test_bmp_bytes_declared_as_png_are_refused_before_storage(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """With formats=['PNG'] only the PNG plugin runs; real BMP bytes posted as
+    image/png must be refused before any file is written (issue #2688)."""
+    pin = _create(client)
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), color=(1, 2, 3)).save(buf, format="BMP")
+    bmp_bytes_declared_as_png = buf.getvalue()
+
+    r = client.post(
+        f"/api/v1/feedback/comments/{pin['id']}/attachment",
+        files={"file": ("shot.png", bmp_bytes_declared_as_png, "image/png")},
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["code"] == "ATTACHMENT_NOT_AN_IMAGE"
+    assert _attachment_files(tmp_path) == []
+    assert _comments(tmp_path)[0].get("attachment") is None
+
+
+def test_tga_bytes_declared_as_png_are_refused_before_storage(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """With formats=['PNG'] only the PNG plugin runs; real TGA bytes posted as
+    image/png must be refused before any file is written (issue #2688)."""
+    pin = _create(client)
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), color=(4, 5, 6)).save(buf, format="TGA")
+    tga_bytes_declared_as_png = buf.getvalue()
+
+    r = client.post(
+        f"/api/v1/feedback/comments/{pin['id']}/attachment",
+        files={"file": ("shot.png", tga_bytes_declared_as_png, "image/png")},
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["code"] == "ATTACHMENT_NOT_AN_IMAGE"
     assert _attachment_files(tmp_path) == []
     assert _comments(tmp_path)[0].get("attachment") is None
 

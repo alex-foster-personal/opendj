@@ -221,8 +221,8 @@ export function summarizeUpdate(
 		};
 	} else if (check.status === 'up-to-date') {
 		return {
-			label: check.same_version_different_build ? 'same version, other build' : 'up to date',
-			prominent: check.same_version_different_build,
+			label: check.same_version_different_build ? 'not the release build' : 'up to date',
+			prominent: false,
 			title: check.same_version_different_build
 				? `The channel offers ${check.available_version}, the same VERSION this build reports, ` +
 					`but its release notes do not name this build's commit. The updater compares version ` +

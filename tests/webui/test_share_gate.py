@@ -100,6 +100,39 @@ def test_health_is_exempt_on_share_host(share_client: TestClient) -> None:
     assert resp.status_code == 200
 
 
+@pytest.mark.requirement("OPS-32")
+def test_health_on_share_host_without_token_discloses_no_benign_env_name(
+    share_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """if an unauthenticated share-host caller ever sees a non-forbidden env
+    var NAME in /api/v1/health then broken.
+
+    OPS-32 round 4 (issue #2637/#2638 follow-on, Mon 14 Sep 2026): this is
+    the exact path the round exists to close. `/api/v1/health` is exempt
+    from this module's own auth gate in token mode (see
+    `test_health_is_exempt_on_share_host` above, and
+    `share_gate.EXEMPT_SUFFIXES` / `share_gate_middleware`'s
+    `if config.auth == AUTH_TOKEN and is_exempt(...)` early return) so that
+    cloudflared can probe liveness before a token is presented. Round 3's
+    `process_env_keys` field handed that same unauthenticated caller the
+    full sorted list of every configured env var name -- which services and
+    secrets this install has configured, on a repo going public. Round 4
+    narrows the field to `process_env_forbidden_keys` (names already
+    matching a small forbidden-prefix constant) plus a control bit, so a
+    benign, non-forbidden-prefix name a real install would also have set
+    must never appear in the body an unauthenticated share-host caller
+    receives.
+
+    - [if] a token-less share-host caller sees a benign env name [then] this fails, [else stop].
+    """
+    monkeypatch.setenv("OPS32_BENIGN_CANARY", "irrelevant-value")
+    resp = share_client.get("/api/v1/health", headers={"Host": SHARE_HOST})
+    assert resp.status_code == 200
+    assert "OPS32_BENIGN_CANARY" not in resp.text
+    body = resp.json()
+    assert "OPS32_BENIGN_CANARY" not in body["process_env_forbidden_keys"]
+
+
 def test_access_mode_rejects_missing_identity_even_for_health(
     access_client: TestClient,
 ) -> None:

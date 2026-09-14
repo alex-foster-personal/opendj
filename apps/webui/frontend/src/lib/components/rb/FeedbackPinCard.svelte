@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { pinBodyPos, pinBodyStyle, pinIsDone, pinStatus } from '$lib/rb/feedback';
+	import { blockedPinDetail, blockedPinRequest } from '$lib/rb/feedback';
 	import { pinVisualState } from '$lib/rb/feedback-pin-partial';
 	import { linkifyAgentNote } from '$lib/rb/feedback';
 	import {
@@ -133,6 +134,17 @@
 	{#each thread as turn (turn.id)}
 		{#if turn.kind === 'opening'}
 			<p class="fb-body-text">{turn.text}</p>
+		{:else if pinStatus(pin) === 'blocked' && turn.author === 'agent' && turn.text === pin.agent_note}
+			<p class="fb-blocked-request">{blockedPinRequest(turn.text)}</p>
+			{#if blockedPinDetail(turn.text)}
+				<p class="fb-note" title="Supporting detail for the blocked request">
+					{#each linkifyAgentNote(blockedPinDetail(turn.text)) as segment, i (i)}
+						{#if segment.type === 'link'}
+							<a href={segment.value} target="_blank" rel="noreferrer noopener" onclick={(e) => e.stopPropagation()}>{segment.value}</a>
+						{:else}{segment.value}{/if}
+					{/each}
+				</p>
+			{/if}
 		{:else}
 			<p class="fb-note" title={turn.author === 'operator' ? 'Your follow-up' : 'What an agent did about this pin'}>
 				{#if turn.author === 'operator'}
@@ -296,6 +308,13 @@
 		/* pin 27fe1e3e61b5: .perf-root sets user-select: none globally, which
 		   this inherits otherwise - an agent's reply must be copyable. */
 		user-select: text;
+	}
+	.fb-blocked-request {
+		margin: 4px 0 0;
+		padding: 4px;
+		border-left: 2px solid var(--rb-red);
+		color: var(--rb-red);
+		font-weight: 700;
 	}
 	.fb-note a {
 		color: var(--rb-accent);

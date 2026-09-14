@@ -44,6 +44,7 @@ from apps.sync_hub import enrollment_credentials, maintenance, maintenance_enrol
 from apps.sync_hub.scheduler_owed import mark_scheduler_owed
 from apps.sync_hub.single_flight import sync_lock_for
 from apps.webui.server.local_operator import local_operator_refusal
+from apps.shared.machine_pressure import read_machine_pressure
 
 from .cloudsync_status import data_dir_for_request
 
@@ -327,6 +328,15 @@ def resume_scheduler_owed(request: Request) -> SchedulerResumeOut:
     return SchedulerResumeOut(ok=True)
 
 
+def _pressure_for_request(request: Request) -> dict[str, Any]:
+    """Live sampler by default; tests may pin a calm payload on ``app.state``."""
+    override = getattr(request.app.state, "machine_pressure", None)
+    if isinstance(override, dict):
+        return override
+    payload = read_machine_pressure()
+    return dict(payload) if isinstance(payload, dict) else {}
+
+
 @router.post(
     "/sync",
     response_model=SyncRunOut,
@@ -339,7 +349,12 @@ def run_sync_round(body: SyncRunIn, request: Request) -> SyncRunOut:
     mirror = getattr(request.app.state, "ui_mirror", None)
     if mirror is not None and not isinstance(mirror, dict):
         mirror = None
-    reason = refuse_sync_round(data_dir, mirror, force=body.force)
+    reason = refuse_sync_round(
+        data_dir,
+        mirror,
+        force=body.force,
+        pressure_payload=_pressure_for_request(request),
+    )
     if reason is not None:
         raise _refuse(409, "CLOUDSYNC_SYNC_DEFERRED", f"CloudSync sync deferred: {reason}")
     with _one_sync_at_a_time(data_dir):

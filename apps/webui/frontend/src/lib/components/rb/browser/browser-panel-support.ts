@@ -12,7 +12,7 @@ export {
 } from '$lib/rb/next-only-filter';
 export { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
 export { libraryHealthDot, type LibraryHealthDot } from '$lib/rb/library-health-dots';
-export { completeLibraryUsable } from '$lib/client-telemetry';
+export { completeLibraryUsable, recordOpenToLibraryRows } from '$lib/client-telemetry';
 export { formatReplaceStateUrl } from '$lib/rb/performance-deeplink';
 export { addToPlaylistToastMessage, appendTracksToPlaylist } from '$lib/rb/add-to-playlist';
 export { removeFromLibrary } from '$lib/rb/track-library';
