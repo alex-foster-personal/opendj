@@ -95,21 +95,13 @@ _RUNNING_AS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
 
 @pytest.fixture
 def data_dir(tmp_path: Path) -> Path:
-    """Shadows ``tests.lyrics.conftest.data_dir`` for every test in this
-    file: ``load_reserved_ids``'s LYR-06 P1 fix (CLAUDE-review round 7, PR
-    #2611, library_verdicts.py:216) makes a MISSING reserved-100 file a hard
-    ``ReservedIdsError`` instead of a silent empty set, so a stub file with
-    zero reserved ids is written here up front -- otherwise every test in
-    this suite that has nothing to do with the reserved guard would break on
-    that error. Tests exercising a genuinely reserved track write their OWN
-    content over this stub (fixture setup runs before the test body); tests
-    exercising the guard's own absent/malformed-file behaviour build their
-    directory straight from ``tmp_path`` instead of depending on this
-    fixture, so the file stays genuinely absent."""
+    """Shadows ``tests.lyrics.conftest.data_dir``: a data dir whose
+    ``state/`` exists but holds NO reserved-100 file, which is what a fresh
+    install looks like, so every backfill in this suite runs the default
+    ``include_reserved=False`` path over an absent reservation. Tests about a
+    genuinely reserved track write the file themselves."""
     path = tmp_path / "data"
-    reserved = path / "state" / library_verdicts.RESERVED_FILENAME
-    reserved.parent.mkdir(parents=True, exist_ok=True)
-    reserved.write_text(json.dumps({"tracks": []}), encoding="utf-8")
+    (path / "state").mkdir(parents=True, exist_ok=True)
     return path
 
 
@@ -1590,20 +1582,31 @@ def test_limit_caps_the_computed_set_not_the_skips(conn, data_dir) -> None:
     assert report.candidates == 3
 
 
-def test_reserved_ids_raises_when_file_absent(tmp_path: Path) -> None:
-    """LYR-06 P1 BLOCKING fix (CLAUDE-review round 7, PR #2611,
-    library_verdicts.py:216), replacing
-    ``test_reserved_ids_load_empty_set_when_file_absent``: a missing
-    reserved-100 file must fail closed, not silently read as "nothing
-    reserved" -- that is the likely case the first time this points at a
-    real ``--data-dir``, and it would let all 100 QA-held tracks get
-    automated verdicts with no trace in the report. Built straight from
-    ``tmp_path``, not the file-level ``data_dir`` fixture (which stubs a
-    reserved file for every OTHER test in this suite), so the file is
-    genuinely absent here."""
-    missing_data_dir = tmp_path / "data"
-    with pytest.raises(library_verdicts.ReservedIdsError, match="missing"):
-        library_verdicts.load_reserved_ids(missing_data_dir)
+def test_reserved_ids_absent_file_reserves_nothing(tmp_path: Path) -> None:
+    """A fresh install has no reserved-100 file (it is a QA artifact written
+    by hand) and ``include_reserved`` defaults to False, so absence must read
+    as "nothing reserved", the same policy ADR-0024's hydration loader has
+    for the same file. Round 7 briefly raised here, which would have refused
+    every default backfill on every machine but the QA one. Built straight
+    from ``tmp_path``, not the file-level ``data_dir`` fixture (which stubs a
+    reserved file), so the file is genuinely absent."""
+    assert library_verdicts.load_reserved_ids(tmp_path / "data") == frozenset()
+
+
+def test_reserved_ids_policy_matches_the_hydration_loader(tmp_path: Path) -> None:
+    """One file, two readers: they must agree on absent AND on present."""
+    from apps.cloud import stem_hydration
+
+    data_dir = tmp_path / "data"
+    assert library_verdicts.load_reserved_ids(data_dir) == stem_hydration.load_reserved_ids(
+        data_dir
+    )
+    (data_dir / "state").mkdir(parents=True)
+    (data_dir / "state" / library_verdicts.RESERVED_FILENAME).write_text(
+        '{"tracks": [{"stable_id": "a"}, {"stable_id": "b"}]}', encoding="utf-8"
+    )
+    assert library_verdicts.load_reserved_ids(data_dir) == frozenset({"a", "b"})
+    assert stem_hydration.load_reserved_ids(data_dir) == frozenset({"a", "b"})
 
 
 def test_reserved_ids_raises_when_path_is_a_directory(tmp_path: Path) -> None:

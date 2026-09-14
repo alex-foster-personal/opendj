@@ -91,13 +91,11 @@ otherwise leave a stale verdict silently unrefreshed forever (see
 **Reserved tracks.** ``<data_dir>/state/stem-order-reserved-100.json`` names
 100 stable_ids held back to test in-app stem ordering; this module refuses
 to process them (reports them skipped, reason "reserved") unless
-``include_reserved=True`` is passed explicitly. That guard is fail-closed:
-when it is active (``include_reserved=False``), a missing, unreadable, or
-malformed reserved-ids file is a hard :class:`ReservedIdsError`, never a
-silent empty set -- the file being absent is the likely case the FIRST time
-this runs against a real ``--data-dir``, and treating that as "nothing
-reserved" would compute automated verdicts for all 100 QA-held tracks with
-no trace in the report. See :func:`load_reserved_ids`.
+``include_reserved=True`` is passed explicitly. A missing file reserves
+nothing (a fresh install has none, as ADR-0024 reads the same file); a
+present but unreadable, malformed, or non-file one is a hard
+:class:`ReservedIdsError`, never a silent empty set. See
+:func:`load_reserved_ids`.
 
 **Cheaper than decoding twice.** ``apps.vocals from-stems`` already computes
 this exact coverage number when it fills ``data/state/vocal-cache``. When a
@@ -251,24 +249,23 @@ class ReservedIdsError(ValueError):
 def load_reserved_ids(data_dir: Path) -> frozenset[str]:
     """The 100 stable_ids held back for in-app ordering QA.
 
-    Fails closed, not open: this is only ever called when the reserved guard
-    is ACTIVE (``backfill_verdicts`` calls it exactly when
-    ``include_reserved`` is False), so a file that is missing, unreadable, or
-    malformed must never read as "nothing reserved" -- that is exactly the
-    silent-disappearance failure mode this guard exists to prevent. Checked
-    with :meth:`Path.exists`, not :meth:`Path.is_file`: the latter would ALSO
-    return False for a directory sitting where the file is expected, folding
-    that anomaly into the same "absent" path instead of surfacing it -- the
-    same distinction :func:`_cached_coverage_pct` already draws for the
-    vocal-cache read.
+    A missing file is an empty reservation, not an error, exactly as
+    :func:`apps.cloud.stem_hydration.load_reserved_ids` reads the same file
+    (ADR-0024): the reservation is a QA artifact written by hand on a test
+    machine, so a fresh install never has one, and ``include_reserved``
+    defaults to False on the CLI and the HTTP route. Failing on absence
+    would refuse every default backfill on every machine but the QA one.
+
+    A file that IS there but cannot be used fails closed: a directory where
+    the file belongs (hence :meth:`Path.exists`, not :meth:`Path.is_file`),
+    an unreadable file, or a malformed one is a hard
+    :class:`ReservedIdsError`, never a silent "nothing reserved".
     """
     path = data_dir / "state" / RESERVED_FILENAME
     if not path.exists():
-        raise ReservedIdsError(
-            f"{path} is missing. The reserved-100 guard cannot be silently "
-            "skipped: pass include_reserved=True to deliberately process the "
-            "QA-held-back tracks, or restore the file."
-        )
+        return frozenset()
+    if not path.is_file():
+        raise ReservedIdsError(f"{path} exists but is not a file")
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -565,7 +562,7 @@ def _write_candidate(
             pipeline_version=STEM_COVERAGE_PIPELINE_VERSION,
             computed_at=sync_stamp.canonical_now(),
         )
-    except (store.LyricStoreError, sqlite3.Error, RuntimeError, ValueError) as exc:
+    except (store.LyricStoreError, sqlite3.Error, RuntimeError, ValueError, OSError) as exc:
         return _WriteOutcome(fail_reason=f"{type(exc).__name__}: {exc}")
     if not written:
         # A real ASR/aligner write OR a fresh human override landed on this
