@@ -4,6 +4,8 @@ Unidentifiable inferred-tier tracks stay local so they cannot mint a
 path-tier PK the hub cannot collapse. Identity-bearing rows still sync.
 A collapse remap has to outlive one ``hub_apply`` batch: first-sync splits
 tracks and playlists across HTTP requests (``PUSH_BATCH_ROWS`` is 200).
+
+[if] an unidentifiable track has a multi-batch remap [then] it holds local, lands, [else stop].
 """
 from __future__ import annotations
 

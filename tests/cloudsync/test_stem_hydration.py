@@ -125,6 +125,7 @@ def _reservation_file(data_dir: Path, *, reserved_ids: list[str]) -> None:
 
 @pytest.mark.requirement("STEM-12")
 def test_hydrate_one_already_local_is_a_noop(tmp_path: Path, fake_s3, cfg: CloudConfig):
+    """[if] a bundle exists on disk [then] hydrate_one reports already_local, [else stop]."""
     stems_dir = tmp_path / "stems"
     bundle_dir = stems_dir / "local-track"
     bundle_dir.mkdir(parents=True)
@@ -146,6 +147,7 @@ def test_hydrate_one_already_local_is_a_noop(tmp_path: Path, fake_s3, cfg: Cloud
 
 @pytest.mark.requirement("STEM-12")
 def test_hydrate_one_fetches_and_strict_loads(tmp_path: Path, fake_s3, cfg: CloudConfig):
+    """[if] a bundle is remote-only [then] hydrate_one downloads, loader accepts it, [else stop]."""
     stems_dir = tmp_path / "stems"
     index_entry = _seed_bundle(fake_s3, cfg, "remote-track")
 
@@ -167,6 +169,7 @@ def test_hydrate_one_fetches_and_strict_loads(tmp_path: Path, fake_s3, cfg: Clou
 
 @pytest.mark.requirement("STEM-12")
 def test_hydrate_one_not_in_index_is_unavailable(tmp_path: Path, fake_s3, cfg: CloudConfig):
+    """[if] a stable_id has no bundle/index [then] hydrate_one reports unavailable, [else stop]."""
     outcome = hydrate_one(
         "nowhere",
         data_dir=tmp_path / "data",
@@ -183,7 +186,10 @@ def test_hydrate_one_indexed_without_manifest_is_error(
     tmp_path: Path, fake_s3, cfg: CloudConfig
 ):
     """Indexed but unproducible is an error, not 'unavailable' (the index
-    claimed the bundle exists)."""
+    claimed the bundle exists).
+
+    [if] the index has no manifest.json hash [then] hydrate_one errors, [else stop].
+    """
     outcome = hydrate_one(
         "headless",
         data_dir=tmp_path / "data",
@@ -201,8 +207,7 @@ def test_hydrate_one_indexed_without_manifest_is_error(
 def test_hydrate_one_rejects_disallowed_index_filename(
     tmp_path: Path, fake_s3, cfg: CloudConfig
 ):
-    """[if] the caller-supplied index names a traversal filename [then] no files
-    are written and hydration reports an explicit error."""
+    """[if] the index names a traversal filename [then] no writes, hydration errors, [else stop]."""
     stems_dir = tmp_path / "stems"
     stable_id = "escape-track"
     index_entry = _seed_bundle(fake_s3, cfg, stable_id)
@@ -232,7 +237,10 @@ def test_hydrate_one_leaves_no_partial_bundle_on_fetch_failure(
     tmp_path: Path, fake_s3, cfg: CloudConfig
 ):
     """A part's hash is in the index but not actually in the fake store:
-    the fetch must fail, and the half-written directory must not remain."""
+    the fetch must fail, and the half-written directory must not remain.
+
+    [if] a fetch fails partway [then] hydrate_one errors, no partial bundle dir, [else stop].
+    """
     stems_dir = tmp_path / "stems"
     index_entry = _seed_bundle(fake_s3, cfg, "broken-track")
     index_entry["vocals.wav"] = "f" * 64  # never pushed -> fetch_asset raises
@@ -254,6 +262,7 @@ def test_hydrate_one_leaves_no_partial_bundle_on_fetch_failure(
 
 @pytest.mark.requirement("STEM-13")
 def test_bulk_hydrate_skips_reserved_by_default(tmp_path: Path, fake_s3, cfg: CloudConfig):
+    """[if] reserved, include_reserved unset [then] bulk_hydrate skips it, [else stop]."""
     data_dir = tmp_path / "data"
     stems_dir = tmp_path / "stems"
     entry = _seed_bundle(fake_s3, cfg, "reserved-track")
@@ -278,6 +287,7 @@ def test_bulk_hydrate_skips_reserved_by_default(tmp_path: Path, fake_s3, cfg: Cl
 def test_bulk_hydrate_includes_reserved_only_with_explicit_flag(
     tmp_path: Path, fake_s3, cfg: CloudConfig
 ):
+    """[if] include_reserved=True [then] bulk_hydrate fetches the reserved track, [else stop]."""
     data_dir = tmp_path / "data"
     stems_dir = tmp_path / "stems"
     entry = _seed_bundle(fake_s3, cfg, "reserved-track")
@@ -300,7 +310,10 @@ def test_bulk_hydrate_includes_reserved_only_with_explicit_flag(
 @pytest.mark.requirement("STEM-13")
 def test_on_demand_hydrate_one_never_skips_reserved(tmp_path: Path, fake_s3, cfg: CloudConfig):
     """MUTATION TARGET: flip skip_reserved=True here and this test goes red
-    -- the deck-load path must be able to hydrate a reserved id."""
+    -- the deck-load path must be able to hydrate a reserved id.
+
+    [if] a deck-load hydrates a reserved track, skip_reserved=False [then] it hydrates, [else stop].
+    """
     data_dir = tmp_path / "data"
     stems_dir = tmp_path / "stems"
     entry = _seed_bundle(fake_s3, cfg, "reserved-track")
@@ -320,11 +333,13 @@ def test_on_demand_hydrate_one_never_skips_reserved(tmp_path: Path, fake_s3, cfg
 
 @pytest.mark.requirement("STEM-13")
 def test_load_reserved_ids_missing_file_is_empty(tmp_path: Path):
+    """[if] no reservation file exists [then] load_reserved_ids returns empty, [else stop]."""
     assert load_reserved_ids(tmp_path / "data") == frozenset()
 
 
 @pytest.mark.requirement("STEM-13")
 def test_load_reserved_ids_reads_tracks_array(tmp_path: Path):
+    """[if] a reservation file lists tracks [then] load_reserved_ids matches it, [else stop]."""
     data_dir = tmp_path / "data"
     _reservation_file(data_dir, reserved_ids=["a", "b"])
     assert load_reserved_ids(data_dir) == frozenset({"a", "b"})
@@ -347,6 +362,7 @@ def _make_bundle_on_disk(stems_dir: Path, stable_id: str, *, atime: float) -> No
 
 @pytest.mark.requirement("STEM-14")
 def test_enforce_budget_evicts_least_recently_used_bundle(tmp_path: Path):
+    """[if] the cache exceeds budget [then] enforce_budget evicts the LRU bundle, [else stop]."""
     stems_dir = tmp_path / "stems"
     _make_bundle_on_disk(stems_dir, "old", atime=1_000_000)
     _make_bundle_on_disk(stems_dir, "new", atime=2_000_000)
@@ -360,7 +376,10 @@ def test_enforce_budget_evicts_least_recently_used_bundle(tmp_path: Path):
 @pytest.mark.requirement("STEM-14")
 def test_enforce_budget_never_evicts_an_open_deck():
     """MUTATION TARGET: pass ``protected=frozenset()`` instead of the real
-    open-deck set here and this test goes red."""
+    open-deck set here and this test goes red.
+
+    [if] the oldest bundle belongs to an open deck [then] it is never evicted, [else stop].
+    """
     stems_dir_holder: dict[str, Path] = {}
 
     def _setup(tmp: Path) -> Path:
@@ -385,7 +404,10 @@ def test_enforce_budget_never_evicts_an_open_deck():
 def test_bulk_hydrate_skips_oversized_bundle_before_download(
     tmp_path: Path, fake_s3, cfg: CloudConfig
 ):
-    """A bundle larger than the remaining byte budget must never start downloading."""
+    """A bundle larger than the remaining byte budget must never start downloading.
+
+    [if] a bundle exceeds the byte budget [then] bulk_hydrate skips downloading it, [else stop].
+    """
     data_dir = tmp_path / "data"
     stems_dir = tmp_path / "stems"
     entry = _seed_bundle(fake_s3, cfg, "big-track")
@@ -410,7 +432,10 @@ def test_bulk_hydrate_skips_oversized_bundle_before_download(
 def test_bulk_hydrate_fits_bundle_within_budget_still_hydrates(
     tmp_path: Path, fake_s3, cfg: CloudConfig
 ):
-    """HEAD-based budget gating must not block a bundle that legitimately fits."""
+    """HEAD-based budget gating must not block a bundle that legitimately fits.
+
+    [if] a bundle fits the byte budget [then] bulk_hydrate still hydrates it, [else stop].
+    """
     data_dir = tmp_path / "data"
     stems_dir = tmp_path / "stems"
     entry = _seed_bundle(fake_s3, cfg, "fits-track")
@@ -431,6 +456,7 @@ def test_bulk_hydrate_fits_bundle_within_budget_still_hydrates(
 
 @pytest.mark.requirement("STEM-14")
 def test_open_deck_registry_is_refcounted():
+    """[if] a deck opens twice [then] one close leaves it open, a second closes it, [else stop]."""
     registry = OpenDeckRegistry()
     registry.mark_open("t")
     registry.mark_open("t")
@@ -447,6 +473,7 @@ def test_open_deck_registry_is_refcounted():
 def test_hydrate_one_classifies_transport_failure_as_error(
     tmp_path: Path, cfg: CloudConfig
 ):
+    """[if] R2 fails mid-fetch [then] hydrate_one errors naming it, not unavailable, [else stop]."""
     stems_dir = tmp_path / "stems"
     stable_id = "transport-track"
     base_s3 = InMemoryAssetS3()
@@ -471,6 +498,7 @@ def test_hydrate_one_classifies_transport_failure_as_error(
 
 @pytest.mark.requirement("STEM-27")
 def test_bundle_remote_size_classifies_head_transport_failure(cfg: CloudConfig):
+    """[if] the HEAD request fails [then] _bundle_remote_size raises, [else stop]."""
     stable_id = "head-fail-track"
     base_s3 = InMemoryAssetS3()
     entry = _seed_bundle(base_s3, cfg, stable_id)
@@ -490,6 +518,7 @@ def test_bundle_remote_size_classifies_head_transport_failure(cfg: CloudConfig):
 def test_hydrate_one_concurrent_calls_leave_exactly_one_bundle(
     tmp_path: Path, fake_s3, cfg: CloudConfig
 ):
+    """[if] 4 threads hydrate one id at once [then] one bundle lands, no temp dirs, [else stop]"""
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     stable_id = "concurrent-track"
@@ -519,6 +548,7 @@ def test_hydrate_one_concurrent_calls_leave_exactly_one_bundle(
 def test_hydrate_one_failure_removes_only_its_own_temp_dir(
     tmp_path: Path, fake_s3, cfg: CloudConfig
 ):
+    """[if] a hydration fails after another succeeds [then] only its dir removed, [else stop]."""
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     good_id = "good-track"
@@ -561,6 +591,7 @@ def test_hydrate_one_failure_removes_only_its_own_temp_dir(
 def test_hydrate_one_protects_its_own_just_hydrated_bundle(
     tmp_path: Path, fake_s3, cfg: CloudConfig, monkeypatch: pytest.MonkeyPatch
 ):
+    """[if] enforce_budget runs right after a hydrate [then] it still lands, [else stop]."""
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     artifact = policy.CFG.artifacts["stem_bundle"]
@@ -596,6 +627,7 @@ def test_hydrate_one_protects_its_own_just_hydrated_bundle(
 
 @pytest.mark.requirement("STEM-30")
 def test_open_deck_registry_served_ttl_protects_then_expires():
+    """[if] a deck is served at time 0 [then] it stays open until the TTL expires, [else stop]."""
     registry = OpenDeckRegistry()
     registry.mark_served("t", now=0.0)
     assert "t" in registry.open_ids(now=0.0)
@@ -605,6 +637,7 @@ def test_open_deck_registry_served_ttl_protects_then_expires():
 
 @pytest.mark.requirement("STEM-30")
 def test_enforce_budget_protects_a_recently_served_bundle_without_deck_open():
+    """[if] a bundle was recently served, no open deck [then] protected until TTL, [else stop]."""
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:

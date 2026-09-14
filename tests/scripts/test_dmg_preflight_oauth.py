@@ -17,6 +17,8 @@ Regression lines:
   - if a sentinel secret value reaches stdout/stderr, the report leaks
   - if hiding doppler from PATH also hides the script's own interpreter,
     the run never starts and every check above is unmeasured, not passing
+
+[if] the engine misses the OAuth id/secret [then] item I fails naming both, never value, [else stop]
 """
 from __future__ import annotations
 

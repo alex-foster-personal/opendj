@@ -7,6 +7,8 @@ Regression lines:
     then broken
   - if a different source site with the same message mints the same id, then
     broken
+
+[if] stable_error_id hashes match site/class or differ by site [then] ids differ, [else stop].
 """
 
 from __future__ import annotations
