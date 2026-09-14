@@ -26,8 +26,13 @@ Two more levers produce real failures out of nothing but the environment:
     corepack genuinely cannot resolve the real pin. That is how a machine
     which has never fetched the pinned version behaves, and it is the exact
     scenario that used to end the script mid-report;
-  * a PATH with the directories providing a tool removed, which is a real
-    environment in which that dependency is genuinely unavailable.
+  * a PATH with a tool made genuinely unavailable via `path_hiding`
+    (tests/scripts/_hermetic_path.py), which hides only that tool rather
+    than dropping the whole directory it lives in -- uv is commonly
+    installed alongside other load-bearing tools (a Homebrew bin dir, a
+    pyenv/uv shim directory), and dropping that directory outright to hide
+    uv risks also hiding whatever else lives there, host-layout-dependent
+    (the class PR #2624 fixed for doppler).
 
 Where a capability is not available on the running machine, the test SKIPS
 naming why, rather than manufacturing a pass.
@@ -59,22 +64,14 @@ from pathlib import Path
 
 import pytest
 
+from tests.scripts._hermetic_path import path_hiding
+
 pytestmark = pytest.mark.requirement("OPS-11")
 
 REPO = Path(__file__).resolve().parents[2]
 PREFLIGHT = REPO / "scripts" / "dmg_preflight.sh"
 FRONTEND = REPO / "apps" / "webui" / "frontend"
 PACKAGE_JSON = FRONTEND / "package.json"
-
-
-def _path_without(tool: str) -> str:
-    """The real PATH minus every directory that provides ``tool``."""
-    kept = [
-        part
-        for part in os.environ.get("PATH", "").split(os.pathsep)
-        if part and not (Path(part) / tool).exists()
-    ]
-    return os.pathsep.join(kept)
 
 
 def _disposable_tree(tmp_path: Path, *, dirty: bool) -> Path:
@@ -259,11 +256,11 @@ def test_the_tree_check_reports_what_git_reports() -> None:
         assert "working tree" not in _report_line(out), out
 
 
-def test_a_dependency_that_is_absent_is_reported_as_a_failure() -> None:
+def test_a_dependency_that_is_absent_is_reported_as_a_failure(tmp_path: Path) -> None:
     """A check that cannot measure its subject reports a failure, never a pass."""
     if shutil.which("uv") is None:
         pytest.skip("UNAVAILABLE: uv is not installed, so it cannot be removed")
-    result = _run_preflight(_path_without("uv"))
+    result = _run_preflight(path_hiding(tmp_path, "uv"))
     out = result.stdout + result.stderr
     assert result.returncode == 1, out
     assert "uv not found on PATH" in out, out

@@ -23,7 +23,7 @@ def _client(config: ShareConfig) -> TestClient:
         enable_cors=False,
         share_config=config,
     )
-    return TestClient(app)
+    return TestClient(app, base_url="http://127.0.0.1")
 
 
 @pytest.fixture
@@ -140,8 +140,16 @@ def test_access_mode_remains_read_only(access_client: TestClient) -> None:
     assert resp.json()["code"] == "SHARE_READ_ONLY"
 
 
-def test_access_mode_does_not_gate_tailnet_host(access_client: TestClient) -> None:
-    resp = access_client.get(
+def test_access_mode_does_not_gate_tailnet_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MUSIC_DJ_ALLOWED_HOSTS", "agentbox.example-tailnet.ts.net")
+    client = _client(
+        ShareConfig(
+            host=SHARE_HOST,
+            auth=AUTH_CLOUDFLARE_ACCESS,
+            read_only=True,
+        )
+    )
+    resp = client.get(
         "/api/v1/settings",
         headers={"Host": "agentbox.example-tailnet.ts.net"},
     )

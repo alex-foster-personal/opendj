@@ -37,6 +37,7 @@ from apps.shared.state import schema as state_schema
 from apps.sync_hub import client, enrollment_credentials, maintenance
 from apps.sync_hub import config as sync_config
 from apps.sync_hub.scheduler import CloudSyncScheduler
+from apps.sync_hub.scheduler_owed import owed_path
 from apps.sync_hub.single_flight import sync_lock_for
 from apps.webui.server.app import create_app
 from apps.webui.server.local_operator import is_loopback_ip
@@ -85,6 +86,8 @@ def ops_client(
         hostname="cloudsync-ops-test",
         state_db_path=str(db_path),
         mount_frontend=False,
+        port=8686,
+        frontend_port=5173,
         share_config=share_config,
     )
     with TestClient(app, base_url=LOOPBACK_BASE_URL, client=client_addr) as http:
@@ -180,6 +183,97 @@ def test_post_sync_maps_a_declared_refusal_to_409_and_journals_it(
     assert detail["code"] == "CLOUDSYNC_SYNC_REFUSED"
     assert detail["message"].startswith("SyncDigestMismatch")
     assert [entry["status"] for entry in status["recent_results"]] == ["error", "ok"]
+
+
+def test_post_sync_returns_409_when_gig_posture(
+    enroll_live_hub: str, enroll_spoke_dir: Path
+) -> None:
+    """[if] app_posture is gig [then] POST /sync returns 409 CLOUDSYNC_SYNC_DEFERRED."""
+    prefs_dir = enroll_spoke_dir / "state"
+    prefs_dir.mkdir(parents=True, exist_ok=True)
+    (prefs_dir / "ui-prefs.json").write_text('{"app_posture": "gig"}', encoding="utf-8")
+
+    with ops_client(enroll_spoke_dir) as http:
+        response = http.post(
+            "/api/v1/cloudsync/sync",
+            json={"hub_url": enroll_live_hub, "force": False},
+        )
+        status = http.get("/api/v1/cloudsync/status").json()
+
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "CLOUDSYNC_SYNC_DEFERRED"
+    assert "gig_posture" in detail["message"]
+    assert status["recent_results"] == []
+
+
+def test_post_sync_force_true_completes_under_gig_posture(
+    enroll_live_hub: str, enroll_spoke_dir: Path
+) -> None:
+    """[if] force=true under gig posture [then] POST /sync completes and journals."""
+    prefs_dir = enroll_spoke_dir / "state"
+    prefs_dir.mkdir(parents=True, exist_ok=True)
+    (prefs_dir / "ui-prefs.json").write_text('{"app_posture": "gig"}', encoding="utf-8")
+
+    with ops_client(enroll_spoke_dir) as http:
+        response = http.post(
+            "/api/v1/cloudsync/sync",
+            json={"hub_url": enroll_live_hub, "force": True},
+        )
+        status = http.get("/api/v1/cloudsync/status").json()
+
+    assert response.status_code == 200, response.text
+    assert len(status["recent_results"]) == 1
+    assert status["last_result"]["status"] in {"ok", "inconclusive"}
+
+
+def test_post_sync_force_true_still_busy_when_lock_held(enroll_spoke_dir: Path) -> None:
+    """[if] force=true while sync lock is held [then] 409 CLOUDSYNC_SYNC_IN_PROGRESS."""
+    lock = sync_lock_for(enroll_spoke_dir)
+    with ops_client(enroll_spoke_dir) as http:
+        assert lock.acquire(blocking=False), "control: nothing else holds the lock"
+        try:
+            response = http.post(
+                "/api/v1/cloudsync/sync",
+                json={"hub_url": "http://127.0.0.1:9", "force": True},
+            )
+        finally:
+            lock.release()
+        status = http.get("/api/v1/cloudsync/status").json()
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "CLOUDSYNC_SYNC_IN_PROGRESS"
+    assert status["recent_results"] == []
+
+
+def test_post_sync_returns_409_when_deck_playing(
+    enroll_live_hub: str, enroll_spoke_dir: Path
+) -> None:
+    """[if] a deck is playing [then] POST /sync returns 409 CLOUDSYNC_SYNC_DEFERRED."""
+    with ops_client(enroll_spoke_dir) as http:
+        http.app.state.ui_mirror = {"decks": {"1": {"playing": True}}}
+        response = http.post("/api/v1/cloudsync/sync", json={"hub_url": enroll_live_hub})
+        status = http.get("/api/v1/cloudsync/status").json()
+
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "CLOUDSYNC_SYNC_DEFERRED"
+    assert "deck_playing" in detail["message"]
+    assert status["recent_results"] == []
+
+
+def test_post_sync_does_not_refuse_when_mirror_absent_and_prep(
+    enroll_live_hub: str, enroll_spoke_dir: Path
+) -> None:
+    """[if] prep posture and no mirror [then] POST /sync still runs."""
+    with ops_client(enroll_spoke_dir) as http:
+        assert getattr(http.app.state, "ui_mirror", None) is None
+        response = http.post(
+            "/api/v1/cloudsync/sync",
+            json={"hub_url": enroll_live_hub, "name": "spoke-a"},
+        )
+
+    assert response.status_code == 200, response.text
 
 
 def test_post_sync_refuses_a_second_run_in_the_same_process(enroll_spoke_dir: Path) -> None:
@@ -401,9 +495,20 @@ def test_the_grant_token_is_never_logged(
     assert token not in caplog.text
 
 
+@pytest.mark.requirement("CLOUDSYNC-09")
+def test_post_scheduler_resume_owed_creates_marker(enroll_spoke_dir: Path) -> None:
+    """if POST /scheduler/resume-owed does not mark owed [then] broken."""
+    with ops_client(enroll_spoke_dir) as http:
+        response = http.post("/api/v1/cloudsync/scheduler/resume-owed")
+    assert response.status_code == 200, response.text
+    assert response.json() == {"ok": True}
+    assert owed_path(enroll_spoke_dir).is_file()
+
+
 # ----- local-operator guard -------------------------------------------------
 
 OPS_CALLS: list[tuple[str, str, dict[str, Any] | None]] = [
+    ("POST", "/api/v1/cloudsync/scheduler/resume-owed", None),
     ("POST", "/api/v1/cloudsync/sync", {"hub_url": "http://127.0.0.1:9"}),
     ("GET", "/api/v1/cloudsync/fleet", None),
     ("POST", "/api/v1/cloudsync/enrollment-grants", {"owner_email": ENROLL_OWNER_EMAIL}),
@@ -473,7 +578,19 @@ def test_operator_routes_refuse_callers_that_are_not_the_local_operator(
             allowed[label] = http.request(method, path, json=payload, headers=headers)
 
     assert {label: r.status_code for label, r in refused.items()} == dict.fromkeys(refused, 403)
-    assert {r.json()["detail"]["code"] for r in refused.values()} == {"CLOUDSYNC_OPS_LOCAL_ONLY"}
+    refused_codes = {
+        "CLOUDSYNC_OPS_LOCAL_ONLY",
+        "HOST_NOT_ALLOWED",
+        "ORIGIN_NOT_ALLOWED",
+    }
+
+    def _refusal_code(response) -> str:
+        body = response.json()
+        if "detail" in body:
+            return body["detail"]["code"]
+        return body["code"]
+
+    assert {_refusal_code(r) for r in refused.values()}.issubset(refused_codes)
     assert all(r.status_code != 403 for r in allowed.values()), {
         label: r.text for label, r in allowed.items() if r.status_code == 403
     }

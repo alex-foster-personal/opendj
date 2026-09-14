@@ -1414,6 +1414,136 @@
         "title": "AutolistSelectionIn",
         "type": "object"
       },
+      "AvailabilityProbeIn": {
+        "properties": {
+          "allow_mass_missing": {
+            "default": false,
+            "title": "Allow Mass Missing",
+            "type": "boolean"
+          },
+          "full": {
+            "default": false,
+            "title": "Full",
+            "type": "boolean"
+          },
+          "stable_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Ids"
+          }
+        },
+        "title": "AvailabilityProbeIn",
+        "type": "object"
+      },
+      "AvailabilityProbeOut": {
+        "properties": {
+          "accepted": {
+            "default": true,
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "phase": {
+            "enum": [
+              "idle",
+              "queued",
+              "running",
+              "complete",
+              "refused",
+              "failed"
+            ],
+            "title": "Phase",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phase"
+        ],
+        "title": "AvailabilityProbeOut",
+        "type": "object"
+      },
+      "AvailabilityStatusOut": {
+        "properties": {
+          "awaiting_volume": {
+            "description": "Rows under an unmounted /Volumes path to re-check",
+            "title": "Awaiting Volume",
+            "type": "integer"
+          },
+          "complete": {
+            "description": "True when no unknown/stale/awaiting_volume rows remain",
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "pending": {
+            "description": "Tracks still needing a probe pass",
+            "title": "Pending",
+            "type": "integer"
+          },
+          "phase": {
+            "enum": [
+              "idle",
+              "queued",
+              "running",
+              "complete",
+              "refused",
+              "failed"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "present": {
+            "description": "Current present count in track_availability",
+            "title": "Present",
+            "type": "integer"
+          },
+          "processed_total": {
+            "description": "Rows classified across this worker lifetime",
+            "title": "Processed Total",
+            "type": "integer"
+          },
+          "stale": {
+            "description": "Rows whose tracks.updated_at is newer than checked_at",
+            "title": "Stale",
+            "type": "integer"
+          },
+          "unknown": {
+            "description": "Live tracks with no availability row",
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "phase",
+          "pending",
+          "unknown",
+          "stale",
+          "awaiting_volume",
+          "processed_total",
+          "present",
+          "complete"
+        ],
+        "title": "AvailabilityStatusOut",
+        "type": "object"
+      },
       "BackfillBatchIn": {
         "properties": {
           "batch_id": {
@@ -7777,7 +7907,8 @@
             "enum": [
               "ok",
               "error",
-              "inconclusive"
+              "inconclusive",
+              "deferred"
             ],
             "title": "Status",
             "type": "string"
@@ -8833,6 +8964,104 @@
           "detail"
         ],
         "title": "LyricsUnavailableOut",
+        "type": "object"
+      },
+      "LyricsVerdictBackfillIn": {
+        "description": "Parity for ``python -m apps.lyrics verdicts backfill``.",
+        "properties": {
+          "dry_run": {
+            "description": "NO default on purpose, same reasoning as the purge lever: the caller states which one it wants",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "include_reserved": {
+            "default": false,
+            "description": "also process the 100 stable_ids reserved for in-app ordering QA (refused by default)",
+            "title": "Include Reserved",
+            "type": "boolean"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "max tracks to compute this call (null = no cap)",
+            "title": "Limit"
+          }
+        },
+        "required": [
+          "dry_run"
+        ],
+        "title": "LyricsVerdictBackfillIn",
+        "type": "object"
+      },
+      "LyricsVerdictBackfillOut": {
+        "description": ":class:`apps.lyrics.library_verdicts.VerdictBackfillReport`.",
+        "properties": {
+          "candidates": {
+            "description": "stable_ids with a bundle directory in either root",
+            "title": "Candidates",
+            "type": "integer"
+          },
+          "data_dir": {
+            "title": "Data Dir",
+            "type": "string"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "failed": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "stable_id -> failure reason",
+            "title": "Failed",
+            "type": "object"
+          },
+          "processed": {
+            "description": "written (or, on a dry run, would be written)",
+            "items": {
+              "type": "string"
+            },
+            "title": "Processed",
+            "type": "array"
+          },
+          "reused_cache": {
+            "description": "subset of processed whose coverage came from an existing from-stems vocal-cache entry instead of a fresh decode",
+            "items": {
+              "type": "string"
+            },
+            "title": "Reused Cache",
+            "type": "array"
+          },
+          "skipped": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": "reason -> stable_ids",
+            "title": "Skipped",
+            "type": "object"
+          }
+        },
+        "required": [
+          "dry_run",
+          "data_dir",
+          "candidates",
+          "processed",
+          "reused_cache",
+          "skipped",
+          "failed"
+        ],
+        "title": "LyricsVerdictBackfillOut",
         "type": "object"
       },
       "MachineIdIn": {
@@ -13138,7 +13367,8 @@
             "enum": [
               "ok",
               "error",
-              "inconclusive"
+              "inconclusive",
+              "deferred"
             ],
             "title": "Status",
             "type": "string"
@@ -13804,6 +14034,19 @@
           "values"
         ],
         "title": "RowModel",
+        "type": "object"
+      },
+      "SchedulerResumeOut": {
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "SchedulerResumeOut",
         "type": "object"
       },
       "SearchHit": {
@@ -15072,6 +15315,32 @@
         "title": "StemBulkHydrateOutcomeOut",
         "type": "object"
       },
+      "StemBundlePresignResponse": {
+        "properties": {
+          "expires_in_seconds": {
+            "default": 900,
+            "title": "Expires In Seconds",
+            "type": "integer"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/StemPresignFileOut"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "files"
+        ],
+        "title": "StemBundlePresignResponse",
+        "type": "object"
+      },
       "StemHydrateIn": {
         "properties": {
           "data_dir": {
@@ -15157,6 +15426,25 @@
         "title": "StemIndexBuildOut",
         "type": "object"
       },
+      "StemIndexResponse": {
+        "properties": {
+          "index": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Index",
+            "type": "object"
+          }
+        },
+        "required": [
+          "index"
+        ],
+        "title": "StemIndexResponse",
+        "type": "object"
+      },
       "StemManifestOut": {
         "description": "Frontend manifest projected from a stricter durable artifact manifest.",
         "properties": {
@@ -15226,6 +15514,34 @@
           "media_type"
         ],
         "title": "StemPartOut",
+        "type": "object"
+      },
+      "StemPresignFileOut": {
+        "properties": {
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "content_hash",
+          "size_bytes",
+          "url"
+        ],
+        "title": "StemPresignFileOut",
         "type": "object"
       },
       "StemPushMissingIn": {
@@ -15856,6 +16172,12 @@
       "SyncRunIn": {
         "additionalProperties": false,
         "properties": {
+          "force": {
+            "default": false,
+            "description": "Bypass Gig posture and playing-deck gates for this round only.",
+            "title": "Force",
+            "type": "boolean"
+          },
           "hub_url": {
             "description": "the hub base URL, e.g. http://hub.tailnet:8686 (CLI --hub)",
             "minLength": 1,
@@ -21102,6 +21424,75 @@
         ]
       }
     },
+    "/api/v1/availability/probe": {
+      "post": {
+        "operationId": "availability_probe_api_v1_availability_probe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AvailabilityProbeIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailabilityProbeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Availability Probe",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/api/v1/availability/status": {
+      "get": {
+        "operationId": "availability_status_api_v1_availability_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailabilityStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Availability Status",
+        "tags": [
+          "library"
+        ]
+      }
+    },
     "/api/v1/bench/kpi": {
       "get": {
         "operationId": "get_kpi_ledger_api_v1_bench_kpi_get",
@@ -22398,6 +22789,38 @@
         ]
       }
     },
+    "/api/v1/cloudsync/scheduler/resume-owed": {
+      "post": {
+        "description": "Mark a deferred scheduler round owed and wake the in-process scheduler.",
+        "operationId": "resume_scheduler_owed_api_v1_cloudsync_scheduler_resume_owed_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchedulerResumeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          }
+        },
+        "summary": "Resume Scheduler Owed",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
     "/api/v1/cloudsync/status": {
       "get": {
         "operationId": "get_status_api_v1_cloudsync_status_get",
@@ -22465,7 +22888,7 @@
                 }
               }
             },
-            "description": "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error."
+            "description": "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled (force=true does not bypass this). CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync before any hub I/O when force=false; NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error."
           },
           "422": {
             "content": {
@@ -25217,6 +25640,48 @@
           }
         },
         "summary": "Get Lyrics Summary",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
+    "/api/v1/lyrics/verdicts/backfill": {
+      "post": {
+        "description": "Parity for ``python -m apps.lyrics verdicts backfill`` (LYR-06): fill\nor refresh the stem-coverage-only verdict for every loadable bundle,\nagent-native so the library-scale backfill is drivable without the CLI.\n\nA track whose row already carries word-level data (``words_content_hash``)\nis reported skipped, never overwritten - this endpoint only ever fills or\nrefreshes the coverage fields, same contract as the CLI.",
+        "operationId": "post_lyrics_verdicts_backfill_api_v1_lyrics_verdicts_backfill_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LyricsVerdictBackfillIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsVerdictBackfillOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Lyrics Verdicts Backfill",
         "tags": [
           "lyrics"
         ]
@@ -30005,6 +30470,130 @@
         ]
       }
     },
+    "/api/v1/sync/stems/bundle-presign": {
+      "get": {
+        "description": "Mint short-lived GET URLs for every file in one indexed bundle.",
+        "operationId": "get_bundle_presign_api_v1_sync_stems_bundle_presign_get",
+        "parameters": [
+          {
+            "description": "the calling spoke",
+            "in": "query",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "description": "the calling spoke",
+              "minLength": 1,
+              "title": "Machine Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "track stable_id",
+            "in": "query",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "description": "track stable_id",
+              "minLength": 1,
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemBundlePresignResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "stems/bundle-presign refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "404": {
+            "description": "STEM_BUNDLE_NOT_INDEXED when the stable_id is absent from the published index"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "STEM_BUNDLE_PRESIGN_FAILED when presigning or HEAD failed"
+          },
+          "503": {
+            "description": "stems/bundle-presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
+          }
+        },
+        "summary": "Get Bundle Presign",
+        "tags": [
+          "sync",
+          "sync-stems"
+        ]
+      }
+    },
+    "/api/v1/sync/stems/index": {
+      "get": {
+        "description": "Return the published stem bundle index for an authenticated spoke.",
+        "operationId": "get_stem_index_api_v1_sync_stems_index_get",
+        "parameters": [
+          {
+            "description": "the calling spoke",
+            "in": "query",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "description": "the calling spoke",
+              "minLength": 1,
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemIndexResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "stems/index refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "stems/index refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
+          }
+        },
+        "summary": "Get Stem Index",
+        "tags": [
+          "sync",
+          "sync-stems"
+        ]
+      }
+    },
     "/api/v1/telemetry/clients": {
       "get": {
         "description": "Every client seen since engine boot, plus the one-glance summary.",
@@ -31286,7 +31875,7 @@
             "description": "Validation Error"
           },
           "502": {
-            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is present but unreadable, or STEM_HYDRATION_NOT_ARMED when this engine is configured for R2 hydration but could not arm it (for example boto3 is absent)"
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable), STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails"
           }
         },
         "summary": "Get Stem Manifest",
@@ -31428,7 +32017,7 @@
             "description": "Validation Error"
           },
           "502": {
-            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is present but unreadable, or STEM_HYDRATION_NOT_ARMED when this engine is configured for R2 hydration but could not arm it (for example boto3 is absent)"
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable), STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails"
           },
           "503": {
             "description": "STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request"

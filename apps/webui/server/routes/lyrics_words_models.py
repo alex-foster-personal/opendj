@@ -211,6 +211,40 @@ class LyricsPurgeOut(BaseModel):
     stable_ids: list[str]
 
 
+class LyricsVerdictBackfillIn(BaseModel):
+    """Parity for ``python -m apps.lyrics verdicts backfill``."""
+
+    dry_run: bool = Field(
+        description="NO default on purpose, same reasoning as the purge lever: "
+                    "the caller states which one it wants"
+    )
+    limit: int | None = Field(
+        default=None, ge=0, description="max tracks to compute this call (null = no cap)"
+    )
+    include_reserved: bool = Field(
+        default=False,
+        description="also process the 100 stable_ids reserved for in-app "
+                    "ordering QA (refused by default)",
+    )
+
+
+class LyricsVerdictBackfillOut(BaseModel):
+    """:class:`apps.lyrics.library_verdicts.VerdictBackfillReport`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    dry_run: bool
+    data_dir: str
+    candidates: int = Field(description="stable_ids with a bundle directory in either root")
+    processed: list[str] = Field(description="written (or, on a dry run, would be written)")
+    reused_cache: list[str] = Field(
+        description="subset of processed whose coverage came from an existing "
+                    "from-stems vocal-cache entry instead of a fresh decode"
+    )
+    skipped: dict[str, list[str]] = Field(description="reason -> stable_ids")
+    failed: dict[str, str] = Field(description="stable_id -> failure reason")
+
+
 class LyricsKpiDefOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 

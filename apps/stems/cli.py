@@ -515,7 +515,7 @@ def cmd_bulk_hydrate(args: argparse.Namespace) -> int:
     ``POST /api/v1/stems/bulk-hydrate``. Prints what it fetched and skipped,
     with reasons -- never silent."""
     from apps.cloud import stem_hydration, stem_index
-    from apps.lyrics.artifacts import asset_clients_for_mode
+    from apps.cloud.stem_source import resolve_stem_hydration_source
 
     if args.ids:
         stable_ids = [sid.strip() for sid in args.ids.split(",") if sid.strip()]
@@ -528,15 +528,15 @@ def cmd_bulk_hydrate(args: argparse.Namespace) -> int:
     else:
         raise SystemExit("error: pass --ids a,b,c or --playlist NAME")
 
-    s3, cfg = asset_clients_for_mode(writing=True)
-    if s3 is None or cfg is None:
+    source = resolve_stem_hydration_source(args.data_dir)
+    if source is None:
         raise SystemExit(
-            "error: bulk-hydrate needs cloudsync mode 'cloud' with R2 credentials "
-            "(doppler run -p general -c dev_personal -- ...)"
+            "error: bulk-hydrate needs cloud mode with R2 credentials or a configured hub"
         )
     index = stem_index.load_cached_index(args.data_dir)
     if args.refresh_index or not index:
-        index = stem_index.refresh_local_cache_from_r2(cfg, s3, args.data_dir)
+        source.refresh_index(args.data_dir, force=args.refresh_index or not index)
+        index = stem_index.load_cached_index(args.data_dir)
     if not index:
         raise SystemExit(
             "error: no stem bundle index published in R2 "
@@ -545,8 +545,7 @@ def cmd_bulk_hydrate(args: argparse.Namespace) -> int:
     report = stem_hydration.bulk_hydrate(
         stable_ids,
         data_dir=args.data_dir,
-        cfg=cfg,
-        s3=s3,
+        source=source,
         index=index,
         byte_budget=args.budget_bytes,
         include_reserved=args.include_reserved,

@@ -25,6 +25,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from apps.shared.state import sync_stamp
 from apps.sync_hub import config as sync_config
 from apps.sync_hub import heartbeat as sync_heartbeat
 
@@ -44,11 +45,11 @@ MAX_RECENT_RESULTS: int = 5
 #: rows really did move. A caller that treats non-``ok`` as failure keeps
 #: working; one that treats non-``error`` as success no longer does, which is
 #: the point.
-ResultStatus = Literal["ok", "error", "inconclusive"]
+ResultStatus = Literal["ok", "error", "inconclusive", "deferred"]
 
 #: Every value :data:`ResultStatus` admits, as data, so the wire validator and
 #: the type cannot drift apart.
-RESULT_STATUSES: tuple[ResultStatus, ...] = ("ok", "error", "inconclusive")
+RESULT_STATUSES: tuple[ResultStatus, ...] = ("ok", "error", "inconclusive", "deferred")
 
 
 class CloudSyncStatusError(RuntimeError):
@@ -190,6 +191,20 @@ def read_results(data_dir: Path) -> tuple[SyncResult, ...]:
     return tuple(ordered[:MAX_RECENT_RESULTS])
 
 
+def journal_deferred(data_dir: Path, reason: str) -> None:
+    """Record one scheduler-deferred round without treating it as a failure."""
+    write_result(
+        data_dir,
+        SyncResult(
+            finished_at=sync_stamp.canonical_now(),
+            status="deferred",
+            message=f"deferred: {reason}",
+            pushed=0,
+            pulled=0,
+        ),
+    )
+
+
 def write_result(data_dir: Path, result: SyncResult) -> tuple[SyncResult, ...]:
     """Prepend one result and atomically retain only the last five attempts."""
     results = (result, *read_results(data_dir))[:MAX_RECENT_RESULTS]
@@ -266,6 +281,7 @@ __all__ = [
     "CloudSyncStatus",
     "CloudSyncStatusError",
     "SyncResult",
+    "journal_deferred",
     "read_status",
     "status_path",
     "write_result",

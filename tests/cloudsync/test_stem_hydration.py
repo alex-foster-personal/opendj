@@ -35,12 +35,12 @@ from apps.cloud.stem_hydration import (
     OPEN_DECKS,
     HydrationOutcome,
     OpenDeckRegistry,
-    _bundle_remote_size,
     bulk_hydrate,
     enforce_budget,
     hydrate_one,
     load_reserved_ids,
 )
+from apps.cloud.stem_source import DirectR2Source
 from apps.stems.artifacts import load_stem_bundle
 from tests.cloudsync.conftest import InMemoryAssetS3
 
@@ -136,8 +136,7 @@ def test_hydrate_one_already_local_is_a_noop(tmp_path: Path, fake_s3, cfg: Cloud
     outcome = hydrate_one(
         "local-track",
         data_dir=tmp_path / "data",
-        cfg=cfg,
-        s3=fake_s3,
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
         index={},
         stems_dir=stems_dir,
     )
@@ -154,8 +153,7 @@ def test_hydrate_one_fetches_and_strict_loads(tmp_path: Path, fake_s3, cfg: Clou
     outcome = hydrate_one(
         "remote-track",
         data_dir=tmp_path / "data",
-        cfg=cfg,
-        s3=fake_s3,
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
         index={"remote-track": index_entry},
         stems_dir=stems_dir,
     )
@@ -173,8 +171,7 @@ def test_hydrate_one_not_in_index_is_unavailable(tmp_path: Path, fake_s3, cfg: C
     outcome = hydrate_one(
         "nowhere",
         data_dir=tmp_path / "data",
-        cfg=cfg,
-        s3=fake_s3,
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
         index={},
         stems_dir=tmp_path / "stems",
     )
@@ -193,8 +190,7 @@ def test_hydrate_one_indexed_without_manifest_is_error(
     outcome = hydrate_one(
         "headless",
         data_dir=tmp_path / "data",
-        cfg=cfg,
-        s3=fake_s3,
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
         index={"headless": {"vocals.wav": "a" * 64}},
         stems_dir=tmp_path / "stems",
     )
@@ -218,8 +214,7 @@ def test_hydrate_one_rejects_disallowed_index_filename(
     outcome = hydrate_one(
         stable_id,
         data_dir=tmp_path / "data",
-        cfg=cfg,
-        s3=fake_s3,
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
         index={stable_id: index_entry},
         stems_dir=stems_dir,
     )
@@ -248,8 +243,7 @@ def test_hydrate_one_leaves_no_partial_bundle_on_fetch_failure(
     outcome = hydrate_one(
         "broken-track",
         data_dir=tmp_path / "data",
-        cfg=cfg,
-        s3=fake_s3,
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
         index={"broken-track": index_entry},
         stems_dir=stems_dir,
     )
@@ -271,8 +265,7 @@ def test_bulk_hydrate_skips_reserved_by_default(tmp_path: Path, fake_s3, cfg: Cl
     report = bulk_hydrate(
         ["reserved-track"],
         data_dir=data_dir,
-        cfg=cfg,
-        s3=fake_s3,
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
         index={"reserved-track": entry},
         byte_budget=10**9,
         stems_dir=stems_dir,
@@ -296,8 +289,7 @@ def test_bulk_hydrate_includes_reserved_only_with_explicit_flag(
     report = bulk_hydrate(
         ["reserved-track"],
         data_dir=data_dir,
-        cfg=cfg,
-        s3=fake_s3,
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
         index={"reserved-track": entry},
         byte_budget=10**9,
         include_reserved=True,
@@ -322,8 +314,7 @@ def test_on_demand_hydrate_one_never_skips_reserved(tmp_path: Path, fake_s3, cfg
     outcome = hydrate_one(
         "reserved-track",
         data_dir=data_dir,
-        cfg=cfg,
-        s3=fake_s3,
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
         index={"reserved-track": entry},
         stems_dir=stems_dir,
         skip_reserved=False,  # the on-demand deck-load caller's contract
@@ -415,8 +406,7 @@ def test_bulk_hydrate_skips_oversized_bundle_before_download(
     report = bulk_hydrate(
         ["big-track"],
         data_dir=data_dir,
-        cfg=cfg,
-        s3=fake_s3,
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
         index={"big-track": entry},
         byte_budget=10,
         stems_dir=stems_dir,
@@ -443,8 +433,7 @@ def test_bulk_hydrate_fits_bundle_within_budget_still_hydrates(
     report = bulk_hydrate(
         ["fits-track"],
         data_dir=data_dir,
-        cfg=cfg,
-        s3=fake_s3,
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
         index={"fits-track": entry},
         byte_budget=10**9,
         stems_dir=stems_dir,
@@ -486,8 +475,7 @@ def test_hydrate_one_classifies_transport_failure_as_error(
     outcome = hydrate_one(
         stable_id,
         data_dir=tmp_path / "data",
-        cfg=cfg,
-        s3=s3,
+        source=DirectR2Source(cfg=cfg, s3=s3),
         index={stable_id: entry},
         stems_dir=stems_dir,
     )
@@ -507,8 +495,9 @@ def test_bundle_remote_size_classifies_head_transport_failure(cfg: CloudConfig):
     for bucket, key in base_s3.store:
         s3.store[(bucket, key)] = base_s3.store[(bucket, key)]
 
+    source = DirectR2Source(cfg=cfg, s3=s3)
     with pytest.raises(asset_store.AssetStoreError, match="simulated R2 transport failure"):
-        _bundle_remote_size(cfg, s3, entry)
+        source.bundle_remote_size(entry, stable_id=stable_id)
 
 
 # --- concurrent hydration safety (STEM-28) -------------------------------------
@@ -529,8 +518,7 @@ def test_hydrate_one_concurrent_calls_leave_exactly_one_bundle(
         return hydrate_one(
             stable_id,
             data_dir=data_dir,
-            cfg=cfg,
-            s3=fake_s3,
+            source=DirectR2Source(cfg=cfg, s3=fake_s3),
             index=index,
             stems_dir=stems_dir,
         )
@@ -560,8 +548,7 @@ def test_hydrate_one_failure_removes_only_its_own_temp_dir(
     good_outcome = hydrate_one(
         good_id,
         data_dir=data_dir,
-        cfg=cfg,
-        s3=fake_s3,
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
         index={good_id: good_entry},
         stems_dir=stems_dir,
     )
@@ -573,8 +560,7 @@ def test_hydrate_one_failure_removes_only_its_own_temp_dir(
     bad_outcome = hydrate_one(
         bad_id,
         data_dir=data_dir,
-        cfg=cfg,
-        s3=fake_s3,
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
         index={bad_id: bad_entry},
         stems_dir=stems_dir,
     )
@@ -611,8 +597,7 @@ def test_hydrate_one_protects_its_own_just_hydrated_bundle(
         outcome = hydrate_one(
             "new-track",
             data_dir=data_dir,
-            cfg=cfg,
-            s3=fake_s3,
+            source=DirectR2Source(cfg=cfg, s3=fake_s3),
             index={"new-track": entry},
             stems_dir=stems_dir,
         )

@@ -79,11 +79,13 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import Any
 
 from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
+from apps.shared.sync_runtime_gates import SyncDeferredError, refuse_sync_round
 from apps.sync_hub import (
     client,
     config_cli,
@@ -103,6 +105,9 @@ from apps.sync_hub import status as sync_status
 #: distinct from 0 because an unmeasured comparison is not a clean one.
 EXIT_INCONCLUSIVE: int = 4
 
+#: Exit code when a sync round is deferred before any hub I/O (CLOUDSYNC-14).
+EXIT_SYNC_DEFERRED: int = 3
+
 #: Exit code for a sync whose PUSH a hosted hub refused on plan grounds while
 #: its pull completed. Distinct from 1 (nothing came in) and from 4 (nothing
 #: was withheld): here rows arrived and this machine's own edits did not leave.
@@ -119,6 +124,8 @@ def sync(
     *,
     name: str | None = None,
     transport: client.HubTransport | None = None,
+    ui_mirror: Mapping[str, Any] | None = None,
+    force: bool = False,
 ) -> client.SyncResult:
     """Run one spoke round trip against ``hub_url``. The spoke's operator entry.
 
@@ -127,6 +134,9 @@ def sync(
     ``run_sync``'s declared failures (see its docstring) propagate out
     unchanged -- fail fast, no repair.
     """
+    reason = refuse_sync_round(data_dir, ui_mirror, force=force)
+    if reason is not None:
+        raise SyncDeferredError(reason)
     started_at = sync_stamp.canonical_now()
     try:
         result = client.run_sync(
@@ -272,6 +282,11 @@ def _parser() -> argparse.ArgumentParser:
         "--name",
         default=None,
         help="this machine's display name; defaults to the hostname",
+    )
+    sync_command.add_argument(
+        "--force",
+        action="store_true",
+        help="Bypass Gig posture and playing-deck gates for this round only.",
     )
 
     subcommands.add_parser(
@@ -577,7 +592,19 @@ def main(argv: list[str] | None = None) -> int:
     """Run one subcommand. Returns a process exit code."""
     args = _parse_args(argv)
     if args.command == "sync":
-        return _report_sync(sync(args.data_dir, args.hub, name=args.name))
+        try:
+            return _report_sync(
+                sync(
+                    args.data_dir,
+                    args.hub,
+                    name=args.name,
+                    ui_mirror=None,
+                    force=args.force,
+                )
+            )
+        except SyncDeferredError as exc:
+            print(f"DEFERRED: {exc.reason}", file=sys.stderr)
+            return EXIT_SYNC_DEFERRED
     if args.command == "status":
         return _report_status(sync_status.read_status(args.data_dir))
     if args.command == "feedback-pins":
@@ -598,7 +625,9 @@ def main(argv: list[str] | None = None) -> int:
 __all__ = [
     "EXIT_CODE_COMMANDS",
     "EXIT_INCONCLUSIVE",
+    "EXIT_SYNC_DEFERRED",
     "PRINTING_COMMANDS",
+    "SyncDeferredError",
     "main",
     "prune",
     "rotate",

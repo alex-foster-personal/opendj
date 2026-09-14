@@ -16,14 +16,23 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from apps.shared.state import locations as state_locations
 from apps.shared.state import sync_stamp
 
 from . import transfer_status
-from .asset_store import AssetS3Client, object_exists, push_asset
+from .asset_store import (
+    AssetS3Client,
+    AssetStoreError,
+    fetch_asset,
+    fetch_presigned_asset,
+    object_exists,
+    push_asset,
+)
 from .config import CloudConfig
 from .eviction import BYTES_PER_MB, EvictionResult, HydrationError, evict_cache
 from .hydration_core import (
@@ -43,6 +52,47 @@ from .hydration_core import (
 #: The one synced table this module writes. Named rather than repeated so the
 #: ``local_changelog`` entry and the ``INSERT`` can never name two tables.
 _LOCATIONS_TABLE: str = "track_locations"
+
+
+# --- download path (hydration fetch + transfer ledger) -----------------------
+
+
+def fetch_asset_for_hydration(
+    cfg: CloudConfig | None,
+    s3: AssetS3Client | None,
+    content_hash: str,
+    dest: Path,
+    *,
+    stable_id: str,
+    bytes_total: int | None = None,
+    pressure_payload: Mapping[str, Any] | None = None,
+    ui_mirror: Mapping[str, Any] | None = None,
+    presigned_url: str | None = None,
+) -> Path:
+    """Download an asset for hydration with transfer_status progress.
+
+    Pool acquisition happens inside :func:`~apps.cloud.asset_store.fetch_asset`
+    or :func:`~apps.cloud.asset_store.fetch_presigned_asset`.
+    """
+    transfer_token = transfer_status.begin_transfer(
+        stable_id, "download", bytes_total=bytes_total
+    )
+    try:
+        if presigned_url is not None:
+            result = fetch_presigned_asset(presigned_url, content_hash, dest)
+        elif cfg is not None and s3 is not None:
+            result = fetch_asset(cfg, s3, content_hash, dest)
+        else:
+            raise HydrationError(
+                "fetch_asset_for_hydration needs cfg and s3 unless presigned_url is set"
+            )
+        if bytes_total is not None:
+            transfer_status.update_transfer(stable_id, transfer_token, bytes_total)
+        return result
+    except AssetStoreError as exc:
+        raise HydrationError(str(exc)) from exc
+    finally:
+        transfer_status.clear_transfer(stable_id, transfer_token)
 
 
 # --- write path (push-then-delete) ------------------------------------------
@@ -296,6 +346,7 @@ __all__ = [
     "apply_policy_after_produce",
     "cache_path",
     "evict_cache",
+    "fetch_asset_for_hydration",
     "resolve_playback_source",
     "resolve_policy",
     "touch_cache_entry",
