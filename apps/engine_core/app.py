@@ -40,6 +40,7 @@ from apps.engine_core.account.api import (
     flags_router,
 )
 from apps.engine_core.availability_api import add_availability_routes
+from apps.engine_core.rescue_api import add_rescue_routes
 from apps.engine_core.library_availability import (
     LibraryAvailabilityWorker,
     attach_library_changed_probe,
@@ -186,6 +187,7 @@ def create_app(
     add_update_check_route(app)
     availability_worker = LibraryAvailabilityWorker(cfg.data_dir)
     add_availability_routes(app, availability_worker)
+    add_rescue_routes(app)
 
     _drop_root_placeholder(app)
     _mount_spa(app)

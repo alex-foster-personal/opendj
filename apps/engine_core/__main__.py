@@ -86,11 +86,47 @@ def build_parser() -> argparse.ArgumentParser:
             "short hostname at first sync)"
         ),
     )
+    rescue = sub.add_parser("rescue", help="list or restore Gig performance snapshots")
+    rescue_sub = rescue.add_subparsers(dest="rescue_command", required=True)
+    rescue_list = rescue_sub.add_parser("list", help="GET /api/v1/rescue/snapshots")
+    rescue_list.add_argument("--data-dir", required=True)
+    rescue_list.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("MUSIC_DJ_BACKEND_PORT", "8585")),
+    )
+    rescue_list.add_argument("--json", action="store_true")
+    rescue_restore = rescue_sub.add_parser(
+        "restore", help="POST /api/v1/rescue/restore"
+    )
+    rescue_restore.add_argument("--data-dir", required=True)
+    rescue_restore.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("MUSIC_DJ_BACKEND_PORT", "8585")),
+    )
+    rescue_restore.add_argument("--play", action="store_true")
+    rescue_restore.add_argument("--snapshot-id")
+    rescue_restore.add_argument("--json", action="store_true")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "rescue":
+        from apps.engine_core.rescue_cli import run_rescue
+
+        rescue_argv = [args.rescue_command]
+        rescue_argv.extend(["--data-dir", args.data_dir])
+        rescue_argv.extend(["--port", str(args.port)])
+        if getattr(args, "json", False):
+            rescue_argv.append("--json")
+        if getattr(args, "play", False):
+            rescue_argv.append("--play")
+        snapshot_id = getattr(args, "snapshot_id", None)
+        if snapshot_id:
+            rescue_argv.extend(["--snapshot-id", snapshot_id])
+        return run_rescue(rescue_argv)
     try:
         _apply_build_profile(args.build_profile)
         cfg = build_config(args.data_dir, args.host, args.port)
