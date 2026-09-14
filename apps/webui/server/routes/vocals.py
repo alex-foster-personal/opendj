@@ -52,7 +52,7 @@ from apps.vocals.cli import (
     classify,
     load_tracks,
 )
-from apps.webui.server.stem_artifacts import StemArtifactError, StemBundleNotFoundError
+from apps.stems.artifacts import StemArtifactError, StemBundleNotFoundError
 
 from .. import rb_vendor
 from ..backend import StateBackend

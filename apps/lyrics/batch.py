@@ -50,7 +50,7 @@ from apps.lyrics.register_stems import _corpus_pairs, _meta_model, register_pair
 from apps.shared.paths import PROJECT_ROOT, STATE_DB, STATE_DIR
 from apps.shared.state import db as state_db_mod
 from apps.shared.state import sync_stamp
-from apps.webui.server.stem_artifacts import ROFORMER_STEMS_DIR
+from apps.stems.artifacts import ROFORMER_STEMS_DIR
 
 REPO_ROOT: Path = PROJECT_ROOT
 LYRICS_EVAL_DIR: Path = STATE_DIR / "lyrics-eval"

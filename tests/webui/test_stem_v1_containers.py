@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.webui.server.routes.stems import router
-from apps.webui.server.stem_artifacts import (
+from apps.stems.artifacts import (
     FRAME_MISMATCH_TOL_S,
     StemArtifactError,
     WavMetadata,

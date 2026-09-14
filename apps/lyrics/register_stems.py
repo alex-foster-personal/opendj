@@ -3,7 +3,7 @@
 THE PROBLEM THIS CLOSES (the maintainer, Tue 1 Sep 2026): ``modal_roformer_spike.py
 separate`` writes flat ``<key>-vocals/<key>-instrumental`` files into the
 lyrics-eval corpora with no ``manifest.json``, so the app's strict loader
-(``apps/webui/server/stem_artifacts.py``) cannot see them - stems on disk,
+(``apps/stems/artifacts.py``) cannot see them - stems on disk,
 lost to the product. Registration here = write a schema-v3 ``roformer2``
 bundle under ``data/state/stems-roformer-spike/<stable_id>/`` (the canonical
 RoFormer root ``stem_roots()`` already searches) and then RE-LOAD it with the
@@ -46,7 +46,7 @@ from apps.lyrics.artifacts import asset_clients_for_mode
 from apps.shared.paths import STATE_DB, STATE_DIR
 from apps.shared.state import db as state_db_mod
 from apps.shared.state import sync_stamp
-from apps.webui.server.stem_artifacts import ROFORMER_STEMS_DIR, load_stem_bundle
+from apps.stems.artifacts import ROFORMER_STEMS_DIR, load_stem_bundle
 
 if TYPE_CHECKING:
     from apps.cloud.asset_store import AssetS3Client

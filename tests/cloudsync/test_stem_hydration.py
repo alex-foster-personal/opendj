@@ -2,7 +2,7 @@
 
 Uses the SAME asset-tier fake other cloud tests use (``InMemoryAssetS3`` /
 ``fake_s3`` from ``tests/cloudsync/conftest.py``) and the real strict loader
-(:func:`apps.webui.server.stem_artifacts.load_stem_bundle`) to verify a
+(:func:`apps.stems.artifacts.load_stem_bundle`) to verify a
 hydrated bundle -- never a mocked loader.
 
 * [if] a bundle is already valid on local disk [then] hydration is a no-op
@@ -41,7 +41,7 @@ from apps.cloud.stem_hydration import (
     hydrate_one,
     load_reserved_ids,
 )
-from apps.webui.server.stem_artifacts import load_stem_bundle
+from apps.stems.artifacts import load_stem_bundle
 from tests.cloudsync.conftest import InMemoryAssetS3
 
 

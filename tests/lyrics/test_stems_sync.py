@@ -15,7 +15,7 @@ from apps.cloud.config import CloudConfig
 from apps.cloud.eviction import HydrationError
 from apps.lyrics import register_stems, stems_sync
 from apps.shared.state import db as state_db
-from apps.webui.server.stem_artifacts import load_stem_bundle
+from apps.stems.artifacts import load_stem_bundle
 
 from .conftest import (
     InMemoryAssetS3,
