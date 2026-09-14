@@ -16,7 +16,11 @@ import pytest
 
 from scripts.perf import capture_s13
 from scripts.perf.capture_kpis import main as capture_kpis_main
-from scripts.perf.capture_ledger import classify_s13_withhold_reason, span_to_ledger_rows
+from scripts.perf.capture_ledger import (
+    append_ledger_rows,
+    classify_s13_withhold_reason,
+    span_to_ledger_rows,
+)
 from scripts.perf.kpi_scorecard import UNKNOWN, score_scenarios
 
 _REPO = Path(__file__).resolve().parents[2]
@@ -368,6 +372,84 @@ def test_engine_socket_timeout_withholds_instead_of_crashing(
     assert scored[0]["status"] == "withheld"
     assert "TimeoutError" in scored[0]["note"]
     assert "engine unreachable" in capsys.readouterr().err
+
+
+def _git_numstat(orig: Path, updated: Path) -> tuple[int, int]:
+    result = subprocess.run(
+        ["git", "diff", "--numstat", "--no-index", str(orig), str(updated)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1, "append must produce a non-empty git diff"
+    parts = result.stdout.strip().split()
+    assert len(parts) >= 2
+    return int(parts[0]), int(parts[1])
+
+
+def _historical_s13_row() -> dict:
+    return {
+        "date": "2026-09-01",
+        "round": "issue-1885",
+        "kpi": "login_submit_to_library_usable_s",
+        "value": 0.5,
+        "unit": "s",
+        "machine": "testhost",
+        "source": (
+            "client-telemetry login span (submit mark to first recordLibraryLoadTiming); "
+            "scored value is in-app (Google consent excluded)"
+        ),
+        "method": (
+            "client-telemetry markLoginSubmit/markLoginNavigate to recordLibraryLoadTiming "
+            "(in-app, Google excluded)"
+        ),
+        "sha": "oldsha",
+        "capture_id": "perf-capture",
+        "note": "historical row",
+    }
+
+
+@pytest.mark.parametrize("indent_width", [2, 4])
+@pytest.mark.requirement("PERF-KPI-S13")
+def test_append_ledger_rows_preserves_fixture_indent(
+    tmp_path: Path, indent_width: int
+) -> None:
+    """[if] append_ledger_rows appends N rows [then] git diff shows zero deleted lines."""
+    historical = _historical_s13_row()
+    ledger = tmp_path / "kpi-ledger.json"
+    orig_payload = {"schema_version": 2, "entries": [historical]}
+    orig_text = json.dumps(orig_payload, indent=indent_width, ensure_ascii=False) + "\n"
+    ledger.write_text(orig_text, encoding="utf-8")
+    orig_copy = tmp_path / "orig.json"
+    orig_copy.write_text(orig_text, encoding="utf-8")
+
+    new_rows = span_to_ledger_rows(
+        _happy_span(),
+        sha="newsha",
+        machine="testhost",
+        capture_date=_dt.date(2026, 9, 11),
+    )
+    append_ledger_rows(ledger, new_rows)
+
+    updated_text = ledger.read_text(encoding="utf-8")
+    updated_payload = json.loads(updated_text)
+    assert updated_payload["entries"][0] == historical
+    assert updated_payload["entries"][1:] == new_rows
+    expected = json.dumps(updated_payload, indent=indent_width, ensure_ascii=False) + "\n"
+    assert updated_text == expected
+
+    added, deleted = _git_numstat(orig_copy, ledger)
+    assert added > 0
+    assert deleted == 0
+
+
+@pytest.mark.requirement("PERF-KPI-S13")
+def test_append_ledger_rows_rejects_unindented_ledger(tmp_path: Path) -> None:
+    """[if] the ledger is not pretty-printed [then] append fails instead of rewriting it."""
+    ledger = tmp_path / "kpi-ledger.json"
+    ledger.write_text('{"schema_version":1,"entries":[]}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="cannot infer JSON indent"):
+        append_ledger_rows(ledger, [_historical_s13_row()])
 
 
 def test_a_reachable_engine_is_not_reported_as_a_timeout() -> None:
