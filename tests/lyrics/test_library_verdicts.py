@@ -27,6 +27,7 @@ apps/lyrics/library_verdicts.py's module docstring for the merge-order note.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import wave
@@ -855,41 +856,70 @@ def test_cached_coverage_pct_raises_on_a_present_but_corrupt_cache_entry(data_di
         library_verdicts._cached_coverage_pct(data_dir, "sid-cache-corrupt-001", bundle)
 
 
-def test_cached_coverage_pct_raises_on_an_unreadable_cache_file(
-    data_dir, monkeypatch
-) -> None:
-    """Sibling of the corrupt-JSON case above: a present file that raises
-    ``OSError`` on read (permission error, I/O fault, truncated device) must
-    also raise rather than being folded into the "no cache" path."""
+#: mode-000 only blocks reads for a NON-root process -- root bypasses
+#: filesystem permission checks entirely (the kernel, not this project's
+#: code, decides that), so this specific fixture cannot be produced for
+#: real under root. Rebutted rather than mocked: skipped in that one
+#: environment, stating why, while the OTHER two real fixtures (corrupt
+#: JSON, a directory at the path) still exercise the same code path.
+_RUNNING_AS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
+
+
+@pytest.mark.skipif(
+    _RUNNING_AS_ROOT,
+    reason="root bypasses filesystem permission checks; mode 000 cannot "
+    "produce a real permission failure under root",
+)
+def test_cached_coverage_pct_raises_on_a_permission_denied_cache_file(data_dir) -> None:
+    """P1 BLOCKING fix (Sol review round 5, PR #2611): the round-4 test for
+    this code path monkeypatched ``Path.read_text`` to synthesize an
+    ``OSError``, which this project's no-mocks test contract forbids -- the
+    unreadable-cache behavior must be validated against a REAL production
+    failure, not a simulated one. ``os.chmod(0o000)`` on a real file this
+    (non-root) process then genuinely cannot read produces that failure for
+    real: the kernel itself refuses the read, raising a real ``OSError``."""
     stems_root = _stems_root(data_dir)
-    _write_wav_bundle(stems_root, "sid-cache-unreadable-001", source_sha256="c" * 64)
-    bundle = load_stem_bundle("sid-cache-unreadable-001", stems_dir=stems_root)
-    cache_path = vcache.cache_path(data_dir, "sid-cache-unreadable-001")
+    _write_wav_bundle(stems_root, "sid-cache-denied-001", source_sha256="c" * 64)
+    bundle = load_stem_bundle("sid-cache-denied-001", stems_dir=stems_root)
+    cache_path = vcache.cache_path(data_dir, "sid-cache-denied-001")
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    # Content is irrelevant -- read_text itself is made to fail below.
     cache_path.write_text("{}", encoding="utf-8")
+    cache_path.chmod(0o000)
+    try:
+        with pytest.raises(RuntimeError, match="could not be read"):
+            library_verdicts._cached_coverage_pct(data_dir, "sid-cache-denied-001", bundle)
+    finally:
+        # Restore read/write so pytest's tmp_path teardown can remove it.
+        cache_path.chmod(0o644)
 
-    real_read_text = Path.read_text
 
-    def _boom(self, *args, **kwargs):
-        if self == cache_path:
-            raise OSError("simulated I/O error")
-        return real_read_text(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "read_text", _boom)
+def test_cached_coverage_pct_raises_when_a_directory_sits_at_the_cache_path(
+    data_dir,
+) -> None:
+    """Sibling real fixture for the same code path (Sol review round 5,
+    PR #2611): a DIRECTORY where a cache file is expected also produces a
+    genuine, unmocked ``OSError`` (``IsADirectoryError``) when actually
+    read -- distinct from a genuinely MISSING path, which is why the
+    "nothing here" guard checks :meth:`Path.exists` rather than
+    :meth:`Path.is_file` (see ``_cached_coverage_pct``'s docstring)."""
+    stems_root = _stems_root(data_dir)
+    _write_wav_bundle(stems_root, "sid-cache-isdir-001", source_sha256="0" * 64)
+    bundle = load_stem_bundle("sid-cache-isdir-001", stems_dir=stems_root)
+    cache_path = vcache.cache_path(data_dir, "sid-cache-isdir-001")
+    cache_path.mkdir(parents=True, exist_ok=True)  # a REAL directory, not a file
 
     with pytest.raises(RuntimeError, match="could not be read"):
-        library_verdicts._cached_coverage_pct(data_dir, "sid-cache-unreadable-001", bundle)
+        library_verdicts._cached_coverage_pct(data_dir, "sid-cache-isdir-001", bundle)
 
 
 def test_backfill_reports_a_corrupt_cache_entry_as_a_failure_not_a_miss(
     conn, data_dir
 ) -> None:
-    """End-to-end control for the two unit tests above, proving the
-    PRESENCE of the good thing per the project's verification rule: the
-    backfill itself must surface a present-but-corrupt cache entry as a
-    FAILURE line an operator can see, never silently re-derive and report
-    the track as successfully processed."""
+    """End-to-end control, proving the PRESENCE of the good thing per the
+    project's verification rule: the backfill itself must surface a
+    present-but-corrupt cache entry as a FAILURE line an operator can see,
+    never silently re-derive and report the track as successfully
+    processed."""
     seed_track(conn, "sid-cache-corrupt-backfill-001")
     stems_root = _stems_root(data_dir)
     _write_wav_bundle(stems_root, "sid-cache-corrupt-backfill-001", source_sha256="d" * 64)
@@ -905,6 +935,57 @@ def test_backfill_reports_a_corrupt_cache_entry_as_a_failure_not_a_miss(
     assert "sid-cache-corrupt-backfill-001" in report.failed
     assert "not valid JSON" in report.failed["sid-cache-corrupt-backfill-001"]
     assert store.get_verdict(conn, "sid-cache-corrupt-backfill-001") is None
+
+
+@pytest.mark.skipif(
+    _RUNNING_AS_ROOT,
+    reason="root bypasses filesystem permission checks; mode 000 cannot "
+    "produce a real permission failure under root",
+)
+def test_backfill_reports_a_permission_denied_cache_file_as_a_failure(
+    conn, data_dir
+) -> None:
+    """End-to-end control for the permission-denied unit test above: the
+    backfill itself must surface it as a FAILURE, not a silent re-derive."""
+    seed_track(conn, "sid-cache-denied-backfill-001")
+    stems_root = _stems_root(data_dir)
+    _write_wav_bundle(stems_root, "sid-cache-denied-backfill-001", source_sha256="1" * 64)
+    cache_path = vcache.cache_path(data_dir, "sid-cache-denied-backfill-001")
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text("{}", encoding="utf-8")
+    cache_path.chmod(0o000)
+    try:
+        report = library_verdicts.backfill_verdicts(
+            conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False
+        )
+    finally:
+        cache_path.chmod(0o644)
+
+    assert report.processed == ()
+    assert "sid-cache-denied-backfill-001" in report.failed
+    assert "could not be read" in report.failed["sid-cache-denied-backfill-001"]
+    assert store.get_verdict(conn, "sid-cache-denied-backfill-001") is None
+
+
+def test_backfill_reports_a_directory_at_the_cache_path_as_a_failure(
+    conn, data_dir
+) -> None:
+    """End-to-end control for the directory-at-path unit test above: the
+    backfill itself must surface it as a FAILURE, not a silent re-derive."""
+    seed_track(conn, "sid-cache-isdir-backfill-001")
+    stems_root = _stems_root(data_dir)
+    _write_wav_bundle(stems_root, "sid-cache-isdir-backfill-001", source_sha256="2" * 64)
+    cache_path = vcache.cache_path(data_dir, "sid-cache-isdir-backfill-001")
+    cache_path.mkdir(parents=True, exist_ok=True)
+
+    report = library_verdicts.backfill_verdicts(
+        conn, data_dir=data_dir, dry_run=False, limit=None, include_reserved=False
+    )
+
+    assert report.processed == ()
+    assert "sid-cache-isdir-backfill-001" in report.failed
+    assert "could not be read" in report.failed["sid-cache-isdir-backfill-001"]
+    assert store.get_verdict(conn, "sid-cache-isdir-backfill-001") is None
 
 
 def test_backfill_reuses_a_readable_cache_entry_as_the_opposite_direction_control(

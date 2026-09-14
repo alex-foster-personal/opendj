@@ -271,23 +271,28 @@ def _cached_coverage_pct(data_dir: Path, stable_id: str, bundle: StemBundle) -> 
     just is not reusable, so silently deriving instead is the honest
     behaviour.
 
-    A MISSING file (no prior ``from-stems`` run for this track) is a third,
-    equally legitimate ``None`` case -- there was never anything to read.
+    NOTHING at the path (no prior ``from-stems`` run for this track) is a
+    third, equally legitimate ``None`` case -- there was never anything to
+    read. Checked with :meth:`Path.exists`, not :meth:`Path.is_file`: the
+    latter would ALSO return False for a directory sitting where a file is
+    expected, silently folding that anomaly into the same "nothing to read"
+    path instead of surfacing it below.
 
-    A PRESENT but unreadable file is different in kind from either of those,
-    and is NOT folded into the same ``None`` path: a permission error, a
-    truncated write, or corrupt JSON on a file that exists means something is
-    actually wrong on disk, not merely "no cache yet". Silently treating that
-    as a miss and deriving fresh coverage would still produce a technically
-    correct verdict, but it would mask the underlying fault from the
-    operator on every affected track, forever -- the project's fail-fast
-    rule against silent exception handling. This raises instead, which
+    Anything present at the path but not a normally readable file is
+    different in kind from either of those, and is NOT folded into the same
+    ``None`` path: a permission error, a truncated write, corrupt JSON, or a
+    directory where a file is expected means something is actually wrong on
+    disk, not merely "no cache yet". Silently treating that as a miss and
+    deriving fresh coverage would still produce a technically correct
+    verdict, but it would mask the underlying fault from the operator on
+    every affected track, forever -- the project's fail-fast rule against
+    silent exception handling. This raises instead, which
     :func:`backfill_verdicts`'s existing per-track exception handler turns
     into an honest FAILURE line rather than a quiet, indistinguishable
     re-derive.
     """
     path = vcache.cache_path(data_dir, stable_id)
-    if not path.is_file():
+    if not path.exists():
         return None
     try:
         text = path.read_text(encoding="utf-8")
