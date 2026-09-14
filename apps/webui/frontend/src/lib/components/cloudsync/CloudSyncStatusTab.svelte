@@ -26,6 +26,7 @@
 		formFromConfig,
 		presentCloudSyncError,
 		presentCloudSyncResultError,
+		statusHeadline,
 		syncNowRequest,
 		type ConfigFormFields
 	} from './cloudsync-view';
@@ -125,6 +126,8 @@
 	function yesNo(value: boolean): string {
 		return value ? 'yes' : 'no';
 	}
+
+	const headline = $derived(statusHeadline(status));
 </script>
 
 <section aria-label="CloudSync status" class="status-tab">
@@ -154,50 +157,56 @@
 		{#if status === null}
 			<p class="muted">Loading status...</p>
 		{:else}
-			<dl>
-				<dt>Configured</dt>
-				<dd
-					data-testid="cloudsync-status-configured"
-					title={`Intent only: enabled from ${status.enabled_source}, hub URL from ${status.endpoint_source}`}
-				>
-					{yesNo(status.configured)}
-				</dd>
-				<dt>Running</dt>
-				<dd
-					data-testid="cloudsync-status-running"
-					title="Evidence: true only while the background scheduler's heartbeat file is fresh"
-				>
-					{yesNo(status.running)}
-				</dd>
-				<dt>Heartbeat</dt>
-				<dd title="UTC time of the last scheduler beat, fresh or stale">{status.heartbeat_at ?? 'none'}</dd>
-				<dt>Hub</dt>
-				<dd title={`Effective hub URL, from ${status.endpoint_source}`}>{status.endpoint ?? 'none'}</dd>
-				<dt>Last result</dt>
-				<dd data-testid="cloudsync-status-last-result">
-					{#if status.last_result === null}
-						none yet
-					{:else if status.last_result.status === 'error'}
-						{status.last_result.status}:
-						{presentCloudSyncResultError(status.last_result).summary}
-						<details data-testid="cloudsync-last-result-details">
-							<summary>{CLOUDSYNC_TECHNICAL_DETAILS_LABEL}</summary>
-							<pre class="technical-details">{status.last_result.message}</pre>
-						</details>
-					{:else}
-						{status.last_result.status}: {status.last_result.message}
-					{/if}
-				</dd>
-				<dt>Rows pending</dt>
-				<dd title="Local changelog rows not yet pushed to the hub; blank when not measured">
-					{status.rows_pending ?? 'not measured'}
-				</dd>
-				<dt>Signed in as</dt>
-				<dd>{status.signed_in_as ?? 'nobody'}</dd>
-			</dl>
-			{#if status.reason}
-				<p class="muted" data-testid="cloudsync-status-reason">{status.reason}</p>
-			{/if}
+			<p class="headline" class:err={headline.tone === 'error'} class:warn={headline.tone === 'warn'} class:ok={headline.tone === 'ok'} data-testid="cloudsync-status-headline">
+				{headline.text}
+			</p>
+			<details class="tech-detail">
+				<summary>Technical detail</summary>
+				<dl>
+					<dt>Configured</dt>
+					<dd
+						data-testid="cloudsync-status-configured"
+						title={`Intent only: enabled from ${status.enabled_source}, hub URL from ${status.endpoint_source}`}
+					>
+						{yesNo(status.configured)}
+					</dd>
+					<dt>Running</dt>
+					<dd
+						data-testid="cloudsync-status-running"
+						title="Evidence: true only while the background scheduler's heartbeat file is fresh"
+					>
+						{yesNo(status.running)}
+					</dd>
+					<dt>Heartbeat</dt>
+					<dd title="UTC time of the last scheduler beat, fresh or stale">{status.heartbeat_at ?? 'none'}</dd>
+					<dt>Hub</dt>
+					<dd title={`Effective hub URL, from ${status.endpoint_source}`}>{status.endpoint ?? 'none'}</dd>
+					<dt>Last result</dt>
+					<dd data-testid="cloudsync-status-last-result">
+						{#if status.last_result === null}
+							none yet
+						{:else if status.last_result.status === 'error'}
+							{status.last_result.status}:
+							{presentCloudSyncResultError(status.last_result).summary}
+							<details data-testid="cloudsync-last-result-details">
+								<summary>{CLOUDSYNC_TECHNICAL_DETAILS_LABEL}</summary>
+								<pre class="technical-details">{status.last_result.message}</pre>
+							</details>
+						{:else}
+							{status.last_result.status}: {status.last_result.message}
+						{/if}
+					</dd>
+					<dt>Rows pending</dt>
+					<dd title="Local changelog rows not yet pushed to the hub; blank when not measured">
+						{status.rows_pending ?? 'not measured'}
+					</dd>
+					<dt>Signed in as</dt>
+					<dd>{status.signed_in_as ?? 'nobody'}</dd>
+				</dl>
+				{#if status.reason}
+					<p class="muted" data-testid="cloudsync-status-reason">{status.reason}</p>
+				{/if}
+			</details>
 		{/if}
 		<div class="actions">
 			<button
@@ -319,8 +328,31 @@
 		display: grid;
 		grid-template-columns: max-content 1fr;
 		gap: 4px 12px;
-		margin: 0;
+		margin: 0.5rem 0 0;
 		font-size: 0.85rem;
+	}
+	.headline {
+		margin: 0;
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: var(--fg);
+	}
+	.headline.ok {
+		color: var(--accent);
+	}
+	.headline.warn {
+		color: var(--warning, #b8860b);
+	}
+	.headline.err {
+		color: var(--danger);
+	}
+	.tech-detail {
+		margin-top: 0.6rem;
+	}
+	.tech-detail summary {
+		cursor: pointer;
+		color: var(--muted);
+		font-size: 0.8rem;
 	}
 	dt {
 		color: var(--muted);
