@@ -1117,6 +1117,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cloudsync/identity-backlog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Identity Backlog
+         * @description Cheap, read-only count of the identity-hold sync backlog (CLOUDSYNC-16:
+         *     the maintainer's admin panel could say 'inconclusive' forever with no way to tell a
+         *     structural backlog from a transient hiccup). One indexed-ish table scan,
+         *     no file I/O, no digest walk.
+         */
+        get: operations["get_identity_backlog_api_v1_cloudsync_identity_backlog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cloudsync/machines": {
         parameters: {
             query?: never;
@@ -1648,7 +1671,14 @@ export interface paths {
          *     did here so the pin itself shows progress: ``status`` moves
          *     open -> issued -> fixed -> merged, ``issue_url`` links the queue item, and
          *     ``agent_note`` is the one-paragraph reply the widget renders under the
-         *     original text. Every write is a partial update; unset fields are untouched.
+         *     original text. ``blocked`` is deliberately narrow: use it only when the maintainer
+         *     must supply credentials/auth, make a destructive-action decision, or choose
+         *     a genuine product fork. "I could not work out what you meant" is a question
+         *     in the note, never blocked. A blocked pin's note starts with one sentence
+         *     saying exactly what the maintainer needs, before any supporting detail. Its first
+         *     sentence is `auth: the maintainer must ...`, `destructive-action: the maintainer must ...`, or
+         *     `product-fork: the maintainer must ...`. Every write is a partial update; unset fields
+         *     are untouched.
          *
          *     Partial-fix convention (pin 58a16ac781db, follow-on to #907): when only
          *     PART of a pin's defect is fixed, do NOT invent a new ``status`` value
@@ -2832,6 +2862,57 @@ export interface paths {
         put?: never;
         /** Post Headphone Output Select */
         post: operations["post_headphone_output_select_api_v1_performance_headphones_outputs_select_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/rescue-snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Rescue Snapshot */
+        post: operations["post_rescue_snapshot_api_v1_performance_rescue_snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/rescue-snapshots/index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rescue Snapshot Index */
+        get: operations["get_rescue_snapshot_index_api_v1_performance_rescue_snapshots_index_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/rescue-snapshots/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Latest Rescue Snapshot */
+        get: operations["get_latest_rescue_snapshot_api_v1_performance_rescue_snapshots_latest_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7803,6 +7884,14 @@ export interface components {
         HubStorageErrorResponse: {
             detail: components["schemas"]["HubStorageErrorBody"];
         };
+        /** IdentityBacklogOut */
+        IdentityBacklogOut: {
+            /**
+             * Unsyncable Inferred
+             * @description live 'tracks' rows held out of every sync digest for lacking BOTH a content_hash and a normalizable ISRC. Not a bug and not fixed by retrying: each row needs `python -m apps.shared.state.backfill_content_hash --live` once its audio is reachable, or an ISRC tag.
+             */
+            unsyncable_inferred: number;
+        };
         /** JobIn */
         JobIn: {
             /** External Ref */
@@ -10417,6 +10506,15 @@ export interface components {
             signals: string[];
             /** Triple Validated */
             triple_validated: boolean;
+        };
+        /** RescueAppendOut */
+        RescueAppendOut: {
+            /** Bytes */
+            bytes: number;
+            /** Captured At Ms */
+            captured_at_ms: number;
+            /** Slot */
+            slot: number;
         };
         /** RevokeOut */
         RevokeOut: {
@@ -14647,6 +14745,26 @@ export interface operations {
             };
         };
     };
+    get_identity_backlog_api_v1_cloudsync_identity_backlog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityBacklogOut"];
+                };
+            };
+        };
+    };
     list_machines_api_v1_cloudsync_machines_get: {
         parameters: {
             query?: never;
@@ -17603,6 +17721,85 @@ export interface operations {
         };
     };
     post_headphone_output_select_api_v1_performance_headphones_outputs_select_post: _HeadphoneJsonPost;
+    post_rescue_snapshot_api_v1_performance_rescue_snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RescueAppendOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rescue_snapshot_index_api_v1_performance_rescue_snapshots_index_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_latest_rescue_snapshot_api_v1_performance_rescue_snapshots_latest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     latest_client_performance_sample_api_v1_performance_telemetry_client_samples_get: {
         parameters: {
             query?: never;

@@ -4,6 +4,8 @@ Regression one-liners:
   - if no CloudSync scheduler configuration exists then GET status says off
   - if the configured endpoint has a recorded failed attempt then GET status says error
   - if the configured endpoint has completed attempts then GET status exposes the newest five
+  - if live tracks are held for missing identity then GET identity-backlog counts them
+  - if no tracks are held for missing identity then GET identity-backlog reads zero
 """
 from __future__ import annotations
 
@@ -15,6 +17,8 @@ from fastapi.testclient import TestClient
 from apps.shared.state import db as state_db
 from apps.webui.server.app import create_app
 from apps.webui.server.sqlite_backend import SqliteBackend
+from tests.cloudsync.test_hub_sync import _DEV_A, _T0
+from tests.cloudsync.test_track_identity_collapse import _insert_identified_track
 
 
 def _client(tmp_path: Path) -> TestClient:
@@ -27,7 +31,10 @@ def _client(tmp_path: Path) -> TestClient:
         state_db_path=str(db_path),
         mount_frontend=False,
     )
-    return TestClient(app)
+    # base_url pinned to a loopback host: SEC-01's host-allowlist middleware
+    # (issue #2689) rejects TestClient's default `Host: testserver`, which
+    # is not in the default allowlist (apps/webui/server/request_guard.py).
+    return TestClient(app, base_url="http://127.0.0.1")
 
 
 def test_status_is_off_when_cloudsync_is_not_configured(tmp_path: Path, monkeypatch):
@@ -96,3 +103,51 @@ def test_status_keeps_only_the_newest_five_results(tmp_path: Path, monkeypatch):
     assert [result["pushed"] for result in body["recent_results"]] == [5, 4, 3, 2, 1]
     assert body["last_push_at"] == "2026-09-05T11:00:05+00:00"
     assert body["last_pull_at"] == "2026-09-05T11:00:05+00:00"
+
+
+def test_identity_backlog_counts_held_inferred_tracks(tmp_path: Path) -> None:
+    db_path = tmp_path / "state" / "state.db"
+    conn = state_db.open_rw(db_path, apply_schema=True)
+    try:
+        _insert_identified_track(conn, "trk-held-a", title="a", updated_at=_T0, origin=_DEV_A)
+        _insert_identified_track(conn, "trk-held-b", title="b", updated_at=_T0, origin=_DEV_A)
+        _insert_identified_track(
+            conn,
+            "trk-hashed",
+            title="hashed",
+            content_hash="a" * 64,
+            updated_at=_T0,
+            origin=_DEV_A,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    with _client(tmp_path) as client:
+        response = client.get("/api/v1/cloudsync/identity-backlog")
+
+    assert response.status_code == 200
+    assert response.json() == {"unsyncable_inferred": 2}
+
+
+def test_identity_backlog_is_zero_on_a_fully_identified_library(tmp_path: Path) -> None:
+    db_path = tmp_path / "state" / "state.db"
+    conn = state_db.open_rw(db_path, apply_schema=True)
+    try:
+        _insert_identified_track(
+            conn,
+            "trk-hashed",
+            title="hashed",
+            content_hash="a" * 64,
+            updated_at=_T0,
+            origin=_DEV_A,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    with _client(tmp_path) as client:
+        response = client.get("/api/v1/cloudsync/identity-backlog")
+
+    assert response.status_code == 200
+    assert response.json() == {"unsyncable_inferred": 0}

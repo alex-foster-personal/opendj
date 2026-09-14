@@ -19,6 +19,7 @@ from urllib.request import Request, urlopen
 _REPO = Path(__file__).resolve().parents[2]
 _FRONTEND_ROOT = _REPO / "apps" / "webui" / "frontend"
 _BROWSER_SCRIPT = _REPO / "scripts" / "perf" / "s13_signin_browser.mjs"
+_REQUEST_ORDER_SCRIPT = _REPO / "scripts" / "perf" / "boot_request_order.mjs"
 
 _DOCUMENTED_OUT = "~/.local/state/af-perf-kpi/google-storage-state.json"
 _OAUTH_ENV_NAMES = (
@@ -43,6 +44,48 @@ def _http_json(method: str, url: str) -> tuple[int, Any]:
         return exc.code, payload
     except URLError as exc:
         raise ConnectionError(str(exc.reason)) from exc
+
+
+def probe_engine_health(frontend: str) -> str | None:
+    """Return an error message, or None when GET /api/v1/health succeeds."""
+    origin = frontend.rstrip("/")
+    try:
+        status, _payload = _http_json("GET", f"{origin}/api/v1/health")
+    except ConnectionError as exc:
+        return f"engine unreachable: {exc}"
+    if status != 200:
+        return f"engine health returned HTTP {status}"
+    return None
+
+
+def record_request_order(frontend: str, log_path: Path) -> int:
+    """Write PERF-UI-03 request-order JSON; exit non-zero if library GETs are late."""
+    from datetime import UTC, datetime
+
+    origin = frontend.rstrip("/")
+    reason = probe_engine_health(origin)
+    if reason is not None:
+        print(reason, file=sys.stderr)
+        return 1
+    engine_resolved_at = datetime.now(UTC).isoformat()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.run(
+        [
+            "pnpm",
+            "exec",
+            "node",
+            str(_REQUEST_ORDER_SCRIPT),
+            "--frontend",
+            origin,
+            "--out",
+            str(log_path),
+            "--engine-resolved-at",
+            engine_resolved_at,
+        ],
+        cwd=_FRONTEND_ROOT,
+        env=os.environ.copy(),
+    )
+    return proc.returncode
 
 
 def preflight(frontend: str) -> str | None:
@@ -116,10 +159,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--out",
-        required=True,
         help=(
             "Destination path for the Playwright storageState JSON. "
             f"Operator convention: {_DOCUMENTED_OUT}"
+        ),
+    )
+    parser.add_argument(
+        "--request-order-log",
+        metavar="PATH",
+        help=(
+            "Optional PERF-UI-03 diagnostics: write boot request-order JSON and "
+            "exit non-zero when ui-prefs or tracks GET starts after BrandLaunch "
+            "first frame."
         ),
     )
     parser.add_argument(
@@ -135,6 +186,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     frontend = args.frontend.rstrip("/")
+    if args.request_order_log:
+        return record_request_order(frontend, Path(args.request_order_log).expanduser())
+    if not args.out:
+        parser.error("--out is required unless --request-order-log is set")
     out = Path(args.out).expanduser()
 
     reason = preflight(frontend)

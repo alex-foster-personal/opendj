@@ -26,7 +26,34 @@
  */
 import { type PreflightCheck, type PreflightResult, getPreflight } from '../api';
 
-let overallStatus = $state<'unknown' | PreflightResult['status']>('unknown');
+export type PreflightOverallStatus = 'unknown' | PreflightResult['status'];
+
+/** The check id for PREFLIGHT-02's library-attached row. */
+export const LIBRARY_ATTACHED_CHECK_ID = 'library-attached';
+
+/** Whether the boot preflight screen should cover the whole app.
+ *
+ * While the first-run setup overlay is open the wizard is actively resolving
+ * library-attached, so the boot gate must not sit on top of it. */
+export function shouldBlockOnPreflight(
+	status: PreflightOverallStatus,
+	setupOpen: boolean
+): boolean {
+	if (setupOpen) return false;
+	return status !== 'pass';
+}
+
+/** Which preflight rows should render. While setup is open the
+ * library-attached row is hidden because the wizard is handling it. */
+export function visiblePreflightChecks(
+	checks: PreflightCheck[],
+	setupOpen: boolean
+): PreflightCheck[] {
+	if (!setupOpen) return checks;
+	return checks.filter((check) => check.id !== LIBRARY_ATTACHED_CHECK_ID);
+}
+
+let overallStatus = $state<PreflightOverallStatus>('unknown');
 let checks = $state<PreflightCheck[]>([]);
 let error = $state<string | null>(null);
 

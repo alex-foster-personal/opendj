@@ -12,15 +12,25 @@
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import SetupOverlay from '$lib/components/setup/SetupOverlay.svelte';
 	import AccountOverlay from '$lib/components/account/AccountOverlay.svelte';
+	import SignInOverlay from '$lib/components/account/SignInOverlay.svelte';
 	import HotkeysOverlay from '$lib/components/rb/hotkeys/HotkeysOverlay.svelte';
 	import { installHotkeysOverlayHotkeys } from '$lib/components/rb/hotkeys/install-hotkeys-overlay';
 	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
-	import { preflightGate } from '$lib/preflight/preflight.svelte';
+	import {
+		LIBRARY_ATTACHED_CHECK_ID,
+		preflightGate,
+		shouldBlockOnPreflight
+	} from '$lib/preflight/preflight.svelte';
 	import { resolveFirstRun } from '$lib/setup/first-run';
-	import { openSetupOverlay } from '$lib/setup/overlay.svelte';
+	import { openSetupOverlay, setupOverlay } from '$lib/setup/overlay.svelte';
 	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
-	import { hydrateConfirmPrefsFromDisk, uiPrefs } from '$lib/rb/prefs.svelte';
+	import { startLibraryBootHydration } from '$lib/rb/library-boot-hydration';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
+
+	if (typeof window !== 'undefined') {
+		startLibraryBootHydration();
+	}
 	import { startAppInstruments } from '$lib/rb/app-init';
 	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
 	import { connect as connectEventsBus } from '$lib/api/events-bus';
@@ -39,6 +49,15 @@
 	// bypass the app shell (sidebar/topbar/padding) - RECON-FRONTEND 5,
 	// option (a). Toasts stay global as the app-wide error surface.
 	const isPerformance = $derived(isPerformanceRoutePath($page.url.pathname));
+
+	const setupOpen = $derived(setupOverlay.open);
+	const blockOnPreflight = $derived(shouldBlockOnPreflight(preflightGate.status, setupOpen));
+	const hideCheckIds = $derived(
+		setupOpen && preflightGate.checks.some((check) => check.id === LIBRARY_ATTACHED_CHECK_ID)
+			? [LIBRARY_ATTACHED_CHECK_ID]
+			: []
+	);
+	const showPreflightIndicator = $derived(!blockOnPreflight && !preflightGate.cleared);
 
 	// Keep html[data-theme] in sync (prefs module also applies on load/set).
 	$effect(() => {
@@ -91,7 +110,6 @@
 		void entitlements.load();
 		raiseSetupOnFirstRun();
 		refreshHealth();
-		void hydrateConfirmPrefsFromDisk();
 		const uninstallSettings = installSettingsHotkeys();
 		const uninstallHotkeysOverlay = installHotkeysOverlayHotkeys();
 		// Page-lifetime instruments: usage heartbeat + the DevTools perf log
@@ -111,11 +129,12 @@
 	<title>Open DJ</title>
 </svelte:head>
 
-{#if !preflightGate.cleared}
+{#if blockOnPreflight}
 	<!-- PREFLIGHT-01 (#771): the boot gate. Nothing else renders until a real
 	     `pass` arrives from GET /api/v1/preflight -- no skip/continue-anyway,
-	     see PreflightScreen.svelte for the polling policy. -->
-	<PreflightScreen mode="boot" navigate={goto} />
+	     see PreflightScreen.svelte for the polling policy. While first-run
+	     setup is open the gate yields so the wizard is not buried. -->
+	<PreflightScreen mode="boot" blocking navigate={goto} hideCheckIds={hideCheckIds} />
 {:else}
 
 {#if health.bindWarning}
@@ -200,6 +219,15 @@
 
 {/if}
 
+{#if showPreflightIndicator}
+	<PreflightScreen
+		mode="boot"
+		blocking={false}
+		navigate={goto}
+		hideCheckIds={hideCheckIds}
+	/>
+{/if}
+
 <SettingsOverlay />
 <StageOverlay />
 <!-- The first-run wizard, over whatever route is on screen. Mounted at the
@@ -211,6 +239,7 @@
      above: the user bauble is drawn on /performance too, and its Account door
      must open something there. -->
 <AccountOverlay />
+<SignInOverlay />
 <!-- Hotkeys overlay (LIBUX-04): "/" hold and "?" toggle. Mounted at the root
      for the same reason SettingsOverlay is: /performance bypasses the app
      shell, and the cheatsheet has to work there too. -->

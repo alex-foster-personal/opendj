@@ -22,6 +22,8 @@
 		refreshUser,
 		startLogin
 	} from '$lib/auth.svelte';
+	import { beginSignIn, failSignIn, signInOverlay } from '$lib/auth/sign-in-overlay.svelte';
+	import { runSignInAfterStartLogin } from '$lib/auth/sign-in-flow';
 	import { openAccountOverlay } from '$lib/account/overlay.svelte';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import { pushToast } from '$lib/stores.svelte';
@@ -34,7 +36,9 @@
 	let menuOpen = $state(false);
 	let menuEl = $state<HTMLDivElement | null>(null);
 	let menuStyle = $state('');
-	let busy = $state(false);
+	/** Sign-out only; sign-in busy comes from signInOverlay so the bauble and blocker stay in sync. */
+	let signOutBusy = $state(false);
+	const busy = $derived(signOutBusy || signInOverlay.busy);
 	/** Set when the avatar URL 404s or Google returns no picture. */
 	let avatarBroken = $state(false);
 
@@ -91,16 +95,16 @@
 			menuOpen = !menuOpen;
 			return;
 		}
-		busy = true;
+		beginSignIn();
 		try {
 			const { authorization_url } = await startLogin();
-			window.location.href = authorization_url;
+			await runSignInAfterStartLogin(authorization_url);
 		} catch (exc) {
 			// Most likely cause is a daemon with no OAuth client configured;
 			// its 503 message is the provisioning runbook, so show it rather
 			// than a generic "sign-in failed".
+			failSignIn();
 			pushToast(exc instanceof Error ? exc.message : 'sign-in failed', 'error', 12000);
-			busy = false;
 		}
 	}
 
@@ -113,14 +117,14 @@
 	}
 
 	async function onSignOut(): Promise<void> {
-		busy = true;
+		signOutBusy = true;
 		try {
 			await logout();
 			menuOpen = false;
 		} catch (exc) {
 			pushToast(exc instanceof Error ? exc.message : 'sign-out failed', 'error');
 		} finally {
-			busy = false;
+			signOutBusy = false;
 		}
 	}
 

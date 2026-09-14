@@ -18,7 +18,7 @@ from fastapi import FastAPI, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from apps.shared.perf_tier import HostInfoUnavailable
+from apps.shared.perf_tier import HostInfoUnavailable, read_host_facts
 
 HOST_INFO_PATH: str = "/api/v1/host-info"
 CODE_HOST_INFO_UNAVAILABLE: str = "host_info_unavailable"
@@ -59,25 +59,6 @@ class HostIdentity:
         if self.info is None:
             raise HostInfoUnavailable(self.failure)
         return self.info
-
-
-def read_host_facts() -> tuple[int, int]:
-    """Return (logical_cpus, ram_bytes). Raises HostInfoUnavailable on failure."""
-    import psutil
-
-    try:
-        logical_cpus = psutil.cpu_count(logical=True)
-    except Exception as exc:  # noqa: BLE001 - psutil surfaces platform errors
-        raise HostInfoUnavailable(f"psutil.cpu_count failed: {exc}") from exc
-    if logical_cpus is None:
-        raise HostInfoUnavailable("psutil.cpu_count returned None")
-    try:
-        ram_bytes = psutil.virtual_memory().total
-    except Exception as exc:  # noqa: BLE001
-        raise HostInfoUnavailable(f"psutil.virtual_memory failed: {exc}") from exc
-    if not isinstance(ram_bytes, int) or ram_bytes <= 0:
-        raise HostInfoUnavailable(f"psutil.virtual_memory().total invalid: {ram_bytes!r}")
-    return logical_cpus, ram_bytes
 
 
 def _canary_path(data_dir: Path) -> Path:

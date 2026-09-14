@@ -1,0 +1,79 @@
+// requirement: PERF-UI-03
+import assert from 'node:assert/strict';
+import { afterEach, before, test } from 'node:test';
+
+import { loadTypeScriptModule } from './load-typescript.mjs';
+
+let hydration;
+let prefsCalls = 0;
+let tracksCalls = 0;
+
+before(async () => {
+	hydration = await loadTypeScriptModule('src/lib/rb/library-boot-hydration.ts');
+});
+
+afterEach(() => {
+	prefsCalls = 0;
+	tracksCalls = 0;
+	hydration.resetLibraryBootHydrationForTests();
+});
+
+test('startLibraryBootHydration is idempotent and shares one tracks and prefs promise', async () => {
+	hydration.setPrefsHydratorForTests(async () => {
+		prefsCalls += 1;
+	});
+	hydration.setFetchBootTracksPageForTests(() => {
+		tracksCalls += 1;
+		return Promise.resolve({ items: [], next_cursor: null });
+	});
+	hydration.startLibraryBootHydration();
+	hydration.startLibraryBootHydration();
+	const first = hydration.bootTracksPrefetch();
+	const second = hydration.bootTracksPrefetch();
+	assert.equal(first.tracksPromise, second.tracksPromise);
+	assert.equal(first.prefsPromise, second.prefsPromise);
+	assert.equal(tracksCalls, 1);
+	assert.equal(prefsCalls, 1);
+	assert.ok(first.startedAt <= Date.now());
+});
+
+test('fetchBootTracksFirstPage falls back when prefetch rejects', async () => {
+	hydration.setPrefsHydratorForTests(async () => {});
+	hydration.setFetchBootTracksPageForTests(() => Promise.reject(new Error('boot fail')));
+	let fallbackCalls = 0;
+	hydration.setFallbackTracksFetchForTests(() => {
+		fallbackCalls += 1;
+		return Promise.resolve({ items: [{ stable_id: 't1' }], next_cursor: null });
+	});
+	hydration.startLibraryBootHydration();
+	const page = await hydration.fetchBootTracksFirstPage(undefined);
+	assert.equal(fallbackCalls, 1);
+	assert.equal(page.items[0].stable_id, 't1');
+});
+
+test('canBootAllTracksEarly refuses playlist and spotify deep-link boots', () => {
+	assert.equal(
+		hydration.canBootAllTracksEarly({
+			remembered: null,
+			source: 'collection',
+			spotify_selected_id: null
+		}),
+		true
+	);
+	assert.equal(
+		hydration.canBootAllTracksEarly({
+			remembered: { kind: 'playlist' },
+			source: 'collection',
+			spotify_selected_id: null
+		}),
+		false
+	);
+	assert.equal(
+		hydration.canBootAllTracksEarly({
+			remembered: null,
+			source: 'spotify',
+			spotify_selected_id: 'pl-1'
+		}),
+		false
+	);
+});

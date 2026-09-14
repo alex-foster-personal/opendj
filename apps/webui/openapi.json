@@ -4098,7 +4098,7 @@
           "status": {
             "anyOf": [
               {
-                "pattern": "^(open|issued|fixed|merged)$",
+                "pattern": "^(open|issued|blocked|fixed|merged)$",
                 "type": "string"
               },
               {
@@ -7308,6 +7308,20 @@
           "detail"
         ],
         "title": "HubStorageErrorResponse",
+        "type": "object"
+      },
+      "IdentityBacklogOut": {
+        "properties": {
+          "unsyncable_inferred": {
+            "description": "live 'tracks' rows held out of every sync digest for lacking BOTH a content_hash and a normalizable ISRC. Not a bug and not fixed by retrying: each row needs `python -m apps.shared.state.backfill_content_hash --live` once its audio is reachable, or an ISRC tag.",
+            "title": "Unsyncable Inferred",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unsyncable_inferred"
+        ],
+        "title": "IdentityBacklogOut",
         "type": "object"
       },
       "JobIn": {
@@ -13974,6 +13988,29 @@
           "triple_validated"
         ],
         "title": "RelocateCandidateOut",
+        "type": "object"
+      },
+      "RescueAppendOut": {
+        "properties": {
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "captured_at_ms": {
+            "title": "Captured At Ms",
+            "type": "integer"
+          },
+          "slot": {
+            "title": "Slot",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "slot",
+          "captured_at_ms",
+          "bytes"
+        ],
+        "title": "RescueAppendOut",
         "type": "object"
       },
       "RevokeOut": {
@@ -22358,6 +22395,28 @@
         ]
       }
     },
+    "/api/v1/cloudsync/identity-backlog": {
+      "get": {
+        "description": "Cheap, read-only count of the identity-hold sync backlog (CLOUDSYNC-16:\nthe maintainer's admin panel could say 'inconclusive' forever with no way to tell a\nstructural backlog from a transient hiccup). One indexed-ish table scan,\nno file I/O, no digest walk.",
+        "operationId": "get_identity_backlog_api_v1_cloudsync_identity_backlog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityBacklogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Identity Backlog",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
     "/api/v1/cloudsync/machines": {
       "get": {
         "operationId": "list_machines_api_v1_cloudsync_machines_get",
@@ -23692,7 +23751,7 @@
     },
     "/api/v1/feedback/comments/{comment_id}": {
       "patch": {
-        "description": "Agent-native half of the pin lifecycle (issue #858, first slice).\n\nA pin is never deleted by a fix. The agent that acts on it records what it\ndid here so the pin itself shows progress: ``status`` moves\nopen -> issued -> fixed -> merged, ``issue_url`` links the queue item, and\n``agent_note`` is the one-paragraph reply the widget renders under the\noriginal text. Every write is a partial update; unset fields are untouched.\n\nPartial-fix convention (pin 58a16ac781db, follow-on to #907): when only\nPART of a pin's defect is fixed, do NOT invent a new ``status`` value\n(there isn't one, and there is no plan to add one - see that pin's PR\nbody for the sizing call). Leave ``status`` at ``open`` or ``issued`` and\nwrite an ``agent_note`` that starts with the literal prefix ``PARTIAL:``\nand names where the remaining work went (a ``#123`` issue/PR reference,\nor a URL) - e.g. ``\"PARTIAL: markers fixed, remainder tracked in #1150\"``.\nThe frontend (``pinVisualState`` in ``feedback.ts``) recognises that\nconvention and paints the pin's marker half orange/half green instead of\nplain amber. A ``PARTIAL:`` note with nothing to point at is NOT\nrecognised - a partial pin must always say where the rest of the work is.",
+        "description": "Agent-native half of the pin lifecycle (issue #858, first slice).\n\nA pin is never deleted by a fix. The agent that acts on it records what it\ndid here so the pin itself shows progress: ``status`` moves\nopen -> issued -> fixed -> merged, ``issue_url`` links the queue item, and\n``agent_note`` is the one-paragraph reply the widget renders under the\noriginal text. ``blocked`` is deliberately narrow: use it only when the maintainer\nmust supply credentials/auth, make a destructive-action decision, or choose\na genuine product fork. \"I could not work out what you meant\" is a question\nin the note, never blocked. A blocked pin's note starts with one sentence\nsaying exactly what the maintainer needs, before any supporting detail. Its first\nsentence is `auth: the maintainer must ...`, `destructive-action: the maintainer must ...`, or\n`product-fork: the maintainer must ...`. Every write is a partial update; unset fields\nare untouched.\n\nPartial-fix convention (pin 58a16ac781db, follow-on to #907): when only\nPART of a pin's defect is fixed, do NOT invent a new ``status`` value\n(there isn't one, and there is no plan to add one - see that pin's PR\nbody for the sizing call). Leave ``status`` at ``open`` or ``issued`` and\nwrite an ``agent_note`` that starts with the literal prefix ``PARTIAL:``\nand names where the remaining work went (a ``#123`` issue/PR reference,\nor a URL) - e.g. ``\"PARTIAL: markers fixed, remainder tracked in #1150\"``.\nThe frontend (``pinVisualState`` in ``feedback.ts``) recognises that\nconvention and paints the pin's marker half orange/half green instead of\nplain amber. A ``PARTIAL:`` note with nothing to point at is NOT\nrecognised - a partial pin must always say where the rest of the work is.",
         "operationId": "update_comment_api_v1_feedback_comments__comment_id__patch",
         "parameters": [
           {
@@ -26703,6 +26762,95 @@
         "summary": "Post Headphone Output Select",
         "tags": [
           "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/rescue-snapshots": {
+      "post": {
+        "operationId": "post_rescue_snapshot_api_v1_performance_rescue_snapshots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RescueAppendOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Rescue Snapshot",
+        "tags": [
+          "performance-rescue"
+        ]
+      }
+    },
+    "/api/v1/performance/rescue-snapshots/index": {
+      "get": {
+        "operationId": "get_rescue_snapshot_index_api_v1_performance_rescue_snapshots_index_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Rescue Snapshot Index Api V1 Performance Rescue Snapshots Index Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Rescue Snapshot Index",
+        "tags": [
+          "performance-rescue"
+        ]
+      }
+    },
+    "/api/v1/performance/rescue-snapshots/latest": {
+      "get": {
+        "operationId": "get_latest_rescue_snapshot_api_v1_performance_rescue_snapshots_latest_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Latest Rescue Snapshot Api V1 Performance Rescue Snapshots Latest Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Latest Rescue Snapshot",
+        "tags": [
+          "performance-rescue"
         ]
       }
     },

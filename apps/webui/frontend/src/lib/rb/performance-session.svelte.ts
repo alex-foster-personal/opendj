@@ -24,10 +24,15 @@ import {
 	type PerformanceSessionSnapshotInput
 } from '$lib/rb/performance-session-snapshot';
 import type { StemControl } from '$lib/rb/stem-types';
+import { decodeBeatStamp } from '$lib/rb/rescue-beat-stamp';
+import type { RescueSnapshot } from '$lib/rb/rescue-snapshot';
+import { API_BASE } from '$lib/api';
 import { pushToast } from '$lib/stores.svelte';
 
 /** AC allows <=30s; 10s is the ship value for crash insurance between refreshes. */
 export const SESSION_SNAPSHOT_THROTTLE_MS = 10_000;
+/** RESCUE-01: simultaneous play restore only within ten minutes of capture. */
+export const RESCUE_RESTORE_MAX_AGE_MS = 600_000;
 
 const DECK_IDS: DeckId[] = [1, 2, 3, 4];
 const STEM_CONTROLS: StemControl[] = ['vocal', 'instrumental', 'drums'];
@@ -39,6 +44,7 @@ export interface PerformanceSessionRestoreOptions {
 	replaceState?: (url: string) => void;
 	dispatch?: typeof dispatchPerformanceCommand;
 	query?: typeof queryPerformanceState;
+	fetchRescue?: (url: string) => Promise<RescueSnapshot | null>;
 	document?: Pick<Document, 'hidden' | 'addEventListener' | 'removeEventListener'>;
 	window?: Pick<Window, 'addEventListener' | 'removeEventListener'>;
 	setInterval?: typeof globalThis.setInterval;
@@ -246,6 +252,81 @@ async function _restoreDeck(
 	}
 }
 
+async function _fetchLatestRescueSnapshot(
+	fetchRescue: (url: string) => Promise<RescueSnapshot | null>
+): Promise<RescueSnapshot | null> {
+	return fetchRescue(`${API_BASE}/api/v1/performance/rescue-snapshots/latest`);
+}
+
+function _rescueSeekMs(
+	query: typeof queryPerformanceState,
+	deckId: DeckId,
+	rescueDeck: RescueSnapshot['decks'][DeckId]
+): number {
+	const beats =
+		query().decks[deckId].beatgrid.map((beat) => ({ t: beat.time_ms / 1000 })) ?? [];
+	const decoded = decodeBeatStamp(rescueDeck.beat_stamp, beats);
+	return decoded ?? rescueDeck.position_ms;
+}
+
+async function _restoreFromRescueSnapshot(
+	dispatch: typeof dispatchPerformanceCommand,
+	query: typeof queryPerformanceState,
+	snapshot: RescueSnapshot,
+	now: number
+): Promise<void> {
+	const ageMs = now - snapshot.captured_at_ms;
+	const restorePlaying = ageMs >= 0 && ageMs <= RESCUE_RESTORE_MAX_AGE_MS;
+	await dispatch({ type: 'crossfader', value: snapshot.mixer.crossfader });
+	await dispatch({ type: 'master_volume', value: snapshot.mixer.master });
+	const playingDecks: DeckId[] = [];
+	for (const deckId of DECK_IDS) {
+		const deck = snapshot.decks[deckId];
+		if (deck.stable_id === null || deck.stable_id.length === 0) continue;
+		try {
+			await dispatch({ type: 'load', deck: deckId, stable_id: deck.stable_id });
+			const seekMs = _rescueSeekMs(query, deckId, deck);
+			if (seekMs > 0) await dispatch({ type: 'seek', deck: deckId, position_ms: seekMs });
+			const channel = deck.mixer_channel;
+			const commands: PerformanceCommand[] = [
+				{ type: 'pitch_range', deck: deckId, range: deck.pitch_range },
+				{ type: 'tempo', deck: deckId, ratio: deck.pitch },
+				{ type: 'quantize', deck: deckId, enabled: deck.quantize_enabled },
+				{ type: 'beat_sync', deck: deckId, enabled: deck.beat_sync_enabled },
+				{ type: 'master_tempo', deck: deckId, enabled: deck.master_tempo_enabled },
+				{ type: 'key_sync', deck: deckId, enabled: deck.key_sync_enabled },
+				{ type: 'trim', deck: deckId, value: channel.trim },
+				{ type: 'eq', deck: deckId, band: 'high', value: channel.eq_high },
+				{ type: 'eq', deck: deckId, band: 'mid', value: channel.eq_mid },
+				{ type: 'eq', deck: deckId, band: 'low', value: channel.eq_low },
+				{ type: 'filter', deck: deckId, value: channel.filter },
+				{ type: 'fader', deck: deckId, value: channel.fader },
+				{ type: 'assign', deck: deckId, assign: channel.assign },
+				{ type: 'channel_cue', deck: deckId, enabled: channel.cue_enabled }
+			];
+			for (const stem of STEM_CONTROLS) {
+				const control = deck.stems[stem];
+				commands.push({ type: 'stem_mute', deck: deckId, stem, muted: control.muted });
+				commands.push({ type: 'stem_solo', deck: deckId, stem, solo: control.solo });
+				commands.push({ type: 'stem_gain', deck: deckId, stem, value: control.gain });
+			}
+			for (const command of commands) {
+				await dispatch(command);
+			}
+			if (restorePlaying && deck.playing) playingDecks.push(deckId);
+		} catch (exc) {
+			const message = exc instanceof Error ? exc.message : String(exc);
+			pushToast(`rescue restore deck ${deckId} failed: ${message}`, 'error');
+		}
+	}
+	if (playingDecks.length > 0) {
+		await Promise.all(
+			playingDecks.map((deckId) => dispatch({ type: 'play', deck: deckId, playing: true }))
+		);
+		pushToast('rescue restored playing decks together', 'warn');
+	}
+}
+
 async function _restoreSession(
 	dispatch: typeof dispatchPerformanceCommand,
 	snapshot: PerformanceSessionSnapshot | null,
@@ -295,13 +376,50 @@ export function installPerformanceSessionRestore(
 		return () => {};
 	}
 
+	const nowFn = opts.now ?? (() => Date.now());
+	const fetchRescue =
+		opts.fetchRescue ??
+		(async (url: string): Promise<RescueSnapshot | null> => {
+			try {
+				const response = await fetch(url);
+				if (!response.ok) return null;
+				const body = (await response.json()) as RescueSnapshot;
+				if (body?.schema !== 1 || body.app_posture !== 'gig') return null;
+				return body;
+			} catch {
+				return null;
+			}
+		});
+
 	const snapshot = parsePerformanceSession(storage.getItem(PERFORMANCE_SESSION_STORAGE_KEY));
 	const urlDeckIds = parseLv2Ids(location.search ?? '');
 	let writer: SessionSnapshotWriter | null = null;
 
-	void _restoreSession(dispatch, snapshot, urlDeckIds).finally(() => {
+	const restore = async (): Promise<void> => {
+		const now = nowFn();
+		const rescue = await _fetchLatestRescueSnapshot(fetchRescue);
+		const rescueFresh =
+			rescue !== null &&
+			now - rescue.captured_at_ms >= 0 &&
+			now - rescue.captured_at_ms <= RESCUE_RESTORE_MAX_AGE_MS;
+		const localFresh =
+			snapshot !== null &&
+			now - snapshot.captured_at_ms >= 0 &&
+			now - snapshot.captured_at_ms <= RESCUE_RESTORE_MAX_AGE_MS;
+		const preferRescue =
+			rescueFresh &&
+			(!localFresh ||
+				(snapshot !== null ? rescue.captured_at_ms > snapshot.captured_at_ms : true));
+		if (preferRescue && rescue !== null) {
+			await _restoreFromRescueSnapshot(dispatch, query, rescue, now);
+			return;
+		}
+		await _restoreSession(dispatch, snapshot, urlDeckIds);
+	};
+
+	void restore().finally(() => {
 		writer = createSessionSnapshotWriter({
-			now: opts.now ?? (() => Date.now()),
+			now: nowFn,
 			storage,
 			location,
 			replaceState,

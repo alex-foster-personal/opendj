@@ -90,13 +90,30 @@ def classify_auto(facts: HostFacts) -> PerfTier:
 
 
 def read_host_facts() -> HostFacts:
-    from apps.engine_core.host_info import HostInfoUnavailable as _EngineHostInfoUnavailable
-    from apps.engine_core.host_info import read_host_facts as _read
+    """Measured (logical_cpus, ram_bytes) via psutil. Raises HostInfoUnavailable.
+
+    Moved here from ``apps.engine_core.host_info`` (issue: trunk quality
+    ratchet, arch.contracts_broken) so this module has one direction of
+    dependency -- callers reach into ``apps.shared`` for host facts, not the
+    other way around. ``apps.engine_core.host_info.read_host_facts`` now
+    re-exports this function rather than defining its own and calling back
+    into here, which used to make ``engine_core`` and ``shared`` a package
+    cycle.
+    """
+    import psutil
 
     try:
-        logical_cpus, ram_bytes = _read()
-    except _EngineHostInfoUnavailable as exc:
-        raise HostInfoUnavailable(str(exc)) from exc
+        logical_cpus = psutil.cpu_count(logical=True)
+    except Exception as exc:
+        raise HostInfoUnavailable(f"psutil.cpu_count failed: {exc}") from exc
+    if logical_cpus is None:
+        raise HostInfoUnavailable("psutil.cpu_count returned None")
+    try:
+        ram_bytes = psutil.virtual_memory().total
+    except Exception as exc:
+        raise HostInfoUnavailable(f"psutil.virtual_memory failed: {exc}") from exc
+    if not isinstance(ram_bytes, int) or ram_bytes <= 0:
+        raise HostInfoUnavailable(f"psutil.virtual_memory().total invalid: {ram_bytes!r}")
     return HostFacts(logical_cpus=logical_cpus, ram_bytes=ram_bytes)
 
 
