@@ -582,6 +582,310 @@ def test_background_round_refuses_catastrophic_present_drop(
         conn.close()
 
 
+def test_background_round_guard_refuses_whole_round_not_partial_batches(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    """P1 (Sol review, PR #2619, thread 4004468648): the mass-missing guard
+    was evaluated batch by batch, AFTER each batch's classification, against
+    the database's CURRENT present count -- which already reflects earlier
+    batches in the SAME round that already committed. On a round split
+    across multiple batches, an early batch's own drop can look safe in
+    isolation and commit, and only a LATER batch trips the guard -- by which
+    point the earlier batch's false absences are already durably persisted.
+    The round as a whole must be refused before writing anything, not
+    partway through it.
+    """
+    audio_dir = tmp_path / "guard-round"
+    audio_dir.mkdir()
+    paths: list[Path] = []
+    conn = state_db.open_rw(state_db_path)
+    try:
+        for index in range(12):
+            audio = audio_dir / f"{index}.mp3"
+            audio.write_bytes(b"\x00")
+            paths.append(audio)
+            _upsert_track(conn, _stable(f"gr{index:02d}"), str(audio))
+    finally:
+        conn.close()
+
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=4)
+    worker.start()
+    try:
+        _wait_worker_complete(worker, guard_s=THREAD_HANG_GUARD_S)
+    finally:
+        worker.stop()
+
+    # The whole volume goes missing: all 12 files gone.
+    for audio in paths:
+        audio.unlink()
+    conn = state_db.open_rw(state_db_path)
+    try:
+        now = datetime.now(UTC).isoformat()
+        conn.execute(
+            "UPDATE tracks SET updated_at = ? WHERE deleted_at IS NULL", (now,)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # batch_size=4 across 12 rows means 3 batches per round: the first
+    # batch's own drop (4 of 12, 33%) looks safe in isolation and would
+    # commit before the second batch's CUMULATIVE drop (8 of 12, 67%) trips
+    # the guard -- exactly the batch-by-batch bug.
+    worker2 = LibraryAvailabilityWorker(data_dir, batch_size=4)
+    worker2.start()
+    started = time.monotonic()
+    try:
+        while time.monotonic() - started < THREAD_HANG_GUARD_S:
+            if worker2.status().phase == "refused":
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("background round never refused the mass-missing drop")
+    finally:
+        worker2.stop()
+
+    conn = state_db.open_rw(state_db_path)
+    try:
+        present_after = conn.execute(
+            "SELECT COUNT(*) FROM track_availability WHERE state = 'present'"
+        ).fetchone()[0]
+        absent_after = conn.execute(
+            "SELECT COUNT(*) FROM track_availability WHERE state = 'absent'"
+        ).fetchone()[0]
+        # A refused round must not have downgraded ANY row: the decision has
+        # to be made before the first write, not partway through the round.
+        assert absent_after == 0, (
+            f"{absent_after} row(s) were downgraded to absent before the "
+            "round was refused -- the guard ran too late"
+        )
+        assert present_after == 12
+        assert conn.execute("SELECT COUNT(*) FROM tracks_available").fetchone()[0] == 12
+    finally:
+        conn.close()
+
+
+def test_background_round_commits_a_legitimate_small_drop(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    """Opposite-direction control for the round-level mass-missing guard: a
+    genuinely small drop (well under the 50% threshold) must still commit
+    normally rather than the round-level pre-check over-correcting into
+    refusing safe rounds too.
+    """
+    audio_dir = tmp_path / "guard-round-safe"
+    audio_dir.mkdir()
+    paths: list[Path] = []
+    conn = state_db.open_rw(state_db_path)
+    try:
+        for index in range(12):
+            audio = audio_dir / f"{index}.mp3"
+            audio.write_bytes(b"\x00")
+            paths.append(audio)
+            _upsert_track(conn, _stable(f"gs{index:02d}"), str(audio))
+    finally:
+        conn.close()
+
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=4)
+    worker.start()
+    try:
+        _wait_worker_complete(worker, guard_s=THREAD_HANG_GUARD_S)
+    finally:
+        worker.stop()
+
+    # Only 2 of 12 go missing (17%), safely under the 50% guard threshold.
+    # Bump updated_at ONLY for the two tracks whose files were actually
+    # deleted: bumping the other 10 (whose classification will not change)
+    # would trip the separate stale-checked_at bug and make this test hang,
+    # rather than exercising the round-level guard control it is meant to be.
+    for audio in paths[:2]:
+        audio.unlink()
+    conn = state_db.open_rw(state_db_path)
+    try:
+        now = datetime.now(UTC).isoformat()
+        conn.execute(
+            "UPDATE tracks SET updated_at = ? WHERE stable_id IN (?, ?)",
+            (now, _stable("gs00"), _stable("gs01")),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    worker2 = LibraryAvailabilityWorker(data_dir, batch_size=4)
+    worker2.start()
+    try:
+        _wait_worker_complete(worker2, guard_s=THREAD_HANG_GUARD_S)
+        assert worker2.status().phase == "complete"
+    finally:
+        worker2.stop()
+
+    conn = state_db.open_rw(state_db_path)
+    try:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM track_availability WHERE state = 'absent'"
+            ).fetchone()[0]
+            == 2
+        )
+        assert conn.execute("SELECT COUNT(*) FROM tracks_available").fetchone()[0] == 10
+    finally:
+        conn.close()
+
+
+def test_background_round_settles_metadata_only_reprobe(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    """Repro for the checked_at-staleness bug: a track re-probed because
+    ``tracks.updated_at`` changed, whose classification (state + checked_path)
+    comes back IDENTICAL to what is already stored, must still settle --
+    not sit stale forever and get re-probed on every single pass.
+
+    The worker polls every ``_POLL_IDLE_S`` (0.25s); on the buggy code this
+    row is re-selected, re-written as a content no-op that skips the
+    checked_at stamp, and immediately re-selected again next poll, so a 5s
+    bound (roughly 20 rounds) is ample to distinguish "never settles" from
+    "briefly slow" -- real settling completes well within a single round.
+    """
+    audio_dir = tmp_path / "checked-at-settle"
+    audio_dir.mkdir()
+    audio = audio_dir / "track.mp3"
+    audio.write_bytes(b"\x00")
+    stable_id = _stable("ck01")
+    conn = state_db.open_rw(state_db_path)
+    try:
+        _upsert_track(conn, stable_id, str(audio))
+    finally:
+        conn.close()
+
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=4)
+    worker.start()
+    try:
+        _wait_worker_complete(worker, guard_s=THREAD_HANG_GUARD_S)
+    finally:
+        worker.stop()
+
+    conn = state_db.open_rw(state_db_path)
+    try:
+        state_before, checked_at_before = conn.execute(
+            "SELECT state, checked_at FROM track_availability WHERE stable_id = ?",
+            (stable_id,),
+        ).fetchone()
+        assert state_before == "present"
+    finally:
+        conn.close()
+
+    # Metadata-only change: the title differs (a genuine field change that
+    # bumps tracks.updated_at) but the file path -- and hence the
+    # classification -- is unchanged, so the round's write is a content
+    # no-op for this row.
+    conn = state_db.open_rw(state_db_path)
+    try:
+        _upsert_track(conn, stable_id, str(audio), title="Retitled Track")
+    finally:
+        conn.close()
+
+    worker2 = LibraryAvailabilityWorker(data_dir, batch_size=4)
+    worker2.start()
+    try:
+        _wait_worker_complete(worker2, guard_s=5.0)
+    finally:
+        worker2.stop()
+
+    conn = state_db.open_rw(state_db_path)
+    try:
+        checked_at_after = conn.execute(
+            "SELECT checked_at FROM track_availability WHERE stable_id = ?",
+            (stable_id,),
+        ).fetchone()[0]
+        assert checked_at_after > checked_at_before, (
+            "checked_at never advanced after a re-probe whose state/path "
+            "came back unchanged -- the row is stale forever"
+        )
+    finally:
+        conn.close()
+
+
+def test_background_round_settles_a_genuine_reclassification(
+    data_dir: Path, state_db_path: Path, tmp_path: Path
+) -> None:
+    """Opposite-direction control for the checked_at-staleness fix: a row
+    whose re-probe DOES change classification (present -> absent) must
+    still settle in exactly one extra pass and advance checked_at --
+    proving the fix does not starve real reclassifications while it stops
+    chasing no-op ones.
+
+    Seeded with 6 tracks (only 1 goes missing = 17%) so the reclassification
+    itself stays safely under the unrelated mass-missing guard's threshold.
+    """
+    audio_dir = tmp_path / "checked-at-genuine"
+    audio_dir.mkdir()
+    stable_id = _stable("ck02")
+    target_audio: Path | None = None
+    conn = state_db.open_rw(state_db_path)
+    try:
+        for index in range(6):
+            audio = audio_dir / f"{index}.mp3"
+            audio.write_bytes(b"\x00")
+            sid = stable_id if index == 0 else _stable(f"ck02filler{index}")
+            _upsert_track(conn, sid, str(audio))
+            if index == 0:
+                target_audio = audio
+    finally:
+        conn.close()
+    assert target_audio is not None
+
+    worker = LibraryAvailabilityWorker(data_dir, batch_size=4)
+    worker.start()
+    try:
+        _wait_worker_complete(worker, guard_s=THREAD_HANG_GUARD_S)
+    finally:
+        worker.stop()
+
+    conn = state_db.open_rw(state_db_path)
+    try:
+        checked_at_before = conn.execute(
+            "SELECT checked_at FROM track_availability WHERE stable_id = ?",
+            (stable_id,),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    target_audio.unlink()
+    conn = state_db.open_rw(state_db_path)
+    try:
+        now = datetime.now(UTC).isoformat()
+        conn.execute(
+            "UPDATE tracks SET updated_at = ? WHERE stable_id = ?",
+            (now, stable_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    worker2 = LibraryAvailabilityWorker(data_dir, batch_size=4)
+    worker2.start()
+    try:
+        _wait_worker_complete(worker2, guard_s=THREAD_HANG_GUARD_S)
+        status_after = worker2.status()
+    finally:
+        worker2.stop()
+
+    assert status_after.processed_total == 1, (
+        "a genuine reclassification must settle in exactly one pass, not loop -- "
+        f"got processed_total={status_after.processed_total}"
+    )
+    conn = state_db.open_rw(state_db_path)
+    try:
+        state_after, checked_at_after = conn.execute(
+            "SELECT state, checked_at FROM track_availability WHERE stable_id = ?",
+            (stable_id,),
+        ).fetchone()
+        assert state_after == "absent"
+        assert checked_at_after > checked_at_before
+    finally:
+        conn.close()
+
+
 def _seed_mass_missing_refusal_fixture(
     data_dir: Path,
     state_db_path: Path,

@@ -39,6 +39,7 @@ class _AvailabilityWriterMixin:
         now: str | None = None,
         allow_mass_missing: bool = False,
         apply_mass_missing_guard: bool = True,
+        always_refresh_checked_at: bool = False,
     ) -> AvailabilityReport:
         """Upsert availability rows and append one event per changed track."""
         stamp = now or self._now_iso()
@@ -49,6 +50,7 @@ class _AvailabilityWriterMixin:
                 now=stamp,
                 allow_mass_missing=allow_mass_missing,
                 apply_mass_missing_guard=apply_mass_missing_guard,
+                always_refresh_checked_at=always_refresh_checked_at,
             )
             for stable_id in write_report.changed_stable_ids:
                 row = next(r for r in rows if r.stable_id == stable_id)

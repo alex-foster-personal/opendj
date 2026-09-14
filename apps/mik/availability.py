@@ -176,12 +176,17 @@ def write(
     now: str | None = None,
     allow_mass_missing: bool = False,
     apply_mass_missing_guard: bool = True,
+    always_refresh_checked_at: bool = False,
 ) -> AvailabilityReport:
     """Upsert ``rows`` into ``track_availability``. Idempotent.
 
-    A row whose state and path are unchanged keeps its original
-    ``checked_at``, so the timestamp answers "when did this state last change"
-    rather than "when did the probe last run".
+    By default (``always_refresh_checked_at=False``), a row whose state and
+    path are unchanged keeps its original ``checked_at``, so the timestamp
+    answers "when did this state last change" rather than "when did the
+    probe last run". Callers that re-select rows off ``checked_at`` staleness
+    (the engine's background worker) pass ``always_refresh_checked_at=True``
+    so a re-probed row that comes back unchanged still settles instead of
+    being re-selected as stale on every future pass.
 
     LIBM-41: a library that was present and is now empty (or dropped by more
     than 50%) is refused unless ``allow_mass_missing`` is set. The check
@@ -193,6 +198,7 @@ def write(
             now=now,
             allow_mass_missing=allow_mass_missing,
             apply_mass_missing_guard=apply_mass_missing_guard,
+            always_refresh_checked_at=always_refresh_checked_at,
         )
 
 

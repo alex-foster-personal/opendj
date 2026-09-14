@@ -119,11 +119,24 @@ def upsert_availability_rows(
     now: str | None = None,
     allow_mass_missing: bool = False,
     apply_mass_missing_guard: bool = True,
+    always_refresh_checked_at: bool = False,
 ) -> AvailabilityWriteReport:
     """Upsert ``rows`` into ``track_availability``. Idempotent.
 
     ``apply_mass_missing_guard=False`` is for engine-sized partial batches that
     must not compare a local batch count with the whole library.
+
+    ``always_refresh_checked_at=False`` (the default) preserves the MIK CLI's
+    documented semantics: ``checked_at`` records the last STATE CHANGE, and a
+    row whose ``(state, checked_path)`` comes back identical to what is
+    already stored is a pure no-op. The engine's background worker opts in
+    with ``True`` instead: it re-selects a row as soon as
+    ``tracks.updated_at > track_availability.checked_at``, so a row whose
+    classification is re-probed and comes back unchanged must still stamp
+    ``checked_at`` forward, or it is re-selected as stale on every future
+    pass forever (LIBM-41 follow-up). Stamping it forward is still counted
+    as ``unchanged``, not ``changed`` -- the visible classification did not
+    move, only the bookkeeping of when it was last confirmed.
     """
     if apply_mass_missing_guard:
         guard_present_drop(conn, rows, allow_mass_missing=allow_mass_missing)
@@ -145,7 +158,11 @@ def upsert_availability_rows(
         prior = existing.get(row.stable_id)
         if prior == (row.state, row.checked_path):
             report.unchanged += 1
-            continue
+            if not always_refresh_checked_at:
+                continue
+        else:
+            report.changed += 1
+            report.changed_stable_ids.append(row.stable_id)
         conn.execute(
             "INSERT INTO track_availability(stable_id, state, checked_path, "
             "checked_at) VALUES (?, ?, ?, ?) "
@@ -153,8 +170,6 @@ def upsert_availability_rows(
             "checked_path=excluded.checked_path, checked_at=excluded.checked_at",
             (row.stable_id, row.state, row.checked_path, stamp),
         )
-        report.changed += 1
-        report.changed_stable_ids.append(row.stable_id)
     return report
 
 

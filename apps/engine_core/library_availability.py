@@ -19,6 +19,7 @@ from apps.mik import availability as avail
 from apps.shared.scan_mass_missing import MassMissingError
 from apps.shared.state import db as state_db
 from apps.shared.state.availability_write import (
+    AvailabilityRow,
     guard_round_present_drop,
     present_count,
 )
@@ -251,56 +252,70 @@ class LibraryAvailabilityWorker:
                 and self._status.phase not in {"queued", "running"}
             )
 
-    def _next_batch(self, conn: sqlite3.Connection) -> list[str]:
+    def _collect_round_stable_ids(self, conn: sqlite3.Connection) -> list[str]:
+        """Every stable_id this round will touch, gathered before any write.
+
+        Mirrors ``_next_batch``'s source order (the priority queue, then the
+        incomplete scan, then the awaiting-volume scan) but drains each
+        source to exhaustion in one pass instead of one page at a time, so
+        the round's mass-missing decision (LIBM-41) can be made ONCE, before
+        any row of the round is probed for writing -- not batch by batch
+        after earlier batches have already committed.
+        """
         with self._lock:
-            if self._priority_ids:
-                batch = [
-                    self._priority_ids.popleft()
-                    for _ in range(min(self._batch_size, len(self._priority_ids)))
-                ]
-                return batch
+            priority = list(self._priority_ids)
+            self._priority_ids.clear()
             cursor = self._keyset_cursor
             scan_awaiting = self._scan_awaiting_volume
-        rows = conn.execute(_INCOMPLETE_SQL, (cursor, self._batch_size)).fetchall()
-        if rows:
-            return [row[0] for row in rows]
+
+        ids: list[str] = list(priority)
+        seen = set(ids)
+
         if not scan_awaiting:
-            with self._lock:
-                self._scan_awaiting_volume = True
-                self._keyset_cursor = ""
-            rows = conn.execute(
-                _AWAITING_VOLUME_SQL, ("", self._batch_size)
-            ).fetchall()
-            return [row[0] for row in rows]
-        rows = conn.execute(
-            _AWAITING_VOLUME_SQL, (cursor, self._batch_size)
-        ).fetchall()
-        return [row[0] for row in rows]
+            rows = conn.execute(_INCOMPLETE_SQL, (cursor, -1)).fetchall()
+            for (stable_id,) in rows:
+                if stable_id not in seen:
+                    ids.append(stable_id)
+                    seen.add(stable_id)
+            if not rows:
+                scan_awaiting = True
+
+        if scan_awaiting:
+            rows = conn.execute(_AWAITING_VOLUME_SQL, ("", -1)).fetchall()
+            for (stable_id,) in rows:
+                if stable_id not in seen:
+                    ids.append(stable_id)
+                    seen.add(stable_id)
+
+        with self._lock:
+            self._scan_awaiting_volume = scan_awaiting
+            # A full pass through each source was just taken to exhaustion,
+            # so the next round starts a fresh scan rather than resuming a
+            # partial page.
+            self._keyset_cursor = ""
+        return ids
 
     def _commit_batch(
         self,
         conn: sqlite3.Connection,
-        stable_ids: list[str],
-        *,
-        apply_mass_missing_guard: bool,
-        allow_mass_missing: bool,
-        round_start_present: int,
+        rows: list[AvailabilityRow],
     ) -> int:
-        rows = avail.probe_batch(conn, stable_ids)
-        if not apply_mass_missing_guard:
-            guard_round_present_drop(
-                conn,
-                rows,
-                round_start_present=round_start_present,
-                allow_mass_missing=allow_mass_missing,
-            )
+        """Durably write a pre-probed, already guard-decided slice of the round.
+
+        The mass-missing decision for the whole round is made once in
+        ``_drain_once``, before any row here was even probed for writing, so
+        this only chunks the writes and status refreshes -- it must not
+        re-run the guard against a partial slice.
+        """
         report = avail.write(
             conn,
             rows,
-            apply_mass_missing_guard=apply_mass_missing_guard,
-            allow_mass_missing=allow_mass_missing,
+            apply_mass_missing_guard=False,
+            allow_mass_missing=False,
+            always_refresh_checked_at=True,
         )
         conn.commit()
+        stable_ids = [row.stable_id for row in rows]
         with self._lock:
             self._status.processed_total += report.total
             if stable_ids:
@@ -314,6 +329,7 @@ class LibraryAvailabilityWorker:
             rows,
             allow_mass_missing=req.allow_mass_missing,
             apply_mass_missing_guard=True,
+            always_refresh_checked_at=True,
         )
         conn.commit()
         with self._lock:
@@ -369,25 +385,21 @@ class LibraryAvailabilityWorker:
                 self._status.last_error = None
 
             round_start_present = present_count(conn)
+            candidate_ids = self._collect_round_stable_ids(conn)
             batches_committed = 0
 
-            while not self._stop.is_set():
-                batch = self._next_batch(conn)
-                if not batch:
-                    breakdown = self._pending_breakdown(conn)
-                    if breakdown["total"] > 0:
-                        with self._lock:
-                            self._keyset_cursor = ""
-                            self._scan_awaiting_volume = False
-                        self._wake.set()
-                    break
+            if candidate_ids:
+                # LIBM-41 follow-up: decide the whole round's mass-missing
+                # question from a dry-run classification of every candidate
+                # BEFORE any of them is written, so a refusal can never leave
+                # earlier batches' downgrades already committed.
+                round_rows = avail.probe_batch(conn, candidate_ids)
                 try:
-                    self._commit_batch(
+                    guard_round_present_drop(
                         conn,
-                        batch,
-                        apply_mass_missing_guard=False,
-                        allow_mass_missing=False,
+                        round_rows,
                         round_start_present=round_start_present,
+                        allow_mass_missing=False,
                     )
                 except MassMissingError as exc:
                     conn.rollback()
@@ -395,13 +407,16 @@ class LibraryAvailabilityWorker:
                         self._status.phase = "refused"
                         self._status.last_error = str(exc)
                     return
-                batches_committed += 1
-                self._refresh_status_counts(conn)
-                if self._on_batch_committed is not None:
-                    self._on_batch_committed(self.status())
-                if len(batch) < self._batch_size:
-                    break
-                self._wake.set()
+
+                for start in range(0, len(round_rows), self._batch_size):
+                    if self._stop.is_set():
+                        break
+                    chunk = round_rows[start : start + self._batch_size]
+                    self._commit_batch(conn, chunk)
+                    batches_committed += 1
+                    self._refresh_status_counts(conn)
+                    if self._on_batch_committed is not None:
+                        self._on_batch_committed(self.status())
 
             with self._lock:
                 if self._priority_ids or self._full_probe is not None:
