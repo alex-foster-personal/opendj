@@ -124,6 +124,26 @@ def loop_value(_key: str, raw: str) -> dict[str, float]:
     return {"in_ms": number_value("in_ms", in_ms), "out_ms": number_value("out_ms", out_ms)}
 
 
+def rescue_decks_value(key: str, raw: str) -> list[dict[str, Any]]:
+    """``<deck>:<position_ms>[,<deck>:<position_ms>...]`` for rescue_resume."""
+    pairs: list[dict[str, Any]] = []
+    for chunk in raw.split(","):
+        entry = chunk.strip()
+        if entry == "":
+            continue
+        if ":" not in entry:
+            raise ValueError(f"{key} entry must be deck:position_ms, got {entry!r}")
+        deck_raw, pos_raw = entry.split(":", 1)
+        deck = deck_value("deck", deck_raw.strip())
+        position_ms = number_value("position_ms", pos_raw.strip())
+        if position_ms < 0:
+            raise ValueError(f"position_ms must be >= 0, got {position_ms!r}")
+        pairs.append({"deck": deck, "position_ms": int(position_ms)})
+    if not pairs:
+        raise ValueError(f"{key} needs at least one deck:position_ms pair")
+    return pairs
+
+
 @dataclass(frozen=True)
 class Arg:
     """One command field, parsed from one positional token (two for ``loop``)."""

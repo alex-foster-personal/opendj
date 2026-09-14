@@ -33,6 +33,7 @@ from apps.opendj_cli.kinds import (
     int_value,
     loop_value,
     number_value,
+    rescue_decks_value,
     positive_int_value,
     text_value,
     unit_value,
@@ -296,6 +297,11 @@ _VERBS: tuple[Verb, ...] = (
          note="Requires a mounted playlist history panel."),
     Verb("playlist_redo", "playlist_redo", (),
          note="Requires a mounted playlist history panel."),
+    Verb("rescue_resume", "rescue_resume", (
+        arg("decks", "rescue_decks", rescue_decks_value, "1:5000[,3:12000]"),
+    ), note="RESCUE-02: schedule every listed deck at position_ms together."),
+    Verb("rescue_stop_all", "rescue_stop_all", (),
+         note="RESCUE-02 Undo: stop every deck restored by rescue playback together."),
 )
 
 VERBS: dict[str, Verb] = {verb.name: verb for verb in _VERBS}
