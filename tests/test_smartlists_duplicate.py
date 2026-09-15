@@ -15,7 +15,7 @@ pytest_plugins = ["tests.test_smartlists_route"]
 
 @pytest.mark.requirement("LIBMX-04")
 def test_duplicate_smartlist_default_name(client, state_db_path):
-    """[if] POST duplicate [then] 201 with same rule and '(copy)' name."""
+    """[if] POST duplicate [then] 201 with same rule and '(copy)' name, [else stop]."""
     sid = _create_smartlist(state_db_path, "source", _BPM_RULE)
     r = client.post(f"/api/v1/smartlists/{sid}/duplicate")
     assert r.status_code == 201
@@ -31,7 +31,7 @@ def test_duplicate_smartlist_default_name(client, state_db_path):
 
 @pytest.mark.requirement("LIBMX-04")
 def test_duplicate_smartlist_custom_name(client, state_db_path):
-    """[if] POST duplicate with name override [then] override is honored."""
+    """[if] POST duplicate with name override [then] override is honored, [else stop]."""
     sid = _create_smartlist(state_db_path, "src", _BPM_RULE)
     r = client.post(
         f"/api/v1/smartlists/{sid}/duplicate",
@@ -43,7 +43,7 @@ def test_duplicate_smartlist_custom_name(client, state_db_path):
 
 @pytest.mark.requirement("LIBMX-04")
 def test_duplicate_unknown_id_404(client):
-    """[if] unknown source id [then] 404 SMARTLIST_NOT_FOUND."""
+    """[if] unknown source id [then] 404 SMARTLIST_NOT_FOUND, [else stop]."""
     r = client.post("/api/v1/smartlists/nope/duplicate")
     assert r.status_code == 404
     assert r.json()["detail"]["code"] == "SMARTLIST_NOT_FOUND"
@@ -51,7 +51,7 @@ def test_duplicate_unknown_id_404(client):
 
 @pytest.mark.requirement("LIBMX-04")
 def test_duplicate_tombstoned_source_404(client, state_db_path):
-    """[if] source is tombstoned [then] 404 SMARTLIST_NOT_FOUND."""
+    """[if] source is tombstoned [then] 404 SMARTLIST_NOT_FOUND, [else stop]."""
     sid = _create_smartlist(state_db_path, "gone", _BPM_RULE)
     assert client.delete(f"/api/v1/smartlists/{sid}").status_code == 204
     r = client.post(f"/api/v1/smartlists/{sid}/duplicate")
@@ -60,7 +60,7 @@ def test_duplicate_tombstoned_source_404(client, state_db_path):
 
 @pytest.mark.requirement("LIBMX-04")
 def test_duplicate_peer_lock_503(client, state_db_path):
-    """[if] peer lock held [then] 503 and no extra row."""
+    """[if] peer lock held [then] 503 and no extra row, [else stop]."""
     sid = _create_smartlist(state_db_path, "locked-src", _BPM_RULE)
     before = client.get("/api/v1/smartlists").json()
     with _make_client(
@@ -75,7 +75,7 @@ def test_duplicate_peer_lock_503(client, state_db_path):
 
 @pytest.mark.requirement("LIBMX-04")
 def test_duplicate_openapi_documents_route(client):
-    """[if] OpenAPI is dumped [then] duplicate route returns 201."""
+    """[if] OpenAPI is dumped [then] duplicate route returns 201, [else stop]."""
     spec = client.get("/openapi.json").json()
     op = spec["paths"]["/api/v1/smartlists/{smartlist_id}/duplicate"]["post"]
     assert "201" in op["responses"]

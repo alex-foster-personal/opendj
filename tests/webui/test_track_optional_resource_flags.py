@@ -231,7 +231,10 @@ def test_stems_available_true_when_indexed_but_not_local(
     hydration_flags_client: TestClient, tmp_path: Path
 ) -> None:
     """A track with no local bundle but a cached R2 index entry reports
-    stems_available=True so the frontend's probe issues GET /stems."""
+    stems_available=True so the frontend's probe issues GET /stems.
+
+    [if] a track has no bundle but a cached index entry [then] stems_available is True, [else stop].
+    """
     from tests.webui.test_stems_hydration import _cfg, _seed_bundle
 
     stable_id = "indexed-not-local"
@@ -258,6 +261,7 @@ def test_stems_available_true_when_indexed_but_not_local(
 def test_stems_available_false_when_hydration_disabled(
     flags_client: TestClient, tmp_path: Path
 ) -> None:
+    """[if] a track is indexed, hydration unbound [then] stems_available is False, [else stop]."""
     stable_id = "indexed-no-hydration"
     data_dir = tmp_path / "data"
     _insert_track(flags_client, tmp_path, stable_id)
@@ -275,6 +279,7 @@ def test_stems_available_false_when_hydration_disabled(
 def test_stems_available_false_when_not_in_index(
     hydration_flags_client: TestClient, tmp_path: Path
 ) -> None:
+    """[if] a track has no bundle, no index entry [then] stems_available is False, [else stop]."""
     stable_id = "not-in-index"
     data_dir = tmp_path / "data"
     _insert_track(hydration_flags_client, tmp_path, stable_id)
@@ -289,7 +294,10 @@ def test_stems_available_false_when_not_in_index(
 def test_stems_available_true_from_local_summary_without_hydration(
     flags_client: TestClient, tmp_path: Path
 ) -> None:
-    """Local bundle path is unaffected when hydration is not wired."""
+    """Local bundle path is unaffected when hydration is not wired.
+
+    [if] a local bundle exists, hydration unwired [then] stems_available still True, [else stop].
+    """
     import json
 
     stable_id = "local-bundle-track"

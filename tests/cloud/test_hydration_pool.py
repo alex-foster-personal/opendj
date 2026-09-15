@@ -1,4 +1,7 @@
-"""CLOUDSYNC-09 hydration pool: bounded download parallelism."""
+"""CLOUDSYNC-09 hydration pool: bounded download parallelism.
+
+[if] memory pressure is elevated [then] the pool admits only 1 concurrent download, [else stop].
+"""
 from __future__ import annotations
 
 import os
@@ -29,6 +32,7 @@ def _reset_pool() -> None:
 
 @pytest.mark.requirement("CLOUDSYNC-09")
 def test_default_cap_is_four_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the env var is unset [then] the effective limit defaults to 4, [else stop]."""
     monkeypatch.delenv(ENV_HYDRATION_MAX_CONCURRENT, raising=False)
     assert DEFAULT_HYDRATION_MAX_CONCURRENT == 4
     assert effective_limit() == 4
@@ -36,6 +40,7 @@ def test_default_cap_is_four_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> 
 
 @pytest.mark.requirement("CLOUDSYNC-09")
 def test_env_override_raises_on_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the env var is non-integer [then] effective_limit raises ValueError, [else stop]."""
     monkeypatch.setenv(ENV_HYDRATION_MAX_CONCURRENT, "abc")
     with pytest.raises(ValueError, match=ENV_HYDRATION_MAX_CONCURRENT):
         effective_limit()
@@ -43,6 +48,7 @@ def test_env_override_raises_on_invalid(monkeypatch: pytest.MonkeyPatch) -> None
 
 @pytest.mark.requirement("CLOUDSYNC-09")
 def test_fourth_enqueue_blocks_until_slot_frees(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] 3 downloads are in flight [then] a 4th run_download blocks for a slot, [else stop]."""
     monkeypatch.setenv(ENV_HYDRATION_MAX_CONCURRENT, "3")
     entered = threading.Event()
     release = threading.Event()
@@ -88,6 +94,7 @@ def test_fourth_enqueue_blocks_until_slot_frees(monkeypatch: pytest.MonkeyPatch)
 
 @pytest.mark.requirement("CLOUDSYNC-09")
 def test_elevated_pressure_limits_to_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] pressure is elevated [then] run_download admits only 1 download, [else stop]."""
     monkeypatch.setenv(ENV_HYDRATION_MAX_CONCURRENT, "4")
     pressure: dict[str, Any] = {
         "available": True,
@@ -130,6 +137,7 @@ def test_elevated_pressure_limits_to_one(monkeypatch: pytest.MonkeyPatch) -> Non
 
 @pytest.mark.requirement("CLOUDSYNC-09")
 def test_failure_propagates_and_releases_slot() -> None:
+    """[if] the callable raises [then] run_download re-raises and frees the slot, [else stop]."""
     def failing() -> None:
         raise RuntimeError("fetch failed")
 
@@ -140,6 +148,7 @@ def test_failure_propagates_and_releases_slot() -> None:
 
 @pytest.mark.requirement("CLOUDSYNC-09")
 def test_pressure_clear_restores_higher_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] pressure clears mid-download [then] a queued download is admitted, [else stop]."""
     monkeypatch.setenv(ENV_HYDRATION_MAX_CONCURRENT, "2")
     pressure_state: dict[str, Any] = {
         "available": True,

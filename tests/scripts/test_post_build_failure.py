@@ -7,6 +7,8 @@ Regression lines:
   - if the row is missing kind=build, error_id, host, or sha, then broken
   - if a headless-dmg FAILED verdict cannot be parsed into a build event,
     then broken
+
+[if] post_build_failure runs on a build result [then] it writes one kind=build row, [else stop].
 """
 
 from __future__ import annotations

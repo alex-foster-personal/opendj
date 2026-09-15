@@ -36,6 +36,9 @@ SENTRY_EVENTS_PER_ID_PER_HOUR: int = 3
 SENTRY_EVENTS_PER_DAY: int = 100
 PERF_MIRROR_KINDS: frozenset[str] = frozenset({"console-warn", "console-error"})
 PERF_EVENT_MARKER: str = "[perf-event]"
+#: Vite dev-server console lines: they exist only under `vite dev` (the preview),
+#: never in a shipped build, and were 12 of 33 open issues on Mon 14 Sep 2026.
+DEV_TOOLING_MARKERS: tuple[str, ...] = ("[hmr]", "[vite]")
 
 _WINDOW_S: float = 3600.0
 
@@ -43,6 +46,11 @@ _WINDOW_S: float = 3600.0
 def is_perf_console_mirror(kind: str, message: str) -> bool:
     """A console line written by perf-event-log.ts; its real report is a ui-error."""
     return kind in PERF_MIRROR_KINDS and PERF_EVENT_MARKER in message
+
+
+def is_dev_tooling_console(kind: str, message: str) -> bool:
+    """A Vite dev-server console line (hot reload, reconnect): local only."""
+    return kind in PERF_MIRROR_KINDS and message.lstrip().startswith(DEV_TOOLING_MARKERS)
 
 
 @dataclass

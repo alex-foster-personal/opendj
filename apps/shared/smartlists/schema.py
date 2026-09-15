@@ -150,7 +150,16 @@ def _validate_predicate(node: dict, path: str) -> None:
     _validate_operand(field, op, value, path)
 
 
-def _validate_node(node: Any, path: str) -> None:
+# No hand-built smartlist rule nests anywhere near this deep; the cap exists
+# to turn an unbounded-recursion payload into a clean SmartlistRuleError
+# instead of an uncaught RecursionError (no route handler catches that, so
+# it would otherwise surface as a bare 500).
+_MAX_RULE_DEPTH = 32
+
+
+def _validate_node(node: Any, path: str, depth: int = 0) -> None:
+    if depth > _MAX_RULE_DEPTH:
+        raise _err(path, f"rule nesting exceeds the maximum depth of {_MAX_RULE_DEPTH}")
     if not isinstance(node, dict):
         raise _err(path, f"expected object, got {type(node).__name__}")
     if "op" in node and node["op"] in LOGICAL_OPS:
@@ -163,7 +172,7 @@ def _validate_node(node: Any, path: str) -> None:
             raise _err(f"{path}.children",
                        "'not' requires exactly one child")
         for i, child in enumerate(children):
-            _validate_node(child, f"{path}.children[{i}]")
+            _validate_node(child, f"{path}.children[{i}]", depth + 1)
         return
     if "field" not in node or "op" not in node:
         raise _err(path,

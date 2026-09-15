@@ -17,6 +17,7 @@ import pytest
 from apps.cloud.asset_store import AssetHead, asset_object_key
 from apps.cloud.config import CloudConfig
 from apps.cloud.stem_index import INDEX_OBJECT_KEY, fetch_index, load_cached_index, publish_index
+from apps.cloud.stem_source import DirectR2Source
 from apps.stems.cli import _default_journal_path, build_parser
 
 
@@ -201,7 +202,7 @@ def test_bulk_hydrate_rejects_both_ids_and_playlist(tmp_path: Path) -> None:
 
 def test_bulk_hydrate_without_credentials_refuses_loudly(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "apps.lyrics.artifacts.asset_clients_for_mode", lambda *, writing: (None, None)
+        "apps.cloud.stem_source.resolve_stem_hydration_source", lambda _data_dir: None
     )
     with pytest.raises(SystemExit, match="credentials"):
         _run(
@@ -234,7 +235,8 @@ def test_bulk_hydrate_ids_fetches_and_reports(
     save_cached_index(data_dir, {"cli-track": entry})
 
     monkeypatch.setattr(
-        "apps.lyrics.artifacts.asset_clients_for_mode", lambda *, writing: (s3, cfg)
+        "apps.cloud.stem_source.resolve_stem_hydration_source",
+        lambda _data_dir: DirectR2Source(cfg=cfg, s3=s3),
     )
 
     rc = _run(
@@ -262,9 +264,10 @@ def test_bulk_hydrate_json_output_reports_skip_reason(
 
     # Warm cache: skip the auto-refresh-on-empty path so an absent id is a
     # reported skip rather than a "no index in R2" refusal.
-    save_cached_index(data_dir, {"other-track": {"manifest.json": "x" * 64}})
+    save_cached_index(data_dir, {"other-track": {"manifest.json": "a" * 64}})
     monkeypatch.setattr(
-        "apps.lyrics.artifacts.asset_clients_for_mode", lambda *, writing: (s3, cfg)
+        "apps.cloud.stem_source.resolve_stem_hydration_source",
+        lambda _data_dir: DirectR2Source(cfg=cfg, s3=s3),
     )
 
     rc = _run(
@@ -302,7 +305,8 @@ def test_bulk_hydrate_refresh_index_fetches_from_r2_on_empty_cache(
     publish_index(cfg, s3, {"fresh-track": entry})
 
     monkeypatch.setattr(
-        "apps.lyrics.artifacts.asset_clients_for_mode", lambda *, writing: (s3, cfg)
+        "apps.cloud.stem_source.resolve_stem_hydration_source",
+        lambda _data_dir: DirectR2Source(cfg=cfg, s3=s3),
     )
 
     rc = _run(
@@ -343,7 +347,8 @@ def test_bulk_hydrate_with_warm_cache_does_not_refetch_index(
     publish_index(cfg, s3, {"other-track": {"manifest.json": "z" * 64}})
 
     monkeypatch.setattr(
-        "apps.lyrics.artifacts.asset_clients_for_mode", lambda *, writing: (s3, cfg)
+        "apps.cloud.stem_source.resolve_stem_hydration_source",
+        lambda _data_dir: DirectR2Source(cfg=cfg, s3=s3),
     )
 
     # publish_index's own read-merge-CAS just touched INDEX_OBJECT_KEY as

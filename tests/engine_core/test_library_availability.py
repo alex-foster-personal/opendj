@@ -1,4 +1,7 @@
-"""Engine-owned ``track_availability`` probing (issue #2588)."""
+"""Engine-owned ``track_availability`` probing (issue #2588).
+
+[if] a probe round would drop the present count catastrophically [then] it is refused, [else stop].
+"""
 from __future__ import annotations
 
 import json
