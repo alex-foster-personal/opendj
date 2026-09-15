@@ -476,7 +476,7 @@ def test_library_get_tracks_bounded_page_pages_with_a_real_cursor(
 
 @pytest.mark.requirement("AGENT-05")
 def test_status_boot_id_mismatch_is_error(engine: Engine, tmp_path: Path) -> None:
-    """[if] lock boot_id disagrees with health [then] status is engine_identity_mismatch."""
+    """[if] the lock boot_id disagrees with health [then] status errors identity mismatch, [else stop]."""
     bad_lock = tmp_path / "bad.lock"
     bad_lock.write_text(
         json.dumps(
