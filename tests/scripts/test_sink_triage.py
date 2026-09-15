@@ -22,11 +22,14 @@ import pytest
 
 from scripts.sink_triage import (
     FingerprintStats,
+    HostSource,
     RunResult,
     SinkRecord,
     TriageState,
     aggregate,
+    collect_host_records,
     marker_for,
+    parse_record,
     run_triage,
     threshold_met,
     triage_fingerprint,
@@ -44,6 +47,138 @@ def _record(site: str, message: str, host: str = "silver") -> SinkRecord:
         error_id="eid-test",
         raw={"source_site": site, "message": message, "host": host, "build_sha": "abc123"},
     )
+
+
+def _build_e2e_message(run_id: int = 34705843143) -> str:
+    return (
+        f"CI failed workflow=E2E run={run_id} conclusion=failure "
+        f"url=https://github.com/maintainer/music-dj-tools/actions/runs/{run_id} "
+        f"sha=921b0489fa060e5945b8302285b2a2a872b4ab40"
+    )
+
+
+def _build_e2e_record(host: str = "nucbox-wsl-8", run_id: int = 34705843143) -> SinkRecord:
+    message = _build_e2e_message(run_id)
+    return SinkRecord(
+        host=host,
+        source_site="build:E2E",
+        message=message,
+        build_sha="921b0489fa060e5945b8302285b2a2a872b4ab40",
+        error_id="eid-21f55ba9a63a",
+        raw={
+            "build_sha": "921b0489fa060e5945b8302285b2a2a872b4ab40",
+            "error_id": "eid-21f55ba9a63a",
+            "host": host,
+            "kind": "build",
+            "message": message,
+            "source_site": "build:E2E",
+        },
+    )
+
+
+def test_parse_record_skips_kind_build() -> None:
+    line = json.dumps(
+        {
+            "kind": "build",
+            "source_site": "build:E2E",
+            "message": _build_e2e_message(),
+            "host": "nucbox-wsl-8",
+        }
+    )
+    assert parse_record(line, "nucbox") is None
+
+
+def test_parse_record_skips_build_source_site_without_kind() -> None:
+    line = json.dumps(
+        {
+            "source_site": "build:E2E",
+            "message": _build_e2e_message(),
+            "host": "nucbox-wsl-8",
+        }
+    )
+    assert parse_record(line, "nucbox") is None
+
+
+def test_build_e2e_fingerprint_anchor() -> None:
+    assert triage_fingerprint("build:E2E", _build_e2e_message()) == "878d8ed91bfc"
+
+
+def _collect_from_jsonl(tmp_path: Path, lines: list[dict[str, object]], name: str = "nucbox") -> list[SinkRecord]:
+    sink = tmp_path / f"{name}-sink.jsonl"
+    sink.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
+    state = TriageState(offsets={}, run_history={}, last_comment={})
+    source = HostSource(name=name, mode="local", sink_path=str(sink))
+    return collect_host_records(source, state)
+
+
+def _gh_no_open_issues(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(args, 0, "", "")
+
+
+def test_build_e2e_flood_does_not_file_issues(tmp_path: Path) -> None:
+    lines = [
+        {
+            "build_sha": "921b0489fa060e5945b8302285b2a2a872b4ab40",
+            "error_id": "eid-21f55ba9a63a",
+            "host": f"nucbox-wsl-{i % 30}",
+            "kind": "build",
+            "message": _build_e2e_message(34705843143 + i),
+            "source_site": "build:E2E",
+        }
+        for i in range(225)
+    ]
+    records = _collect_from_jsonl(tmp_path, lines)
+    assert records == []
+    result = run_triage(
+        sources=[],
+        state_path=tmp_path / "state.json",
+        kpi_path=tmp_path / "kpi.json",
+        repo="maintainer/music-dj-tools",
+        dry_run=True,
+        records_in=records,
+        gh_run=_gh_no_open_issues,
+    )
+    assert result.new_issues == 0
+    assert result.comments == 0
+    assert result.commands == []
+
+
+def test_engine_flood_still_files_when_build_rows_present(tmp_path: Path) -> None:
+    engine_lines = [
+        {
+            "source_site": "engine:flood",
+            "message": "disk write failed on path /tmp/x",
+            "host": "silver",
+            "build_sha": "abc123",
+        }
+    ] * 100
+    build_lines = [
+        {
+            "build_sha": "921b0489fa060e5945b8302285b2a2a872b4ab40",
+            "error_id": "eid-21f55ba9a63a",
+            "host": f"nucbox-wsl-{i % 30}",
+            "kind": "build",
+            "message": _build_e2e_message(34705843143 + i),
+            "source_site": "build:E2E",
+        }
+        for i in range(225)
+    ]
+    records = _collect_from_jsonl(tmp_path, engine_lines + build_lines)
+    assert len(records) == 100
+    result = run_triage(
+        sources=[],
+        state_path=tmp_path / "state.json",
+        kpi_path=tmp_path / "kpi.json",
+        repo="maintainer/music-dj-tools",
+        dry_run=True,
+        records_in=records,
+        gh_run=_gh_no_open_issues,
+        sb_run=lambda _args: "- [ ] stop the flood\n",
+    )
+    assert result.new_issues == 1
+    assert result.comments == 0
+    assert len(result.commands) == 1
+    assert "issue create" in result.commands[0]
 
 
 def test_paths_and_numbers_share_a_fingerprint() -> None:
