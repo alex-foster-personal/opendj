@@ -153,6 +153,17 @@ describe('countVisibleTrackRows', () => {
 		assert.equal(mod.countVisibleTrackRows(), 1);
 	});
 
+	it('evaluates rows against their own scroll container [multi-pane]', () => {
+		const firstContainer = fakeElement({ rowRect: CONTAINER_RECT });
+		const secondContainer = fakeElement({ rowRect: rect({ top: 600, bottom: 1000 }) });
+		const rows = [
+			fakeElement({ rowRect: rect({ top: 0, bottom: 40 }), container: firstContainer }),
+			fakeElement({ rowRect: rect({ top: 600, bottom: 640 }), container: secondContainer })
+		];
+		install(rows);
+		assert.equal(mod.countVisibleTrackRows(), 2);
+	});
+
 	it('throws if a mounted row has no .table-wrap ancestor', () => {
 		const rows = [fakeElement({ rowRect: rect({ top: 0, bottom: 40 }), container: null })];
 		install(rows);

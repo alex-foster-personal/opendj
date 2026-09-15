@@ -79,14 +79,6 @@ function _isPaintedChain(element: Element): boolean {
 export function countVisibleTrackRows(): number {
 	const rows = [...document.querySelectorAll(TRACK_ROW_SELECTOR)];
 	if (rows.length === 0) return 0;
-	const container = rows[0].closest(SCROLL_CONTAINER_SELECTOR);
-	if (container === null) {
-		throw new Error(
-			`countVisibleTrackRows: found ${rows.length} track row(s) with no ancestor matching "${SCROLL_CONTAINER_SELECTOR}" - TrackTable.svelte's wrapper markup moved`
-		);
-	}
-	if (!_isPaintedChain(container)) return 0;
-	const containerRect = container.getBoundingClientRect();
 	const windowRect: Rect = {
 		top: 0,
 		left: 0,
@@ -96,6 +88,14 @@ export function countVisibleTrackRows(): number {
 		height: window.innerHeight
 	};
 	return rows.filter((row) => {
+		const container = row.closest(SCROLL_CONTAINER_SELECTOR);
+		if (container === null) {
+			throw new Error(
+				`countVisibleTrackRows: found a track row with no ancestor matching "${SCROLL_CONTAINER_SELECTOR}" - TrackTable.svelte's wrapper markup moved`
+			);
+		}
+		if (!_isPaintedChain(container)) return false;
+		const containerRect = container.getBoundingClientRect();
 		const rect = row.getBoundingClientRect();
 		return _rectsIntersect(rect, containerRect) && _rectsIntersect(rect, windowRect);
 	}).length;
