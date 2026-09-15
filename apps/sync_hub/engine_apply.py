@@ -81,6 +81,16 @@ class ApplyResult:
     hash_pending: int = 0
     faults: tuple[protocol.StampFault, ...] = ()
     identity_conflicts: int = 0
+    identity_rejects: tuple[protocol.IdentityReject, ...] = ()
+
+
+@dataclass(frozen=True)
+class _ApplyOneOutcome:
+    """Result of applying one offered row."""
+
+    status: str
+    faults: tuple[protocol.StampFault, ...] = ()
+    identity_reject: protocol.IdentityReject | None = None
 
 
 @dataclass(frozen=True)
@@ -403,20 +413,21 @@ def _apply(
     faults: list[protocol.StampFault] = []
     remap: dict[str, str] = load_identity_remap(conn)
     held: set[str] = set()
+    identity_rejects: list[protocol.IdentityReject] = []
     for change in ordered:
-        outcome, extra = _apply_one(
-            conn, change, remap, held, record_changelog, stamp
-        )
-        if outcome == "accepted":
+        outcome = _apply_one(conn, change, remap, held, record_changelog, stamp)
+        if outcome.status == "accepted":
             accepted += 1
             if change.hash_pending:
                 hash_pending += 1
-        elif outcome == "rejected":
+        elif outcome.status == "rejected":
             rejected += 1
+            if outcome.identity_reject is not None:
+                identity_rejects.append(outcome.identity_reject)
         else:
             quarantined += 1
-            faults.extend(extra)
-            if outcome == "identity":
+            faults.extend(outcome.faults)
+            if outcome.status == "identity":
                 identity_conflicts += 1
     return ApplyResult(
         accepted=accepted,
@@ -426,6 +437,7 @@ def _apply(
         hash_pending=hash_pending,
         faults=tuple(faults),
         identity_conflicts=identity_conflicts,
+        identity_rejects=tuple(identity_rejects),
     )
 
 
@@ -436,27 +448,33 @@ def _apply_one(
     held: set[str],
     record_changelog: bool,
     stamp: str,
-) -> tuple[str, tuple[protocol.StampFault, ...]]:
+) -> _ApplyOneOutcome:
     """Apply one rewritten row. Returns accepted/rejected/quarantined/identity."""
     change = rewrite_incoming_change(change, remap)
     if names_held_parent(change, held):
-        return "identity", ()
+        return _ApplyOneOutcome(status="identity")
     spec = SPEC_BY_TABLE[change.table]
     columns, values = _checked_values(conn, change.table, spec, change)
     verdict = _resolve_against_stored(conn, spec, change)
     if verdict.identity_conflict:
         held.add(change.pk[0])
         _log_identity_conflict(change)
-        return "identity", ()
+        return _ApplyOneOutcome(status="identity")
     if verdict.faults:
         _log_quarantine(change, verdict.faults)
-        return "quarantined", verdict.faults
+        return _ApplyOneOutcome(status="quarantined", faults=verdict.faults)
     if verdict.loses:
+        identity_reject: protocol.IdentityReject | None = None
         if verdict.rewrite_incoming_to is not None:
             record_identity_remap(
                 conn, remap, change.pk[0], verdict.rewrite_incoming_to
             )
-        return "rejected", ()
+            identity_reject = protocol.IdentityReject(
+                table="tracks",
+                offered_pk=str(change.pk[0]),
+                survivor_pk=verdict.rewrite_incoming_to,
+            )
+        return _ApplyOneOutcome(status="rejected", identity_reject=identity_reject)
     # Survivor PK must exist before children remap onto it. Incoming-wins
     # identity collapse writes the incoming row first, then moves stored
     # children, then drops the loser. The other order is a FOREIGN KEY
@@ -470,7 +488,7 @@ def _apply_one(
         _replace_members(conn, change.pk[0], change.members)
     if record_changelog:
         _log_hub_change(conn, change, stamp)
-    return "accepted", ()
+    return _ApplyOneOutcome(status="accepted")
 
 
 def _log_identity_conflict(change: RowChange) -> None:

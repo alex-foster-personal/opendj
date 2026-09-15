@@ -80,6 +80,7 @@ from apps.sync_hub.service_models import (
     HashPendingResponse,
     HelloRequest,
     HelloResponse,
+    IdentityRejectModel,
     MachineModel,
     PullResponse,
     PushRequest,
@@ -502,6 +503,14 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
             seq=result.seq,
             quarantined=result.quarantined,
             hash_pending=result.hash_pending,
+            identity_rejects=[
+                IdentityRejectModel(
+                    table=reject.table,
+                    offered_pk=reject.offered_pk,
+                    survivor_pk=reject.survivor_pk,
+                )
+                for reject in result.identity_rejects
+            ],
         )
 
 

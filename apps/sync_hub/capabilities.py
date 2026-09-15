@@ -64,8 +64,17 @@ LIBRARY_SIZE_V1: str = "library-size/v1"
 #: ``quarantined`` (issue #2850, ADR-0068).
 HASH_PENDING_V1: str = "hash-pending/v1"
 
+#: The caller understands per-row identity-collapse rejections on push
+#: (wire v5, issue #3057).
+IDENTITY_REJECT_V1: str = "identity-reject/v1"
+
 #: Everything this build understands, advertised on every request it makes.
-THIS_BUILD: tuple[str, ...] = (QUARANTINE_V1, LIBRARY_SIZE_V1, HASH_PENDING_V1)
+THIS_BUILD: tuple[str, ...] = (
+    QUARANTINE_V1,
+    LIBRARY_SIZE_V1,
+    HASH_PENDING_V1,
+    IDENTITY_REJECT_V1,
+)
 
 
 def understands_hash_pending(advertised: Sequence[str] | None) -> bool:
@@ -129,6 +138,7 @@ def refusal(endpoint: str, detail: str, advertised: Sequence[str] | None) -> str
 
 __all__ = [
     "HASH_PENDING_V1",
+    "IDENTITY_REJECT_V1",
     "LIBRARY_SIZE_V1",
     "QUARANTINE_V1",
     "THIS_BUILD",
