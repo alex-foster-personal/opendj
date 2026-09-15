@@ -68,6 +68,9 @@ from apps.shared.state import schema as state_schema
 from apps.sync_hub import protocol
 
 #: The sync protocol's version. See the module docstring for what bumps it.
+#: ``PushResponse.identity_rejects`` (issue #3057) is an OPTIONAL response
+#: field older peers ignore, advertised by the ``identity-reject/v1``
+#: capability token: NOT a wire change under the rule above, so no bump.
 WIRE_VERSION: int = 4
 
 #: Row-shape fingerprint of every wire version that has shipped, oldest

@@ -75,6 +75,10 @@ from apps.sync_hub import (
     service_storage,
     wire_version,
 )
+from apps.sync_hub.machine_wire_limits import (
+    MACHINE_ID_MAX_LENGTH,
+    clamp_machine_row_for_wire,
+)
 from apps.sync_hub.service_models import (
     SYNC_VERSION_RESPONSES,
     DigestResponse,
@@ -82,6 +86,7 @@ from apps.sync_hub.service_models import (
     HashPendingResponse,
     HelloRequest,
     HelloResponse,
+    IdentityRejectModel,
     MachineModel,
     PullResponse,
     PushRequest,
@@ -212,7 +217,8 @@ def _hub_identity(request: Request, conn: sqlite3.Connection) -> str:
 
 def _machine_models(conn: sqlite3.Connection) -> list[MachineModel]:
     return [
-        MachineModel(**machine.to_wire()) for machine in engine.machines_snapshot(conn)
+        MachineModel(**clamp_machine_row_for_wire(machine).to_wire())
+        for machine in engine.machines_snapshot(conn)
     ]
 
 
@@ -532,6 +538,14 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
             seq=result.seq,
             quarantined=result.quarantined,
             hash_pending=result.hash_pending,
+            identity_rejects=[
+                IdentityRejectModel(
+                    table=reject.table,
+                    offered_pk=reject.offered_pk,
+                    survivor_pk=reject.survivor_pk,
+                )
+                for reject in result.identity_rejects
+            ],
         )
 
 
@@ -542,7 +556,9 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
 )
 def pull(
     request: Request,
-    machine_id: str = Query(min_length=1, description="the calling spoke"),
+    machine_id: str = Query(
+        min_length=1, max_length=MACHINE_ID_MAX_LENGTH, description="the calling spoke"
+    ),
     since_seq: int = Query(0, ge=0, description="last hub_changelog.seq applied"),
     limit: int = Query(
         engine.DEFAULT_PULL_LIMIT,
@@ -587,7 +603,9 @@ def pull(
 @router.get("/status", response_model=StatusResponse, responses=_auth("status"))
 def status(
     request: Request,
-    machine_id: str = Query(min_length=1, description="the calling spoke"),
+    machine_id: str = Query(
+        min_length=1, max_length=MACHINE_ID_MAX_LENGTH, description="the calling spoke"
+    ),
 ) -> StatusResponse:
     """Hub identity, current seq, known machines and synced row counts."""
     with _hub_conn(request) as conn:
