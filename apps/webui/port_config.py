@@ -169,6 +169,10 @@ class WorktreeEnvironmentError(PortConfigError):
     """The loaded ``apps`` tree does not belong to the current worktree."""
 
 
+class WorktreeUnavailableError(PortConfigError):
+    """No Git worktree exists for this process (e.g. an installed, non-checkout build)."""
+
+
 @dataclass(frozen=True)
 class WebuiPorts:
     """Validated backend and frontend ports for one worktree."""
@@ -815,11 +819,24 @@ def show_ports(
 ) -> WebuiPorts:
     """Return this worktree's reserved pair, or raise PortConfigError.
 
-    Same refusal as ``python -m apps.webui.port_config show``.
+    Same refusal as ``python -m apps.webui.port_config show``. Raises
+    ``WorktreeUnavailableError`` (a ``PortConfigError``) when this process is
+    not running inside a Git worktree at all -- an installed build has no
+    ``.git`` to resolve a pair against, which is a legitimate, expected state,
+    not a bug, so it is reported as a named refusal rather than left to
+    surface as an unhandled ``git`` subprocess failure.
     """
+    try:
+        resolved_repo_root = _repo_root(repo_root)
+        resolved_common_dir = _common_dir(common_dir)
+    except (subprocess.CalledProcessError, OSError) as exc:
+        raise WorktreeUnavailableError(
+            "this process is not running inside a Git worktree (e.g. an "
+            "installed build), so no worktree port pair can be resolved"
+        ) from exc
     return _require_reservation(
-        _repo_root(repo_root),
-        _common_dir(common_dir),
+        resolved_repo_root,
+        resolved_common_dir,
         os.environ if environ is None else environ,
     )
 
@@ -990,6 +1007,7 @@ __all__ = [
     "RESERVED_FIXED_PORTS",
     "PortConfigError",
     "WebuiPorts",
+    "WorktreeUnavailableError",
     "check_reservation",
     "claim_ports",
     "describe_port_owner",
