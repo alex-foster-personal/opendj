@@ -424,6 +424,8 @@ def test_cli_emits_the_lane_overlay() -> None:
 
 
 def test_cli_names_the_labelled_artifact() -> None:
+    conf = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
+    expected = dmg_filename(BASE_PRODUCT, "B", conf["version"], "aarch64")
     name = _run_cli(
         "dmg-name",
         "--config",
@@ -433,7 +435,7 @@ def test_cli_names_the_labelled_artifact() -> None:
         "--arch",
         "aarch64",
     )
-    assert name == "OpenDJ-B-0.1.1-aarch64.dmg"
+    assert name == expected
 
 
 def test_cli_refuses_dmg_name_without_an_arch() -> None:
