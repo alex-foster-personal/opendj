@@ -44,21 +44,6 @@ _reported: dict[str, dict[tuple[str, str], str]] = {}
 _reported_lock = threading.Lock()
 
 
-def _repair_for(reason: str) -> str:
-    """The operator next step for this hold, not always stamp repair."""
-    if sync_set.IDENTITY_HOLD_REASON in reason:
-        return (
-            "it carries identity (`python -m apps.shared.state."
-            "backfill_content_hash --live` or `/fix-links`)"
-        )
-    if sync_set.IDENTITY_DUP_REASON in reason:
-        return "the LWW survivor of this content identity is offered instead"
-    return (
-        "it is repaired with `python -m apps.shared.state."
-        "normalize_stamps --live`"
-    )
-
-
 @dataclass
 class _Group:
     pks: list[str] = field(default_factory=list)
@@ -104,7 +89,7 @@ class QuarantinePass:
                 self.scope,
                 reason,
                 ", ".join(group.examples),
-                _repair_for(reason),
+                sync_set.remedy_for(reason),
             )
         if self._groups:
             log.info(

@@ -263,6 +263,26 @@ def test_an_unconfigured_machine_raises_rather_than_defaulting(
     assert "sync_policies" in str(excinfo.value)
 
 
+def test_unconfigured_machine_with_local_file_plays_without_policy_row(
+    conn: sqlite3.Connection, tmp_path: Path
+):
+    """Local-only installs without a sync_policies row still play on-disk bytes."""
+    body = b"local body"
+    audio = _write(tmp_path / "music" / "song.flac", body)
+    _seed_track(conn, "t1", content_hash=_sha(body))
+    _seed_machine(conn, "m1")
+    conn.execute(
+        "UPDATE tracks SET file_path = ? WHERE stable_id = ?",
+        (str(audio), "t1"),
+    )
+
+    source = hydration.resolve_playback_source(
+        conn, "t1", "m1", asset_kind="audio", cache_dir=tmp_path / "cache"
+    )
+    assert source.origin == "local"
+    assert source.path == audio
+
+
 def test_an_unknown_asset_kind_raises(conn: sqlite3.Connection):
     _seed_track(conn, "t1")
     _seed_machine(conn, "m1")

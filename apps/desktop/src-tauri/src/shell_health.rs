@@ -23,6 +23,7 @@ pub struct ShellHealthSnapshot {
     pub lock_pid: Option<u32>,
     pub lock_port: Option<u16>,
     pub exit_code: Option<i32>,
+    pub reason: Option<String>,
 }
 
 impl Default for ShellHealthSnapshot {
@@ -33,6 +34,7 @@ impl Default for ShellHealthSnapshot {
             lock_pid: None,
             lock_port: None,
             exit_code: None,
+            reason: None,
         }
     }
 }
@@ -160,6 +162,7 @@ fn handle_connection(
             "lock_pid": snap.lock_pid,
             "lock_port": snap.lock_port,
             "exit_code": snap.exit_code,
+            "reason": snap.reason,
             "checked_at": utc_timestamp_iso(),
         });
         return write_json_response(
@@ -260,6 +263,7 @@ mod tests {
             lock_pid: Some(24600),
             lock_port: Some(58583),
             exit_code: Some(9),
+            reason: None,
         });
         let address = format!("127.0.0.1:{}", server.port());
         let mut stream = TcpStream::connect_timeout(

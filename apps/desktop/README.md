@@ -154,7 +154,10 @@ its engine child every 5 s. A dead or zombie engine is reaped, shell-side
 the bootstrap fatal view instead of spinning on a dead port. Within 30 s the
 shell either restarts on a fresh port (logging
 `engine restarted after exit code N` with a UTC timestamp) or shows fatal with
-Relaunch. Skipped when `OPENDJ_ENGINE_ORIGIN` is set.
+Relaunch. When restart fails because the data-dir mount has under 1 GiB free,
+the shell enters `waiting for disk space` (shell health `engine: waiting-disk`,
+`reason: low-disk`) and auto-restarts once space returns instead of showing the
+fatal dialog. Skipped when `OPENDJ_ENGINE_ORIGIN` is set.
 
 **The shell spawns its own engine.** `start_engine` picks a free loopback
 port, spawns the bundled payload and waits for health before the window

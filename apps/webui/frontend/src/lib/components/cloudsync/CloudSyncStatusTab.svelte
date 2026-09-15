@@ -299,16 +299,23 @@
 					<dt>Hash pending</dt>
 					<dd
 						data-testid="cloudsync-status-hash-pending"
-						title="Live tracks offered as hash_pending while awaiting content_hash (ADR-0047)"
+						title="Live tracks offered as hash_pending while awaiting content_hash (ADR-0068)"
 					>
 						{status.hash_pending ?? 'not measured'}
 					</dd>
 					<dt>Quarantined</dt>
 					<dd
 						data-testid="cloudsync-status-quarantined"
-						title="Rows held out of the sync set for stamp faults or identity-dup losers"
+						title="Direct stamp faults and identity-dup losers only"
 					>
 						{status.quarantined ?? 'not measured'}
+					</dd>
+					<dt>Excluded total</dt>
+					<dd
+						data-testid="cloudsync-status-excluded-total"
+						title="Every row held outside the sync set, including transitive parent and membership holds"
+					>
+						{status.excluded_total ?? 'not measured'}
 					</dd>
 					<dt>Signed in as</dt>
 					<dd>{status.signed_in_as ?? 'nobody'}</dd>

@@ -185,18 +185,34 @@ pub fn origin_for_adopt(host: &str, port: u16) -> String {
 /// SIGTERM then SIGKILL a holder pid, using killpg when it is a group leader.
 pub fn stop_holder_pid(pid: u32) {
     let pgid = pid as i32;
+    engine::append_shell_log("shutdown", &format!("stopping adopted engine pid {pid}: SIGTERM"));
+    let sigterm_sent = std::time::Instant::now();
     unsafe {
         if libc::killpg(pgid, libc::SIGTERM) != 0 {
             libc::kill(pgid, libc::SIGTERM);
         }
     }
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = sigterm_sent + std::time::Duration::from_secs(5);
     while std::time::Instant::now() < deadline {
         if !pid_alive(pid) {
+            engine::append_shell_log(
+                "shutdown",
+                &format!(
+                    "adopted engine pid {pid} exited {}ms after SIGTERM",
+                    sigterm_sent.elapsed().as_millis()
+                ),
+            );
             return;
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
+    engine::append_shell_log(
+        "shutdown",
+        &format!(
+            "adopted engine pid {pid} did not exit within {}ms of SIGTERM; escalating to SIGKILL",
+            sigterm_sent.elapsed().as_millis()
+        ),
+    );
     unsafe {
         if libc::killpg(pgid, libc::SIGKILL) != 0 {
             libc::kill(pgid, libc::SIGKILL);
@@ -205,6 +221,7 @@ pub fn stop_holder_pid(pid: u32) {
     while pid_alive(pid) {
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
+    engine::append_shell_log("shutdown", &format!("adopted engine pid {pid} gone after SIGKILL"));
 }
 
 #[cfg(unix)]

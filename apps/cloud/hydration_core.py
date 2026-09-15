@@ -36,11 +36,14 @@ resolves to the strongest (see :data:`MODE_STRENGTH`) -- a pin exists to
 guarantee availability, so the strongest claim wins, and the tiebreak is
 ``playlist_id`` order so the answer never depends on row order.
 
-Nothing here invents a default. A machine with no ``sync_policies`` row for
-the asset kind raises :class:`~apps.cloud.eviction.HydrationError` rather
-than silently reading as ``stream``; that is the difference between an
-unconfigured fleet you can see and one that quietly streams a gig over
-venue wifi.
+:func:`resolve_policy` invents no default: a machine with no
+``sync_policies`` row for the asset kind raises
+:class:`~apps.cloud.eviction.HydrationError` rather than silently reading
+as ``stream``. :func:`resolve_playback_source` is the one exception: when
+there is no policy row but a pinned local file still exists on disk, local
+bytes are returned (implicit local-only installs never configure CloudSync).
+Missing row with no on-disk local copy still refuses loudly; a configured
+``excluded`` policy still wins over local bytes.
 """
 from __future__ import annotations
 
@@ -274,34 +277,27 @@ def _unavailable_marked_local(
     return None
 
 
-def _local_file(conn: sqlite3.Connection, stable_id: str) -> Path | None:
-    """First on-disk local copy, primary role first, else ``None``.
+def _local_file(
+    conn: sqlite3.Connection, stable_id: str, machine_id: str
+) -> Path | None:
+    """First materialised on-disk local copy for ``machine_id``, else ``None``.
 
-    ``available`` is a probe stamp, not a live fact: it stays 1 after an
-    eviction or an unmounted volume. Trusting it alone would hand the player
-    a path that 404s, so the row is re-checked against the filesystem.
+    Delegates to :func:`apps.shared.state.locations.local_audio_path`, which
+    prefers ``track_locations`` then falls back to ``tracks.file_path`` so
+    local-only imports without CloudSync rows still resolve.
     """
-    rows = conn.execute(
-        """
-        SELECT file_path
-        FROM track_locations
-        WHERE stable_id = ?
-          AND kind = 'local'
-          AND available = 1
-          AND deleted_at IS NULL
-          AND file_path IS NOT NULL
-          AND file_path != ''
-        ORDER BY CASE role WHEN 'primary' THEN 0 ELSE 1 END, rowid
-        """,
-        (stable_id,),
-    ).fetchall()
-    for (file_path,) in rows:
-        candidate = Path(str(file_path))
-        # FIFOs and other special nodes are playable paths even when
-        # ``is_file()`` is false; ``exists()`` is the right gate here.
-        if candidate.exists() and not candidate.is_dir():
-            return candidate
-    return None
+    from apps.shared import fs_residency
+    from apps.shared.state import locations as state_locations
+
+    # FIFOs and other special nodes are playable paths whose open() the audio
+    # route probes under a timeout (#766, #2749); the strict materialised gate
+    # would read them as absent and fall through to the cloud policy.
+    return state_locations.local_audio_path(
+        conn,
+        stable_id,
+        machine_id=machine_id,
+        residency=fs_residency.exists_for_audio_open_probe,
+    )
 
 
 def _content_hash(conn: sqlite3.Connection, stable_id: str) -> str | None:
@@ -350,7 +346,21 @@ def resolve_playback_source(
     step without one, that is a misconfiguration and raises rather than
     returning a source the player cannot use.
     """
-    policy = resolve_policy(conn, stable_id, machine_id, asset_kind=asset_kind)
+    local = _local_file(conn, stable_id, machine_id)
+    try:
+        policy = resolve_policy(conn, stable_id, machine_id, asset_kind=asset_kind)
+    except HydrationError:
+        if local is not None:
+            content_hash = _content_hash(conn, stable_id)
+            return PlaybackSource(
+                origin="local",
+                mode="pinned",
+                policy_source="sync_policies",
+                path=local,
+                content_hash=content_hash,
+            )
+        raise
+
     content_hash = _content_hash(conn, stable_id)
 
     if policy.mode == "excluded":
@@ -370,7 +380,6 @@ def resolve_playback_source(
             ),
         )
 
-    local = _local_file(conn, stable_id)
     if local is not None:
         return PlaybackSource(
             origin="local",

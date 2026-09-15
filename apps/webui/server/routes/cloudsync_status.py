@@ -66,11 +66,15 @@ class CloudSyncStatusOut(BaseModel):
     rows_pending: int | None
     hash_pending: int | None = Field(
         default=None,
-        description="live tracks offered as hash_pending on the hub (ADR-0047)",
+        description="live tracks offered as hash_pending on the hub (ADR-0068)",
     )
     quarantined: int | None = Field(
         default=None,
-        description="rows held out of the sync set for stamp or identity-dup reasons",
+        description="rows held for direct stamp faults or identity-dup losers only",
+    )
+    excluded_total: int | None = Field(
+        default=None,
+        description="every row this machine holds outside the sync set, including transitives",
     )
     endpoint: str | None
     recent_results: list[RecentResultOut]
@@ -134,9 +138,9 @@ def get_status(request: Request) -> CloudSyncStatusOut:
     db_path = data_dir / "state" / "state.db"
     conn = state_db.open_ro(db_path)
     try:
-        excluded = sync_set.excluded_counts(conn)
         wire["hash_pending"] = sync_set.count_hash_pending(conn)
-        wire["quarantined"] = sum(excluded.values()) if excluded else 0
+        wire["quarantined"] = sync_set.count_quarantined_roots(conn)
+        wire["excluded_total"] = sync_set.excluded_total(conn)
     finally:
         conn.close()
     return CloudSyncStatusOut(**wire)

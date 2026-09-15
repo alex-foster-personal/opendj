@@ -17,8 +17,8 @@ All runtime logs stay in the engine data directory, so they survive app restarts
 
 | Path | Writer | Retention and purpose |
 | --- | --- | --- |
-| `<data-dir>/logs/engine.log` | Bundled engine stdout and stderr | Appended across launches. Rotates at 5 MiB; timestamped archives older than 7 days are deleted. |
-| `<data-dir>/logs/engine-warn.log` | Python logging and uvicorn errors | JSONL warnings and errors only, with a `boot_id` on every record. Same 5 MiB live cap and 7-day archive retention as `engine.log`. Use `tail -f` for the focused incident stream. |
+| `<data-dir>/logs/engine.log` | Bundled engine stdout and stderr | Appended across launches. Rotates at 5 MiB; keeps at most 20 timestamped archives per stream (~100 MiB); archives older than 7 days are deleted. Rotation stops when free space under the data-dir mount falls below 1 GiB (one ERROR is logged). |
+| `<data-dir>/logs/engine-warn.log` | Python logging and uvicorn errors | JSONL warnings and errors only, with a `boot_id` on every record. Same 5 MiB live cap, 20-archive count cap, 7-day retention, and 1 GiB free-space rotation halt as `engine.log`. `uvicorn.access` lines are muted with one WARNING when the rate exceeds 50 lines/s for 60 s. Use `tail -f` for the focused incident stream. |
 | `<data-dir>/logs/webui-client-errors-YYYY-MM-DD.log` | Browser error API | Full daily JSONL browser-error records. The file is never rewritten by triage. |
 | `<data-dir>/logs/webui-performance-YYYY-MM-DD.log` | Live page telemetry | Boot-deferred client performance samples (10 s while visible). Error-bearing rows also appear in `GET /api/v1/errors`. |
 | `<data-dir>/logs/webui-client-errors-YYYY-MM-DD.triage.jsonl` | Browser error triage API | Append-only decisions: `fix`, `no-fix`, or `duplicate`, with a required reference. |

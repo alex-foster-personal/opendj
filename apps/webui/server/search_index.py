@@ -27,6 +27,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+from apps.shared.state.db import is_sqlite_busy
 from apps.webui.soft_deletes import has_soft_deletes
 
 _SCHEMA_VERSION = 2
@@ -36,6 +37,10 @@ _SOURCE_READ_ATTEMPTS = 3
 
 class SearchIndexUnavailable(RuntimeError):
     """Raised when the source state.db does not exist on disk."""
+
+
+class SearchQueryError(ValueError):
+    """Malformed FTS5 query syntax (not SQLite busy/locked)."""
 
 
 def index_path_for(state_db_path: Path) -> Path:
@@ -49,7 +54,7 @@ def build_fts_query(q: str) -> str | None:
     Every whitespace-split term becomes a quoted prefix query (``"term"*``);
     terms are implicitly ANDed by FTS5 when space-joined.
     """
-    cleaned = q.strip().replace('"', "")
+    cleaned = q.strip().replace("\x00", "").replace('"', "")
     terms = [t for t in cleaned.split() if t]
     if not terms:
         return None
@@ -257,20 +262,25 @@ def search(
     target = ensure_index(state_db_path, index_db_path)
     conn = sqlite3.connect(f"file:{target}?mode=ro", uri=True)
     try:
-        total = int(
-            conn.execute(
-                "SELECT COUNT(*) FROM tracks_fts WHERE tracks_fts MATCH ?",
-                (fts_query,),
-            ).fetchone()[0]
-        )
-        rows = conn.execute(
-            "SELECT stable_id, "
-            "snippet(tracks_fts, -1, '', '', ' ... ', 10) AS context "
-            "FROM tracks_fts WHERE tracks_fts MATCH ? "
-            "ORDER BY bm25(tracks_fts, 10.0, 5.0, 3.0, 2.0, 1.0, 1.0, 1.0) "
-            "LIMIT ? OFFSET ?",
-            (fts_query, limit, offset),
-        ).fetchall()
+        try:
+            total = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM tracks_fts WHERE tracks_fts MATCH ?",
+                    (fts_query,),
+                ).fetchone()[0]
+            )
+            rows = conn.execute(
+                "SELECT stable_id, "
+                "snippet(tracks_fts, -1, '', '', ' ... ', 10) AS context "
+                "FROM tracks_fts WHERE tracks_fts MATCH ? "
+                "ORDER BY bm25(tracks_fts, 10.0, 5.0, 3.0, 2.0, 1.0, 1.0, 1.0) "
+                "LIMIT ? OFFSET ?",
+                (fts_query, limit, offset),
+            ).fetchall()
+        except sqlite3.OperationalError as exc:
+            if is_sqlite_busy(exc):
+                raise
+            raise SearchQueryError(str(exc)) from exc
     finally:
         conn.close()
     return [(r[0], r[1]) for r in rows], total
@@ -278,6 +288,7 @@ def search(
 
 __all__ = [
     "SearchIndexUnavailable",
+    "SearchQueryError",
     "build_fts_query",
     "ensure_index",
     "index_path_for",

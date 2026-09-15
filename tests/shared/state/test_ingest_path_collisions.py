@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import sqlite3
 import struct
 import unicodedata
 import wave
@@ -23,6 +24,7 @@ from apps.shared.state.ingest.path_collisions import (
     is_streaming_path,
 )
 from apps.shared.state.writer import StateWriter
+from tests.shared.state.test_ingest_rekordbox import _counts
 
 pytestmark = pytest.mark.requirement("NATIVE-13")
 
@@ -198,73 +200,79 @@ def test_missing_files_with_colliding_keys_fail_closed(tmp_path: Path) -> None:
     assert missing_b in str(excinfo.value)
 
 
-class _FakeRbDb:
-    def __init__(self) -> None:
-        self.closed = False
-
-    def close(self) -> None:
-        self.closed = True
-
-
-def _make_rb_row(rb_id: str, folder_path: str) -> dict:
-    return {
-        "id": rb_id,
-        "title": "collision-track",
-        "artist": "artist",
-        "album": "album",
-        "folder_path": folder_path,
-        "is_streaming": False,
-        "isrc": None,
-        "bpm": None,
-        "rating": None,
-        "duration_ms": 180_000,
-        "file_size": 4242,
-        "key_name": None,
-        "updated_at": None,
-    }
-
-
-def _patch_rb_ingest(
-    monkeypatch: pytest.MonkeyPatch,
-    rows: list[dict],
-    fake_db: _FakeRbDb,
-) -> None:
-    import pyrekordbox
-
-    monkeypatch.setattr(
-        pyrekordbox,
-        "Rekordbox6Database",
-        lambda *args, **kwargs: fake_db,
-        raising=False,
-    )
-    monkeypatch.setattr(rb_ingest, "_rb_rows", lambda _rb: iter(rows))
-    monkeypatch.setattr(rb_ingest, "_rb_playlists", lambda _rb: iter(()))
+def _set_case_only_collision_paths(rb_db: Path, path_a: str, path_b: str) -> None:
+    """Point two fixture tracks at case-colliding local paths via SQL."""
+    conn = sqlite3.connect(rb_db)
+    try:
+        ids = [
+            row[0]
+            for row in conn.execute(
+                "SELECT ID FROM djmdContent "
+                "WHERE COALESCE(rb_local_deleted, 0) = 0 "
+                "LIMIT 2"
+            ).fetchall()
+        ]
+        if len(ids) < 2:
+            pytest.skip("fixture needs at least two local tracks")
+        conn.execute(
+            "UPDATE djmdContent SET FolderPath = ? WHERE ID = ?",
+            (path_a, ids[0]),
+        )
+        conn.execute(
+            "UPDATE djmdContent SET FolderPath = ? WHERE ID = ?",
+            (path_b, ids[1]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def test_rekordbox_collision_refuses_without_partial_state(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    tmp_rb_db: Path, tmp_path: Path
 ) -> None:
+    """Production Rekordbox6Database reader refuses before mutating seeded state."""
+    from pyrekordbox import Rekordbox6Database
+
+    path_a = str(tmp_path / "Song.wav")
+    path_b = str(tmp_path / "song.wav")
+
     conn = state_db.open_rw(tmp_path / "state.db")
     bus = FakeEventBus()
     writer = StateWriter(conn, bus=bus, actor="rb-collision")
-    fake_db = _FakeRbDb()
-    path_a = str(tmp_path / "Song.wav")
-    path_b = str(tmp_path / "song.wav")
-    rows = [_make_rb_row("R1", path_a), _make_rb_row("R2", path_b)]
-    _patch_rb_ingest(monkeypatch, rows, fake_db)
-
     try:
+        rb_ingest.ingest_rb(writer, tmp_rb_db, dry_run=False)
+        seed_counts = _counts(conn)
+        assert seed_counts["tracks"] > 0
+        assert seed_counts["events"] > 0
+        before_counts = _counts(conn)
+        before_events = list(bus.events)
+
+        _set_case_only_collision_paths(tmp_rb_db, path_a, path_b)
+
+        rb = Rekordbox6Database(path=str(tmp_rb_db), unlock=False)
+        try:
+            rows = list(rb_ingest._rb_rows(rb))
+            folder_paths = [row["folder_path"] for row in rows if row["folder_path"]]
+            assert path_a in folder_paths
+            assert path_b in folder_paths
+        finally:
+            rb.close()
+
+        # dry_run=False: live write path must not mutate already-persisted state (#3019)
         with pytest.raises(PathCollisionError) as excinfo:
-            rb_ingest.ingest_rb(writer, tmp_path / "rb.db", dry_run=True)
+            rb_ingest.ingest_rb(writer, tmp_rb_db, dry_run=False)
 
         message = str(excinfo.value)
         assert path_a in message
         assert path_b in message
-        assert writer.bus is bus
-        assert fake_db.closed is True
-        assert _track_count(conn) == 0
-        assert _event_count(conn) == 0
-        assert bus.events == []
+        after_counts = _counts(conn)
+        assert after_counts == before_counts, (
+            f"collision refusal must not mutate state; "
+            f"before={before_counts} after={after_counts}"
+        )
+        assert bus.events == before_events, (
+            "collision refusal must not publish new bus events"
+        )
     finally:
         writer.close()
         conn.close()

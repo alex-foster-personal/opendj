@@ -28,6 +28,7 @@ from scripts.ci_cost_guard import infer_standard_sku
 
 WORKFLOW_DIR = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 GUARD = WORKFLOW_DIR / "ci-cost-guard.yml"
+MACOS_DESKTOP_COMPILE = WORKFLOW_DIR / "macos-desktop-compile.yml"
 MACOS_PACKAGING = WORKFLOW_DIR / "macos-packaging.yml"
 MACOS_NATIVE_COMPANION = WORKFLOW_DIR / "macos-native-companion.yml"
 
@@ -75,6 +76,16 @@ RUNNER_SWITCH = re.compile(
 CHAINED_RUNNER_SWITCH = re.compile(
     r"\$\{\{\s*fromJSON\(\s*(?P<inner>.*?)\)\s*\}\}"
 )
+#: First disjunct of ci.yml job `test` runs-on (ADR-0041 main-fix reserve). Pinned
+#: in tests/scripts/test_ci_main_fix_runner_reserve.py EXPECTED_RUNS_ON.
+MAIN_FIX_RUNNER_GUARD_PREFIX = (
+    "((github.event_name == 'push' && github.ref == 'refs/heads/main') || "
+    "(github.event_name == 'pull_request' && "
+    "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair'))) "
+    "&& vars.CI_RUNS_ON_MAIN_FIX"
+)
+_JSON_LITERAL_DISJUNCT = re.compile(r"^'(.+)'\s*$")
+_VARS_DISJUNCT = re.compile(r"^vars\.[A-Z0-9_]+$")
 
 
 def runner_labels(job_id: str, runs_on: object) -> list[str]:
@@ -129,11 +140,30 @@ def runner_labels(job_id: str, runs_on: object) -> list[str]:
         "expression be priced by guesswork."
     )
     inner = chained.group("inner")
-    fallbacks = re.findall(r"\|\|\s*'([^']+)'\s*$", inner)
-    assert fallbacks, (
-        f"{job_id} runner expression {expr!r} has no literal JSON fallback to price"
+    if "inputs." in inner:
+        raise AssertionError(
+            f"{job_id} runs on the expression {labels[0]!r}, which this reader cannot "
+            "price: inputs.* disjuncts are not readable here"
+        )
+    disjuncts = top_level_disjuncts(inner)
+    assert disjuncts, (
+        f"{job_id} runner expression {expr!r} has no disjuncts this reader can read"
     )
-    fallback = json.loads(fallbacks[-1])
+    literal_match = _JSON_LITERAL_DISJUNCT.fullmatch(disjuncts[-1])
+    assert literal_match, (
+        f"{job_id} runs on the expression {labels[0]!r}, which this reader cannot "
+        "price: the final disjunct is not a literal JSON fallback"
+    )
+    for disjunct in disjuncts[:-1]:
+        trimmed = disjunct.strip()
+        if trimmed == MAIN_FIX_RUNNER_GUARD_PREFIX:
+            continue
+        assert _VARS_DISJUNCT.fullmatch(trimmed), (
+            f"{job_id} runs on the expression {labels[0]!r}, which this reader cannot "
+            f"price: disjunct {disjunct!r} is neither vars.* nor the ADR-0041 "
+            "main-fix guard prefix"
+        )
+    fallback = json.loads(literal_match.group(1))
     return [fallback] if isinstance(fallback, str) else list(fallback)
 
 

@@ -12,6 +12,7 @@ use tauri::{AppHandle, Manager};
 use url::Url;
 
 use crate::engine;
+use crate::engine_log::{disk_free_bytes, ENGINE_LOG_MIN_FREE_BYTES};
 use crate::launch;
 use crate::shell_health::{ShellHealthServer, ShellHealthSnapshot, utc_timestamp_iso};
 
@@ -25,6 +26,7 @@ pub enum SupervisorPhase {
     Dead,
     Reaping,
     Restarting,
+    AwaitingDiskSpace,
     Fatal,
     AwaitingRelaunch,
 }
@@ -189,8 +191,8 @@ fn tick(app: &AppHandle, supervisor: &EngineSupervisor) {
                 engine::append_shell_log(
                     "WARN",
                     &format!(
-                        "engine died: exit_code={} pid={} port={}",
-                        dead.exit_code.unwrap_or(-1),
+                        "{} pid={} port={}",
+                        dead.exit_reason(),
                         dead.lock_pid.unwrap_or(0),
                         dead.lock_port.unwrap_or(0)
                     ),
@@ -215,16 +217,37 @@ fn tick(app: &AppHandle, supervisor: &EngineSupervisor) {
                     return;
                 }
                 guard = supervisor.inner.lock().expect("supervisor mutex");
+                if is_low_disk(&guard.paths.data_dir) {
+                    enter_awaiting_disk(app, supervisor, &mut guard);
+                    return;
+                }
             }
             if dead_at.elapsed() >= RECOVERY_TIMEOUT && guard.phase == SupervisorPhase::Restarting
             {
-                guard.phase = SupervisorPhase::Fatal;
-                engine::append_shell_log("ERROR", "engine fatal: restart failed within 30s");
-                update_surfaces(app, supervisor, &guard);
-                show_fatal_dialog(app, &guard);
+                if is_low_disk(&guard.paths.data_dir) {
+                    enter_awaiting_disk(app, supervisor, &mut guard);
+                } else {
+                    guard.phase = SupervisorPhase::Fatal;
+                    engine::append_shell_log("ERROR", "engine fatal: restart failed within 30s");
+                    update_surfaces(app, supervisor, &guard);
+                    show_fatal_dialog(app, &guard);
+                }
             } else if guard.phase == SupervisorPhase::Restarting {
                 publish_restarting(app, supervisor, &guard);
             }
+        }
+        SupervisorPhase::AwaitingDiskSpace => {
+            if disk_space_recovered(&guard.paths.data_dir) {
+                let app_clone = app.clone();
+                drop(guard);
+                if attempt_restart(&app_clone, supervisor, false) {
+                    engine::append_shell_log("INFO", "engine restarted after low disk recovered");
+                    return;
+                }
+                guard = supervisor.inner.lock().expect("supervisor mutex");
+                guard.phase = SupervisorPhase::AwaitingDiskSpace;
+            }
+            publish_awaiting_disk(app, supervisor, &guard);
         }
         SupervisorPhase::Fatal | SupervisorPhase::AwaitingRelaunch | SupervisorPhase::Dead => {
             publish_dead(app, supervisor, &guard);
@@ -235,8 +258,26 @@ fn tick(app: &AppHandle, supervisor: &EngineSupervisor) {
 
 struct DeathInfo {
     exit_code: Option<i32>,
+    /// The terminating signal, when the OS reported one. Only obtainable when
+    /// this shell is the engine's real parent (the `Spawned` variant, reaped
+    /// via `waitpid`); an `Adopted` engine's death is inferred from health and
+    /// carries no signal.
+    signal: Option<i32>,
     lock_pid: Option<u32>,
     lock_port: Option<u16>,
+}
+
+impl DeathInfo {
+    /// `engine-exited(signal N)` / `engine-exited(code N)`, matching the
+    /// naming the shell log uses for every other exit trigger, so a reader
+    /// can tell a killed engine from one that exited on its own.
+    fn exit_reason(&self) -> String {
+        match (self.signal, self.exit_code) {
+            (Some(signal), _) => format!("engine-exited(signal {signal})"),
+            (None, Some(code)) => format!("engine-exited(code {code})"),
+            (None, None) => "engine-exited(unknown)".to_string(),
+        }
+    }
 }
 
 fn detect_death(guard: &mut RuntimeState) -> Option<DeathInfo> {
@@ -245,8 +286,10 @@ fn detect_death(guard: &mut RuntimeState) -> Option<DeathInfo> {
     match guard.supervised.as_mut() {
         Some(Supervised::Spawned(engine)) => {
             if let Some(status) = engine.try_reap() {
+                use std::os::unix::process::ExitStatusExt;
                 return Some(DeathInfo {
                     exit_code: status.code(),
+                    signal: status.signal(),
                     lock_pid: lock_holder.map(|(pid, _)| pid).or(Some(engine.pid())),
                     lock_port: lock_holder.map(|(_, port)| port).or(Some(engine.port())),
                 });
@@ -254,6 +297,7 @@ fn detect_death(guard: &mut RuntimeState) -> Option<DeathInfo> {
             if engine.is_log_failed() {
                 return Some(DeathInfo {
                     exit_code: Some(1),
+                    signal: None,
                     lock_pid: lock_holder.map(|(pid, _)| pid).or(Some(engine.pid())),
                     lock_port: lock_holder.map(|(_, port)| port).or(Some(engine.port())),
                 });
@@ -264,12 +308,14 @@ fn detect_death(guard: &mut RuntimeState) -> Option<DeathInfo> {
                 if !launch::pid_can_act(pid) {
                     return Some(DeathInfo {
                         exit_code: Some(1),
+                        signal: None,
                         lock_pid: Some(pid),
                         lock_port: Some(port),
                     });
                 }
                 return Some(DeathInfo {
                     exit_code: Some(1),
+                    signal: None,
                     lock_pid: lock_holder.map(|(pid, _)| pid).or(Some(pid)),
                     lock_port: Some(port),
                 });
@@ -280,6 +326,7 @@ fn detect_death(guard: &mut RuntimeState) -> Option<DeathInfo> {
             if !launch::pid_can_act(*pid) || !engine::health_ok(*port) {
                 return Some(DeathInfo {
                     exit_code: Some(1),
+                    signal: None,
                     lock_pid: Some(*pid),
                     lock_port: Some(*port),
                 });
@@ -404,6 +451,46 @@ fn write_parent_file(data_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn is_low_disk(data_dir: &Path) -> bool {
+    disk_free_bytes(data_dir)
+        .map(|free| free < ENGINE_LOG_MIN_FREE_BYTES)
+        .unwrap_or(false)
+}
+
+fn disk_space_recovered(data_dir: &Path) -> bool {
+    disk_free_bytes(data_dir)
+        .map(|free| free >= ENGINE_LOG_MIN_FREE_BYTES)
+        .unwrap_or(false)
+}
+
+fn enter_awaiting_disk(
+    app: &AppHandle,
+    supervisor: &EngineSupervisor,
+    guard: &mut RuntimeState,
+) {
+    guard.phase = SupervisorPhase::AwaitingDiskSpace;
+    engine::append_shell_log("WARN", "engine awaiting disk space recovery");
+    update_surfaces(app, supervisor, guard);
+}
+
+fn publish_awaiting_disk(app: &AppHandle, supervisor: &EngineSupervisor, guard: &RuntimeState) {
+    supervisor.shell_health.update(ShellHealthSnapshot {
+        status: "waiting".into(),
+        engine: "waiting-disk".into(),
+        lock_pid: guard.lock_pid,
+        lock_port: guard.lock_port,
+        exit_code: guard.exit_code,
+        reason: Some("low-disk".into()),
+    });
+    set_window_title(
+        app,
+        &format!(
+            "{} - waiting for disk space",
+            guard.paths.product_name
+        ),
+    );
+}
+
 fn publish_running(app: &AppHandle, supervisor: &EngineSupervisor, guard: &RuntimeState) {
     let (lock_pid, lock_port) = launch::read_lock_fields(&launch::lock_path(&guard.paths.data_dir))
         .or_else(|| guard.supervised.as_ref().map(|s| (s.pid().unwrap_or(0), s.port())))
@@ -414,6 +501,7 @@ fn publish_running(app: &AppHandle, supervisor: &EngineSupervisor, guard: &Runti
         lock_pid: Some(lock_pid),
         lock_port: Some(lock_port),
         exit_code: None,
+        reason: None,
     });
     set_window_title(app, &guard.paths.product_name);
 }
@@ -425,6 +513,7 @@ fn publish_restarting(app: &AppHandle, supervisor: &EngineSupervisor, guard: &Ru
         lock_pid: guard.lock_pid,
         lock_port: guard.lock_port,
         exit_code: guard.exit_code,
+        reason: None,
     });
     set_window_title(app, &format!("{} - engine restarting", guard.paths.product_name));
 }
@@ -436,6 +525,7 @@ fn publish_dead(app: &AppHandle, supervisor: &EngineSupervisor, guard: &RuntimeS
         lock_pid: guard.lock_pid,
         lock_port: guard.lock_port,
         exit_code: guard.exit_code,
+        reason: None,
     });
     set_window_title(app, &format!("{} - engine dead", guard.paths.product_name));
 }
@@ -444,6 +534,7 @@ fn update_surfaces(app: &AppHandle, supervisor: &EngineSupervisor, guard: &Runti
     match guard.phase {
         SupervisorPhase::Running => publish_running(app, supervisor, guard),
         SupervisorPhase::Restarting => publish_restarting(app, supervisor, guard),
+        SupervisorPhase::AwaitingDiskSpace => publish_awaiting_disk(app, supervisor, guard),
         SupervisorPhase::Dead | SupervisorPhase::Fatal | SupervisorPhase::AwaitingRelaunch => {
             publish_dead(app, supervisor, guard);
             navigate_fatal_bootstrap(app, guard, supervisor.shell_health.port());
@@ -554,5 +645,44 @@ mod tests {
     fn recovery_timeout_matches_heartbeat_interval() {
         assert_eq!(RECOVERY_TIMEOUT, Duration::from_secs(30));
         assert!(POLL_INTERVAL <= RECOVERY_TIMEOUT);
+    }
+
+    // - if a signal-killed engine is logged only by exit code then `kill -9`
+    //   and a plain `exit(1)` are indistinguishable in the shell log, which is
+    //   exactly what issue #2801's acceptance test checks for -> broken
+    // - if a signal takes priority over a stray exit code on the same
+    //   `ExitStatus` then a real signal death could be misreported as a code
+    //   exit -> broken
+
+    fn death(exit_code: Option<i32>, signal: Option<i32>) -> DeathInfo {
+        DeathInfo {
+            exit_code,
+            signal,
+            lock_pid: None,
+            lock_port: None,
+        }
+    }
+
+    #[test]
+    fn a_signal_kill_is_named_by_its_signal_number() {
+        assert_eq!(death(None, Some(9)).exit_reason(), "engine-exited(signal 9)");
+    }
+
+    #[test]
+    fn an_ordinary_exit_is_named_by_its_code() {
+        assert_eq!(death(Some(1), None).exit_reason(), "engine-exited(code 1)");
+    }
+
+    #[test]
+    fn a_signal_is_named_even_alongside_a_placeholder_exit_code() {
+        // `ExitStatus::code()` is platform-defined when a process was signaled
+        // (macOS reports None; some platforms could report something else),
+        // so the signal must win over any accompanying code.
+        assert_eq!(death(Some(1), Some(9)).exit_reason(), "engine-exited(signal 9)");
+    }
+
+    #[test]
+    fn neither_signal_nor_code_says_so_rather_than_guessing() {
+        assert_eq!(death(None, None).exit_reason(), "engine-exited(unknown)");
     }
 }

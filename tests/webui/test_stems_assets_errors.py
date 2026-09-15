@@ -12,6 +12,7 @@ from tests.webui.test_stems_hydration import _assets_client
 
 @pytest.mark.requirement("STEM-33")
 def test_hydrate_missing_manifest_path_returns_structured_400(tmp_path: Path) -> None:
+    """[if] hydrate is called with a missing manifest path [then] 400 names STEM_MANIFEST_PATH_NOT_FOUND, [else stop]."""
     with _assets_client(data_dir=tmp_path / "data") as client:
         resp = client.post(
             f"/api/v1/stems/{'a' * 40}/hydrate",
@@ -29,6 +30,7 @@ def test_push_missing_without_external_roots_returns_503(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """[if] push-missing runs without MDT_EXTERNAL_STEM_ROOTS [then] 503 names MDT_EXTERNAL_STEM_ROOTS_MISSING, [else stop]."""
     monkeypatch.delenv("MDT_EXTERNAL_STEM_ROOTS", raising=False)
     with _assets_client(data_dir=tmp_path / "data") as client:
         resp = client.post("/api/v1/stems/push-missing", json={})
@@ -40,6 +42,7 @@ def test_push_missing_without_external_roots_returns_503(
 
 @pytest.mark.requirement("STEM-33")
 def test_hydrate_valid_manifest_dry_run_returns_200(tmp_path: Path) -> None:
+    """[if] hydrate dry-run receives a valid manifest path [then] 200 returns status ok, [else stop]."""
     manifest = tmp_path / "manifest.json"
     manifest.write_text(
         json.dumps(

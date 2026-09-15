@@ -26,7 +26,7 @@ import os
 import sqlite3
 import unicodedata
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -238,15 +238,19 @@ def _batched(items: Sequence[str], size: int) -> Iterator[Sequence[str]]:
         yield items[start : start + size]
 
 
+ResidencyPredicate = Callable[[Path], bool]
+
+
 def _materialise_raw_audio_path(
     raw: str | None,
     *,
     path_map: PathMap | None = None,
+    residency: ResidencyPredicate = fs_residency.is_materialised,
 ) -> Path | None:
     if not raw or raw.startswith(platform_paths.STREAMING_PREFIXES):
         return None
     mapped = platform_paths.resolve_asset_path(raw, path_map=path_map)
-    if mapped.resolved is None or not fs_residency.is_materialised(mapped.resolved):
+    if mapped.resolved is None or not residency(mapped.resolved):
         return None
     return mapped.resolved
 
@@ -290,18 +294,42 @@ def local_audio_path(
     *,
     machine_id: str | None = None,
     path_map: PathMap | None = None,
+    residency: ResidencyPredicate = fs_residency.is_materialised,
 ) -> Path | None:
     """This machine's materialised local audio path for ``stable_id``.
 
     Prefers a local ``track_locations`` row on this machine, then
     ``tracks.file_path``. Returns ``None`` when neither path materialises.
+    ``residency`` is the on-disk gate: the default admits regular files with
+    local bytes; a playback caller that probes ``open()`` itself passes
+    :func:`fs_residency.exists_for_audio_open_probe` so a FIFO or other
+    special node reaches the bounded open probe instead of reading as absent.
     """
     owner = machine_id or _sync_stamp.local_machine_id(conn)
     for raw, _source in _local_audio_raw_candidates(conn, stable_id, machine_id=owner):
-        resolved = _materialise_raw_audio_path(raw, path_map=path_map)
+        resolved = _materialise_raw_audio_path(raw, path_map=path_map, residency=residency)
         if resolved is not None:
             return resolved
     return None
+
+
+def recorded_audio_path(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    *,
+    machine_id: str | None = None,
+) -> str | None:
+    """This machine's first RECORDED audio path for ``stable_id``, unprobed.
+
+    Same candidate order as :func:`local_audio_path` (a local
+    ``track_locations`` row on this machine, then ``tracks.file_path``) but
+    without the residency gate, for callers that probe the path themselves
+    and must tell "no recorded location" from "recorded but missing or
+    blocked on disk" (the preflight audio-access row).
+    """
+    owner = machine_id or _sync_stamp.local_machine_id(conn)
+    candidates = _local_audio_raw_candidates(conn, stable_id, machine_id=owner)
+    return candidates[0][0] if candidates else None
 
 
 def local_audio_path_raw(
