@@ -1,0 +1,11 @@
+# Positive control: tests/fixtures/security/sast-control/subprocess_shell_true.py
+rules:
+  - id: odj-subprocess-shell-true
+    languages: [python]
+    severity: ERROR
+    message: >-
+      subprocess with shell=True hands the string to /bin/sh, so any interpolated value
+      is shell syntax. Pass an argv list instead (docs/security/static-analysis.md).
+    pattern-either:
+      - pattern: subprocess.$FUNC(..., shell=True, ...)
+      - pattern: asyncio.create_subprocess_shell(...)

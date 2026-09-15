@@ -1,0 +1,14 @@
+# zizmor + actionlint positive control. NOT a live workflow: it lives outside
+# .github/workflows, so GitHub never runs it. scripts/security/scan_workflows.sh
+# audits it and fails as UNKNOWN unless both tools flag the injection below.
+name: control
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+jobs:
+  echo-title:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ${{ github.event.issue.title }}

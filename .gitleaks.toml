@@ -1,0 +1,16 @@
+# gitleaks configuration: the default ruleset plus proven false-positive allowlists.
+# Spec: docs/security/secret-scanning.md. Every allowlist entry says why it is safe.
+# Never allowlist a live credential: rotate it in Doppler first, then allowlist as history.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = """\
+  localStorage and cache-key constants (PREFS_STORAGE_KEY = 'opendj.prefs', \
+  SKEY_REVISION = '...'): identifiers, not credentials. The first full-history run \
+  (Mon 14 Sep 2026) attributed 33 of its 103 generic-api-key hits to this shape."""
+regexTarget = "line"
+regexes = [
+  '''(?i)(storage_key|prefs_key|skey_revision)["']?\s*[:=]''',
+]
