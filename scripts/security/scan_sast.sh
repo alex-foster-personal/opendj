@@ -3,6 +3,8 @@
 #
 # Usage: scripts/security/scan_sast.sh pr|full
 #   pr    diff-aware: only findings NEW versus the base commit (--baseline-commit).
+#         SKIP (with reason) when the diff has no file semgrep scans, decided from
+#         git diff scope plus semgrep target resolution, not from semgrep's 0/0 output.
 #   full  whole tree. Reports existing debt; not wired to CI (would be red on day one).
 #
 # Rules: registry packs p/python p/typescript p/rust plus tools/semgrep/ (custom).
@@ -56,8 +58,13 @@ mkdir -p "$control_root/$(dirname "$CONTROL_DIR")"
 cp -R "$SECURITY_REPO_ROOT/$CONTROL_DIR" "$control_root/$CONTROL_DIR"
 printf '# empty on purpose: disables the default ignore list for the control copy\n' \
   >"$control_root/.semgrepignore"
-control_files="$(find "$control_root/$CONTROL_DIR" -type f | wc -l | tr -d ' ')"
-_semgrep "$control_root" "$OUT/control.json" . || _unknown_exit "control scan errored"
+control_targets=()
+while IFS= read -r -d '' _control_file; do
+  control_targets+=("${_control_file#"$control_root"/}")
+done < <(find "$control_root/$CONTROL_DIR" -type f -print0)
+control_files="${#control_targets[@]}"
+_semgrep "$control_root" "$OUT/control.json" "${control_targets[@]}" ||
+  _unknown_exit "control scan errored"
 require_args=()
 for rule in "${REQUIRED_CONTROL_RULES[@]}"; do require_args+=(--require-rule "$rule"); done
 sec_py semgrep-summary "$OUT/control.json" "${require_args[@]}" --min-rules "$MIN_RULES" \
@@ -68,33 +75,39 @@ control_hits="$(cat "$OUT/control.count")"
 # ----- scan ---------------------------------------------------------------------------------------
 if [[ "$MODE" == "pr" ]]; then
   base="$(sec_base_sha)"
+  head="$(sec_head_sha)"
+  sec_py semgrep-diff-scope \
+    --root "$SECURITY_REPO_ROOT" --base "$base" --head "$head" \
+    --semgrep "$SECURITY_BIN_DIR/semgrep" \
+    --config p/python --config p/typescript --config p/rust \
+    --config "$SECURITY_REPO_ROOT/tools/semgrep" \
+    --exclude tests/fixtures/security \
+    --count-file "$OUT/scope.count" >"$OUT/scope.txt" ||
+    _unknown_exit "could not resolve diff scope"
+  scannable="$(cat "$OUT/scope.count")"
+  if [[ "$scannable" -eq 0 ]]; then
+    sec_row "$SCANNER" "$MODE" "fired($control_hits)" 0 SKIP "no scannable file changed vs ${base:0:9}"
+    exit 0
+  fi
   # Diff-aware mode scans only files changed since base, so zero files is a valid answer.
   _semgrep "$SECURITY_REPO_ROOT" "$OUT/scan.json" --baseline-commit "$base" \
     --exclude "tests/fixtures/security" || _unknown_exit "diff-aware scan errored"
   title="semgrep: findings new vs ${base:0:9}"
   detail="diff-aware vs ${base:0:9}"
-  # A diff with no file semgrep scans (docs only, or ignored paths) loads no rules
-  # at all; secscan reports that as SKIP (exit 3) instead of a missing-rules UNKNOWN.
-  skip_args=(--skip-if-nothing-scanned)
+  expected_args=(--expected-scannable "$scannable")
 elif [[ "$MODE" == "full" ]]; then
   _semgrep "$SECURITY_REPO_ROOT" "$OUT/scan.json" --exclude "tests/fixtures/security" ||
     _unknown_exit "full scan errored"
   title="semgrep: whole tree"
   detail="whole tree (existing debt included)"
-  skip_args=()
+  expected_args=()
 fi
 # The rule floor is proved by the control above; a diff-aware run loads only the
 # rules for the languages it scans (154 Python rules for a Python-only diff).
-summary_rc=0
-sec_py semgrep-summary "$OUT/scan.json" --min-rules 1 --min-files 1 ${skip_args[@]+"${skip_args[@]}"} \
+sec_py semgrep-summary "$OUT/scan.json" --min-rules 1 --min-files 1 ${expected_args[@]+"${expected_args[@]}"} \
   --count-file "$OUT/scan.count" \
-  --report-md "$SECURITY_WORK_DIR/report.md" --title "$title" || summary_rc=$?
-if [[ $summary_rc -eq 3 ]]; then
-  sec_row "$SCANNER" "$MODE" "fired($control_hits)" 0 SKIP "no scannable file changed vs ${base:0:9}"
-  exit 0
-elif [[ $summary_rc -ne 0 ]]; then
+  --report-md "$SECURITY_WORK_DIR/report.md" --title "$title" ||
   _unknown_exit "scan output unparseable or rules missing"
-fi
 
 findings="$(cat "$OUT/scan.count")"
 if [[ "$findings" -eq 0 ]]; then

@@ -6,18 +6,17 @@ Secret values are never read into output: gitleaks/trufflehog summaries print ru
 or detector ids, file paths, lines and short commit ids only.
 
 Exit codes: 0 = parsed (findings may be > 0), 2 = UNKNOWN (input could not be
-measured: missing file, malformed JSON, expected subject absent, control silent),
-3 = SKIP (semgrep-summary --skip-if-nothing-scanned only: the scope held no file
-semgrep scans, so no rules loaded and nothing was measured).
+measured: missing file, malformed JSON, expected subject absent, control silent).
 
 Acceptance (one assertion each, exercised by `just security-scan`):
 - [if] osv JSON lacks one of the expected manifests [then] exit 2 (UNKNOWN).
 - [if] an IgnoredVulns entry lacks reason/ignoreUntil or expires > max days out [then] exit 2.
 - [if] a head finding shares (ecosystem, package, id) with base [then] it is not NEW.
 - [if] a semgrep control run lacks a required rule id [then] exit 2.
-- [if] a diff-aware semgrep run scanned 0 files and loaded 0 rules under
-  --skip-if-nothing-scanned [then] exit 3 (SKIP), not 2.
-- [if] semgrep scanned files but loaded 0 rules [then] exit 2, with or without that flag.
+- [if] semgrep-diff-scope cannot run git or semgrep on changed paths [then] exit 2.
+- [if] semgrep-summary has --expected-scannable > 0 but loaded 0 rules or scanned 0 files
+  [then] exit 2 (UNKNOWN), not a pass.
+- [if] semgrep scanned files but loaded 0 rules [then] exit 2.
 """
 
 from __future__ import annotations
@@ -34,7 +33,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 UNKNOWN_EXIT = 2
-SKIP_EXIT = 3
 LOCKFILE_PATTERN = re.compile(
     r"(^|/)(uv\.lock|poetry\.lock|Pipfile\.lock|pylock\.toml|[^/]*requirements[^/]*\.txt"
     r"|pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?|Cargo\.lock|go\.sum|Gemfile\.lock)$"
@@ -230,6 +228,95 @@ def cmd_trufflehog_summary(args: argparse.Namespace) -> int:
 
 
 # ----- sast / workflows ------------------------------------------------------------------------
+def _path_excluded(path: str, prefixes: list[str]) -> bool:
+    return any(path == prefix or path.startswith(f"{prefix}/") for prefix in prefixes)
+
+
+def _git_diff_names(root: Path, base: str, head: str) -> list[str]:
+    proc = subprocess.run(
+        ["git", "-C", str(root), "diff", "--name-only", base, head],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [line for line in proc.stdout.splitlines() if line.strip()]
+
+
+def _git_file_at_ref(root: Path, ref: str, rel_path: str) -> bool:
+    proc = subprocess.run(
+        ["git", "-C", str(root), "cat-file", "-e", f"{ref}:{rel_path}"],
+        capture_output=True,
+    )
+    return proc.returncode == 0
+
+
+def _semgrep_scannable_count(
+    *,
+    root: Path,
+    semgrep: str,
+    configs: list[str],
+    excludes: list[str],
+    candidates: list[str],
+) -> int:
+    cmd = [
+        semgrep,
+        "scan",
+        *configs,
+        "--json",
+        "--time",
+        "--metrics=off",
+        "--disable-version-check",
+    ]
+    for prefix in excludes:
+        cmd.extend(["--exclude", prefix])
+    cmd.extend(candidates)
+    proc = subprocess.run(cmd, cwd=root, capture_output=True, text=True, check=False)
+    if proc.returncode not in (0, 1):
+        raise RuntimeError(
+            f"semgrep exited {proc.returncode}: {proc.stderr.strip()[:200] or proc.stdout[:200]}"
+        )
+    if not proc.stdout.strip():
+        raise RuntimeError("semgrep produced no JSON output")
+    doc = json.loads(proc.stdout)
+    if not isinstance(doc, dict):
+        raise RuntimeError("semgrep JSON root is not an object")
+    return len(doc.get("paths", {}).get("scanned", []))
+
+
+def cmd_semgrep_diff_scope(args: argparse.Namespace) -> int:
+    root = Path(args.root)
+    candidates: list[str] = []
+    for rel in _git_diff_names(root, args.base, args.head):
+        if not _git_file_at_ref(root, args.head, rel):
+            continue
+        if _path_excluded(rel, args.exclude):
+            continue
+        candidates.append(rel)
+    if not candidates:
+        count = 0
+        print(count)
+        if args.count_file:
+            Path(args.count_file).write_text(f"{count}\n", encoding="utf-8")
+        return 0
+    configs: list[str] = []
+    for cfg in args.config:
+        configs.extend(["--config", cfg])
+    try:
+        count = _semgrep_scannable_count(
+            root=root,
+            semgrep=args.semgrep,
+            configs=configs,
+            excludes=args.exclude,
+            candidates=candidates,
+        )
+    except (OSError, RuntimeError, json.JSONDecodeError, subprocess.CalledProcessError) as exc:
+        return _unknown(f"semgrep diff scope unreadable: {exc}")
+    print(count)
+    if args.count_file:
+        Path(args.count_file).write_text(f"{count}\n", encoding="utf-8")
+    return 0
+
+
 def cmd_semgrep_summary(args: argparse.Namespace) -> int:
     try:
         doc = _load_json(Path(args.json))
@@ -246,11 +333,12 @@ def cmd_semgrep_summary(args: argparse.Namespace) -> int:
     if rules is not None:
         scanned = len(doc.get("paths", {}).get("scanned", []))
         print(f"semgrep loaded {rules} rules, scanned {scanned} files")
-        # semgrep loads rules per language present, so an empty scope loads none.
-        # Only then is a zero rule count an answer rather than a failed download.
-        if args.skip_if_nothing_scanned and scanned == 0 and rules == 0:
-            _emit(args, args.title, ["no file in scope that semgrep scans"], 0)
-            return SKIP_EXIT
+        expected = args.expected_scannable
+        if expected is not None and expected > 0 and (rules == 0 or scanned == 0):
+            return _unknown(
+                f"semgrep expected {expected} scannable file(s) but loaded {rules} rules "
+                f"and scanned {scanned} files"
+            )
         if rules < args.min_rules:
             return _unknown(f"semgrep loaded {rules} rules, fewer than the {args.min_rules} floor")
         if scanned < args.min_files:
@@ -333,10 +421,19 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--min-files", type=int, default=0, help="fewer scanned files is UNKNOWN")
     p.add_argument("--fail-on-error", action="store_true")
     p.add_argument(
-        "--skip-if-nothing-scanned",
-        action="store_true",
-        help="exit 3 (SKIP) when 0 files were scanned and 0 rules loaded",
+        "--expected-scannable",
+        type=int,
+        default=None,
+        help="PR diff scope count; 0 rules or 0 scanned with N>0 is UNKNOWN",
     )
+
+    p = add("semgrep-diff-scope", cmd_semgrep_diff_scope)
+    p.add_argument("--root", required=True)
+    p.add_argument("--base", required=True)
+    p.add_argument("--head", default="HEAD")
+    p.add_argument("--semgrep", required=True)
+    p.add_argument("--config", action="append", required=True)
+    p.add_argument("--exclude", action="append", default=[])
 
     p = add("zizmor-summary", cmd_zizmor_summary)
     p.add_argument("json")
