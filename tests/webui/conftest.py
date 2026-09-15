@@ -18,8 +18,15 @@ from apps.webui.server.backend import (
     Track,
 )
 from apps.webui.server.etag import compute_etag
+from tests.testclient_host_allowlist import install_loopback_testclient_default
 
 WEBUI_TEST_ROOT: Path = Path(__file__).resolve().parent
+
+# SEC-01 (issue #2689): TestClient's own base_url default ("http://testserver")
+# is not in the daemon's host allowlist. Default every TestClient built in
+# this suite to an allowlisted loopback host instead of fixing 181 call
+# sites one by one -- see tests/testclient_host_allowlist.py for why.
+install_loopback_testclient_default()
 
 
 @pytest.fixture(autouse=True)
