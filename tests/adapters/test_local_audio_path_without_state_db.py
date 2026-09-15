@@ -7,7 +7,7 @@ The sibling ``bulk_rb_meta`` already reads a missing state db as "no rows";
 the artwork tri-state must do the same and answer False, never raise.
 
 - [if] config.STATE_DB does not exist [then] local_artwork_available answers False [⛔️ if it raises]
-- [if] config.STATE_DB does not exist [then] _resolve_local_audio_path answers None [⛔️ if it raises]
+- [if] config.STATE_DB is absent [then] _resolve_local_audio_path answers None [⛔️ if it raises]
 """
 
 from __future__ import annotations
