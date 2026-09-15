@@ -1,6 +1,6 @@
 /**
  * Read-only snapshot of capability, entitlement, and build-flag stores for
- * the /admin entitlements inspector (ADMIN-01).
+ * the /admin entitlements inspector (ADMIN-03).
  *
  * Calls the existing *Refusal() helpers; never re-derives refusal sentences.
  */
