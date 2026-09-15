@@ -22,8 +22,8 @@ from pathlib import Path
 from typing import Protocol
 
 from apps.lyrics import jobs as jobs_mod
-from apps.lyrics.batch import BatchReport, CommandFailed, StageBlocked, run_batch
-from apps.shared.paths import STATE_DIR
+from apps.lyrics.batch import BatchReport, CommandFailed, StageBlocked, batch_paths_for, run_batch
+from apps.shared.paths import PROJECT_ROOT, STATE_DIR
 
 DEFAULT_STATE_DIR: Path = STATE_DIR
 POLL_SLEEP_S: float = 30.0
@@ -35,13 +35,7 @@ class Driver(Protocol):
                  progress: Callable[[str], None]) -> BatchReport: ...
 
 
-def _default_driver(*, corpus: str, stable_ids: list[str], live: bool,
-                    progress: Callable[[str], None]) -> BatchReport:
-    return run_batch(corpus=corpus, stable_ids=stable_ids, live=live,
-                     progress=progress)
-
-
-def work_once(state_dir: Path, *, driver: Driver = _default_driver) -> bool:
+def work_once(state_dir: Path, *, driver: Driver | None = None) -> bool:
     """Consume ONE queued job (oldest first). Returns False when idle."""
     queued = [j for j in jobs_mod.list_jobs(state_dir) if j.status == "queued"]
     if not queued:
@@ -58,6 +52,20 @@ def work_once(state_dir: Path, *, driver: Driver = _default_driver) -> bool:
         note = " | ".join(progress_lines)[-NOTE_MAX_CHARS:]
         jobs_mod.annotate(state_dir, job.id, note)
         print(f"[batch] {msg}")
+
+    if driver is None:
+        paths = batch_paths_for(state_dir)
+
+        def driver(*, corpus: str, stable_ids: list[str], live: bool,
+                   progress: Callable[[str], None]) -> BatchReport:
+            return run_batch(
+                corpus=corpus,
+                stable_ids=stable_ids,
+                live=live,
+                progress=progress,
+                paths=paths,
+                repo_root=PROJECT_ROOT,
+            )
 
     try:
         report = driver(corpus=corpus, stable_ids=list(job.stable_ids),
@@ -77,7 +85,7 @@ def work_once(state_dir: Path, *, driver: Driver = _default_driver) -> bool:
     return True
 
 
-def work_loop(state_dir: Path, *, driver: Driver = _default_driver,
+def work_loop(state_dir: Path, *, driver: Driver | None = None,
               poll_sleep_s: float = POLL_SLEEP_S) -> None:
     """Consume forever with a modest poll sleep (R3's runner-up guarantee:
     a queued job never sits unconsumed while this loop is alive)."""

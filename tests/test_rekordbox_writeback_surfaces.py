@@ -164,10 +164,16 @@ READ_ONLY_DB_HANDLES: dict[str, str] = {
     "apps/sync/playlist_diff.py": "rb_open_db(path) for a read-only diff",
     "apps/sync/usb/state.py": "open_db() no-arg working copy",
     "apps/tags/collect.py": "open_db() no-arg working copy, collects tags",
+<<<<<<< HEAD
     "apps/webui/server/rb_djay_sync_service.py": (
         "open_db() no-arg working copy in run_metadata_plan/run_cues_plan for audit "
         "diffs/plans; compare/plan only, writes CSVs under data/sync; live rekordbox "
         "writes are HTTP-guarded elsewhere on this module's apply routes"
+=======
+    "apps/sync/djay_sync_service.py": (
+        "open_db() no-arg working copy in run_metadata_plan/run_cues_plan; "
+        "compare/plan only, writes CSVs under data/sync"
+>>>>>>> origin/main
     ),
 }
 

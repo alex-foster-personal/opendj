@@ -1,8 +1,10 @@
-"""PR-body ADR gate (issue #1489).
+"""PR-body ADR gate (issue #1489, widened by issue #2678).
 
 A PR that touches an architecturally significant path must carry either
 ``ADR: NNNN`` naming a file under ``docs/decisions/``, or
 ``ADR: none, because <reason>`` with a non-empty reason on the SAME line.
+Independently of any gated path, ``docs/decisions/`` itself must never
+carry two ``ADR-NNNN-*.md`` files sharing a number (issue #2678).
 
     python -m scripts.adr_check --pr 1234 --base origin/main
     python -m scripts.adr_check --base origin/main
@@ -19,7 +21,10 @@ LINE (horizontal whitespace only), so neither a rubber-stamped marker
 nor the next section heading of an ordinary multiline body can silence
 the gate for free. ``gh pr view`` failing prints UNKNOWN and exits 2,
 never a silent pass -- a failed read is not the same as a PR with
-nothing to say.
+nothing to say. The duplicate-id check runs before the gated-path
+early-return, so it fires on every invocation -- including a docs-only
+PR and a bare run against ``main`` with an empty diff -- not only on a
+PR that happens to touch a gated path.
 """
 
 from __future__ import annotations
@@ -42,16 +47,23 @@ DEFAULT_BASE = "origin/main"
 GATED_PREFIXES: tuple[str, ...] = (
     "apps/cloud/",
     "apps/engine_core/",
+    "apps/sync_hub/",
+    "apps/webui/server/routes/",
+    "apps/database/",
+    ".github/workflows/",
 )
 
 # Globs: POSIX paths, matched with fnmatch.
 GATED_GLOBS: tuple[str, ...] = (
     "apps/webui/server/state*",
     "apps/webui/server/**/state*",
+    "*/migrations/*",
     ".planning/REQUIREMENTS.md",
     "pyproject.toml",
     "requirements.txt",
     "uv.lock",
+    "apps/webui/frontend/package.json",
+    "apps/webui/openapi.json",
 )
 
 # Horizontal whitespace only. ``\s`` matches a newline, which is how a
@@ -103,6 +115,22 @@ def existing_adr_ids(adr_dir: Path) -> set[str]:
     return ids
 
 
+def duplicate_adr_ids(adr_dir: Path) -> dict[str, list[str]]:
+    """ADR id -> filenames, for every id claimed by 2+ files. Empty when unique."""
+    claimed: dict[str, list[str]] = {}
+    if not adr_dir.is_dir():
+        return {}
+    for path in sorted(adr_dir.glob("ADR-*.md")):
+        if path.stat().st_size == 0:
+            # Renumbering leaves zero-byte tombstones until git rm; they must
+            # not keep a colliding id live for the gate.
+            continue
+        match = re.match(r"ADR-(\d{4})-", path.name)
+        if match:
+            claimed.setdefault(match.group(1), []).append(path.name)
+    return {adr_id: names for adr_id, names in claimed.items() if len(names) > 1}
+
+
 def ids_in_body(body: str) -> list[str]:
     return [match.group(1) for match in _ID_RE.finditer(body or "")]
 
@@ -117,6 +145,13 @@ def evaluate(
     adr_dir: Path,
 ) -> Verdict:
     """Pure verdict over changed paths, a PR/commit body, and the ADR dir."""
+    dupes = duplicate_adr_ids(adr_dir)
+    if dupes:
+        detail = "; ".join(
+            f"ADR-{adr_id}: {', '.join(names)}" for adr_id, names in sorted(dupes.items())
+        )
+        return Verdict(1, f"[adr-check] duplicate ADR id(s) -- {detail}")
+
     hit = gated_paths(changed)
     if not hit:
         return Verdict(0, "[adr-check] OK -- no gated paths")

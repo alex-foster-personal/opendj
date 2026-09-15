@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from apps.lyrics import register_stems, stems_sync, worker
-from apps.lyrics.batch import BatchPaths, StageBlocked, run_batch
+from apps.lyrics.batch import BatchPaths, StageBlocked, batch_paths_for, run_batch
 from apps.shared.paths import DATA_DIR, PROJECT_ROOT, STATE_DIR
 
 PIPELINE_COMMANDS: frozenset[str] = frozenset(
@@ -81,20 +81,15 @@ def add_pipeline_commands(subcommands: argparse._SubParsersAction) -> None:
     hydrate.add_argument("--data-dir", type=Path, default=None)
 
 
+def _batch_paths(state_dir: Path) -> BatchPaths:
+    return batch_paths_for(state_dir)
+
+
 def _load_stable_ids(path: Path) -> list[str]:
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, list) or not raw:
         raise SystemExit(f"[ERROR] --tracks must be a non-empty JSON list: {path}")
     return [str(x) for x in raw]
-
-
-def _batch_paths(state_dir: Path) -> BatchPaths:
-    return BatchPaths(
-        eval_dir=state_dir / "lyrics-eval",
-        state_db=state_dir / "state.db",
-        stems_root=state_dir / "stems-roformer-spike",
-        bench_dir=PROJECT_ROOT / "scripts" / "bench",
-    )
 
 
 def cmd_pipeline(args: argparse.Namespace) -> int:

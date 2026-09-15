@@ -40,6 +40,7 @@ class RowModel(BaseModel):
     pk: list[str] = Field(min_length=1)
     values: dict[str, Any]
     members: list[dict[str, Any]] | None = None
+    hash_pending: bool | None = None
 
 
 #: Carried on every request that can move rows (``hello``, ``push``,
@@ -207,6 +208,7 @@ class PushResponse(BaseModel):
     #: row was never compared and the hub's copy is untouched.
     #: ``accepted + rejected + quarantined`` equals the rows offered.
     quarantined: int = 0
+    hash_pending: int = 0
 
 
 class PullResponse(BaseModel):
@@ -228,6 +230,15 @@ class PullResponse(BaseModel):
     #: needs ``python -m apps.shared.state.normalize_stamps --live``; the
     #: pull still serves everything else.
     quarantined: int = 0
+    hash_pending: int = 0
+
+
+class HashPendingResponse(BaseModel):
+    stable_ids: list[str]
+    total: int
+    next_cursor: str | None = None
+    schema_version: int
+    wire_version: int
 
 
 class StatusResponse(BaseModel):
@@ -259,12 +270,14 @@ class DigestResponse(BaseModel):
     #: have converged, and folding it in would fire the ADR 04 c6 corruption
     #: alarm on ordinary legacy data.
     quarantined: dict[str, int] = Field(default_factory=dict)
+    hash_pending: dict[str, int] = Field(default_factory=dict)
 
 
 __all__ = [
     "SYNC_VERSION_RESPONSES",
     "DigestResponse",
     "EnrollRequest",
+    "HashPendingResponse",
     "HelloRequest",
     "HelloResponse",
     "MachineModel",
