@@ -483,6 +483,9 @@ class PreflightCheckOut(BaseModel):
     track anywhere in a small sample), which is an honest denominator, never
     a fabricated pass. ``remediation`` is null on a pass or a pending row and
     a real sentence on a fail.
+
+    ``user_*`` fields carry plain-language copy for the boot gate (issue
+    #2722). Admin/diagnostics views keep the technical ``label``/``detail``.
     """
 
     id: str
@@ -490,6 +493,9 @@ class PreflightCheckOut(BaseModel):
     status: Literal["pass", "fail", "pending"]
     detail: str
     remediation: str | None = None
+    user_label: str | None = None
+    user_detail: str | None = None
+    user_remediation: str | None = None
 
 
 class PreflightOut(BaseModel):

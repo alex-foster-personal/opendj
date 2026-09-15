@@ -82,7 +82,7 @@ function _snapshot(now) {
 }
 
 before(async () => {
-	restore = await loadTypeScriptModule('src/lib/rb/performance-rescue-restore.ts');
+	restore = await loadTypeScriptModule('src/lib/rb/performance-rescue-restore.svelte.ts');
 	math = await loadTypeScriptModule('src/lib/rb/performance-rescue-math.ts');
 });
 

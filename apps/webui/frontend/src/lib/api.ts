@@ -623,3 +623,47 @@ export async function postLyricsPurge(
 export async function getLyricsKpiLedger(): Promise<Record<string, unknown>> {
 	return unwrap(api.GET('/api/v1/bench/lyrics-kpi'));
 }
+
+export interface RbDjayPlaylistPlanResult {
+	plan_path: string;
+	patch_csv: string;
+	diff_md: string;
+	op_total: number;
+	summary: {
+		create: number;
+		update: number;
+		noop: number;
+		djay_only_playlists: number;
+		membership_adds: number;
+		membership_removes: number;
+	};
+}
+
+export interface RbDjayPlaylistDiffResult {
+	computed: boolean;
+	reason?: string;
+	diff: PlaylistDetail['diff'];
+	summary?: Record<string, unknown>;
+}
+
+/** SYNC-03 dry-run planner: POST /api/v1/rb-djay-sync/playlists/plan */
+export async function planRbDjayPlaylistSync(body: {
+	matches_path?: string;
+	only_playlists?: string[];
+	max_ops?: number;
+}): Promise<RbDjayPlaylistPlanResult> {
+	return requireBody(
+		await api.POST('/api/v1/rb-djay-sync/playlists/plan', { body })
+	).data as RbDjayPlaylistPlanResult;
+}
+
+/** Saved playlist-plan buckets for one playlist detail page. */
+export async function getPlaylistRbDjayDiff(
+	playlistId: string
+): Promise<RbDjayPlaylistDiffResult> {
+	return requireBody(
+		await api.GET('/api/v1/playlists/{playlist_id}/rb-djay-diff', {
+			params: { path: { playlist_id: playlistId } }
+		})
+	).data as RbDjayPlaylistDiffResult;
+}

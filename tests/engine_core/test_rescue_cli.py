@@ -1,4 +1,8 @@
-"""``python -m apps.engine_core rescue`` CLI parity (RESCUE-04)."""
+"""``python -m apps.engine_core rescue`` CLI parity (RESCUE-04).
+
+[if] a live daemon's ring holds a 5-min-old snapshot [then] rescue list shows it, [else stop].
+[if] that snapshot has deck 1 playing [then] rescue restore --play resumes deck 1, [else stop].
+"""
 
 from __future__ import annotations
 
