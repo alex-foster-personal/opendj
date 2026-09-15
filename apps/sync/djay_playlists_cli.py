@@ -8,7 +8,7 @@ import argparse
 import json
 import sys
 
-from apps.webui.server.rb_djay_sync_service import RbDjaySyncError, list_djay_playlists
+from apps.sync.djay_sync_service import RbDjaySyncError, list_djay_playlists
 
 
 def main(argv: list[str] | None = None) -> int:
