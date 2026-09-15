@@ -10,6 +10,7 @@ only after those two are defined there, so there is no import cycle.
 from __future__ import annotations
 
 import itertools
+import logging
 import sqlite3
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -19,13 +20,20 @@ from typing import Any
 
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import capabilities, client_refusal, engine, protocol, wire_version
-from apps.sync_hub.transport import API_PREFIX, HubTransport, SyncTransportError
+from apps.sync_hub.transport import (
+    API_PREFIX,
+    HubTransport,
+    SyncTransportError,
+    is_timeout_transport,
+)
 
 #: What this build advertises on every request that can be answered
 #: partially (round 5 gate B-1). One comma-free token per request for the
 #: GET side, because :meth:`HubTransport.get` carries flat string params and
 #: FastAPI reads a single occurrence into a one-element list.
 _ADVERTISED: tuple[str, ...] = capabilities.THIS_BUILD
+
+log = logging.getLogger(__name__)
 
 
 def _local_machine_row(
@@ -156,6 +164,59 @@ class _PullOutcome:
     quarantined: int = 0
 
 
+def _post_push_chunk(
+    channel: HubTransport,
+    machine_id: str,
+    chunk: Sequence[protocol.RowChange],
+    wire_fleet: list[dict[str, object]],
+) -> dict[str, object]:
+    return channel.post(
+        f"{API_PREFIX}/push",
+        {
+            "machine_id": machine_id,
+            "schema_version": state_schema.SCHEMA_VERSION,
+            "wire_version": wire_version.WIRE_VERSION,
+            "rows": [change.to_wire() for change in chunk],
+            "machines": wire_fleet,
+            "capabilities": list(_ADVERTISED),
+        },
+    )
+
+
+def _push_chunk_with_split(
+    channel: HubTransport,
+    machine_id: str,
+    chunk: Sequence[protocol.RowChange],
+    wire_fleet: list[dict[str, object]],
+) -> tuple[dict[str, object], int]:
+    """Push one chunk, splitting once on client timeout."""
+    try:
+        return _post_push_chunk(channel, machine_id, chunk, wire_fleet), 1
+    except SyncTransportError as exc:
+        if not is_timeout_transport(exc) or len(chunk) <= 1:
+            raise
+        mid = len(chunk) // 2
+        log.warning(
+            "push timed out on %d row(s); retrying as %d then %d",
+            len(chunk),
+            mid,
+            len(chunk) - mid,
+        )
+        left, left_requests = _push_chunk_with_split(
+            channel, machine_id, chunk[:mid], wire_fleet
+        )
+        right, right_requests = _push_chunk_with_split(
+            channel, machine_id, chunk[mid:], wire_fleet
+        )
+        return {
+            "accepted": _int_from(left, "accepted", "push")
+            + _int_from(right, "accepted", "push"),
+            "rejected": _int_from(left, "rejected", "push")
+            + _int_from(right, "rejected", "push"),
+            "quarantined": left.get("quarantined"),
+        }, left_requests + right_requests
+
+
 def _push_in_batches(
     channel: HubTransport,
     machine_id: str,
@@ -182,16 +243,8 @@ def _push_in_batches(
     wire_fleet = [machine.to_wire() for machine in fleet]
     for chunk in _batched(rows, batch_rows):
         try:
-            payload = channel.post(
-                f"{API_PREFIX}/push",
-                {
-                    "machine_id": machine_id,
-                    "schema_version": state_schema.SCHEMA_VERSION,
-                    "wire_version": wire_version.WIRE_VERSION,
-                    "rows": [change.to_wire() for change in chunk],
-                    "machines": wire_fleet,
-                    "capabilities": list(_ADVERTISED),
-                },
+            payload, chunk_requests = _push_chunk_with_split(
+                channel, machine_id, chunk, wire_fleet
             )
         except SyncTransportError as exc:
             if not client_refusal.is_plan_refusal(exc):
@@ -207,7 +260,7 @@ def _push_in_batches(
         accepted += _int_from(payload, "accepted", "push")
         rejected += _int_from(payload, "rejected", "push")
         reported.append(payload.get("quarantined"))
-        requests += 1
+        requests += chunk_requests
     return _PushOutcome(
         accepted=accepted,
         rejected=rejected,

@@ -143,6 +143,17 @@ export interface CloudSyncStatus {
 	endpoint: string | null;
 	recent_results: CloudSyncRecentResult[];
 	update_required: CloudSyncUpdateRequired | null;
+	digest_diff?: Array<{
+		table: string;
+		stable_id: string;
+		newer_side: string;
+		stamp?: string;
+	}> | null;
+	credential_notice?: {
+		verdict: string;
+		action: string;
+		hub_machine_id: string;
+	} | null;
 }
 
 /**

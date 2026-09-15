@@ -3521,6 +3521,32 @@
             "title": "Configured",
             "type": "boolean"
           },
+          "credential_notice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CredentialNoticeOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One-shot re-enroll notice while the hub reads the credential as missing."
+          },
+          "digest_diff": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DigestDiffSampleOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sample divergent rows when the latest result is a digest mismatch.",
+            "title": "Digest Diff"
+          },
           "enabled": {
             "description": "configured AND running: a scheduler heartbeat is fresh",
             "title": "Enabled",
@@ -4615,6 +4641,29 @@
         "title": "CredentialMachineOut",
         "type": "object"
       },
+      "CredentialNoticeOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "hub_machine_id": {
+            "title": "Hub Machine Id",
+            "type": "string"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "action",
+          "hub_machine_id"
+        ],
+        "title": "CredentialNoticeOut",
+        "type": "object"
+      },
       "CredentialsOut": {
         "properties": {
           "blockers": {
@@ -5101,6 +5150,34 @@
           "track_count"
         ],
         "title": "DeletedPlaylistOut",
+        "type": "object"
+      },
+      "DigestDiffSampleOut": {
+        "properties": {
+          "newer_side": {
+            "title": "Newer Side",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "stamp": {
+            "default": "",
+            "title": "Stamp",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table",
+          "stable_id",
+          "newer_side"
+        ],
+        "title": "DigestDiffSampleOut",
         "type": "object"
       },
       "DigestResponse": {
@@ -14814,6 +14891,33 @@
         "title": "RowModel",
         "type": "object"
       },
+      "RowsResponse": {
+        "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/SyncRowSampleModel"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "title": "RowsResponse",
+        "type": "object"
+      },
       "SchedulerResumeOut": {
         "properties": {
           "ok": {
@@ -16945,6 +17049,53 @@
           "mode"
         ],
         "title": "SyncPolicyPut",
+        "type": "object"
+      },
+      "SyncRowSampleModel": {
+        "description": "One sync-eligible row for digest diff (CSSTATUS-09).",
+        "properties": {
+          "canonical_hex": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Canonical Hex",
+            "type": "string"
+          },
+          "origin_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Device Id"
+          },
+          "pk": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Pk",
+            "type": "array"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "pk",
+          "canonical_hex"
+        ],
+        "title": "SyncRowSampleModel",
         "type": "object"
       },
       "SyncRunIn": {
@@ -32561,6 +32712,112 @@
           }
         },
         "summary": "Push",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/sync/rows": {
+      "get": {
+        "description": "Paginated sync-eligible canonical rows for post-sync diff (CSSTATUS-09).",
+        "operationId": "rows_api_v1_sync_rows_get",
+        "parameters": [
+          {
+            "description": "the calling spoke",
+            "in": "query",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "description": "the calling spoke",
+              "minLength": 1,
+              "title": "Machine Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "sync-set table name",
+            "in": "query",
+            "name": "table",
+            "required": true,
+            "schema": {
+              "description": "sync-set table name",
+              "minLength": 1,
+              "title": "Table",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "maximum": 5000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "protocol features the caller understands",
+            "in": "query",
+            "name": "capabilities",
+            "required": false,
+            "schema": {
+              "description": "protocol features the caller understands",
+              "items": {
+                "type": "string"
+              },
+              "title": "Capabilities",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RowsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "rows refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "rows refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
+          }
+        },
+        "summary": "Rows",
         "tags": [
           "sync"
         ]
