@@ -127,7 +127,26 @@ def test_identity_backlog_counts_held_inferred_tracks(tmp_path: Path) -> None:
         response = client.get("/api/v1/cloudsync/identity-backlog")
 
     assert response.status_code == 200
-    assert response.json() == {"unsyncable_inferred": 2}
+    assert response.json() == {"unsyncable_inferred": 0, "hash_pending": 2}
+
+
+def test_status_reports_hash_pending_and_quarantined_counts(tmp_path: Path) -> None:
+    db_path = tmp_path / "state" / "state.db"
+    conn = state_db.open_rw(db_path, apply_schema=True)
+    try:
+        _insert_identified_track(conn, "trk-held-a", title="a", updated_at=_T0, origin=_DEV_A)
+        _insert_identified_track(conn, "trk-held-b", title="b", updated_at=_T0, origin=_DEV_A)
+        conn.commit()
+    finally:
+        conn.close()
+
+    with _client(tmp_path) as client:
+        response = client.get("/api/v1/cloudsync/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["hash_pending"] == 2
+    assert body["quarantined"] == 0
 
 
 def test_identity_backlog_is_zero_on_a_fully_identified_library(tmp_path: Path) -> None:
@@ -150,4 +169,4 @@ def test_identity_backlog_is_zero_on_a_fully_identified_library(tmp_path: Path) 
         response = client.get("/api/v1/cloudsync/identity-backlog")
 
     assert response.status_code == 200
-    assert response.json() == {"unsyncable_inferred": 0}
+    assert response.json() == {"unsyncable_inferred": 0, "hash_pending": 0}

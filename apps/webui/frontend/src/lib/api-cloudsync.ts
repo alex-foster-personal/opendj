@@ -127,19 +127,22 @@ export interface CloudSyncStatus {
 	last_pull_at: string | null;
 	last_result: { status: CloudSyncResultStatus; message: string } | null;
 	rows_pending: number | null;
+	/** Live tracks offered as hash_pending while awaiting content_hash (ADR-0047). */
+	hash_pending: number | null;
+	/** Rows held out of the sync set for stamp or identity-dup reasons. */
+	quarantined: number | null;
 	endpoint: string | null;
 	recent_results: CloudSyncRecentResult[];
 }
 
 /**
- * The identity-hold sync backlog: live `tracks` rows excluded from every
- * digest for lacking both a content hash and a normalizable ISRC. Not a
- * sync bug -- each row needs `backfill_content_hash --live` once its audio
- * is reachable, or an ISRC tag. See apps/sync_hub/sync_set.py::
- * count_unsyncable_inferred and CLOUDSYNC-16.
+ * Identity backlog counters from GET /api/v1/cloudsync/identity-backlog.
+ * `hash_pending` rows travel to the hub and sync; `unsyncable_inferred` is
+ * identity-dup losers only (CLOUDSYNC-16, ADR-0047).
  */
 export interface CloudSyncIdentityBacklog {
 	unsyncable_inferred: number;
+	hash_pending: number;
 }
 
 // ----------------------------------------------------------- local path table
