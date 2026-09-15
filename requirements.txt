@@ -80,8 +80,15 @@ llvmlite==0.47.0
 # `librosa+madmom` unless `MDT_BENCH_NONSHIPPABLE=1` is set, and no pyproject
 # extra or shipped payload declares madmom at all (NOTICE, docs/operator-setup.md).
 madmom @ git+https://github.com/CPJKU/madmom@main
-# madmom uses pkg_resources which was removed from setuptools>=81.
-setuptools<85
+# madmom uses pkg_resources which was removed from setuptools>=81. Renovate's
+# security bump to <85 (PR #2736, CVE-2026-59890) broke this: verified
+# empirically that setuptools 84 has no pkg_resources module, so the
+# --no-build-isolation madmom install would fail. That CVE is a MANIFEST.in
+# Unicode-normalization exclusion bypass in `sdist` builds on macOS -- this
+# repo never publishes an sdist with MANIFEST.in secret exclusions, so the cap
+# stays below the removal line instead. See
+# tests/test_dependency_contract.py::test_setuptools_cap_still_excludes_the_pkg_resources_removal.
+setuptools<81
 PyYAML>=6.0
 
 # Phase 15 -- open-dj spec validation + canonicalisation.
