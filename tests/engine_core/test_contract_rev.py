@@ -38,10 +38,7 @@ cfg = EngineConfig(data_dir=Path(__import__("os").environ["MDT_DATA_DIR"]))
 first = create_app(cfg)
 second = create_app(cfg)
 
-# SEC-01 (#2689): this runs in a bare subprocess (see the module docstring),
-# so it never imports tests/conftest.py's TestClient default -- base_url
-# must be explicit here or the daemon host allowlist 403s every request.
-with TestClient(first, base_url="http://127.0.0.1") as client:
+with TestClient(first) as client:
     health = client.get(HEALTH_PATH)
     events_in_schema = HEALTH_PATH in client.get("/openapi.json").json()["paths"]
 
