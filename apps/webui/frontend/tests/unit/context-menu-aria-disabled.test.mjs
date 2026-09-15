@@ -114,7 +114,12 @@ test('source: onclick calls activate and Enter/Space on aria-disabled are swallo
 
 test('source: arrow keys walk all menuitems without skipping aria-disabled', () => {
 	const source = readFileSync(MENU_PATH, 'utf8');
-	assert.match(source, /querySelectorAll<HTMLElement>\('\[role="menuitem"\]'\)/);
+	// #2416 (08b04b55e) added checkable rows; the walk must cover both roles
+	// and still carry no aria-disabled / :disabled exclusion (asserted below).
+	assert.match(
+		source,
+		/querySelectorAll<HTMLElement>\('\[role="menuitem"\], \[role="menuitemcheckbox"\]'\)/
+	);
 	assert.equal(source.includes(':not([aria-disabled])'), false);
 	assert.equal(source.includes(':not(:disabled)'), false);
 	assert.match(source, /event\.key === 'ArrowDown'/);
