@@ -125,6 +125,48 @@
  * `rekordbox-writeback-disabled.spec.ts` is the only other spec with a
  * catch-all `**\/api/v1/**` route, and it fulfils permissively with no
  * equivalent assertion, so it is not a latent flake of this shape).
+ *
+ * STALE-DECLARATION REGRESSION, fixed Tue 15 Sep 2026 (measured red on
+ * trunk PRs #2804 and #2840, neither of which touches this file): the CI
+ * log listed eight requests this file did not yet answer -- GET
+ * /api/v1/playlists/deleted, /api/v1/usb/volumes (twice), /api/v1/ingest/pending,
+ * /api/v1/tracks/{sid}/rb-meta (twice), /api/v1/rescue/snapshots,
+ * /api/v1/perf-tier, and POST /api/v1/performance/telemetry/client-samples.
+ * Re-running the same `grep -rn 'defer(' apps/webui/frontend/src` the Tue 8
+ * Sep audit above used now returns twelve call sites, not seven: two new
+ * deferred families reach the network and were never declared here --
+ * `perf-tier:fetch` (app-init.ts) and `client-samples:first`
+ * (client-performance-samples.ts), both added Sat 12 Sep 2026 (687db7217 /
+ * 9f4631536), after that audit. A third new family, `machine-pressure:first`
+ * (machine-pressure.ts), already had its request covered by the existing
+ * /api/v1/performance/telemetry/pressure mock above, so it never showed as
+ * unexpected. The other four requests are not boot-scheduler deferrals at
+ * all -- they are ordinary component-mount fetches that land inside the
+ * generous PAST_BOOT_BURST_MS window: LibraryNav's sidebar starts USB
+ * polling on mount (usb-tracker.svelte.ts, 5s interval, hence the pair),
+ * RecentlyDeletedFolder's tree constructor fetches once eagerly
+ * (tree-recently-deleted.svelte.ts -> playlist-deleted.ts),
+ * LibraryJobsChrome fetches ingest-pending once on mount alongside the
+ * already-declared library-jobs call (ingest-pending.svelte.ts), and the
+ * /performance route's own onMount calls runPerformanceRescueAutoRestore
+ * (rescue-restore.svelte.ts), which lists rescue snapshots once and stops
+ * there when the list is empty.
+ * The doubled rb-meta request is NOT a duplicate-fetch defect: scrutinized
+ * because the point of this spec is exactly "no artwork request for this
+ * track", so a spurious second metadata fetch would have been worth
+ * failing on. BrowserPanel's `_fetchRbMetaWithRetry` retries once on any
+ * non-404 failure (BrowserPanel.svelte, `_hydrateRowMeta`); with the route
+ * previously unmocked, the catch-all's `route.abort()` looked exactly like
+ * a transient network failure, so the retry fired for real. Also confirmed
+ * harmless to the assertions this spec makes: the artwork cell renders off
+ * `row.artwork_available` from the /tracks list response (BrowserPanel.svelte
+ * line ~1974), never off rb-meta's own artwork_available field, so mocking
+ * rb-meta does not touch the artwork_available: null contract under test.
+ * Declaring the route below with a normal 200 response leaves exactly one
+ * rb-meta request in a manual run; the historical two-request log line
+ * above is an artifact of this file having no mock, not of the app. All
+ * eight requests are declared below as ordinary KNOWN requests, same
+ * contract as every other declaration in this file.
  */
 import { expect, test } from '@playwright/test';
 import { BOOT_IDLE_TIMEOUT_MS, BOOT_QUIET_MS } from '../../src/lib/rb/boot-scheduler';
@@ -337,6 +379,82 @@ test('null artwork availability identifies an unavailable reader without request
 	await page.route('**/api/v1/analysis/source', (route) =>
 		route.fulfill({
 			json: { lanes: { beatgrid: { default: 'rbx', toggle: 'unset', effective: 'rbx' } } }
+		})
+	);
+
+	// perf-tier-client.ts, deferred directly in app-init.ts's
+	// `startAppInstruments` (`scheduler.defer('perf-tier:fetch', ...)`, added
+	// 687db7217, Sat 12 Sep 2026) rather than from its own module. Answered
+	// 'STANDARD'/'auto' so it never overrides the caps the test does not care
+	// about.
+	await page.route('**/api/v1/perf-tier', (route) =>
+		route.fulfill({
+			json: { tier: 'STANDARD', source: 'auto', auto_tier: 'STANDARD', override: 'auto' }
+		})
+	);
+	// client-performance-samples.ts's `startClientPerformanceSampling`, also
+	// deferred from app-init.ts (`scheduler.defer('client-samples:first', ...)`,
+	// same 9f4631536 introduction, Sat 12 Sep 2026). The module never reads the
+	// response body, so an empty 204 is the honest minimal answer.
+	await page.route('**/api/v1/performance/telemetry/client-samples', (route) =>
+		route.fulfill({ status: 204, json: {} })
+	);
+	// RecentlyDeletedFolder.svelte constructs a TreeRecentlyDeleted on mount,
+	// which fetches this eagerly in its constructor
+	// (tree-recently-deleted.svelte.ts -> playlist-deleted.ts, LIBMX-03). The
+	// wire type is a bare array (DeletedPlaylistOut[]), not an envelope.
+	await page.route('**/api/v1/playlists/deleted', (route) => route.fulfill({ json: [] }));
+	// LibraryNav.svelte starts USB polling on mount (usb-tracker.svelte.ts
+	// `startUsbWatch`, LIBMX-13): one immediate fetch plus a 5s interval, which
+	// is why this lands twice inside PAST_BOOT_BURST_MS.
+	await page.route('**/api/v1/usb/volumes', (route) =>
+		route.fulfill({ json: { volumes: [], scanned_at: 0 } })
+	);
+	// LibraryJobsChrome.svelte also starts the ingest-pending watch on mount,
+	// alongside the already-declared library-jobs call above
+	// (ingest-pending.svelte.ts `startIngestPendingWatch`, LIBMX-13). An empty
+	// batches array means the store never arms its own follow-up poll.
+	await page.route('**/api/v1/ingest/pending', (route) => route.fulfill({ json: { batches: [] } }));
+	// The /performance route's own onMount calls runPerformanceRescueAutoRestore
+	// (rescue-restore.svelte.ts, #2704). An empty snapshots list makes it
+	// return immediately with no follow-up /rescue/restore call.
+	await page.route('**/api/v1/rescue/snapshots', (route) =>
+		route.fulfill({ json: { snapshots: [] } })
+	);
+	// BrowserPanel's IntersectionObserver-gated per-row hydration
+	// (`_hydrateRowMeta`, BrowserPanel.svelte) fetches this for every visible
+	// row, including the one row this spec renders. Declared as a real 200 so
+	// `_fetchRbMetaWithRetry`'s one-retry-on-failure never fires (see the
+	// STALE-DECLARATION note above for why the unmocked route logged it
+	// twice). This payload's own artwork_available is unrelated to the
+	// artwork_available: null under test above, which the row already carries
+	// from the /tracks list response.
+	await page.route(/\/api\/v1\/tracks\/[^/]+\/rb-meta$/, (route) =>
+		route.fulfill({
+			json: {
+				stable_id: SID,
+				vendor: 'local',
+				vendor_id: null,
+				file_exists: true,
+				is_streaming: false,
+				folder_path: TRACK.file_path,
+				genre: null,
+				artwork_available: null,
+				artwork_status: 'no_image_path',
+				analysis_available: false,
+				beatgrid_issue: null,
+				cue_count: 0,
+				quality: {
+					venue: null,
+					label: 'Unknown',
+					rank: null,
+					of: 6,
+					blurb: 'not measured in the e2e gate',
+					kbps: null,
+					container: '.mp3',
+					lossless: false
+				}
+			}
 		})
 	);
 

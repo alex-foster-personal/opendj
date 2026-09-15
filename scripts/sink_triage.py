@@ -5,9 +5,10 @@ Issue #2673. Reads JSONL deltas from nucbox and remote Mac hosts, groups by a
 stable fingerprint (source_site + message class with numbers, ids and paths
 masked), and opens or updates GitHub issues when thresholds fire.
 
-Build/CI rows (``kind=build`` or ``source_site`` starting with ``build:``) stay
-in the JSONL for grepping (ADR-0017) but are excluded from flood filing
-(ADR-0047 / issue #2846).
+Triage scope is runtime engine/client JSONL errors only. Build/CI rows
+(``kind=build`` or ``source_site`` starting with ``build:``) stay in the JSONL
+for grepping (ADR-0017 / OBS-01) but are excluded from flood filing (ADR-0047;
+issues #2845, #2846).
 
 MINI-PRD
     R1 Fixture dry-run ........................................... done + regression
@@ -138,15 +139,6 @@ def utc_now_iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _triage_runtime_record(record: SinkRecord) -> bool:
-    kind = record.raw.get("kind")
-    if isinstance(kind, str) and kind.strip().lower() == "build":
-        return False
-    if record.source_site.strip().lower().startswith("build:"):
-        return False
-    return True
-
-
 def triage_fingerprint(source_site: str, message: str) -> str:
     site = source_site.strip().lower()
     klass = classify_message(message)
@@ -157,6 +149,22 @@ def triage_fingerprint(source_site: str, message: str) -> str:
 
 def marker_for(fingerprint: str) -> str:
     return f"{MARKER_PREFIX} {fingerprint} -->"
+
+
+def _should_triage_record(raw: dict[str, Any]) -> bool:
+    """Return True for runtime rows; skip OBS-01 kind=build / build:* CI telemetry."""
+    kind = str(raw.get("kind") or "").strip().lower()
+    if kind == "build":
+        return False
+    source_site = str(raw.get("source_site") or "").strip().lower()
+    if source_site.startswith("build:"):
+        return False
+    return True
+
+
+def _triage_runtime_record(record: SinkRecord) -> bool:
+    """Filter records_in paths that bypass parse_record (tests, direct injection)."""
+    return _should_triage_record(record.raw)
 
 
 def parse_record(line: str, host_label: str) -> SinkRecord | None:
@@ -172,6 +180,8 @@ def parse_record(line: str, host_label: str) -> SinkRecord | None:
     message = str(raw.get("message") or "").strip()
     source_site = str(raw.get("source_site") or "").strip()
     if not message or not source_site:
+        return None
+    if not _should_triage_record(raw):
         return None
     return SinkRecord(
         host=str(raw.get("host") or host_label),

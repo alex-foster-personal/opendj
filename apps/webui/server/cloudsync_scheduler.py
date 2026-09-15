@@ -31,6 +31,7 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from apps.sync_hub import status as sync_status
+from apps.sync_hub.scheduler import next_delay_s
 
 from .routes.feedback import _now
 from .routes.feedback_sync import (
@@ -47,6 +48,10 @@ log = logging.getLogger(__name__)
 #: CFG. How often a configured engine syncs. A pin dropped on one machine
 #: shows on another within about two ticks (one push, one pull).
 CLOUDSYNC_INTERVAL_S: float = 60.0
+
+#: While wire versions differ, retries cannot succeed until a binary upgrade.
+WIRE_MISMATCH_BASE_S: float = 300.0
+WIRE_MISMATCH_MAX_BACKOFF_S: float = 3600.0
 
 #: The only values the switch admits; anything else is a misconfiguration.
 _SWITCH_VALUES: tuple[str, ...] = ("", "0", "1")
@@ -74,6 +79,7 @@ class CloudSyncScheduler:
         self._last_ok_at: str | None = None
         self._last_error: str | None = None
         self._last_error_at: str | None = None
+        self._wire_mismatch_failures = 0
 
     @property
     def running(self) -> bool:
@@ -150,6 +156,7 @@ class CloudSyncScheduler:
             self._journal_error(f"scheduled feedback pin sync crashed: {message}")
             return None
         self._last_ok_at = _now()
+        self._wire_mismatch_failures = 0
         return result
 
     def stop(self) -> None:
@@ -162,7 +169,23 @@ class CloudSyncScheduler:
     def _loop(self) -> None:
         while not self._stop.is_set():
             self.run_once()
-            self._stop.wait(self._interval_s)
+            delay_s = self._next_wait_s()
+            self._stop.wait(delay_s)
+
+    def _next_wait_s(self) -> float:
+        try:
+            current = sync_status.read_status(self._data_dir, env=self._env)
+        except sync_status.CloudSyncStatusError:
+            return self._interval_s
+        if current.update_required is None:
+            self._wire_mismatch_failures = 0
+            return self._interval_s
+        self._wire_mismatch_failures += 1
+        return next_delay_s(
+            WIRE_MISMATCH_BASE_S,
+            self._wire_mismatch_failures - 1,
+            WIRE_MISMATCH_MAX_BACKOFF_S,
+        )
 
     def _refuse_to_start(self, exc: Exception) -> None:
         code = getattr(exc, "code", type(exc).__name__)
@@ -190,4 +213,9 @@ class CloudSyncScheduler:
             log.exception("could not journal the CloudSync scheduler failure: %s", message)
 
 
-__all__ = ["CLOUDSYNC_INTERVAL_S", "CloudSyncScheduler"]
+__all__ = [
+    "CLOUDSYNC_INTERVAL_S",
+    "CloudSyncScheduler",
+    "WIRE_MISMATCH_BASE_S",
+    "WIRE_MISMATCH_MAX_BACKOFF_S",
+]

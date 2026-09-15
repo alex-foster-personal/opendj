@@ -1,4 +1,4 @@
-// requirement: ADMIN-01
+// requirement: ADMIN-03
 import { expect, test, type Page } from '@playwright/test';
 
 async function gotoShellReady(page: Page, path: string): Promise<void> {

@@ -19,6 +19,9 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from apps.opendj_cli import EXIT_FAILED
+from apps.webui.server.rb_vendor_pkg.own_lane_store import state_conn_ro
+
 KEY_SEGMENTS_VERB = "key-segments"
 
 _USAGE = (
@@ -43,6 +46,38 @@ def run(
 
 
 _RBX_SOURCE_REASON = "key lane source is rekordbox, not own"
+
+
+def _track_exists(stable_id: str, state_db: Path | None) -> bool:
+    conn = state_conn_ro(state_db)
+    if conn is None:
+        return False
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM tracks WHERE stable_id = ? AND deleted_at IS NULL",
+            (stable_id,),
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
+def _not_found(stable_id: str, *, as_json: bool) -> int:
+    message = f"track not found: {stable_id}"
+    if as_json:
+        print(
+            json.dumps(
+                {
+                    "error": {"code": "not_found", "message": message},
+                    "exit_code": EXIT_FAILED,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    else:
+        print(f"opendj: {message}", file=sys.stderr)
+    return EXIT_FAILED
 
 
 def _key_segments(
@@ -71,6 +106,8 @@ def _key_segments(
     if stable_id is None:
         print(_USAGE, file=sys.stderr)
         return 1
+    if not _track_exists(stable_id, state_db):
+        return _not_found(stable_id, as_json=as_json)
     # Lazy import: this CLI's other heads never touch the analysis package,
     # and importing it eagerly would pull librosa/numpy into every deck
     # command's startup path for a head most invocations never take.

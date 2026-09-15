@@ -10,6 +10,8 @@ Regression one-liners:
     records a decision then broken
   - if confirm_cue_loss: true does not let the merge proceed as before then
     broken
+
+[if] dedup apply would discard survivor-lacking cue data [then] block without confirm_cue_loss, [else stop].
 """
 from __future__ import annotations
 

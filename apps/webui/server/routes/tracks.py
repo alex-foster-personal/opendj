@@ -263,7 +263,8 @@ def list_tracks(
         show_deleted=show_deleted,
     )
     page = backend.list_tracks(flt)
-    rows = rb_vendor.build_track_rows(page.items)
+    jobs_store = getattr(request.app.state, "jobs_store", None)
+    rows = rb_vendor.build_track_rows(page.items, jobs_store=jobs_store)
     stable_ids = [t.stable_id for t in page.items]
     state_db_path = Path(request.app.state.state_db_path)
     data_dir = _data_dir_from_state_db(state_db_path)

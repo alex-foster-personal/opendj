@@ -8,9 +8,12 @@ import from here directly.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+
 from apps.shared.scan_mass_missing import guard_scan_count
+from apps.shared.state.locations import ID_BIND_BATCH
 from apps.shared.state.schema import AVAILABILITY_STATES
 
 
@@ -112,6 +115,31 @@ def guard_round_present_drop(
     )
 
 
+def _load_existing_availability(
+    conn: sqlite3.Connection,
+    existing_scope_stable_ids: Sequence[str] | None,
+) -> dict[str, tuple[str, str | None]]:
+    if existing_scope_stable_ids is None:
+        return {
+            stable_id: (state, checked_path)
+            for stable_id, state, checked_path in conn.execute(
+                "SELECT stable_id, state, checked_path FROM track_availability"
+            )
+        }
+    existing: dict[str, tuple[str, str | None]] = {}
+    scope = list(existing_scope_stable_ids)
+    for start in range(0, len(scope), ID_BIND_BATCH):
+        chunk = scope[start : start + ID_BIND_BATCH]
+        placeholders = ",".join("?" * len(chunk))
+        for stable_id, state, checked_path in conn.execute(
+            f"SELECT stable_id, state, checked_path FROM track_availability "
+            f"WHERE stable_id IN ({placeholders})",
+            chunk,
+        ):
+            existing[stable_id] = (state, checked_path)
+    return existing
+
+
 def upsert_availability_rows(
     conn: sqlite3.Connection,
     rows: list[AvailabilityRow],
@@ -120,6 +148,7 @@ def upsert_availability_rows(
     allow_mass_missing: bool = False,
     apply_mass_missing_guard: bool = True,
     always_refresh_checked_at: bool = False,
+    existing_scope_stable_ids: Sequence[str] | None = None,
 ) -> AvailabilityWriteReport:
     """Upsert ``rows`` into ``track_availability``. Idempotent.
 
@@ -142,12 +171,7 @@ def upsert_availability_rows(
         guard_present_drop(conn, rows, allow_mass_missing=allow_mass_missing)
     stamp = now or datetime.now(UTC).isoformat()
     report = AvailabilityWriteReport()
-    existing: dict[str, tuple[str, str | None]] = {
-        stable_id: (state, checked_path)
-        for stable_id, state, checked_path in conn.execute(
-            "SELECT stable_id, state, checked_path FROM track_availability"
-        )
-    }
+    existing = _load_existing_availability(conn, existing_scope_stable_ids)
     for row in rows:
         if row.state not in AVAILABILITY_STATES:
             raise ValueError(

@@ -76,9 +76,12 @@ def test_fetch_command_uses_the_programmatic_fetch_path(
         def __init__(self, data_dir: Path) -> None:
             observed["data_dir"] = data_dir
 
-        def fetch_stable_id(self, stable_id: str) -> Lyrics:
+        def fetch_or_resolve_stable_id(self, stable_id: str):
+            from apps.lyrics.service import FetchResult
+
             observed["stable_id"] = stable_id
-            return Lyrics(stable_id, "lrclib", (LyricLine(1000, "One line"),))
+            lyrics = Lyrics(stable_id, "lrclib", (LyricLine(1000, "One line"),))
+            return FetchResult(outcome="cached", lyrics=lyrics)
 
     monkeypatch.setattr(cli, "LyricsService", FakeService)
     assert cli.main(["fetch", "track-123", "--data-dir", str(tmp_path)]) == 0

@@ -39,11 +39,33 @@ def test_the_shell_inspects_the_lock_before_spawn() -> None:
 
 @pytest.mark.requirement("INSTALL-14")
 def test_exit_requested_shuts_down_the_engine() -> None:
-    """[if] main.rs skips shutdown on exit events [then] the child process leaks, [else stop]."""
+    """[if] main.rs skips shutdown on final Exit [then] the child process leaks, [else stop]."""
     main_rs = MAIN_RS.read_text(encoding="utf-8")
     assert "RunEvent::ExitRequested" in main_rs
     assert "RunEvent::Exit" in main_rs
     assert "supervisor.shutdown()" in main_rs
+
+
+@pytest.mark.requirement("INSTALL-21")
+def test_exit_requested_prevents_exit_without_shutdown() -> None:
+    """[if] ExitRequested calls shutdown [then] Cmd-Q kills audio before confirm, [else stop]."""
+    main_rs = MAIN_RS.read_text(encoding="utf-8")
+    assert "prevent_exit" in main_rs
+    exit_requested_idx = main_rs.index("RunEvent::ExitRequested { api, .. }")
+    exit_idx = main_rs.index("RunEvent::Exit =>")
+    shutdown_idx = main_rs.rindex("supervisor.shutdown()")
+    assert exit_requested_idx < exit_idx
+    assert shutdown_idx > exit_idx
+    before_exit = main_rs[exit_requested_idx:exit_idx]
+    assert "supervisor.shutdown()" not in before_exit
+
+
+@pytest.mark.requirement("INSTALL-21")
+def test_close_requested_delegates_to_webview_hook() -> None:
+    """[if] red-window close bypasses the quit hook [then] quit is immediate, [else stop]."""
+    main_rs = MAIN_RS.read_text(encoding="utf-8")
+    assert "CloseRequested" in main_rs
+    assert "__OPENDJ_requestQuit" in main_rs
 
 
 @pytest.mark.requirement("INSTALL-14")

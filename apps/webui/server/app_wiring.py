@@ -89,6 +89,7 @@ from .routes import ingest_pending as ingest_pending_routes
 from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
 from .routes import library_jobs as library_jobs_routes
+from .routes import lifecycle as lifecycle_routes
 from .routes import lyrics_search as lyrics_search_routes
 from .routes import lyrics_words as lyrics_words_routes
 from .routes import mytag as mytag_routes
@@ -116,6 +117,7 @@ from .routes import relocate as relocate_routes
 from .routes import search as search_routes
 from .routes import settings as settings_routes
 from .routes import settings_ai as settings_ai_routes
+from .routes import shell as shell_routes
 from .routes import share as share_routes
 from .routes import smartlists as smartlists_routes
 from .routes import spotify as spotify_routes
@@ -339,6 +341,33 @@ def _startup_stem_index_refresh(source, data_dir: Path) -> None:
         source.refresh_index(Path(data_dir), force=True)
 
 
+def _install_armed_stem_hydration(
+    app: FastAPI,
+    *,
+    data_dir: Path,
+    source,
+    start_refresh_thread: bool = True,
+) -> None:
+    from apps.cloud.stem_source import DirectR2Source
+
+    app.state.stem_hydration_source = source
+    app.state.stem_hydration_data_dir = data_dir
+    app.state.stem_hydration_unarmed_reason = None
+    app.state.stem_hydration_unarmed_kind = None
+    app.state.stem_hydration_cfg = None
+    app.state.stem_hydration_s3 = None
+    if isinstance(source, DirectR2Source):
+        app.state.stem_hydration_cfg = source.cfg
+        app.state.stem_hydration_s3 = source.s3
+    if start_refresh_thread:
+        threading.Thread(
+            target=_startup_stem_index_refresh,
+            args=(source, data_dir),
+            name="opendj-stem-index-startup-refresh",
+            daemon=True,
+        ).start()
+
+
 def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None:
     """Wire on-demand stem hydration onto ``app.state`` (ADR-0024 / ADR-0025),
     or leave it unset.
@@ -354,11 +383,12 @@ def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None
     ``stem_hydration_unarmed_reason`` is set and stems misses answer 502
     ``STEM_HYDRATION_NOT_ARMED``.
     """
-    from apps.cloud.stem_source import DirectR2Source, arm_stem_hydration_source
+    from apps.cloud.stem_source import arm_stem_hydration_source
 
     app.state.stem_hydration_source = None
     app.state.stem_hydration_data_dir = None
     app.state.stem_hydration_unarmed_reason = None
+    app.state.stem_hydration_unarmed_kind = None
     # Legacy test injection points; production uses stem_hydration_source.
     app.state.stem_hydration_cfg = None
     app.state.stem_hydration_s3 = None
@@ -368,22 +398,12 @@ def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None
     armed = arm_stem_hydration_source(data_dir)
     if armed.unarmed_reason is not None:
         app.state.stem_hydration_unarmed_reason = armed.unarmed_reason
+        app.state.stem_hydration_unarmed_kind = armed.unarmed_kind
         app.state.stem_hydration_data_dir = data_dir
         return
-    source = armed.source
-    if source is None:
+    if armed.source is None:
         return
-    app.state.stem_hydration_source = source
-    app.state.stem_hydration_data_dir = data_dir
-    if isinstance(source, DirectR2Source):
-        app.state.stem_hydration_cfg = source.cfg
-        app.state.stem_hydration_s3 = source.s3
-    threading.Thread(
-        target=_startup_stem_index_refresh,
-        args=(source, data_dir),
-        name="opendj-stem-index-startup-refresh",
-        daemon=True,
-    ).start()
+    _install_armed_stem_hydration(app, data_dir=data_dir, source=armed.source)
 
 
 def _install_exception_handlers(app: FastAPI) -> None:
@@ -513,6 +533,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         ingest_upload_routes.router,
         ingest_pending_routes.router,
         library_routes.router,
+        lifecycle_routes.router,
         lyrics_search_routes.router,
         lyrics_words_routes.router,
         health_routes.router,
@@ -521,6 +542,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         settings_ai_routes.router,
         state_routes.router,
         commands_routes.router,
+        shell_routes.router,
         ui_prefs_routes.router,
         cloudsync_routes.router,
         cloudsync_ops_routes.router,
