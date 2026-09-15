@@ -225,6 +225,8 @@ jobs:
           THRESHOLD_IN: ${{ inputs.threshold }}
         run: |
           set -euo pipefail
+          echo "TEST-FORCE-FAIL for issue #2906 - proving window-failure-report fires" >&2
+          exit 1
           threshold="${THRESHOLD_IN:-$DEFAULT_THRESHOLD}"
           python3 -m scripts.periodic_window decide \
             --repo "$REPO" \
