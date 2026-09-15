@@ -26,6 +26,7 @@ from apps.webui.port_config import (
     RESERVED_FIXED_PORTS,
     PortConfigError,
     WebuiPorts,
+    WorktreeUnavailableError,
     _allocate_pair,
     _lane_pool_starts,
     assert_source_tree_matches_worktree,
@@ -35,6 +36,7 @@ from apps.webui.port_config import (
     main,
     release_ports,
     resolve_ports,
+    show_ports,
 )
 
 
@@ -682,6 +684,36 @@ def test_guard_is_inapplicable_outside_any_git_worktree(
     monkeypatch.chdir(outside)
 
     assert assert_source_tree_matches_worktree() is None
+
+
+def test_show_ports_names_a_missing_worktree_instead_of_crashing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An installed build has no Git worktree; show_ports must refuse loudly, not
+    let ``git``'s subprocess.CalledProcessError escape uncaught (issue #2786)."""
+    outside = tmp_path / "not-a-repo"
+    outside.mkdir()
+    monkeypatch.chdir(outside)
+
+    with pytest.raises(WorktreeUnavailableError) as exc_info:
+        show_ports()
+    assert isinstance(exc_info.value, PortConfigError)
+    assert "not running inside a Git worktree" in str(exc_info.value)
+
+
+def test_show_ports_names_a_missing_git_binary_instead_of_crashing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A packaged build may ship with no ``git`` executable at all; that must also
+    surface as WorktreeUnavailableError, not a bare FileNotFoundError."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
+    (tmp_path / "empty-bin").mkdir()
+
+    with pytest.raises(WorktreeUnavailableError):
+        show_ports()
 
 
 pytestmark = pytest.mark.rb_parity
