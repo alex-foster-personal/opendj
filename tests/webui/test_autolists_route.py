@@ -140,6 +140,51 @@ def test_query_house_returns_page(client: TestClient) -> None:
     assert body["tracks"][0]["stable_id"] == "al-001"
 
 
+def test_query_non_numeric_rating_422(client: TestClient) -> None:
+    """Issue #2913: non-numeric rating bucket id returns 422, not 500."""
+    res = client.post(
+        "/api/v1/autolists/query",
+        json={
+            "limit": 1,
+            "offset": 0,
+            "selection": {"genre": [], "rating": ["advtest"], "bpm": []},
+        },
+    )
+    assert res.status_code == 422
+    body = res.text.lower()
+    assert "rating" in body or "selection" in body
+    detail = res.json()["detail"]
+    assert detail["code"] == "AUTOLIST_SELECTION_INVALID"
+    assert detail["field"] == "selection.rating"
+
+
+def test_query_valid_numeric_rating_200(client: TestClient) -> None:
+    """Issue #2913: valid numeric rating bucket id still returns 200."""
+    res = client.post(
+        "/api/v1/autolists/query",
+        json={
+            "selection": {"genre": [], "rating": ["4"], "bpm": []},
+        },
+    )
+    assert res.status_code == 200
+
+
+def test_query_non_numeric_bpm_422(client: TestClient) -> None:
+    """Issue #2913: non-numeric bpm bucket id returns 422, not 500."""
+    res = client.post(
+        "/api/v1/autolists/query",
+        json={
+            "selection": {"genre": [], "rating": [], "bpm": ["advtest"]},
+        },
+    )
+    assert res.status_code == 422
+    body = res.text.lower()
+    assert "bpm" in body or "selection" in body
+    detail = res.json()["detail"]
+    assert detail["code"] == "AUTOLIST_SELECTION_INVALID"
+    assert detail["field"] == "selection.bpm"
+
+
 def test_index_compact_keys(client: TestClient) -> None:
     res = client.get("/api/v1/autolists/index")
     assert res.status_code == 200
