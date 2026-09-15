@@ -1,8 +1,13 @@
 """Stdio MCP server for installed Open DJ (AGENT-11).
 
-Six tools over lock-file HTTP: ``status``, ``app_state``, ``command``,
-``library``, ``ui_url``, and ``open_route``. Safety rails live in
-:mod:`mcp_safety`.
+Eight tools over lock-file HTTP: ``status``, ``app_state``, ``command``,
+``library``, ``ui_url``, ``open_route``, ``update_check``, and
+``update_apply``. Safety rails live in :mod:`mcp_safety`.
+
+The two update tools are the agent-native half of the updater (AGENT-13,
+issue #2942): the same ``check_via_engine`` and ``apply_via_engine`` the
+packaged CLI and the module entry point call, so the MCP server cannot
+acquire its own idea of what "installed" means.
 """
 
 from __future__ import annotations
@@ -28,10 +33,17 @@ from apps.opendj_cli.client import (
     OrderRejected,
     OrderTimedOut,
 )
+from apps.engine_core.update_channel import (
+    APPLY_TIMEOUT_S,
+    EXIT_APPLIED,
+    apply_via_engine,
+    check_via_engine,
+)
 from apps.opendj_cli.mcp_safety import (
     SafetyRefusal,
     guard_library_request,
     guard_order,
+    guard_update_apply,
     validate_api_path,
 )
 from apps.opendj_cli.orders import single
@@ -529,6 +541,78 @@ def create_server() -> MCPServer:
         except httpx.TransportError:
             document["reachable"] = False
         return document
+
+    @server.tool(annotations=_READ_ONLY)
+    def update_check() -> dict[str, Any]:
+        """Report what the update channel offers the running app (AGENT-13).
+
+        Read-only: one manifest is read and two versions are compared, and
+        nothing is downloaded or installed. A status an agent cannot act on
+        is an error result, so an outage can never be read as "up to date".
+        """
+        try:
+            origin = _resolve_origin()
+        except EngineNotRunning as error:
+            raise _engine_not_running(error) from error
+        outcome = check_via_engine(origin.base_url)
+        if not outcome.actionable:
+            raise _tool_error(
+                {
+                    "error": outcome.status,
+                    "detail": outcome.detail,
+                    "origin": origin.base_url,
+                    "document": outcome.document,
+                }
+            )
+        return outcome.document
+
+    @server.tool(annotations=_DESTRUCTIVE)
+    def update_apply(timeout_s: float = APPLY_TIMEOUT_S) -> dict[str, Any]:
+        """Install the announced release and wait for the relaunch (AGENT-13).
+
+        Gated like the other destructive calls, because it replaces the
+        installed app. Success is claimed only when the relaunched app
+        reports the announced version AND a build identity that moved.
+        """
+        try:
+            guard_update_apply()
+            origin = _resolve_origin()
+        except SafetyRefusal as error:
+            raise _tool_error(
+                {"error": error.code, "message": str(error), **error.fields}
+            ) from error
+        except EngineNotRunning as error:
+            raise _engine_not_running(error) from error
+        if not timeout_s > 0:
+            raise _tool_error(
+                {
+                    "error": "usage",
+                    "message": f"timeout_s must be greater than zero, got {timeout_s!r}",
+                }
+            )
+        outcome = apply_via_engine(
+            origin.base_url, timeout_s, lock_path=_state.lock_path
+        )
+        if outcome.code != EXIT_APPLIED:
+            raise _tool_error(
+                {
+                    "error": outcome.reason,
+                    "status": outcome.status,
+                    "detail": outcome.detail,
+                    "origin": origin.base_url,
+                    "command_id": outcome.command_id,
+                    "available_version": outcome.advertised_version,
+                    "before": outcome.before,
+                    "after": outcome.after,
+                }
+            )
+        return {
+            "applied": True,
+            "available_version": outcome.advertised_version,
+            "command_id": outcome.command_id,
+            "before": outcome.before,
+            "after": outcome.after,
+        }
 
     return server
 

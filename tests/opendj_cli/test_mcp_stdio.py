@@ -16,7 +16,12 @@ from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.types import CallToolResult
 
-from tests.opendj_cli.conftest import Engine
+from tests.opendj_cli.conftest import Engine, Updater
+
+RUNNING_VERSION = "0.1.0"
+RELEASED_VERSION = "0.1.1"
+RUNNING_SHA = "0d41a28c0000000000000000000000000000beef"
+RELEASED_SHA = "deadbeef0000000000000000000000000000beef"
 
 
 def _tool_payload(result: CallToolResult) -> dict[str, Any]:
@@ -269,7 +274,8 @@ def test_app_state_non_success_is_error(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_tools_list_carries_annotations(engine: Engine) -> None:
-    """[if] tools/list runs [then] every tool carries readOnlyHint, [else stop]."""
+    """[if] tools/list runs [then] every tool carries readOnlyHint, and the
+    calls that change the world carry destructiveHint, [else stop]."""
     engine.page().start()
     params = _stdio_params(engine)
 
@@ -285,9 +291,15 @@ def test_tools_list_carries_annotations(engine: Engine) -> None:
     for tool in tools:
         assert tool.annotations is not None
         assert tool.annotations.read_only_hint is not None
-    destructive = {tool.name: tool.annotations.destructive_hint for tool in tools}
+    by_name = {tool.name: tool.annotations for tool in tools}
+    destructive = {name: annotation.destructive_hint for name, annotation in by_name.items()}
     assert destructive["library"] is True
     assert destructive["command"] is True
+    # AGENT-13: the updater is on this surface too, and apply is destructive.
+    assert destructive["update_apply"] is True
+    assert by_name["update_check"].read_only_hint is True
+    # An unset hint is not a destructive claim; only a True one would be.
+    assert destructive["update_check"] is not True
 
 
 @pytest.mark.requirement("AGENT-11")
@@ -341,13 +353,17 @@ def test_status_stale_lock_port(tmp_path: Any) -> None:
 
 
 @pytest.mark.requirement("AGENT-11")
-def test_home_empty_tmp_dir_is_error_for_four_tools(tmp_path: Any) -> None:
-    """[if] HOME has no engine lock [then] status/command/library/open_route each surface isError True with their error code readable in the text, [else stop].
+def test_home_empty_tmp_dir_is_error_for_every_tool(tmp_path: Any) -> None:
+    """[if] HOME has no engine lock [then] every tool surfaces isError True with
+    its error code readable in the text, [else stop].
 
     Issue #2895 acceptance: drive real stdio, no mocking. HOME points at an
-    empty temp dir so ``resolve_origin`` naturally finds no lock file.
+    empty temp dir so ``resolve_origin`` naturally finds no lock file. The
+    destructive gate is closed explicitly rather than inherited, so ``library``
+    and ``update_apply`` are refused deterministically by the rail whose code
+    the case names, on a machine where nothing has been enabled.
     """
-    env = {**os.environ, "HOME": str(tmp_path)}
+    env = {**os.environ, "HOME": str(tmp_path), "OPENDJ_MCP_ENABLE_DESTRUCTIVE": ""}
     params = StdioServerParameters(
         command=sys.executable,
         args=["-m", "apps.opendj_cli", "mcp"],
@@ -364,6 +380,8 @@ def test_home_empty_tmp_dir_is_error_for_four_tools(tmp_path: Any) -> None:
         ("command", {"verb": "play", "args": ["1"]}, "engine_not_running"),
         ("library", {"method": "FROB", "path": "/x"}, '"error": "usage"'),
         ("open_route", {"route": "/settings"}, "engine_not_running"),
+        ("update_check", {}, "engine_not_running"),
+        ("update_apply", {}, "destructive_blocked"),
     ]
     for tool, arguments, expected_code in cases:
         result = asyncio.run(_call(tool, arguments))
@@ -390,6 +408,132 @@ def test_command_order_failed_is_error(engine: Engine) -> None:
     assert result.is_error is True
     texts = [block.text for block in result.content if block.type == "text"]
     assert any('"error": "order_failed"' in text for text in texts)
+
+
+def _updater_params(
+    updater: Updater, *, env: dict[str, str] | None = None
+) -> StdioServerParameters:
+    return StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "apps.opendj_cli", "--lock", str(updater.lock_path), "mcp"],
+        env=env,
+    )
+
+
+def _call_updater(
+    updater: Updater,
+    tool: str,
+    arguments: dict[str, Any],
+    *,
+    env: dict[str, str] | None = None,
+) -> CallToolResult:
+    params = _updater_params(updater, env=env)
+
+    async def _call() -> CallToolResult:
+        async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
+            return await session.call_tool(tool, arguments)
+
+    return asyncio.run(_call())
+
+
+@pytest.mark.requirement("AGENT-13")
+def test_update_check_reports_the_channel(updater: Updater) -> None:
+    """[if] the channel offers a newer build [then] update_check returns the
+    engine's own check document, [else stop]."""
+    updater.start(
+        app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
+    )
+    result = _call_updater(updater, "update_check", {})
+    assert result.is_error is False
+    payload = _tool_payload(result)
+    assert payload["status"] == "update-available"
+    assert payload["current_version"] == RUNNING_VERSION
+    assert payload["available_version"] == RELEASED_VERSION
+
+
+@pytest.mark.requirement("AGENT-13")
+def test_update_check_is_an_error_when_the_channel_cannot_be_read(
+    updater: Updater, tmp_path: Any
+) -> None:
+    """[if] the channel is not offering anything actionable [then] update_check
+    is an error result naming the status, [else stop]."""
+    updater.start(
+        app_version="0.2.0", git_sha_full=RUNNING_SHA, publish=RUNNING_VERSION
+    )
+    result = _call_updater(updater, "update_check", {})
+    assert result.is_error is True
+    texts = [block.text for block in result.content if block.type == "text"]
+    assert any("ahead-of-channel" in text for text in texts)
+
+
+@pytest.mark.requirement("AGENT-13")
+def test_update_apply_is_gated_like_the_other_destructive_calls(updater: Updater) -> None:
+    """[if] the destructive gate is closed [then] update_apply is an error
+    naming destructive_blocked and posts no order, [else stop]."""
+    updater.start(
+        app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
+    )
+    updater.start_shell(
+        lambda: updater.relaunch(
+            app_version=RELEASED_VERSION, git_sha_full=RELEASED_SHA
+        )
+    )
+    env = {**os.environ, "OPENDJ_MCP_ENABLE_DESTRUCTIVE": ""}
+    result = _call_updater(updater, "update_apply", {}, env=env)
+    assert result.is_error is True
+    texts = [block.text for block in result.content if block.type == "text"]
+    assert any("destructive_blocked" in text for text in texts)
+    assert updater.apply_posts == 0, "a gated call must post nothing"
+    assert updater.shell_claims == 0
+
+
+@pytest.mark.requirement("AGENT-13")
+def test_update_apply_installs_and_reports_both_identities(updater: Updater) -> None:
+    """[if] the gate is open and the channel offers a newer build [then]
+    update_apply returns the before and after identities, [else stop]."""
+    updater.start(
+        app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
+    )
+    updater.start_shell(
+        lambda: updater.relaunch(
+            app_version=RELEASED_VERSION, git_sha_full=RELEASED_SHA
+        )
+    )
+    env = {**os.environ, "OPENDJ_MCP_ENABLE_DESTRUCTIVE": "1"}
+    result = _call_updater(updater, "update_apply", {"timeout_s": 60.0}, env=env)
+    updater.wait_for_shell()
+    assert updater.shell_error is None
+    assert result.is_error is False, result.content
+    payload = _tool_payload(result)
+    assert payload["applied"] is True
+    assert payload["before"]["app_version"] == RUNNING_VERSION
+    assert payload["after"]["app_version"] == RELEASED_VERSION
+
+
+@pytest.mark.requirement("AGENT-13")
+def test_update_apply_is_an_error_when_the_install_does_not_land(updater: Updater) -> None:
+    """[if] the shell reports the install failed [then] update_apply is an error
+    carrying the shell's own error, [else stop]."""
+    updater.start(
+        app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
+    )
+    updater.start_shell(
+        lambda: updater.relaunch(
+            app_version=RELEASED_VERSION, git_sha_full=RELEASED_SHA
+        ),
+        result={
+            "status": "failed",
+            "outcome": "refused",
+            "error": "minisign verify failed",
+        },
+    )
+    env = {**os.environ, "OPENDJ_MCP_ENABLE_DESTRUCTIVE": "1"}
+    result = _call_updater(updater, "update_apply", {"timeout_s": 60.0}, env=env)
+    updater.wait_for_shell()
+    assert result.is_error is True
+    texts = [block.text for block in result.content if block.type == "text"]
+    assert any("minisign verify failed" in text for text in texts)
 
 
 @pytest.mark.requirement("AGENT-11")
