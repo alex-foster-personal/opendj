@@ -18,6 +18,7 @@ from typing import Any, TextIO
 
 import httpx
 
+from apps.opendj_cli.mcp_safety import SafetyRefusal, validate_api_path
 from apps.opendj_cli.origin import EngineNotRunning, EngineOrigin, resolve_origin, unreachable
 from apps.webui.port_config import PortConfigError, resolve_ports
 
@@ -126,24 +127,50 @@ def _request_body(
     return None
 
 
-def _emit_body(stream: TextIO, body: bytes, content_type: str | None) -> None:
+def _emit_body(stream: TextIO, body: bytes) -> None:
     text = body.decode("utf-8", errors="replace")
-    if content_type and "json" in content_type.lower():
-        try:
-            parsed = json.loads(text)
-        except json.JSONDecodeError:
-            pass
-        else:
-            print(json.dumps(parsed, indent=2, sort_keys=True), file=stream)
-            return
-    print(text, file=stream, end="" if text.endswith("\n") else None)
-    if text and not text.endswith("\n"):
-        print(file=stream)
+    parsed = json.loads(text)
+    print(json.dumps(parsed, indent=2, sort_keys=True), file=stream)
+
+
+def _emit_body_or_text(stream: TextIO, body: bytes) -> None:
+    text = body.decode("utf-8", errors="replace")
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        print(text, file=stream, end="" if text.endswith("\n") else None)
+        if text and not text.endswith("\n"):
+            print(file=stream)
+        return
+    print(json.dumps(parsed, indent=2, sort_keys=True), file=stream)
 
 
 def _fail_usage(message: str) -> int:
     print(f"opendj api: {message}", file=sys.stderr)
     return EXIT_USAGE
+
+
+def _fail_structured(
+    as_json: bool,
+    *,
+    code: str,
+    message: str,
+    exit_code: int,
+) -> int:
+    if as_json:
+        print(
+            json.dumps(
+                {
+                    "error": {"code": code, "message": message},
+                    "exit_code": exit_code,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    else:
+        print(f"opendj api: {message}", file=sys.stderr)
+    return exit_code
 
 
 def _fail_unreachable(base_url: str, port: int, error: BaseException) -> int:
@@ -215,13 +242,22 @@ def _write_response(
 ) -> int:
     exit_code = exit_for_status(response.status_code)
     payload = response.content
-    content_type = response.headers.get("content-type")
     if exit_code == EXIT_OK:
-        if payload:
-            _emit_body(sys.stdout, payload, content_type)
+        if not payload:
+            return EXIT_OK
+        try:
+            json.loads(payload)
+        except json.JSONDecodeError:
+            return _fail_structured(
+                as_json,
+                code="not_json",
+                message="response is not JSON",
+                exit_code=EXIT_FAILED,
+            )
+        _emit_body(sys.stdout, payload)
         return EXIT_OK
     if payload:
-        _emit_body(sys.stderr, payload, content_type)
+        _emit_body_or_text(sys.stderr, payload)
     elif not as_json:
         print(f"opendj api: {response.status_code} from {url}", file=sys.stderr)
     return exit_code
@@ -236,8 +272,16 @@ def run(
 ) -> int:
     try:
         parsed = _parse_request(rest)
+        validate_api_path(parsed.path)
         target = resolve_backend_base_url(environ=environ, lock_path=lock)
         body = _request_body(parsed.method, parsed.json_body, parsed.fields)
+    except SafetyRefusal as error:
+        return _fail_structured(
+            as_json,
+            code=error.code,
+            message=str(error),
+            exit_code=EXIT_FAILED,
+        )
     except UsageError as error:
         return _fail_usage(str(error))
 
