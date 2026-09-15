@@ -470,3 +470,65 @@ def test_library_get_tracks_bounded_page_pages_with_a_real_cursor(
     second_ids = {item["stable_id"] for item in second["body"]["items"]}
     assert second_ids, "the next page must not be empty"
     assert first_ids.isdisjoint(second_ids)
+
+
+@pytest.mark.requirement("AGENT-05")
+def test_status_boot_id_mismatch_is_error(engine: Engine, tmp_path: Path) -> None:
+    """[if] lock boot_id disagrees with health [then] status is engine_identity_mismatch."""
+    bad_lock = tmp_path / "bad.lock"
+    bad_lock.write_text(
+        json.dumps(
+            {
+                "pid": 4242,
+                "role": "opendj-engine",
+                "host": "127.0.0.1",
+                "port": engine.port,
+                "boot_id": "wrong-boot",
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = asyncio.run(mcp_support.call_tool_async(bad_lock, "status", {}))
+    assert result.is_error is True
+    texts = [block.text for block in result.content if block.type == "text"]
+    assert any('"error": "engine_identity_mismatch"' in text for text in texts)
+
+
+@pytest.mark.requirement("AGENT-05")
+def test_command_wrong_role_is_error(engine: Engine, tmp_path: Path) -> None:
+    """[if] lock role is not opendj-engine [then] command is engine_identity_mismatch."""
+    bad_lock = tmp_path / "bad.lock"
+    bad_lock.write_text(
+        json.dumps(
+            {
+                "pid": 4242,
+                "role": "not-opendj-engine",
+                "host": "127.0.0.1",
+                "port": engine.port,
+                "boot_id": "test-boot",
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = asyncio.run(
+        mcp_support.call_tool_async(
+            bad_lock,
+            "command",
+            {"order": {"single": {"type": "master_mute", "muted": True}}},
+        )
+    )
+    assert result.is_error is True
+    texts = [block.text for block in result.content if block.type == "text"]
+    assert any('"error": "engine_identity_mismatch"' in text for text in texts)
+
+
+@pytest.mark.requirement("AGENT-05")
+def test_command_matching_engine_succeeds(engine: Engine) -> None:
+    """[if] lock matches the live engine [then] command still dispatches."""
+    engine.page().start()
+    payload = call_tool(
+        engine,
+        "command",
+        {"order": {"single": {"type": "master_mute", "muted": True}}},
+    )
+    assert "mirror_delta" in payload
