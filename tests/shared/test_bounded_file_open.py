@@ -1,4 +1,9 @@
-"""Unit tests for subprocess-isolated bounded file open (#2749)."""
+"""Unit tests for subprocess-isolated bounded file open (#2749).
+
+[if] a file is readable [then] the probe returns ok inside its timeout, [else stop].
+[if] an open blocks (writer-less FIFO) [then] the probe times out and reaps its worker, [else stop].
+[if] a probe just timed out [then] the next probe of a readable file is still fast, [else stop].
+"""
 
 from __future__ import annotations
 

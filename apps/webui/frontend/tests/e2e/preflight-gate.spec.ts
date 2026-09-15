@@ -44,8 +44,9 @@ test.describe('preflight boot gate', () => {
 		await expect(libraryRow).toHaveAttribute('data-check-status', 'fail');
 		await expect(libraryRow).toContainText('0 tracks');
 
-		// The real reason is on screen, not decoration.
-		await expect(gate).toContainText('Run setup to import a library');
+		// Import path must be offered on the boot gate (issue #2722).
+		await expect(gate.getByTestId('preflight-import-music')).toBeVisible();
+		await expect(gate.getByTestId('preflight-run-setup')).toBeVisible();
 
 		// A fresh install has nothing recorded to sample, which is an honest
 		// `pending`, never a fabricated pass (this issue's own denominator rule).

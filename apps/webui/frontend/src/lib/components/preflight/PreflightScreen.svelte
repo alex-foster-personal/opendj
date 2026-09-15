@@ -40,10 +40,18 @@
 	 */
 	import { onDestroy, onMount } from 'svelte';
 	import {
+		BOOT_HEADLINE_NEEDS_ACTION,
+		BOOT_HEADLINE_STARTING,
+		bootCheckDetail,
+		bootCheckLabel
+	} from '$lib/preflight/preflight-boot-copy';
+	import {
 		checkPreflight,
 		preflightGate,
 		requestPermissions
 	} from '$lib/preflight/preflight.svelte';
+	import { firstRunGate, retryFirstRunGate } from '$lib/setup/first-run-gate.svelte';
+	import { runSetup, runSetupBlocked } from '$lib/setup/run-setup';
 	import PreflightCheckRow from './PreflightCheckRow.svelte';
 
 	const POLL_MS = 3_000;
@@ -106,6 +114,51 @@
 			visibleChecks.length > 0 ||
 			preflightGate.error !== null
 	);
+
+	const bootHeadline = $derived(
+		mode === 'boot' && blocking && preflightGate.needsActionCopy
+			? BOOT_HEADLINE_NEEDS_ACTION
+			: mode === 'boot' && blocking
+				? BOOT_HEADLINE_STARTING
+				: mode === 'boot'
+					? 'Startup checks'
+					: 'Preflight'
+	);
+
+	const showImportCta = $derived(
+		mode === 'boot' &&
+			blocking &&
+			(preflightGate.needsActionCopy ||
+				firstRunGate.hasError ||
+				firstRunGate.isResolving ||
+				visibleChecks.some((row) => row.id === 'library-attached'))
+	);
+
+	let importBusy = $state(false);
+	let importError = $state<string | null>(null);
+
+	async function handleImportMusic(): Promise<void> {
+		if (!navigate || importBusy) return;
+		importBusy = true;
+		importError = await runSetup(navigate);
+		importBusy = false;
+	}
+
+	async function retrySetupCheck(): Promise<void> {
+		const show = await retryFirstRunGate();
+		if (show !== true || !navigate) return;
+		importBusy = true;
+		importError = await runSetup(navigate);
+		importBusy = false;
+	}
+
+	function bootRowLabel(check: (typeof preflightGate.checks)[number]): string {
+		return bootCheckLabel(check, mode);
+	}
+
+	function bootRowDetail(check: (typeof preflightGate.checks)[number]): string {
+		return bootCheckDetail(check, mode);
+	}
 </script>
 
 {#if showSurface}
@@ -118,16 +171,53 @@
 	data-preflight-status={preflightGate.status}
 	data-preflight-blocking={blocking ? 'true' : 'false'}
 >
-	<h2>{mode === 'boot' ? (blocking ? 'Starting up' : 'Startup checks') : 'Preflight'}</h2>
+	{#if mode === 'boot' && blocking}
+		<header class="preflight-brand" aria-label="Open DJ">
+			<div class="preflight-mark" aria-hidden="true"></div>
+			<div class="preflight-lockup">
+				<span class="preflight-name">Open DJ</span>
+				<p class="preflight-welcome">
+					Welcome. Import your music to start DJing, or keep going once setup finishes.
+				</p>
+			</div>
+		</header>
+	{/if}
+	<h2>{bootHeadline}</h2>
 	{#if preflightGate.error}
 		<p class="preflight-error">Could not reach the engine: {preflightGate.error}</p>
 	{/if}
+	{#if mode === 'boot' && blocking && firstRunGate.hasError}
+		<p class="preflight-error" role="alert">{firstRunGate.error}</p>
+		<button type="button" class="preflight-retry-first-run" onclick={() => void retrySetupCheck()}>
+			Retry setup check
+		</button>
+	{/if}
 	<ul class="preflight-checks">
 		{#each visibleChecks as check (check.id)}
-			<PreflightCheckRow {check} {navigate} />
+			<PreflightCheckRow
+				{check}
+				{navigate}
+				label={mode === 'boot' ? bootRowLabel(check) : check.label}
+				detail={mode === 'boot' ? bootRowDetail(check) : check.detail}
+			/>
 		{/each}
 	</ul>
 	<div class="preflight-actions">
+		{#if showImportCta}
+			<button
+				type="button"
+				class="preflight-import"
+				data-testid="preflight-import-music"
+				disabled={importBusy || runSetupBlocked() !== null || !navigate}
+				title={runSetupBlocked() ?? 'Open setup to import rekordbox or a music folder.'}
+				onclick={() => void handleImportMusic()}
+			>
+				{importBusy ? 'Opening setup...' : 'Import your music'}
+			</button>
+			{#if importError}
+				<p class="preflight-error">{importError}</p>
+			{/if}
+		{/if}
 		<button type="button" onclick={() => void checkPreflight()}>Re-check</button>
 		<button
 			type="button"
@@ -137,8 +227,10 @@
 			Re-request permissions
 		</button>
 	</div>
-	{#if mode === 'boot' && blocking}
+	{#if mode === 'boot' && blocking && !preflightGate.needsActionCopy}
 		<p class="note">This screen clears itself automatically once every check passes.</p>
+	{:else if mode === 'boot' && blocking && preflightGate.needsActionCopy}
+		<p class="note">Import your music below to continue, or fix the items above and re-check.</p>
 	{/if}
 </section>
 {/if}
@@ -163,6 +255,28 @@
 		border-radius: 8px;
 		background: var(--surface);
 		color: var(--fg);
+	}
+	.preflight-brand {
+		display: flex;
+		align-items: center;
+		gap: 0.85rem;
+	}
+	.preflight-mark {
+		width: 3rem;
+		height: 3rem;
+		flex: none;
+		background: url('/favicon.svg') center / contain no-repeat;
+	}
+	.preflight-name {
+		display: block;
+		font-size: 1.15rem;
+		font-weight: 700;
+		letter-spacing: -0.01em;
+	}
+	.preflight-welcome {
+		margin: 0.2rem 0 0;
+		color: var(--muted);
+		font-size: 0.9em;
 	}
 	.preflight-boot {
 		position: fixed;

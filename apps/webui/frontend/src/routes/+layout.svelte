@@ -21,8 +21,12 @@
 		preflightGate,
 		shouldBlockOnPreflight
 	} from '$lib/preflight/preflight.svelte';
-	import { resolveFirstRun } from '$lib/setup/first-run';
+	import { bootGateYielded } from '$lib/overlays/overlay-stack';
+	import { accountOverlay } from '$lib/account/overlay.svelte';
+	import { signInOverlay } from '$lib/auth/sign-in-overlay.svelte';
+	import { firstRunGate, runFirstRunGate } from '$lib/setup/first-run-gate.svelte';
 	import { openSetupOverlay, setupOverlay } from '$lib/setup/overlay.svelte';
+	import { settingsOverlay } from '$lib/settings/overlay.svelte';
 	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
 	import { startLibraryBootHydration } from '$lib/rb/library-boot-hydration';
@@ -51,7 +55,15 @@
 	const isPerformance = $derived(isPerformanceRoutePath($page.url.pathname));
 
 	const setupOpen = $derived(setupOverlay.open);
-	const blockOnPreflight = $derived(shouldBlockOnPreflight(preflightGate.status, setupOpen));
+	const yieldBootGate = $derived(
+		bootGateYielded({
+			setup: setupOpen,
+			settings: settingsOverlay.open,
+			account: accountOverlay.open,
+			signIn: signInOverlay.open
+		})
+	);
+	const blockOnPreflight = $derived(shouldBlockOnPreflight(preflightGate.status, yieldBootGate));
 	const hideCheckIds = $derived(
 		setupOpen && preflightGate.checks.some((check) => check.id === LIBRARY_ATTACHED_CHECK_ID)
 			? [LIBRARY_ATTACHED_CHECK_ID]
@@ -91,8 +103,8 @@
 	 * itself lives in $lib/setup/first-run, under test.
 	 */
 	function raiseSetupOnFirstRun(): void {
-		void resolveFirstRun().then((show) => {
-			if (!show) return;
+		void runFirstRunGate().then((show) => {
+			if (show !== true) return;
 			openSetupOverlay();
 			// Already on a performance route (the packaged shell's landing
 			// route) means no navigation at all; the overlay is simply raised.
