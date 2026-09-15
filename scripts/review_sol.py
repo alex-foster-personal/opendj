@@ -77,14 +77,31 @@ SOL_LOGINS: frozenset[str] = frozenset({"maintainer"})
 #: than half-counting. `v1` is a format version: a later shape gets `v2` and
 #: this reader learns it explicitly.
 SOL_MARKER = re.compile(
-    r"<!--\s*sol-review\s+v1\s+sha=([0-9a-f]{7,40})\s+seat=(\S+)\s+model=(\S+)\s*-->",
+    r"<!--\s*sol-review\s+v1\s+sha=([0-9a-f]{7,40})\s+seat=(\S+)\s+model=(\S+)"
+    r"(?:\s+skipped=([\w.,/-]+))?\s*-->",
     re.IGNORECASE,
 )
 
 
-def marker(sha: str, seat: str, model: str) -> str:
+def marker(sha: str, seat: str, model: str, skipped: frozenset[str] = frozenset()) -> str:
     """The marker the lane writes into every artifact it posts."""
-    return f"<!-- sol-review v1 sha={sha} seat={seat} model={model} -->"
+    tail = (
+        f" skipped={','.join(sorted(skipped))}" if skipped else ""
+    )
+    return f"<!-- sol-review v1 sha={sha} seat={seat} model={model}{tail} -->"
+
+
+def skipped_paths_from_marker(body: str) -> frozenset[str]:
+    match = SOL_MARKER.search(body or "")
+    if not match or not match.group(4):
+        return frozenset()
+    return frozenset(match.group(4).split(","))
+
+
+def marker_skipped_mismatch(body: str, diff: str) -> str | None:
+    from scripts.review_lane import skipped_paths_match_diff
+
+    return skipped_paths_match_diff(skipped_paths_from_marker(body), diff)
 
 
 def _normalize_login(login: str) -> str:

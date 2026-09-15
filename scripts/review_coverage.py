@@ -504,6 +504,7 @@ def triage(pr: str) -> int:
         for name in EXPECTED_REVIEWERS
     }
     _require_head_unchanged(head_sha, _head_sha(pr))
+
     verdicts = substitute_alternatives(
         verdicts_with_carry(
             pr,

@@ -25,6 +25,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 
 from apps.stems import tiers as tiercfg
+from apps.webui.server.routes.stems_parity_guard import guard_stems_parity_call
 
 router = APIRouter(prefix="/stems", tags=["stem-tiers"])
 
@@ -125,6 +126,10 @@ def estimate(
     than a plausible-looking guess. Rendering a guess as a number is how an
     assumption becomes ground truth.
     """
+    return guard_stems_parity_call(lambda: _estimate_impl(seconds, gpu))
+
+
+def _estimate_impl(seconds: float, gpu: Optional[str]) -> EstimateOut:
     _ensure_loaded()
     out: list[TierEstimateOut] = []
     for tier in tiercfg.ladder():
@@ -234,6 +239,10 @@ def generate(body: GenerateIn, request: Request) -> dict:
     the programmatic half of the right-click menu item, so an agent can drive
     the identical flow (AGENT-NATIVE PARITY).
     """
+    return guard_stems_parity_call(lambda: _generate_impl(body, request))
+
+
+def _generate_impl(body: GenerateIn, request: Request) -> dict:
     import subprocess
     import uuid
 

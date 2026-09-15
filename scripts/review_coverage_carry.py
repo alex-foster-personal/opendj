@@ -16,6 +16,7 @@ from pathlib import Path
 
 from scripts.review_claude import CLAUDE, CLAUDE_LOGINS, CLAUDE_MARKER
 from scripts.review_gh import TriageError, _SHA_IN_BACKTICKS, _STATUS_COMPLETED
+from scripts.review_lane import diff_of, evidence_skipped_paths_ok
 from scripts.review_sol import SOL, SOL_LOGINS, SOL_MARKER, _normalize_login
 
 
@@ -240,9 +241,15 @@ def verdicts_with_carry(
     classify_reviewer,
 ):
     """Classify each reviewer at head, then try debt-only carry on MISS rows."""
+    from scripts.review_coverage import ReviewerVerdict
+
+    pr_diff = diff_of(pr)
     verdicts = []
     for name in expected_reviewers:
         verdict = classify_reviewer(name, checks, evidence.get(name))
+        row = evidence.get(name)
+        if verdict.reviewed and row and (reason := evidence_skipped_paths_ok(name, row.bodies, pr_diff)):
+            verdict = ReviewerVerdict(name, False, reason)
         if not verdict.reviewed:
             carried = try_carry_verdict(
                 name, pr, head_sha, reviews, inline, issue_comments, repo_root
