@@ -65,7 +65,7 @@ LIBRARY_SIZE_V1: str = "library-size/v1"
 HASH_PENDING_V1: str = "hash-pending/v1"
 
 #: The caller understands per-row identity-collapse rejections on push
-#: (wire v5, issue #3057).
+#: (issue #3057).
 IDENTITY_REJECT_V1: str = "identity-reject/v1"
 
 #: Everything this build understands, advertised on every request it makes.

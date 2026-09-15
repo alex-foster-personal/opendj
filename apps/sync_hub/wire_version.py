@@ -68,11 +68,10 @@ from apps.shared.state import schema as state_schema
 from apps.sync_hub import protocol
 
 #: The sync protocol's version. See the module docstring for what bumps it.
-#: v5 adds per-row identity-collapse rejection detail on ``/push`` (issue
-#: #3057): when the hub rejects an offered ``tracks`` row because a stored
-#: row won the identity collapse, ``PushResponse.identity_rejects`` names the
-#: hub survivor PK. Row shapes are unchanged from v4.
-WIRE_VERSION: int = 5
+#: ``PushResponse.identity_rejects`` (issue #3057) is an OPTIONAL response
+#: field older peers ignore, advertised by the ``identity-reject/v1``
+#: capability token: NOT a wire change under the rule above, so no bump.
+WIRE_VERSION: int = 4
 
 #: Row-shape fingerprint of every wire version that has shipped, oldest
 #: first. APPEND-ONLY: an entry is a fact about deployed peers, and rewriting
@@ -88,8 +87,6 @@ WIRE_FINGERPRINTS: dict[int, str] = {
     3: "00a3594073b7dc9b",
     # v4: playlists forbid_duplicates (LIBM-D2 / #2416). Measured Sun 13 Sep 2026.
     4: "6985ab3a573661be",
-    # v5: push identity_rejects (issue #3057). Same row shape as v4.
-    5: "6985ab3a573661be",
 }
 
 #: 409 codes the gate answers with. SYNC_SCHEMA_VERSION is kept verbatim for

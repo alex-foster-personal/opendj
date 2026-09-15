@@ -144,7 +144,7 @@ class _PushOutcome:
     #: Rows of OURS the hub refused because ITS local copy carries a stamp it
     #: cannot order. ``None`` means the hub did not report.
     hub_quarantined: int | None = None
-    #: Identity-collapse rejections from the hub (wire v5, issue #3057).
+    #: Identity-collapse rejections from the hub (issue #3057).
     identity_rejects: tuple[protocol.IdentityReject, ...] = ()
     #: True when the hub answered a push request with 403
     #: ``entitlement_not_in_plan`` (:mod:`apps.sync_hub.client_refusal`).

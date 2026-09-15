@@ -222,7 +222,7 @@ class PushResponse(BaseModel):
     quarantined: int = 0
     hash_pending: int = 0
     #: Identity-collapse rejections: the offered PK lost to a stored survivor
-    #: (wire v5, issue #3057). Only emitted for ``tracks`` rows where the hub
+    #: (issue #3057). Only emitted for ``tracks`` rows where the hub
     #: kept a different PK for the same content identity.
     identity_rejects: list[IdentityRejectModel] = Field(default_factory=list)
 
