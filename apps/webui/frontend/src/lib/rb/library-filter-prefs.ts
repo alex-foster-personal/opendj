@@ -7,10 +7,9 @@
  * Deliberately NOT a rune module (no $state here): pure types, validation and
  * a factory the reactive singleton in prefs.svelte.ts calls into.
  *
- * localStorage only: these three are view filters on the pane in front of
- * you, not machine state the daemon has any use for, so there is no
- * /api/v1/ui-prefs twin. Agent parity comes from the settings route instead
- * (src/lib/settings/apply.ts registers all three keys).
+ * Agent parity is GET/PUT /api/v1/ui-prefs (disk-backed in
+ * data/state/ui-prefs.json). The settings overlay is a second consumer of
+ * the same setters, not the external agent path.
  */
 
 interface LibraryFilterPrefs {
@@ -72,11 +71,13 @@ interface LibraryFilterSetters {
  */
 export function makeLibraryFilterSetters(
 	state: LibraryFilterPrefs,
-	persist: () => void
+	persist: () => void,
+	syncDiskPrefs: (patch: Partial<LibraryFilterPrefs>) => void
 ): LibraryFilterSetters {
 	function _write<K extends keyof LibraryFilterPrefs>(key: K, next: LibraryFilterPrefs[K]): void {
 		state[key] = next;
 		persist();
+		syncDiskPrefs({ [key]: next } as Partial<LibraryFilterPrefs>);
 	}
 	return {
 		setNextOnlyFilter: (next) => _write('next_only_filter', next),

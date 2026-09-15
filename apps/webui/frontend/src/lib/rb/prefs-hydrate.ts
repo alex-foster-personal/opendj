@@ -16,6 +16,11 @@ import { setResolvedPosture } from './app-posture';
 import { PERF_TIER_PREFS, type PerfTierPref } from './perf-tier-prefs';
 import { parseAutoSync, parseLevelCalibration } from './prefs-fields';
 import { writeBootStampMirror } from './gig-stamp-mirror';
+import { hydrateMidiEnabledFromDisk } from '../components/rb/midi/midi-ui-state.svelte';
+import {
+	hydrateWheelSensitivityFromDisk,
+	type WheelSensitivityDisk
+} from './wheel-adjust';
 import type { AppModePrefs, AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
 
 export type UiTheme = 'dark' | 'light';
@@ -25,6 +30,27 @@ export type TopbarDiskPrefKey =
 	| 'auto_play_enabled'
 	| 'auto_play_enforce_order'
 	| 'auto_play_maximize_reach';
+
+export type LibraryDensity = 'compact' | 'cosy';
+
+export type LibraryBrowserDiskPrefKey =
+	| 'hide_broken_links'
+	| 'library_density'
+	| 'next_only_filter'
+	| 'remixes_filter'
+	| 'vocals_filter';
+
+export function setLibraryBrowserDiskPref<K extends LibraryBrowserDiskPrefKey>(
+	uiPrefs: Pick<PrefsHydrateTarget, K>,
+	persist: () => void,
+	sync: (patch: Pick<DiskPrefsPatch, K>) => void,
+	key: K,
+	next: PrefsHydrateTarget[K]
+): void {
+	uiPrefs[key] = next;
+	persist();
+	void sync({ [key]: next } as Pick<DiskPrefsPatch, K>);
+}
 
 export function setTopbarDiskPref(
 	uiPrefs: Pick<PrefsHydrateTarget, TopbarDiskPrefKey>,
@@ -66,6 +92,13 @@ export type DiskPrefsPatch = {
 	auto_play_enabled?: boolean;
 	auto_play_enforce_order?: boolean;
 	auto_play_maximize_reach?: boolean;
+	hide_broken_links?: boolean;
+	library_density?: LibraryDensity;
+	next_only_filter?: boolean;
+	remixes_filter?: boolean;
+	vocals_filter?: boolean;
+	wheel_sensitivity?: WheelSensitivityDisk;
+	midi_enabled?: boolean;
 	app_mode?: AppModePrefs;
 };
 
@@ -109,6 +142,11 @@ export interface PrefsHydrateTarget {
 	auto_play_enabled: boolean;
 	auto_play_enforce_order: boolean;
 	auto_play_maximize_reach: boolean;
+	hide_broken_links: boolean;
+	library_density: LibraryDensity;
+	next_only_filter: boolean;
+	remixes_filter: boolean;
+	vocals_filter: boolean;
 }
 
 /** The five boolean lyric prefs hydrate in one loop rather than five ifs. */
@@ -197,11 +235,20 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 				'beat_sync_max',
 				'auto_play_enabled',
 				'auto_play_enforce_order',
-				'auto_play_maximize_reach'
+				'auto_play_maximize_reach',
+				'hide_broken_links',
+				'next_only_filter',
+				'remixes_filter',
+				'vocals_filter'
 			] as const) {
 				const value = body[key];
 				if (typeof value === 'boolean') uiPrefs[key] = value;
 			}
+			if (body.library_density === 'compact' || body.library_density === 'cosy') {
+				uiPrefs.library_density = body.library_density;
+			}
+			hydrateWheelSensitivityFromDisk(body);
+			hydrateMidiEnabledFromDisk(body);
 			const lastGigAt = body.app_mode?.last_gig_at;
 			if (typeof lastGigAt === 'string') {
 				writeBootStampMirror(lastGigAt);
