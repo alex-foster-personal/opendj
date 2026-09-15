@@ -135,10 +135,18 @@ app="$(find "$MACOS_DIR" -maxdepth 1 -type d -name '*.app' -print -quit)"
 [ -n "$app" ] || die "just dmg produced no app bundle in $MACOS_DIR"
 dmg="$(find "$DMG_DIR" -maxdepth 1 -type f -name '*.dmg' -print -quit)"
 [ -n "$dmg" ] || die "just dmg produced no dmg in $DMG_DIR"
-archive="$(find "$MACOS_DIR" -maxdepth 1 -type f -name '*.app.tar.gz' -print -quit)"
-[ -n "$archive" ] || die "just dmg produced no updater archive in $MACOS_DIR"
+built_archive="$(find "$MACOS_DIR" -maxdepth 1 -type f -name '*.app.tar.gz' -print -quit)"
+[ -n "$built_archive" ] || die "just dmg produced no updater archive in $MACOS_DIR"
+[ -f "$built_archive.sig" ] || die "just dmg produced no updater signature for $built_archive"
+# Tauri names the archive after the product ("Open DJ.app.tar.gz"). GitHub
+# stores an uploaded asset under a space-free name ("Open.DJ.app.tar.gz"), so
+# a manifest URL carrying the space 404s and the in-app updater never installs
+# (v0.1.2, Tue 15 Sep 2026). Publish the same bytes under a name GitHub keeps.
+# The signature is over the bytes, so the rename does not invalidate it.
+archive="$MACOS_DIR/OpenDJ-$version-aarch64.app.tar.gz"
 signature="$archive.sig"
-[ -f "$signature" ] || die "just dmg produced no updater signature for $archive"
+cp "$built_archive" "$archive"
+cp "$built_archive.sig" "$signature"
 
 xcrun stapler validate "$app"
 spctl -a -t exec -vv "$app"
