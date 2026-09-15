@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from scripts.diagnostics import probe_native_metrics as native
+from apps.diagnostics import probe_native_metrics as native
 
 # Trimmed from real `vm_stat` output on this Mac, Wed 9 Sep 2026.
 VM_STAT_SAMPLE = """Mach Virtual Memory Statistics: (page size of 16384 bytes)
