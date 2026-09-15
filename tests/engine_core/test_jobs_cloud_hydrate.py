@@ -1,4 +1,7 @@
-"""``cloud.hydrate`` job kind: enqueue, argv, and runner terminal states."""
+"""``cloud.hydrate`` job kind: enqueue, argv, and runner terminal states.
+
+[if] a cloud.hydrate job runs through the engine job runner [then] enqueue argv and terminal states stay contract-stable, [else stop].
+"""
 from __future__ import annotations
 
 import asyncio

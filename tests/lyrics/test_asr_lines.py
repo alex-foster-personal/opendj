@@ -1,4 +1,7 @@
-"""ASR word grouping for line-level lyrics (LYRICS-07)."""
+"""ASR word grouping for line-level lyrics (LYRICS-07).
+
+[if] ASR word timestamps are grouped into lyric lines [then] pause gaps split lines deterministically, [else stop].
+"""
 
 from __future__ import annotations
 

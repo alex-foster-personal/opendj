@@ -474,6 +474,20 @@ _ALLOWED_HARD_DELETES: frozenset[tuple[str, str]] = frozenset({
     ("apps/sync_hub/engine_identity.py", "dynamic:_ident(table)"),
     ("apps/sync_hub/engine_identity.py", "track_locations"),
     ("apps/sync_hub/engine_identity.py", "playlist_memberships"),
+    # apps/shared/state_authoritative_backup.restore_tables -- offline selective
+    # restore of ADR-0022 backup-only authoritative table groups (issue #2498,
+    # ADR-0022). Runs under EngineLock with the live engine stopped; deletes
+    # every row in the requested full-table group, then INSERT ... SELECT from
+    # a verified local backup inside one transaction. Not a peer-visible row
+    # delete -- wholesale scope replace during disaster recovery. dynamic:name
+    # is _full_table_group's f-string for pairings/smartlists; the guard
+    # cannot resolve which table and flags all dynamic DELETE targets.
+    ("apps/shared/state_authoritative_backup.py", "dynamic:name"),
+    # Same restore path, scoped replace for track_fields notes/tags only
+    # (rating and other field_name rows are untouched). Tombstones would break
+    # count parity and leave ghosts; see track_fields_notes_tags group in
+    # RESTORE_REGISTRY.
+    ("apps/shared/state_authoritative_backup.py", "track_fields"),
 })
 
 

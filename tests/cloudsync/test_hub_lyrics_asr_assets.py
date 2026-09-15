@@ -1,4 +1,7 @@
-"""Hub presigned ASR lyric transcript endpoints (LYRICS-07, #2851)."""
+"""Hub presigned ASR lyric transcript endpoints (LYRICS-07, #2851).
+
+[if] hub ASR presign or fetch endpoints mis-key or leak transcripts [then] fail, [else stop].
+"""
 
 from __future__ import annotations
 
