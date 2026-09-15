@@ -47,7 +47,10 @@ from apps.engine_core.app import create_app
 from apps.engine_core.config import EngineConfig
 
 app = create_app(EngineConfig(data_dir=Path(os.environ["MDT_DATA_DIR"])))
-with TestClient(app) as client:
+# SEC-01 (#2689): this runs in a bare subprocess (see the module docstring),
+# so it never imports tests/conftest.py's TestClient default -- base_url
+# must be explicit here or the daemon host allowlist 403s every request.
+with TestClient(app, base_url="http://127.0.0.1") as client:
     watcher = app.state.library_jobs_watcher
     thread = watcher._thread
     drain_alive = thread is not None and thread.is_alive()

@@ -495,6 +495,52 @@
         "title": "AlignmentOut",
         "type": "object"
       },
+      "AnalysisApplyRequest": {
+        "properties": {
+          "diff_csv": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diff Csv"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
+          },
+          "i_understand_the_risks": {
+            "default": false,
+            "title": "I Understand The Risks",
+            "type": "boolean"
+          },
+          "live": {
+            "default": false,
+            "title": "Live",
+            "type": "boolean"
+          }
+        },
+        "title": "AnalysisApplyRequest",
+        "type": "object"
+      },
       "AnalysisOrderOut": {
         "properties": {
           "kind": {
@@ -2497,6 +2543,7 @@
             "items": {
               "type": "string"
             },
+            "maxItems": 100,
             "minItems": 1,
             "title": "Stable Ids",
             "type": "array"
@@ -4529,6 +4576,84 @@
           "machines"
         ],
         "title": "CredentialsOut",
+        "type": "object"
+      },
+      "CuesApplyRequest": {
+        "properties": {
+          "bulk": {
+            "default": false,
+            "title": "Bulk",
+            "type": "boolean"
+          },
+          "cautious": {
+            "default": false,
+            "title": "Cautious",
+            "type": "boolean"
+          },
+          "diff_csv": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diff Csv"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "i_understand_the_risks": {
+            "default": false,
+            "title": "I Understand The Risks",
+            "type": "boolean"
+          },
+          "live": {
+            "default": false,
+            "title": "Live",
+            "type": "boolean"
+          },
+          "tracks": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tracks"
+          }
+        },
+        "title": "CuesApplyRequest",
+        "type": "object"
+      },
+      "CuesPlanRequest": {
+        "properties": {
+          "matches_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matches Path"
+          },
+          "min_confidence": {
+            "default": 0.7,
+            "title": "Min Confidence",
+            "type": "number"
+          }
+        },
+        "title": "CuesPlanRequest",
         "type": "object"
       },
       "DecideIn": {
@@ -9263,6 +9388,28 @@
         "title": "MachineOverview",
         "type": "object"
       },
+      "MatchRequest": {
+        "properties": {
+          "out_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Dir"
+          },
+          "use_fingerprint": {
+            "default": false,
+            "title": "Use Fingerprint",
+            "type": "boolean"
+          }
+        },
+        "title": "MatchRequest",
+        "type": "object"
+      },
       "MeOut": {
         "properties": {
           "signed_in": {
@@ -9728,6 +9875,43 @@
         "title": "MembershipTransferOut",
         "type": "object"
       },
+      "MetadataPlanRequest": {
+        "properties": {
+          "include_cues": {
+            "default": false,
+            "title": "Include Cues",
+            "type": "boolean"
+          },
+          "matches_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matches Path"
+          },
+          "min_confidence": {
+            "default": 0.7,
+            "title": "Min Confidence",
+            "type": "number"
+          },
+          "prefer": {
+            "default": "newest",
+            "enum": [
+              "rekordbox",
+              "djay",
+              "newest"
+            ],
+            "title": "Prefer",
+            "type": "string"
+          }
+        },
+        "title": "MetadataPlanRequest",
+        "type": "object"
+      },
       "MetadataShareRequest": {
         "description": "Explicit acknowledgement that the resulting web view excludes audio.",
         "properties": {
@@ -9877,6 +10061,7 @@
             "items": {
               "type": "string"
             },
+            "maxItems": 100,
             "minItems": 1,
             "title": "Stable Ids",
             "type": "array"
@@ -11681,6 +11866,62 @@
         "title": "PlayItUnmetOut",
         "type": "object"
       },
+      "PlaylistApplyRequest": {
+        "properties": {
+          "allow_broken": {
+            "default": false,
+            "title": "Allow Broken",
+            "type": "boolean"
+          },
+          "bulk": {
+            "default": false,
+            "title": "Bulk",
+            "type": "boolean"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "i_understand_the_risks": {
+            "default": false,
+            "title": "I Understand The Risks",
+            "type": "boolean"
+          },
+          "live": {
+            "default": false,
+            "title": "Live",
+            "type": "boolean"
+          },
+          "plan_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Path"
+          },
+          "playlists": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlists"
+          }
+        },
+        "title": "PlaylistApplyRequest",
+        "type": "object"
+      },
       "PlaylistBrokenSummary": {
         "properties": {
           "broken_count": {
@@ -11955,6 +12196,42 @@
           "mode"
         ],
         "title": "PlaylistPinPut",
+        "type": "object"
+      },
+      "PlaylistPlanRequest": {
+        "properties": {
+          "matches_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matches Path"
+          },
+          "max_ops": {
+            "default": 10000,
+            "title": "Max Ops",
+            "type": "integer"
+          },
+          "only_playlists": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Only Playlists"
+          }
+        },
+        "title": "PlaylistPlanRequest",
         "type": "object"
       },
       "PlaylistRenameIn": {
@@ -12498,7 +12775,7 @@
         "type": "object"
       },
       "PreflightCheckOut": {
-        "description": "One row of PREFLIGHT-01's boot gate (issue #771).\n\n``status`` is never a two-way pass/fail: ``pending`` covers a check that\ngenuinely could not be exercised (e.g. audio-access with no resolvable\ntrack anywhere in a small sample), which is an honest denominator, never\na fabricated pass. ``remediation`` is null on a pass or a pending row and\na real sentence on a fail.",
+        "description": "One row of PREFLIGHT-01's boot gate (issue #771).\n\n``status`` is never a two-way pass/fail: ``pending`` covers a check that\ngenuinely could not be exercised (e.g. audio-access with no resolvable\ntrack anywhere in a small sample), which is an honest denominator, never\na fabricated pass. ``remediation`` is null on a pass or a pending row and\na real sentence on a fail.\n\n``user_*`` fields carry plain-language copy for the boot gate (issue\n#2722). Admin/diagnostics views keep the technical ``label``/``detail``.",
         "properties": {
           "detail": {
             "title": "Detail",
@@ -12531,6 +12808,39 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "user_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Detail"
+          },
+          "user_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Label"
+          },
+          "user_remediation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Remediation"
           }
         },
         "required": [
@@ -12999,6 +13309,62 @@
           "machine_score"
         ],
         "title": "RatingEntry",
+        "type": "object"
+      },
+      "RatingsApplyRequest": {
+        "properties": {
+          "bulk": {
+            "default": false,
+            "title": "Bulk",
+            "type": "boolean"
+          },
+          "cautious": {
+            "default": false,
+            "title": "Cautious",
+            "type": "boolean"
+          },
+          "diff_csv": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diff Csv"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "i_understand_the_risks": {
+            "default": false,
+            "title": "I Understand The Risks",
+            "type": "boolean"
+          },
+          "live": {
+            "default": false,
+            "title": "Live",
+            "type": "boolean"
+          },
+          "tracks": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tracks"
+          }
+        },
+        "title": "RatingsApplyRequest",
         "type": "object"
       },
       "RatingsFile": {
@@ -27800,6 +28166,51 @@
         ]
       }
     },
+    "/api/v1/playlists/{playlist_id}/rb-djay-diff": {
+      "get": {
+        "description": "Return saved playlist-plan diff buckets for one playlist when computed.",
+        "operationId": "get_playlist_rb_djay_diff_api_v1_playlists__playlist_id__rb_djay_diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Playlist Rb Djay Diff Api V1 Playlists  Playlist Id  Rb Djay Diff Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Playlist Rb Djay Diff",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
     "/api/v1/playlists/{playlist_id}/sets": {
       "get": {
         "operationId": "list_playlist_sets",
@@ -28545,6 +28956,406 @@
         "summary": "Get Queue",
         "tags": [
           "queues"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/analysis/apply": {
+      "post": {
+        "description": "SYNC-05: dry-run or live analysis-field apply from analysis-diff.csv.",
+        "operationId": "rb_djay_sync_analysis_apply_api_v1_rb_djay_sync_analysis_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Analysis Apply Api V1 Rb Djay Sync Analysis Apply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Analysis Apply",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/cues/apply": {
+      "post": {
+        "description": "SYNC-04: dry-run or scaffold live cue apply.",
+        "operationId": "rb_djay_sync_cues_apply_api_v1_rb_djay_sync_cues_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CuesApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Cues Apply Api V1 Rb Djay Sync Cues Apply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Cues Apply",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/cues/plan": {
+      "post": {
+        "description": "SYNC-04: cue comparison CSV.",
+        "operationId": "rb_djay_sync_cues_plan_api_v1_rb_djay_sync_cues_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CuesPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Cues Plan Api V1 Rb Djay Sync Cues Plan Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Cues Plan",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/djay/playlists": {
+      "get": {
+        "description": "SYNC-01: enumerate djay playlists and track UUID memberships.",
+        "operationId": "rb_djay_sync_djay_playlists_api_v1_rb_djay_sync_djay_playlists_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Djay Playlists Api V1 Rb Djay Sync Djay Playlists Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rb Djay Sync Djay Playlists",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/match": {
+      "post": {
+        "description": "SYNC-02: build matches.csv from working-copy vendor DBs.",
+        "operationId": "rb_djay_sync_match_api_v1_rb_djay_sync_match_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Match Api V1 Rb Djay Sync Match Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Match",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/metadata/plan": {
+      "post": {
+        "description": "SYNC-05 + SYNC-06 (+ optional SYNC-04 cues) diff CSV generation.",
+        "operationId": "rb_djay_sync_metadata_plan_api_v1_rb_djay_sync_metadata_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Metadata Plan Api V1 Rb Djay Sync Metadata Plan Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Metadata Plan",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/playlists/apply": {
+      "post": {
+        "description": "SYNC-03: dry-run or live apply of playlist-plan.json into djay.",
+        "operationId": "rb_djay_sync_playlists_apply_api_v1_rb_djay_sync_playlists_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Playlists Apply Api V1 Rb Djay Sync Playlists Apply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Playlists Apply",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/playlists/plan": {
+      "post": {
+        "description": "SYNC-03: compute playlist-plan.json and companion artefacts.",
+        "operationId": "rb_djay_sync_playlists_plan_api_v1_rb_djay_sync_playlists_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Playlists Plan Api V1 Rb Djay Sync Playlists Plan Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Playlists Plan",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/ratings/apply": {
+      "post": {
+        "description": "SYNC-06: dry-run or live ratings apply from ratings-diff.csv.",
+        "operationId": "rb_djay_sync_ratings_apply_api_v1_rb_djay_sync_ratings_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RatingsApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Ratings Apply Api V1 Rb Djay Sync Ratings Apply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rb Djay Sync Ratings Apply",
+        "tags": [
+          "rb-djay-sync"
+        ]
+      }
+    },
+    "/api/v1/rb-djay-sync/status": {
+      "get": {
+        "description": "SYNC-01..06 capability probe: DB paths, artefacts, fingerprint, writeback.",
+        "operationId": "rb_djay_sync_status_api_v1_rb_djay_sync_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rb Djay Sync Status Api V1 Rb Djay Sync Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rb Djay Sync Status",
+        "tags": [
+          "rb-djay-sync"
         ]
       }
     },

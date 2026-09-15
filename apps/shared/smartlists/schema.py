@@ -72,10 +72,15 @@ def _is_relative_date(value: Any) -> bool:
     )
 
 
+def _is_real_number(value: Any) -> bool:
+    """True for int/float values, excluding bool (a subclass of int)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def _validate_typed_list(field: str, value: list, path: str, *, op: str) -> None:
     ftype = FIELD_TYPES[field]
     for i, elt in enumerate(value):
-        if ftype == "number" and not isinstance(elt, (int, float)):
+        if ftype == "number" and not _is_real_number(elt):
             raise _err(f"{path}.value[{i}]",
                        f"{op} on {field!r} expects numbers")
         if ftype == "string" and not isinstance(elt, str):
@@ -102,7 +107,7 @@ def _validate_list_op(field: str, op: str, value: Any, path: str) -> None:
 
 def _validate_scalar_operand(field: str, value: Any, path: str) -> None:
     ftype = FIELD_TYPES[field]
-    if ftype == "number" and not isinstance(value, (int, float)):
+    if ftype == "number" and not _is_real_number(value):
         raise _err(f"{path}.value",
                    f"field {field!r} expects a number")
     if ftype == "string" and not isinstance(value, str):

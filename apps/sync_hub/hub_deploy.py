@@ -27,9 +27,11 @@ CLI::
     python -m apps.sync_hub.hub_deploy argv   --uv UV --data-dir D --port P
     python -m apps.sync_hub.hub_deploy render --kind systemd|launchd --out-dir O --repo-root R \\
         --uv UV --data-dir D --port P --backup-dest B --keep N [--upload-r2 --doppler DOPPLER] \\
-        [--serve-r2 --doppler DOPPLER --serve-doppler-config CONFIG]
+        [--serve-r2 --doppler DOPPLER --serve-doppler-config CONFIG] \\
+        [--allowed-hosts HOST[,HOST]]
     python -m apps.sync_hub.hub_deploy init   --data-dir D
-    python -m apps.sync_hub.hub_deploy status --data-dir D --url http://127.0.0.1:P
+    python -m apps.sync_hub.hub_deploy status --data-dir D --url http://127.0.0.1:P \\
+        [--allowed-hosts HOST[,HOST]]
 """
 
 from __future__ import annotations
@@ -52,6 +54,7 @@ from xml.sax.saxutils import escape
 from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity
 from apps.shared.state import schema as state_schema
+from apps.webui.server.request_guard import ALLOWED_HOSTS_ENV, parse_allowed_hosts
 
 Kind = Literal["systemd", "launchd"]
 Verdict = Literal["OK", "CRITICAL", "UNKNOWN"]
@@ -86,6 +89,22 @@ HUB_ENV: dict[str, str] = {
     "MDT_LIBRARY_MODE": "local",
     "MUSIC_DJ_AUTO_ANALYZE": "off",
 }
+
+
+def _validated_allowed_hosts(raw: str) -> str:
+    """Parse and normalize; fail at render time, not request time."""
+    try:
+        hosts = parse_allowed_hosts(raw.strip())
+    except ValueError as exc:
+        raise HubDeployError(str(exc)) from exc
+    return ",".join(hosts)
+
+
+def hub_service_env(*, allowed_hosts: str | None = None) -> dict[str, str]:
+    env = dict(HUB_ENV)
+    if allowed_hosts is not None and allowed_hosts.strip():
+        env[ALLOWED_HOSTS_ENV] = _validated_allowed_hosts(allowed_hosts)
+    return env
 
 TEMPLATE_FILES: dict[Kind, dict[str, str]] = {
     "systemd": {
@@ -263,9 +282,11 @@ class RenderInputs:
     doppler: str | None
     serve_r2: bool = False
     serve_doppler_config: str | None = None
+    allowed_hosts: str | None = None
 
 
 def _placeholder_values(kind: Kind, inputs: RenderInputs) -> dict[str, dict[str, str]]:
+    serve_env = hub_service_env(allowed_hosts=inputs.allowed_hosts)
     serve = hub_serve_argv(
         uv=inputs.uv,
         data_dir=inputs.data_dir,
@@ -287,7 +308,7 @@ def _placeholder_values(kind: Kind, inputs: RenderInputs) -> dict[str, dict[str,
         return {
             "opendj-hub.service": {
                 "REPO_ROOT": repo,
-                "ENVIRONMENT": systemd_environment(HUB_ENV),
+                "ENVIRONMENT": systemd_environment(serve_env),
                 "EXEC_START": systemd_exec_line(serve),
             },
             "opendj-hub-backup.service": {
@@ -304,7 +325,7 @@ def _placeholder_values(kind: Kind, inputs: RenderInputs) -> dict[str, dict[str,
                 "LABEL": CFG.LAUNCHD_LABEL,
                 "REPO_ROOT": escape(repo),
                 "PROGRAM_ARGUMENTS": launchd_strings(serve),
-                "ENVIRONMENT": launchd_environment(HUB_ENV),
+                "ENVIRONMENT": launchd_environment(serve_env),
                 "LOG_DIR": escape(logs),
             },
             f"{CFG.LAUNCHD_BACKUP_LABEL}.plist": {
@@ -416,6 +437,67 @@ def probe_hub(url: str, data_dir: Path) -> HubProbe:
     return verdict("OK", "is_hub true, hub id matches the data dir, schema matches")
 
 
+@dataclass(frozen=True)
+class AllowedHostProbe:
+    verdict: Verdict
+    reason: str
+    host: str | None = None
+    http_status: int | None = None
+
+
+def probe_allowed_host(url: str, allowed_hosts: str) -> AllowedHostProbe:
+    """Probe loopback health with Host set to the first allowed hostname."""
+    base = url.rstrip("/")
+    try:
+        normalized = _validated_allowed_hosts(allowed_hosts)
+    except HubDeployError as exc:
+        return AllowedHostProbe("UNKNOWN", str(exc))
+    first_host = normalized.split(",", 1)[0]
+    request = urllib.request.Request(
+        f"{base}/api/v1/health",
+        headers={"Host": first_host},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=CFG.PROBE_TIMEOUT_S) as resp:
+            status = resp.status
+            body_text = resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+        body_text = exc.read().decode("utf-8", "replace")
+    except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+        return AllowedHostProbe(
+            "UNKNOWN",
+            f"no answer from {base} with Host {first_host!r}: {exc}",
+            host=first_host,
+        )
+    if status == 200:
+        return AllowedHostProbe(
+            "OK",
+            f"allowed host {first_host!r} accepted on loopback",
+            host=first_host,
+            http_status=status,
+        )
+    if status == 403:
+        try:
+            body = json.loads(body_text)
+        except json.JSONDecodeError:
+            body = None
+        if isinstance(body, dict) and body.get("code") == "HOST_NOT_ALLOWED":
+            return AllowedHostProbe(
+                "CRITICAL",
+                f"host {first_host!r} is not in the configured allowlist",
+                host=first_host,
+                http_status=status,
+            )
+    snippet = body_text[:300]
+    return AllowedHostProbe(
+        "UNKNOWN",
+        f"GET /api/v1/health with Host {first_host!r} answered {status}: {snippet}",
+        host=first_host,
+        http_status=status,
+    )
+
+
 # ----- CLI -------------------------------------------------------------------
 
 
@@ -448,6 +530,12 @@ def _build_parser() -> argparse.ArgumentParser:
             default=None,
             help="Doppler config for --serve-r2 (project is CFG.DOPPLER_PROJECT)",
         )
+    render.add_argument(
+        "--allowed-hosts",
+        default=None,
+        help="comma-separated bare hostnames for MUSIC_DJ_ALLOWED_HOSTS on the serve unit "
+        "(required for tailnet spokes via tailscale serve)",
+    )
     init = sub.add_parser(
         "init", help="create the hub DB and register the hub (needs MDT_IS_HUB=1)"
     )
@@ -455,6 +543,12 @@ def _build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="probe a running hub over HTTP")
     status.add_argument("--data-dir", required=True, type=Path)
     status.add_argument("--url", required=True)
+    status.add_argument(
+        "--allowed-hosts",
+        default=None,
+        help="if set, probe GET /api/v1/health on loopback with Host set to the first "
+        "listed hostname",
+    )
     return parser
 
 
@@ -496,6 +590,7 @@ def _cmd_render(args: argparse.Namespace) -> int:
         doppler=args.doppler,
         serve_r2=args.serve_r2,
         serve_doppler_config=args.serve_doppler_config,
+        allowed_hosts=args.allowed_hosts,
     )
     args.out_dir.mkdir(parents=True, exist_ok=True)
     for name, text in render_units(args.kind, inputs).items():
@@ -514,7 +609,13 @@ def _cmd_status(args: argparse.Namespace) -> int:
     probe = probe_hub(args.url, args.data_dir)
     print(json.dumps(asdict(probe), sort_keys=True))
     print(f"[{probe.verdict}] {probe.reason}")
-    return EXIT_BY_VERDICT[probe.verdict]
+    worst = EXIT_BY_VERDICT[probe.verdict]
+    if args.allowed_hosts:
+        allow_probe = probe_allowed_host(args.url, args.allowed_hosts)
+        print(json.dumps(asdict(allow_probe), sort_keys=True))
+        print(f"[{allow_probe.verdict}] allowed-host: {allow_probe.reason}")
+        worst = max(worst, EXIT_BY_VERDICT[allow_probe.verdict])
+    return worst
 
 
 #: Keys are exactly the subparser names; argparse refuses anything else.

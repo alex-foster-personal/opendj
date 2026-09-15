@@ -1,4 +1,9 @@
-"""RESCUE-01: atomic rescue snapshot ring writer."""
+"""RESCUE-01: atomic rescue snapshot ring writer.
+
+[if] appends wrap the ring [then] the index and latest read point at the newest slot, [else stop].
+[if] a snapshot is over 32 KiB or has the wrong schema [then] append rejects it, [else stop].
+[if] a write dies pre-rename or the newest slot is gone [then] latest is the prior one, [else stop].
+"""
 
 from __future__ import annotations
 

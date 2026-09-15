@@ -28,7 +28,30 @@
  */
 
 import { capabilities } from '../api/capabilities.svelte';
-import { type SetupStatus, getSetupStatus, setupRefusal } from './setup-api';
+import { type SetupStatus, finalSetupRefusal, getSetupStatus } from './setup-api';
+
+/** How long to keep probing health before the boot gate shows a visible error. */
+export const FIRST_RUN_TIMEOUT_MS = 15_000;
+/** Shorter probe budget for resolveFirstRunWithMeta callers and tests. */
+export const FIRST_RUN_PROBE_TIMEOUT_MS = 5_000;
+/** Delay between health probe retries while the daemon is still starting. */
+export const FIRST_RUN_PROBE_INTERVAL_MS = 500;
+
+export interface FirstRunResult {
+	show: boolean;
+	error: string | null;
+}
+
+export class FirstRunTimeoutError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'FirstRunTimeoutError';
+	}
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * The decision, given what is already known. Pure: no fetch, no navigation.
@@ -46,19 +69,78 @@ export function shouldShowFirstRun(
 	return status.should_show_wizard;
 }
 
+/** Poll until the daemon flavor is no longer unknown, or timeout. */
+export async function waitForEngineFlavor(
+	timeoutMs = FIRST_RUN_PROBE_TIMEOUT_MS,
+	intervalMs = FIRST_RUN_PROBE_INTERVAL_MS
+): Promise<'engine' | 'legacy' | 'timeout'> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		const flavor = await capabilities.probe();
+		if (flavor !== 'unknown') return flavor;
+		await sleep(intervalMs);
+	}
+	return 'timeout';
+}
+
 /**
- * Probe the daemon and resolve the gate. Returns false rather than throwing:
- * every failure mode here means "show the library", and a caller that had to
- * handle an exception would only translate it back into that same answer.
+ * Probe the daemon and resolve the gate. Returns false rather than throwing
+ * for status-fetch failures (show the library). Probe timeout is NOT silent:
+ * resolveFirstRunWithMeta surfaces it as an error for the boot gate.
  */
-export async function resolveFirstRun(): Promise<boolean> {
-	await capabilities.probe();
-	const refusal = setupRefusal();
-	if (refusal !== null) return false;
+export async function resolveFirstRunWithMeta(
+	options: { probeTimeoutMs?: number; probeIntervalMs?: number } = {}
+): Promise<FirstRunResult> {
+	const flavor = await waitForEngineFlavor(
+		options.probeTimeoutMs ?? FIRST_RUN_PROBE_TIMEOUT_MS,
+		options.probeIntervalMs ?? FIRST_RUN_PROBE_INTERVAL_MS
+	);
+	if (flavor === 'timeout') {
+		return {
+			show: false,
+			error:
+				'Could not reach the app engine in time. Check that the backend is running, then retry.'
+		};
+	}
+	const refusal = finalSetupRefusal();
+	if (refusal !== null) return { show: false, error: null };
 	try {
-		return shouldShowFirstRun(refusal, await getSetupStatus());
+		return { show: shouldShowFirstRun(refusal, await getSetupStatus()), error: null };
 	} catch (exc) {
 		console.error('[library] first-run check failed', exc);
-		return false;
+		return { show: false, error: null };
+	}
+}
+
+/**
+ * Probe until the daemon flavor is known, then ask the engine whether to show
+ * the wizard. Retries after a failed health GET (cold start) instead of
+ * treating "daemon not identified yet" as a final refusal -- that was the
+ * race that skipped GET /api/v1/setup/status entirely on fresh installs.
+ */
+export async function resolveFirstRun(
+	options: { timeoutMs?: number } = {}
+): Promise<boolean> {
+	const timeoutMs = options.timeoutMs ?? FIRST_RUN_TIMEOUT_MS;
+	const deadline = Date.now() + timeoutMs;
+
+	while (true) {
+		await capabilities.probe();
+		const refusal = finalSetupRefusal();
+		if (refusal !== null) return false;
+		if (capabilities.flavor === 'engine') {
+			try {
+				return shouldShowFirstRun(null, await getSetupStatus());
+			} catch (exc) {
+				console.error('[library] first-run check failed', exc);
+				return false;
+			}
+		}
+		if (Date.now() >= deadline) {
+			throw new FirstRunTimeoutError(
+				'The app could not reach the engine to offer setup. Check that it is running, then retry.'
+			);
+		}
+		await sleep(FIRST_RUN_PROBE_INTERVAL_MS);
 	}
 }
