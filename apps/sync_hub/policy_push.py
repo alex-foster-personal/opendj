@@ -98,6 +98,52 @@ def proposed_from_sync_changes(
     )
 
 
+def _registered_machines(conn: sqlite3.Connection) -> set[str]:
+    return {str(row[0]) for row in conn.execute("SELECT machine_id FROM machines")}
+
+
+def _registered_only(
+    proposed: ProposedPolicy, registered: set[str]
+) -> ProposedPolicy | None:
+    """Keep only rows whose ``machine_id`` is already in ``machines``.
+
+    Rows naming a machine the hub has not met are left for ``hub_apply``'s
+    FOREIGN KEY refusal when no fleet snapshot accompanied the push (round 3
+    finding N4 still needs that 409 to be observable on the wire).
+    """
+    policies = tuple(c for c in proposed.policies if c.machine_id in registered)
+    pins = tuple(p for p in proposed.pins if p.machine_id in registered)
+    removed_policies = tuple(
+        k for k in proposed.removed_policies if k.machine_id in registered
+    )
+    removed_pins = tuple(k for k in proposed.removed_pins if k.machine_id in registered)
+    if not (policies or pins or removed_policies or removed_pins):
+        return None
+    return ProposedPolicy(
+        author_machine_id=proposed.author_machine_id,
+        policies=policies,
+        pins=pins,
+        defaults=proposed.defaults,
+        excluded_tables=proposed.excluded_tables,
+        removed_policies=removed_policies,
+        removed_pins=removed_pins,
+    )
+
+
+def _pending_playlists(changes: Sequence[protocol.RowChange]) -> frozenset[str]:
+    """Live ``playlists`` rows carried in the same push batch as a pin."""
+    ids: set[str] = set()
+    for change in changes:
+        if change.table != "playlists":
+            continue
+        if _is_tombstone(change):
+            continue
+        playlist_id = change.values.get("playlist_id")
+        if playlist_id is not None:
+            ids.add(str(playlist_id))
+    return frozenset(ids)
+
+
 def evaluate_push_policies(
     conn: sqlite3.Connection,
     author_machine_id: str,
@@ -111,7 +157,14 @@ def evaluate_push_policies(
     proposed = proposed_from_sync_changes(author_machine_id, changes)
     if proposed is None:
         return None
-    outcome = evaluate(conn, proposed)
+    proposed = _registered_only(proposed, _registered_machines(conn))
+    if proposed is None:
+        return None
+    outcome = evaluate(
+        conn,
+        proposed,
+        extra_live_playlists=_pending_playlists(changes),
+    )
     if outcome.blocking:
         raise SyncPolicyViolationError(outcome)
     return outcome

@@ -280,14 +280,24 @@ def _require_distinct_keys(proposed: ProposedPolicy) -> None:
             )
 
 
-def evaluate(conn: sqlite3.Connection, proposed: ProposedPolicy) -> PolicyOutcome:
+def evaluate(
+    conn: sqlite3.Connection,
+    proposed: ProposedPolicy,
+    *,
+    extra_live_playlists: frozenset[str] = frozenset(),
+) -> PolicyOutcome:
     """Validate and plan ``proposed``. Reads only.
 
     Raises :class:`PolicyInputError` (``PROPOSAL_INVALID``) for a repeated key.
+
+    ``extra_live_playlists`` names playlists offered in the same push batch
+    that are not yet in ``conn``; only the post-proposal pass consults it.
     """
     _require_distinct_keys(proposed)
     before = validate_fleet_policy(conn, empty_proposal(proposed.author_machine_id))
-    after = validate_fleet_policy(conn, proposed)
+    after = validate_fleet_policy(
+        conn, proposed, extra_live_playlists=extra_live_playlists
+    )
     gate = _GateContext(
         before_keys=frozenset((v.rule_id, v.subject) for v in before),
         own_subjects=frozenset(subject for _, subject in proposal_targets(proposed)),
