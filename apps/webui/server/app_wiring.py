@@ -340,6 +340,33 @@ def _startup_stem_index_refresh(source, data_dir: Path) -> None:
         source.refresh_index(Path(data_dir), force=True)
 
 
+def _install_armed_stem_hydration(
+    app: FastAPI,
+    *,
+    data_dir: Path,
+    source,
+    start_refresh_thread: bool = True,
+) -> None:
+    from apps.cloud.stem_source import DirectR2Source
+
+    app.state.stem_hydration_source = source
+    app.state.stem_hydration_data_dir = data_dir
+    app.state.stem_hydration_unarmed_reason = None
+    app.state.stem_hydration_unarmed_kind = None
+    app.state.stem_hydration_cfg = None
+    app.state.stem_hydration_s3 = None
+    if isinstance(source, DirectR2Source):
+        app.state.stem_hydration_cfg = source.cfg
+        app.state.stem_hydration_s3 = source.s3
+    if start_refresh_thread:
+        threading.Thread(
+            target=_startup_stem_index_refresh,
+            args=(source, data_dir),
+            name="opendj-stem-index-startup-refresh",
+            daemon=True,
+        ).start()
+
+
 def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None:
     """Wire on-demand stem hydration onto ``app.state`` (ADR-0024 / ADR-0025),
     or leave it unset.
@@ -355,11 +382,12 @@ def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None
     ``stem_hydration_unarmed_reason`` is set and stems misses answer 502
     ``STEM_HYDRATION_NOT_ARMED``.
     """
-    from apps.cloud.stem_source import DirectR2Source, arm_stem_hydration_source
+    from apps.cloud.stem_source import arm_stem_hydration_source
 
     app.state.stem_hydration_source = None
     app.state.stem_hydration_data_dir = None
     app.state.stem_hydration_unarmed_reason = None
+    app.state.stem_hydration_unarmed_kind = None
     # Legacy test injection points; production uses stem_hydration_source.
     app.state.stem_hydration_cfg = None
     app.state.stem_hydration_s3 = None
@@ -369,22 +397,12 @@ def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None
     armed = arm_stem_hydration_source(data_dir)
     if armed.unarmed_reason is not None:
         app.state.stem_hydration_unarmed_reason = armed.unarmed_reason
+        app.state.stem_hydration_unarmed_kind = armed.unarmed_kind
         app.state.stem_hydration_data_dir = data_dir
         return
-    source = armed.source
-    if source is None:
+    if armed.source is None:
         return
-    app.state.stem_hydration_source = source
-    app.state.stem_hydration_data_dir = data_dir
-    if isinstance(source, DirectR2Source):
-        app.state.stem_hydration_cfg = source.cfg
-        app.state.stem_hydration_s3 = source.s3
-    threading.Thread(
-        target=_startup_stem_index_refresh,
-        args=(source, data_dir),
-        name="opendj-stem-index-startup-refresh",
-        daemon=True,
-    ).start()
+    _install_armed_stem_hydration(app, data_dir=data_dir, source=armed.source)
 
 
 def _install_exception_handlers(app: FastAPI) -> None:
