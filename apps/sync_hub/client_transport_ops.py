@@ -144,6 +144,8 @@ class _PushOutcome:
     #: Rows of OURS the hub refused because ITS local copy carries a stamp it
     #: cannot order. ``None`` means the hub did not report.
     hub_quarantined: int | None = None
+    #: Identity-collapse rejections from the hub (issue #3057).
+    identity_rejects: tuple[protocol.IdentityReject, ...] = ()
     #: True when the hub answered a push request with 403
     #: ``entitlement_not_in_plan`` (:mod:`apps.sync_hub.client_refusal`).
     #: The batches before it are counted; nothing after it was sent.
@@ -214,6 +216,8 @@ def _push_chunk_with_split(
             "rejected": _int_from(left, "rejected", "push")
             + _int_from(right, "rejected", "push"),
             "quarantined": left.get("quarantined"),
+            "identity_rejects": list(left.get("identity_rejects") or [])
+            + list(right.get("identity_rejects") or []),
         }, left_requests + right_requests
 
 
@@ -240,6 +244,7 @@ def _push_in_batches(
     rejected = 0
     requests = 0
     reported: list[Any] = []
+    identity_rejects: list[protocol.IdentityReject] = []
     wire_fleet = [machine.to_wire() for machine in fleet]
     for chunk in _batched(rows, batch_rows):
         try:
@@ -260,13 +265,26 @@ def _push_in_batches(
         accepted += _int_from(payload, "accepted", "push")
         rejected += _int_from(payload, "rejected", "push")
         reported.append(payload.get("quarantined"))
+        identity_rejects.extend(_identity_rejects_from(payload))
         requests += chunk_requests
     return _PushOutcome(
         accepted=accepted,
         rejected=rejected,
         requests=requests,
         hub_quarantined=_total_reported(reported),
+        identity_rejects=tuple(identity_rejects),
     )
+
+
+def _identity_rejects_from(payload: Mapping[str, object]) -> list[protocol.IdentityReject]:
+    raw = payload.get("identity_rejects")
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise protocol.SyncProtocolError(
+            f"push response 'identity_rejects' must be an array or absent, got {raw!r}"
+        )
+    return [protocol.IdentityReject.from_wire(item) for item in raw]
 
 
 def _pull_in_chunks(

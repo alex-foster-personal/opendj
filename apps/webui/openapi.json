@@ -7661,6 +7661,33 @@
         "title": "IdentityBacklogOut",
         "type": "object"
       },
+      "IdentityRejectModel": {
+        "description": "One identity-collapse rejection: the offered PK lost to a hub survivor.",
+        "properties": {
+          "offered_pk": {
+            "minLength": 1,
+            "title": "Offered Pk",
+            "type": "string"
+          },
+          "survivor_pk": {
+            "minLength": 1,
+            "title": "Survivor Pk",
+            "type": "string"
+          },
+          "table": {
+            "minLength": 1,
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table",
+          "offered_pk",
+          "survivor_pk"
+        ],
+        "title": "IdentityRejectModel",
+        "type": "object"
+      },
       "JobIn": {
         "properties": {
           "external_ref": {
@@ -9530,11 +9557,13 @@
             "type": "string"
           },
           "machine_id": {
+            "maxLength": 256,
             "minLength": 1,
             "title": "Machine Id",
             "type": "string"
           },
           "name": {
+            "maxLength": 256,
             "minLength": 1,
             "title": "Name",
             "type": "string"
@@ -13262,6 +13291,7 @@
             "type": "array"
           },
           "machine_id": {
+            "maxLength": 256,
             "minLength": 1,
             "title": "Machine Id",
             "type": "string"
@@ -13315,6 +13345,13 @@
             "default": 0,
             "title": "Hash Pending",
             "type": "integer"
+          },
+          "identity_rejects": {
+            "items": {
+              "$ref": "#/components/schemas/IdentityRejectModel"
+            },
+            "title": "Identity Rejects",
+            "type": "array"
           },
           "quarantined": {
             "default": 0,
@@ -32537,6 +32574,7 @@
             "required": true,
             "schema": {
               "description": "the calling spoke",
+              "maxLength": 256,
               "minLength": 1,
               "title": "Machine Id",
               "type": "string"
@@ -32838,6 +32876,7 @@
             "required": true,
             "schema": {
               "description": "the calling spoke",
+              "maxLength": 256,
               "minLength": 1,
               "title": "Machine Id",
               "type": "string"
