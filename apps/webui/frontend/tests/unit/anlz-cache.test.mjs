@@ -1002,3 +1002,75 @@ test('a settled own answer of missing reaches the engine, an empty rekordbox gri
 		globalThis.fetch = originalFetch;
 	}
 });
+
+// ---------------------------------------------- PERFMODE-04 shed (waveform-detail-bands)
+
+test('while the shed defers, ensureAnlzPrefetch does not fetch; once released, it does', async () => {
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls += 1;
+		return jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+	};
+	const requests = [];
+	cache.setAnlzPrefetchShedRequest((id) => requests.push(id));
+	try {
+		cache.ensureAnlzPrefetch('shed-gated-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		assert.deepEqual(requests, ['waveform-detail-bands'], 'ensureAnlzPrefetch must ask the shed, not fetch directly');
+		assert.equal(calls, 0, 'the work effect (a real /anlz fetch) must be absent while the gate is closed');
+		assert.equal(cache.getAnlzEntry('shed-gated-track'), undefined, 'nothing published yet');
+
+		await cache.resumeAnlzPrefetchOwedFetch();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		assert.equal(calls, 1, 'the work effect must be present once the gate reopens');
+		assert.equal(cache.getAnlzEntry('shed-gated-track')?.status, 'ready');
+	} finally {
+		globalThis.fetch = originalFetch;
+		cache.setAnlzPrefetchShedRequest(null);
+	}
+});
+
+test('with no shed armed, ensureAnlzPrefetch fetches immediately, exactly like before this PR', async () => {
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls += 1;
+		return jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+	};
+	try {
+		cache.ensureAnlzPrefetch('shed-ungated-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(calls, 1);
+		assert.equal(cache.getAnlzEntry('shed-ungated-track')?.status, 'ready');
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test('ensureAnlzPrefetch on a fresh, usable cache entry still does not fetch (cache-hit check runs before the gate)', async () => {
+	globalThis.fetch = async () => jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+	try {
+		cache.ensureAnlzPrefetch('shed-cachehit-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(cache.getAnlzEntry('shed-cachehit-track')?.status, 'ready');
+
+		let calls = 0;
+		globalThis.fetch = async () => {
+			calls += 1;
+			return jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+		};
+		const requests = [];
+		cache.setAnlzPrefetchShedRequest((id) => requests.push(id));
+		try {
+			cache.ensureAnlzPrefetch('shed-cachehit-track');
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			assert.equal(calls, 0, 'a fresh ready entry must not even ask the shed');
+			assert.equal(requests.length, 0);
+		} finally {
+			cache.setAnlzPrefetchShedRequest(null);
+		}
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});

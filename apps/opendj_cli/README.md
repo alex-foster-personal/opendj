@@ -33,6 +33,13 @@ opendj --json open /performance
 MCP equivalent: `open_route` with `route` defaulting to `/performance`.
 `ui_url` opens a browser tab only and does not move the shell window.
 
+## CLI meta commands
+
+| Command | Purpose |
+|---------|---------|
+| `opendj status [--json]` | Lock-file origin, health, build-info (MCP `status` parity) |
+| `opendj api METHOD PATH` | Raw HTTP to `/api/v1/*` only; refuses traversal and non-JSON 2xx bodies |
+
 ## MCP tools
 
 | Tool | Purpose |

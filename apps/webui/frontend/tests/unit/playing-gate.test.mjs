@@ -349,6 +349,98 @@ test('the DEFAULT recorder is the real perf ring, not just an injectable seam', 
 	assert.equal(row.labels.resumedBy, 'playback-stopped');
 });
 
+// ------------------------------------------------------- createBackgroundDemandShed
+
+/** A shed whose transport, pressure, xrun counter and clock the test owns outright. */
+function makeShed({ playing = true, elevated = true, xruns = 0, jobs = [] } = {}) {
+	const state = { playing, elevated, xruns, notified: [] };
+	const shed = gateModule.createBackgroundDemandShed({
+		isPlaying: () => state.playing,
+		pressureElevated: () => state.elevated,
+		readXruns: () => state.xruns,
+		notify: (suggestion) => state.notified.push(suggestion),
+		jobs
+	});
+	return { shed, state };
+}
+
+test('createBackgroundDemandShed refuses to register a P0 job', () => {
+	assert.throws(
+		() =>
+			gateModule.createBackgroundDemandShed({
+				isPlaying: () => false,
+				pressureElevated: () => false,
+				readXruns: () => 0,
+				jobs: [{ id: 'audio-callbacks', run: async () => {} }]
+			}),
+		/audio-callbacks cannot be shed/
+	);
+});
+
+test('a job requested while playing and elevated is owed, not run', () => {
+	let ran = 0;
+	const { shed } = makeShed({
+		playing: true,
+		elevated: true,
+		jobs: [{ id: 'library-poll-cadence', run: async () => { ran += 1; } }]
+	});
+
+	shed.request('library-poll-cadence');
+
+	assert.equal(ran, 0, 'the work effect must be absent while the gate is closed');
+	assert.equal(shed.pending, true, 'but owed, never dropped');
+});
+
+test('the owed job actually runs once pressure clears', async () => {
+	let ran = 0;
+	const { shed, state } = makeShed({
+		playing: true,
+		elevated: true,
+		jobs: [{ id: 'library-poll-cadence', run: async () => { ran += 1; } }]
+	});
+
+	shed.request('library-poll-cadence');
+	assert.equal(ran, 0);
+
+	state.elevated = false;
+	shed.sync();
+	await flush();
+
+	assert.equal(ran, 1, 'the work effect must be present once the gate reopens');
+	assert.equal(shed.pending, false);
+});
+
+test('a job requested while idle runs its real work immediately', () => {
+	let ran = 0;
+	const { shed } = makeShed({
+		playing: false,
+		elevated: false,
+		jobs: [{ id: 'library-poll-cadence', run: async () => { ran += 1; } }]
+	});
+
+	shed.request('library-poll-cadence');
+
+	assert.equal(ran, 1);
+});
+
+test('sync() suggests toasts exactly once per elevated episode, only while a deck plays', () => {
+	const { shed, state } = makeShed({ playing: true, elevated: false, jobs: [] });
+
+	shed.sync();
+	assert.equal(state.notified.length, 0, 'idle: no suggestion');
+
+	state.elevated = true;
+	shed.sync();
+	assert.equal(state.notified.length, gateModule.SHED_TOAST_SUGGESTIONS.length);
+
+	shed.sync();
+	assert.equal(
+		state.notified.length,
+		gateModule.SHED_TOAST_SUGGESTIONS.length,
+		'one episode, one suggestion round, not one per sync tick'
+	);
+});
+
 // ------------------------------------------------------------- anyDeckPlaying
 
 test('anyDeckPlaying reports false on a fresh engine with no deck loaded', () => {

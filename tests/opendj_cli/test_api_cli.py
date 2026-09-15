@@ -15,6 +15,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from starlette.responses import HTMLResponse
 
 from apps.opendj_cli import api_cli
 from apps.opendj_cli.__main__ import main
@@ -76,6 +77,109 @@ def test_api_get_prints_json_and_exits_0(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     base_url, _port = library_daemon
+    _patch_backend(monkeypatch, base_url)
+
+    assert main(["api", "GET", "/api/v1/health"]) == api_cli.EXIT_OK
+
+    captured = capsys.readouterr()
+    body = json.loads(captured.out)
+    assert body["status"] == "ok"
+    assert captured.err == ""
+
+
+@pytest.fixture
+def html_api_daemon(tmp_path: Path) -> Iterator[tuple[str, int]]:
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(5)
+    port = int(listener.getsockname()[1])
+    app = create_app(
+        backend=InMemoryBackend(),
+        mount_frontend=False,
+        enable_cors=False,
+        client_error_log_dir=tmp_path / "client-errors",
+        client_event_log_dir=tmp_path / "client-events",
+    )
+
+    @app.get("/api/v1/test-html-3035")
+    def _html() -> HTMLResponse:
+        return HTMLResponse("<html></html>")
+
+    server, thread = start_uvicorn_in_thread(
+        __import__("uvicorn").Config(app, log_level="warning"),
+        what="the html api daemon",
+        sockets=[listener],
+    )
+    base_url = f"http://127.0.0.1:{port}"
+    try:
+        yield base_url, port
+    finally:
+        server.should_exit = True
+        thread.join(timeout=0.5)
+        if thread.is_alive():
+            server.force_exit = True
+            thread.join(timeout=10)
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_api_rejects_traversal(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] the api path climbs out of /api/v1 [then] exit failed with no stdout, [else stop]."""
+    assert (
+        main(["api", "GET", "/api/v1/../../../etc/passwd"])
+        == api_cli.EXIT_FAILED
+    )
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_api_rejects_root_path(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] the api path is bare / [then] exit failed with no stdout, [else stop]."""
+    assert main(["api", "GET", "/"]) == api_cli.EXIT_FAILED
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_api_invalid_path_emits_json_code(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] --json and the path is invalid [then] stdout carries code invalid_path, [else stop]."""
+    assert main(["--json", "api", "GET", "/"]) == api_cli.EXIT_FAILED
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["error"]["code"] == "invalid_path"
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_api_rejects_html_success_body(
+    html_api_daemon: tuple[str, int],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] a 200 body is HTML not JSON [then] exit failed and stderr says not JSON, [else stop]."""
+    base_url, _port = html_api_daemon
+    _patch_backend(monkeypatch, base_url)
+
+    assert main(["api", "GET", "/api/v1/test-html-3035"]) == api_cli.EXIT_FAILED
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "not JSON" in captured.err
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_api_health_still_accepts_json(
+    html_api_daemon: tuple[str, int],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] the health route answers JSON [then] exit ok and print the body, [else stop]."""
+    base_url, _port = html_api_daemon
     _patch_backend(monkeypatch, base_url)
 
     assert main(["api", "GET", "/api/v1/health"]) == api_cli.EXIT_OK
