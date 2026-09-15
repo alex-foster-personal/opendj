@@ -108,14 +108,13 @@ def test_status_engine_down(tmp_path: Any) -> None:
 @pytest.mark.requirement("AGENT-05")
 def test_library_ui_prefs_topbar_round_trip(engine: Engine) -> None:
     """[if] MCP library PUTs auto_play_enforce_order [then] GET returns it, [else stop]."""
-    engine.page().start()
     put = call_tool(
         engine,
         "library",
         {
             "method": "PUT",
             "path": "/api/v1/ui-prefs",
-            "body": json.dumps({"auto_play_enforce_order": True}),
+            "fields": {"auto_play_enforce_order": "true"},
         },
     )
     assert put["status_code"] == 200
