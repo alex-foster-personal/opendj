@@ -81,7 +81,7 @@ llvmlite==0.47.0
 # extra or shipped payload declares madmom at all (NOTICE, docs/operator-setup.md).
 madmom @ git+https://github.com/CPJKU/madmom@main
 # madmom uses pkg_resources which was removed from setuptools>=81.
-setuptools<85
+setuptools<81
 PyYAML>=6.0
 
 # Phase 15 -- open-dj spec validation + canonicalisation.
@@ -188,5 +188,8 @@ setproctitle>=1.3,<2
 regex==2026.7.19
 httpx>=0.28,<1
 httpx2>=2.12.0,<3
+# MCP stdio server the installed app ships (AGENT-11, #2753, PR #2766); a core
+# dependency in pyproject since then, and CI installs this file only.
+mcp>=2.0,<3
 # Google id_token verification for POST /api/v1/sync/enroll (ADR 12 B).
 pyjwt[crypto]>=2.9,<3

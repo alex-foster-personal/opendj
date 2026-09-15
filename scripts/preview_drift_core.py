@@ -122,6 +122,72 @@ def _promote_to_fossil(report: Report) -> None:
         report.verdict = "FOSSIL"
 
 
+def _append_fossil_merge_reason(
+    report: Report, merge_count: int, main_ref: str, fossil_threshold: int, mode: str
+) -> None:
+    report.reasons.append(
+        f"{merge_count} merge commits on the preview and not on "
+        f"{main_ref} (ceiling {fossil_threshold}): a divergent "
+        f"lineage shape, left behind by a history rewrite -- "
+        f"{_fossil_shape_conclusion(mode)}."
+    )
+
+
+def _append_fossil_stale_reason(
+    report: Report, stale: list[PreviewOnlyCommit], fossil_threshold: int, mode: str
+) -> None:
+    oldest = min(stale, key=lambda c: c.committed_at)
+    newest = max(stale, key=lambda c: c.committed_at)
+    report.reasons.append(
+        f"{len(stale)} preview-only commits (ceiling {fossil_threshold}), "
+        f"spanning {oldest.committed_at.date()} to {newest.committed_at.date()}: "
+        f"a divergent lineage shape -- {_fossil_shape_conclusion(mode)}. "
+        f"Nothing here is merged to main."
+    )
+
+
+def _maybe_finish_remote_fossil_early(
+    cwd: Path,
+    main_ref: str,
+    preview_ref: str,
+    report: Report,
+    fossil_threshold: int,
+) -> bool:
+    """Return True when ``report`` is a finished FOSSIL verdict in remote mode.
+
+    Containment replay over a fossil-shaped ref can take many minutes on a
+    nucbox timer (issue #2718: ``preview-refresh.service`` hit its 300 s
+    ``TimeoutStartSec`` while ``git cherry`` alone took under 2 s). Remote
+    mode only: worktree measurements stay authoritative and must run the full
+    path (r3974540460). The stale shortcut additionally requires every cherry
+    ``+`` row to be past ``max_age_hours`` AND ``behind`` to exceed
+    ``max_behind``, so a small ref that is merely behind but not yet a
+    divergent fossil still gets the full containment pass.
+    """
+    if report.mode != "remote" or report.serves_main_tree:
+        return False
+
+    merges = _merge_commits(cwd, main_ref, preview_ref)
+    if len(merges) >= fossil_threshold:
+        _promote_to_fossil(report)
+        _append_fossil_merge_reason(report, len(merges), main_ref, fossil_threshold, report.mode)
+        return True
+
+    if len(report.preview_only) < fossil_threshold:
+        return False
+    raw_stale = [c for c in report.preview_only if c.age_hours > report.max_age_hours]
+    if len(raw_stale) < fossil_threshold:
+        return False
+    if len(raw_stale) != len(report.preview_only):
+        return False
+    if report.behind <= report.max_behind:
+        return False
+
+    _promote_to_fossil(report)
+    _append_fossil_stale_reason(report, raw_stale, fossil_threshold, report.mode)
+    return True
+
+
 def _fossil_shape_conclusion(mode: str) -> str:
     """The sentence explaining what a fossil-shaped commit history MEANS,
     which depends entirely on whether the measured ref is being served right
@@ -203,9 +269,6 @@ def evaluate(
     # as landed forever from a single patch-id match, with no later
     # re-check, so two such commits can each read "landed" while their
     # COMBINED state never coexisted on any one main commit.
-    if not report.serves_main_tree:
-        _mark_superseded_commits(cwd, preview_ref, report.preview_only)
-        _mark_landed_commits(cwd, main_ref, preview_ref, report.preview_only)
 
     # A fifth blind spot neither commit nor tree comparison can see: in
     # --worktree mode, `cwd` IS the served directory, and a staged, unstaged,
@@ -228,6 +291,15 @@ def evaluate(
                 f"live with no PR gate having seen it"
             )
 
+    if _maybe_finish_remote_fossil_early(
+        cwd, main_ref, preview_ref, report, fossil_threshold
+    ):
+        return report
+
+    if not report.serves_main_tree:
+        _mark_superseded_commits(cwd, preview_ref, report.preview_only)
+        _mark_landed_commits(cwd, main_ref, preview_ref, report.preview_only)
+
     merge_trusted_paths: set[str] = set()
     if report.serves_main_tree:
         if report.preview_only:
@@ -239,18 +311,6 @@ def evaluate(
             )
     else:
         merges = _merge_commits(cwd, main_ref, preview_ref)
-        if len(merges) >= fossil_threshold:
-            # A three-figure merge count is the divergent-lineage shape, and
-            # replaying that many merges is not a cheap check. Say what it is
-            # rather than spending minutes reaching the same answer.
-            _promote_to_fossil(report)
-            report.reasons.append(
-                f"{len(merges)} merge commits on the preview and not on "
-                f"{main_ref} (ceiling {fossil_threshold}): a divergent "
-                f"lineage shape, left behind by a history rewrite -- "
-                f"{_fossil_shape_conclusion(mode)}."
-            )
-            return report
         carrying, merge_trusted_paths = _resolution_carrying_merges(cwd, main_ref, merges)
         if carrying:
             described_merges = _describe(cwd, carrying)
@@ -298,15 +358,8 @@ def evaluate(
     # right now, so a permanently-true red is the correct outcome, not a
     # problem to avoid -- `_promote_to_fossil` preserves DRIFT there instead.
     if len(stale) >= fossil_threshold:
-        oldest = min(stale, key=lambda c: c.committed_at)
-        newest = max(stale, key=lambda c: c.committed_at)
         _promote_to_fossil(report)
-        report.reasons.append(
-            f"{len(stale)} preview-only commits (ceiling {fossil_threshold}), "
-            f"spanning {oldest.committed_at.date()} to {newest.committed_at.date()}: "
-            f"a divergent lineage shape -- {_fossil_shape_conclusion(mode)}. "
-            f"Nothing here is merged to main."
-        )
+        _append_fossil_stale_reason(report, stale, fossil_threshold, mode)
         return report
 
     _apply_never_coexisted_check(cwd, main_ref, preview_ref, report, landed_shas)

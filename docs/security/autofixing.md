@@ -74,6 +74,11 @@ Notes:
 - `requirements.txt` and `uv.lock` must move together. Until CI installs from `uv.lock`
   (see [malicious-packages.md](malicious-packages.md)), a Renovate bump to one without
   the other is a bug the PR check must catch.
+- Renovate comments "Artifact update problem" when it changed a manifest but could not
+  regenerate the lockfile. That PR must not merge. #2740 did on Mon 14 Sep 2026 and
+  left `uv sync --extra dev` unresolvable on main. `.github/workflows/lockfile-check.yml`
+  (`uv lock --check`) fails such a PR in seconds. The fleet's merge sweep must also refuse
+  it; that needs ADR-0042 follow-up F1, which makes the sweep read completed checks.
 - Validate before merging the config:
   `npx --yes --package renovate -- renovate-config-validator`.
 

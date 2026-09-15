@@ -9,6 +9,10 @@ collects all of tests/ and needs no registration.
   itself is broken and every real build would fail on nothing -> broken.
 - if a core dependency that is ALSO named by an extra reads as that extra
   leaking in, every real build trips on its own hard dependencies -> broken.
+- if a package only a core dep pulls in (httpx2 via mcp) reads as its extra
+  leaking in, every dmg build from main fails on nothing -> broken.
+- if the project itself pulls in an extra's package and that is excused
+  because a core dep also needs it, a requested extra ships unaudited -> broken.
 - if the registry narrows to only the extra a bug report happened to name,
   the other omitted extras stay unaudited -> broken.
 - if pyproject.toml grows or renames an [extras] group nobody added to the
@@ -54,6 +58,34 @@ def test_a_core_dependency_also_named_by_an_extra_is_not_a_false_positive() -> N
     not read as the extra leaking in, or every real build trips on itself."""
     lock = LOCK_SAMPLE + "numpy==1.26.4\n    # via music-dj-tools\n"
     _verify_omitted_extras(parse_locked_export(lock), PYPROJECT)
+
+
+@pytest.mark.requirement("INSTALL-12")
+def test_a_transitive_core_dependency_also_named_by_an_extra_is_not_a_false_positive() -> None:
+    """httpx2 is in "dev" AND required by mcp 2.x, a core dep. Reached only
+    through mcp it is core closure, not the extra leaking; flagging it failed
+    every dmg build from main at f04dc8a82 (Tue 15 Sep 2026)."""
+    lock = LOCK_SAMPLE + "httpx2==2.13.0\n    # via mcp\n"
+    _verify_omitted_extras(parse_locked_export(lock), PYPROJECT)
+
+
+@pytest.mark.requirement("INSTALL-12")
+def test_an_extra_package_the_project_pulls_in_still_fails_even_if_a_core_dep_needs_it() -> None:
+    """Control for the test above: when the export also shows the project
+    itself requiring httpx2, the dev extra WAS requested, so the build stops."""
+    lock = LOCK_SAMPLE + "httpx2==2.13.0\n    # via\n    #   mcp\n    #   music-dj-tools\n"
+    with pytest.raises(PayloadBuildError) as excinfo:
+        _verify_omitted_extras(parse_locked_export(lock), PYPROJECT)
+    assert "httpx2" in str(excinfo.value)
+    assert "dev" in str(excinfo.value)
+
+
+@pytest.mark.requirement("INSTALL-12")
+def test_the_real_locked_export_passes_the_extras_audit() -> None:
+    """The steady state on the real lock: the audit the dmg build runs must
+    accept the export this repo actually produces."""
+    entries, _dropped = locked_requirements(REPO_ROOT)
+    assert "httpx2" in {entry.name for entry in entries}
 
 
 @pytest.mark.requirement("INSTALL-12")
