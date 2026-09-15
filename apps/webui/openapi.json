@@ -26025,6 +26025,19 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": {
+                    "code": "TAG_READER_UNAVAILABLE",
+                    "message": "ingest upload requires the optional 'mutagen' tag reader for duration-based duplicate detection (pip install 'music-dj-tools[tags]')"
+                  }
+                }
+              }
+            },
+            "description": "Optional mutagen tag reader ([tags] extra) is not installed."
           }
         },
         "summary": "Upload",
@@ -32737,14 +32750,7 @@
             "description": "The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE."
           },
           "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "SYNC_PROTOCOL (stamp/capability gate) or SYNC_POLICY_VIOLATION (blocking policy rule on offered sync_policies / playlist_pins rows)"
           },
           "503": {
             "content": {

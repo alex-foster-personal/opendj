@@ -22,6 +22,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import httpx
+
+EXPECTED_ENGINE_ROLE = "opendj-engine"
+HEALTH_PATH = "/api/v1/health"
+IDENTITY_PROBE_TIMEOUT_S = 3.0
+
 # The same override the live-debug skill uses, so an agent that already points
 # OPENDJ_LIVE_LOCK_PATH at a sandboxed engine drives that engine from the CLI.
 LOCK_PATH_ENV = "OPENDJ_LIVE_LOCK_PATH"
@@ -38,6 +44,24 @@ class EngineNotRunning(RuntimeError):
         self.lock_path = lock_path
 
 
+class EngineIdentityMismatch(EngineNotRunning):
+    """The process on the lock's port is not the engine the lock describes."""
+
+    def __init__(
+        self,
+        message: str,
+        lock_path: Path,
+        *,
+        lock_boot_id: str | None,
+        health_boot_id: str | None,
+        port: int,
+    ) -> None:
+        super().__init__(message, lock_path)
+        self.lock_boot_id = lock_boot_id
+        self.health_boot_id = health_boot_id
+        self.port = port
+
+
 @dataclass(frozen=True)
 class EngineOrigin:
     """Where the engine the lock file describes is listening."""
@@ -47,6 +71,7 @@ class EngineOrigin:
     lock_path: Path
     pid: int | None
     role: str | None
+    boot_id: str | None
 
     @property
     def base_url(self) -> str:
@@ -112,13 +137,97 @@ def resolve_origin(
     host = payload.get("host")
     pid = payload.get("pid")
     role = payload.get("role")
+    boot_id = payload.get("boot_id")
     return EngineOrigin(
         host=host if isinstance(host, str) and host != "" else "127.0.0.1",
         port=_lock_port(payload, resolved),
         lock_path=resolved,
         pid=pid if isinstance(pid, int) and not isinstance(pid, bool) else None,
         role=role if isinstance(role, str) else None,
+        boot_id=boot_id if isinstance(boot_id, str) and boot_id != "" else None,
     )
+
+
+def verify_engine_identity(origin: EngineOrigin) -> None:
+    """Refuse unless the lock's role and boot_id match the live engine health."""
+    if origin.role != EXPECTED_ENGINE_ROLE:
+        observed = origin.role if origin.role is not None else "(missing)"
+        raise EngineIdentityMismatch(
+            f"engine lock file {origin.lock_path} names port {origin.port} with "
+            f"role={observed}, but expected role={EXPECTED_ENGINE_ROLE}",
+            origin.lock_path,
+            lock_boot_id=origin.boot_id,
+            health_boot_id=None,
+            port=origin.port,
+        )
+
+    url = f"{origin.base_url}{HEALTH_PATH}"
+    try:
+        with httpx.Client(timeout=IDENTITY_PROBE_TIMEOUT_S) as client:
+            response = client.get(url)
+    except httpx.TransportError as error:
+        raise unreachable(origin, error) from error
+
+    if response.status_code != 200:
+        raise EngineNotRunning(
+            f"engine lock file {origin.lock_path} names {origin.base_url}, but "
+            f"{HEALTH_PATH} returned status {response.status_code}",
+            origin.lock_path,
+        )
+
+    try:
+        payload = response.json()
+    except ValueError:
+        raise EngineNotRunning(
+            f"engine lock file {origin.lock_path} names {origin.base_url}, but "
+            f"{HEALTH_PATH} is not JSON (not an Open DJ engine)",
+            origin.lock_path,
+        ) from None
+
+    if not isinstance(payload, dict):
+        raise EngineNotRunning(
+            f"engine lock file {origin.lock_path} names {origin.base_url}, but "
+            f"{HEALTH_PATH} is not an Open DJ engine health document",
+            origin.lock_path,
+        )
+
+    health_boot_id = payload.get("boot_id")
+    if not isinstance(health_boot_id, str) or health_boot_id == "":
+        raise EngineNotRunning(
+            f"engine lock file {origin.lock_path} names {origin.base_url}, but "
+            f"{HEALTH_PATH} is missing boot_id (not an Open DJ engine health document)",
+            origin.lock_path,
+        )
+
+    lock_boot_id = origin.boot_id
+    if lock_boot_id is None:
+        raise EngineIdentityMismatch(
+            f"engine lock file {origin.lock_path} names port {origin.port} with "
+            f"boot_id=(missing), but {HEALTH_PATH} reported boot_id={health_boot_id}",
+            origin.lock_path,
+            lock_boot_id=None,
+            health_boot_id=health_boot_id,
+            port=origin.port,
+        )
+
+    if lock_boot_id != health_boot_id:
+        raise EngineIdentityMismatch(
+            f"engine lock file {origin.lock_path} names port {origin.port} with "
+            f"boot_id={lock_boot_id}, but {HEALTH_PATH} reported boot_id={health_boot_id}",
+            origin.lock_path,
+            lock_boot_id=lock_boot_id,
+            health_boot_id=health_boot_id,
+            port=origin.port,
+        )
+
+
+def resolve_verified_origin(
+    path: Path | None = None, environ: Mapping[str, str] | None = None
+) -> EngineOrigin:
+    """Read the lock file and verify the named engine is the one listening."""
+    origin = resolve_origin(path, environ)
+    verify_engine_identity(origin)
+    return origin
 
 
 def unreachable(origin: EngineOrigin, error: BaseException) -> EngineNotRunning:

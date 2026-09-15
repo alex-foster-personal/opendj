@@ -23,7 +23,7 @@ from apps.sync_hub.machine_wire_limits import (
 )
 from tests.cloudsync.test_hub_sync import _T0
 
-pytestmark = pytest.mark.requirement("CLOUDSYNC-21")
+pytestmark = pytest.mark.requirement("CLOUDSYNC-22")
 
 _HELLO = "/api/v1/sync/hello"
 _PUSH = "/api/v1/sync/push"

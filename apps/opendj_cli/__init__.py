@@ -17,7 +17,9 @@ body as ``error.code``):
      which, and ``--json`` carries it as ``verdict``; only ``confirmed``
      claims the effect was observed. See :mod:`confirm`.
 1    the order ran and failed, or the invocation was rejected before dispatch
-2    the engine is not running; the message names the lock file that was checked
+2    the engine is not running or its identity does not match the lock file
+     (``engine_not_running`` or ``engine_identity_mismatch``); the message
+     names the lock file that was checked
 3    the engine is up and no performance page is open, so nothing can be claimed
 4    the page accepted the order but the mirror never confirmed it
 5    the engine did not answer before the deadline

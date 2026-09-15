@@ -138,7 +138,12 @@ class _Fleet:
 # ----- reading ---------------------------------------------------------------
 
 
-def _read_fleet(conn: sqlite3.Connection, proposed: ProposedPolicy) -> _Fleet:
+def _read_fleet(
+    conn: sqlite3.Connection,
+    proposed: ProposedPolicy,
+    *,
+    extra_live_playlists: frozenset[str] = frozenset(),
+) -> _Fleet:
     machines = {str(m): int(h) for m, h in conn.execute("SELECT machine_id, is_hub FROM machines")}
     cells = {
         (str(m), str(k)): PolicyCell(str(m), str(k), str(mode), budget)
@@ -162,7 +167,7 @@ def _read_fleet(conn: sqlite3.Connection, proposed: ProposedPolicy) -> _Fleet:
     live = frozenset(
         str(row[0])
         for row in conn.execute("SELECT playlist_id FROM playlists WHERE deleted_at IS NULL")
-    )
+    ) | extra_live_playlists
     defaults = {d.asset_kind: d.mode for d in proposed.defaults}
     return _Fleet(machines, cells, pins, live, defaults)
 
@@ -372,9 +377,14 @@ def _cross_machine_edits(proposed: ProposedPolicy) -> list[Violation]:
 # ----- entry point ----------------------------------------------------------------
 
 
-def validate_fleet_policy(conn: sqlite3.Connection, proposed: ProposedPolicy) -> list[Violation]:
+def validate_fleet_policy(
+    conn: sqlite3.Connection,
+    proposed: ProposedPolicy,
+    *,
+    extra_live_playlists: frozenset[str] = frozenset(),
+) -> list[Violation]:
     """Every rule the stored fleet plus ``proposed`` breaks. Reads only."""
-    fleet = _read_fleet(conn, proposed)
+    fleet = _read_fleet(conn, proposed, extra_live_playlists=extra_live_playlists)
     return [
         *_vocabulary(proposed),
         *_unknown_machines(fleet, proposed),

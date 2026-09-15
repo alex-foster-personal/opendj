@@ -58,8 +58,9 @@ pip install --no-build-isolation -r requirements.txt
 python -m pyrekordbox download-key   # one-time: cache master.db decryption key
 ```
 
-`--no-build-isolation` is required because `madmom` needs `cython` and
-`numpy` at setup time but declares no build-requires.
+`--no-build-isolation` is required because `madmom`'s own build-requires ask
+for `numpy>2`, while this venv pins `numpy<2`; building against the ambient
+venv keeps the compiled extensions on the numpy that is actually installed.
 
 ## Running tests and lint
 
