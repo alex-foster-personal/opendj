@@ -5801,11 +5801,11 @@ export interface components {
         /** AppModeOut */
         AppModeOut: {
             /**
-             * App Mode
+             * Id
              * @default performance
              * @enum {string}
              */
-            id?: "performance" | "library-management" | "library" | "music-player";
+            id: "performance" | "library-management" | "library" | "music-player";
             /** Last Gig At */
             last_gig_at?: string | null;
         };
@@ -21357,6 +21357,13 @@ export interface operations {
                     };
                 };
             };
+            /** @description MDT_EXTERNAL_STEM_ROOTS entry does not exist */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -21365,6 +21372,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description MDT_EXTERNAL_STEM_ROOTS not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -21413,6 +21427,13 @@ export interface operations {
                         [key: string]: string;
                     };
                 };
+            };
+            /** @description Invalid or missing manifest_path, corrupt manifest, or hydrate refused */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

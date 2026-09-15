@@ -7,15 +7,32 @@ the hash-based hydrate path without going through the track-scoped loader.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.cloud.asset_store import AssetStoreError
+from apps.cloud.eviction import HydrationError
 from apps.lyrics import stems_sync
+from scripts.stem_inventory import EXTERNAL_ROOTS_ENV
 
 router = APIRouter(tags=["stems"])
+
+STEM_HYDRATE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: {
+        "description": (
+            "Invalid or missing manifest_path, corrupt manifest, or hydrate refused"
+        ),
+    },
+}
+
+STEM_PUSH_MISSING_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: {"description": "MDT_EXTERNAL_STEM_ROOTS entry does not exist"},
+    503: {"description": "MDT_EXTERNAL_STEM_ROOTS not configured"},
+}
 
 STEM_BULK_HYDRATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: {
@@ -94,33 +111,89 @@ class StemPushMissingIn(BaseModel):
     data_dir: str | None = Field(default=None)
 
 
-@router.post("/stems/{stable_id}/hydrate")
+def _structured_error(status_code: int, code: str, message: str) -> HTTPException:
+    return HTTPException(status_code=status_code, detail={"code": code, "message": message})
+
+
+def _raise_hydrate_error(exc: BaseException) -> NoReturn:
+    if isinstance(exc, FileNotFoundError):
+        raise _structured_error(
+            400,
+            "STEM_MANIFEST_PATH_NOT_FOUND",
+            f"manifest_path does not exist: {exc.filename or exc}",
+        ) from exc
+    if isinstance(exc, HydrationError):
+        raise _structured_error(400, "STEM_HYDRATE_REFUSED", str(exc)) from exc
+    if isinstance(exc, ValueError):
+        raise _structured_error(400, "STEM_MANIFEST_INVALID", str(exc)) from exc
+    if isinstance(exc, json.JSONDecodeError):
+        raise _structured_error(400, "STEM_MANIFEST_INVALID", str(exc)) from exc
+    if isinstance(exc, AssetStoreError):
+        raise _structured_error(400, "STEM_HYDRATE_FETCH_FAILED", str(exc)) from exc
+    raise exc
+
+
+def _raise_push_missing_error(exc: BaseException) -> NoReturn:
+    if isinstance(exc, RuntimeError) and EXTERNAL_ROOTS_ENV in str(exc):
+        raise _structured_error(
+            503,
+            "MDT_EXTERNAL_STEM_ROOTS_MISSING",
+            str(exc),
+        ) from exc
+    if isinstance(exc, FileNotFoundError) and EXTERNAL_ROOTS_ENV in str(exc):
+        raise _structured_error(
+            400,
+            "MDT_EXTERNAL_STEM_ROOTS_INVALID",
+            str(exc),
+        ) from exc
+    raise exc
+
+
+@router.post(
+    "/stems/{stable_id}/hydrate",
+    responses=STEM_HYDRATE_RESPONSES,
+)
 def hydrate_stem(stable_id: str, body: StemHydrateIn) -> dict[str, str]:
+    manifest_path = Path(body.manifest_path)
+    if not manifest_path.is_file():
+        raise _structured_error(
+            400,
+            "STEM_MANIFEST_PATH_NOT_FOUND",
+            f"manifest_path does not exist: {body.manifest_path}",
+        )
     data_dir = Path(body.data_dir) if body.data_dir else None
     try:
         rc = stems_sync.hydrate(
             stable_id,
-            manifest_path=Path(body.manifest_path),
+            manifest_path=manifest_path,
             data_dir=data_dir,
             dry_run=body.dry_run,
         )
-    except (ValueError, Exception) as exc:
-        from apps.cloud.eviction import HydrationError
-
-        if isinstance(exc, (HydrationError, ValueError)):
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        raise
+    except (
+        FileNotFoundError,
+        HydrationError,
+        ValueError,
+        json.JSONDecodeError,
+        AssetStoreError,
+    ) as exc:
+        _raise_hydrate_error(exc)
     if rc != 0:
-        raise HTTPException(status_code=500, detail="hydrate failed")
+        raise _structured_error(500, "STEM_HYDRATE_FAILED", "hydrate failed")
     return {"status": "ok", "stable_id": stable_id}
 
 
-@router.post("/stems/push-missing")
+@router.post(
+    "/stems/push-missing",
+    responses=STEM_PUSH_MISSING_RESPONSES,
+)
 def push_missing_stems(body: StemPushMissingIn) -> dict[str, str]:
     data_dir = Path(body.data_dir) if body.data_dir else None
-    rc = stems_sync.push_missing(data_dir=data_dir, dry_run=body.dry_run)
+    try:
+        rc = stems_sync.push_missing(data_dir=data_dir, dry_run=body.dry_run)
+    except (RuntimeError, FileNotFoundError) as exc:
+        _raise_push_missing_error(exc)
     if rc != 0:
-        raise HTTPException(status_code=500, detail="push-missing failed")
+        raise _structured_error(500, "STEM_PUSH_MISSING_FAILED", "push-missing failed")
     return {"status": "ok"}
 
 
