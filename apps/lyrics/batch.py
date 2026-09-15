@@ -40,9 +40,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from apps.cloud import policy
+from apps.cloud import policy, stem_index
+from apps.cloud.asset_store import require_credentials
+from apps.cloud.config import CloudConfig, MissingEnvError
 from apps.cloud.eviction import HydrationError
 from apps.cloud.hydration_core import resolve_policy
+from apps.cloud.stem_hydration import hydrate_one
+from apps.cloud.stem_source import resolve_stem_hydration_source
 from apps.lyrics import store
 from apps.lyrics.artifacts import asset_clients_for_mode
 from apps.lyrics.ingest_state import ingest_state
@@ -95,6 +99,21 @@ def run_subprocess(cmd: list[str]) -> None:
         raise CommandFailed(f"command failed ({proc.returncode}): {' '.join(cmd)}")
 
 
+def _subprocess_runner_for(paths: BatchPaths) -> Runner:
+    """Bind ``BatchPaths`` so subprocess stages honor ``--state-dir`` / ``MDT_DATA_DIR``."""
+    default_paths = BatchPaths()
+
+    def runner(cmd: list[str]) -> None:
+        env = os.environ.copy()
+        if paths != default_paths:
+            env["MDT_DATA_DIR"] = str(paths.data_dir)
+        proc = subprocess.run(cmd, cwd=REPO_ROOT, check=False, env=env)
+        if proc.returncode != 0:
+            raise CommandFailed(f"command failed ({proc.returncode}): {' '.join(cmd)}")
+
+    return runner
+
+
 #-----------------------------------------------------------------------------
 # plan + report
 #-----------------------------------------------------------------------------
@@ -106,6 +125,20 @@ class BatchPaths:
     state_db: Path = STATE_DB
     stems_root: Path = ROFORMER_STEMS_DIR
     bench_dir: Path = BENCH_DIR
+
+    @property
+    def data_dir(self) -> Path:
+        return self.state_db.parent.parent
+
+
+def batch_paths_for(state_dir: Path) -> BatchPaths:
+    """Resolve batch driver paths from a state dir holding state.db."""
+    return BatchPaths(
+        eval_dir=state_dir / "lyrics-eval",
+        state_db=state_dir / "state.db",
+        stems_root=state_dir / "stems-roformer-spike",
+        bench_dir=REPO_ROOT / "scripts" / "bench",
+    )
 
 
 @dataclass
@@ -153,13 +186,16 @@ class BatchReport:
 class Cmds:
     """Command-list builders for every subprocess stage."""
 
-    def __init__(self, corpus: str, corpus_dir: Path, bench_dir: Path) -> None:
+    def __init__(self, corpus: str, corpus_dir: Path, bench_dir: Path,
+                 state_dir: Path) -> None:
         self.corpus = corpus
         self.dir = corpus_dir
         self.bench_dir = bench_dir
+        self.state_dir = state_dir
 
     def metadata(self) -> list[str]:
-        return [*UV_PY, METADATA_SCRIPT, "--corpus", self.corpus]
+        return [*UV_PY, METADATA_SCRIPT, "--corpus", self.corpus,
+                "--state-dir", str(self.state_dir)]
 
     def stems(self, inputs: list[str]) -> list[str]:
         return [*UV_MODAL_PY, ROFORMER_SPIKE, "separate",
@@ -170,13 +206,15 @@ class Cmds:
                 "--out", str(self.dir / "vocal-presence.json")]
 
     def spike(self, *args: str) -> list[str]:
-        return [*UV_PY, SPIKE, "--dir", self.corpus, *args]
+        return [*UV_PY, SPIKE, "--dir", self.corpus,
+                "--state-dir", str(self.state_dir), *args]
 
     def merge_musixmatch(self) -> list[str]:
         return [*UV_PY, "-m", "apps.lyrics.sources", "merge-musixmatch"]
 
     def language(self) -> list[str]:
-        return [*UV_SCRIPT, LANGUAGE_SCRIPT, "--dir", self.corpus]
+        return [*UV_SCRIPT, LANGUAGE_SCRIPT, "--dir", self.corpus,
+                "--state-dir", str(self.state_dir)]
 
     def asr(self) -> list[str]:
         return [*UV_MODAL_PY, ASR_SPIKE, "transcribe-files",
@@ -242,6 +280,17 @@ def _resolve_tracks(
         if audio is None and not registered:
             report.exclude(track_id, f"resolve: audio missing on this Mac "
                                      f"({db_file_path or 'no file_path'})")
+
+
+def _preflight_r2_credentials() -> None:
+    """Refuse cloud live runs before Modal when R2 credentials are absent."""
+    if policy.CFG.mode != "cloud":
+        return
+    try:
+        cfg = CloudConfig.from_env()
+        require_credentials(cfg)
+    except MissingEnvError as exc:
+        raise StageBlocked(str(exc)) from exc
 
 
 def _assert_iso3_pins(repo_root: Path) -> None:
@@ -311,9 +360,35 @@ def _stage_corpus(cmds: Cmds, report: BatchReport, runner: Runner,
 
 
 def _lane_stems(cmds: Cmds, report: BatchReport, runner: Runner,
-                progress: Progress, stems_root: Path) -> None:
+                progress: Progress, paths: BatchPaths) -> None:
     """Stems (skip already-registered) -> register_pair per pair -> coverage."""
+    stems_root = paths.stems_root
     stems_dir = cmds.dir / "stems"
+    data_dir = paths.data_dir
+    index = stem_index.load_cached_index(data_dir)
+    source = resolve_stem_hydration_source(data_dir)
+    for t in report.active():
+        if t.registered or t.stable_id not in index:
+            continue
+        if source is None:
+            progress(f"stems: {t.stable_id} in fleet index but hydration "
+                     "transport unarmed")
+            continue
+        outcome = hydrate_one(
+            t.stable_id,
+            data_dir=data_dir,
+            source=source,
+            index=index,
+            stems_dir=stems_root,
+        )
+        if outcome.status in ("already_local", "hydrated"):
+            t.registered = True
+            progress(f"stems: {t.stable_id} hydrated from fleet index")
+        elif outcome.status in ("unavailable", "error"):
+            progress(
+                f"stems: {t.stable_id} index entry but hydrate failed: "
+                f"{outcome.reason or outcome.status}"
+            )
     for t in report.active():
         if not t.registered:
             continue
@@ -611,13 +686,12 @@ def run_batch(
     """The R1 driver. Raises StageBlocked when a whole stage is impossible."""
     paths = paths or BatchPaths()
     notify: Progress = progress or (lambda msg: print(f"[batch] {msg}"))
-    if runner is run_subprocess and paths != BatchPaths():
-        raise StageBlocked(
-            "config: the default subprocess runner only works against the real "
-            "repo paths (the stage scripts derive their own dirs); custom "
-            "BatchPaths need an injected runner")
+    effective_runner = (
+        _subprocess_runner_for(paths) if runner is run_subprocess else runner
+    )
     report = BatchReport(corpus=corpus, live=live)
-    cmds = Cmds(corpus, paths.eval_dir / corpus, paths.bench_dir)
+    cmds = Cmds(corpus, paths.eval_dir / corpus, paths.bench_dir,
+                paths.state_db.parent)
     _assert_iso3_pins(repo_root)
     _resolve_tracks(corpus, stable_ids, paths, report)
 
@@ -626,20 +700,22 @@ def run_batch(
         return report
 
     _preflight_cloud_policies(paths, stable_ids)
-    _stage_corpus(cmds, report, runner, notify)
+    _preflight_r2_credentials()
+    _stage_corpus(cmds, report, effective_runner, notify)
     # R2: the two lanes have independent inputs - overlap them, nothing fancier.
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-        fut_stems = pool.submit(_lane_stems, cmds, report, runner, notify,
-                                paths.stems_root)
-        fut_cands = pool.submit(_lane_candidates, cmds, report, runner, notify)
+        fut_stems = pool.submit(_lane_stems, cmds, report, effective_runner,
+                                notify, paths)
+        fut_cands = pool.submit(_lane_candidates, cmds, report, effective_runner,
+                                notify)
         concurrent.futures.wait([fut_stems, fut_cands])
     for fut in (fut_stems, fut_cands):
         exc = fut.exception()
         if exc is not None:
             raise exc
-    _stage_asr(cmds, report, runner, notify)
-    manifest_jobs = _stage_align_chain(cmds, report, runner, notify)
-    runner(cmds.manifest(manifest_jobs))
+    _stage_asr(cmds, report, effective_runner, notify)
+    manifest_jobs = _stage_align_chain(cmds, report, effective_runner, notify)
+    effective_runner(cmds.manifest(manifest_jobs))
     report.stages.append("manifest")
     _stage_ingest(cmds, report, paths, notify)
     _ledger_stub(report, paths, notify)
