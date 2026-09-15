@@ -1,8 +1,8 @@
 """ADR-0047 / CLOUDSYNC-19 acceptance: hash_pending deferred hash sync.
 
-Acceptance, one test each:
-- 9000 inferred/no-hash/no-ISRC spoke -> verified agreement, hash_pending=9000
-- second machine --for-hub hashes 8000/9000 -> hub 8000 hashed, 1000 pending
+Acceptance, one test each (fixtures use 100/80 rows in CI; REQUIREMENTS.md cites 9000/8000):
+- inferred/no-hash/no-ISRC spoke -> verified agreement, hash_pending=N, quarantined=0
+- second machine --for-hub hashes most pending rows -> hub reports remainder
 - two machines push different hashes -> LWW, both logged, one row
 - old hub without hash-pending/v1 -> 422 and versioned status upgrade message
 - row with content_hash is never hash_pending
