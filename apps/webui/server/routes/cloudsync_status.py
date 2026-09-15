@@ -64,6 +64,14 @@ class CloudSyncStatusOut(BaseModel):
     last_pull_at: str | None
     last_result: LastResultOut | None
     rows_pending: int | None
+    hash_pending: int | None = Field(
+        default=None,
+        description="live tracks offered as hash_pending on the hub (ADR-0047)",
+    )
+    quarantined: int | None = Field(
+        default=None,
+        description="rows held out of the sync set for stamp or identity-dup reasons",
+    )
     endpoint: str | None
     recent_results: list[RecentResultOut]
     update_required: UpdateRequiredOut | None = Field(
@@ -80,11 +88,16 @@ class IdentityBacklogOut(BaseModel):
 
     unsyncable_inferred: int = Field(
         description=(
-            "live 'tracks' rows held out of every sync digest for lacking BOTH a "
-            "content_hash and a normalizable ISRC. Not a bug and not fixed by "
-            "retrying: each row needs "
-            "`python -m apps.shared.state.backfill_content_hash --live` once its "
-            "audio is reachable, or an ISRC tag."
+            "live 'tracks' rows still held for content-identity duplicate losers "
+            "only. Rows lacking hash and ISRC travel as hash_pending instead."
+        )
+    )
+    hash_pending: int = Field(
+        description=(
+            "live 'tracks' rows offered to the hub with hash_pending=true while "
+            "awaiting content_hash. Run "
+            "`python -m apps.shared.state.backfill_content_hash --for-hub --live` "
+            "on a machine that holds the audio."
         )
     )
 
@@ -107,10 +120,9 @@ UNREADABLE_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 @router.get("/status", response_model=CloudSyncStatusOut, responses=UNREADABLE_RESPONSES)
 def get_status(request: Request) -> CloudSyncStatusOut:
+    data_dir = data_dir_for_request(request)
     try:
-        return CloudSyncStatusOut(
-            **sync_status.read_status(data_dir_for_request(request)).to_wire()
-        )
+        wire = sync_status.read_status(data_dir).to_wire()
     except sync_status.CloudSyncStatusError as exc:
         raise HTTPException(
             status_code=500,
@@ -119,6 +131,15 @@ def get_status(request: Request) -> CloudSyncStatusOut:
                 "message": str(exc),
             },
         ) from exc
+    db_path = data_dir / "state" / "state.db"
+    conn = state_db.open_ro(db_path)
+    try:
+        excluded = sync_set.excluded_counts(conn)
+        wire["hash_pending"] = sync_set.count_hash_pending(conn)
+        wire["quarantined"] = sum(excluded.values()) if excluded else 0
+    finally:
+        conn.close()
+    return CloudSyncStatusOut(**wire)
 
 
 @router.get("/identity-backlog", response_model=IdentityBacklogOut)
@@ -130,10 +151,11 @@ def get_identity_backlog(request: Request) -> IdentityBacklogOut:
     db_path = data_dir_for_request(request) / "state" / "state.db"
     conn = state_db.open_ro(db_path)
     try:
-        count = sync_set.count_unsyncable_inferred(conn)
+        dup_only = sync_set.count_unsyncable_inferred(conn)
+        pending = sync_set.count_hash_pending(conn)
     finally:
         conn.close()
-    return IdentityBacklogOut(unsyncable_inferred=count)
+    return IdentityBacklogOut(unsyncable_inferred=dup_only, hash_pending=pending)
 
 
 __all__ = [

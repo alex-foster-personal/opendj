@@ -245,20 +245,15 @@ def test_prepare_spoke_identity_remaps_children_and_holds_the_loser(
 
 
 def test_count_unsyncable_inferred_matches_the_hold_predicate(tmp_path: Path) -> None:
-    """The admin-panel backlog number must count exactly what excludes a
-    ``tracks`` row for identity, no more and no less (CLOUDSYNC-16:
-    the maintainer has never seen CloudSync converge, and this backlog -- not a code
-    bug -- is the dominant reason on a real library)."""
+    """hash_pending rows are counted separately from identity-dup holds."""
     conn = state_db.open_rw(client.state_db_path(tmp_path / "spoke"))
     try:
-        # Held: inferred tier, no hash, no ISRC.
         _insert_identified_track(
             conn, "trk-unsyncable-a", title="a", updated_at=_T0, origin=_DEV_A
         )
         _insert_identified_track(
             conn, "trk-unsyncable-b", title="b", updated_at=_T0, origin=_DEV_A
         )
-        # Free: has a content hash.
         _insert_identified_track(
             conn,
             "trk-hashed",
@@ -267,7 +262,6 @@ def test_count_unsyncable_inferred_matches_the_hold_predicate(tmp_path: Path) ->
             updated_at=_T0,
             origin=_DEV_A,
         )
-        # Free: no hash, but a normalizable ISRC.
         _insert_identified_track(
             conn,
             "trk-isrc",
@@ -276,11 +270,9 @@ def test_count_unsyncable_inferred_matches_the_hold_predicate(tmp_path: Path) ->
             updated_at=_T0,
             origin=_DEV_A,
         )
-        # Free: not inferred tier.
         _insert_identified_track(
             conn, "trk-vendor-tier", title="vendor", updated_at=_T0, origin=_DEV_A, tier="isrc"
         )
-        # Excluded from the count: soft-deleted.
         _insert_identified_track(
             conn,
             "trk-deleted",
@@ -291,24 +283,21 @@ def test_count_unsyncable_inferred_matches_the_hold_predicate(tmp_path: Path) ->
         )
         conn.commit()
 
-        assert sync_set.count_unsyncable_inferred(conn) == 2
+        assert sync_set.count_hash_pending(conn) == 2
+        assert sync_set.count_unsyncable_inferred(conn) == 0
 
         held = sync_set.HeldKeys(conn)
         columns = sync_set.deciding_columns(conn, "tracks")
         spec = sync_set.spec_for("tracks")
-        held_reasons = 0
         for stable_id in ("trk-unsyncable-a", "trk-unsyncable-b"):
             row = conn.execute(
                 f"SELECT {', '.join(columns)} FROM tracks WHERE stable_id = ?",
                 (stable_id,),
             ).fetchone()
             reason = sync_set.row_reason("tracks", columns, row, spec, held)
-            if reason == sync_set.IDENTITY_HOLD_REASON:
-                held_reasons += 1
-        assert held_reasons == 2, (
-            "count_unsyncable_inferred must count exactly the rows "
-            "row_reason holds for IDENTITY_HOLD_REASON, not an approximation"
-        )
+            assert reason is None, (
+                "hash_pending candidates must be in the sync set, not held"
+            )
     finally:
         conn.close()
 
@@ -357,12 +346,13 @@ def test_run_sync_holds_unidentifiable_inferred_and_still_syncs_identity(
     )
     hub_after = state_db.open_rw(client.state_db_path(hub_dir))
     try:
-        assert _track_ids(hub_after) == {"trk-hashed"}
+        assert _track_ids(hub_after) == {"trk-hashed", "trk-unsyncable"}
     finally:
         hub_after.close()
     spoke_after = state_db.open_rw(client.state_db_path(spoke))
     try:
         assert _track_ids(spoke_after) == {"trk-hashed", "trk-unsyncable"}
+        assert sync_set.count_hash_pending(spoke_after) == 1
     finally:
         spoke_after.close()
 
@@ -419,11 +409,11 @@ def test_second_library_collapses_hashed_rows_and_holds_unidentifiable(
     hub_after = state_db.open_rw(client.state_db_path(hub_dir))
     try:
         ids = _track_ids(hub_after)
-        assert "trk-b-unsyncable" not in ids
-        assert len(ids) == 1, (
-            "hashed overlap must collapse to one tracks row, unidentifiable "
-            f"must stay off the hub; hub holds {ids}"
+        assert "trk-b-unsyncable" in ids
+        assert len(ids) == 2, (
+            "hashed overlap must collapse to one tracks row; unidentifiable "
+            f"rows stay on the hub as hash_pending; hub holds {ids}"
         )
-        assert ids <= {"trk-a-seeded", "trk-b-hashed"}
+        assert ids <= {"trk-a-seeded", "trk-b-hashed", "trk-b-unsyncable"}
     finally:
         hub_after.close()

@@ -17,7 +17,11 @@ import pytest
 from apps.shared import hashing
 from apps.shared.state import db as state_db
 from apps.shared.state import backfill_content_hash as backfill_module
-from apps.shared.state.backfill_content_hash import build_parser, run_backfill
+from apps.shared.state.backfill_content_hash import (
+    build_parser,
+    run_backfill,
+    run_for_hub_backfill,
+)
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter
 
@@ -163,6 +167,15 @@ def test_cli_rejects_dry_run_plus_live() -> None:
 def test_cli_requires_dry_run_or_live() -> None:
     with pytest.raises(SystemExit):
         build_parser().parse_args([])
+
+
+def test_cli_parses_for_hub_dry_run(tmp_path: Path) -> None:
+    args = build_parser().parse_args(
+        ["--data-dir", str(tmp_path), "--for-hub", "--dry-run"]
+    )
+    assert args.for_hub is True
+    assert args.dry_run is True
+    assert args.live is False
 
 
 def test_cli_parses_live_with_data_dir_and_limit(tmp_path: Path) -> None:

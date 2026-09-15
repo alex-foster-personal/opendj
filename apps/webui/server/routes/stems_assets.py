@@ -12,12 +12,18 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from apps.cloud.asset_store import AssetStoreError
 from apps.cloud.eviction import HydrationError
 from apps.lyrics import stems_sync
-from scripts.stem_inventory import EXTERNAL_ROOTS_ENV
+from apps.stems.external_roots import EXTERNAL_ROOTS_ENV
+from apps.vocals.errors import UnknownPlaylistError
+from apps.webui.server.routes.stems_parity_guard import (
+    guard_stems_parity_call,
+    unknown_playlist_response,
+)
 
 router = APIRouter(tags=["stems"])
 
@@ -41,6 +47,7 @@ STEM_BULK_HYDRATE_RESPONSES: dict[int | str, dict[str, Any]] = {
             "bundle index in R2"
         )
     },
+    404: {"description": "Unknown playlist name (detail + known sibling keys)"},
     502: {
         "description": (
             "Local stem bundle index cache is present but unreadable "
@@ -154,32 +161,35 @@ def _raise_push_missing_error(exc: BaseException) -> NoReturn:
     responses=STEM_HYDRATE_RESPONSES,
 )
 def hydrate_stem(stable_id: str, body: StemHydrateIn) -> dict[str, str]:
-    manifest_path = Path(body.manifest_path)
-    if not manifest_path.is_file():
-        raise _structured_error(
-            400,
-            "STEM_MANIFEST_PATH_NOT_FOUND",
-            f"manifest_path does not exist: {body.manifest_path}",
-        )
-    data_dir = Path(body.data_dir) if body.data_dir else None
-    try:
-        rc = stems_sync.hydrate(
-            stable_id,
-            manifest_path=manifest_path,
-            data_dir=data_dir,
-            dry_run=body.dry_run,
-        )
-    except (
-        FileNotFoundError,
-        HydrationError,
-        ValueError,
-        json.JSONDecodeError,
-        AssetStoreError,
-    ) as exc:
-        _raise_hydrate_error(exc)
-    if rc != 0:
-        raise _structured_error(500, "STEM_HYDRATE_FAILED", "hydrate failed")
-    return {"status": "ok", "stable_id": stable_id}
+    def _run() -> dict[str, str]:
+        manifest_path = Path(body.manifest_path)
+        if not manifest_path.is_file():
+            raise _structured_error(
+                400,
+                "STEM_MANIFEST_PATH_NOT_FOUND",
+                f"manifest_path does not exist: {body.manifest_path}",
+            )
+        data_dir = Path(body.data_dir) if body.data_dir else None
+        try:
+            rc = stems_sync.hydrate(
+                stable_id,
+                manifest_path=manifest_path,
+                data_dir=data_dir,
+                dry_run=body.dry_run,
+            )
+        except (
+            FileNotFoundError,
+            HydrationError,
+            ValueError,
+            json.JSONDecodeError,
+            AssetStoreError,
+        ) as exc:
+            _raise_hydrate_error(exc)
+        if rc != 0:
+            raise _structured_error(500, "STEM_HYDRATE_FAILED", "hydrate failed")
+        return {"status": "ok", "stable_id": stable_id}
+
+    return guard_stems_parity_call(_run)
 
 
 @router.post(
@@ -187,14 +197,17 @@ def hydrate_stem(stable_id: str, body: StemHydrateIn) -> dict[str, str]:
     responses=STEM_PUSH_MISSING_RESPONSES,
 )
 def push_missing_stems(body: StemPushMissingIn) -> dict[str, str]:
-    data_dir = Path(body.data_dir) if body.data_dir else None
-    try:
-        rc = stems_sync.push_missing(data_dir=data_dir, dry_run=body.dry_run)
-    except (RuntimeError, FileNotFoundError) as exc:
-        _raise_push_missing_error(exc)
-    if rc != 0:
-        raise _structured_error(500, "STEM_PUSH_MISSING_FAILED", "push-missing failed")
-    return {"status": "ok"}
+    def _run() -> dict[str, str]:
+        data_dir = Path(body.data_dir) if body.data_dir else None
+        try:
+            rc = stems_sync.push_missing(data_dir=data_dir, dry_run=body.dry_run)
+        except (RuntimeError, FileNotFoundError) as exc:
+            _raise_push_missing_error(exc)
+        if rc != 0:
+            raise _structured_error(500, "STEM_PUSH_MISSING_FAILED", "push-missing failed")
+        return {"status": "ok"}
+
+    return guard_stems_parity_call(_run)
 
 
 def _resolve_playlist_stable_ids(data_dir: Path, playlist: str) -> list[str]:
@@ -212,12 +225,19 @@ def _resolve_playlist_stable_ids(data_dir: Path, playlist: str) -> list[str]:
     response_model=StemBulkHydrateOut,
     responses=STEM_BULK_HYDRATE_RESPONSES,
 )
-def bulk_hydrate_stems(body: StemBulkHydrateIn) -> StemBulkHydrateOut:
+def bulk_hydrate_stems(body: StemBulkHydrateIn) -> StemBulkHydrateOut | JSONResponse:
     """Agent-native parity for ``python -m apps.stems bulk-hydrate`` (ADR-0024).
 
     Hydrates as many bundles as fit ``budget_bytes``, skipping the
     reservation guard unless ``include_reserved`` is explicitly true.
     """
+    try:
+        return guard_stems_parity_call(lambda: _bulk_hydrate_stems_impl(body))
+    except UnknownPlaylistError as exc:
+        return unknown_playlist_response(exc)
+
+
+def _bulk_hydrate_stems_impl(body: StemBulkHydrateIn) -> StemBulkHydrateOut:
     from apps.cloud import stem_hydration, stem_index
     from apps.cloud.eviction import HydrationError
     from apps.cloud.stem_source import resolve_stem_hydration_source
@@ -279,13 +299,21 @@ def bulk_hydrate_stems(body: StemBulkHydrateIn) -> StemBulkHydrateOut:
 @router.post("/stems/index/build", response_model=StemIndexBuildOut)
 def build_stem_index(body: StemIndexBuildIn) -> StemIndexBuildOut:
     """Agent-native parity for ``python -m apps.stems build-index`` (ADR-0024)."""
+    return guard_stems_parity_call(lambda: _build_stem_index_impl(body))
+
+
+def _build_stem_index_impl(body: StemIndexBuildIn) -> StemIndexBuildOut:
     from apps.cloud import stem_index
     from apps.shared.paths import DATA_DIR
+    from apps.webui.server.routes.stems import _raise_stem_index_corrupt
 
     data_dir = Path(body.data_dir) if body.data_dir else DATA_DIR
     default_journal = data_dir / "state" / "stem-r2-migration.jsonl"
     journal_path = Path(body.journal_path) if body.journal_path else default_journal
-    index = stem_index.build_index_from_journal(journal_path)
+    try:
+        index = stem_index.build_index_from_journal(journal_path)
+    except stem_index.StemIndexError as exc:
+        _raise_stem_index_corrupt(exc, data_dir)
     stem_index.save_cached_index(data_dir, index)
     published = False
     if body.publish:

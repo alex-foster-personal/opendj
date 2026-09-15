@@ -120,6 +120,7 @@ def _result_from_rounds(
     machine_id: str,
     hub_machine_id: str,
     local_digest: protocol.SyncDigest,
+    remote_digest: protocol.SyncDigest,
     restored: bool,
     hub_quarantined: int | None,
     digest_inconclusive: bool,
@@ -152,6 +153,8 @@ def _result_from_rounds(
         quarantined_rows=local_digest.quarantined_rows or 0,
         quarantined_incoming=sum(round_.pull.quarantined for round_ in rounds),
         hub_quarantined=hub_quarantined,
+        hash_pending=local_digest.hash_pending_rows,
+        hub_hash_pending=remote_digest.hash_pending_rows,
         digest_inconclusive=digest_inconclusive,
         push_refused=push_refused,
     )

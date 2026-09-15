@@ -7,13 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from pydantic import BaseModel
 
 from apps.shared.state import db as state_db
+from apps.sync.djay_sync_service import RbDjaySyncError, playlist_rb_djay_diff
 
 from .. import rb_vendor
 from ..backend import StateBackend
 from ..deps import get_read_state
 from ..etag import compute_etag
 from ..models import PlaylistDetail, PlaylistDiff, PlaylistSummary, TrackRowOut
-from ..rb_djay_sync_service import RbDjaySyncError, playlist_rb_djay_diff
 from .tracks import AvailableFilter, keep_by_availability
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])

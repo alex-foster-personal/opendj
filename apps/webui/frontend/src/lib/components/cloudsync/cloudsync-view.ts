@@ -609,14 +609,14 @@ export function statusHeadline(status: CloudSyncStatus | null): StatusHeadline {
  * real library but not proven to be the same event on any one run, so this
  * never claims causation, only reports the count honestly.
  */
-export function identityBacklogNote(count: number | null): string | null {
-	if (count === null || count <= 0) return null;
-	const plural = count !== 1;
+export function identityBacklogNote(hashPending: number | null): string | null {
+	if (hashPending === null || hashPending <= 0) return null;
+	const plural = hashPending !== 1;
 	return (
-		`${count} track${plural ? 's' : ''} in this library cannot sync yet: ` +
-		`${plural ? 'they lack' : 'it lacks'} an audio fingerprint or ISRC to identify ` +
-		`${plural ? 'them' : 'it'} by. Run backfill_content_hash once the audio is reachable, ` +
-		`or add an ISRC tag -- retrying Sync now will not change this.`
+		`${hashPending} track${plural ? 's' : ''} await an audio fingerprint on the hub ` +
+		`(hash_pending). On a machine that holds the audio, run ` +
+		`python -m apps.shared.state.backfill_content_hash --for-hub --live ` +
+		`-- retrying Sync now on this machine will not hash them.`
 	);
 }
 
