@@ -123,7 +123,14 @@ def _parse_v1(lines: list[str]) -> dict:
         if m_cat:
             name, code = m_cat.group(1).strip(), m_cat.group(2).strip()
             current_code = code
-            categories[code] = {"name": name, "requirements": []}
+            # setdefault, not assignment: two "### <Name> (CODE)" headers can
+            # share one CODE (e.g. "Admin operator surfaces (ADMIN)" then
+            # "Admin diagnostics (ADMIN)"). A plain `categories[code] = ...`
+            # replaces the dict object the first header built, silently
+            # dropping every requirement already collected under it -- same
+            # silent-miss shape as the _CODE widenings above, just one level
+            # up. v2's parser already uses setdefault for this reason.
+            categories.setdefault(code, {"name": name, "requirements": []})
             continue
         if current_code is None:
             continue
