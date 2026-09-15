@@ -143,7 +143,10 @@ signature="$archive.sig"
 xcrun stapler validate "$app"
 spctl -a -t exec -vv "$app"
 xcrun stapler validate "$dmg"
-spctl -a -t open -vv "$dmg"
+# A disk image carries no launch context of its own: without an explicit
+# primary-signature context, macOS 26.6.1 answers "rejected, source=Insufficient
+# Context" for a notarized, stapled dmg (measured on the Air, Tue 15 Sep 2026).
+spctl -a -t open --context context:primary-signature -vv "$dmg"
 
 # The asset is uploaded under its FILENAME, and the updater endpoint fetches
 # `latest.json`. So it is named exactly that, inside a unique directory: BSD
