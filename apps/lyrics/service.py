@@ -1,4 +1,4 @@
-"""The shared fetch/cache path used by the lyrics CLI and future API readers."""
+"""The shared fetch/cache path used by the lyrics CLI and library jobs."""
 
 from __future__ import annotations
 
@@ -9,10 +9,20 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
+from apps.cloud import stem_index
+from apps.cloud.lyrics_asr_source import LYRICS_ASR_NOT_FOUND
 from apps.lyrics import cache
+from apps.lyrics.asr_lines import group_asr_words_into_lines, parse_asr_words
+from apps.lyrics.asr_source import (
+    AsrLyricsProvider,
+    LyricsAsrFetchError,
+    LyricsAsrNotFoundError,
+    language_to_iso3,
+)
 from apps.lyrics.cache import LyricLine, Lyrics
+from apps.lyrics.fetch_verdicts import FetchVerdict, utc_now_iso, write_verdict
 
 LRCLIB_GET_URL = "https://lrclib.net/api/get"
 USER_AGENT = "music-dj-tools-lyrics/1.0"
@@ -55,10 +65,27 @@ class LrclibProvider:
         return synced if isinstance(synced, str) and synced.strip() else None
 
 
-class LyricsService:
-    def __init__(self, data_dir: Path, provider: SyncedLyricsProvider | None = None) -> None:
+FetchOutcome = Literal["cached", "instrumental", "no_source"]
+
+
+@dataclass(frozen=True)
+class FetchResult:
+    outcome: FetchOutcome
+    lyrics: Lyrics | None = None
+    hub_code: str | None = None
+    hub_message: str | None = None
+
+
+class LyricsFetchService:
+    def __init__(
+        self,
+        data_dir: Path,
+        provider: SyncedLyricsProvider | None = None,
+        asr_provider: AsrLyricsProvider | None = None,
+    ) -> None:
         self.data_dir = data_dir
         self.provider = provider or LrclibProvider()
+        self.asr_provider = asr_provider or AsrLyricsProvider(data_dir)
 
     def fetch(self, track: Track) -> Lyrics:
         path = cache.cache_path(self.data_dir, track.stable_id)
@@ -72,10 +99,156 @@ class LyricsService:
             raise cache.LyricsUnavailableError(f"no synced lyrics found for {track.stable_id}")
         lyrics = Lyrics(track.stable_id, "lrclib", parse_lrc_lines(synced))
         cache.write(path, lyrics)
+        write_verdict(
+            self.data_dir,
+            FetchVerdict(
+                stable_id=track.stable_id,
+                outcome="cached",
+                source="lrclib",
+                vocals_sha256=vocals_sha256_for_track(self.data_dir, track.stable_id),
+                hub_code=None,
+                hub_message=None,
+                language_iso3=None,
+                recorded_at=utc_now_iso(),
+            ),
+        )
         return lyrics
+
+    def fetch_or_resolve(self, track: Track) -> FetchResult:
+        path = cache.cache_path(self.data_dir, track.stable_id)
+        cached = cache.load(path)
+        if cached is not None:
+            if cached.stable_id != track.stable_id:
+                raise ValueError(f"lyrics-cache identity mismatch at {path}")
+            return FetchResult(outcome="cached", lyrics=cached)
+        synced = self.provider.fetch_synced(track)
+        if synced is not None:
+            lyrics = Lyrics(track.stable_id, "lrclib", parse_lrc_lines(synced))
+            cache.write(path, lyrics)
+            write_verdict(
+                self.data_dir,
+                FetchVerdict(
+                    stable_id=track.stable_id,
+                    outcome="cached",
+                    source="lrclib",
+                    vocals_sha256=vocals_sha256_for_track(self.data_dir, track.stable_id),
+                    hub_code=None,
+                    hub_message=None,
+                    language_iso3=None,
+                    recorded_at=utc_now_iso(),
+                ),
+            )
+            return FetchResult(outcome="cached", lyrics=lyrics)
+        vocals_sha256 = vocals_sha256_for_track(self.data_dir, track.stable_id)
+        if vocals_sha256 is None:
+            write_verdict(
+                self.data_dir,
+                FetchVerdict(
+                    stable_id=track.stable_id,
+                    outcome="no_source",
+                    source=None,
+                    vocals_sha256=None,
+                    hub_code=LYRICS_ASR_NOT_FOUND,
+                    hub_message="track is not in the local stem bundle index",
+                    language_iso3=None,
+                    recorded_at=utc_now_iso(),
+                ),
+            )
+            return FetchResult(
+                outcome="no_source",
+                hub_code=LYRICS_ASR_NOT_FOUND,
+                hub_message="track is not in the local stem bundle index",
+            )
+        try:
+            transcript = self.asr_provider.fetch_transcript(track.stable_id)
+        except LyricsAsrNotFoundError as exc:
+            write_verdict(
+                self.data_dir,
+                FetchVerdict(
+                    stable_id=track.stable_id,
+                    outcome="no_source",
+                    source=None,
+                    vocals_sha256=vocals_sha256,
+                    hub_code=exc.code,
+                    hub_message=exc.message,
+                    language_iso3=None,
+                    recorded_at=utc_now_iso(),
+                ),
+            )
+            return FetchResult(
+                outcome="no_source",
+                hub_code=exc.code,
+                hub_message=exc.message,
+            )
+        except LyricsAsrFetchError:
+            raise
+        parsed_words = parse_asr_words(list(transcript.words))
+        if not parsed_words:
+            write_verdict(
+                self.data_dir,
+                FetchVerdict(
+                    stable_id=track.stable_id,
+                    outcome="instrumental",
+                    source=None,
+                    vocals_sha256=vocals_sha256,
+                    hub_code=None,
+                    hub_message=None,
+                    language_iso3=language_to_iso3(transcript.language),
+                    recorded_at=utc_now_iso(),
+                ),
+            )
+            return FetchResult(outcome="instrumental")
+        lines = group_asr_words_into_lines(parsed_words)
+        if not lines:
+            write_verdict(
+                self.data_dir,
+                FetchVerdict(
+                    stable_id=track.stable_id,
+                    outcome="instrumental",
+                    source=None,
+                    vocals_sha256=vocals_sha256,
+                    hub_code=None,
+                    hub_message=None,
+                    language_iso3=language_to_iso3(transcript.language),
+                    recorded_at=utc_now_iso(),
+                ),
+            )
+            return FetchResult(outcome="instrumental")
+        lyrics = Lyrics(track.stable_id, "asr", lines)
+        cache.write(path, lyrics)
+        write_verdict(
+            self.data_dir,
+            FetchVerdict(
+                stable_id=track.stable_id,
+                outcome="cached",
+                source="asr",
+                vocals_sha256=vocals_sha256,
+                hub_code=None,
+                hub_message=None,
+                language_iso3=language_to_iso3(transcript.language),
+                recorded_at=utc_now_iso(),
+            ),
+        )
+        return FetchResult(outcome="cached", lyrics=lyrics)
 
     def fetch_stable_id(self, stable_id: str) -> Lyrics:
         return self.fetch(load_track(self.data_dir / "state" / "state.db", stable_id))
+
+    def fetch_or_resolve_stable_id(self, stable_id: str) -> FetchResult:
+        return self.fetch_or_resolve(load_track(self.data_dir / "state" / "state.db", stable_id))
+
+
+LyricsService = LyricsFetchService
+
+
+def vocals_sha256_for_track(data_dir: Path, stable_id: str) -> str | None:
+    entry = stem_index.load_cached_index(data_dir).get(stable_id)
+    if not entry:
+        return None
+    for filename, digest in entry.items():
+        if filename.startswith("vocals."):
+            return digest
+    return None
 
 
 def load_track(state_db: Path, stable_id: str) -> Track:

@@ -8771,6 +8771,39 @@
         "title": "LyricLineOut",
         "type": "object"
       },
+      "LyricsAsrPresignResponse": {
+        "properties": {
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "expires_in_seconds": {
+            "default": 900,
+            "title": "Expires In Seconds",
+            "type": "integer"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "url",
+          "content_hash",
+          "size_bytes"
+        ],
+        "title": "LyricsAsrPresignResponse",
+        "type": "object"
+      },
       "LyricsCachedIdsOut": {
         "description": "Stable ids with a valid on-disk lyrics-cache entry.",
         "properties": {
@@ -31626,6 +31659,74 @@
         "summary": "Hello",
         "tags": [
           "sync"
+        ]
+      }
+    },
+    "/api/v1/sync/lyrics-asr/{stable_id}": {
+      "get": {
+        "description": "Mint a short-lived GET URL for one ASR transcript JSON object.",
+        "operationId": "get_lyrics_asr_presign_api_v1_sync_lyrics_asr__stable_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "the calling spoke",
+            "in": "query",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "description": "the calling spoke",
+              "minLength": 1,
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsAsrPresignResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "lyrics-asr/presign refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "404": {
+            "description": "LYRICS_ASR_NOT_FOUND when the transcript object is absent from R2"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "LYRICS_ASR_PRESIGN_FAILED when presigning or HEAD failed"
+          },
+          "503": {
+            "description": "lyrics-asr/presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
+          }
+        },
+        "summary": "Get Lyrics Asr Presign",
+        "tags": [
+          "sync",
+          "sync-lyrics-asr"
         ]
       }
     },
