@@ -61,7 +61,7 @@ LIBRARY_SIZE_V1: str = "library-size/v1"
 
 #: The caller understands ``hash_pending`` on row payloads, a hub ``/hash-pending``
 #: listing, and digest responses that report ``hash_pending`` separately from
-#: ``quarantined`` (issue #2850, ADR-0047).
+#: ``quarantined`` (issue #2850, ADR-0068).
 HASH_PENDING_V1: str = "hash-pending/v1"
 
 #: Everything this build understands, advertised on every request it makes.

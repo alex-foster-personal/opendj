@@ -245,7 +245,7 @@ class SyncDigest:
     #: unknown, never coerced to 0, or the readout becomes a failed
     #: measurement rendered as a clean result.
     quarantined: dict[str, int] | None = field(default=None)
-    #: Rows per table offered or held as hash_pending (ADR-0047). Included IN
+    #: Rows per table offered or held as hash_pending (ADR-0068). Included IN
     #: the hash but counted separately from ``quarantined``. ``None`` when the
     #: peer did not report the field.
     hash_pending: dict[str, int] | None = field(default=None)

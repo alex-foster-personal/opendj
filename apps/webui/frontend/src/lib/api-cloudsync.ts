@@ -134,7 +134,7 @@ export interface CloudSyncStatus {
 	last_pull_at: string | null;
 	last_result: { status: CloudSyncResultStatus; message: string } | null;
 	rows_pending: number | null;
-	/** Live tracks offered as hash_pending while awaiting content_hash (ADR-0047). */
+	/** Live tracks offered as hash_pending while awaiting content_hash (ADR-0068). */
 	hash_pending: number | null;
 	/** Direct stamp faults and identity-dup losers only (CSSTATUS-07). */
 	quarantined: number | null;
@@ -148,7 +148,7 @@ export interface CloudSyncStatus {
 /**
  * Identity backlog counters from GET /api/v1/cloudsync/identity-backlog.
  * `hash_pending` rows travel to the hub and sync; `unsyncable_inferred` is
- * identity-dup losers only (CLOUDSYNC-16, ADR-0047).
+ * identity-dup losers only (CLOUDSYNC-16, ADR-0068).
  */
 export interface CloudSyncIdentityBacklog {
 	unsyncable_inferred: number;

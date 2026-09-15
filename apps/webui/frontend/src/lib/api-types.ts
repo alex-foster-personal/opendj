@@ -6932,7 +6932,7 @@ export interface components {
             excluded_total?: number | null;
             /**
              * Hash Pending
-             * @description live tracks offered as hash_pending on the hub (ADR-0047)
+             * @description live tracks offered as hash_pending on the hub (ADR-0068)
              */
             hash_pending?: number | null;
             /**

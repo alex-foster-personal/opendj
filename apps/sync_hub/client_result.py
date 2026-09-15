@@ -69,7 +69,7 @@ class SyncResult:
     #: ``None`` means the hub did not report the field (an older build),
     #: which is surfaced as unknown and never coerced to 0.
     hub_quarantined: int | None = None
-    #: Rows this machine offered or holds as hash_pending (ADR-0047), read
+    #: Rows this machine offered or holds as hash_pending (ADR-0068), read
     #: from the local digest. ``None`` when the hub did not report the field.
     hash_pending: int | None = None
     hub_hash_pending: int | None = None

@@ -1,6 +1,6 @@
-"""[if] hash_pending spoke/hub sync runs [then] deferred hashes follow ADR-0047, [else stop].
+"""[if] hash_pending spoke/hub sync runs [then] deferred hashes follow ADR-0068, [else stop].
 
-ADR-0047 / CLOUDSYNC-19 acceptance: hash_pending deferred hash sync.
+ADR-0068 / CLOUDSYNC-19 acceptance: hash_pending deferred hash sync.
 
 Acceptance, one test each (fixtures use 100/80 rows in CI; REQUIREMENTS.md cites 9000/8000):
 - inferred/no-hash/no-ISRC spoke -> verified agreement, hash_pending=N, quarantined=0

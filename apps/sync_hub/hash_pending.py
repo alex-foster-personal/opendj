@@ -1,4 +1,4 @@
-"""Hub-side listing of tracks awaiting ``content_hash`` (ADR-0047)."""
+"""Hub-side listing of tracks awaiting ``content_hash`` (ADR-0068)."""
 from __future__ import annotations
 
 import sqlite3
