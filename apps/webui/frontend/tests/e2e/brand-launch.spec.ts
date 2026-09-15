@@ -11,6 +11,36 @@ import {
 	BRAND_LAUNCH_MEET_MS
 } from '../../src/lib/brand-launch';
 
+const BRAND_LAUNCH_PAUSE_STYLE_ID = 'brand-launch-test-pause';
+
+/** Cold-open with a fresh launch marker; pause CSS until visible so slow loads cannot miss the 1.6 s window. */
+async function openWithFreshLaunch(
+	page: import('@playwright/test').Page,
+	url: string,
+	opts?: { clock?: boolean; keepPaused?: boolean }
+): Promise<import('@playwright/test').Locator> {
+	await page.addInitScript(() => {
+		localStorage.removeItem('odj.brand-launch.v1');
+		const pause = document.createElement('style');
+		pause.id = BRAND_LAUNCH_PAUSE_STYLE_ID;
+		pause.textContent =
+			'.brand-launch, .brand-half-dark, .brand-half-light { animation-play-state: paused !important; }';
+		(document.head ?? document.documentElement).appendChild(pause);
+	});
+	if (opts?.clock) {
+		await page.clock.install({ time: 0 });
+	}
+	const launch = page.getByLabel('Open DJ launch animation');
+	await Promise.all([
+		page.goto(url, { waitUntil: 'domcontentloaded' }),
+		launch.waitFor({ state: 'visible', timeout: 30_000 })
+	]);
+	if (!opts?.keepPaused) {
+		await page.evaluate((styleId) => document.getElementById(styleId)?.remove(), BRAND_LAUNCH_PAUSE_STYLE_ID);
+	}
+	return launch;
+}
+
 /** Slide offset magnitude for one half (px in screen space). */
 async function halfTranslateMagnitude(page: import('@playwright/test').Page): Promise<number> {
 	return page.evaluate(() => {
@@ -74,12 +104,9 @@ async function gapAlongDivider(page: import('@playwright/test').Page): Promise<n
 }
 
 test('first open plays the identity launch once without blocking the app', async ({ page }) => {
-	await page.addInitScript(() => localStorage.removeItem('odj.brand-launch.v1'));
-	await page.goto('/');
-	const launch = page.getByLabel('Open DJ launch animation');
-	await expect(launch).toBeVisible({ timeout: 15_000 });
+	const launch = await openWithFreshLaunch(page, '/');
 	await expect(page.locator('body')).toBeVisible();
-	await expect(launch).toBeHidden({ timeout: 5_000 });
+	await expect(launch).toBeHidden({ timeout: BRAND_LAUNCH_DURATION_MS + 1_000 });
 	await expect.poll(() => page.evaluate(() => localStorage.getItem('odj.brand-launch.v1'))).toBe('complete');
 
 	await page.reload();
@@ -87,13 +114,7 @@ test('first open plays the identity launch once without blocking the app', async
 });
 
 test('launch halves slide closed then fade removes overlay', async ({ page }) => {
-	await page.clock.install({ time: 0 });
-	await page.addInitScript(() => localStorage.removeItem('odj.brand-launch.v1'));
-	const launch = page.getByLabel('Open DJ launch animation');
-	const launchVisible = launch.waitFor({ state: 'visible', timeout: 15_000 });
-	await page.goto('/');
-	await launchVisible;
-
+	const launch = await openWithFreshLaunch(page, '/', { clock: true });
 	await expect(launch).toBeVisible();
 
 	const gapStart = await gapAlongDivider(page);
@@ -132,13 +153,7 @@ test('launch halves slide closed then fade removes overlay', async ({ page }) =>
 
 test('reduced motion shows closed circle without slide', async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'reduce' });
-	await page.clock.install({ time: 0 });
-	await page.addInitScript(() => localStorage.removeItem('odj.brand-launch.v1'));
-	const launch = page.getByLabel('Open DJ launch animation');
-	const launchVisible = launch.waitFor({ state: 'visible', timeout: 15_000 });
-	await page.goto('/');
-	await launchVisible;
-
+	const launch = await openWithFreshLaunch(page, '/', { clock: true });
 	await expect(launch).toBeVisible();
 	expect(await gapAlongDivider(page)).toBeLessThan(1.5);
 
@@ -151,15 +166,8 @@ test('reduced motion shows closed circle without slide', async ({ page }) => {
 
 test('library rows paint behind the launch overlay on /performance', async ({ page }) => {
 	test.skip(process.env.PERFORMANCE_E2E_FIXTURE === '1', 'needs reference library rows');
-	await page.addInitScript(() => localStorage.removeItem('odj.brand-launch.v1'));
-	const launch = page.getByLabel('Open DJ launch animation');
+	const launch = await openWithFreshLaunch(page, '/performance', { clock: true, keepPaused: true });
 	const rows = page.locator('[data-testid="track-row"]').first();
-	await Promise.all([
-		page.goto('/performance'),
-		launch.waitFor({ state: 'visible', timeout: 30_000 })
-	]);
-	// Freeze the launch overlay while library rows finish painting (PERF-UI-03).
-	await page.clock.install({ time: 0 });
 	await expect(rows).toBeVisible({ timeout: 15_000 });
 	await expect(launch).toBeVisible();
 });
