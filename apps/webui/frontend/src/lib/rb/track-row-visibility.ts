@@ -13,6 +13,15 @@
  * access to TrackTable's own scrollTop/viewportHeight state; the only signal
  * available to an external reader is DOM geometry, hence getBoundingClientRect
  * rather than the scrollTop-index math `virtual-window.ts` uses internally.
+ *
+ * Geometry alone is not enough either: LIBUX-05's "technically-working mode"
+ * (`/performance`, the only route this mirror runs on) hides the whole
+ * BrowserPanel by setting opacity + pointer-events on ITS OWN root element,
+ * never a wrapper div (each region owns its `grid-area`). A hidden panel's
+ * rows keep their normal on-page rects - opacity is a paint-time effect, not
+ * a layout one - so a geometry-only check reads a positive count while the
+ * screen shows nothing. `_isPaintedChain` walks the container's ancestors
+ * for the opacity/visibility/display an intersection rect cannot see.
  */
 
 const TRACK_ROW_SELECTOR = '[data-testid="track-row"]';
@@ -43,11 +52,30 @@ function _rectsIntersect(row: Rect, bounds: Rect): boolean {
 	);
 }
 
+/** True while `element` and every ancestor up to the document root paint:
+ * no `opacity: 0`, `visibility: hidden`, or `display: none` anywhere in the
+ * chain. Checked once against the scroll container, not per row, since
+ * LIBUX-05 hides the shared BrowserPanel ancestor the container and every
+ * row sit inside, not any row individually. */
+function _isPaintedChain(element: Element): boolean {
+	let node: Element | null = element;
+	while (node !== null) {
+		const style = getComputedStyle(node);
+		if (style.opacity === '0' || style.visibility === 'hidden' || style.display === 'none') {
+			return false;
+		}
+		node = node.parentElement;
+	}
+	return true;
+}
+
 /** Rows currently on screen: present in the DOM, inside the scroll
- * container's clipped viewport, AND inside the browser window. Reads 0 when
- * no track row is mounted (empty library, or the browser panel collapsed to
- * nothing) and 0 when every mounted row is scrolled out of the container's
- * or the window's visible bounds. */
+ * container's clipped viewport, inside the browser window, AND on an
+ * unhidden paint chain. Reads 0 when no track row is mounted (empty
+ * library, or the browser panel's `{#if}`-collapsed on the library page),
+ * when every mounted row is scrolled out of the container's or the window's
+ * visible bounds, or when the panel is opacity-hidden by LIBUX-05's
+ * technically-working mode. */
 export function countVisibleTrackRows(): number {
 	const rows = [...document.querySelectorAll(TRACK_ROW_SELECTOR)];
 	if (rows.length === 0) return 0;
@@ -57,6 +85,7 @@ export function countVisibleTrackRows(): number {
 			`countVisibleTrackRows: found ${rows.length} track row(s) with no ancestor matching "${SCROLL_CONTAINER_SELECTOR}" - TrackTable.svelte's wrapper markup moved`
 		);
 	}
+	if (!_isPaintedChain(container)) return 0;
 	const containerRect = container.getBoundingClientRect();
 	const windowRect: Rect = {
 		top: 0,
