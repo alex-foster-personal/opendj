@@ -1,0 +1,73 @@
+/**
+ * Counts track rows actually intersecting the viewport, for the ui-mirror
+ * `browser.visible_rows_count` field (#3096).
+ *
+ * TrackTable.svelte virtualizes the row list (`computeVirtualWindow`,
+ * `virtual-window.ts`): the mounted DOM band is the visible rows PLUS an
+ * `OVERSCAN` pad of extra rows above and below, kept mounted off-screen for
+ * smooth scrolling. So `document.querySelectorAll(TRACK_ROW_SELECTOR).length`
+ * alone counts overscan rows too and overstates what is actually on screen -
+ * this module exists to filter that DOM count down to genuine intersection.
+ *
+ * ui-mirror.ts runs outside any Svelte component, so it has no reactive
+ * access to TrackTable's own scrollTop/viewportHeight state; the only signal
+ * available to an external reader is DOM geometry, hence getBoundingClientRect
+ * rather than the scrollTop-index math `virtual-window.ts` uses internally.
+ */
+
+const TRACK_ROW_SELECTOR = '[data-testid="track-row"]';
+/** TrackTable.svelte's scrollable wrapper (`bind:this={wrapEl}`, `class="table-wrap"`).
+ * A row's own rect can be geometrically positioned inside the page even while
+ * clipped out of sight by this container's `overflow`, which is exactly what
+ * an overscan row is - so intersection must be checked against THIS rect, not
+ * just the window's. */
+const SCROLL_CONTAINER_SELECTOR = '.table-wrap';
+
+interface Rect {
+	top: number;
+	left: number;
+	right: number;
+	bottom: number;
+	width: number;
+	height: number;
+}
+
+function _rectsIntersect(row: Rect, bounds: Rect): boolean {
+	return (
+		row.width > 0 &&
+		row.height > 0 &&
+		row.left < bounds.right &&
+		row.right > bounds.left &&
+		row.top < bounds.bottom &&
+		row.bottom > bounds.top
+	);
+}
+
+/** Rows currently on screen: present in the DOM, inside the scroll
+ * container's clipped viewport, AND inside the browser window. Reads 0 when
+ * no track row is mounted (empty library, or the browser panel collapsed to
+ * nothing) and 0 when every mounted row is scrolled out of the container's
+ * or the window's visible bounds. */
+export function countVisibleTrackRows(): number {
+	const rows = [...document.querySelectorAll(TRACK_ROW_SELECTOR)];
+	if (rows.length === 0) return 0;
+	const container = rows[0].closest(SCROLL_CONTAINER_SELECTOR);
+	if (container === null) {
+		throw new Error(
+			`countVisibleTrackRows: found ${rows.length} track row(s) with no ancestor matching "${SCROLL_CONTAINER_SELECTOR}" - TrackTable.svelte's wrapper markup moved`
+		);
+	}
+	const containerRect = container.getBoundingClientRect();
+	const windowRect: Rect = {
+		top: 0,
+		left: 0,
+		right: window.innerWidth,
+		bottom: window.innerHeight,
+		width: window.innerWidth,
+		height: window.innerHeight
+	};
+	return rows.filter((row) => {
+		const rect = row.getBoundingClientRect();
+		return _rectsIntersect(rect, containerRect) && _rectsIntersect(rect, windowRect);
+	}).length;
+}

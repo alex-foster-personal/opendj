@@ -13,6 +13,7 @@ import {
 	classifyMirrorPublishGap,
 	mirrorStallMessage
 } from './mirror-publish-stall';
+import { countVisibleTrackRows } from './track-row-visibility';
 
 const MIRROR_PATH = '/api/v1/state/ui-mirror';
 
@@ -94,7 +95,7 @@ export function buildUiMirror(): Record<string, unknown> {
 				phrases: deck.phrases
 			}])
 		),
-		browser: { playlist: state.browser.active_playlist, search: null, sort: null, selected_row: null, visible_rows_count: document.querySelectorAll('.track-row, [role="row"]').length },
+		browser: { playlist: state.browser.active_playlist, search: null, sort: null, selected_row: null, visible_rows_count: countVisibleTrackRows() },
 		toasts: [
 			...toasts.map((toast) => ({ id: toast.logId, kind: toast.kind, message: toast.message })),
 			...(silence.verdict === 'silent-while-playing' ? [{ id: 'silent-while-playing' }] : []),
