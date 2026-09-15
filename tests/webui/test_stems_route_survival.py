@@ -119,6 +119,7 @@ def _assert_survives(client: TestClient, bad_call: Callable[[], Any]) -> None:
 def test_bulk_hydrate_unknown_playlist_returns_404_with_known(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """[if] bulk-hydrate names an unknown playlist [then] 404 lists known playlists, [else stop]."""
     data_dir = _seed_playlist_data_dir(tmp_path)
     cfg = _cfg()
     s3 = InMemoryAssetS3()
@@ -149,6 +150,7 @@ def test_bulk_hydrate_unknown_playlist_returns_404_with_known(
 def test_stems_parity_routes_survive_bad_input(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """[if] stems parity routes receive bad input [then] they return structured errors and health stays 200, [else stop]."""
     data_dir = _seed_playlist_data_dir(tmp_path)
     cfg = _cfg()
     s3 = InMemoryAssetS3()

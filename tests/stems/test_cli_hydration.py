@@ -368,7 +368,7 @@ def test_bulk_hydrate_with_warm_cache_does_not_refetch_index(
 
 @pytest.mark.requirement("STEM-34")
 def test_bulk_hydrate_unknown_playlist_exits_2(tmp_path: Path) -> None:
-    """Unknown playlist must exit 2 with CLI-style error (issue #2957)."""
+    """[if] bulk-hydrate names an unknown playlist [then] exit 2 names it, [else stop]."""
     from tests.webui.test_stems_route_survival import _seed_playlist_data_dir
 
     data_dir = _seed_playlist_data_dir(tmp_path)

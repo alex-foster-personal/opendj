@@ -427,6 +427,10 @@ def resolve_playable_audio(
         # Share venue caps are enforced on the legacy pick path; believed-state
         # audio wiring is local-machine only in CLOUDSYNC-10.
         track_locations.policy_from_env(share=share)
+    else:
+        from apps.shared.library_mode import library_mode
+
+        library_mode()
     state = _open_ro(config.STATE_DB, "STATE_DB")
     try:
         exists = state.execute(
