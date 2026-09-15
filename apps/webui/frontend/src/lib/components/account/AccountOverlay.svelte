@@ -342,8 +342,8 @@
 										 the second, which no file on this machine touched.
 
 										 Branching on `flag.overridden` would separate them, and is
-										 NOT what this does: app_mode.show_unbuildable is the first
-										 default-off flag in apps/feature_flags/store.FLAGS, and this
+										 NOT what this does: usb.export is a default-on flag that the
+										 App Store profile turns off, and this
 										 heading already covers declared defaults as well as local
 										 overrides. One sentence true of both states beats two
 										 sentences where one is unreachable. -->

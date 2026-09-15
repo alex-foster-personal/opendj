@@ -12,6 +12,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from typing import Any
 
+from scripts.ci_cost_billing import BillingLedger
 from scripts.ci_cost_model import Coverage, RunRow
 
 
@@ -181,5 +182,111 @@ def render_report(
         "api_calls": coverage.api_calls,
         "cache_gap": coverage.cache_gap,
         "unpriced_runs": len(unpriced),
+    }
+    return "\n".join(lines), summary
+
+
+def render_billing_report(
+    ledger: BillingLedger,
+    *,
+    allowance_limit: int,
+    warn_pct: float,
+    stop_pct: float,
+) -> tuple[str, dict[str, Any]]:
+    """Render a billing-API ledger. Fails closed when data is not trusted."""
+    if ledger.unknown_reason:
+        state = "UNKNOWN"
+        used = 0.0
+        pct = 0.0
+    elif ledger.hosted_violations:
+        state = "HOSTED"
+        used = float(ledger.allowance_minutes)
+        pct = (used / allowance_limit * 100) if allowance_limit else 0.0
+    else:
+        used = float(ledger.allowance_minutes)
+        pct = (used / allowance_limit * 100) if allowance_limit else 0.0
+        if pct >= stop_pct:
+            state = "STOP"
+        elif pct >= warn_pct:
+            state = "WARN"
+        else:
+            state = "OK"
+
+    measured = ledger.measured_at or "n/a"
+    lines = [
+        f"# CI spend ledger -- {ledger.repository}",
+        "",
+        f"- Month: **{ledger.month}**",
+        f"- Source: **GitHub billing usage API** ({ledger.api_calls} API call(s))",
+        f"- Measured through: **{measured}**",
+    ]
+
+    if ledger.unknown_reason:
+        lines += [
+            f"- Verdict: **{state}** ({ledger.unknown_reason})",
+            "",
+            "> **UNTRUSTED:** No allowance figure is quoted below because the "
+            "billing feed is incomplete or stale.",
+            "",
+        ]
+    elif ledger.hosted_violations:
+        lines += [
+            f"- Allowance used: **{used:.0f} / {allowance_limit} min ({pct:.1f}%)** "
+            f"-> **{state}**",
+            f"- Net billed (hosted SKUs): **${ledger.net_usd:.2f}**",
+            "",
+            "> **HOSTED BILLING AFTER CUTOVER:** GitHub-hosted Actions minutes "
+            f"with net spend appeared after {ledger.hosted_violations[0].day}. "
+            "Self-hosted cutover was Wed 3 Sep 2026.",
+            "",
+        ]
+        for violation in ledger.hosted_violations:
+            lines.append(
+                f"- **{violation.day}** `{violation.sku}` net **${violation.net_usd:.2f}**"
+            )
+        lines.append("")
+    else:
+        lines += [
+            f"- Allowance used: **{used:.0f} / {allowance_limit} min ({pct:.1f}%)** "
+            f"-> **{state}**",
+            f"- Net billed (this repo): **${ledger.net_usd:.2f}**",
+            "",
+            "Allowance minutes apply Linux 1x, Windows 2x, macOS 10x to the "
+            "billing quantity for each Actions SKU.",
+            "",
+        ]
+
+    if ledger.skus and not ledger.unknown_reason:
+        lines += ["## Per SKU (billing usage)", ""]
+        lines += _table(
+            ["SKU", "Minutes", "Allowance min", "Net $"],
+            ["---", "---:", "---:", "---:"],
+            [
+                [
+                    row.sku,
+                    str(row.minutes),
+                    str(row.allowance_minutes),
+                    f"${row.net_usd:.2f}",
+                ]
+                for row in ledger.skus
+            ],
+        )
+        lines.append("")
+
+    summary = {
+        "state": state,
+        "month": ledger.month,
+        "allowance_used": used if not ledger.unknown_reason else 0.0,
+        "allowance_limit": allowance_limit,
+        "allowance_pct": pct if not ledger.unknown_reason else 0.0,
+        "cost_usd": ledger.net_usd if not ledger.unknown_reason else 0.0,
+        "measured_at": ledger.measured_at,
+        "complete": ledger.is_trusted and not ledger.unknown_reason,
+        "api_calls": ledger.api_calls,
+        "unknown_reason": ledger.unknown_reason,
+        "hosted_violations": [
+            {"day": v.day, "sku": v.sku, "net_usd": v.net_usd} for v in ledger.hosted_violations
+        ],
+        "source": "billing_usage",
     }
     return "\n".join(lines), summary

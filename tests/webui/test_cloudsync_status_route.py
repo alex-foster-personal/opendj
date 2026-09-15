@@ -79,6 +79,36 @@ def test_status_exposes_a_recorded_error(tmp_path: Path, monkeypatch):
     assert body["recent_results"][0]["status"] == "error"
 
 
+def test_status_exposes_update_required_for_wire_mismatch(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("MDT_CLOUDSYNC_SCHEDULER", "1")
+    monkeypatch.setenv("MDT_CLOUDSYNC_HUB_URL", "https://hub.example.test")
+    message = (
+        'POST https://agentbox.<tailnet>:8870/api/v1/sync/hello -> HTTP 409: '
+        '{"detail":{"code":"SYNC_WIRE_VERSION","message":"peer speaks sync wire v4, '
+        'this machine speaks v3 (schema v14 vs v13). The synced row shapes differ, '
+        'so no row may cross; upgrade whichever machine is on the lower wire version, '
+        'then sync again."}}'
+    )
+    (tmp_path / "cloudsync-status.json").write_text(json.dumps({"results": [{
+        "finished_at": "2026-09-15T06:00:00+00:00",
+        "status": "error",
+        "message": message,
+        "pushed": 0,
+        "pulled": 0,
+    }]}), encoding="utf-8")
+    with _client(tmp_path) as client:
+        response = client.get("/api/v1/cloudsync/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["update_required"] == {
+        "code": "SYNC_WIRE_VERSION",
+        "local_wire_version": 3,
+        "peer_wire_version": 4,
+        "action": "install the latest Open DJ",
+    }
+
+
 def test_status_keeps_only_the_newest_five_results(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("MDT_CLOUDSYNC_SCHEDULER", "1")
     monkeypatch.setenv("MDT_CLOUDSYNC_HUB_URL", "https://hub.example.test")

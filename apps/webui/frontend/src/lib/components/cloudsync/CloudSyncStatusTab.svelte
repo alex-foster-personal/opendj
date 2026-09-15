@@ -283,7 +283,7 @@
 							none yet
 						{:else if status.last_result.status === 'error'}
 							{status.last_result.status}:
-							{presentCloudSyncResultError(status.last_result).summary}
+							{presentCloudSyncResultError(status.last_result, status.update_required).summary}
 							<details data-testid="cloudsync-last-result-details">
 								<summary>{CLOUDSYNC_TECHNICAL_DETAILS_LABEL}</summary>
 								<pre class="technical-details">{status.last_result.message}</pre>

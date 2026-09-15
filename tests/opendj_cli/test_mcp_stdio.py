@@ -4,37 +4,54 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import re
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.types import CallToolResult
 
 from tests.opendj_cli.conftest import Engine
 
 
-def _tool_json(result: Any) -> dict[str, Any]:
-    texts = [block.text for block in result.content if block.type == "text"]
-    assert texts, f"tool returned no text content: {result!r}"
-    return json.loads(texts[0])
+def _tool_payload(result: CallToolResult) -> dict[str, Any]:
+    assert result.structured_content is not None
+    assert isinstance(result.structured_content, dict)
+    encoded = result.structured_content.get("result")
+    assert not isinstance(encoded, str), "double-encoded structuredContent"
+    return result.structured_content
 
 
-async def _with_session(engine: Engine, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    params = StdioServerParameters(
+def _stdio_params(engine: Engine) -> StdioServerParameters:
+    return StdioServerParameters(
         command=sys.executable,
         args=["-m", "apps.opendj_cli", "--lock", str(engine.lock_path), "mcp"],
     )
+
+
+async def _call_tool(
+    engine: Engine,
+    tool: str,
+    arguments: dict[str, Any],
+) -> CallToolResult:
+    params = _stdio_params(engine)
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            result = await session.call_tool(tool, arguments)
-            return _tool_json(result)
+            return await session.call_tool(tool, arguments)
 
 
 def call_tool(engine: Engine, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    return asyncio.run(_with_session(engine, tool, arguments))
+    return _tool_payload(asyncio.run(_call_tool(engine, tool, arguments)))
+
+
+def call_tool_result(engine: Engine, tool: str, arguments: dict[str, Any]) -> CallToolResult:
+    return asyncio.run(_call_tool(engine, tool, arguments))
 
 
 @pytest.mark.requirement("AGENT-11")
@@ -50,23 +67,8 @@ def test_status_reports_lock_port(engine: Engine) -> None:
 def test_app_state_health(engine: Engine) -> None:
     """[if] engine is up [then] app_state /api/v1/health returns ok, [else stop]."""
     engine.page().start()
-    params = StdioServerParameters(
-        command=sys.executable,
-        args=["-m", "apps.opendj_cli", "--lock", str(engine.lock_path), "mcp"],
-    )
-
-    async def _read_health() -> dict[str, Any]:
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool(
-                    "app_state",
-                    {"path": "/api/v1/health"},
-                )
-                return json.loads(result.content[0].text)
-
-    body = asyncio.run(_read_health())
-    assert body["status"] == "ok"
+    payload = call_tool(engine, "app_state", {"path": "/api/v1/health"})
+    assert payload["status"] == "ok"
 
 
 @pytest.mark.requirement("AGENT-11")
@@ -84,32 +86,79 @@ def test_command_master_mute_returns_mirror_delta(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_status_engine_down(tmp_path: Any) -> None:
-    """[if] no engine is running [then] status says engine_not_running within 5 s, [else stop]."""
+    """[if] no engine is running [then] status is isError with engine_not_running, [else stop]."""
     missing = tmp_path / "missing.engine.lock"
     params = StdioServerParameters(
         command=sys.executable,
         args=["-m", "apps.opendj_cli", "--lock", str(missing), "mcp"],
     )
 
-    async def _status() -> dict[str, Any]:
+    async def _status() -> CallToolResult:
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool("status", {})
-                return _tool_json(result)
+                return await session.call_tool("status", {})
 
     started = time.monotonic()
-    payload = asyncio.run(_status())
+    result = asyncio.run(_status())
     assert time.monotonic() - started < 5.0
-    assert payload["error"] == "engine_not_running"
-    assert payload["lock_path"] == str(missing)
+    assert result.is_error is True
+    texts = [block.text for block in result.content if block.type == "text"]
+    assert any("engine_not_running" in text for text in texts)
+    assert any(str(missing) in text for text in texts)
+
+
+@pytest.mark.requirement("AGENT-05")
+def test_library_ui_prefs_topbar_round_trip(engine: Engine) -> None:
+    """[if] MCP library PUTs auto_play_enforce_order [then] GET returns it, [else stop]."""
+    put = call_tool(
+        engine,
+        "library",
+        {
+            "method": "PUT",
+            "path": "/api/v1/ui-prefs",
+            "fields": {"auto_play_enforce_order": "true"},
+        },
+    )
+    assert put["status_code"] == 200
+    get = call_tool(
+        engine,
+        "library",
+        {"method": "GET", "path": "/api/v1/ui-prefs"},
+    )
+    assert get["status_code"] == 200
+    body = json.loads(get["body"])
+    assert body["auto_play_enforce_order"] is True
+
+
+@pytest.mark.requirement("AGENT-05")
+def test_library_ui_prefs_library_browser_round_trip(engine: Engine) -> None:
+    """[if] MCP library PUTs remixes_filter [then] GET returns it, [else stop]."""
+    put = call_tool(
+        engine,
+        "library",
+        {
+            "method": "PUT",
+            "path": "/api/v1/ui-prefs",
+            "fields": {"remixes_filter": "true"},
+        },
+    )
+    assert put["status_code"] == 200
+    get = call_tool(
+        engine,
+        "library",
+        {"method": "GET", "path": "/api/v1/ui-prefs"},
+    )
+    assert get["status_code"] == 200
+    body = json.loads(get["body"])
+    assert body["remixes_filter"] is True
 
 
 @pytest.mark.requirement("AGENT-11")
 def test_library_writeback_blocked(engine: Engine) -> None:
-    """[if] library targets writeback apply [then] it returns writeback_blocked, [else stop]."""
+    """[if] library targets writeback apply [then] isError names writeback_blocked, [else stop]."""
     engine.page().start()
-    payload = call_tool(
+    result = call_tool_result(
         engine,
         "library",
         {
@@ -117,19 +166,23 @@ def test_library_writeback_blocked(engine: Engine) -> None:
             "path": "/api/v1/playlists/demo/writeback/apply",
         },
     )
-    assert payload["error"] == "writeback_blocked"
+    assert result.is_error is True
+    texts = [block.text for block in result.content if block.type == "text"]
+    assert any("writeback_blocked" in text for text in texts)
 
 
 @pytest.mark.requirement("AGENT-11")
 def test_library_delete_blocked_without_destructive(engine: Engine) -> None:
-    """[if] DELETE lacks the destructive flag [then] it returns destructive_blocked, [else stop]."""
+    """[if] DELETE lacks the destructive flag [then] isError names destructive_blocked."""
     engine.page().start()
-    payload = call_tool(
+    result = call_tool_result(
         engine,
         "library",
         {"method": "DELETE", "path": "/api/v1/playlists/demo"},
     )
-    assert payload["error"] == "destructive_blocked"
+    assert result.is_error is True
+    texts = [block.text for block in result.content if block.type == "text"]
+    assert any("destructive_blocked" in text for text in texts)
 
 
 @pytest.mark.requirement("AGENT-11")
@@ -146,20 +199,103 @@ def test_command_play_prepends_master_mute(engine: Engine) -> None:
     assert page.mirror["master"]["muted"] is True
 
 
+@pytest.mark.requirement("AGENT-12")
+def test_open_route_posts_navigate_and_waits_for_mirror(engine: Engine) -> None:
+    """[if] open_route is called [then] shell navigate opens performance, [else stop]."""
+    shell = engine.shell()
+    shell.start()
+    try:
+        payload = call_tool(engine, "open_route", {"route": "/performance"})
+    finally:
+        shell.stop()
+    assert payload["accepted"] is True
+    assert payload["client_open"] is True
+    assert payload["route"] == "/performance"
+
+
+@pytest.mark.requirement("AGENT-12")
+def test_command_auto_ensures_when_page_closed(engine: Engine) -> None:
+    """[if] command runs with no page [then] auto-ensure opens performance, [else stop]."""
+    shell = engine.shell()
+    shell.start()
+    try:
+        payload = call_tool(
+            engine,
+            "command",
+            {"order": {"single": {"type": "master_mute", "muted": True}}},
+        )
+    finally:
+        shell.stop()
+    assert "mirror_delta" in payload
+    assert payload.get("error") != "no_performance_page"
+
+
 @pytest.mark.requirement("AGENT-11")
 def test_app_state_rejects_invalid_paths(engine: Engine) -> None:
-    """[if] app_state path is outside /api/v1 [then] it returns invalid_path, [else stop]."""
+    """[if] app_state path is outside /api/v1 [then] isError names invalid_path, [else stop]."""
     engine.page().start()
     for path in ("/health", "/api/v1/../health"):
-        payload = call_tool(engine, "app_state", {"path": path})
-        assert payload["error"] == "invalid_path"
+        result = call_tool_result(engine, "app_state", {"path": path})
+        assert result.is_error is True
+        texts = [block.text for block in result.content if block.type == "text"]
+        assert any("invalid_path" in text for text in texts)
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_app_state_non_success_is_error(engine: Engine) -> None:
+    """[if] app_state hits a 404 path [then] isError is true and names the status, [else stop]."""
+    engine.page().start()
+    result = call_tool_result(
+        engine,
+        "app_state",
+        {"path": "/api/v1/performance/mirror"},
+    )
+    assert result.is_error is True
+    texts = [block.text for block in result.content if block.type == "text"]
+    assert any("404" in text for text in texts)
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_tools_list_carries_annotations(engine: Engine) -> None:
+    """[if] tools/list runs [then] every tool carries readOnlyHint, [else stop]."""
+    engine.page().start()
+    params = _stdio_params(engine)
+
+    async def _list_tools() -> list[Any]:
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                listed = await session.list_tools()
+                return listed.tools
+
+    tools = asyncio.run(_list_tools())
+    assert tools
+    for tool in tools:
+        assert tool.annotations is not None
+        assert tool.annotations.read_only_hint is not None
+    destructive = {tool.name: tool.annotations.destructive_hint for tool in tools}
+    assert destructive["library"] is True
+    assert destructive["command"] is True
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_structured_content_is_object_not_string(engine: Engine) -> None:
+    """[if] a tool returns JSON [then] structuredContent is the object, [else stop]."""
+    engine.page().start()
+    result = call_tool_result(engine, "status", {})
+    assert result.structured_content is not None
+    assert isinstance(result.structured_content, dict)
+    assert "lock_path" in result.structured_content
+    assert not isinstance(result.structured_content.get("result"), str)
 
 
 @pytest.mark.requirement("AGENT-11")
 def test_status_stale_lock_port(tmp_path: Any) -> None:
     """[if] the lock names a dead port [then] status reports not-running within 5 s, [else stop].
 
-    Not-running is either ``engine_not_running`` or an ``UNREACHABLE`` health string.
+    Not-running is either an isError ``engine_not_running``, or a success whose
+    ``health`` field is an ``UNREACHABLE`` string (the port answered, just not
+    with the engine's API; see the "UNREACHABLE" note in the PR body).
     """
     lock_path = tmp_path / ".engine.lock"
     lock_path.write_text(
@@ -174,7 +310,7 @@ def test_status_stale_lock_port(tmp_path: Any) -> None:
         encoding="utf-8",
     )
     started = time.monotonic()
-    payload = call_tool(
+    result = call_tool_result(
         Engine(
             base_url="http://127.0.0.1:9",
             port=9,
@@ -184,6 +320,83 @@ def test_status_stale_lock_port(tmp_path: Any) -> None:
         {},
     )
     assert time.monotonic() - started < 5.0
-    assert payload["error"] == "engine_not_running" or str(payload.get("health", "")).startswith(
-        "UNREACHABLE"
+    if result.is_error:
+        texts = [block.text for block in result.content if block.type == "text"]
+        assert any("engine_not_running" in text for text in texts)
+    else:
+        payload = _tool_payload(result)
+        assert str(payload.get("health", "")).startswith("UNREACHABLE")
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_home_empty_tmp_dir_is_error_for_four_tools(tmp_path: Any) -> None:
+    """[if] HOME has no engine lock [then] status/command/library/open_route each
+    surface isError True with their error code readable in the text, [else stop].
+
+    Issue #2895 acceptance: drive real stdio, no mocking. HOME points at an
+    empty temp dir so ``resolve_origin`` naturally finds no lock file.
+    """
+    env = {**os.environ, "HOME": str(tmp_path)}
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "apps.opendj_cli", "mcp"],
+        env=env,
     )
+
+    async def _call(tool: str, arguments: dict[str, Any]) -> CallToolResult:
+        async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
+            return await session.call_tool(tool, arguments)
+
+    cases: list[tuple[str, dict[str, Any], str]] = [
+        ("status", {}, "engine_not_running"),
+        ("command", {"verb": "play", "args": ["1"]}, "engine_not_running"),
+        ("library", {"method": "FROB", "path": "/x"}, '"error": "usage"'),
+        ("open_route", {"route": "/settings"}, "engine_not_running"),
+    ]
+    for tool, arguments, expected_code in cases:
+        result = asyncio.run(_call(tool, arguments))
+        assert result.is_error is True, f"{tool} {arguments} should be isError"
+        texts = [block.text for block in result.content if block.type == "text"]
+        assert any(expected_code in text for text in texts), (tool, texts)
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_command_safety_refusal_is_error(engine: Engine) -> None:
+    """[if] command runs with neither order nor verb [then] isError names usage
+    (a SafetyRefusal), [else stop]."""
+    engine.page().start()
+    result = call_tool_result(engine, "command", {})
+    assert result.is_error is True
+    texts = [block.text for block in result.content if block.type == "text"]
+    assert any('"error": "usage"' in text for text in texts)
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_command_order_failed_is_error(engine: Engine) -> None:
+    """[if] the engine route rejects a malformed order body [then] isError names
+    order_failed, [else stop]."""
+    engine.page().start()
+    result = call_tool_result(engine, "command", {"order": {"sequence": []}})
+    assert result.is_error is True
+    texts = [block.text for block in result.content if block.type == "text"]
+    assert any('"error": "order_failed"' in text for text in texts)
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_no_unconverted_error_document_returns() -> None:
+    """[if] mcp_server.py is scanned for a bare error-document return [then] none
+    remain, proven by a control literal that DOES trip the pattern, [else stop].
+
+    Guards the class fix in issue #2895: the next error path added to
+    mcp_server.py cannot silently regress to isError:false.
+    """
+    source_path = (
+        Path(__file__).resolve().parents[2] / "apps" / "opendj_cli" / "mcp_server.py"
+    )
+    pattern = re.compile(r'return\s*(_engine_not_running\(|\{"error":)')
+    control = 'return {"error": "control_only", "message": "trip the pattern"}'
+    assert pattern.search(control), "pattern must fire on a known-bad literal"
+    source = source_path.read_text(encoding="utf-8")
+    matches = pattern.findall(source)
+    assert matches == [], f"unconverted error-document return(s) in mcp_server.py: {matches}"

@@ -1,3 +1,6 @@
+import { api } from '../api/client';
+import { makeDiskWriteChain } from './disk-write-chain';
+
 /**
  * Mouse-wheel adjust for continuous 0..1 controls (dials and faders).
  *
@@ -296,8 +299,54 @@ function _loadSensitivity(): Record<WheelInputKind, number> {
 
 let _sensitivity: Record<WheelInputKind, number> = _loadSensitivity();
 
+export type WheelSensitivityDisk = Partial<Record<WheelInputKind, number>>;
+
+const _syncWheelSensitivityDisk = makeDiskWriteChain(
+	async (patch: { wheel_sensitivity: Record<WheelInputKind, number> }) => {
+		try {
+			await api.PUT('/api/v1/ui-prefs', { body: patch });
+		} catch {
+			/* localStorage remains authoritative if daemon is down */
+		}
+	}
+);
+
 function _persistSensitivity(): void {
 	_storage()?.setItem(SENSITIVITY_STORAGE_KEY, JSON.stringify(_sensitivity));
+}
+
+function _syncWheelSensitivityToDisk(): void {
+	void _syncWheelSensitivityDisk({
+		wheel_sensitivity: { mouse: _sensitivity.mouse, trackpad: _sensitivity.trackpad }
+	});
+}
+
+/** Apply disk-backed wheel factors from GET /api/v1/ui-prefs (issue #2854). */
+export function hydrateWheelSensitivityFromDisk(body: {
+	wheel_sensitivity?: WheelSensitivityDisk;
+}): void {
+	const raw = body.wheel_sensitivity;
+	if (raw === undefined || typeof raw !== 'object') return;
+	const next = { ..._sensitivity };
+	let changed = false;
+	for (const kind of ['mouse', 'trackpad'] as const) {
+		const value = raw[kind];
+		if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+		try {
+			_assertStoredFactor(kind, value);
+		} catch {
+			continue;
+		}
+		const applied = value < WHEEL_SENSITIVITY_MIN ? WHEEL_SENSITIVITY_MIN : value;
+		if (next[kind] !== applied) {
+			next[kind] = applied;
+			changed = true;
+		}
+	}
+	if (!changed) return;
+	_sensitivity = next;
+	_persistSensitivity();
+	_notifySensitivityChange();
 }
 
 /** Current factors. Copy, so callers cannot mutate the live config in place. */
@@ -344,6 +393,7 @@ export function setWheelSensitivity(kind: WheelInputKind, factor: number): void 
 	_assertFactor(kind, factor);
 	_sensitivity[kind] = factor;
 	_persistSensitivity();
+	_syncWheelSensitivityToDisk();
 	_notifySensitivityChange();
 }
 
@@ -351,6 +401,7 @@ export function setWheelSensitivity(kind: WheelInputKind, factor: number): void 
 export function resetWheelSensitivity(): void {
 	_sensitivity = { ...WHEEL_SENSITIVITY };
 	_storage()?.removeItem(SENSITIVITY_STORAGE_KEY);
+	_syncWheelSensitivityToDisk();
 	_notifySensitivityChange();
 }
 

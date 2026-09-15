@@ -7,6 +7,7 @@
 	import ProvenanceTooltip from '$lib/components/ProvenanceTooltip.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import QualityBadge from '$lib/components/rb/QualityBadge.svelte';
+	import LineLyricsPanel from '$lib/components/LineLyricsPanel.svelte';
 	import LyricsPanel from '$lib/components/LyricsPanel.svelte';
 	import { fetchRbMeta, RbApiError } from '$lib/rb/api-rb';
 	import { lyricEntry, loadLyrics } from '$lib/lyrics/lyrics-cache.svelte';
@@ -122,6 +123,7 @@
 			Stage
 		</button>
 	{/if}
+	<LineLyricsPanel stableId={track.stable_id} />
 	<LyricsPanel stableId={track.stable_id} />
 
 	<h3>Actions</h3>

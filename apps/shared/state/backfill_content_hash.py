@@ -130,18 +130,11 @@ def _resolve_hash_path(
     ``"track_path"``. Another machine's ``track_locations`` row is never
     consulted.
     """
-    if state_locations.locations_table_ready(conn):
-        row = conn.execute(
-            "SELECT file_path FROM track_locations "
-            "WHERE stable_id = ? AND machine_id = ? AND deleted_at IS NULL "
-            "AND kind = 'local' AND file_path IS NOT NULL "
-            "ORDER BY CASE role WHEN 'primary' THEN 0 ELSE 1 END, "
-            "created_at, location_id "
-            "LIMIT 1",
-            (stable_id, machine_id),
-        ).fetchone()
-        if row is not None:
-            return (row[0], "location")
+    raw, source = state_locations.local_audio_path_raw(
+        conn, stable_id, machine_id=machine_id,
+    )
+    if raw is not None:
+        return (raw, source)
     return (track_file_path, "track_path")
 
 

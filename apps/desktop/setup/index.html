@@ -29,6 +29,24 @@
 				</p>
 			</section>
 
+			<section id="fatal-view" class="view" hidden>
+				<h1>Open DJ engine stopped</h1>
+				<p class="lede">
+					The engine exited while this window was open.
+				</p>
+				<dl class="facts">
+					<dt>Exit code</dt>
+					<dd><code id="fatal-exit">(unknown)</code></dd>
+					<dt>Last pid</dt>
+					<dd><code id="fatal-pid">(unknown)</code></dd>
+					<dt>Last port</dt>
+					<dd><code id="fatal-port">(unknown)</code></dd>
+				</dl>
+				<div class="actions">
+					<button id="relaunch" type="button">Relaunch</button>
+				</div>
+			</section>
+
 			<section id="unreachable-view" class="view" hidden>
 				<h1 id="headline">Open DJ cannot reach its engine</h1>
 

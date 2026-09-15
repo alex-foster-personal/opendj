@@ -52,6 +52,7 @@ function status(overrides = {}) {
 		rows_pending: null,
 		endpoint: null,
 		recent_results: [],
+		update_required: null,
 		...overrides
 	};
 }
@@ -547,4 +548,44 @@ test('env overrides are named when they mask the saved config', () => {
 	assert.equal(notes.length, 2);
 	assert.match(notes[0], /MDT_CLOUDSYNC_SCHEDULER/);
 	assert.match(notes[1], /MDT_CLOUDSYNC_HUB_URL/);
+});
+
+// requirement: CSSTATUS-06
+// [if] status.update_required is set [then] chipState is update_required and labels mention install the latest Open DJ
+test('update_required renders a dedicated chip state and install copy', () => {
+	const live = { configured: true, running: true, enabled: true };
+	const updateRequired = {
+		code: 'SYNC_WIRE_VERSION',
+		local_wire_version: 3,
+		peer_wire_version: 4,
+		action: 'install the latest Open DJ'
+	};
+	const wireMismatch = status({ ...live, update_required: updateRequired });
+	assert.equal(view.chipState(wireMismatch), 'update_required');
+	assert.equal(view.chipFullLabel(wireMismatch), 'sync: update required');
+	assert.equal(view.chipShortLabel(wireMismatch), 'upd');
+	assert.match(view.chipTitle(wireMismatch, null), /install the latest Open DJ/);
+	assert.match(view.chipTitle(wireMismatch, null), /this machine speaks v3/);
+	assert.match(view.chipAriaLabel(wireMismatch, null), /install the latest Open DJ/);
+	const headline = view.statusHeadline(wireMismatch);
+	assert.equal(headline.tone, 'warn');
+	assert.match(headline.text, /App update required to sync/);
+	assert.match(headline.text, /Install the latest Open DJ/);
+});
+
+// requirement: CSSTATUS-06
+// [if] status has connection refused error only [then] chipState is error and copy does not mention update required
+test('connection refused stays a generic error without update required copy', () => {
+	const live = { configured: true, running: true, enabled: true };
+	const networkError = status({
+		...live,
+		update_required: null,
+		last_result: { status: 'error', message: '[Errno 61] Connection refused' }
+	});
+	assert.equal(view.chipState(networkError), 'error');
+	assert.equal(view.chipFullLabel(networkError), 'sync: error');
+	const headline = view.statusHeadline(networkError);
+	assert.equal(headline.tone, 'error');
+	assert.doesNotMatch(headline.text, /update required/i);
+	assert.doesNotMatch(view.chipTitle(networkError, null), /update required/i);
 });

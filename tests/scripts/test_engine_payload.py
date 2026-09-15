@@ -274,6 +274,25 @@ def test_the_linux_only_libc_soname_is_classified_not_bundled() -> None:
 
 
 @pytest.mark.requirement("INSTALL-11")
+@pytest.mark.parametrize(
+    "line,call,source",
+    [
+        (40, "find_library", "path = find_library(name)"),
+        (43, "CDLL", "return CDLL(path, use_errno=True)"),
+    ],
+)
+def test_truststore_macos_framework_loads_are_classified(line: int, call: str, source: str) -> None:
+    """[if] truststore's two dynamic loads (pulled in by mcp 2.x via httpx2) are
+    unclassified [then] every dmg build from main fails, as the Air's did Tue 15 Sep."""
+    site = RuntimeLoadSite(
+        path="pylib/truststore/_macos.py", line=line, call=call, library=None, source=source
+    )
+    classified, unclassified = classify_runtime_load_sites([site])
+    assert unclassified == []
+    assert "/System/Library/Frameworks" in classified[site.describe()]
+
+
+@pytest.mark.requirement("INSTALL-11")
 def test_a_dynamic_argument_is_still_required_to_be_classified() -> None:
     """"We could not read it" and "it is fine" must not render the same."""
     unknown = RuntimeLoadSite(
