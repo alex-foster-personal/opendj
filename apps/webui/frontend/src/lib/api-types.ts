@@ -20372,6 +20372,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description library unreadable (state/state.db missing, locked, or corrupt) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     rescue_snapshots_list_api_v1_rescue_snapshots_get: {

@@ -30434,6 +30434,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "library unreadable (state/state.db missing, locked, or corrupt)"
           }
         },
         "summary": "Rescue Restore",
