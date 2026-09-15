@@ -208,23 +208,51 @@ impl Engine {
             return;
         }
         let pid = self.child.id() as i32;
+        append_shell_log("shutdown", &format!("stopping engine pgid {pid}: SIGTERM"));
         // SAFETY: killpg on a pgid this process created. A negative or zero
         // pid is impossible here because Child::id() is the spawned pid.
         unsafe {
             libc::killpg(pid, libc::SIGTERM);
         }
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while Instant::now() < deadline {
+        let sigterm_sent = Instant::now();
+        let deadline = sigterm_sent + Duration::from_secs(5);
+        loop {
+            if Instant::now() >= deadline {
+                break;
+            }
             match self.child.try_wait() {
-                Ok(Some(_)) => return,
+                Ok(Some(_)) => {
+                    append_shell_log(
+                        "shutdown",
+                        &format!(
+                            "engine pgid {pid} exited {}ms after SIGTERM",
+                            sigterm_sent.elapsed().as_millis()
+                        ),
+                    );
+                    return;
+                }
                 Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-                Err(_) => break,
+                Err(err) => {
+                    append_shell_log(
+                        "WARN",
+                        &format!("could not poll engine pgid {pid} after SIGTERM: {err}"),
+                    );
+                    break;
+                }
             }
         }
+        append_shell_log(
+            "shutdown",
+            &format!(
+                "engine pgid {pid} did not exit within {}ms of SIGTERM; escalating to SIGKILL",
+                sigterm_sent.elapsed().as_millis()
+            ),
+        );
         unsafe {
             libc::killpg(pid, libc::SIGKILL);
         }
         let _ = self.child.wait();
+        append_shell_log("shutdown", &format!("engine pgid {pid} reaped after SIGKILL"));
     }
 }
 
@@ -800,6 +828,37 @@ mod tests {
             .unwrap()
     }
 
+    /// A child that survives SIGTERM, so [`Engine::shutdown`] has no choice
+    /// but to escalate to SIGKILL.
+    ///
+    /// A single tail `sleep 30` will not do: a POSIX shell execs into the
+    /// last command of a script rather than forking it, which replaces the
+    /// shell (and its trap) with a plain `sleep` that dies on SIGTERM like
+    /// any other process. The loop keeps the shell -- and its ignored TERM --
+    /// as the live, tracked process for the whole test.
+    fn sigterm_ignoring_child() -> Child {
+        let mut command = Command::new("/bin/sleep");
+        command
+            .arg("30")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0);
+        // SIG_IGN, unlike a handler function, survives exec, so `sleep`
+        // inherits "ignore SIGTERM" instead of reverting to the default that
+        // would kill it. Set from the child side of fork, before exec, so
+        // the test binary's own (unrelated) signal disposition is untouched.
+        unsafe {
+            command.pre_exec(|| {
+                if libc::signal(libc::SIGTERM, libc::SIG_IGN) == libc::SIG_ERR {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        command.spawn().unwrap()
+    }
+
     #[test]
     fn retries_interrupted_reads_instead_of_ending_the_pump() {
         let directory = scratch_dir("pump-interrupted");
@@ -873,6 +932,45 @@ mod tests {
         }
         child.kill().unwrap();
         panic!("stop_process_group left the engine running");
+    }
+
+    // - if `Engine::shutdown` never escalates past SIGTERM then an engine
+    //   that ignores it (or one wedged deep enough not to act on it) outlives
+    //   the shell that thinks it stopped -> broken
+    // - if shutdown returns before the 5s SIGTERM grace period then a slow
+    //   but honest shutdown looks identical to one that never got a chance to
+    //   comply -> broken (this is the "SIGKILL escalation is logged
+    //   distinctly from SIGTERM" contract issue #2801 asks for; the log
+    //   content itself is exercised by DeathInfo::exit_reason and
+    //   exit_requested_trigger's own tests, since the shell log's global
+    //   OnceLock sink is not reliably assertable across parallel tests)
+
+    #[test]
+    fn shutdown_escalates_to_sigkill_when_sigterm_is_ignored() {
+        let directory = scratch_dir("shutdown-escalate");
+        let log_path = directory.join("engine.log");
+        let sink = Arc::new(LogSink::new(log_path.clone()));
+        let mut engine = Engine {
+            child: sigterm_ignoring_child(),
+            port: 1,
+            data_dir: directory.clone(),
+            log_path,
+            log_sink: sink,
+        };
+
+        let started = Instant::now();
+        engine.shutdown();
+        let elapsed = started.elapsed();
+
+        assert!(
+            elapsed >= Duration::from_secs(5),
+            "shutdown must wait out the SIGTERM grace period before escalating, took {elapsed:?}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(10),
+            "SIGKILL should terminate the child promptly once sent, took {elapsed:?}"
+        );
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

@@ -25,7 +25,7 @@ mod shell_health;
 mod supervisor;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -113,8 +113,40 @@ fn handle_diagnostic_flags<'a>(args: impl Iterator<Item = &'a str>, app_version:
     }
 }
 
-static SIGNAL_RECEIVED: AtomicBool = AtomicBool::new(false);
+/// 0 means no signal received yet. Set only from the signal handler itself
+/// (an async-signal-safe atomic store), read from the poll thread below,
+/// which does the actual logging and shutdown work outside the signal
+/// context.
+static SIGNAL_RECEIVED: AtomicI32 = AtomicI32::new(0);
 static ON_SHUTDOWN: OnceLock<Mutex<Option<Box<dyn Fn() + Send + Sync>>>> = OnceLock::new();
+
+/// Name a signal this shell installs a handler for. The handler only ever
+/// delivers SIGTERM or SIGINT, so "unknown" would mean the atomic was
+/// corrupted, not a real third signal.
+fn signal_name(signal: i32) -> &'static str {
+    if signal == libc::SIGTERM {
+        "SIGTERM"
+    } else if signal == libc::SIGINT {
+        "SIGINT"
+    } else {
+        "unknown signal"
+    }
+}
+
+/// Name a `RunEvent::ExitRequested`'s trigger from its `code` field.
+///
+/// `None` is what tauri reports for a quit the platform delivers directly to
+/// the app -- Cmd-Q, the Dock menu, or an Apple Event `quit` such as
+/// `osascript ... to quit` -- because none of those originate as a call this
+/// process made on itself. `Some(_)` is this process asking to exit itself,
+/// which for this shell means the webview's confirmed quit flow calling the
+/// process plugin's `exit()`.
+fn exit_requested_trigger(code: Option<i32>) -> String {
+    match code {
+        None => "apple-event-quit".to_string(),
+        Some(code) => format!("programmatic-exit(code={code})"),
+    }
+}
 
 // ----- build identity -----------------------------------------------------
 // Baked at COMPILE time by the `dmg` recipe. `option_env!` returns None for a
@@ -368,22 +400,31 @@ use launch::LaunchPlan;
 
 fn install_signal_handlers() {
     let _ = ON_SHUTDOWN.set(Mutex::new(None));
-    extern "C" fn signal_handler(_: i32) {
-        SIGNAL_RECEIVED.store(true, Ordering::SeqCst);
+    extern "C" fn signal_handler(signal: i32) {
+        // Async-signal-safe: one atomic store, nothing else. All the logging
+        // and shutdown work happens on the poll thread below, never here.
+        SIGNAL_RECEIVED.store(signal, Ordering::SeqCst);
     }
     unsafe {
         libc::signal(libc::SIGTERM, signal_handler as *const () as usize);
         libc::signal(libc::SIGINT, signal_handler as *const () as usize);
     }
     std::thread::spawn(|| {
-        while !SIGNAL_RECEIVED.load(Ordering::SeqCst) {
+        let signal = loop {
+            let received = SIGNAL_RECEIVED.load(Ordering::SeqCst);
+            if received != 0 {
+                break received;
+            }
             std::thread::sleep(Duration::from_millis(50));
-        }
+        };
+        let name = signal_name(signal);
+        engine::append_shell_log("shutdown", &format!("shell exiting: received {name}"));
         if let Some(slot) = ON_SHUTDOWN.get() {
             if let Some(shutdown) = slot.lock().expect("shutdown mutex").as_ref() {
                 shutdown();
             }
         }
+        engine::append_shell_log("shutdown", &format!("shell exit complete: {name}"));
         std::process::exit(0);
     });
 }
@@ -482,6 +523,10 @@ fn main() {
             }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
+                engine::append_shell_log(
+                    "shutdown",
+                    "window-close requested; delegating to webview quit gate",
+                );
                 request_quit_from_webview(window.app_handle());
             }
         })
@@ -581,13 +626,24 @@ fn main() {
         // INSTALL-21: ExitRequested is intercepted and delegated to the web UI.
         // Shutdown runs only on the final Exit after a confirmed quit.
         match event {
-            RunEvent::ExitRequested { api, .. } => {
+            RunEvent::ExitRequested { code, api, .. } => {
                 api.prevent_exit();
+                engine::append_shell_log(
+                    "shutdown",
+                    &format!("exit requested: {}", exit_requested_trigger(code)),
+                );
                 request_quit_from_webview(handle);
             }
             RunEvent::Exit => {
                 if let Some(state) = handle.try_state::<RuntimeSupervisorState>() {
+                    engine::append_shell_log("shutdown", "shell exit: stopping runtime supervisor");
                     state.supervisor.shutdown();
+                    engine::append_shell_log("shutdown", "shell exit: runtime supervisor stopped");
+                } else {
+                    engine::append_shell_log(
+                        "shutdown",
+                        "shell exit: no runtime supervisor (external engine origin)",
+                    );
                 }
             }
             _ => {}
@@ -695,5 +751,34 @@ mod tests {
     #[test]
     fn handle_diagnostic_flags_returns_none_for_a_normal_launch() {
         assert_eq!(handle_diagnostic_flags(std::iter::empty(), "0.1.1"), None);
+    }
+
+    // - if SIGTERM and SIGINT are not named distinctly then a reader of the
+    //   shell log cannot tell a script's kill from a terminal Ctrl-C -> broken
+    // - if a code:None exit is not named apple-event-quit then a Cmd-Q, a
+    //   Dock quit and a raw `osascript ... to quit` are indistinguishable
+    //   from this shell asking to exit itself -> broken (issue #2801)
+
+    #[test]
+    fn signal_name_distinguishes_sigterm_from_sigint() {
+        assert_eq!(signal_name(libc::SIGTERM), "SIGTERM");
+        assert_eq!(signal_name(libc::SIGINT), "SIGINT");
+        assert_ne!(signal_name(libc::SIGTERM), signal_name(libc::SIGINT));
+    }
+
+    #[test]
+    fn signal_name_of_an_unhandled_signal_says_so_rather_than_guessing() {
+        assert_eq!(signal_name(libc::SIGKILL), "unknown signal");
+    }
+
+    #[test]
+    fn a_platform_delivered_exit_is_named_apple_event_quit() {
+        assert_eq!(exit_requested_trigger(None), "apple-event-quit");
+    }
+
+    #[test]
+    fn a_self_requested_exit_is_named_programmatic_with_its_code() {
+        assert_eq!(exit_requested_trigger(Some(0)), "programmatic-exit(code=0)");
+        assert_eq!(exit_requested_trigger(Some(1)), "programmatic-exit(code=1)");
     }
 }
