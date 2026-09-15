@@ -9,7 +9,8 @@ useDefault = true
 description = """\
   localStorage and cache-key constants (PREFS_STORAGE_KEY = 'opendj.prefs', \
   SKEY_REVISION = '...'): identifiers, not credentials. The first full-history run \
-  (Mon 14 Sep 2026) attributed 33 of its 103 generic-api-key hits to this shape."""
+  (Mon 14 Sep 2026) attributed 33 of its 103 generic-api-key hits to this shape. \
+  Review by Sun 13 Dec 2026."""
 regexTarget = "line"
 regexes = [
   '''(?i)(storage_key|prefs_key|skey_revision)["']?\s*[:=]''',
