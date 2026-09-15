@@ -44,7 +44,7 @@ import {
 	mergePerfTierPrefsFromParsed,
 	type PerfTierPrefs
 } from './perf-tier-prefs';
-import { createDiskPrefsSync, makePrefsHydrator } from './prefs-hydrate';
+import { createDiskPrefsSync, makePrefsHydrator, setTopbarDiskPref } from './prefs-hydrate';
 import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLibrary } from './prefs-fields';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
@@ -472,23 +472,19 @@ export function setLibraryDensity(next: LibraryDensity): void {
 }
 
 export function setBeatSyncMax(next: boolean): void {
-	uiPrefs.beat_sync_max = next;
-	_persist();
+	setTopbarDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'beat_sync_max', next);
 }
 
 export function setAutoPlayEnabled(next: boolean): void {
-	uiPrefs.auto_play_enabled = next;
-	_persist();
+	setTopbarDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'auto_play_enabled', next);
 }
 
 export function setAutoPlayEnforceOrder(next: boolean): void {
-	uiPrefs.auto_play_enforce_order = next;
-	_persist();
+	setTopbarDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'auto_play_enforce_order', next);
 }
 
 export function setAutoPlayMaximizeReach(next: boolean): void {
-	uiPrefs.auto_play_maximize_reach = next;
-	_persist();
+	setTopbarDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'auto_play_maximize_reach', next);
 }
 
 /** Collapse one suggestion panel while retaining the other panel's state. */
