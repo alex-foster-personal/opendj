@@ -1,4 +1,7 @@
-"""SEC-01: daemon host allowlist and mutating-origin guard (issue #2689)."""
+"""SEC-01: daemon host allowlist and mutating-origin guard (issue #2689).
+
+[if] Host or a mutating Origin fails the allowlist [then] the guard rejects it, [else stop].
+"""
 from __future__ import annotations
 
 import pytest
