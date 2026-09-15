@@ -5,10 +5,8 @@ receive only short-lived GET URLs and content digests, never bucket keys.
 """
 from __future__ import annotations
 
-import json
-import os
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -23,39 +21,12 @@ from apps.shared.stable_id import is_safe_stable_id_segment
 from apps.shared.state import db as state_db
 from apps.sync_hub import service_credentials
 
+StemIndexFetcher = Callable[[], stem_index.StemAssetIndex]
+
 router = APIRouter(prefix="/stems", tags=["sync-stems"])
 _auth = service_credentials.credential_responses
 
 _PRESIGN_EXPIRY_S: int = asset_store.DEFAULT_PRESIGN_EXPIRY_SECONDS
-_STEM_INDEX_HIT_FILE_ENV = "MDT_HUB_TEST_STEM_INDEX_HIT_FILE"
-_STEM_INDEX_JSON_ENV = "MDT_HUB_TEST_STEM_INDEX_JSON"
-_STEM_INDEX_DENY_ENV = "MDT_HUB_TEST_STEM_INDEX_DENY"
-
-
-def _record_stem_index_hit() -> None:
-    hit_file = os.environ.get(_STEM_INDEX_HIT_FILE_ENV, "").strip()
-    if not hit_file:
-        return
-    path = Path(hit_file)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    current = int(path.read_text(encoding="utf-8").strip()) if path.is_file() else 0
-    path.write_text(str(current + 1), encoding="utf-8")
-
-
-def _test_stem_index_override() -> stem_index.StemAssetIndex | None:
-    index_path = os.environ.get(_STEM_INDEX_JSON_ENV, "").strip()
-    if not index_path:
-        return None
-    raw = json.loads(Path(index_path).read_text(encoding="utf-8"))
-    if not isinstance(raw, dict):
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "code": STEM_BUNDLE_PRESIGN_FAILED,
-                "message": f"{_STEM_INDEX_JSON_ENV} must contain a JSON object",
-            },
-        )
-    return {str(sid): dict(files) for sid, files in raw.items() if isinstance(files, dict)}
 
 
 def _db_path(request: Request) -> Path:
@@ -208,24 +179,22 @@ def get_stem_index(
     request: Request,
     machine_id: str = Query(min_length=1, description="the calling spoke"),
 ) -> StemIndexResponse:
-    """Return the published stem bundle index for an authenticated spoke."""
+    """Return the published stem bundle index for an authenticated spoke.
+
+    ``request.app.state.stem_index_fetcher``, when set by the code that built
+    the app, replaces the real R2 index fetch with the callable's return
+    value. Production never sets it; only test app-builders do. The
+    credential check always runs first regardless.
+    """
     with _hub_conn(request) as conn:
         _require_credential(request, conn, machine_id, "stems/index")
-    if os.environ.get(_STEM_INDEX_DENY_ENV, "").strip() in {"1", "true", "yes"}:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "HOST_NOT_ALLOWED",
-                "message": "test hook: stem index denied",
-            },
-        )
-    _record_stem_index_hit()
-    test_index = _test_stem_index_override()
-    if test_index is not None:
-        return StemIndexResponse(index=test_index)
+    fetcher: StemIndexFetcher | None = getattr(request.app.state, "stem_index_fetcher", None)
     try:
-        cfg, s3 = _hub_r2_clients()
-        index = stem_index.fetch_index(cfg, s3)
+        if fetcher is not None:
+            index = fetcher()
+        else:
+            cfg, s3 = _hub_r2_clients()
+            index = stem_index.fetch_index(cfg, s3)
     except HTTPException:
         raise
     except stem_index.StemIndexError as exc:

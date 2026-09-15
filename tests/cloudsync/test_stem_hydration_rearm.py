@@ -8,13 +8,14 @@ import pytest
 from apps.cloud import stem_index
 from apps.cloud.stem_source import STEM_HYDRATION_NOT_ARMED
 from apps.sync_hub import config as sync_config
+from tests.cloudsync.conftest import free_port
 from tests.cloudsync.stem_rearm_hub_rig import (
     boot_stem_hub,
     build_spoke_app,
     enroll_spoke,
     read_hit_count,
+    stem_index_payload,
     stop_stem_hub,
-    write_index_json,
 )
 
 pytestmark = pytest.mark.requirement("STEM-32")
@@ -26,19 +27,16 @@ def _fast_rearm_throttle(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MDT_SYNC_CREDENTIAL_MODE", "observe")
 
 
-def test_transient_403_rearms_and_hydrates_without_restart(
+def test_transient_unreachable_rearms_and_hydrates_without_restart(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """MUTATION TARGET: removing maybe_rearm_stem_hydration must fail this test."""
     stable_id = "rearm-recovery-track"
-    index_json = tmp_path / "stem-index.json"
-    write_index_json(index_json, stable_id)
     enroll_root = tmp_path / "enroll"
     enroll_hub = boot_stem_hub(
         enroll_root,
-        allowed_hosts="127.0.0.1",
-        index_json=index_json,
+        index=stem_index_payload(stable_id),
         name="enroll-hub",
     )
     spoke_dir = tmp_path / "spoke"
@@ -47,19 +45,13 @@ def test_transient_403_rearms_and_hydrates_without_restart(
     finally:
         stop_stem_hub(enroll_hub)
 
-    blocked_root = tmp_path / "blocked"
-    blocked_hub = boot_stem_hub(
-        blocked_root,
-        allowed_hosts="127.0.0.1",
-        index_json=index_json,
-        deny_index=True,
-        name="blocked-hub",
-    )
+    unreachable_port = free_port()
+    unreachable_url = f"http://127.0.0.1:{unreachable_port}"
     sync_config.write_config(
         spoke_dir,
         sync_config.CloudSyncConfig(
             enabled=True,
-            hub_url=blocked_hub.url,
+            hub_url=unreachable_url,
             machine_name="spoke",
         ),
     )
@@ -70,24 +62,12 @@ def test_transient_403_rearms_and_hydrates_without_restart(
     response = client.get(f"/api/v1/tracks/{stable_id}/stems")
     assert response.status_code == 502
     assert response.json()["detail"]["code"] == STEM_HYDRATION_NOT_ARMED
-    assert read_hit_count(blocked_hub) == 0
 
-    stop_stem_hub(blocked_hub)
-    allowed_root = tmp_path / "allowed"
-    allowed_hub = boot_stem_hub(
-        allowed_root,
-        allowed_hosts="127.0.0.1",
-        index_json=index_json,
-        deny_index=False,
-        name="allowed-hub",
-    )
-    sync_config.write_config(
-        spoke_dir,
-        sync_config.CloudSyncConfig(
-            enabled=True,
-            hub_url=allowed_hub.url,
-            machine_name="spoke",
-        ),
+    recovery_hub = boot_stem_hub(
+        tmp_path / "recovery",
+        port=unreachable_port,
+        index=stem_index_payload(stable_id),
+        name="recovery-hub",
     )
     time.sleep(0.25)
     try:
@@ -95,11 +75,11 @@ def test_transient_403_rearms_and_hydrates_without_restart(
         assert response.status_code == 200
         body = response.json()
         assert body.get("hydrating") is True or body.get("stable_id") == stable_id
-        assert read_hit_count(allowed_hub) == 1
+        assert read_hit_count(recovery_hub) == 1
         assert app.state.stem_hydration_source is not None
         assert app.state.stem_hydration_unarmed_reason is None
     finally:
-        stop_stem_hub(allowed_hub)
+        stop_stem_hub(recovery_hub)
 
 
 def test_structural_401_never_retries_rearm(
@@ -108,13 +88,10 @@ def test_structural_401_never_retries_rearm(
 ) -> None:
     """MUTATION TARGET: retrying structural reasons must fail this test."""
     stable_id = "structural-auth-track"
-    index_json = tmp_path / "stem-index.json"
-    write_index_json(index_json, stable_id)
     hub_root = tmp_path / "hub"
     hub = boot_stem_hub(
         hub_root,
-        allowed_hosts="127.0.0.1",
-        index_json=index_json,
+        index=stem_index_payload(stable_id),
     )
     spoke_dir = tmp_path / "spoke"
     try:
@@ -149,11 +126,7 @@ def test_throttle_skips_hub_inside_window(
     monkeypatch.setattr(stem_index, "INDEX_REFRESH_RETRY_INTERVAL_S", 60.0)
     stable_id = "throttle-track"
     hub_root = tmp_path / "hub"
-    hub = boot_stem_hub(
-        hub_root,
-        allowed_hosts="127.0.0.1",
-        index_json=None,
-    )
+    hub = boot_stem_hub(hub_root)
     spoke_dir = tmp_path / "spoke"
     try:
         enroll_spoke(spoke_dir, hub.url)
