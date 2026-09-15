@@ -33,10 +33,6 @@
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
 	import { startLibraryBootHydration } from '$lib/rb/library-boot-hydration';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
-
-	if (typeof window !== 'undefined') {
-		startLibraryBootHydration();
-	}
 	import { startAppInstruments } from '$lib/rb/app-init';
 	import { installShellNavigationPoll } from '$lib/rb/shell-navigation';
 	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
@@ -46,6 +42,10 @@
 	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
 	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
 	import PerformanceAppNav from '$lib/components/PerformanceAppNav.svelte';
+
+	if (typeof window !== 'undefined') {
+		startLibraryBootHydration();
+	}
 
 	let { children } = $props();
 
