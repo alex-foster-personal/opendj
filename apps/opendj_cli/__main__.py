@@ -7,6 +7,7 @@
     opendj api GET /api/v1/smartlists
     opendj api POST /api/v1/smartlists --json '{"name":"...","rule":{...}}'
     opendj --list-verbs [--json]
+    opendj install-cli [--target ~/.local/bin/opendj]
 
 Exit codes are documented in :mod:`apps.opendj_cli`; the load-bearing ones are
 2 (no engine, and the message names the lock file that was checked) and 4 (the
@@ -80,6 +81,7 @@ _STATE_COMMAND = "state"
 _SCRIPT_COMMAND = "do"
 _TRACK_COMMAND = "track"
 _API_COMMAND = "api"
+_INSTALL_COMMAND = "install-cli"
 _MCP_COMMAND = "mcp"
 
 
@@ -647,6 +649,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_CONFIRMED
     try:
         head, rest = _head(args.invocation)
+        if head == _INSTALL_COMMAND:
+            from apps.opendj_cli import install_cli
+
+            return install_cli.run(rest, as_json=args.json)
         if head == _STATE_COMMAND:
             return _run_state(args, resolve_origin(args.lock))
         if head == _TRACK_COMMAND:

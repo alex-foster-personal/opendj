@@ -10355,6 +10355,9 @@ export interface components {
          *     track anywhere in a small sample), which is an honest denominator, never
          *     a fabricated pass. ``remediation`` is null on a pass or a pending row and
          *     a real sentence on a fail.
+         *
+         *     ``user_*`` fields carry plain-language copy for the boot gate (issue
+         *     #2722). Admin/diagnostics views keep the technical ``label``/``detail``.
          */
         PreflightCheckOut: {
             /** Detail */
@@ -10370,6 +10373,12 @@ export interface components {
              * @enum {string}
              */
             status: "pass" | "fail" | "pending";
+            /** User Detail */
+            user_detail?: string | null;
+            /** User Label */
+            user_label?: string | null;
+            /** User Remediation */
+            user_remediation?: string | null;
         };
         /**
          * PreflightOut

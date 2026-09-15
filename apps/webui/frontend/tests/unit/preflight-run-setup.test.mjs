@@ -105,9 +105,9 @@ test('the true fresh-install fail row renders a clickable Run setup control (iss
 		navigate: () => {}
 	});
 
-	assert.ok(html.includes(RUN_SETUP_TESTID), 'fresh fail library-attached must offer Run setup');
+	assert.ok(html.includes(RUN_SETUP_TESTID), 'expected a preflight-run-setup control in the markup');
 	const buttonMatch = html.match(/<button[^>]*data-testid="preflight-run-setup"[^>]*>/);
-	assert.ok(buttonMatch);
+	assert.ok(buttonMatch, 'expected a <button> element carrying the testid');
 	assert.doesNotMatch(buttonMatch[0], /disabled/);
 });
 

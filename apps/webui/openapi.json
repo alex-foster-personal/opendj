@@ -12780,7 +12780,7 @@
         "type": "object"
       },
       "PreflightCheckOut": {
-        "description": "One row of PREFLIGHT-01's boot gate (issue #771).\n\n``status`` is never a two-way pass/fail: ``pending`` covers a check that\ngenuinely could not be exercised (e.g. audio-access with no resolvable\ntrack anywhere in a small sample), which is an honest denominator, never\na fabricated pass. ``remediation`` is null on a pass or a pending row and\na real sentence on a fail.",
+        "description": "One row of PREFLIGHT-01's boot gate (issue #771).\n\n``status`` is never a two-way pass/fail: ``pending`` covers a check that\ngenuinely could not be exercised (e.g. audio-access with no resolvable\ntrack anywhere in a small sample), which is an honest denominator, never\na fabricated pass. ``remediation`` is null on a pass or a pending row and\na real sentence on a fail.\n\n``user_*`` fields carry plain-language copy for the boot gate (issue\n#2722). Admin/diagnostics views keep the technical ``label``/``detail``.",
         "properties": {
           "detail": {
             "title": "Detail",
@@ -12813,6 +12813,39 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "user_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Detail"
+          },
+          "user_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Label"
+          },
+          "user_remediation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Remediation"
           }
         },
         "required": [

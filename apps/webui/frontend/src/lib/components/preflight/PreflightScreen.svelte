@@ -39,12 +39,9 @@
 	 * use and pass it straight through to PreflightCheckRow.
 	 */
 	import { onDestroy, onMount } from 'svelte';
-	import {
-		BOOT_HEADLINE_NEEDS_ACTION,
-		BOOT_HEADLINE_STARTING,
-		bootCheckDetail,
-		bootCheckLabel
-	} from '$lib/preflight/preflight-boot-copy';
+	import { OVERLAY_Z } from '$lib/overlays/stack';
+	import { bootGateHeading, needsImportAction } from '$lib/preflight/boot-copy';
+	import { bootCheckDetail, bootCheckLabel } from '$lib/preflight/preflight-boot-copy';
 	import {
 		checkPreflight,
 		preflightGate,
@@ -74,6 +71,25 @@
 	);
 
 	let timer: ReturnType<typeof setInterval> | null = null;
+	let importBusy = $state(false);
+	let importError = $state<string | null>(null);
+
+	const bootHeadline = $derived(
+		mode === 'boot' && blocking
+			? bootGateHeading(blocking, preflightGate.checks, preflightGate.consecutiveFailPolls)
+			: mode === 'boot'
+				? 'Startup checks'
+				: 'Preflight'
+	);
+
+	const showImportCta = $derived(
+		mode === 'boot' &&
+			blocking &&
+			(needsImportAction(preflightGate.checks) ||
+				preflightGate.needsActionCopy ||
+				firstRunGate.hasError ||
+				firstRunGate.isResolving)
+	);
 
 	function stopPolling(): void {
 		if (timer === null) return;
@@ -81,9 +97,13 @@
 		timer = null;
 	}
 
+	async function pollPreflight(): Promise<void> {
+		await checkPreflight();
+	}
+
 	function ensurePolling(): void {
 		if (timer !== null) return;
-		timer = setInterval(() => void checkPreflight(), POLL_MS);
+		timer = setInterval(() => void pollPreflight(), POLL_MS);
 	}
 
 	// Boot mode polls only while not yet cleared (a fresh pass stops it, and
@@ -103,7 +123,7 @@
 	});
 
 	onMount(() => {
-		void checkPreflight();
+		void pollPreflight();
 	});
 
 	onDestroy(stopPolling);
@@ -112,30 +132,9 @@
 		mode === 'admin' ||
 			blocking ||
 			visibleChecks.length > 0 ||
-			preflightGate.error !== null
+			preflightGate.error !== null ||
+			firstRunGate.hasError
 	);
-
-	const bootHeadline = $derived(
-		mode === 'boot' && blocking && preflightGate.needsActionCopy
-			? BOOT_HEADLINE_NEEDS_ACTION
-			: mode === 'boot' && blocking
-				? BOOT_HEADLINE_STARTING
-				: mode === 'boot'
-					? 'Startup checks'
-					: 'Preflight'
-	);
-
-	const showImportCta = $derived(
-		mode === 'boot' &&
-			blocking &&
-			(preflightGate.needsActionCopy ||
-				firstRunGate.hasError ||
-				firstRunGate.isResolving ||
-				visibleChecks.some((row) => row.id === 'library-attached'))
-	);
-
-	let importBusy = $state(false);
-	let importError = $state<string | null>(null);
 
 	async function handleImportMusic(): Promise<void> {
 		if (!navigate || importBusy) return;
@@ -170,6 +169,7 @@
 	data-preflight-mode={mode}
 	data-preflight-status={preflightGate.status}
 	data-preflight-blocking={blocking ? 'true' : 'false'}
+	style:--preflight-boot-z={mode === 'boot' && blocking ? OVERLAY_Z.preflightBoot : undefined}
 >
 	{#if mode === 'boot' && blocking}
 		<header class="preflight-brand" aria-label="Open DJ">
@@ -197,6 +197,7 @@
 			<PreflightCheckRow
 				{check}
 				{navigate}
+				{mode}
 				label={mode === 'boot' ? bootRowLabel(check) : check.label}
 				detail={mode === 'boot' ? bootRowDetail(check) : check.detail}
 			/>
@@ -281,11 +282,20 @@
 	.preflight-boot {
 		position: fixed;
 		inset: 0;
-		z-index: 1000;
+		z-index: var(--preflight-boot-z, 360);
 		max-width: 520px;
 		margin: 10vh auto;
 		height: fit-content;
 		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+		background: var(--surface);
+	}
+	.preflight-boot::before {
+		content: '';
+		position: fixed;
+		inset: 0;
+		z-index: -1;
+		background: rgba(0, 0, 0, 0.55);
+		pointer-events: none;
 	}
 	.preflight-boot-strip {
 		position: fixed;
