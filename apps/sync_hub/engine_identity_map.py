@@ -34,9 +34,22 @@ def ensure_identity_remap_table(conn: sqlite3.Connection) -> None:
     )
 
 
+def _identity_remap_table_exists(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (REMAP_TABLE,)
+    ).fetchone()
+    return row is not None
+
+
 def load_identity_remap(conn: sqlite3.Connection) -> dict[str, str]:
-    """Loser PK -> survivor PK, including remaps from earlier batches."""
-    ensure_identity_remap_table(conn)
+    """Loser PK -> survivor PK, including remaps from earlier batches.
+
+    Read-only: the status route reads the sync set over a read-only
+    connection, and even ``CREATE TABLE IF NOT EXISTS`` is a write to
+    SQLite. A database that never recorded a remap has no rows to load.
+    """
+    if not _identity_remap_table_exists(conn):
+        return {}
     return {
         str(loser): str(survivor)
         for loser, survivor in conn.execute(
