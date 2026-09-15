@@ -1,4 +1,8 @@
-"""RESCUE-01: HTTP routes for rescue snapshots."""
+"""RESCUE-01: HTTP routes for rescue snapshots.
+
+[if] a snapshot is POSTed [then] it lands in slot 0 and latest and index serve it, [else stop].
+[if] the ring is empty [then] the latest route returns 404, [else stop].
+"""
 
 from __future__ import annotations
 

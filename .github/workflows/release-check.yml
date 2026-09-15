@@ -186,7 +186,9 @@ jobs:
           # normally driven from a dev machine, where parallel wins 2.7x.
           # See ops/test-latency/README.md.
           PYTEST_JOBS: "0"
-        run: make release-check
+        run: |
+          make release-check \
+            PYTEST_BASETEMP="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-release-check"
 
       - name: Upload built dists
         if: always()

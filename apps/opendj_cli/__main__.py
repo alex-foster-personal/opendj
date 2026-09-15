@@ -7,6 +7,7 @@
     opendj api GET /api/v1/smartlists
     opendj api POST /api/v1/smartlists --json '{"name":"...","rule":{...}}'
     opendj --list-verbs [--json]
+    opendj install-cli [--target ~/.local/bin/opendj]
 
 Exit codes are documented in :mod:`apps.opendj_cli`; the load-bearing ones are
 2 (no engine, and the message names the lock file that was checked) and 4 (the
@@ -80,6 +81,8 @@ _STATE_COMMAND = "state"
 _SCRIPT_COMMAND = "do"
 _TRACK_COMMAND = "track"
 _API_COMMAND = "api"
+_INSTALL_COMMAND = "install-cli"
+_MCP_COMMAND = "mcp"
 
 
 class _Parser(argparse.ArgumentParser):
@@ -606,8 +609,28 @@ def _split_api_tokens(tokens: Sequence[str]) -> tuple[list[str], list[str]] | No
     return list(tokens[:index]), list(tokens[index + 1 :])
 
 
+def _split_mcp_tokens(tokens: Sequence[str]) -> tuple[list[str], list[str]] | None:
+    """Return global argv and mcp argv when ``mcp`` is the subcommand."""
+    if _MCP_COMMAND not in tokens:
+        return None
+    index = tokens.index(_MCP_COMMAND)
+    return list(tokens[:index]), list(tokens[index + 1 :])
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     tokens = sys.argv[1:] if argv is None else list(argv)
+    mcp_split = _split_mcp_tokens(tokens)
+    if mcp_split is not None:
+        global_tokens, mcp_tokens = mcp_split
+        args = _parser(as_json="--json" in global_tokens).parse_args(
+            [*global_tokens, _MCP_COMMAND]
+        )
+        if args.list_verbs:
+            print_verbs(args.json)
+            return EXIT_CONFIRMED
+        from apps.opendj_cli import mcp_cli
+
+        return mcp_cli.run(mcp_tokens, lock=args.lock)
     api_split = _split_api_tokens(tokens)
     if api_split is not None:
         global_tokens, api_tokens = api_split
@@ -619,13 +642,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             return EXIT_CONFIRMED
         from apps.opendj_cli import api_cli
 
-        return api_cli.run(api_tokens, as_json=args.json)
+        return api_cli.run(api_tokens, as_json=args.json, lock=args.lock)
     args = _parser(as_json="--json" in tokens).parse_args(tokens)
     if args.list_verbs:
         print_verbs(args.json)
         return EXIT_CONFIRMED
     try:
         head, rest = _head(args.invocation)
+        if head == _INSTALL_COMMAND:
+            from apps.opendj_cli import install_cli
+
+            return install_cli.run(rest, as_json=args.json)
         if head == _STATE_COMMAND:
             return _run_state(args, resolve_origin(args.lock))
         if head == _TRACK_COMMAND:

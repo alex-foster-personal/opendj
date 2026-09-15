@@ -257,6 +257,7 @@ def init_telemetry(
     try:
         import sentry_sdk
         from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
         from sentry_sdk.integrations.starlette import StarletteIntegration
     except ImportError as exc:
         detail = (
@@ -289,6 +290,11 @@ def init_telemetry(
         max_breadcrumbs=25,
         before_send=_before_send,
         integrations=[
+            # Logs are breadcrumbs only. The default (event_level=ERROR) sent
+            # every log.error as a second, unscrubbed event: 92 of the org's
+            # 219 events on Mon 14 Sep 2026. Errors reach Sentry through the
+            # explicit captures and warning_log's forward, never the logger.
+            LoggingIntegration(level=logging.INFO, event_level=None, sentry_logs_level=None),
             StarletteIntegration(failed_request_status_codes=set()),
             FastApiIntegration(failed_request_status_codes=set()),
         ],
@@ -362,7 +368,7 @@ def capture_browser_error(
     or when the quota budget refused it. Never raises: reporting an error
     must not become one.
     """
-    from apps.shared.telemetry.budget import is_perf_console_mirror
+    from apps.shared.telemetry.budget import is_dev_tooling_console, is_perf_console_mirror
     from apps.shared.telemetry.sink import (
         capture_error_event,
         client_error_message,
@@ -375,7 +381,7 @@ def capture_browser_error(
         source_site=client_source_site(kind, url),
         kind="client",
     )
-    if is_perf_console_mirror(kind, message):
+    if is_perf_console_mirror(kind, message) or is_dev_tooling_console(kind, message):
         return None
     client = _client()
     if client is None:

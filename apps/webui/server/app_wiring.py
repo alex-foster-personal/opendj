@@ -109,6 +109,7 @@ from .routes import quality as quality_routes
 from .routes import queues as queues_routes
 from .routes import rb_assets as rb_assets_routes
 from .routes import rb_hot_cues as rb_hot_cues_routes
+from .routes import rb_djay_sync as rb_djay_sync_routes
 from .routes import reconcile as reconcile_routes
 from .routes import rekordbox_gate as rekordbox_gate_routes
 from .routes import relocate as relocate_routes
@@ -497,6 +498,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         stems_routes.router,
         stems_assets_routes.router,
         stem_tiers_routes.router,
+        rb_djay_sync_routes.router,
         reconcile_routes.router,
         rekordbox_gate_routes.router,
         relocate_routes.router,

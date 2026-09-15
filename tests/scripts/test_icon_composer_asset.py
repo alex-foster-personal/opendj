@@ -158,7 +158,7 @@ def test_install_refuses_a_path_that_is_not_a_built_app(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("INSTALL-20")
 def test_committed_catalog_and_sidecar_match_the_committed_source() -> None:
-    """[if] the committed fallback is present [then] its digest matches the source."""
+    """[if] the committed fallback is present [then] its digest matches the source, [else stop]."""
     if not DEFAULT_COMMITTED_ASSETS_CAR.is_file() or not DEFAULT_SOURCE_SHA256_SIDECAR.is_file():
         pytest.skip("UNAVAILABLE: committed Assets.car fallback is not present in this checkout")
     digest = compute_source_digest(DEFAULT_ICON_SOURCE)
@@ -168,7 +168,7 @@ def test_committed_catalog_and_sidecar_match_the_committed_source() -> None:
 
 @pytest.mark.requirement("INSTALL-20")
 def test_check_reports_compile_when_actool_is_available() -> None:
-    """[if] actool is available [then] the read-only check selects compile."""
+    """[if] actool is available [then] the read-only check selects compile, [else stop]."""
     if try_find_actool() is None:
         pytest.skip("UNAVAILABLE: actool is not on this host")
     line = check_icon_composer_asset()
@@ -180,7 +180,7 @@ def test_check_reports_compile_when_actool_is_available() -> None:
 def test_check_reports_reuse_when_actool_is_absent_and_fallback_matches(
     tmp_path: Path,
 ) -> None:
-    """[if] actool is absent and the fallback matches [then] reuse is selected."""
+    """[if] actool is absent and the fallback matches [then] reuse is selected, [else stop]."""
     try:
         cap = require_no_actool_env()
     except RuntimeError as exc:
@@ -214,7 +214,7 @@ def test_check_reports_reuse_when_actool_is_absent_and_fallback_matches(
 
 @pytest.mark.requirement("INSTALL-20")
 def test_stale_source_is_refused_when_actool_is_absent(tmp_path: Path) -> None:
-    """[if] the source changes without actool [then] stale provenance is refused."""
+    """[if] the source changes without actool [then] stale provenance is refused, [else stop]."""
     try:
         cap = require_no_actool_env()
     except RuntimeError as exc:
@@ -269,7 +269,7 @@ def test_stale_source_is_refused_when_actool_is_absent(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("INSTALL-20")
 def test_prepare_and_install_reuses_committed_catalog_without_actool(tmp_path: Path) -> None:
-    """[if] actool is absent and the fallback matches [then] install copies it."""
+    """[if] actool is absent and the fallback matches [then] install copies it, [else stop]."""
     try:
         cap = require_no_actool_env()
     except RuntimeError as exc:
@@ -319,7 +319,7 @@ def test_prepare_and_install_reuses_committed_catalog_without_actool(tmp_path: P
 
 @pytest.mark.requirement("INSTALL-20")
 def test_actool_available_strategy_requires_compile_not_fallback() -> None:
-    """[if] actool is available [then] the strategy is compile even with a fallback."""
+    """[if] actool is available [then] the strategy is compile despite a fallback, [else stop]."""
     if try_find_actool() is None:
         pytest.skip("UNAVAILABLE: actool is not on this host")
     if not DEFAULT_COMMITTED_ASSETS_CAR.is_file():
@@ -331,7 +331,7 @@ def test_actool_available_strategy_requires_compile_not_fallback() -> None:
 
 @pytest.mark.requirement("INSTALL-20")
 def test_compile_failure_is_not_hidden_by_committed_catalog(tmp_path: Path) -> None:
-    """[if] actool is invoked but fails [then] compile raises, never silent reuse."""
+    """[if] actool is invoked but fails [then] compile raises, no silent reuse, [else stop]."""
     fake_actool = tmp_path / "actool"
     fake_actool.write_text("#!/bin/sh\necho simulated actool failure >&2\nexit 42\n")
     fake_actool.chmod(0o755)
@@ -345,7 +345,7 @@ def test_compile_failure_is_not_hidden_by_committed_catalog(tmp_path: Path) -> N
 
 @pytest.mark.requirement("INSTALL-20")
 def test_cli_check_accepts_explicit_paths(tmp_path: Path) -> None:
-    """[if] --check is given explicit paths [then] it inspects that disposable tree."""
+    """[if] --check is given explicit paths [then] it inspects that disposable tree, [else stop]."""
     try:
         require_no_actool_env()
     except RuntimeError as exc:

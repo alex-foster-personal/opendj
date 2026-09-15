@@ -12,6 +12,11 @@
   "minimumReleaseAge": "3 days",
   "prConcurrentLimit": 6,
   "dependencyDashboard": true,
+  "dependencyDashboardApproval": true,
+  "labels": [
+    "post-v1",
+    "dependencies"
+  ],
   "osvVulnerabilityAlerts": true,
   "vulnerabilityAlerts": {
     "labels": [

@@ -31,6 +31,8 @@ class WaitStatus(StrEnum):
     FAILURE = "FAILURE"
     TIMEOUT = "TIMEOUT"
     NO_BASELINE = "NO_BASELINE"
+    MERGED = "MERGED"
+    CLOSED_UNMERGED = "CLOSED_UNMERGED"
 
 
 @dataclass(frozen=True)
@@ -44,7 +46,25 @@ class WaitResult:
 
     @property
     def ok(self) -> bool:
-        return self.status is WaitStatus.SUCCESS
+        return self.status in {WaitStatus.SUCCESS, WaitStatus.MERGED}
+
+
+@dataclass(frozen=True)
+class LifecycleOutcome:
+    status: WaitStatus
+    message: str
+
+
+def lifecycle_wait_status(state: str, merged: bool) -> WaitStatus | None:
+    """Map a pulls-API `(state, merged)` pair to a terminal poll outcome.
+
+    `open` PRs keep polling; merged or closed-without-merge stop the loop.
+    """
+    if merged and state == "closed":
+        return WaitStatus.MERGED
+    if state == "closed" and not merged:
+        return WaitStatus.CLOSED_UNMERGED
+    return None
 
 
 # ----- pure: reasoning over an already-fetched check-run snapshot ----------
@@ -270,6 +290,7 @@ def poll_until_terminal(
     poll_interval_s: float,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
+    lifecycle_check: Callable[[], LifecycleOutcome | None] | None = None,
 ) -> tuple[WaitStatus, dict[str, dict], str]:
     """Poll `fetch_check_runs` until every name in `expected` exists AND is
     terminal, or `timeout_s` elapses. Never returns SUCCESS for a snapshot
@@ -298,6 +319,10 @@ def poll_until_terminal(
     latest: dict[str, dict] = {}
     previous_names: frozenset[str] | None = None
     while True:
+        if lifecycle_check is not None:
+            outcome = lifecycle_check()
+            if outcome is not None:
+                return outcome.status, latest, outcome.message
         latest = _latest_by_name(fetch_check_runs())
         missing = _missing(expected, latest)
         observed_names = frozenset(latest.keys())

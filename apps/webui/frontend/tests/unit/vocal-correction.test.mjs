@@ -9,7 +9,7 @@
  * - if parseVocalAnchor('#foo') is non-null then broken (must not swallow FB-03 CSS anchors)
  * - if wavestack mapping disagrees with waveClickTargetMs at the window center then broken
  * - if strip mapping at x=0 / x=width is not 0 / duration then broken
- * - if default text contains an U+2014 character or omits stable_id then broken
+ * - if default text contains a disallowed dash character or omits stable_id then broken
  */
 
 import assert from 'node:assert/strict';
@@ -158,7 +158,7 @@ test('strip mapping at x=0 / x=width is 0 / duration', () => {
 	);
 });
 
-test('default text names stable_id and never uses an U+2014 or U+2013 characters', () => {
+test('default text names stable_id and never uses a disallowed dash character', () => {
 	const regionHit = vocal.hitFromVocals({
 		stableId: STABLE_ID,
 		vocals: demucsVocals([region]),

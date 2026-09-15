@@ -41,6 +41,24 @@ def is_materialised(path: Path) -> bool:
     return not is_dataless_stub(st)
 
 
+def exists_for_audio_open_probe(path: Path) -> bool:
+    """True when a library path exists locally and an ``open()`` probe may run.
+
+    Materialised regular files and FIFOs both qualify: a FIFO with no writer
+    blocks in-kernel the same way a wedged macOS Media Library prompt does, and
+    must reach the bounded-open probe instead of being treated as missing (#2749).
+    """
+    try:
+        st = path.stat()
+    except OSError:
+        return False
+    if stat_module.S_ISFIFO(st.st_mode):
+        return True
+    if not stat_module.S_ISREG(st.st_mode):
+        return False
+    return not is_dataless_stub(st)
+
+
 def materialised_size(path: Path) -> Optional[int]:
     """Byte size when materialised regular file; None when missing / stub / not a file."""
     try:

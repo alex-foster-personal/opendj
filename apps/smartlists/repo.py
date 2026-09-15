@@ -154,6 +154,8 @@ class SmartlistsRepo:
         rule_schema_version: int = 0,
     ) -> SmartlistRow:
         validate_rule(rule)
+        if not name.strip():
+            raise SmartlistsRepoError("smartlist name must be non-empty")
         if order_by not in _ALLOWED_ORDER_BY:
             raise SmartlistsRepoError(
                 f"order_by {order_by!r} not in allowlist {sorted(_ALLOWED_ORDER_BY)}"

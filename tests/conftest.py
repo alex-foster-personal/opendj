@@ -20,6 +20,23 @@ from pathlib import Path
 
 import pytest
 
+from tests.testclient_host_allowlist import install_loopback_testclient_default
+
+# SEC-01 (issue #2689): the daemon host allowlist middleware
+# (apps/webui/server/request_guard.py) rejects any request whose Host header
+# is not allowlisted. starlette.testclient.TestClient defaults base_url to
+# "http://testserver", which is not allowlisted, so every TestClient built
+# anywhere in this tree without an explicit base_url got a 403
+# HOST_NOT_ALLOWED instead of reaching the route under test -- seen across
+# tests/webui, tests/cloudsync, tests/engine_core, tests/scripts and
+# tests/analysis_contract, not just the two suites that own an app fixture.
+# This is the ONE place that default lives for the whole tests/ tree; see
+# tests/testclient_host_allowlist.py for why a shared default beats patching
+# every call site. A caller that passes its own base_url (e.g. to exercise a
+# foreign-host rejection, see tests/webui/test_request_guard.py) is
+# untouched -- this only changes the default.
+install_loopback_testclient_default()
+
 
 def _can_import(module_name: str) -> bool:
     """Return whether an optional dependency is actually importable."""

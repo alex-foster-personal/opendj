@@ -29,6 +29,7 @@ def _happy_span() -> dict:
 
 @pytest.mark.requirement("PERF-UI-03")
 def test_happy_span_writes_numeric_open_to_library_rows_ms() -> None:
+    """[if] a span is 1800 ms [then] one open_to_library_rows_ms row holds 1800.0, [else stop]."""
     rows = span_to_ledger_rows(
         _happy_span(),
         sha="abc123",
@@ -45,6 +46,7 @@ def test_happy_span_writes_numeric_open_to_library_rows_ms() -> None:
 
 @pytest.mark.requirement("PERF-UI-03")
 def test_missing_span_is_withheld() -> None:
+    """[if] no span was captured [then] the ledger row is withheld with value null, [else stop]."""
     rows = span_to_ledger_rows(
         None,
         sha="abc123",
@@ -58,6 +60,7 @@ def test_missing_span_is_withheld() -> None:
 
 @pytest.mark.requirement("PERF-UI-03")
 def test_scorecard_reads_boot_lib() -> None:
+    """[if] a happy span meets the shipped BOOT-LIB map [then] the verdict is PASS, [else stop]."""
     kpi_map = {"scenarios": {"BOOT-LIB": _shipped_map()["scenarios"]["BOOT-LIB"]}}
     entries = span_to_ledger_rows(
         _happy_span(),
