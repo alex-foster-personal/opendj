@@ -211,34 +211,28 @@ def local_audio_file(stable_id: str) -> tuple[Path, str]:
     route falls back here to stream that path directly. Same residency +
     media-type gates as :func:`audio_file` -- never a mocked or missing file.
     """
+    from apps.shared.state import locations as state_locations
+
     state = _open_ro(config.STATE_DB, "STATE_DB")
     try:
         row = state.execute(
+            "SELECT 1 FROM tracks WHERE stable_id = ? AND deleted_at IS NULL",
+            (stable_id,),
+        ).fetchone()
+        if row is None:
+            raise not_found("TRACK_NOT_FOUND", f"unknown stable_id {stable_id}")
+        path = state_locations.local_audio_path(state, stable_id)
+        canonical = state.execute(
             "SELECT file_path FROM tracks WHERE stable_id = ? AND deleted_at IS NULL",
             (stable_id,),
         ).fetchone()
     finally:
         state.close()
-    if row is None:
-        raise not_found("TRACK_NOT_FOUND", f"unknown stable_id {stable_id}")
-    if not row[0]:
+    if path is None:
         raise not_found(
             "AUDIO_FILE_MISSING",
-            f"track {stable_id} has no rekordbox mapping and no file_path",
-        )
-    mapped = resolve_asset_path(row[0])
-    if mapped.resolved is None:
-        raise not_found(
-            "AUDIO_FILE_MISSING",
-            f"file_path for track {stable_id} could not be resolved "
-            f"on this platform ({mapped.reason}): {row[0]}",
-        )
-    path = mapped.resolved
-    if not fs_residency.is_materialised(path):
-        raise not_found(
-            "AUDIO_FILE_MISSING",
-            f"file_path for track {stable_id} is missing or not "
-            f"materialised (dataless/iCloud stub): {path}",
+            f"track {stable_id} has no materialised local audio "
+            f"(file_path={canonical[0] if canonical else None!r})",
         )
     media_type = config.AUDIO_MEDIA_TYPES.get(path.suffix.lower())
     if media_type is None:
@@ -252,21 +246,22 @@ def local_audio_file(stable_id: str) -> tuple[Path, str]:
     return path, media_type
 
 
-def _resolve_local_audio_path(file_path: str | None) -> Path | None:
-    """Resolved, materialised on-disk path for a state-layer ``file_path``.
+def _resolve_local_audio_path(stable_id: str) -> Path | None:
+    """Resolved, materialised on-disk path for a state-layer track.
 
-    ``None`` when the path is absent, unresolvable on this platform, or not
-    materialised (dataless/iCloud stub) -- same residency gate as
+    ``None`` when no local ``track_locations`` row or ``tracks.file_path``
+    materialises on this machine -- same residency gate as
     :func:`local_audio_file`. Shared by :func:`local_artwork` and
     :func:`local_artwork_available` so both agree on what "the file exists"
     means, and both check it BEFORE asking whether a reader exists.
     """
-    if not file_path:
-        return None
-    mapped = resolve_asset_path(file_path)
-    if mapped.resolved is None or not fs_residency.is_materialised(mapped.resolved):
-        return None
-    return mapped.resolved
+    from apps.shared.state import locations as state_locations
+
+    state = _open_ro(config.STATE_DB, "STATE_DB")
+    try:
+        return state_locations.local_audio_path(state, stable_id)
+    finally:
+        state.close()
 
 
 def local_artwork(stable_id: str) -> tuple[bytes, str]:
@@ -290,7 +285,7 @@ def local_artwork(stable_id: str) -> tuple[bytes, str]:
     so those still 404 ``ARTWORK_NOT_FOUND`` even when mutagen is absent.
     """
     file_path, _duration_ms = local_track_row(stable_id)
-    resolved = _resolve_local_audio_path(file_path)
+    resolved = _resolve_local_audio_path(stable_id)
     if resolved is None:
         raise not_found(
             "ARTWORK_NOT_FOUND",
@@ -315,7 +310,7 @@ def local_artwork(stable_id: str) -> tuple[bytes, str]:
     return embedded
 
 
-def local_artwork_available(file_path: str | None) -> bool | None:
+def local_artwork_available(stable_id: str) -> bool | None:
     """Tri-state local-track counterpart of ``artwork_available`` for a
     rekordbox-mapped row (see ``rb_assets.py``'s ``_local_rb_meta``, which
     already holds ``file_path`` for other fields).
@@ -329,7 +324,7 @@ def local_artwork_available(file_path: str | None) -> bool | None:
     exactly the guessed verdict :func:`local_artwork` refuses to give for
     its own 503 -- this sibling used to make it anyway (#795).
     """
-    resolved = _resolve_local_audio_path(file_path)
+    resolved = _resolve_local_audio_path(stable_id)
     if resolved is None:
         return False
     if not HAS_MUTAGEN:

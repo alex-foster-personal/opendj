@@ -33,6 +33,7 @@ from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import upsert_record
 from apps.analysis_waveform import local_waveform
 from apps.shared.state.db import open_rw as open_state_rw
+from apps.shared.state.writer import StateWriter
 from apps.stems import artifacts as stem_artifacts
 from apps.webui.server.routes import ingest as ingest_mod
 from apps.webui.server.routes import library as library_mod
@@ -355,3 +356,42 @@ def test_playable_ready_track_has_empty_gaps(client, app, tmp_path):
 def test_unknown_axis_is_422(client):
     response = client.get("/api/v1/library/readiness?axis=stutter")
     assert response.status_code == 422
+
+
+def test_present_when_only_track_location_is_materialised(client, app, tmp_path):
+    real = tmp_path / "mirror.mp3"
+    real.write_bytes(b"x" * 4096)
+    foreign = "/Users/dev/Music/ghost.mp3"
+    sid = "f" * 40
+
+    conn = open_state_rw(app.state.state_db)
+    writer = StateWriter(conn, actor="test-readiness")
+    try:
+        writer.upsert_track(
+            stable_id=sid,
+            stable_id_tier="inferred",
+            title="mirrored",
+            artists=["X"],
+            album=None,
+            isrc=None,
+            duration_ms=200_000,
+            file_path=str(real),
+        )
+        conn.execute(
+            "UPDATE tracks SET file_path = ? WHERE stable_id = ?",
+            (foreign, sid),
+        )
+        conn.commit()
+    finally:
+        writer.close()
+        conn.close()
+
+    _write_roformer_bundle(Path(app.state.stem_roots[0]), sid)
+    body = client.get("/api/v1/library/readiness?axis=all").json()
+    _assert_count_invariants(body)
+    assert body["present"] == 1
+    assert body["unreachable"] == 0
+    item = body["items"][0]
+    assert item["stable_id"] == sid
+    assert item["file_path"] == str(real)
+    assert item["stems"] == "ready"
