@@ -21078,6 +21078,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Unknown playlist name (detail + known sibling keys) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {

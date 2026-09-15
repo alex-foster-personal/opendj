@@ -31268,6 +31268,9 @@
           "400": {
             "description": "Invalid request, missing R2 credentials, or no published stem bundle index in R2"
           },
+          "404": {
+            "description": "Unknown playlist name (detail + known sibling keys)"
+          },
           "422": {
             "content": {
               "application/json": {
