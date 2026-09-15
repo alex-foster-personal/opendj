@@ -81,8 +81,8 @@ fn process_state(pid: u32) -> Option<char> {
         if !output.status.success() {
             return None;
         }
-        let state = String::from_utf8_lossy(&output.stdout).trim();
-        state.chars().next()
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        stdout.trim().chars().next()
     }
 }
 
