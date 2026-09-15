@@ -1,6 +1,7 @@
 """The ``opendj`` console script: AGENT-05's client of the AGENT-03 bus.
 
     opendj state [--json]
+    opendj status [--json]
     opendj deck 1 play | pause | cue | seek 42000
     opendj eq 2 low 0.2 --over 4beats
     opendj do "load 1 <stable-id>" then "play 1" and "play 2"
@@ -79,6 +80,7 @@ from apps.opendj_cli.verbs import (
 _REFUSALS = (NoPerformancePage, OrderTimedOut, OrderRejected, MalformedResult)
 
 _STATE_COMMAND = "state"
+_STATUS_COMMAND = "status"
 _OPEN_COMMAND = "open"
 _SCRIPT_COMMAND = "do"
 _TRACK_COMMAND = "track"
@@ -625,6 +627,8 @@ def _head(tokens: Sequence[str]) -> tuple[str, list[str]]:
     head, *rest = tokens
     if head == _STATE_COMMAND and rest:
         raise InvocationError(f"state takes no arguments, got {rest[0]!r}")
+    if head == _STATUS_COMMAND and rest:
+        raise InvocationError(f"status takes no arguments, got {rest[0]!r}")
     if head == _OPEN_COMMAND and not rest:
         raise InvocationError("usage: opendj open performance")
     return head, rest
@@ -695,6 +699,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return install_cli.run(rest, as_json=args.json)
         if head == _STATE_COMMAND:
             return _run_state(args, resolve_origin(args.lock))
+        if head == _STATUS_COMMAND:
+            from apps.opendj_cli import status_cli
+
+            return status_cli.run(rest, as_json=args.json, lock=args.lock)
         if head == _OPEN_COMMAND:
             return _run_open(args, resolve_origin(args.lock), rest)
         if head == _TRACK_COMMAND:
