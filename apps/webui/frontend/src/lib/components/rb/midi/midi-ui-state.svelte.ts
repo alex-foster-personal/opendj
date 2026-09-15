@@ -126,14 +126,14 @@ export async function requestMidiAccess(): Promise<void> {
 		}
 		await initMidi();
 		// Access granted: remember the choice so a reload auto-re-requests.
-		_persistMidiEnabled(true);
+		persistMidiEnabled(true);
 		_syncMidiEnabledToDisk(true);
 	} catch (exc) {
 		midiUi.lastError = exc instanceof Error ? exc.message : String(exc);
 		console.error('[midi-panel] permission request failed', exc);
 		// Denied/unsupported: forget the choice so we don't nag on every reload
 		// (the user re-opts-in from the panel when ready). Fail-fast, no retry.
-		_persistMidiEnabled(false);
+		persistMidiEnabled(false);
 		_syncMidiEnabledToDisk(false);
 	} finally {
 		midiUi.requestPending = false;
