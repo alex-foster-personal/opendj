@@ -1177,6 +1177,11 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 			return;
 		}
 		const mediaDevices = _requireHeadphoneDeviceApi();
+		// List first: a hung or denied permission prompt must never leave the I/O
+		// selects empty, so the unlabelled devices are always selectable and the
+		// unlock failure is still raised (and shown) afterwards.
+		await refreshHeadphoneOutputs(monitorSource);
+		_assertCurrentHeadphoneOperation(generation, null);
 		await _unlockHeadphoneOutputLabels(mediaDevices);
 		_assertCurrentHeadphoneOperation(generation, null);
 		await refreshHeadphoneOutputs(monitorSource);
