@@ -3715,6 +3715,14 @@
 		align-items: center;
 		gap: 8px;
 		padding: 0 6px;
+		/* Issue #3097: this row and PerformanceAppNav (position: fixed,
+		 * bottom-left, height 18px) are both anchored to the exact same
+		 * bottom-left rectangle - this row via normal grid flow, the nav via
+		 * `position: fixed` on top of it (z-index 50). Left-padding by the
+		 * nav's reserved width keeps this row's own content (the wordmark
+		 * first of all) from rendering underneath it, instead of merely
+		 * being covered by a higher stacking context. */
+		padding-left: var(--rb-perf-nav-w);
 		background: var(--rb-panel);
 		border-top: 1px solid var(--rb-border);
 	}
