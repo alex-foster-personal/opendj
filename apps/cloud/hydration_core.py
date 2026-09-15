@@ -286,9 +286,18 @@ def _local_file(
     prefers ``track_locations`` then falls back to ``tracks.file_path`` so
     local-only imports without CloudSync rows still resolve.
     """
+    from apps.shared import fs_residency
     from apps.shared.state import locations as state_locations
 
-    return state_locations.local_audio_path(conn, stable_id, machine_id=machine_id)
+    # FIFOs and other special nodes are playable paths whose open() the audio
+    # route probes under a timeout (#766, #2749); the strict materialised gate
+    # would read them as absent and fall through to the cloud policy.
+    return state_locations.local_audio_path(
+        conn,
+        stable_id,
+        machine_id=machine_id,
+        residency=fs_residency.exists_for_audio_open_probe,
+    )
 
 
 def _content_hash(conn: sqlite3.Connection, stable_id: str) -> str | None:
