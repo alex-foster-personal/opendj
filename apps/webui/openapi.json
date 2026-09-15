@@ -865,6 +865,23 @@
         "title": "AnlzCueOut",
         "type": "object"
       },
+      "AppModeOut": {
+        "properties": {
+          "last_gig_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Gig At"
+          }
+        },
+        "title": "AppModeOut",
+        "type": "object"
+      },
       "AppPostureOut": {
         "properties": {
           "label": {
@@ -18729,6 +18746,9 @@
       },
       "UiPrefsOut": {
         "properties": {
+          "app_mode": {
+            "$ref": "#/components/schemas/AppModeOut"
+          },
           "app_posture": {
             "default": "prep",
             "enum": [
@@ -18850,6 +18870,16 @@
       },
       "UiPrefsPatch": {
         "properties": {
+          "app_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppModeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "app_posture": {
             "anyOf": [
               {

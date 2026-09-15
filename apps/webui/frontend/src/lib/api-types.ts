@@ -5764,6 +5764,11 @@ export interface components {
              */
             slot: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
         };
+        /** AppModeOut */
+        AppModeOut: {
+            /** Last Gig At */
+            last_gig_at?: string | null;
+        };
         /** AppPostureOut */
         AppPostureOut: {
             /** Label */
@@ -12653,6 +12658,7 @@ export interface components {
         };
         /** UiPrefsOut */
         UiPrefsOut: {
+            app_mode?: components["schemas"]["AppModeOut"];
             /**
              * App Posture
              * @default prep
@@ -12751,6 +12757,7 @@ export interface components {
         };
         /** UiPrefsPatch */
         UiPrefsPatch: {
+            app_mode?: components["schemas"]["AppModeOut"] | null;
             /** App Posture */
             app_posture?: ("prep" | "gig") | null;
             /** Auto Play Enabled */
