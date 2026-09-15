@@ -306,9 +306,16 @@
 					<dt>Quarantined</dt>
 					<dd
 						data-testid="cloudsync-status-quarantined"
-						title="Rows held out of the sync set for stamp faults or identity-dup losers"
+						title="Direct stamp faults and identity-dup losers only"
 					>
 						{status.quarantined ?? 'not measured'}
+					</dd>
+					<dt>Excluded total</dt>
+					<dd
+						data-testid="cloudsync-status-excluded-total"
+						title="Every row held outside the sync set, including transitive parent and membership holds"
+					>
+						{status.excluded_total ?? 'not measured'}
 					</dd>
 					<dt>Signed in as</dt>
 					<dd>{status.signed_in_as ?? 'nobody'}</dd>
