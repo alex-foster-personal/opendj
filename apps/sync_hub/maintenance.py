@@ -87,6 +87,7 @@ from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
 from apps.shared.sync_runtime_gates import SyncDeferredError, refuse_sync_round
 from apps.sync_hub import (
+    capabilities,
     client,
     config_cli,
     engine,
@@ -98,6 +99,7 @@ from apps.sync_hub import (
     maintenance_policy,
 )
 from apps.sync_hub import status as sync_status
+from apps.sync_hub.transport import SyncTransportError
 
 #: Exit code for a sync that COMPLETED without verifying agreement (round 5
 #: gate T8). Distinct from 1: a caller must be able to tell "the merge is
@@ -116,6 +118,15 @@ EXIT_PUSH_REFUSED: int = 5
 
 def _open(data_dir: Path) -> sqlite3.Connection:
     return state_db.open_rw(client.state_db_path(data_dir))
+
+
+def _sync_error_message(exc: Exception) -> str:
+    """Map a failed sync to an operator-facing journal line."""
+    if isinstance(exc, SyncTransportError) and exc.code == "SYNC_PROTOCOL":
+        text = str(exc)
+        if capabilities.HASH_PENDING_V1 in text or "hash_pending" in text:
+            return capabilities.hash_pending_upgrade_message()
+    return str(exc)
 
 
 def sync(
@@ -143,12 +154,13 @@ def sync(
             Path(data_dir), hub_url, transport=transport, name=name
         )
     except Exception as exc:
+        message = _sync_error_message(exc)
         sync_status.write_result(
             Path(data_dir),
             sync_status.SyncResult(
                 finished_at=sync_stamp.canonical_now(),
                 status="error",
-                message=str(exc),
+                message=message,
                 pushed=0,
                 pulled=0,
             ),

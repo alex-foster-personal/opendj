@@ -179,20 +179,36 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _cmd_fetch(data_dir: Path, track: str) -> int:
-    lyrics = LyricsService(data_dir).fetch_stable_id(track)
-    print(
-        json.dumps(
-            {
-                "stable_id": lyrics.stable_id,
-                "source": lyrics.source,
-                "lines": [
-                    {"start_ms": line.start_ms, "text": line.text} for line in lyrics.lines
-                ],
-            },
-            ensure_ascii=False,
+    from apps.lyrics.asr_source import LyricsAsrFetchError
+
+    service = LyricsService(data_dir)
+    try:
+        result = service.fetch_or_resolve_stable_id(track)
+    except LyricsAsrFetchError as exc:
+        print(exc.message, file=sys.stderr)
+        return 1
+    if result.outcome == "cached" and result.lyrics is not None:
+        lyrics = result.lyrics
+        print(
+            json.dumps(
+                {
+                    "stable_id": lyrics.stable_id,
+                    "source": lyrics.source,
+                    "lines": [
+                        {"start_ms": line.start_ms, "text": line.text}
+                        for line in lyrics.lines
+                    ],
+                },
+                ensure_ascii=False,
+            )
         )
-    )
-    return 0
+        return 0
+    if result.outcome == "instrumental":
+        print("instrumental: ASR transcript has zero words", file=sys.stderr)
+        return 1
+    message = result.hub_message or "no lyrics source available"
+    print(message, file=sys.stderr)
+    return 1
 
 
 def _cmd_index(args: argparse.Namespace) -> int:

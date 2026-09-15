@@ -46,6 +46,7 @@ from apps.vocals.cli import (
     order_todo,
     pvdi_present,
 )
+from apps.vocals.errors import UnknownPlaylistError
 
 pytestmark = pytest.mark.requirement("CAT-05")
 
@@ -363,8 +364,10 @@ def test_playlist_filter_limits_scope(data_dir: Path) -> None:
     ctx = Ctx(data_dir=data_dir)
     tracks = load_tracks(ctx, "small")
     assert [t.stable_id for t in tracks] == ["todoB"]
-    with pytest.raises(SystemExit, match="unknown playlist"):
+    with pytest.raises(UnknownPlaylistError, match="unknown playlist") as exc_info:
         load_tracks(ctx, "nope")
+    assert exc_info.value.name == "nope"
+    assert exc_info.value.known == ["big", "small"]
 
 
 def test_pvdi_present_probe(data_dir: Path, tmp_path: Path) -> None:

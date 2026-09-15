@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from apps.smartlists.autolist_groups import (
+    AutolistSelectionError,
     GENRE_UNSPECIFIED_ID,
     RATING_UNRATED_ID,
     bpm_bucket_key,
@@ -103,6 +104,28 @@ def test_rating_bucket_key() -> None:
     assert rating_bucket_key(None) == RATING_UNRATED_ID
     assert rating_bucket_key(0) == RATING_UNRATED_ID
     assert rating_bucket_key(5) == "5"
+
+
+def test_rating_non_numeric_bucket_raises() -> None:
+    with pytest.raises(AutolistSelectionError) as exc_info:
+        selection_to_rule({"genre": [], "rating": ["advtest"], "bpm": []})
+    exc = exc_info.value
+    assert exc.group == "rating"
+    assert exc.field == "selection.rating"
+
+
+def test_bpm_unknown_bucket_raises() -> None:
+    with pytest.raises(AutolistSelectionError) as exc_info:
+        selection_to_rule({"genre": [], "rating": [], "bpm": ["advtest"]})
+    exc = exc_info.value
+    assert exc.group == "bpm"
+    assert exc.field == "selection.bpm"
+
+
+def test_rating_numeric_string_still_compiles() -> None:
+    rule = selection_to_rule({"genre": [], "rating": ["4"], "bpm": []})
+    assert rule is not None
+    assert rule == {"field": "rating", "op": "=", "value": 4}
 
 
 def test_genre_unspecified_bucket(seeded_library, state_conn) -> None:

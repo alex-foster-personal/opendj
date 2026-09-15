@@ -36,6 +36,10 @@ _RW_PRAGMAS: tuple[tuple[str, object], ...] = (
 _RW_CONNECT_TIMEOUT_S: float = 5.0
 
 
+class StateStoreBusyError(RuntimeError):
+    """Raised when SQLite cannot acquire the writer lock after busy_timeout."""
+
+
 def is_sqlite_busy(exc: BaseException) -> bool:
     """True for SQLITE_BUSY / ``database is locked`` :class:`OperationalError`."""
     if not isinstance(exc, sqlite3.OperationalError):
@@ -229,6 +233,7 @@ def connect_dry_run(path: Path | None = None) -> Iterator[sqlite3.Connection]:
 
 
 __all__ = [
+    "StateStoreBusyError",
     "connect_dry_run",
     "connect_ro",
     "connect_rw",

@@ -26,6 +26,9 @@ ALLOWED_KEYS: frozenset[str] = frozenset(
         "library_density",
         "beat_sync_max",
         "next_only_filter",
+        "remixes_filter",
+        "vocals_filter",
+        "midi_enabled",
         "hide_todo_settings",
         "jog_radial_waveform",
         "auto_sync.rekordbox",
@@ -159,7 +162,8 @@ def ai_apply(body: AiApplyIn) -> AiApplyOut:
     )
     user = (
         f"ALLOWED_KEYS: {sorted(ALLOWED_KEYS)}\n"
-        f"ENUMS: theme=dark|light; library_density=compact|cosy; others=boolean\n"
+        f"ENUMS: theme=dark|light; library_density=compact|cosy; "
+        f"wheel_sensitivity={{mouse,trackpad}} each in (0.05,4.0]; others=boolean\n"
         f"INSTRUCTION: {body.instruction.strip()}"
     )
     try:

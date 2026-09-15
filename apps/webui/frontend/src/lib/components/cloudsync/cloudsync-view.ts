@@ -34,13 +34,16 @@ export type PolicyCellMode = SyncMode | typeof UNSET;
 
 /**
  * Asset kinds whose stored policy something in production actually acts on.
- * Only karaoke_words has a policy-driven producer today
- * (apps/lyrics/artifacts.py pushes through apps.cloud.asset_store). For the
- * rest, resolve_playback_source / apply_policy_after_produce / evict_cache
- * have no production caller, so a stored mode syncs but changes nothing on
+ * Audio deck load and karaoke_words have production callers today
+ * (resolve_playback_source for audio; apps/lyrics/artifacts.py for
+ * karaoke_words). For the rest, apply_policy_after_produce / evict_cache
+ * have no production caller yet, so a stored mode syncs but changes nothing on
  * disk. Those columns are marked inert, never hidden.
  */
-export const RUNTIME_WIRED_ASSET_KINDS: ReadonlyArray<AssetKind> = ['karaoke_words'];
+export const RUNTIME_WIRED_ASSET_KINDS: ReadonlyArray<AssetKind> = [
+	'audio',
+	'karaoke_words'
+];
 
 export function isRuntimeWired(kind: AssetKind): boolean {
 	return RUNTIME_WIRED_ASSET_KINDS.includes(kind);
@@ -606,14 +609,14 @@ export function statusHeadline(status: CloudSyncStatus | null): StatusHeadline {
  * real library but not proven to be the same event on any one run, so this
  * never claims causation, only reports the count honestly.
  */
-export function identityBacklogNote(count: number | null): string | null {
-	if (count === null || count <= 0) return null;
-	const plural = count !== 1;
+export function identityBacklogNote(hashPending: number | null): string | null {
+	if (hashPending === null || hashPending <= 0) return null;
+	const plural = hashPending !== 1;
 	return (
-		`${count} track${plural ? 's' : ''} in this library cannot sync yet: ` +
-		`${plural ? 'they lack' : 'it lacks'} an audio fingerprint or ISRC to identify ` +
-		`${plural ? 'them' : 'it'} by. Run backfill_content_hash once the audio is reachable, ` +
-		`or add an ISRC tag -- retrying Sync now will not change this.`
+		`${hashPending} track${plural ? 's' : ''} await an audio fingerprint on the hub ` +
+		`(hash_pending). On a machine that holds the audio, run ` +
+		`python -m apps.shared.state.backfill_content_hash --for-hub --live ` +
+		`-- retrying Sync now on this machine will not hash them.`
 	);
 }
 

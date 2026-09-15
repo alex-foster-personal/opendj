@@ -521,23 +521,22 @@ test('statusHeadline leads with a plain sentence and a next step for every state
 	}
 });
 
-test('identityBacklogNote reports the identity-hold count without a retry suggestion', () => {
+test('identityBacklogNote reports hash_pending with --for-hub guidance', () => {
 	/** if a zero or missing backlog still shows a note then broken */
 	assert.equal(view.identityBacklogNote(null), null);
 	assert.equal(view.identityBacklogNote(0), null);
 
-	/** if a positive backlog produces no note, or claims retrying the sync
-	 * fixes it (it does nothing for rows held on identity), then broken */
+	/** if a positive hash_pending backlog produces no note, or omits --for-hub, then broken */
 	const many = view.identityBacklogNote(7331);
 	assert.match(many, /7331 tracks/);
-	assert.match(many, /they lack/);
-	assert.match(many, /retrying Sync now will not change this/);
+	assert.match(many, /hash_pending/);
+	assert.match(many, /--for-hub --live/);
+	assert.match(many, /retrying Sync now on this machine will not hash them/);
 
 	/** if singular phrasing is not grammatical for a count of one then broken */
 	const one = view.identityBacklogNote(1);
 	assert.match(one, /1 track /);
 	assert.doesNotMatch(one, /1 tracks/);
-	assert.match(one, /it lacks/);
 });
 
 test('env overrides are named when they mask the saved config', () => {

@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Literal
 
 from apps.lyrics import cache as lyrics_cache
+from apps.lyrics import fetch_verdicts
+from apps.lyrics.service import vocals_sha256_for_track
 from apps.stems.selection import has_bundle
 
 from . import queue_store
@@ -176,7 +178,14 @@ def artifact_is_fresh(
         return has_bundle(stable_id, stems_root)
     path = lyrics_cache.cache_path(data_dir, stable_id)
     loaded = lyrics_cache.load(path)
-    return loaded is not None and loaded.stable_id == stable_id
+    if loaded is not None and loaded.stable_id == stable_id:
+        return True
+    verdict = fetch_verdicts.load_verdict(data_dir, stable_id)
+    if verdict is None:
+        return False
+    return fetch_verdicts.is_terminal_fresh(
+        verdict, vocals_sha256_for_track(data_dir, stable_id)
+    )
 
 
 def _upsert(  # noqa: PLR0913

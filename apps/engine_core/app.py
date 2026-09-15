@@ -68,7 +68,7 @@ from apps.engine_core.jobs.runner import (
 from apps.engine_core.jobs.store import JobStore
 from apps.engine_core.lock import EngineLock
 from apps.engine_core.setup.api import router as setup_router
-from apps.engine_core.update_channel import add_update_check_route
+from apps.engine_core.update_channel import add_update_apply_route, add_update_check_route
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.feature_flags import load_flags
 from apps.shared import events, platform_paths
@@ -76,6 +76,7 @@ from apps.shared.library_mode import apply_library_env, assert_ready
 from apps.shared.paths import STATE_DB
 from apps.shared.sync_bind_guard import assert_sync_bind_allowed
 from apps.webui.server.request_guard import assert_request_guard_bind_allowed
+from apps.cloud import job as cloud_job
 from apps.stems import job as stems_job
 from apps.stems.api import router as stems_plan_router
 from apps.stems.live_capability import assess_install_once
@@ -185,6 +186,7 @@ def create_app(
     # verification. Here so an agent and a browser tab can ask the same
     # question the shell's button asks.
     add_update_check_route(app)
+    add_update_apply_route(app)
     availability_worker = LibraryAvailabilityWorker(cfg.data_dir)
     add_availability_routes(app, availability_worker)
     add_rescue_routes(app)
@@ -236,6 +238,8 @@ def _register_job_kinds() -> None:
     register_worker(stems_job.JOB_KIND, stems_job.build_argv)
     register_progress_observer(stems_job.JOB_KIND, stems_job.on_progress)
     register_reconcile(stems_job.JOB_KIND, stems_job.reconcile_from_disk)
+    register_worker(cloud_job.JOB_KIND, cloud_job.build_argv)
+    register_reconcile(cloud_job.JOB_KIND, cloud_job.reconcile_from_disk)
 
 
 # ----- legacy composition ------------------------------------------------

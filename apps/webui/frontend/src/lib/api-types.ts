@@ -1388,7 +1388,7 @@ export interface paths {
         };
         /**
          * Next Command
-         * @description Let the sole open performance page claim its next agent order.
+         * @description Let a consumer claim its next command.
          */
         get: operations["next_command_api_v1_commands_next_get"];
         put?: never;
@@ -1410,7 +1410,7 @@ export interface paths {
         put?: never;
         /**
          * Complete Command
-         * @description Resolve an order with page-produced per-step statuses and mirror delta.
+         * @description Resolve a performance order or a shell command result.
          */
         post: operations["complete_command_api_v1_commands__order_id__result_post"];
         delete?: never;
@@ -2365,6 +2365,23 @@ export interface paths {
         get: operations["get_library_wheel_axes_api_v1_library_wheel_axes_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lifecycle/quit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request Shell Quit */
+        post: operations["request_shell_quit_api_v1_lifecycle_quit_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4503,6 +4520,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/hash-pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Hash Pending List
+         * @description List ``stable_id`` values on this hub still awaiting ``content_hash``.
+         */
+        get: operations["hash_pending_list_api_v1_sync_hash_pending_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sync/hello": {
         parameters: {
             query?: never;
@@ -4517,6 +4554,26 @@ export interface paths {
          * @description Register a spoke in ``machines`` and report the hub's id and seq.
          */
         post: operations["hello_api_v1_sync_hello_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/lyrics-asr/{stable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Asr Presign
+         * @description Mint a short-lived GET URL for one ASR transcript JSON object.
+         */
+        get: operations["get_lyrics_asr_presign_api_v1_sync_lyrics_asr__stable_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5261,6 +5318,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/update/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Update Apply */
+        post: operations["update_apply_api_v1_update_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/update/apply/{command_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Update Apply Status */
+        get: operations["update_apply_status_api_v1_update_apply__command_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/update/check": {
         parameters: {
             query?: never;
@@ -5743,6 +5834,17 @@ export interface components {
              * @enum {string}
              */
             slot: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
+        };
+        /** AppModeOut */
+        AppModeOut: {
+            /**
+             * Id
+             * @default performance
+             * @enum {string}
+             */
+            id: "performance" | "library-management" | "library" | "music-player";
+            /** Last Gig At */
+            last_gig_at?: string | null;
         };
         /** AppPostureOut */
         AppPostureOut: {
@@ -6824,6 +6926,11 @@ export interface components {
              */
             endpoint_source: "env" | "file" | "default";
             /**
+             * Hash Pending
+             * @description live tracks offered as hash_pending on the hub (ADR-0047)
+             */
+            hash_pending?: number | null;
+            /**
              * Heartbeat At
              * @description UTC time of the last scheduler beat, fresh or stale
              */
@@ -6833,6 +6940,11 @@ export interface components {
             /** Last Push At */
             last_push_at: string | null;
             last_result: components["schemas"]["LastResultOut"] | null;
+            /**
+             * Quarantined
+             * @description rows held out of the sync set for stamp or identity-dup reasons
+             */
+            quarantined?: number | null;
             /** Reason */
             reason: string | null;
             /** Recent Results */
@@ -7362,6 +7474,10 @@ export interface components {
         };
         /** DigestResponse */
         DigestResponse: {
+            /** Hash Pending */
+            hash_pending?: {
+                [key: string]: number;
+            };
             /** Overall */
             overall: string;
             /** Quarantined */
@@ -8013,6 +8129,19 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HashPendingResponse */
+        HashPendingResponse: {
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /** Schema Version */
+            schema_version: number;
+            /** Stable Ids */
+            stable_ids: string[];
+            /** Total */
+            total: number;
+            /** Wire Version */
+            wire_version: number;
+        };
         /** HeadphoneOutputDeviceOut */
         HeadphoneOutputDeviceOut: {
             /** Id */
@@ -8276,8 +8405,13 @@ export interface components {
         /** IdentityBacklogOut */
         IdentityBacklogOut: {
             /**
+             * Hash Pending
+             * @description live 'tracks' rows offered to the hub with hash_pending=true while awaiting content_hash. Run `python -m apps.shared.state.backfill_content_hash --for-hub --live` on a machine that holds the audio.
+             */
+            hash_pending: number;
+            /**
              * Unsyncable Inferred
-             * @description live 'tracks' rows held out of every sync digest for lacking BOTH a content_hash and a normalizable ISRC. Not a bug and not fixed by retrying: each row needs `python -m apps.shared.state.backfill_content_hash --live` once its audio is reachable, or an ISRC tag.
+             * @description live 'tracks' rows still held for content-identity duplicate losers only. Rows lacking hash and ISRC travel as hash_pending instead.
              */
             unsyncable_inferred: number;
         };
@@ -8746,6 +8880,22 @@ export interface components {
             /** Unreachable */
             unreachable: number;
         };
+        /** LifecycleQuitIn */
+        LifecycleQuitIn: {
+            /**
+             * Force
+             * @description Must be true for agent and ship clean-quit paths.
+             */
+            force: boolean;
+        };
+        /** LifecycleQuitOut */
+        LifecycleQuitOut: {
+            /**
+             * Ok
+             * @default true
+             */
+            ok: boolean;
+        };
         /**
          * LocalDataOut
          * @description One store on this machine that holds something about the account.
@@ -8831,6 +8981,22 @@ export interface components {
             start_ms: number;
             /** Text */
             text: string;
+        };
+        /** LyricsAsrPresignResponse */
+        LyricsAsrPresignResponse: {
+            /** Content Hash */
+            content_hash: string;
+            /**
+             * Expires In Seconds
+             * @default 900
+             */
+            expires_in_seconds: number;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Stable Id */
+            stable_id: string;
+            /** Url */
+            url: string;
         };
         /**
          * LyricsCachedIdsOut
@@ -10489,6 +10655,11 @@ export interface components {
              * @default false
              */
             has_more: boolean;
+            /**
+             * Hash Pending
+             * @default 0
+             */
+            hash_pending: number;
             /** Machines */
             machines: components["schemas"]["MachineModel"][];
             /**
@@ -10528,6 +10699,11 @@ export interface components {
         PushResponse: {
             /** Accepted */
             accepted: number;
+            /**
+             * Hash Pending
+             * @default 0
+             */
+            hash_pending: number;
             /**
              * Quarantined
              * @default 0
@@ -11098,6 +11274,8 @@ export interface components {
          * @description One offered row. ``members`` is set only on a ``playlists`` row.
          */
         RowModel: {
+            /** Hash Pending */
+            hash_pending?: boolean | null;
             /** Members */
             members?: {
                 [key: string]: unknown;
@@ -12617,6 +12795,7 @@ export interface components {
         };
         /** UiPrefsOut */
         UiPrefsOut: {
+            app_mode?: components["schemas"]["AppModeOut"];
             /**
              * App Posture
              * @default prep
@@ -12649,6 +12828,11 @@ export interface components {
                 [key: string]: unknown;
             };
             /**
+             * Hide Broken Links
+             * @default false
+             */
+            hide_broken_links: boolean;
+            /**
              * Hide Todo Settings
              * @default false
              */
@@ -12659,6 +12843,12 @@ export interface components {
              */
             jog_radial_waveform: boolean;
             level_calibration?: components["schemas"]["LevelCalibrationOut"];
+            /**
+             * Library Density
+             * @default compact
+             * @enum {string}
+             */
+            library_density: "compact" | "cosy";
             /**
              * Lyrics Deck Line
              * @default true
@@ -12691,11 +12881,26 @@ export interface components {
              */
             lyrics_waveform_overlay: boolean;
             /**
+             * Midi Enabled
+             * @default false
+             */
+            midi_enabled: boolean;
+            /**
+             * Next Only Filter
+             * @default false
+             */
+            next_only_filter: boolean;
+            /**
              * Perf Tier
              * @default auto
              * @enum {string}
              */
             perf_tier: "auto" | "low" | "standard" | "high";
+            /**
+             * Remixes Filter
+             * @default false
+             */
+            remixes_filter: boolean;
             /**
              * Show Agent Pins
              * @default true
@@ -12712,9 +12917,16 @@ export interface components {
              * @enum {string}
              */
             theme: "dark" | "light";
+            /**
+             * Vocals Filter
+             * @default false
+             */
+            vocals_filter: boolean;
+            wheel_sensitivity?: components["schemas"]["WheelSensitivityOut"];
         };
         /** UiPrefsPatch */
         UiPrefsPatch: {
+            app_mode?: components["schemas"]["AppModeOut"] | null;
             /** App Posture */
             app_posture?: ("prep" | "gig") | null;
             /** Auto Play Enabled */
@@ -12730,11 +12942,15 @@ export interface components {
             confirm?: {
                 [key: string]: unknown;
             } | null;
+            /** Hide Broken Links */
+            hide_broken_links?: boolean | null;
             /** Hide Todo Settings */
             hide_todo_settings?: boolean | null;
             /** Jog Radial Waveform */
             jog_radial_waveform?: boolean | null;
             level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
+            /** Library Density */
+            library_density?: ("compact" | "cosy") | null;
             /** Lyrics Deck Line */
             lyrics_deck_line?: boolean | null;
             /** Lyrics Global */
@@ -12747,14 +12963,23 @@ export interface components {
             lyrics_load_strategy?: ("in-view" | "hover" | "off") | null;
             /** Lyrics Waveform Overlay */
             lyrics_waveform_overlay?: boolean | null;
+            /** Midi Enabled */
+            midi_enabled?: boolean | null;
+            /** Next Only Filter */
+            next_only_filter?: boolean | null;
             /** Perf Tier */
             perf_tier?: ("auto" | "low" | "standard" | "high") | null;
+            /** Remixes Filter */
+            remixes_filter?: boolean | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
             /** Technically Working Animate */
             technically_working_animate?: boolean | null;
             /** Theme */
             theme?: ("dark" | "light") | null;
+            /** Vocals Filter */
+            vocals_filter?: boolean | null;
+            wheel_sensitivity?: components["schemas"]["WheelSensitivityOut"] | null;
         };
         /** UndoRecordOut */
         UndoRecordOut: {
@@ -12777,6 +13002,48 @@ export interface components {
             revision: string;
             /** Survivor */
             survivor: string;
+        };
+        /** UpdateApplyAccepted */
+        UpdateApplyAccepted: {
+            /**
+             * Accepted
+             * @default true
+             */
+            accepted: boolean;
+            /** Available Version */
+            available_version: string;
+            /** Command Id */
+            command_id: string;
+        };
+        /** UpdateApplyRefused */
+        UpdateApplyRefused: {
+            /** Detail */
+            detail: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "update-available" | "up-to-date" | "ahead-of-channel" | "endpoint-unreachable" | "endpoint-refused" | "manifest-malformed" | "platform-unsupported" | "identity-unavailable";
+        };
+        /** UpdateApplyStatusOut */
+        UpdateApplyStatusOut: {
+            /** Claimed At Utc */
+            claimed_at_utc?: string | null;
+            /** Command Id */
+            command_id: string;
+            /** Completed At Utc */
+            completed_at_utc?: string | null;
+            /** Enqueued At Utc */
+            enqueued_at_utc: string;
+            /** Error */
+            error?: string | null;
+            /** Outcome */
+            outcome?: ("installed" | "no-update" | "refused") | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "claimed" | "succeeded" | "failed";
         };
         /**
          * UpdateCheckOut
@@ -13062,6 +13329,19 @@ export interface components {
             };
             /** Transcript */
             transcript: string;
+        };
+        /** WheelSensitivityOut */
+        WheelSensitivityOut: {
+            /**
+             * Mouse
+             * @default 1
+             */
+            mouse: number;
+            /**
+             * Trackpad
+             * @default 0.3333333333333333
+             */
+            trackpad: number;
         };
         /** WorktreePortsOut */
         WorktreePortsOut: {
@@ -15895,7 +16175,10 @@ export interface operations {
     };
     next_command_api_v1_commands_next_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description performance: AGENT-03 orders for the open /performance page; shell: desktop-shell commands such as apply-update */
+                consumer?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -15909,6 +16192,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -17608,6 +17900,48 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
+                };
+            };
+        };
+    };
+    request_shell_quit_api_v1_lifecycle_quit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LifecycleQuitIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifecycleQuitOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -20845,6 +21179,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Unknown playlist name (detail + known sibling keys) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -21124,6 +21465,13 @@ export interface operations {
                     };
                 };
             };
+            /** @description MDT_EXTERNAL_STEM_ROOTS entry does not exist */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -21132,6 +21480,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description MDT_EXTERNAL_STEM_ROOTS not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -21180,6 +21535,13 @@ export interface operations {
                         [key: string]: string;
                     };
                 };
+            };
+            /** @description Invalid or missing manifest_path, corrupt manifest, or hydrate refused */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -21300,6 +21662,56 @@ export interface operations {
             };
         };
     };
+    hash_pending_list_api_v1_sync_hash_pending_get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+                limit?: number;
+                cursor?: string | null;
+                /** @description protocol features the caller understands */
+                capabilities?: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HashPendingResponse"];
+                };
+            };
+            /** @description hash-pending refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description hash-pending refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     hello_api_v1_sync_hello_post: {
         parameters: {
             query?: never;
@@ -21348,6 +21760,68 @@ export interface operations {
                 };
             };
             /** @description hello refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_lyrics_asr_presign_api_v1_sync_lyrics_asr__stable_id__get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsAsrPresignResponse"];
+                };
+            };
+            /** @description lyrics-asr/presign refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description LYRICS_ASR_NOT_FOUND when the transcript object is absent from R2 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description LYRICS_ASR_PRESIGN_FAILED when presigning or HEAD failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description lyrics-asr/presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -22689,6 +23163,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UiPrefsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_apply_api_v1_update_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateApplyAccepted"];
+                };
+            };
+            /** @description apply refused; no shell command enqueued */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateApplyRefused"];
+                };
+            };
+        };
+    };
+    update_apply_status_api_v1_update_apply__command_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                command_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateApplyStatusOut"];
                 };
             };
             /** @description Validation Error */

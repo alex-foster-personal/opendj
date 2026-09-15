@@ -28,6 +28,8 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from apps.analysis import run as analysis_run
+from apps.shared import platform_paths
+from apps.shared.state import locations as state_locations
 from apps.lyrics import cache as lyrics_cache
 from apps.shared import fs_residency
 from apps.webui.soft_deletes import has_soft_deletes
@@ -309,26 +311,27 @@ def tracks_on_disk(
     try:
         if has_soft_deletes(conn, "tracks"):
             tracks_sql = (
-                "SELECT stable_id, file_path FROM tracks "
-                "WHERE file_path IS NOT NULL AND deleted_at IS NULL"
+                "SELECT stable_id, file_path FROM tracks WHERE deleted_at IS NULL"
             )
         else:
-            tracks_sql = (
-                "SELECT stable_id, file_path FROM tracks "
-                "WHERE file_path IS NOT NULL"
-            )
+            tracks_sql = "SELECT stable_id, file_path FROM tracks"
         rows = conn.execute(tracks_sql).fetchall()
+        stable_ids = [str(sid) for sid, _fp in rows]
+        track_paths = {str(sid): fp for sid, fp in rows}
+        resolved = state_locations.bulk_local_audio_paths(conn, stable_ids)
     finally:
         conn.close()
     ok: list[tuple[str, str]] = []
     unreachable = 0
-    for sid, fp in rows:
-        if fp.startswith(("tidal:", "soundcloud:", "spotify:")):
+    for sid in stable_ids:
+        path = resolved.get(sid)
+        if path is not None:
+            ok.append((sid, str(path)))
             continue
-        if fs_residency.is_materialised(Path(fp)):
-            ok.append((sid, fp))
-        else:
-            unreachable += 1
+        fp = track_paths.get(sid)
+        if fp and str(fp).startswith(platform_paths.STREAMING_PREFIXES):
+            continue
+        unreachable += 1
     return ok, unreachable
 
 

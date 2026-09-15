@@ -259,6 +259,150 @@ def diff_of(pr: str) -> str:
     return _gh(["api", f"repos/{REPO}/pulls/{pr}", "-H", "Accept: application/vnd.github.v3.diff"])
 
 
+# Machine-written data that CI validates mechanically rather than by reading.
+# .test_durations is pytest-split's timing table: tests/scripts/
+# test_ci_shard_matrix.py checks it is JSON with >= 3000 non-negative numbers.
+# A full refresh is ~800 KB of diff, which alone exceeds the reviewers' size
+# cap and blocks the PR from ever being reviewed (#2880, Tue 15 Sep 2026).
+GENERATED_DATA_PATHS: frozenset[str] = frozenset({".test_durations"})
+_FILE_HEADER = re.compile(
+    r'^diff --git a/(?:"([^"]+)"|(\S+)) b/(?:"([^"]+)"|(\S+))$'
+)
+_FILE_HEADER_QUOTED = re.compile(r'^diff --git "a/([^"]+)" "b/([^"]+)"$')
+
+
+def _parse_file_header(line: str) -> tuple[str, str] | None:
+    if match := _FILE_HEADER_QUOTED.match(line):
+        return match.group(1), match.group(2)
+    if match := _FILE_HEADER.match(line):
+        a_path = match.group(1) or match.group(2)
+        b_path = match.group(3) or match.group(4)
+        return a_path, b_path
+    return None
+
+
+def reviewed_paths_in_diff(diff: str) -> frozenset[str]:
+    """Every b/ path from a successfully parsed `diff --git` header."""
+    paths: set[str] = set()
+    for line in diff.split("\n"):
+        if not line.startswith("diff --git "):
+            continue
+        parsed = _parse_file_header(line)
+        if not parsed:
+            raise TriageError(
+                f"unparsed diff header (refusing to guess skip state): {line!r}"
+            )
+        paths.add(parsed[1])
+    return frozenset(paths)
+
+
+def split_generated_data(diff: str) -> tuple[str, frozenset[str]]:
+    """The diff minus whole-file sections for GENERATED_DATA_PATHS, and those paths.
+
+    A section is dropped only when BOTH sides name the same generated path, so a
+    rename from a source file into one stays in the reviewed diff. The caller
+    must name the dropped paths in the review marker: coverage reads the marker,
+    not the prose.
+
+    Requirements:
+      / Split on ``\\n`` only so a forged header inside a ``\\r`` cannot start a
+        skip section. [if ``splitlines`` is used then broken]
+      / Every ``diff --git `` line must parse or raise ``TriageError``. [if an
+        unparsed header inherits skip state then broken]
+      / Quoted git path headers parse like unquoted ones. [if they inherit skip
+        state then broken]
+    """
+    kept: list[str] = []
+    skipped_paths: set[str] = set()
+    section: list[str] = []
+    skipping = False
+
+    def flush() -> None:
+        nonlocal section, skipping
+        if section and not skipping:
+            kept.extend(section)
+        section = []
+
+    for line in diff.split("\n"):
+        if line.startswith("diff --git "):
+            flush()
+            parsed = _parse_file_header(line)
+            if not parsed:
+                raise TriageError(
+                    f"unparsed diff header (refusing to guess skip state): {line!r}"
+                )
+            a_path, b_path = parsed
+            section = [line]
+            skipping = (
+                a_path == b_path
+                and b_path in GENERATED_DATA_PATHS
+            )
+            if skipping:
+                skipped_paths.add(b_path)
+        else:
+            section.append(line)
+
+    flush()
+    return "\n".join(kept), frozenset(skipped_paths)
+
+
+def reviewable_diff(pr: str) -> tuple[str, list[str]]:
+    filtered, skipped = split_generated_data(diff_of(pr))
+    return filtered, sorted(skipped)
+
+
+def unreviewed_note(dropped: list[str]) -> list[str]:
+    if not dropped:
+        return []
+    names = ", ".join(f"`{path}`" for path in dropped)
+    return [
+        "",
+        f"Not reviewed: {names}, generated data that CI validates mechanically "
+        "(scripts/review_lane.py GENERATED_DATA_PATHS).",
+    ]
+
+
+def skipped_paths_match_diff(marker_skipped: frozenset[str], diff: str) -> str | None:
+    """Return a coverage failure reason when marker skipped paths disagree with `diff`."""
+    _, expected = split_generated_data(diff)
+    if marker_skipped == expected:
+        return None
+    return (
+        f"marker skipped={','.join(sorted(marker_skipped)) or '(none)'} "
+        f"but diff generated-data sections are "
+        f"{','.join(sorted(expected)) or '(none)'}"
+    )
+
+
+def certified_reviewed_paths(diff: str, skipped: frozenset[str]) -> frozenset[str]:
+    """Non-generated changed paths the lane read after dropping `skipped`."""
+    return reviewed_paths_in_diff(diff) - skipped
+
+
+def cli_lane_marker_skipped_mismatch(lane: str, body: str, diff: str) -> str | None:
+    """Coverage helper: marker `skipped=` must match generated-data sections in `diff`."""
+    if lane == "Claude":
+        from scripts.review_claude import marker_skipped_mismatch
+
+        return marker_skipped_mismatch(body, diff)
+    if lane == "Sol":
+        from scripts.review_sol import marker_skipped_mismatch
+
+        return marker_skipped_mismatch(body, diff)
+    return None
+
+
+def evidence_skipped_paths_ok(
+    lane: str, bodies: tuple[str, ...], pr_diff: str | None
+) -> str | None:
+    if not pr_diff:
+        return None
+    for body in bodies:
+        if reason := cli_lane_marker_skipped_mismatch(lane, body, pr_diff):
+            return reason
+    return None
+
+
 def anchorable_lines(diff: str) -> dict[str, set[int]]:
     """RIGHT-side line numbers a review comment may be attached to.
 

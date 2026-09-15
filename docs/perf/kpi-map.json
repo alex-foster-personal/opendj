@@ -431,12 +431,12 @@
         "open_to_library_rows_ms"
       ],
       "unit": "ms",
-      "budget": 2900,
+      "budget": 1800,
       "acceptable": 4000,
       "breaking": 8000,
       "lower_is_better": true,
       "spec_cells": {
-        "target": "<=2900ms",
+        "target": "<=1800ms",
         "acceptable": "<=4000ms",
         "breaking": ">8000ms"
       },

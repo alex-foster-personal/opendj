@@ -23,6 +23,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
 from . import sync_stamp as _sync_stamp
+from .db import StateStoreBusyError, is_sqlite_busy
 
 # The synced tables this class writes, and the primary key columns whose
 # values become the ``local_changelog`` row_pk. Kept beside the writes rather
@@ -50,6 +51,15 @@ def _iso(dt: datetime) -> str:
     return _sync_stamp.canonical_from(dt)
 
 
+def _begin_immediate(conn: sqlite3.Connection) -> None:
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+    except sqlite3.OperationalError as exc:
+        if is_sqlite_busy(exc):
+            raise StateStoreBusyError(str(exc)) from exc
+        raise
+
+
 def compute_playlist_id(vendor: str, vendor_pl_id: str) -> str:
     """Stable playlist id: ``sha1('<vendor>:<vendor_pl_id>')``.
 
@@ -73,14 +83,20 @@ def immediate_transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connecti
             "immediate transaction requires an idle connection; acquire it "
             "before reading membership state"
         )
-    conn.execute("BEGIN IMMEDIATE")
+    _begin_immediate(conn)
     try:
         yield conn
     except Exception:
         conn.execute("ROLLBACK")
         raise
     else:
-        conn.execute("COMMIT")
+        try:
+            conn.execute("COMMIT")
+        except sqlite3.OperationalError as exc:
+            if is_sqlite_busy(exc):
+                conn.execute("ROLLBACK")
+                raise StateStoreBusyError(str(exc)) from exc
+            raise
 
 
 def next_playlist_revision(
@@ -119,6 +135,7 @@ __all__ = [
     "PLAYLISTS_TABLE",
     "TRACKS_TABLE",
     "VENDOR_IDS_TABLE",
+    "StateStoreBusyError",
     "compute_playlist_id",
     "immediate_transaction",
     "next_playlist_revision",

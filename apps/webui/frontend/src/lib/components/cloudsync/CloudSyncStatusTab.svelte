@@ -101,7 +101,7 @@
 	 */
 	async function fetchIdentityBacklog(): Promise<number | null> {
 		try {
-			return (await getIdentityBacklog()).unsyncable_inferred;
+			return (await getIdentityBacklog()).hash_pending;
 		} catch {
 			return null;
 		}
@@ -251,7 +251,7 @@
 				<p
 					class="headline warn"
 					data-testid="cloudsync-identity-backlog-note"
-					title="apps/sync_hub/sync_set.py::count_unsyncable_inferred, live count of tracks excluded from every sync digest for missing identity"
+					title="apps/sync_hub/sync_set.py::count_hash_pending, live tracks offered as hash_pending on the hub"
 				>
 					{backlogNote}
 				</p>
@@ -295,6 +295,20 @@
 					<dt>Rows pending</dt>
 					<dd title="Local changelog rows not yet pushed to the hub; blank when not measured">
 						{status.rows_pending ?? 'not measured'}
+					</dd>
+					<dt>Hash pending</dt>
+					<dd
+						data-testid="cloudsync-status-hash-pending"
+						title="Live tracks offered as hash_pending while awaiting content_hash (ADR-0047)"
+					>
+						{status.hash_pending ?? 'not measured'}
+					</dd>
+					<dt>Quarantined</dt>
+					<dd
+						data-testid="cloudsync-status-quarantined"
+						title="Rows held out of the sync set for stamp faults or identity-dup losers"
+					>
+						{status.quarantined ?? 'not measured'}
 					</dd>
 					<dt>Signed in as</dt>
 					<dd>{status.signed_in_as ?? 'nobody'}</dd>
