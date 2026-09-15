@@ -65,6 +65,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from apps.sync_hub import sync_set
+from apps.sync_hub.machine_wire_limits import (
+    MachineWireLimitError,
+    validate_machine_wire_fields,
+)
 from apps.sync_hub.quarantine_log import quarantine_pass, record_quarantine
 from apps.sync_hub.protocol_common import (
     DELETED_AT,
@@ -235,9 +239,15 @@ class MachineRow:
     @classmethod
     def from_wire(cls, payload: Mapping[str, Any]) -> MachineRow:
         raw_root = payload.get("data_root")
+        machine_id = _require_str(payload, "machine_id")
+        name = _require_str(payload, "name")
+        try:
+            validate_machine_wire_fields(machine_id, name)
+        except MachineWireLimitError as exc:
+            raise SyncProtocolError(str(exc)) from exc
         return cls(
-            machine_id=_require_str(payload, "machine_id"),
-            name=_require_str(payload, "name"),
+            machine_id=machine_id,
+            name=name,
             platform=_require_str(payload, "platform"),
             is_hub=bool(payload.get("is_hub", False)),
             data_root=None if raw_root is None else str(raw_root),

@@ -20,6 +20,14 @@ Requirements (mini-PRD)
   fails while any file is unindexed, [else stop]
 - [if] inputs do not change [then] regeneration is byte-for-byte deterministic,
   [else stop]
+- [if] `review_thread_triage` validates a PR's own debt file [then] it reuses
+  `_parse_debt_text` (via `check_pr_debt_file`), never a second copy of the
+  format rules (issue #2980), [else stop]
+- [if] a PR has no debt file [then] `check_pr_debt_file` passes it through
+  untouched -- an absent file is not a format defect, [else stop]
+- [if] a sibling debt file is malformed [then] `check_pr_debt_file` for a
+  DIFFERENT PR number does not see it at all, and only `other_debt_file_problems`
+  reports it, as non-blocking, [else stop]
 """
 
 from __future__ import annotations
@@ -52,72 +60,125 @@ class DebtFile:
 # ----- parsing ------------------------------------------------------------
 
 
-def _logged_date(raw: str, path: Path) -> date:
+def _logged_date(raw: str, label: str) -> date:
     """Parse one `Logged:` value, refusing anything the format does not cover."""
     text = raw.strip()
     try:
         parsed = datetime.strptime(text, _DATE_FORMAT).date()  # noqa: DTZ007 -- a calendar day, not an instant
     except ValueError as exc:
         raise ValueError(
-            f"{path} has an unparseable Logged date {text!r}; "
+            f"{label} has an unparseable Logged date {text!r}; "
             f"the format is 'Ddd D Mmm YYYY', for example 'Sat 5 Sep 2026'"
         ) from exc
     # The weekday is a checksum on the number, not decoration. Recomputing it
     # silently would let a typo published as fact survive a regeneration.
     if not text.startswith(parsed.strftime("%a")):
         raise ValueError(
-            f"{path} logs {text!r}, but that date is a "
+            f"{label} logs {text!r}, but that date is a "
             f"{parsed.strftime('%A')}; correct the weekday or the day"
         )
     return parsed
 
 
-def _entries(text: str, path: Path) -> list[date]:
+def _entries(text: str, label: str) -> list[date]:
     """Return one logged date per entry, refusing incomplete entries.
 
     An entry starts at its `Logged:` line and runs to the next one. Counting
     entries rather than permalinks is what keeps the index honest: one entry
     may cite several review rounds, and debt found outside a review thread
-    cites none at all.
+    cites none at all. `label` identifies the file in a raised message; it is
+    a string rather than a `Path` because `_parse_debt_text` (below) validates
+    text fetched over the network, at a pinned commit, with nothing on local
+    disk to point a `Path` at.
     """
     starts = [(m.start(), m.group(1)) for m in _LOGGED.finditer(text)]
     if not starts:
-        raise ValueError(f"{path} is missing Logged metadata; every entry needs 'Logged: <date>'")
+        raise ValueError(f"{label} is missing Logged metadata; every entry needs 'Logged: <date>'")
     bounds = [start for start, _ in starts] + [len(text)]
     dates: list[date] = []
     for index, (_, raw) in enumerate(starts):
         block = text[bounds[index] : bounds[index + 1]]
         if _SOURCE.search(block) is None:
             raise ValueError(
-                f"{path} entry logged {raw.strip()!r} is missing its "
+                f"{label} entry logged {raw.strip()!r} is missing its "
                 f"'Source: <permalink or provenance>' line"
             )
-        dates.append(_logged_date(raw, path))
+        dates.append(_logged_date(raw, label))
     return dates
 
 
+def _parse_debt_text(number: int, text: str, label: str) -> DebtFile:
+    """The format rules, applied to text already in hand -- the core `_entry`
+    shares with `scripts.review_thread_triage`'s PR-head debt check.
+
+    `number` is the PR the caller expects this text to belong to (a filename's
+    stem for `_entry`, a PR argument for triage); `label` identifies the
+    source in a raised message. Split out so triage's own-file check reuses
+    these exact format rules instead of a second copy of them (issue #2980).
+    """
+    match = _PR.search(text)
+    if match is None:
+        raise ValueError(f"{label} must start with a PR or Issue number heading")
+    heading = int(match.group(1))
+    if heading != number:
+        raise ValueError(
+            f"{label} declares PR #{heading} but triage would read it as PR #{number}; "
+            f"rename the file or correct the heading"
+        )
+    branch = _BRANCH.search(text)
+    if branch is None:
+        raise ValueError(f"{label} is missing Branch metadata: add a 'Branch: `<branch>`' line")
+    dates = _entries(text, label)
+    return DebtFile(number=heading, branch=branch.group(1), count=len(dates), newest=max(dates))
+
+
 def _entry(path: Path) -> DebtFile:
-    """Read one debt file, raising on any metadata it does not actually record."""
+    """Read one debt file on disk, raising on any metadata it does not
+    actually record. Thin wrapper over `_parse_debt_text`: the filename
+    supplies the expected PR number and doubles as the error label."""
     if not path.stem.isdigit():
         raise ValueError(
             f"{path} is not named for a pull request; triage reads .planning/debt/<pr>.md, "
             f"so the filename must be the PR number"
         )
     text = path.read_text(encoding="utf-8")
-    match = _PR.search(text)
-    if match is None:
-        raise ValueError(f"{path} must start with a PR or Issue number heading")
-    number = int(match.group(1))
-    if number != int(path.stem):
-        raise ValueError(
-            f"{path} declares PR #{number} but triage would read it as PR #{int(path.stem)}; "
-            f"rename the file or correct the heading"
-        )
-    branch = _BRANCH.search(text)
-    if branch is None:
-        raise ValueError(f"{path} is missing Branch metadata: add a 'Branch: `<branch>`' line")
-    dates = _entries(text, path)
-    return DebtFile(number=number, branch=branch.group(1), count=len(dates), newest=max(dates))
+    return _parse_debt_text(int(path.stem), text, str(path))
+
+
+def check_pr_debt_file(number: int, text: str) -> None:
+    """Raise when PR `number`'s OWN debt file text fails `_parse_debt_text`.
+
+    Scoped to exactly one file on purpose (issue #2980): a caller passes only
+    the text of `.planning/debt/<number>.md`, fetched at that PR's own head,
+    never a whole directory. That is what keeps a pre-existing malformed file
+    elsewhere from failing a blameless PR -- this function structurally
+    cannot see any file but the one it was handed. An empty `text` (no debt
+    file at all) passes silently; a missing file is not a format defect.
+    """
+    if not text:
+        return
+    _parse_debt_text(number, text, f".planning/debt/{number}.md")
+
+
+def other_debt_file_problems(number: int, debt_dir: Path = DEBT_DIR) -> list[str]:
+    """Best-effort, non-blocking report of a SIBLING debt file that fails the
+    parser -- diagnostic only, for a `review-triage` run to label as a
+    main-side problem rather than stay silent about it. Never raises: this
+    scan is only as current as the checkout it runs from, so it must never
+    gate a PR the way `check_pr_debt_file` does for the PR's own, pinned-SHA
+    file.
+    """
+    problems: list[str] = []
+    if not debt_dir.exists():
+        return problems
+    for path in sorted(debt_dir.glob("*.md")):
+        if path.stem.isdigit() and int(path.stem) == number:
+            continue
+        try:
+            _entry(path)
+        except ValueError as exc:
+            problems.append(str(exc))
+    return problems
 
 
 # ----- rendering ----------------------------------------------------------

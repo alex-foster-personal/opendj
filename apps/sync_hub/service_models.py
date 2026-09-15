@@ -19,13 +19,17 @@ from pydantic import BaseModel, Field
 
 from apps.sync_hub import enrollment, service_enroll
 from apps.sync_hub.machine_credentials import CredentialVerdict
+from apps.sync_hub.machine_wire_limits import (
+    MACHINE_ID_MAX_LENGTH,
+    MACHINE_NAME_MAX_LENGTH,
+)
 
 
 class MachineModel(BaseModel):
     """One ``machines`` row on the wire."""
 
-    machine_id: str = Field(min_length=1)
-    name: str = Field(min_length=1)
+    machine_id: str = Field(min_length=1, max_length=MACHINE_ID_MAX_LENGTH)
+    name: str = Field(min_length=1, max_length=MACHINE_NAME_MAX_LENGTH)
     platform: str = Field(min_length=1)
     is_hub: bool = False
     data_root: str | None = None
@@ -187,7 +191,7 @@ class EnrollRequest(BaseModel):
 
 
 class PushRequest(BaseModel):
-    machine_id: str = Field(min_length=1)
+    machine_id: str = Field(min_length=1, max_length=MACHINE_ID_MAX_LENGTH)
     schema_version: int
     wire_version: int | None = _WIRE_VERSION_FIELD
     rows: list[RowModel]

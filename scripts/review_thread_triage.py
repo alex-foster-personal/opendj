@@ -78,6 +78,10 @@ Requirements (mini-PRD)
   [if a reviewer resolves a thread, or edits or deletes its terminal reply,
   while the ledger's own round trips are in flight, and the verdict is still
   built from the pre-ledger-read snapshot, then broken]
+- `/ ` validate the PR's OWN `.planning/debt/<pr>.md` via `review_debt_check.py`,
+  reusing `scripts.debt_index`'s parser (issue #2980) instead of a copy of it.
+  [if a malformed own-file passes silently, a sibling's defect is blamed on
+  this PR, or a debt-file-less PR behaves any differently, then broken]
 
 Usage. Run as a module, not as a file path: it imports its functional core
 from `scripts.review_thread_parse`, and a direct path invocation puts the file
@@ -100,6 +104,7 @@ except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.review_thread_triage") from None
     raise
+from scripts.review_debt_check import check_pr_head_debt_file, render_debt_verdict
 from scripts.review_ledger import OWNER, REPO, LedgerReadError, _debt_permalinks
 from scripts.review_thread_parse import PullRequest, Thread, build_thread
 from scripts.review_thread_refs import (
@@ -468,7 +473,9 @@ def _render(pr: PullRequest) -> str:
     return "\n".join(lines)
 
 
-def _as_json(pr: PullRequest) -> str:
+def _as_json(
+    pr: PullRequest, debt_error: str | None = None, main_side_debt: list[str] | None = None
+) -> str:
     return json.dumps(
         {
             "number": pr.number,
@@ -485,6 +492,8 @@ def _as_json(pr: PullRequest) -> str:
             "unindexed_debt": len(pr.unindexed_debt),
             "untriaged": len(pr.silent),
             "in_progress": len(pr.in_progress),
+            "debt_file_error": debt_error,
+            "main_side_debt_problems": main_side_debt or [],
             "threads": [
                 {
                     "id": t.node_id,
@@ -540,11 +549,14 @@ def main(argv: list[str] | None = None) -> int:
         # let them call review_coverage directly rather than nesting schemas.
         try:
             pr = fetch_pull_request(args.pr, owner=args.owner, repo=args.repo)
+            debt_error, main_side_debt = check_pr_head_debt_file(
+                pr.number, pr.head_sha, args.owner, args.repo
+            )
         except (LedgerReadError, HeadMovedError, BaseRetargetedError) as exc:
             print(f"[review-thread-triage] COULD NOT MEASURE: {exc}", file=sys.stderr)
             return 3
-        print(_as_json(pr))
-        return 1 if pr.failing else 0
+        print(_as_json(pr, debt_error, main_side_debt))
+        return 1 if (pr.failing or debt_error) else 0
 
     try:
         # Sample the head BEFORE coverage runs. Coverage certifies whichever
@@ -561,6 +573,9 @@ def main(argv: list[str] | None = None) -> int:
         # findings outside this run's terminal-disposition check.
         pr = fetch_pull_request(args.pr, owner=args.owner, repo=args.repo)
         review_coverage._require_head_unchanged(sampled_head, pr.head_sha)
+        debt_error, main_side_debt = check_pr_head_debt_file(
+            pr.number, pr.head_sha, args.owner, args.repo
+        )
     except review_coverage.TriageError as exc:
         # Could not measure is not a verdict, and must not read as either one.
         print(f"[review-coverage] COULD NOT MEASURE: {exc}", file=sys.stderr)
@@ -573,8 +588,11 @@ def main(argv: list[str] | None = None) -> int:
         return 3
 
     print(_render(pr))
+    debt_report = render_debt_verdict(pr.number, pr.head_sha, debt_error, main_side_debt)
+    if debt_report:
+        print(f"\n{debt_report}")
     print()
-    return 1 if (pr.failing or coverage) else 0
+    return 1 if (pr.failing or coverage or debt_error) else 0
 
 
 if __name__ == "__main__":
