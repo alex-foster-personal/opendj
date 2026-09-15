@@ -23,19 +23,27 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException
 
-from apps.shared import fs_residency, platform_paths
+from apps.cloud import hydration
+from apps.cloud import policy as cloud_policy
+from apps.cloud.config import CloudConfig, MissingEnvError
+from apps.cloud.eviction import HydrationError
+from apps.shared import audio_quality, fs_residency, platform_paths
 from apps.shared._mutagen import HAS_MUTAGEN
 from apps.shared.platform_paths import MappedPath
 from apps.shared.state import locations as track_locations
+from apps.shared.state import sync_stamp
 
 from . import config
 from .cues import HOT_CUE_SLOTS
 from .errors import _open_ro, not_found, unavailable
 from .models import RbContent
+
+if TYPE_CHECKING:
+    from apps.engine_core.jobs.store import JobStore
 
 
 def resolve_content(stable_id: str) -> RbContent:
@@ -395,26 +403,35 @@ def local_track_file_tags(stable_id: str) -> tuple[str | None, str | None]:
     return (tags.get("genre"), tags.get("comments"))
 
 
-def resolve_playable_audio(
-    stable_id: str, *, share: bool = False
-) -> track_locations.PickedAudio:
-    """Pick the single file the frontend may play. Never returns a list."""
-    folder_path: str | None = None
-    try:
-        content = resolve_content(stable_id)
-        folder_path = content.folder_path
-    except HTTPException as exc:
-        detail = exc.detail if isinstance(exc.detail, dict) else {}
-        if detail.get("code") == "TRACK_NOT_FOUND":
-            raise
-        if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
-            raise
-    from apps.shared.crate_index import resolve_crate_audio
-
-    crate_audio = resolve_crate_audio(stable_id)
-    extra_paths: tuple[tuple[str, str, track_locations.Kind], ...] = (
-        ((str(crate_audio), "crate-index", "local"),) if crate_audio is not None else ()
+def _picked_from_path(path: Path, *, source: str) -> track_locations.PickedAudio:
+    media_type = config.AUDIO_MEDIA_TYPES.get(path.suffix.lower())
+    if media_type is None:
+        raise not_found(
+            "AUDIO_FILE_MISSING",
+            f"unsupported audio extension for {path}",
+        )
+    quality = audio_quality.classify(str(path), None)
+    return track_locations.PickedAudio(
+        path=path,
+        media_type=media_type,
+        kind="local",
+        venue_key=quality.venue.key if quality.venue else None,
+        venue_rank=quality.venue.rank if quality.venue else None,
+        source=source,
     )
+
+
+def resolve_playable_audio(
+    stable_id: str,
+    *,
+    share: bool = False,
+    jobs_store: JobStore | None = None,
+) -> track_locations.PickedAudio:
+    """Pick the single file the frontend may play via believed-state resolution."""
+    if share:
+        # Share venue caps are enforced on the legacy pick path; believed-state
+        # audio wiring is local-machine only in CLOUDSYNC-10.
+        track_locations.policy_from_env(share=share)
     state = _open_ro(config.STATE_DB, "STATE_DB")
     try:
         exists = state.execute(
@@ -423,21 +440,69 @@ def resolve_playable_audio(
         ).fetchone()
         if exists is None:
             raise not_found("TRACK_NOT_FOUND", f"unknown stable_id {stable_id}")
-        picked = track_locations.pick_playable(
-            state,
-            stable_id,
-            policy=track_locations.policy_from_env(share=share),
-            folder_path=folder_path,
-            extra_paths=extra_paths,
-        )
+        machine_id = sync_stamp.local_machine_id(state)
+        cache_dir = cloud_policy.artifact_cache_root(config.DATA_DIR, "audio")
+        try:
+            cfg = CloudConfig.from_env()
+        except MissingEnvError:
+            cfg = None
+        try:
+            source = hydration.resolve_playback_source(
+                state,
+                stable_id,
+                machine_id,
+                asset_kind="audio",
+                cache_dir=cache_dir,
+                cfg=cfg,
+            )
+        except HydrationError as exc:
+            raise unavailable(
+                "CLOUD_POLICY_UNCONFIGURED",
+                str(exc),
+            ) from exc
     finally:
         state.close()
-    if picked is None:
-        raise not_found(
-            "AUDIO_FILE_MISSING",
-            f"no working audio location for track {stable_id}",
+
+    if source.origin in ("local", "cache"):
+        if source.path is None:
+            raise not_found(
+                "AUDIO_FILE_MISSING",
+                f"believed-state origin {source.origin!r} has no path for {stable_id}",
+            )
+        return _picked_from_path(
+            source.path,
+            source="believed-state-local"
+            if source.origin == "local"
+            else "believed-state-cache",
         )
-    return picked
+
+    if source.origin == "unavailable":
+        raise not_found(
+            "CLOUD_ASSET_UNAVAILABLE",
+            source.reason
+            or f"audio for track {stable_id} is unavailable on this machine",
+        )
+
+    if source.origin == "presigned":
+        try:
+            hydration.enqueue_hydrate_asset(
+                jobs_store,
+                stable_id=stable_id,
+                asset_kind="audio",
+                machine_id=machine_id,
+                data_dir=config.DATA_DIR,
+            )
+        except HydrationError as exc:
+            raise unavailable("CLOUD_HYDRATING", str(exc)) from exc
+        raise unavailable(
+            "CLOUD_HYDRATING",
+            f"audio for track {stable_id} is hydrating from remote storage",
+        )
+
+    raise not_found(
+        "AUDIO_FILE_MISSING",
+        f"no working audio location for track {stable_id}",
+    )
 
 
 def empty_anlz_payload(stable_id: str, points: int) -> dict[str, Any]:

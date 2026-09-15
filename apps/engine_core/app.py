@@ -76,6 +76,7 @@ from apps.shared.library_mode import apply_library_env, assert_ready
 from apps.shared.paths import STATE_DB
 from apps.shared.sync_bind_guard import assert_sync_bind_allowed
 from apps.webui.server.request_guard import assert_request_guard_bind_allowed
+from apps.cloud import job as cloud_job
 from apps.stems import job as stems_job
 from apps.stems.api import router as stems_plan_router
 from apps.stems.live_capability import assess_install_once
@@ -236,6 +237,8 @@ def _register_job_kinds() -> None:
     register_worker(stems_job.JOB_KIND, stems_job.build_argv)
     register_progress_observer(stems_job.JOB_KIND, stems_job.on_progress)
     register_reconcile(stems_job.JOB_KIND, stems_job.reconcile_from_disk)
+    register_worker(cloud_job.JOB_KIND, cloud_job.build_argv)
+    register_reconcile(cloud_job.JOB_KIND, cloud_job.reconcile_from_disk)
 
 
 # ----- legacy composition ------------------------------------------------
