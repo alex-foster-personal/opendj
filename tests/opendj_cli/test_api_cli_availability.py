@@ -1,4 +1,7 @@
-"""``opendj api`` parity for availability probe/status (issue #2588)."""
+"""``opendj api`` parity for availability probe/status (issue #2588).
+
+[if] the CLI drives the probe/status routes [then] it surfaces the routes' own fields, [else stop].
+"""
 from __future__ import annotations
 
 import json

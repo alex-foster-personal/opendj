@@ -1,4 +1,7 @@
-"""Unit tests for CloudSync runtime defer gates (CLOUDSYNC-14 part 1)."""
+"""Unit tests for CloudSync runtime defer gates (CLOUDSYNC-14 part 1).
+
+[if] a deck plays or posture is gig [then] refuse_sync_round defers with a reason, [else stop].
+"""
 
 from __future__ import annotations
 

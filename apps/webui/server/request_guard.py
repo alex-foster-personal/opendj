@@ -90,10 +90,22 @@ def build_allowed_hostnames(
     share_config,
     *,
     environ: Mapping[str, str] | None = None,
+    daemon_hostname: str | None = None,
 ) -> frozenset[str]:
+    """Loopback + share-tunnel host + operator allowlist + this daemon's own
+    configured hostname.
+
+    ``daemon_hostname`` is ``app.state.hostname`` -- the same value the real
+    entry point sets from ``MUSIC_DJ_HOSTNAME`` (``_build_default_app``) and
+    every test fixture sets via ``create_app(hostname=...)``. Omitting it
+    left a client that addresses this daemon by its own advertised LAN
+    hostname (rather than a loopback IP) 403ing on every request.
+    """
     hostnames = set(_LOOPBACK_HOSTNAMES)
     if share_config.host:
         hostnames.add(share_config.host)
+    if daemon_hostname:
+        hostnames.add(daemon_hostname.lower())
     for host in resolve_allowed_hosts_from_environ(environ):
         hostnames.add(host.lower())
     return frozenset(hostnames)
@@ -148,7 +160,9 @@ def install_request_guard(
 ) -> None:
     share_config = app.state.share_config
     app.state.allowed_hostnames = build_allowed_hostnames(
-        share_config, environ=environ
+        share_config,
+        environ=environ,
+        daemon_hostname=getattr(app.state, "hostname", None),
     )
     trusted = build_trusted_origins(
         frontend_port=frontend_port,
@@ -183,7 +197,10 @@ def _allowed_hostnames(request: Request) -> frozenset[str]:
         return hostnames
     from apps.webui.server.share_gate import ShareConfig
 
-    return build_allowed_hostnames(ShareConfig.from_environ())
+    return build_allowed_hostnames(
+        ShareConfig.from_environ(),
+        daemon_hostname=getattr(request.app.state, "hostname", None),
+    )
 
 
 def _origin_allowed(request: Request, origin: str) -> bool:
