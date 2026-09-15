@@ -27,6 +27,19 @@ def test_post_navigate_accepts_performance_route() -> None:
     assert isinstance(body["id"], str) and body["id"]
 
 
+def test_post_navigate_logs_the_request(caplog: pytest.LogCaptureFixture) -> None:
+    """issue #2879: agent-native parity - the toast has a log counterpart."""
+    with caplog.at_level("INFO", logger="apps.webui.server.routes.shell"):
+        with _client() as client:
+            posted = client.post("/api/v1/shell/navigate", json={"route": "/performance"})
+
+    navigate_id = posted.json()["id"]
+    assert any(
+        "/performance" in record.message and navigate_id in record.message
+        for record in caplog.records
+    )
+
+
 def test_pending_poll_does_not_consume() -> None:
     with _client() as client:
         posted = client.post("/api/v1/shell/navigate", json={"route": "/performance"})

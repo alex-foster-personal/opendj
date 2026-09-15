@@ -89,6 +89,11 @@ class Offer:
         return len(self.held)
 
     @property
+    def hash_pending(self) -> int:
+        """How many offered rows travel with ``hash_pending: true``."""
+        return sum(1 for row in self.rows if row.hash_pending)
+
+    @property
     def held_seq(self) -> int | None:
         """Lowest changelog seq among the held rows; None when none has one.
 
@@ -163,7 +168,15 @@ def _row_change(
     if table == "playlists" and members is None:
         held.hold(table, pk)
         return HeldRow(table=table, pk=pk)
-    return RowChange(table=table, pk=pk, values=values, members=members)
+    raw = dict(zip(columns, row, strict=True))
+    pending = sync_set.is_hash_pending_track(raw, held)
+    return RowChange(
+        table=table,
+        pk=pk,
+        values=values,
+        members=members,
+        hash_pending=pending,
+    )
 
 
 def _rows_for_table(

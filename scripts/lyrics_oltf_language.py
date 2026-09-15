@@ -67,9 +67,9 @@ def _recover_artist_title(track: dict) -> tuple[str, str]:
     return "", title
 
 
-def _load_screen_best() -> dict[str, str]:
+def _load_screen_best(corpus_dir: Path) -> dict[str, str]:
     """version-screen's is_best candidate_id per track_id ({} before the screen ran)."""
-    path = CORPUS_DIR / "version-screen.json"
+    path = corpus_dir / "version-screen.json"
     if not path.is_file():
         return {}
     return {r["track_id"]: r["candidate_id"]
@@ -77,28 +77,38 @@ def _load_screen_best() -> dict[str, str]:
 
 
 def main() -> int:
-    global CORPUS_DIR
+    from apps.shared.paths import STATE_DIR as DEFAULT_STATE_DIR
+
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dir", default="oltf", metavar="CORPUS",
-                    help="corpus dir name under data/state/lyrics-eval/ (default: oltf)")
+                    help="corpus dir name under lyrics-eval/ (default: oltf)")
+    ap.add_argument(
+        "--state-dir",
+        type=Path,
+        default=None,
+        help="directory holding state.db (default: apps.shared.paths.STATE_DIR)",
+    )
     args = ap.parse_args()
-    CORPUS_DIR = LYRICS_EVAL_DIR / args.dir
-    if not CORPUS_DIR.is_dir():
-        raise SystemExit(f"[ERROR] corpus dir {CORPUS_DIR} does not exist")
-    out_path = CORPUS_DIR / "language.json"
-    all_rows = json.loads((CORPUS_DIR / "tracks.json").read_text(encoding="utf-8"))
+    state_dir = args.state_dir or DEFAULT_STATE_DIR
+    lyrics_eval_dir = state_dir / "lyrics-eval"
+    corpus_dir = lyrics_eval_dir / args.dir
+    candidates_dir = lyrics_eval_dir / "candidates"
+    if not corpus_dir.is_dir():
+        raise SystemExit(f"[ERROR] corpus dir {corpus_dir} does not exist")
+    out_path = corpus_dir / "language.json"
+    all_rows = json.loads((corpus_dir / "tracks.json").read_text(encoding="utf-8"))
     excluded = [t for t in all_rows if t.get("excluded_reason")]
     if excluded:
         print(f"[..] {len(excluded)} of {len(all_rows)} corpus rows excluded upstream "
               f"(excluded_reason set)")
     tracks = [t for t in all_rows if not t.get("excluded_reason")]
-    screen_best = _load_screen_best()
+    screen_best = _load_screen_best(corpus_dir)
     detector = LanguageDetectorBuilder.from_all_languages().build()
     rows: list[dict] = []
     for t in tracks:
         artist, title = _recover_artist_title(t)
         key = _fork_key(artist, title, int(t["length_s"] or 0))
-        cand_path = CANDIDATES_DIR / f"{key}.json"
+        cand_path = candidates_dir / f"{key}.json"
         if not cand_path.is_file():
             raise SystemExit(f"[ERROR] no candidate file for {t['track_id']} ({key}) -- "
                              f"run scripts/lyrics_oltf_spike.py candidates first")

@@ -3979,6 +3979,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/hash-pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Hash Pending List
+         * @description List ``stable_id`` values on this hub still awaiting ``content_hash``.
+         */
+        get: operations["hash_pending_list_api_v1_sync_hash_pending_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sync/hello": {
         parameters: {
             query?: never;
@@ -4750,6 +4770,57 @@ export interface paths {
         get: operations["get_ui_prefs_api_v1_ui_prefs_get"];
         /** Put Ui Prefs */
         put: operations["put_ui_prefs_api_v1_ui_prefs_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/update/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Update Apply */
+        post: operations["update_apply_api_v1_update_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/update/apply/{command_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Update Apply Status */
+        get: operations["update_apply_status_api_v1_update_apply__command_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/update/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Update Check */
+        get: operations["update_check_api_v1_update_check_get"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -6124,6 +6195,11 @@ export interface components {
              */
             endpoint_source: "env" | "file" | "default";
             /**
+             * Hash Pending
+             * @description live tracks offered as hash_pending on the hub (ADR-0047)
+             */
+            hash_pending?: number | null;
+            /**
              * Heartbeat At
              * @description UTC time of the last scheduler beat, fresh or stale
              */
@@ -6133,6 +6209,11 @@ export interface components {
             /** Last Push At */
             last_push_at: string | null;
             last_result: components["schemas"]["LastResultOut"] | null;
+            /**
+             * Quarantined
+             * @description rows held out of the sync set for stamp or identity-dup reasons
+             */
+            quarantined?: number | null;
             /** Reason */
             reason: string | null;
             /** Recent Results */
@@ -6669,6 +6750,10 @@ export interface components {
         };
         /** DigestResponse */
         DigestResponse: {
+            /** Hash Pending */
+            hash_pending?: {
+                [key: string]: number;
+            };
             /** Overall */
             overall: string;
             /** Quarantined */
@@ -7132,6 +7217,19 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HashPendingResponse */
+        HashPendingResponse: {
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /** Schema Version */
+            schema_version: number;
+            /** Stable Ids */
+            stable_ids: string[];
+            /** Total */
+            total: number;
+            /** Wire Version */
+            wire_version: number;
+        };
         /** HeadphoneOutputDeviceOut */
         HeadphoneOutputDeviceOut: {
             /** Id */
@@ -7402,8 +7500,13 @@ export interface components {
         /** IdentityBacklogOut */
         IdentityBacklogOut: {
             /**
+             * Hash Pending
+             * @description live 'tracks' rows offered to the hub with hash_pending=true while awaiting content_hash. Run `python -m apps.shared.state.backfill_content_hash --for-hub --live` on a machine that holds the audio.
+             */
+            hash_pending: number;
+            /**
              * Unsyncable Inferred
-             * @description live 'tracks' rows held out of every sync digest for lacking BOTH a content_hash and a normalizable ISRC. Not a bug and not fixed by retrying: each row needs `python -m apps.shared.state.backfill_content_hash --live` once its audio is reachable, or an ISRC tag.
+             * @description live 'tracks' rows still held for content-identity duplicate losers only. Rows lacking hash and ISRC travel as hash_pending instead.
              */
             unsyncable_inferred: number;
         };
@@ -9521,6 +9624,11 @@ export interface components {
              * @default false
              */
             has_more: boolean;
+            /**
+             * Hash Pending
+             * @default 0
+             */
+            hash_pending: number;
             /** Machines */
             machines: components["schemas"]["MachineModel"][];
             /**
@@ -9560,6 +9668,11 @@ export interface components {
         PushResponse: {
             /** Accepted */
             accepted: number;
+            /**
+             * Hash Pending
+             * @default 0
+             */
+            hash_pending: number;
             /**
              * Quarantined
              * @default 0
@@ -10033,6 +10146,8 @@ export interface components {
          * @description One offered row. ``members`` is set only on a ``playlists`` row.
          */
         RowModel: {
+            /** Hash Pending */
+            hash_pending?: boolean | null;
             /** Members */
             members?: {
                 [key: string]: unknown;
@@ -11602,6 +11717,92 @@ export interface components {
             revision: string;
             /** Survivor */
             survivor: string;
+        };
+        /** UpdateApplyAccepted */
+        UpdateApplyAccepted: {
+            /**
+             * Accepted
+             * @default true
+             */
+            accepted: boolean;
+            /** Available Version */
+            available_version: string;
+            /** Command Id */
+            command_id: string;
+        };
+        /** UpdateApplyRefused */
+        UpdateApplyRefused: {
+            /** Detail */
+            detail: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "update-available" | "up-to-date" | "ahead-of-channel" | "endpoint-unreachable" | "endpoint-refused" | "manifest-malformed" | "platform-unsupported" | "identity-unavailable";
+        };
+        /** UpdateApplyStatusOut */
+        UpdateApplyStatusOut: {
+            /** Claimed At Utc */
+            claimed_at_utc?: string | null;
+            /** Command Id */
+            command_id: string;
+            /** Completed At Utc */
+            completed_at_utc?: string | null;
+            /** Enqueued At Utc */
+            enqueued_at_utc: string;
+            /** Error */
+            error?: string | null;
+            /** Outcome */
+            outcome?: ("installed" | "no-update" | "refused") | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "claimed" | "succeeded" | "failed";
+        };
+        /**
+         * UpdateCheckOut
+         * @description What the UI and any agent read.
+         *
+         *     ``applies_via`` is stated because the answer and the action come from
+         *     different components: this route answers, and the Tauri updater inside
+         *     the desktop shell is what can act. A browser tab can learn an update
+         *     exists and cannot install it, and saying so beats a dead button.
+         */
+        UpdateCheckOut: {
+            /**
+             * Applies Via
+             * @default the desktop shell's Tauri updater; this endpoint only reports
+             */
+            applies_via: string;
+            /** Available Version */
+            available_version?: string | null;
+            /** Current Built At Utc */
+            current_built_at_utc?: string | null;
+            /** Current Git Sha */
+            current_git_sha?: string | null;
+            /** Current Version */
+            current_version?: string | null;
+            /** Detail */
+            detail?: string | null;
+            /** Endpoint */
+            endpoint: string;
+            /** Notes */
+            notes?: string | null;
+            /** Platform Key */
+            platform_key: string;
+            /** Published At */
+            published_at?: string | null;
+            /**
+             * Same Version Different Build
+             * @default false
+             */
+            same_version_different_build: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "update-available" | "up-to-date" | "ahead-of-channel" | "endpoint-unreachable" | "endpoint-refused" | "manifest-malformed" | "platform-unsupported" | "identity-unavailable";
         };
         /** UpdateRequiredOut */
         UpdateRequiredOut: {
@@ -19009,6 +19210,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Unknown playlist name (detail + known sibling keys) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -19416,6 +19624,56 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["EnrollErrorResponse"];
                 };
+            };
+        };
+    };
+    hash_pending_list_api_v1_sync_hash_pending_get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+                limit?: number;
+                cursor?: string | null;
+                /** @description protocol features the caller understands */
+                capabilities?: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HashPendingResponse"];
+                };
+            };
+            /** @description hash-pending refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description hash-pending refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -20880,6 +21138,93 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    update_apply_api_v1_update_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateApplyAccepted"];
+                };
+            };
+            /** @description apply refused; no shell command enqueued */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateApplyRefused"];
+                };
+            };
+        };
+    };
+    update_apply_status_api_v1_update_apply__command_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                command_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateApplyStatusOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_check_api_v1_update_check_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateCheckOut"];
+                };
+            };
+            /** @description the update channel could not be read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

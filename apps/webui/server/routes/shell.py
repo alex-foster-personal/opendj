@@ -6,6 +6,7 @@ opened via ``ui_url`` must not consume these requests.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -13,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Request
 from apps.webui.server.shell_navigate import ShellNavigateStore, validate_shell_route
 
 router = APIRouter(prefix="/shell", tags=["shell"])
+log = logging.getLogger(__name__)
 
 
 def _store(request: Request) -> ShellNavigateStore:
@@ -33,6 +35,10 @@ async def post_shell_navigate(request: Request, body: dict[str, Any]) -> dict[st
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     pending = _store(request).set_pending(validated)
+    # The desktop shell's toast (issue #2879) has no server-side counterpart
+    # unless this line exists: agent-native parity requires the same event be
+    # observable programmatically, not just shown on screen.
+    log.info("shell navigate requested: route=%s id=%s", pending.route, pending.id)
     return {"accepted": True, "id": pending.id, "route": pending.route}
 
 
