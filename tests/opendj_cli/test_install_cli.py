@@ -84,7 +84,8 @@ def test_install_cli_refuses_outside_payload(monkeypatch: pytest.MonkeyPatch) ->
 
 @pytest.mark.requirement("AGENT-05")
 def test_help_lists_the_installed_app_verbs() -> None:
-    """[if] an agent runs opendj --help [then] install-cli and BOTH update verbs
+    """[if] opendj --help runs [then] it lists the installed-app verbs, [else stop].
+    [if] an agent runs opendj --help [then] install-cli and BOTH update verbs
     appear, [else stop].
 
     AGENT-13: an agent on a machine with only the installed app has no repo to
@@ -105,7 +106,8 @@ def test_help_lists_the_installed_app_verbs() -> None:
 
 @pytest.mark.requirement("AGENT-05")
 def test_list_verbs_footer_lists_the_installed_app_verbs() -> None:
-    """[if] an agent runs opendj --list-verbs [then] install-cli and both update
+    """[if] list-verbs prints its footer [then] it names the installed-app verbs, [else stop].
+    [if] an agent runs opendj --list-verbs [then] install-cli and both update
     verbs appear, [else stop]."""
     with redirect_stdout(io.StringIO()) as captured:
         main(["--list-verbs"])

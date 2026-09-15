@@ -240,7 +240,8 @@ def test_app_state_non_success_is_error(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_tools_list_carries_annotations(engine: Engine) -> None:
-    """[if] tools/list runs [then] every tool carries readOnlyHint, and the
+    """[if] tools/list is called [then] every tool carries annotations, [else stop].
+    [if] tools/list runs [then] every tool carries readOnlyHint, and the
     calls that change the world carry destructiveHint, [else stop]."""
     engine.page().start()
     async def _list_tools() -> list[Any]:
@@ -316,7 +317,8 @@ def test_status_stale_lock_port(tmp_path: Any) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_home_empty_tmp_dir_is_error_for_every_tool(tmp_path: Any) -> None:
-    """[if] HOME has no engine lock [then] every tool surfaces isError True with
+    """[if] HOME is an empty tmp dir [then] every tool answers an error, [else stop].
+    [if] HOME has no engine lock [then] every tool surfaces isError True with
     its error code readable in the text, [else stop].
 
     Issue #2895 acceptance: drive real stdio, no mocking. HOME points at an

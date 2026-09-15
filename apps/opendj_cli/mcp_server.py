@@ -22,6 +22,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 import httpx
 
 from apps.opendj_cli.api_cli import HTTP_METHODS, _parse_field, _parse_header, _request_body
+from apps.opendj_cli.engine_status import build_engine_status
 from apps.opendj_cli.client import (
     MIRROR_TIMEOUT_S,
     EngineClient,
@@ -127,21 +128,6 @@ def _resolve_origin() -> EngineOrigin:
 
 def _resolve_verified_origin() -> EngineOrigin:
     return resolve_verified_origin(_state.lock_path)
-
-
-def _fetch_json(origin: EngineOrigin, path: str) -> Any:
-    url = f"{origin.base_url}{path}"
-    try:
-        with httpx.Client(timeout=PROBE_TIMEOUT_S) as client:
-            response = client.get(url)
-    except httpx.TransportError as error:
-        raise unreachable(origin, error) from error
-    if response.status_code != 200:
-        return f"UNREACHABLE: {response.status_code} {response.text[:200]}"
-    try:
-        return response.json()
-    except ValueError:
-        return response.text
 
 
 def _parse_order_payload(
@@ -331,18 +317,9 @@ def create_server() -> MCPServer:
         except EngineNotRunning as error:
             raise _engine_not_running(error) from error
         try:
-            health = _fetch_json(origin, "/api/v1/health")
-            build_info = _fetch_json(origin, "/api/v1/build-info")
+            return build_engine_status(origin)
         except EngineNotRunning as error:
             raise _engine_not_running(error) from error
-        return {
-            "lock_path": str(origin.lock_path),
-            "origin": origin.base_url,
-            "pid": origin.pid,
-            "role": origin.role,
-            "health": health,
-            "build_info": build_info,
-        }
 
     @server.tool(annotations=_READ_ONLY, structured_output=True)
     def app_state(path: str = "/api/v1/setup/status") -> dict[str, Any]:

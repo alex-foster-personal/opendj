@@ -23,11 +23,17 @@ let server;
 let origin;
 /** stable_id -> {size} or {httpStatus} - what the real server will serve. */
 const catalog = new Map();
+/** stable_id -> request count - real socket hits, not a mocked call log. */
+const requestHits = new Map();
 
 before(async () => {
 	server = createServer((req, res) => {
 		const match = /^\/api\/v1\/tracks\/([^/]+)\/audio$/.exec(req.url ?? '');
 		const entry = match === null ? undefined : catalog.get(decodeURIComponent(match[1]));
+		if (entry !== undefined) {
+			const stable_id = decodeURIComponent(match[1]);
+			requestHits.set(stable_id, (requestHits.get(stable_id) ?? 0) + 1);
+		}
 		if (entry === undefined) {
 			res.writeHead(404).end();
 			return;
@@ -269,4 +275,46 @@ test('ensureAudioPrefetch still works after clearAudioPrefetchCache', async () =
 	cache.clearAudioPrefetchCache();
 	assert.equal(await prefetchAndSettle(cache, 'after-clear'), 'ready');
 	assert.equal(cache.audioPrefetchReadyCount(), 1);
+});
+
+// ------------------------------------------- PERFMODE-04 shed (audio-prefetch-cache-caps)
+
+test('while the shed defers, the fetch pump never starts; once released, it does', async () => {
+	const cache = await freshCache();
+	serve('gated', 64 * 1024);
+
+	const requests = [];
+	cache.setAudioPrefetchShedRequest((id) => requests.push(id));
+
+	cache.ensureAudioPrefetch('gated');
+	await new Promise((resolve) => setTimeout(resolve, 50));
+
+	assert.deepEqual(requests, ['audio-prefetch-cache-caps'], 'ensureAudioPrefetch must ask the shed, not fetch directly');
+	assert.equal(
+		requestHits.get('gated'),
+		undefined,
+		'the work effect (a real HTTP fetch) must be absent while the gate is closed'
+	);
+	assert.equal(cache.audioPrefetchStatus('gated'), 'loading', 'intent is recorded even though the fetch has not run');
+
+	// Release: the drain callback the job registers in app-init.ts.
+	await cache.resumeAudioPrefetchOwedPump();
+	assert.equal(
+		await prefetchAndSettle(cache, 'gated'),
+		'ready',
+		'the work effect must be present once the gate reopens'
+	);
+	assert.equal(requestHits.get('gated'), 1, 'exactly one real fetch once released');
+
+	cache.setAudioPrefetchShedRequest(null);
+});
+
+test('mutation control: an ungated cache is unaffected by setAudioPrefetchShedRequest(null)', async () => {
+	// Guards against a guard that always defers: with no shed armed (the
+	// production default before app-init.ts runs, and every existing test
+	// above), ensureAudioPrefetch must behave exactly as before this PR.
+	const cache = await freshCache();
+	serve('ungated', 4096);
+	assert.equal(await prefetchAndSettle(cache, 'ungated'), 'ready');
+	assert.equal(requestHits.get('ungated'), 1);
 });

@@ -16,6 +16,7 @@ from apps.sync_hub.transport import (
 
 @pytest.mark.requirement("CSSTATUS-10")
 def test_classify_transport_failure_includes_elapsed_for_502() -> None:
+    """[if] a 502 transport failure is classified [then] its kind is proxy timeout, [else stop]."""
     classified = classify_transport_failure(
         "POST https://hub:8870/api/v1/sync/push -> HTTP 502:  (after 31.2s)"
     )

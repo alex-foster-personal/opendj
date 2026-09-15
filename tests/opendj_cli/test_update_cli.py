@@ -53,7 +53,8 @@ def _apply(updater: Updater, *extra: str) -> int:
 
 @pytest.mark.requirement("AGENT-13")
 def test_check_names_the_status_and_both_versions(updater: Updater, capsys: Any) -> None:
-    """[if] the channel offers a newer build [then] check prints the status,
+    """[if] check finds an available update [then] it prints all three fields, [else stop].
+    [if] the channel offers a newer build [then] check prints the status,
     the current version and the available version and exits 0, [else stop]."""
     updater.start(
         app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
@@ -69,7 +70,8 @@ def test_check_names_the_status_and_both_versions(updater: Updater, capsys: Any)
 def test_check_exits_zero_when_the_channel_offers_nothing_new(
     updater: Updater, capsys: Any
 ) -> None:
-    """[if] this build is what the channel offers [then] check exits 0 naming
+    """[if] the channel offers no update [then] check exits 0 as up-to-date, [else stop].
+    [if] this build is what the channel offers [then] check exits 0 naming
     it current, [else stop]."""
     updater.start(
         app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RUNNING_VERSION
@@ -82,7 +84,8 @@ def test_check_exits_zero_when_the_channel_offers_nothing_new(
 def test_check_json_carries_the_engine_document(
     updater: Updater, capsys: Any
 ) -> None:
-    """[if] check runs with --json [then] stdout is the engine's own document,
+    """[if] check runs with --json [then] stdout parses as the engine's document, [else stop].
+    [if] check runs with --json [then] stdout is the engine's own document,
     [else stop]."""
     updater.start(
         app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
@@ -100,7 +103,8 @@ def test_check_json_carries_the_engine_document(
 def test_check_exits_nonzero_when_the_channel_is_behind_this_build(
     updater: Updater, capsys: Any
 ) -> None:
-    """[if] this build is newer than the channel [then] check exits nonzero
+    """[if] this build is ahead of the channel [then] check errors, not current, [else stop].
+    [if] this build is newer than the channel [then] check exits nonzero
     saying so, and never claims it is current, [else stop]."""
     updater.start(
         app_version="0.2.0", git_sha_full=RUNNING_SHA, publish=RUNNING_VERSION
@@ -114,7 +118,8 @@ def test_check_exits_nonzero_when_the_channel_is_behind_this_build(
 def test_check_exits_nonzero_when_nothing_answers_the_lock(
     updater: Updater, capsys: Any
 ) -> None:
-    """[if] the lock names a port nothing answers on [then] check exits nonzero
+    """[if] the lock names an unreachable port [then] check exits 2 naming the URL, [else stop].
+    [if] the lock names a port nothing answers on [then] check exits nonzero
     naming the URL it tried, [else stop]."""
     updater.lock_path.write_text(
         json.dumps({"pid": 1, "role": "opendj-engine", "host": "127.0.0.1", "port": 9}),
@@ -127,7 +132,8 @@ def test_check_exits_nonzero_when_nothing_answers_the_lock(
 
 @pytest.mark.requirement("AGENT-13")
 def test_apply_installs_and_prints_both_identities(updater: Updater, capsys: Any) -> None:
-    """[if] the channel offers a newer build [then] apply posts the order, waits
+    """[if] apply installs an offered build [then] it exits 0 with both identities, [else stop].
+    [if] the channel offers a newer build [then] apply posts the order, waits
     for the relaunch and exits 0 only once both app_version and git_sha_full
     are the announced build, [else stop]."""
     updater.start(
@@ -153,7 +159,8 @@ def test_apply_installs_and_prints_both_identities(updater: Updater, capsys: Any
 def test_apply_sends_nothing_when_the_channel_offers_nothing(
     updater: Updater, capsys: Any
 ) -> None:
-    """[if] the channel is not offering an update [then] apply exits nonzero
+    """[if] the channel offers no update [then] apply errors and posts nothing, [else stop].
+    [if] the channel is not offering an update [then] apply exits nonzero
     with the status and detail and posts no order, [else stop].
 
     The count is taken on the ENGINE, not on the CLI's behaviour: the engine
@@ -180,7 +187,8 @@ def test_apply_sends_nothing_when_the_channel_offers_nothing(
 def test_apply_surfaces_the_409_when_one_is_already_in_flight(
     updater: Updater, capsys: Any
 ) -> None:
-    """[if] another apply is already pending [then] apply exits nonzero with the
+    """[if] another apply is already pending [then] apply exits nonzero naming it, [else stop].
+    [if] another apply is already pending [then] apply exits nonzero with the
     409 status and detail, [else stop]."""
     updater.start(
         app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
@@ -196,7 +204,8 @@ def test_apply_surfaces_the_409_when_one_is_already_in_flight(
 def test_apply_refuses_a_relaunch_that_is_not_the_announced_version(
     updater: Updater, capsys: Any
 ) -> None:
-    """[if] the relaunched app reports a build the channel did not announce
+    """[if] the relaunch reports an unannounced version [then] apply exits nonzero, [else stop].
+    [if] the relaunched app reports a build the channel did not announce
     [then] apply exits nonzero rather than reporting success, [else stop]."""
     updater.start(
         app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
@@ -213,7 +222,8 @@ def test_apply_refuses_a_relaunch_that_is_not_the_announced_version(
 
 @pytest.mark.requirement("AGENT-13")
 def test_apply_bounds_the_wait_and_fails_loudly(updater: Updater, capsys: Any) -> None:
-    """[if] no shell ever claims the order [then] apply exits nonzero within its
+    """[if] no shell claims the order [then] apply exits nonzero by its deadline, [else stop].
+    [if] no shell ever claims the order [then] apply exits nonzero within its
     deadline rather than hanging, [else stop]."""
     updater.start(
         app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
@@ -230,7 +240,8 @@ def test_apply_bounds_the_wait_and_fails_loudly(updater: Updater, capsys: Any) -
 def test_apply_exits_three_when_the_shell_reports_a_failed_install(
     updater: Updater, capsys: Any
 ) -> None:
-    """[if] the shell reports the install failed [then] apply exits 3 with the
+    """[if] the shell reports a failed install [then] apply exits 3 with its error, [else stop].
+    [if] the shell reports the install failed [then] apply exits 3 with the
     shell's own error, [else stop]."""
     updater.start(
         app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
@@ -252,7 +263,8 @@ def test_apply_exits_three_when_the_shell_reports_a_failed_install(
 
 @pytest.mark.requirement("AGENT-13")
 def test_an_unknown_update_verb_is_a_usage_error(updater: Updater, capsys: Any) -> None:
-    """[if] update is given a verb it does not have [then] it exits 1 and names
+    """[if] update gets an unknown verb [then] it exits usage naming check/apply, [else stop].
+    [if] update is given a verb it does not have [then] it exits 1 and names
     the two it does, [else stop]."""
     updater.start(
         app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
@@ -267,7 +279,8 @@ def test_an_unknown_update_verb_is_a_usage_error(updater: Updater, capsys: Any) 
 def test_apply_refuses_a_relaunch_that_never_changes_the_identity(
     updater: Updater, capsys: Any
 ) -> None:
-    """[if] the relaunched app reports the SAME build [then] apply exits nonzero
+    """[if] the relaunch keeps the same identity [then] apply exits nonzero, [else stop].
+    [if] the relaunched app reports the SAME build [then] apply exits nonzero
     instead of calling the install done, [else stop]."""
     updater.start(
         app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION

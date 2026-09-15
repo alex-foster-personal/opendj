@@ -37,7 +37,8 @@ def _call_updater(
 
 @pytest.mark.requirement("AGENT-13")
 def test_update_check_reports_the_channel(updater: Updater) -> None:
-    """[if] the channel offers a newer build [then] update_check returns the
+    """[if] update check runs [then] the result names the channel, [else stop].
+    [if] the channel offers a newer build [then] update_check returns the
     engine's own check document, [else stop]."""
     updater.start(
         app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
@@ -54,7 +55,8 @@ def test_update_check_reports_the_channel(updater: Updater) -> None:
 def test_update_check_is_an_error_when_the_channel_cannot_be_read(
     updater: Updater, tmp_path: Any
 ) -> None:
-    """[if] the channel is not offering anything actionable [then] update_check
+    """[if] the channel cannot be read [then] update check is an error, [else stop].
+    [if] the channel is not offering anything actionable [then] update_check
     is an error result naming the status, [else stop]."""
     updater.start(
         app_version="0.2.0", git_sha_full=RUNNING_SHA, publish=RUNNING_VERSION
@@ -67,7 +69,8 @@ def test_update_check_is_an_error_when_the_channel_cannot_be_read(
 
 @pytest.mark.requirement("AGENT-13")
 def test_update_apply_is_gated_like_the_other_destructive_calls(updater: Updater) -> None:
-    """[if] the destructive gate is closed [then] update_apply is an error
+    """[if] update_apply runs gated closed [then] it errors destructive_blocked, [else stop].
+    [if] the destructive gate is closed [then] update_apply is an error
     naming destructive_blocked and posts no order, [else stop]."""
     updater.start(
         app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
@@ -88,7 +91,8 @@ def test_update_apply_is_gated_like_the_other_destructive_calls(updater: Updater
 
 @pytest.mark.requirement("AGENT-13")
 def test_update_apply_installs_and_reports_both_identities(updater: Updater) -> None:
-    """[if] the gate is open and the channel offers a newer build [then]
+    """[if] update_apply installs a new build [then] it reports both identities, [else stop].
+    [if] the gate is open and the channel offers a newer build [then]
     update_apply returns the before and after identities, [else stop]."""
     updater.start(
         app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
@@ -111,7 +115,8 @@ def test_update_apply_installs_and_reports_both_identities(updater: Updater) -> 
 
 @pytest.mark.requirement("AGENT-13")
 def test_update_apply_is_an_error_when_the_install_does_not_land(updater: Updater) -> None:
-    """[if] the shell reports the install failed [then] update_apply is an error
+    """[if] the shell reports a failed install [then] update_apply errors with it, [else stop].
+    [if] the shell reports the install failed [then] update_apply is an error
     carrying the shell's own error, [else stop]."""
     updater.start(
         app_version=RUNNING_VERSION, git_sha_full=RUNNING_SHA, publish=RELEASED_VERSION
