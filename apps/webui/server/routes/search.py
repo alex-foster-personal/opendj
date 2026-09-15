@@ -62,6 +62,15 @@ def search_collection(
     if not q.strip():
         return SearchResults(query=q, items=[], total=0, next_offset=None)
 
+    if "\x00" in q:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "SEARCH_QUERY_INVALID",
+                "message": "search query must not contain NUL bytes",
+            },
+        )
+
     try:
         hits, total = search_index.search(
             state_db_path, q, limit=limit, offset=offset,
@@ -70,6 +79,11 @@ def search_collection(
         raise HTTPException(
             status_code=503,
             detail={"code": "SEARCH_INDEX_UNAVAILABLE", "message": str(exc)},
+        ) from exc
+    except search_index.SearchQueryError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "SEARCH_QUERY_INVALID", "message": str(exc)},
         ) from exc
 
     context_by_id = dict(hits)
