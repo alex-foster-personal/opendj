@@ -67,9 +67,11 @@ librosa==0.10.*
 numba==0.65.1
 llvmlite==0.47.0
 # madmom 0.16.1 still imports ``collections.MutableSequence`` (removed in
-# Python 3.10+).  The maintained git HEAD has 3.12+ fixes.  Install with
-# ``pip install --no-build-isolation -r requirements.txt`` because madmom
-# needs cython+numpy at setup() time but declares no build-requires.
+# Python 3.10+).  The maintained git HEAD has 3.12+ fixes; pinned to a commit
+# SHA so upstream cannot change what setup.py runs without a diff here.
+# Install with ``pip install --no-build-isolation -r requirements.txt``:
+# madmom's own [build-system] asks for numpy>2, and building in isolation would
+# compile it against a numpy this venv's <2 pin never installs.
 #
 # NON-SHIPPABLE (NATIVE-08). madmom's own code is BSD-3-Clause, but the
 # pretrained beat/downbeat models it loads are CC BY-NC-SA 4.0
@@ -79,16 +81,14 @@ llvmlite==0.47.0
 # `apps/analysis/backends/__init__.py`'s registry refuses to resolve
 # `librosa+madmom` unless `MDT_BENCH_NONSHIPPABLE=1` is set, and no pyproject
 # extra or shipped payload declares madmom at all (NOTICE, docs/operator-setup.md).
-madmom @ git+https://github.com/CPJKU/madmom@main
-# madmom uses pkg_resources which was removed from setuptools>=81. Renovate's
-# security bump to <85 (PR #2736, CVE-2026-59890) broke this: verified
-# empirically that setuptools 84 has no pkg_resources module, so the
-# --no-build-isolation madmom install would fail. That CVE is a MANIFEST.in
-# Unicode-normalization exclusion bypass in `sdist` builds on macOS -- this
-# repo never publishes an sdist with MANIFEST.in secret exclusions, so the cap
-# stays below the removal line instead. See
-# tests/test_dependency_contract.py::test_setuptools_cap_still_excludes_the_pkg_resources_removal.
-setuptools<81
+madmom @ git+https://github.com/CPJKU/madmom@27f032e8947204902c675e5e341a3faf5dc86dae
+# Security floor: setuptools 83.0.0 fixed CVE-2026-59890 (GHSA-h35f-9h28-mq5c).
+# This used to be a `setuptools<81` cap on the belief that madmom imports
+# pkg_resources; madmom replaced that import with importlib.metadata in
+# upstream #540 (Sun 25 Aug 2024), and the SHA above builds and tracks beats
+# under setuptools 84 with pkg_resources absent. Do not re-add the cap. See
+# tests/test_dependency_contract.py::test_setuptools_floor_includes_the_cve_2026_59890_fix.
+setuptools>=83
 PyYAML>=6.0
 
 # Phase 15 -- open-dj spec validation + canonicalisation.
