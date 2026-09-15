@@ -1,8 +1,7 @@
 """Lifespan shutdown after a blocked audio-access probe (#2749 / PREFLIGHT-01).
 
 Regression lines:
-  - if engine lifespan shuts down after a blocked audio-access attempt [then]
-    shutdown finishes within the existing watcher join timeout, [else stop]
+  - [if] an audio probe blocks [then] preflight fails audio-access, shutdown ends <10 s, [else stop]
 """
 
 from __future__ import annotations

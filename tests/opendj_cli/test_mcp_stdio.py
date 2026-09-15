@@ -39,7 +39,7 @@ def call_tool(engine: Engine, tool: str, arguments: dict[str, Any]) -> dict[str,
 
 @pytest.mark.requirement("AGENT-11")
 def test_status_reports_lock_port(engine: Engine) -> None:
-    """[if] Open DJ is running [then] status reports the lock port and healthy engine."""
+    """[if] Open DJ is running [then] status reports lock port and healthy engine, [else stop]."""
     engine.page().start()
     payload = call_tool(engine, "status", {})
     assert str(engine.port) in payload["origin"]
@@ -48,7 +48,7 @@ def test_status_reports_lock_port(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_app_state_health(engine: Engine) -> None:
-    """[if] engine is up [then] app_state /api/v1/health returns ok."""
+    """[if] engine is up [then] app_state /api/v1/health returns ok, [else stop]."""
     engine.page().start()
     params = StdioServerParameters(
         command=sys.executable,
@@ -71,7 +71,7 @@ def test_app_state_health(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_command_master_mute_returns_mirror_delta(engine: Engine) -> None:
-    """[if] an agent calls command master_mute [then] the result includes a mirror delta."""
+    """[if] command orders master_mute [then] the result has a changed mirror_delta, [else stop]."""
     engine.page().start()
     payload = call_tool(
         engine,
@@ -84,7 +84,7 @@ def test_command_master_mute_returns_mirror_delta(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_status_engine_down(tmp_path: Any) -> None:
-    """[if] the engine is not running [then] status returns engine_not_running quickly."""
+    """[if] no engine is running [then] status says engine_not_running within 5 s, [else stop]."""
     missing = tmp_path / "missing.engine.lock"
     params = StdioServerParameters(
         command=sys.executable,
@@ -107,7 +107,7 @@ def test_status_engine_down(tmp_path: Any) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_library_writeback_blocked(engine: Engine) -> None:
-    """[if] library targets writeback apply [then] the server refuses before HTTP."""
+    """[if] library targets writeback apply [then] it returns writeback_blocked, [else stop]."""
     engine.page().start()
     payload = call_tool(
         engine,
@@ -122,7 +122,7 @@ def test_library_writeback_blocked(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_library_delete_blocked_without_destructive(engine: Engine) -> None:
-    """[if] DELETE is attempted without destructive flag [then] the server refuses."""
+    """[if] DELETE lacks the destructive flag [then] it returns destructive_blocked, [else stop]."""
     engine.page().start()
     payload = call_tool(
         engine,
@@ -134,7 +134,7 @@ def test_library_delete_blocked_without_destructive(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_command_play_prepends_master_mute(engine: Engine) -> None:
-    """[if] play is ordered without prior mute [then] master mute is prepended."""
+    """[if] play is ordered without prior mute [then] master mute is prepended, [else stop]."""
     page = engine.page()
     page.start()
     payload = call_tool(
@@ -148,7 +148,7 @@ def test_command_play_prepends_master_mute(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_app_state_rejects_invalid_paths(engine: Engine) -> None:
-    """[if] app_state path is outside /api/v1 [then] it is rejected before fetch."""
+    """[if] app_state path is outside /api/v1 [then] it returns invalid_path, [else stop]."""
     engine.page().start()
     for path in ("/health", "/api/v1/../health"):
         payload = call_tool(engine, "app_state", {"path": path})
@@ -157,7 +157,10 @@ def test_app_state_rejects_invalid_paths(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_status_stale_lock_port(tmp_path: Any) -> None:
-    """[if] the lock names a dead port [then] status reports engine_not_running or UNREACHABLE."""
+    """[if] the lock names a dead port [then] status reports not-running within 5 s, [else stop].
+
+    Not-running is either ``engine_not_running`` or an ``UNREACHABLE`` health string.
+    """
     lock_path = tmp_path / ".engine.lock"
     lock_path.write_text(
         json.dumps(
