@@ -71,6 +71,9 @@ export const SETUP_HOST_ROUTE = '/performance';
 /** The label every entry point shows, so they are recognisably the same door. */
 export const RUN_SETUP_LABEL = 'Run setup';
 
+/** Primary boot-gate CTA for empty libraries (issue #2722). */
+export const IMPORT_MUSIC_LABEL = 'Import your music';
+
 /**
  * The hover explanation, per the house rule that a control says what it does
  * and what it will change. Used as the enabled-state `title`; the refusal

@@ -76,6 +76,7 @@ except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.sol_review") from None
     raise
+from scripts.codex_home import CodexHomeUnavailable, select_codex_home
 from scripts.review_lane import (
     BADGE_COLORS,
     REPO,
@@ -181,6 +182,16 @@ def _seat_argv(seat: str, hostname: str | None = None) -> list[str]:
 def _run_seat(seat: str, prompt: str) -> subprocess.CompletedProcess[str]:
     if _is_local_seat(seat):
         env = {k: v for k, v in os.environ.items() if k != "OPENAI_API_KEY"}
+        # CODEX_HOME is set HERE, deterministically, rather than trusted from
+        # whatever the caller's shell happened to export. A stale ambient
+        # CODEX_HOME pointing at an expired seat used to fail silently into a
+        # 401; this fails explicitly (coverage MISS) or picks a live seat.
+        try:
+            codex_home, weekly_pct = select_codex_home()
+        except CodexHomeUnavailable as exc:
+            raise TriageError(f"coverage MISS: {exc}") from exc
+        env["CODEX_HOME"] = codex_home
+        print(f"[sol-review] local seat: CODEX_HOME={codex_home} ({weekly_pct}% weekly used)")
         return subprocess.run(
             _seat_argv(seat),
             input=prompt,

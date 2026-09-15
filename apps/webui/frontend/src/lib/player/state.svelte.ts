@@ -33,6 +33,7 @@ export function _emptyDeckState(deck_id: DeckId): DeckState {
 	return {
 		deck_id,
 		stable_id: null,
+		source_path: null,
 		title: null,
 		artist: null,
 		rating: null,

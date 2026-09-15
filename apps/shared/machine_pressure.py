@@ -44,10 +44,12 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from apps.shared.machine_pressure_signal import (
+    pressure_is_elevated,
+)
+
 # Locked signals (specs/perf-latency-program.md Pressure cluster, PERFMODE-05).
-KERNEL_ELEVATED_LEVEL = 2
 PRESSURE_CHURN_WEIGHT_SWAP = 10
-PRESSURE_CHURN_EARLY_WARNING = 500
 PRESSURE_CHURN_WINDOW_S = 1
 PRESSURE_SAMPLE_IDLE_MS = 1000
 PRESSURE_SAMPLE_ELEVATED_MS = 5000
@@ -94,16 +96,8 @@ def pressure_band_for_level(level: int) -> str:
     return {1: "fine", 2: "warning", 4: "critical"}[level]
 
 
-def _is_elevated(values: dict[str, Any]) -> bool:
-    kernel = values.get("kernel_memory_pressure_level")
-    if isinstance(kernel, int) and kernel >= KERNEL_ELEVATED_LEVEL:
-        return True
-    churn = values.get("churn_score")
-    return isinstance(churn, (int, float)) and churn >= PRESSURE_CHURN_EARLY_WARNING
-
-
 def _next_ttl_seconds(values: dict[str, Any]) -> float:
-    if _is_elevated(values):
+    if pressure_is_elevated(values):
         return PRESSURE_SAMPLE_ELEVATED_MS / 1000.0
     return PRESSURE_SAMPLE_IDLE_MS / 1000.0
 

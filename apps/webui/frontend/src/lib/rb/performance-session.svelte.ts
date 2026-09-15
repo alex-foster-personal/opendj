@@ -28,6 +28,8 @@ import { pushToast } from '$lib/stores.svelte';
 
 /** AC allows <=30s; 10s is the ship value for crash insurance between refreshes. */
 export const SESSION_SNAPSHOT_THROTTLE_MS = 10_000;
+/** RESCUE-01: simultaneous play restore only within ten minutes of capture. */
+export const RESCUE_RESTORE_MAX_AGE_MS = 600_000;
 
 const DECK_IDS: DeckId[] = [1, 2, 3, 4];
 const STEM_CONTROLS: StemControl[] = ['vocal', 'instrumental', 'drums'];
@@ -43,6 +45,7 @@ export interface PerformanceSessionRestoreOptions {
 	window?: Pick<Window, 'addEventListener' | 'removeEventListener'>;
 	setInterval?: typeof globalThis.setInterval;
 	clearInterval?: typeof globalThis.clearInterval;
+	skipDeckRestore?: boolean;
 }
 
 function _snapshotInputFromState(
@@ -203,54 +206,70 @@ async function _restoreDeck(
 	deckId: DeckId,
 	stable_id: string,
 	position_ms: number,
-	snapshot: PerformanceSessionSnapshot | null
+	snapshot: PerformanceSessionSnapshot | null,
+	skipSeek = false
 ): Promise<void> {
 	try {
 		await dispatch({ type: 'load', deck: deckId, stable_id });
-		if (position_ms > 0) {
+		if (!skipSeek && position_ms > 0) {
 			await dispatch({ type: 'seek', deck: deckId, position_ms });
 		}
 		if (snapshot === null) return;
-		const deck = snapshot.decks[deckId];
-		const channel = snapshot.mixer.channels[deckId];
-		const commands: PerformanceCommand[] = [
-			{ type: 'pitch_range', deck: deckId, range: deck.pitch_range },
-			{ type: 'tempo', deck: deckId, ratio: deck.pitch },
-			{ type: 'quantize', deck: deckId, enabled: deck.quantize_enabled },
-			{ type: 'beat_sync', deck: deckId, enabled: deck.beat_sync_enabled },
-			{ type: 'master_tempo', deck: deckId, enabled: deck.master_tempo_enabled },
-			{ type: 'key_sync', deck: deckId, enabled: deck.key_sync_enabled },
-			{ type: 'trim', deck: deckId, value: channel.trim },
-			{ type: 'eq', deck: deckId, band: 'high', value: channel.eq_high },
-			{ type: 'eq', deck: deckId, band: 'mid', value: channel.eq_mid },
-			{ type: 'eq', deck: deckId, band: 'low', value: channel.eq_low },
-			{ type: 'filter', deck: deckId, value: channel.filter },
-			{ type: 'fader', deck: deckId, value: channel.fader },
-			{ type: 'assign', deck: deckId, assign: channel.assign },
-			{ type: 'stem_eq_mode', deck: deckId, enabled: channel.stem_eq_mode ?? false }
-		];
-		for (const stem of STEM_CONTROLS) {
-			const control = snapshot.stems[deckId][stem];
-			commands.push({ type: 'stem_mute', deck: deckId, stem, muted: control.muted });
-			commands.push({ type: 'stem_solo', deck: deckId, stem, solo: control.solo });
-			if (control.gain !== undefined) {
-				commands.push({ type: 'stem_gain', deck: deckId, stem, value: control.gain });
-			}
-		}
-		for (const command of commands) {
-			await dispatch(command);
-		}
+		await restoreDeckConfigFromSnapshot(dispatch, deckId, snapshot);
 	} catch (exc) {
 		const message = exc instanceof Error ? exc.message : String(exc);
 		pushToast(`session restore deck ${deckId} failed: ${message}`, 'error');
 	}
 }
 
+export async function restoreDeckConfigFromSnapshot(
+	dispatch: typeof dispatchPerformanceCommand,
+	deckId: DeckId,
+	snapshot: PerformanceSessionSnapshot | PerformanceRescueDeckConfigSource
+): Promise<void> {
+	const deck = snapshot.decks[deckId];
+	const channel = snapshot.mixer.channels[deckId];
+	const commands: PerformanceCommand[] = [
+		{ type: 'pitch_range', deck: deckId, range: deck.pitch_range },
+		{ type: 'tempo', deck: deckId, ratio: deck.pitch },
+		{ type: 'quantize', deck: deckId, enabled: deck.quantize_enabled },
+		{ type: 'beat_sync', deck: deckId, enabled: deck.beat_sync_enabled },
+		{ type: 'master_tempo', deck: deckId, enabled: deck.master_tempo_enabled },
+		{ type: 'key_sync', deck: deckId, enabled: deck.key_sync_enabled },
+		{ type: 'trim', deck: deckId, value: channel.trim },
+		{ type: 'eq', deck: deckId, band: 'high', value: channel.eq_high },
+		{ type: 'eq', deck: deckId, band: 'mid', value: channel.eq_mid },
+		{ type: 'eq', deck: deckId, band: 'low', value: channel.eq_low },
+		{ type: 'filter', deck: deckId, value: channel.filter },
+		{ type: 'fader', deck: deckId, value: channel.fader },
+		{ type: 'assign', deck: deckId, assign: channel.assign },
+		{ type: 'stem_eq_mode', deck: deckId, enabled: channel.stem_eq_mode ?? false }
+	];
+	for (const stem of STEM_CONTROLS) {
+		const control = snapshot.stems[deckId][stem];
+		commands.push({ type: 'stem_mute', deck: deckId, stem, muted: control.muted });
+		commands.push({ type: 'stem_solo', deck: deckId, stem, solo: control.solo });
+		if (control.gain !== undefined) {
+			commands.push({ type: 'stem_gain', deck: deckId, stem, value: control.gain });
+		}
+	}
+	for (const command of commands) {
+		await dispatch(command);
+	}
+}
+
+type PerformanceRescueDeckConfigSource = Pick<
+	PerformanceSessionSnapshot,
+	'decks' | 'mixer' | 'stems'
+>;
+
 async function _restoreSession(
 	dispatch: typeof dispatchPerformanceCommand,
 	snapshot: PerformanceSessionSnapshot | null,
-	urlDeckIds: Partial<Record<DeeplinkDeckId, string>>
+	urlDeckIds: Partial<Record<DeeplinkDeckId, string>>,
+	skipDeckRestore: boolean
 ): Promise<void> {
+	if (skipDeckRestore) return;
 	if (snapshot !== null) {
 		await dispatch({ type: 'crossfader', value: snapshot.mixer.crossfader });
 		await dispatch({ type: 'master_volume', value: snapshot.mixer.master });
@@ -295,13 +314,16 @@ export function installPerformanceSessionRestore(
 		return () => {};
 	}
 
+	const nowFn = opts.now ?? (() => Date.now());
 	const snapshot = parsePerformanceSession(storage.getItem(PERFORMANCE_SESSION_STORAGE_KEY));
 	const urlDeckIds = parseLv2Ids(location.search ?? '');
 	let writer: SessionSnapshotWriter | null = null;
+	activeSessionWriter = null;
+	const skipDeckRestore = opts.skipDeckRestore ?? false;
 
-	void _restoreSession(dispatch, snapshot, urlDeckIds).finally(() => {
+	void _restoreSession(dispatch, snapshot, urlDeckIds, skipDeckRestore).finally(() => {
 		writer = createSessionSnapshotWriter({
-			now: opts.now ?? (() => Date.now()),
+			now: nowFn,
 			storage,
 			location,
 			replaceState,
@@ -312,10 +334,26 @@ export function installPerformanceSessionRestore(
 			clearInterval: opts.clearInterval
 		});
 		writer.flush(true);
+		activeSessionWriter = writer;
 	});
 
 	return () => {
 		writer?.dispose();
 		writer = null;
+		activeSessionWriter = null;
 	};
+}
+
+let activeSessionWriter: SessionSnapshotWriter | null = null;
+
+/** INSTALL-21 / RESCUE-01: final session snapshot before a confirmed shell quit. */
+export function flushPerformanceSessionSnapshot(): void {
+	if (activeSessionWriter !== null) {
+		activeSessionWriter.flush(true);
+		return;
+	}
+	if (typeof window === 'undefined' || window.location.pathname !== '/performance') return;
+	const now = Date.now();
+	const serialized = buildPerformanceSessionSnapshot(queryPerformanceState(), now);
+	window.localStorage.setItem(PERFORMANCE_SESSION_STORAGE_KEY, serialized);
 }

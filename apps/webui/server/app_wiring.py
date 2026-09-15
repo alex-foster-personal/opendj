@@ -6,10 +6,13 @@ factory stays under the complexity and file-size ratchets.
 """
 from __future__ import annotations
 
+import logging
 import os
 import socket
+import sqlite3
+import threading
 from collections.abc import AsyncIterator, Callable, Sequence
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +27,7 @@ from apps.feature_flags import FlagStore, load_flags
 from apps.play_analytics.api import router as play_analytics_router
 from apps.sets.api import router as sets_router
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
+from apps.shared.state.db import StateStoreBusyError
 from apps.sync_hub import hosted_config as sync_hub_hosted_config
 from apps.sync_hub.service import router as sync_hub_router
 from apps.webui.port_config import (
@@ -50,6 +54,8 @@ from .errors import (
     handle_rekordbox_writeback_disabled,
     handle_slice_not_contiguous,
     handle_smartlist_immutable,
+    handle_sqlite_busy_operational_error,
+    handle_state_store_busy,
     handle_target_inside_slice,
 )
 from .playlist_add import AlreadyExistsError, BulkLimitError, SmartlistImmutableError
@@ -63,7 +69,6 @@ from .routes import autolists as autolists_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes
-from .routes import error_feed as error_feed_routes
 from .routes import client_events as client_events_routes
 from .routes import cloudsync as cloudsync_routes
 from .routes import cloudsync_config as cloudsync_config_routes
@@ -74,6 +79,7 @@ from .routes import cloudsync_status as cloudsync_status_routes
 from .routes import commands as commands_routes
 from .routes import copilot as copilot_routes
 from .routes import dedup_review as dedup_review_routes
+from .routes import error_feed as error_feed_routes
 from .routes import feedback as feedback_routes
 from .routes import feedback_attachments as feedback_attachments_routes
 from .routes import feedback_performance_marks as feedback_performance_marks_routes
@@ -87,6 +93,7 @@ from .routes import ingest_pending as ingest_pending_routes
 from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
 from .routes import library_jobs as library_jobs_routes
+from .routes import lifecycle as lifecycle_routes
 from .routes import lyrics_search as lyrics_search_routes
 from .routes import lyrics_words as lyrics_words_routes
 from .routes import mytag as mytag_routes
@@ -94,6 +101,7 @@ from .routes import pairing_capture as pairing_capture_routes
 from .routes import pairings as pairings_routes
 from .routes import performance_headphones as performance_headphones_routes
 from .routes import performance_telemetry as performance_telemetry_routes
+from .routes import rescue_snapshots as rescue_snapshots_routes
 from .routes import play_it as play_it_routes
 from .routes import playlist_history as playlist_history_routes
 from .routes import playlist_sets as playlist_sets_routes
@@ -103,20 +111,21 @@ from .routes import playlists as playlists_routes
 from .routes import preflight as preflight_routes
 from .routes import progress as progress_routes
 from .routes import quality as quality_routes
-from .routes import sql_playground as sql_playground_routes
-from .routes import worktree_ports as worktree_ports_routes
 from .routes import queues as queues_routes
 from .routes import rb_assets as rb_assets_routes
 from .routes import rb_hot_cues as rb_hot_cues_routes
+from .routes import rb_djay_sync as rb_djay_sync_routes
 from .routes import reconcile as reconcile_routes
 from .routes import rekordbox_gate as rekordbox_gate_routes
 from .routes import relocate as relocate_routes
 from .routes import search as search_routes
 from .routes import settings as settings_routes
 from .routes import settings_ai as settings_ai_routes
+from .routes import shell as shell_routes
 from .routes import share as share_routes
 from .routes import smartlists as smartlists_routes
 from .routes import spotify as spotify_routes
+from .routes import sql_playground as sql_playground_routes
 from .routes import state as state_routes
 from .routes import stem_tiers as stem_tiers_routes
 from .routes import stems as stems_routes
@@ -129,9 +138,16 @@ from .routes import usb_volumes as usb_volumes_routes
 from .routes import usb_volumes_sim as usb_volumes_sim_routes
 from .routes import vocals as vocals_routes
 from .routes import voice_probe as voice_probe_routes
+from .routes import worktree_ports as worktree_ports_routes
+from .request_guard import (
+    host_allowlist_middleware,
+    install_request_guard,
+    origin_guard_middleware,
+)
 from .share_gate import ShareConfig, share_gate_middleware
 from .usage_telemetry import UsageStore
 
+log = logging.getLogger(__name__)
 
 class _SpaStaticFiles(StaticFiles):
     """Serve the SPA shell for extensionless client-side routes.
@@ -324,6 +340,76 @@ def _bind_stem_and_usage(
     app.state.usage_store = usage_store if usage_store is not None else UsageStore()
 
 
+def _startup_stem_index_refresh(source, data_dir: Path) -> None:
+    with suppress(Exception):
+        source.refresh_index(Path(data_dir), force=True)
+
+
+def _install_armed_stem_hydration(
+    app: FastAPI,
+    *,
+    data_dir: Path,
+    source,
+    start_refresh_thread: bool = True,
+) -> None:
+    from apps.cloud.stem_source import DirectR2Source
+
+    app.state.stem_hydration_source = source
+    app.state.stem_hydration_data_dir = data_dir
+    app.state.stem_hydration_unarmed_reason = None
+    app.state.stem_hydration_unarmed_kind = None
+    app.state.stem_hydration_cfg = None
+    app.state.stem_hydration_s3 = None
+    if isinstance(source, DirectR2Source):
+        app.state.stem_hydration_cfg = source.cfg
+        app.state.stem_hydration_s3 = source.s3
+    if start_refresh_thread:
+        threading.Thread(
+            target=_startup_stem_index_refresh,
+            args=(source, data_dir),
+            name="opendj-stem-index-startup-refresh",
+            daemon=True,
+        ).start()
+
+
+def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None:
+    """Wire on-demand stem hydration onto ``app.state`` (ADR-0024 / ADR-0025),
+    or leave it unset.
+
+    Unset is a legitimate machine state, not a failure: local mode, or a
+    machine with neither R2 credentials nor a configured hub, simply never
+    hydrates on demand. Routes check ``stem_hydration_source`` for ``None``
+    and fall back to pre-hydration behavior.
+
+    Configured but unable to arm (cloud mode with R2 credentials but no boto3,
+    or CloudSync enabled but hub unreachable / no sync credential at boot) is
+    NOT that legitimate state: the engine still boots, but
+    ``stem_hydration_unarmed_reason`` is set and stems misses answer 502
+    ``STEM_HYDRATION_NOT_ARMED``.
+    """
+    from apps.cloud.stem_source import arm_stem_hydration_source
+
+    app.state.stem_hydration_source = None
+    app.state.stem_hydration_data_dir = None
+    app.state.stem_hydration_unarmed_reason = None
+    app.state.stem_hydration_unarmed_kind = None
+    # Legacy test injection points; production uses stem_hydration_source.
+    app.state.stem_hydration_cfg = None
+    app.state.stem_hydration_s3 = None
+    if not enabled:
+        return
+    data_dir = Path(data_dir)
+    armed = arm_stem_hydration_source(data_dir)
+    if armed.unarmed_reason is not None:
+        app.state.stem_hydration_unarmed_reason = armed.unarmed_reason
+        app.state.stem_hydration_unarmed_kind = armed.unarmed_kind
+        app.state.stem_hydration_data_dir = data_dir
+        return
+    if armed.source is None:
+        return
+    _install_armed_stem_hydration(app, data_dir=data_dir, source=armed.source)
+
+
 def _install_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(NotFoundError, handle_not_found)
     app.add_exception_handler(
@@ -336,9 +422,13 @@ def _install_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(TargetInsideSliceError, handle_target_inside_slice)
     app.add_exception_handler(BulkLimitError, handle_bulk_limit)
     app.add_exception_handler(BackendError, handle_backend_error)
+    app.add_exception_handler(StateStoreBusyError, handle_state_store_busy)
+    app.add_exception_handler(
+        sqlite3.OperationalError, handle_sqlite_busy_operational_error,
+    )
 
 
-def _configure_cors(app: FastAPI, frontend_port: int | None) -> None:
+def _configure_cors(app: FastAPI) -> None:
     # NOTE: wildcard allow_methods/allow_headers is safe because
     # allow_origins is restricted to the SvelteKit dev server on
     # loopback. If you set MUSIC_DJ_BIND_HOST to expose the daemon
@@ -347,34 +437,12 @@ def _configure_cors(app: FastAPI, frontend_port: int | None) -> None:
     # allow_headers=["Content-Type","If-Match"]. The If-Match header
     # must remain allowed for optimistic-concurrency preflights.
     # See apps/webui/README.md -> "CORS policy" for rationale.
-    worktree_origins = (
-        [
-            f"http://localhost:{frontend_port}",
-            f"http://127.0.0.1:{frontend_port}",
-        ]
-        if frontend_port is not None
-        else []
-    )
-    share_origin = os.environ.get("MUSIC_DJ_SHARE_ORIGIN", "").strip()
-    if not share_origin and app.state.share_config.host:
-        share_origin = f"https://{app.state.share_config.host}"
-    share_origins = [share_origin] if share_origin else []
+    trusted_origins = getattr(app.state, "trusted_origins", ())
+    trusted_origin_regex = getattr(app.state, "trusted_origin_regex", None)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            *worktree_origins,
-            *share_origins,
-            # Isolated e2e verify stacks (loopback-only, see
-            # .planning/rekordbox-parity/e2e*): frontend :5273/:5275
-            # talks to daemons :8686/:8688 via VITE_API_BASE.
-            "http://localhost:5273", "http://127.0.0.1:5273",
-            "http://localhost:5275", "http://127.0.0.1:5275",
-        ],
-        # scripts/bench/serve.py is a loopback static server for the
-        # vocal quality rater; its port is a CLI arg (8791 by default,
-        # 87xx in parallel runs), so it needs a pattern, not a literal.
-        # POST /bench/ratings from that page is preflighted.
-        allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):87\d\d$",
+        allow_origins=list(trusted_origins),
+        allow_origin_regex=trusted_origin_regex,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -389,6 +457,8 @@ def _configure_cors(app: FastAPI, frontend_port: int | None) -> None:
 
 
 def _configure_http_middleware(app: FastAPI, bind_host: str) -> None:
+    app.middleware("http")(host_allowlist_middleware)
+    app.middleware("http")(origin_guard_middleware)
     app.middleware("http")(share_gate_middleware)
 
     @app.middleware("http")
@@ -422,6 +492,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         client_events_routes.router,
         performance_telemetry_routes.router,
         performance_headphones_routes.router,
+        rescue_snapshots_routes.router,
         bench_routes.router,
         bulk_edit_routes.router,
         find_replace_routes.router,
@@ -455,6 +526,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         stems_routes.router,
         stems_assets_routes.router,
         stem_tiers_routes.router,
+        rb_djay_sync_routes.router,
         reconcile_routes.router,
         rekordbox_gate_routes.router,
         relocate_routes.router,
@@ -469,6 +541,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         ingest_upload_routes.router,
         ingest_pending_routes.router,
         library_routes.router,
+        lifecycle_routes.router,
         lyrics_search_routes.router,
         lyrics_words_routes.router,
         health_routes.router,
@@ -477,6 +550,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         settings_ai_routes.router,
         state_routes.router,
         commands_routes.router,
+        shell_routes.router,
         ui_prefs_routes.router,
         cloudsync_routes.router,
         cloudsync_ops_routes.router,

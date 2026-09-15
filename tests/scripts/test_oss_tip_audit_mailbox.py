@@ -316,3 +316,45 @@ def test_a_local_part_must_be_dot_separated_atoms(tmp_path: Path) -> None:
         assert shape not in matches, f"a non dot-atom local part was reported: {shape}"
     for address in real:
         assert address in matches, f"{address} stopped being reported; the class is too narrow"
+
+
+def test_macos_iconset_slot_names_are_not_mailboxes(tmp_path: Path) -> None:
+    """#1808: scripts/desktop_icons.py's `_iconutil_round_trip` names its five
+    `@2x` iconset slots as quoted Python string literals, e.g.
+    ``"icon_16x16@2x.png"``. Unlike the tauri.conf.json entry already in
+    ALLOWED_NON_ADDRESSES (``128x128@2x.png``, matched after a `/` so `icon_`
+    is not absorbed), a literal has no `/` before it: the quote is not a word
+    boundary, so `icon_` joins the local part and the match differs, five
+    distinct enumerated strings not yet covered by the one existing entry.
+
+    Do NOT fix this by matching any `<word>x<word>@<n>x.<ext>` shape: the
+    control below is exactly that shape, at a size Apple's iconset never
+    ships, and it must still fire -- a rule loosened until it stops
+    complaining is worse than the false positive it was chasing (#1808).
+    """
+    iconset_lines = "\n".join(
+        f'    "icon_{size}@2x.png",' for size in ("16x16", "32x32", "128x128", "256x256", "512x512")
+    )
+    real_mailbox = _MAILBOX
+    unlisted_control = "icon_64x64" + "@" + "2x.png"  # not a real Apple iconset slot
+    path = _write(
+        tmp_path,
+        "desktop_icons_fixture.py",
+        "expected = {\n"
+        f"{iconset_lines}\n"
+        "}\n"
+        f"# {real_mailbox}\n"
+        f"# {unlisted_control}\n",
+    )
+
+    result = audit_paths(tmp_path, [path])
+    matches = [f.match for f in result.findings]
+
+    for size in ("16x16", "32x32", "128x128", "256x256", "512x512"):
+        literal = f"icon_{size}@2x.png"
+        assert literal not in matches, f"{literal} is an Apple iconset slot name, not a mailbox"
+    assert real_mailbox in matches, "a real mailbox alongside the iconset names stopped firing"
+    assert unlisted_control in matches, (
+        "an unlisted icon-shaped string stopped firing -- the rule was loosened "
+        "by shape instead of fixed by enumeration"
+    )

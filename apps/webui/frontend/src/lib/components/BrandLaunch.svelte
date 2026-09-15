@@ -1,6 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { completeBrandLaunch, shouldPlayBrandLaunch } from '$lib/brand-launch';
+	import {
+		BRAND_LAUNCH_DURATION_MS,
+		BRAND_LAUNCH_FADE_MS,
+		BRAND_LAUNCH_HOLD_MS,
+		BRAND_LAUNCH_SLIDE_MS,
+		completeBrandLaunch,
+		shouldPlayBrandLaunch
+	} from '$lib/brand-launch';
 
 	let visible = $state(false);
 
@@ -16,13 +23,33 @@
 </script>
 
 {#if visible}
-	<div class="brand-launch" aria-label="Open DJ launch animation" onanimationend={finish}>
-		<!-- The shipped mark itself, not an imitation of it. Spinning the real
-		     artwork is also what the maintainer's OPS-10 note asked for: the two shades
-		     meet along a diagonal, so the split IS the divider line that lets
-		     you see it spin, and it decelerates onto the finished logo. -->
-		<div class="brand-mark" aria-hidden="true"></div>
-		<div class="brand-lockup"><span class="brand-name">Open DJ</span></div>
+	<div
+		class="brand-launch"
+		aria-label="Open DJ launch animation"
+		style="
+			--brand-slide-ms: {BRAND_LAUNCH_SLIDE_MS}ms;
+			--brand-hold-ms: {BRAND_LAUNCH_HOLD_MS}ms;
+			--brand-fade-ms: {BRAND_LAUNCH_FADE_MS}ms;
+			--brand-total-ms: {BRAND_LAUNCH_DURATION_MS}ms;
+		"
+		onanimationend={finish}
+	>
+		<div class="brand-mark" aria-hidden="true">
+			<svg class="brand-mark-svg" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+				<path
+					class="brand-half-dark"
+					data-testid="brand-launch-half-dark"
+					d="M 367.72,144.28 A 188.00,188.00 0 0,0 101.85,410.15 Z"
+					fill="#9c4b34"
+				/>
+				<path
+					class="brand-half-light"
+					data-testid="brand-launch-half-light"
+					d="M 410.15,101.85 A 188.00,188.00 0 0,1 144.28,367.72 Z"
+					fill="#D97757"
+				/>
+			</svg>
+		</div>
 	</div>
 {/if}
 
@@ -33,62 +60,61 @@
 		z-index: 1200;
 		display: grid;
 		place-items: center;
-		align-content: center;
-		gap: clamp(1rem, 3vw, 1.8rem);
 		background: #050505;
 		pointer-events: none;
-		animation: launch-fade 2.7s ease-out forwards;
+		animation: launch-fade var(--brand-fade-ms) ease-out forwards;
+		animation-delay: calc(var(--brand-slide-ms) + var(--brand-hold-ms));
 	}
 	.brand-mark {
 		width: clamp(7rem, 20vw, 12rem);
 		aspect-ratio: 1;
-		background: url('/favicon.svg') center / contain no-repeat;
-		animation: orbit-turn 2.2s cubic-bezier(0.2, 0.75, 0.25, 1) forwards;
 	}
-	.brand-lockup {
-		display: grid;
-		justify-items: center;
-		animation: mark-arrive 2.7s ease-out forwards;
+	.brand-mark-svg {
+		display: block;
+		width: 100%;
+		height: 100%;
 	}
-	/* Anybody 800 at width 150, ALL CAPS: the maintainer's blind pick on Thu 10 Sep 2026 to sit
-	   beside the terracotta mark. A 1.6 KB static instance subset to the wordmark's glyphs,
-	   shipped in static/ so the launch stays offline. Every candidate and round is kept in
-	   docs/brand/wordmark-font/. */
-	@font-face {
-		font-family: 'Anybody Wordmark';
-		src: url('/fonts/anybody-800-w150-wordmark.woff2') format('woff2');
-		font-weight: 800;
-		font-display: block;
+	.brand-half-dark,
+	.brand-half-light {
+		animation-duration: var(--brand-slide-ms);
+		animation-timing-function: ease-out;
+		animation-fill-mode: both;
 	}
-	.brand-name {
-		color: #fff;
-		font-family: 'Anybody Wordmark', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-		font-size: clamp(1.7rem, 4.2vw, 2.9rem);
-		font-weight: 800;
-		letter-spacing: -0.01em;
-		text-transform: uppercase;
+	.brand-half-dark {
+		animation-name: brand-half-slide-dark;
 	}
-	/* The end rotation MUST be a multiple of 360deg. The two halves of the mark
-	   carry different shades, so any other terminal angle settles on a mark
-	   whose colors are swapped relative to the shipped artwork. The old value
-	   was 900deg, which is 180deg out, and it went unnoticed because the rings
-	   this replaced were their own artwork and had nothing to be wrong about.
-	   Same eased shape as before, scaled from 900 to 1080. */
-	@keyframes orbit-turn {
-		0% { transform: rotate(0deg) scale(0.78); }
-		35% { transform: rotate(648deg) scale(1.16); }
-		70% { transform: rotate(984deg) scale(1.04); }
-		100% { transform: rotate(1080deg) scale(1); }
+	.brand-half-light {
+		animation-name: brand-half-slide-light;
 	}
-	@keyframes mark-arrive {
-		0%, 62% { opacity: 0; transform: translateY(0.5rem) scale(0.92); }
-		100% { opacity: 1; transform: translateY(0) scale(1); }
+	@keyframes brand-half-slide-dark {
+		from {
+			transform: translate(-28%, 28%);
+		}
+		to {
+			transform: translate(0, 0);
+		}
+	}
+	@keyframes brand-half-slide-light {
+		from {
+			transform: translate(28%, -28%);
+		}
+		to {
+			transform: translate(0, 0);
+		}
 	}
 	@keyframes launch-fade {
-		0%, 83% { opacity: 1; }
-		100% { opacity: 0; }
+		from {
+			opacity: 1;
+		}
+		to {
+			opacity: 0;
+		}
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.brand-launch, .brand-mark, .brand-lockup { animation-duration: 1ms; }
+		.brand-half-dark,
+		.brand-half-light {
+			animation: none;
+			transform: none;
+		}
 	}
 </style>

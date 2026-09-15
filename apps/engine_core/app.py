@@ -39,6 +39,12 @@ from apps.engine_core.account.api import (
     entitlements_router,
     flags_router,
 )
+from apps.engine_core.availability_api import add_availability_routes
+from apps.engine_core.rescue_api import add_rescue_routes
+from apps.engine_core.library_availability import (
+    LibraryAvailabilityWorker,
+    attach_library_changed_probe,
+)
 from apps.engine_core.assistant.api import router as assistant_router
 from apps.engine_core.build_info import BUILD_IDENTITY_STATE_ATTR, add_build_info_route
 from apps.engine_core.host_info import add_host_info_route
@@ -62,20 +68,22 @@ from apps.engine_core.jobs.runner import (
 from apps.engine_core.jobs.store import JobStore
 from apps.engine_core.lock import EngineLock
 from apps.engine_core.setup.api import router as setup_router
-from apps.engine_core.update_channel import add_update_check_route
+from apps.engine_core.update_channel import add_update_apply_route, add_update_check_route
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.feature_flags import load_flags
 from apps.shared import events, platform_paths
 from apps.shared.library_mode import apply_library_env, assert_ready
 from apps.shared.paths import STATE_DB
 from apps.shared.sync_bind_guard import assert_sync_bind_allowed
+from apps.webui.server.request_guard import assert_request_guard_bind_allowed
+from apps.cloud import job as cloud_job
 from apps.stems import job as stems_job
 from apps.stems.api import router as stems_plan_router
 from apps.stems.live_capability import assess_install_once
 from apps.stems.live_capability_api import router as live_stems_capability_router
 from apps.sync_hub.scheduler import scheduler_lifespan
 from apps.webui.library_assets import ensure_stem_storage, stem_storage
-from apps.webui.server import analysis_autostart
+from apps.webui.server import analysis_autostart, library_jobs_autostart
 from apps.webui.server.app import _SpaStaticFiles
 from apps.webui.server.app import create_app as legacy_create_app
 from apps.webui.server.backend import StateBackend
@@ -112,6 +120,7 @@ def create_app(
     """Build the engine app. No import-time construction, no globals."""
     assert_no_progress_ledger(cfg.data_dir)
     assert_sync_bind_allowed(cfg.host)
+    assert_request_guard_bind_allowed(cfg.host)
     prepare_layout(cfg)
 
     boot_id = lock.boot_id if lock is not None else str(uuid.uuid4())
@@ -177,6 +186,10 @@ def create_app(
     # verification. Here so an agent and a browser tab can ask the same
     # question the shell's button asks.
     add_update_check_route(app)
+    add_update_apply_route(app)
+    availability_worker = LibraryAvailabilityWorker(cfg.data_dir)
+    add_availability_routes(app, availability_worker)
+    add_rescue_routes(app)
 
     _drop_root_placeholder(app)
     _mount_spa(app)
@@ -195,8 +208,17 @@ def create_app(
     # a half-written file change behaviour mid-request. A malformed file
     # raises here and stops the boot rather than degrading into defaults.
     app.state.feature_flags = load_flags(cfg.data_dir)
+    app.state.availability_worker = availability_worker
 
-    _wrap_lifespan(app, cfg=cfg, hub=hub, store=store, runner=runner, lock=lock)
+    _wrap_lifespan(
+        app,
+        cfg=cfg,
+        hub=hub,
+        store=store,
+        runner=runner,
+        lock=lock,
+        availability_worker=availability_worker,
+    )
     return app
 
 
@@ -216,6 +238,8 @@ def _register_job_kinds() -> None:
     register_worker(stems_job.JOB_KIND, stems_job.build_argv)
     register_progress_observer(stems_job.JOB_KIND, stems_job.on_progress)
     register_reconcile(stems_job.JOB_KIND, stems_job.reconcile_from_disk)
+    register_worker(cloud_job.JOB_KIND, cloud_job.build_argv)
+    register_reconcile(cloud_job.JOB_KIND, cloud_job.reconcile_from_disk)
 
 
 # ----- legacy composition ------------------------------------------------
@@ -263,6 +287,14 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
         # step, so it arms the CloudSync scheduler. Armed is not running: it
         # still waits for MDT_CLOUDSYNC_SCHEDULER=1 and MDT_CLOUDSYNC_HUB_URL.
         cloudsync_scheduler=True,
+        # User-ordered stems and lyrics jobs (/api/v1/library-jobs) only run if
+        # the daemon drains them. Same MUSIC_DJ_LIBRARY_JOBS contract as the
+        # standalone webui daemon; without it the installed app queued jobs
+        # that stayed pending forever.
+        auto_user_jobs=library_jobs_autostart.arm_from_environ(os.environ),
+        # STEM-31 / ADR-0025: on-demand stem hydration (ADR-0024). Armed is not
+        # running: it stays inert in local mode or when hydration cannot arm.
+        stem_hydration=True,
     )
 
 
@@ -360,6 +392,7 @@ def _wrap_lifespan(
     store: JobStore,
     runner: JobRunner,
     lock: EngineLock | None,
+    availability_worker: LibraryAvailabilityWorker,
 ) -> None:
     """Wrap, never replace, the legacy lifespan.
 
@@ -372,6 +405,7 @@ def _wrap_lifespan(
     async def _lifespan(instance: FastAPI) -> AsyncIterator[None]:
         hub.bind(asyncio.get_running_loop())
         events.set_hub(hub)
+        restore_hub_publish = attach_library_changed_probe(availability_worker, hub)
         await runner.start()
         heartbeat = (
             asyncio.create_task(_heartbeat(lock)) if lock is not None else None
@@ -390,8 +424,16 @@ def _wrap_lifespan(
             # The CloudSync scheduler idles until cloudsync-config.json (or
             # its env overrides) turns it on, and never starts on the hub.
             cloudsync_dir = Path(str(instance.state.state_db_path)).resolve().parent.parent
-            async with legacy_lifespan(instance), scheduler_lifespan(cloudsync_dir):
-                yield
+            async with legacy_lifespan(instance), scheduler_lifespan(
+                cloudsync_dir,
+                ui_mirror_provider=lambda: getattr(instance.state, "ui_mirror", None),
+            ) as sched:
+                instance.state.sync_hub_scheduler = sched
+                availability_worker.start()
+                try:
+                    yield
+                finally:
+                    availability_worker.stop()
         finally:
             if heartbeat is not None:
                 heartbeat.cancel()
@@ -407,6 +449,7 @@ def _wrap_lifespan(
             try:
                 await runner.stop()
             finally:
+                hub.publish = restore_hub_publish  # type: ignore[method-assign]
                 events.set_hub(None)
                 hub.unbind()
                 store.close()

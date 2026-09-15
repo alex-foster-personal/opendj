@@ -209,11 +209,14 @@ test('isUpdaterExpected discriminates dev, repo, payload, and Tauri', () => {
 	}
 });
 
-test('same version from another build is surfaced, not hidden behind up-to-date', () => {
+test('a same-version local build reads as plain and quiet, never a warning', () => {
 	const drifted = { ...ANSWERED_UP_TO_DATE, same_version_different_build: true };
 	const summary = mod.summarizeUpdate({ kind: 'ok', value: drifted });
-	assert.equal(summary.prominent, true);
-	assert.match(summary.label, /other build/);
+	assert.equal(summary.prominent, false);
+	assert.equal(summary.label, 'not the release build');
+	assert.doesNotMatch(summary.label, /other build/);
+	assert.ok(summary.title.includes(drifted.available_version));
+	assert.ok(summary.title.includes(drifted.current_git_sha));
 });
 
 test('a build ahead of the channel says so rather than claiming currency', () => {

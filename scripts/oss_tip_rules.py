@@ -185,6 +185,25 @@ ALLOWED_NON_ADDRESSES = frozenset(
     {
         "128x128@2x.png",  # tauri icon name, apps/desktop/src-tauri/tauri.conf.json
         "signalsmith-stretch@1.3.2.patch",  # pnpm patch spec, package.json
+        # The macOS iconset names in scripts/desktop_icons.py's own
+        # `_iconutil_round_trip` expected-slot set. There the name sits inside a
+        # quoted Python string literal rather than after a `/`, so `icon_` is a
+        # word character joined onto the local part and the match differs from
+        # the tauri.conf.json entry above -- five entries, one per Apple iconset
+        # slot that carries an `@2x` scale suffix (#1808). Do NOT rename the
+        # icon files to dodge this: iconutil's iconset slot names are a fixed
+        # Apple contract, not something this repo controls.
+        "icon_16x16@2x.png",
+        "icon_32x32@2x.png",
+        "icon_128x128@2x.png",
+        "icon_256x256@2x.png",
+        "icon_512x512@2x.png",
+        # tests/scripts/test_oss_tip_audit_mailbox.py's own f-string TEMPLATE
+        # for generating the five entries above, scanned as source text before
+        # Python ever substitutes `{size}`: the audit sees the literal
+        # characters `icon_{size}@2x.png` in the .py file itself, which is
+        # the same iconset shape as the entries above, not a mailbox.
+        "icon_{size}@2x.png",
     }
 )
 # The files whose whole function is holding the addresses attached to this
@@ -202,7 +221,19 @@ MAILBOX_EXEMPT_PATHS = frozenset({".mailmap", "docs/git-author-convention.md"})
 # agentbox README and `.env.sample`; no Tailscale network carries it. Enumerated,
 # not prefix-matched: `example-tailnet-prod` would be a different network and is
 # reported (#1808).
-_ALLOWED_TAILNETS = frozenset({"example", "example-tailnet"})
+_ALLOWED_TAILNETS = frozenset(
+    {
+        "example",
+        "example-tailnet",
+        # Negative-example label `tests/scripts/test_oss_tip_audit.py` builds to
+        # prove the tailnet-name rule fires; not a network anyone operates.
+        "not-a-real-tailnet",
+        # Negative-example label `tests/webui/test_crate_sync.py` builds to prove
+        # a push destination on the WRONG tailnet is rejected; not a network
+        # anyone operates.
+        "not-this-deployments-tailnet",
+    }
+)
 
 # A URL AUTHORITY immediately before a match means the `/Users/` (or `/home/`,
 # or `C:\Users\`) segment is a URL ROUTE, not a home directory. The GitHub REST

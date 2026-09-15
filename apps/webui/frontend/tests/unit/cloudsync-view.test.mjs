@@ -16,9 +16,12 @@ import { before, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let view;
+let ApiError;
 
 before(async () => {
 	view = await loadTypeScriptModule('src/lib/components/cloudsync/cloudsync-view.ts');
+	const client = await loadTypeScriptModule('src/lib/api/client.ts');
+	ApiError = client.ApiError;
 });
 
 function policy(overrides = {}) {
@@ -49,6 +52,7 @@ function status(overrides = {}) {
 		rows_pending: null,
 		endpoint: null,
 		recent_results: [],
+		update_required: null,
 		...overrides
 	};
 }
@@ -226,6 +230,98 @@ test('chipShortLabel is three letters or fewer for compact viewports', () => {
 	);
 });
 
+// requirement: CSSTATUS-04
+// [if] a local in-progress 409 is presented [then] the summary names conflict and next step without raw host or HTTP 409, [else stop]
+test('a local in-progress 409 gets a plain conflict summary with raw text only in details', () => {
+	const raw =
+		'a CloudSync sync (a Sync now or a scheduler round) is already running against this data dir';
+	const error = new ApiError(409, 'CLOUDSYNC_SYNC_IN_PROGRESS', raw, new Response());
+	const presented = view.presentCloudSyncError(error);
+	assert.match(presented.summary, /conflict/i);
+	assert.match(presented.summary, /wait|refresh|try again/i);
+	assert.doesNotMatch(presented.summary, /HTTP 409/);
+	assert.doesNotMatch(presented.summary, /http:\/\//i);
+	assert.doesNotMatch(presented.ariaLabel, /HTTP 409/);
+	assert.equal(presented.details, raw);
+	assert.equal(presented.isConflict409, true);
+});
+
+// requirement: CSSTATUS-04
+// [if] a journaled SyncDigestMismatch row is presented [then] the conflict summary is shown and the raw text stays in details, [else stop]
+test('a journaled SyncDigestMismatch gets the remote conflict summary', () => {
+	const raw = 'SyncDigestMismatch: local and hub digests disagree after sync';
+	const presented = view.presentCloudSyncResultError({ status: 'error', message: raw });
+	assert.equal(presented.summary, view.CLOUDSYNC_REMOTE_409_SUMMARY);
+	assert.equal(presented.details, raw);
+	assert.equal(presented.isConflict409, true);
+});
+
+// requirement: CSSTATUS-04
+// [if] a transport-shaped HTTP 409 message is presented [then] the remote conflict summary is shown and the raw input stays in details, [else stop]
+test('a transport-shaped HTTP 409 gets the remote conflict summary', () => {
+	const raw = 'POST http://internal-hub.example/api/v1/sync -> HTTP 409: track_vendor_ids conflict';
+	const presented = view.presentCloudSyncResultError({ status: 'error', message: raw });
+	assert.equal(presented.summary, view.CLOUDSYNC_REMOTE_409_SUMMARY);
+	assert.equal(presented.details, raw);
+	assert.equal(presented.isConflict409, true);
+});
+
+// requirement: CSSTATUS-04
+// [if] a non-409 error is presented [then] the generic failure summary is shown and raw text stays in details, [else stop]
+test('a non-409 error gets a safe failure summary', () => {
+	const raw = 'POST http://hub.example/api/v1/sync -> HTTP 502: hub unreachable';
+	const presented = view.presentCloudSyncResultError({ status: 'error', message: raw });
+	assert.equal(presented.summary, view.CLOUDSYNC_GENERIC_ERROR_SUMMARY);
+	assert.equal(presented.details, raw);
+	assert.equal(presented.isConflict409, false);
+});
+
+// requirement: CSSTATUS-04
+// [if] the chip is in error [then] chipTitle uses the safe summary plus the CloudSync link CTA, [else stop]
+test('chipTitle uses the safe error summary plus Click to open CloudSync', () => {
+	const live = { configured: true, running: true, enabled: true };
+	const raw = 'POST http://internal-hub.example/api/v1/sync -> HTTP 409: busy';
+	const title = view.chipTitle(
+		status({ ...live, last_result: { status: 'error', message: raw } }),
+		null
+	);
+	assert.match(title, /CloudSync conflict:/);
+	assert.match(title, /Click to open CloudSync\./);
+	assert.doesNotMatch(title, /HTTP 409/);
+	assert.doesNotMatch(title, /internal-hub/);
+});
+
+// requirement: CSSTATUS-04
+// [if] the chip is in error [then] chipAriaLabel is descriptive, [else stop]
+test('chipAriaLabel is descriptive for error and stable for non-error states', () => {
+	const live = { configured: true, running: true, enabled: true };
+	const raw = 'CLOUDSYNC_SYNC_IN_PROGRESS: already running';
+	const errorStatus = status({ ...live, last_result: { status: 'error', message: raw } });
+	assert.match(view.chipAriaLabel(errorStatus, null), /another sync is already running/);
+	assert.equal(view.chipAriaLabel(status(live), null), 'CloudSync status');
+	assert.equal(view.chipAriaLabel(null, null), 'CloudSync status');
+});
+
+// requirement: CSSTATUS-04
+// [if] chip state helpers are unchanged [then] off/syncing/ok/error/inconclusive labels still match, [else stop]
+test('chip state helpers still return the existing off/syncing/ok/error/inconclusive values', () => {
+	const live = { configured: true, running: true, enabled: true };
+	assert.equal(view.chipState(status(live)), 'syncing');
+	assert.equal(
+		view.chipState(status({ ...live, last_result: { status: 'ok', message: '' } })),
+		'ok'
+	);
+	assert.equal(
+		view.chipState(status({ ...live, last_result: { status: 'error', message: '' } })),
+		'error'
+	);
+	assert.equal(view.chipShortLabel(status({ ...live, last_result: { status: 'error', message: '' } })), 'err');
+	assert.equal(
+		view.chipShortLabel(status({ ...live, last_result: { status: 'inconclusive', message: '' } })),
+		'inc'
+	);
+});
+
 test('chipTitle names the state and links to /cloudsync', () => {
 	/** if the tooltip CTA still points at the old popover then broken */
 	assert.equal(view.CHIP_HREF, '/cloudsync');
@@ -256,12 +352,42 @@ test('chipTitle names the state and links to /cloudsync', () => {
 
 test('Sync now posts the effective hub URL and machine name, and refuses without a hub', () => {
 	/** if Sync now fires with no hub URL, or ignores the effective (env-won) URL, then broken */
-	assert.equal(view.syncNowRequest(null).kind, 'refuse');
-	assert.equal(view.syncNowRequest(config()).kind, 'refuse');
+	const openGate = { appPosture: 'prep', uiMirror: null };
+	assert.equal(view.syncNowRequest(null, openGate).kind, 'refuse');
+	assert.equal(view.syncNowRequest(config(), openGate).kind, 'refuse');
 	const decision = view.syncNowRequest(
-		config({ hub_url: 'http://env-hub:8686', hub_url_source: 'env', machine_name: 'silver' })
+		config({ hub_url: 'http://env-hub:8686', hub_url_source: 'env', machine_name: 'silver' }),
+		openGate
 	);
 	assert.deepEqual(decision, { kind: 'post', body: { hub_url: 'http://env-hub:8686', name: 'silver' } });
+});
+
+test('syncNowRequest refuses when gig posture gates sync', () => {
+	const decision = view.syncNowRequest(
+		config({ hub_url: 'http://hub:8686', configured: true }),
+		{ appPosture: 'gig', uiMirror: null }
+	);
+	assert.equal(decision.kind, 'refuse');
+	assert.match(decision.reason, /gig_posture/);
+});
+
+test('syncNowRequest refuses when a deck is playing', () => {
+	const decision = view.syncNowRequest(
+		config({ hub_url: 'http://hub:8686', configured: true }),
+		{ appPosture: 'prep', uiMirror: { decks: { '1': { playing: true } } } }
+	);
+	assert.equal(decision.kind, 'refuse');
+	assert.match(decision.reason, /deck_playing/);
+});
+
+test('forceSyncNowRequest posts force true and ignores gate', () => {
+	const decision = view.forceSyncNowRequest(
+		config({ hub_url: 'http://hub:8686', machine_name: 'silver', configured: true })
+	);
+	assert.deepEqual(decision, {
+		kind: 'post',
+		body: { hub_url: 'http://hub:8686', name: 'silver', force: true }
+	});
 });
 
 test('the config form mirrors the backend validator', () => {
@@ -286,6 +412,134 @@ test('cloudSyncTabFromUrl maps tab query params to the visible tab', () => {
 	assert.equal(tab('?tab=nope'), 'status');
 });
 
+// ----------------------------------------------------------- status headline
+// requirement: CSSTATUS-05
+// if a raw connection-refused exception ever renders as a bare "error" with
+// no cause and no next step then broken
+
+test('plainSyncFailureCause names common transport failures and never invents unknown ones', () => {
+	/** if an unrecognized message is dropped instead of falling back then broken */
+	assert.match(
+		view.plainSyncFailureCause('POST http://h:1/api/v1/sync/hello failed: [Errno 61] Connection refused'),
+		/could not reach the hub machine \(connection refused\)/
+	);
+	assert.match(view.plainSyncFailureCause('Read timed out'), /did not respond in time \(timeout\)/);
+	assert.match(
+		view.plainSyncFailureCause('getaddrinfo ENOTFOUND hub.example'),
+		/hub address could not be found \(DNS lookup failed\)/
+	);
+	assert.match(view.plainSyncFailureCause('401 Unauthorized'), /rejected the sign-in/);
+	assert.match(view.plainSyncFailureCause('some brand new exception text'), /last sync attempt failed/);
+});
+
+test('statusHeadline leads with a plain sentence and a next step for every state', () => {
+	/** if an error result renders a bare word with no cause and no next step then broken */
+	const errorHeadline = view.statusHeadline(
+		status({
+			configured: true,
+			running: true,
+			last_result: { status: 'error', message: '[Errno 61] Connection refused' }
+		})
+	);
+	assert.equal(errorHeadline.tone, 'error');
+	assert.match(errorHeadline.text, /^Not synced: could not reach the hub machine/);
+	assert.match(errorHeadline.text, /Sync now/);
+
+	/** if "not configured" ever reads as a bare no/off with no next step then broken */
+	const notConfigured = view.statusHeadline(status());
+	assert.equal(notConfigured.tone, 'off');
+	assert.match(notConfigured.text, /not set up/);
+	assert.match(notConfigured.text, /Enter a hub URL/);
+
+	/** if configured-but-not-running collapses into the same text as not-configured then broken */
+	const noHeartbeat = view.statusHeadline(status({ configured: true, running: false }));
+	assert.equal(noHeartbeat.tone, 'warn');
+	assert.match(noHeartbeat.text, /not running automatically/);
+	assert.notEqual(noHeartbeat.text, notConfigured.text);
+
+	/** Sol review, PR #2604: an OK result must win over a stale heartbeat,
+	 * never "not running automatically" -- if this regresses then broken */
+	const okDespiteStaleHeartbeat = view.statusHeadline(
+		status({
+			configured: true,
+			running: false,
+			last_push_at: '2026-09-14T11:00:00.000Z',
+			last_result: { status: 'ok', message: '' }
+		})
+	);
+	assert.equal(okDespiteStaleHeartbeat.tone, 'ok');
+	assert.match(okDespiteStaleHeartbeat.text, /^In sync\./);
+
+	/** Devin review, PR #2604: a saved endpoint with automatic sync off is
+	 * "manual only", never the same "not set up" text as no endpoint at all
+	 * -- if it reads identically to notConfigured then broken */
+	const manualOnly = view.statusHeadline(
+		status({ configured: false, endpoint: 'http://hub:8686', endpoint_source: 'file' })
+	);
+	assert.equal(manualOnly.tone, 'off');
+	assert.match(manualOnly.text, /Automatic sync is off/);
+	assert.match(manualOnly.text, /http:\/\/hub:8686/);
+	assert.notEqual(manualOnly.text, notConfigured.text);
+
+	/** Devin review, PR #2604: disabling CloudSync after a recorded error
+	 * must not leave the headline red -- current config wins over a stale
+	 * journal verdict; if this still reads "Not synced" then broken */
+	const disabledAfterError = view.statusHeadline(
+		status({
+			configured: false,
+			endpoint: null,
+			last_result: { status: 'error', message: 'Connection refused' }
+		})
+	);
+	assert.equal(disabledAfterError.tone, 'off');
+	assert.doesNotMatch(disabledAfterError.text, /Not synced/);
+
+	/** if an inconclusive result reads as ok or as error then broken */
+	const inconclusive = view.statusHeadline(
+		status({ configured: true, running: true, last_result: { status: 'inconclusive', message: '' } })
+	);
+	assert.equal(inconclusive.tone, 'warn');
+	assert.match(inconclusive.text, /could not fully confirm/);
+
+	/** if a genuine ok result still shows jargon instead of "In sync" then broken */
+	const frozenNow = Date.parse('2026-09-14T12:00:00.000Z');
+	const originalNow = Date.now;
+	Date.now = () => frozenNow;
+	try {
+		const ok = view.statusHeadline(
+			status({
+				configured: true,
+				running: true,
+				last_push_at: '2026-09-14T11:48:00.000Z',
+				last_result: { status: 'ok', message: '' }
+			})
+		);
+		assert.equal(ok.tone, 'ok');
+		assert.equal(ok.text, 'In sync. Last synced 12m ago.');
+	} finally {
+		Date.now = originalNow;
+	}
+});
+
+test('identityBacklogNote reports the identity-hold count without a retry suggestion', () => {
+	/** if a zero or missing backlog still shows a note then broken */
+	assert.equal(view.identityBacklogNote(null), null);
+	assert.equal(view.identityBacklogNote(0), null);
+
+	/** if a positive backlog produces no note, or claims retrying the sync
+	 * fixes it (it does nothing for rows held on identity), then broken */
+	const many = view.identityBacklogNote(7331);
+	assert.match(many, /7331 tracks/);
+	assert.match(many, /they lack/);
+	assert.match(many, /retrying Sync now will not change this/);
+
+	/** if singular phrasing is not grammatical for a count of one then broken */
+	const one = view.identityBacklogNote(1);
+	assert.match(one, /1 track /);
+	assert.doesNotMatch(one, /1 tracks/);
+	assert.match(one, /it lacks/);
+});
+
 test('env overrides are named when they mask the saved config', () => {
 	/** if an env-won field is silently shown as the saved value then broken */
 	assert.deepEqual(view.envOverrideNotes(config()), []);
@@ -295,4 +549,44 @@ test('env overrides are named when they mask the saved config', () => {
 	assert.equal(notes.length, 2);
 	assert.match(notes[0], /MDT_CLOUDSYNC_SCHEDULER/);
 	assert.match(notes[1], /MDT_CLOUDSYNC_HUB_URL/);
+});
+
+// requirement: CSSTATUS-06
+// [if] status.update_required is set [then] chipState is update_required and labels mention install the latest Open DJ
+test('update_required renders a dedicated chip state and install copy', () => {
+	const live = { configured: true, running: true, enabled: true };
+	const updateRequired = {
+		code: 'SYNC_WIRE_VERSION',
+		local_wire_version: 3,
+		peer_wire_version: 4,
+		action: 'install the latest Open DJ'
+	};
+	const wireMismatch = status({ ...live, update_required: updateRequired });
+	assert.equal(view.chipState(wireMismatch), 'update_required');
+	assert.equal(view.chipFullLabel(wireMismatch), 'sync: update required');
+	assert.equal(view.chipShortLabel(wireMismatch), 'upd');
+	assert.match(view.chipTitle(wireMismatch, null), /install the latest Open DJ/);
+	assert.match(view.chipTitle(wireMismatch, null), /this machine speaks v3/);
+	assert.match(view.chipAriaLabel(wireMismatch, null), /install the latest Open DJ/);
+	const headline = view.statusHeadline(wireMismatch);
+	assert.equal(headline.tone, 'warn');
+	assert.match(headline.text, /App update required to sync/);
+	assert.match(headline.text, /Install the latest Open DJ/);
+});
+
+// requirement: CSSTATUS-06
+// [if] status has connection refused error only [then] chipState is error and copy does not mention update required
+test('connection refused stays a generic error without update required copy', () => {
+	const live = { configured: true, running: true, enabled: true };
+	const networkError = status({
+		...live,
+		update_required: null,
+		last_result: { status: 'error', message: '[Errno 61] Connection refused' }
+	});
+	assert.equal(view.chipState(networkError), 'error');
+	assert.equal(view.chipFullLabel(networkError), 'sync: error');
+	const headline = view.statusHeadline(networkError);
+	assert.equal(headline.tone, 'error');
+	assert.doesNotMatch(headline.text, /update required/i);
+	assert.doesNotMatch(view.chipTitle(networkError, null), /update required/i);
 });

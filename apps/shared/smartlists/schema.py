@@ -72,10 +72,15 @@ def _is_relative_date(value: Any) -> bool:
     )
 
 
+def _is_real_number(value: Any) -> bool:
+    """True for int/float values, excluding bool (a subclass of int)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def _validate_typed_list(field: str, value: list, path: str, *, op: str) -> None:
     ftype = FIELD_TYPES[field]
     for i, elt in enumerate(value):
-        if ftype == "number" and not isinstance(elt, (int, float)):
+        if ftype == "number" and not _is_real_number(elt):
             raise _err(f"{path}.value[{i}]",
                        f"{op} on {field!r} expects numbers")
         if ftype == "string" and not isinstance(elt, str):
@@ -102,7 +107,7 @@ def _validate_list_op(field: str, op: str, value: Any, path: str) -> None:
 
 def _validate_scalar_operand(field: str, value: Any, path: str) -> None:
     ftype = FIELD_TYPES[field]
-    if ftype == "number" and not isinstance(value, (int, float)):
+    if ftype == "number" and not _is_real_number(value):
         raise _err(f"{path}.value",
                    f"field {field!r} expects a number")
     if ftype == "string" and not isinstance(value, str):
@@ -150,7 +155,16 @@ def _validate_predicate(node: dict, path: str) -> None:
     _validate_operand(field, op, value, path)
 
 
-def _validate_node(node: Any, path: str) -> None:
+# No hand-built smartlist rule nests anywhere near this deep; the cap exists
+# to turn an unbounded-recursion payload into a clean SmartlistRuleError
+# instead of an uncaught RecursionError (no route handler catches that, so
+# it would otherwise surface as a bare 500).
+_MAX_RULE_DEPTH = 32
+
+
+def _validate_node(node: Any, path: str, depth: int = 0) -> None:
+    if depth > _MAX_RULE_DEPTH:
+        raise _err(path, f"rule nesting exceeds the maximum depth of {_MAX_RULE_DEPTH}")
     if not isinstance(node, dict):
         raise _err(path, f"expected object, got {type(node).__name__}")
     if "op" in node and node["op"] in LOGICAL_OPS:
@@ -163,7 +177,7 @@ def _validate_node(node: Any, path: str) -> None:
             raise _err(f"{path}.children",
                        "'not' requires exactly one child")
         for i, child in enumerate(children):
-            _validate_node(child, f"{path}.children[{i}]")
+            _validate_node(child, f"{path}.children[{i}]", depth + 1)
         return
     if "field" not in node or "op" not in node:
         raise _err(path,

@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "opener",
+  "description": "Open Google OAuth consent URLs in the system browser. The main UI lives on http://127.0.0.1:<ephemeral>, which Tauri classifies as a REMOTE origin, so without the `remote` block below openUrl would be inert in the shipped app. Scope is limited to opening a URL in the default browser, not the plugin's full default permission set.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*/*", "http://localhost:*/*"]
+  },
+  "permissions": ["opener:allow-open-url"]
+}

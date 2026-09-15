@@ -9,6 +9,8 @@ Regression lines:
   - if a build-failure event is not tagged kind=build, then broken
   - if a packaged (payload) build with a DSN present still defaults ON, then
     broken
+
+[if] the sink captures an event, or a build has a DSN [then] ids carry, telemetry off, [else stop].
 """
 
 from __future__ import annotations
@@ -19,9 +21,12 @@ from pathlib import Path
 import pytest
 
 from apps.shared.telemetry import DSN_ENV, TELEMETRY_ENV, decide_telemetry
+from apps.shared.telemetry import sink as sink_module
 from apps.shared.telemetry.sink import (
     capture_error_event,
+    make_event,
     post_build_failure,
+    reset_rate_state_for_tests,
     sentry_payload,
 )
 
@@ -90,6 +95,71 @@ def test_build_failure_payload_is_tagged_kind_build(
     assert tags["error_id"] == event.error_id
     assert tags["host"] == "nucbox-wsl"
     assert tags["build_sha"] == SHA
+
+
+@pytest.fixture(autouse=True)
+def _reset_sink_rate_state() -> None:
+    reset_rate_state_for_tests()
+
+
+def test_sink_rotates_when_next_record_exceeds_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sink = tmp_path / "error-sink.jsonl"
+    sink.write_text("x" * 8, encoding="utf-8")
+    monkeypatch.setattr(sink_module, "SINK_MAX_BYTES", 10)
+    event = make_event(
+        message="rotation probe",
+        source_site="tests:sink:rotation",
+        kind="engine",
+    )
+    sink_module.append_sink(event, sink)
+    archives = list(tmp_path.glob("error-sink.jsonl.*"))
+    assert len(archives) == 1
+    assert archives[0].read_text(encoding="utf-8") == "x" * 8
+    assert "rotation probe" in sink.read_text(encoding="utf-8")
+
+
+def test_sink_prunes_beyond_max_archives(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sink = tmp_path / "error-sink.jsonl"
+    monkeypatch.setattr(sink_module, "SINK_MAX_ARCHIVES", 2)
+    for index in range(3):
+        (tmp_path / f"error-sink.jsonl.2026010{index}T000000Z").write_text(
+            f"archive-{index}", encoding="utf-8"
+        )
+    event = make_event(
+        message="prune probe",
+        source_site="tests:sink:prune",
+        kind="engine",
+    )
+    sink_module._prune_sink_archives(sink)
+    archives = sorted(tmp_path.glob("error-sink.jsonl.*"))
+    assert len(archives) == 2
+
+
+def test_sink_rate_limit_emits_suppression_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sink = tmp_path / "error-sink.jsonl"
+    monkeypatch.setattr(sink_module, "SINK_EVENTS_PER_MINUTE", 2)
+    minutes = iter(["202601011200"] * 5 + ["202601011201"])
+    monkeypatch.setattr(sink_module, "_utc_minute", lambda: next(minutes))
+    for index in range(6):
+        sink_module.append_sink(
+            make_event(
+                message=f"event-{index}",
+                source_site=f"tests:sink:rate:{index}",
+                kind="engine",
+            ),
+            sink,
+        )
+    rows = [json.loads(line) for line in sink.read_text(encoding="utf-8").splitlines()]
+    assert rows[0]["message"] == "event-0"
+    assert rows[1]["message"] == "event-1"
+    summary = next(row for row in rows if row["source_site"] == "telemetry:sink:rate-limit")
+    assert "3 events suppressed" in summary["message"]
 
 
 def test_packaged_build_defaults_off_even_with_a_dsn() -> None:

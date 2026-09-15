@@ -36,7 +36,14 @@ import {
 	measureCueLatencyMs
 } from '$lib/player/cue-latency';
 import { persistMixerConfig } from '$lib/player/mixer-config';
-import { mixerState } from '$lib/player/state.svelte';
+import { deckStates, mixerState } from '$lib/player/state.svelte';
+import {
+	installHeadphoneOutputLiveness,
+	type LivenessVerdict,
+	type HeadphoneOutputSnapshot
+} from '$lib/rb/audio-output-liveness';
+import { recordPerfEvent } from '$lib/rb/perf-event-log';
+import { pushToast } from '$lib/stores.svelte';
 
 /**
  * One enumerated headphone output -- structurally the `HeadphoneOutputDevice`
@@ -336,6 +343,32 @@ export function setHeadDelayMs(value: unknown): void {
 	mixerState.headphones.head_delay_ms = value;
 	persistMixerConfig({ head_delay_ms: value });
 	applyHeadphoneMix();
+}
+
+type HeadphonesStateWithLiveness = (typeof mixerState)['headphones'] & {
+	liveness_verdict: LivenessVerdict;
+	liveness_snapshot: HeadphoneOutputSnapshot | null;
+};
+
+function _headphonesWithLiveness(): HeadphonesStateWithLiveness {
+	return mixerState.headphones as HeadphonesStateWithLiveness;
+}
+
+function _publishHeadphoneLiveness(snapshot: HeadphoneOutputSnapshot): void {
+	const hp = _headphonesWithLiveness();
+	hp.liveness_verdict = snapshot.verdict;
+	hp.liveness_snapshot = snapshot;
+}
+
+/** UI copy for a live headphone liveness verdict (distinct from the static BT caveat). */
+export function headphoneLivenessAlertText(verdict: LivenessVerdict | undefined): string | null {
+	if (verdict === 'stalled' || verdict === 'dead') {
+		return 'Headphone output not producing sound';
+	}
+	if (verdict === 'dead-escalated') {
+		return 'Headphone output not producing sound - re-select the device or reload';
+	}
+	return null;
 }
 
 /** Case-insensitive label match for Bluetooth-class monitor devices. */
@@ -776,6 +809,60 @@ function _requireHeadphoneOutputAcquisitionApi(): _OutputSelectableMediaDevices 
 
 let _watchingDeviceChanges = false;
 let _lastMonitorSource: MonitorSource | undefined;
+let _headphoneLiveness: ReturnType<typeof installHeadphoneOutputLiveness> | null = null;
+
+function _isAnyDeckPlaying(): boolean {
+	return ([1, 2, 3, 4] as const).some((deck) => deckStates[deck].playing);
+}
+
+function _shouldMonitorHeadphoneOutput(): boolean {
+	return (
+		mixerState.headphones.active &&
+		mixerState.headphones.output_mode === 'two_outputs' &&
+		_isAnyDeckPlaying()
+	);
+}
+
+function _selectedHeadphoneDeviceStillPresent(): boolean {
+	const id = mixerState.headphones.selected_output_device_id;
+	if (id === null) return false;
+	return mixerState.headphones.outputs.some((output) => output.id === id);
+}
+
+function _stopHeadphoneLiveness(): void {
+	_headphoneLiveness?.uninstall();
+	_headphoneLiveness = null;
+	const hp = _headphonesWithLiveness();
+	hp.liveness_verdict = 'idle';
+	hp.liveness_snapshot = null;
+}
+
+function _startHeadphoneLiveness(element: HTMLAudioElement): void {
+	_stopHeadphoneLiveness();
+	const hp = _headphonesWithLiveness();
+	hp.liveness_verdict = 'idle';
+	hp.liveness_snapshot = null;
+	_headphoneLiveness = installHeadphoneOutputLiveness(
+		element,
+		{
+			pushToast,
+			recordPerfEvent: (kind, message, severity) => recordPerfEvent(kind, message, null, severity),
+			setInterval: (fn, ms) => setInterval(fn, ms),
+			clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
+			now: () => performance.now(),
+			onSnapshot: (snapshot) => _publishHeadphoneLiveness(snapshot),
+			watchDeviceChanges:
+				typeof navigator !== 'undefined' && navigator.mediaDevices !== undefined
+					? (handler) => {
+							navigator.mediaDevices.addEventListener('devicechange', handler);
+							return () => navigator.mediaDevices.removeEventListener('devicechange', handler);
+						}
+					: undefined
+		},
+		_shouldMonitorHeadphoneOutput,
+		_selectedHeadphoneDeviceStillPresent
+	);
+}
 /** Cue device ids that already filled HEAD DELAY this session. */
 const _calibratedCueIds = new Set<string>();
 /** One in-flight chirp at a time; a failed cal is not remembered so re-select retries. */
@@ -808,6 +895,7 @@ function _unwatchHeadphoneDeviceChanges(): void {
 function _clearHeadphoneSelection(): void {
 	const currentElement = _headphoneNodes?.element;
 	if (currentElement !== undefined) _detachHeadphoneElement(currentElement);
+	_stopHeadphoneLiveness();
 	mixerState.headphones.selected_output_device_id = null;
 	mixerState.headphones.active = false;
 	_cueClearedByOperator = true;
@@ -853,6 +941,7 @@ async function _reapplyPinnedSinks(
 	if (plan.clearCue) {
 		const currentElement = _headphoneNodes?.element;
 		if (currentElement !== undefined) _detachHeadphoneElement(currentElement);
+		_stopHeadphoneLiveness();
 		mixerState.headphones.active = false;
 		return;
 	}
@@ -865,6 +954,7 @@ async function _reapplyPinnedSinks(
 	nodes.element.srcObject = nodes.destination.stream;
 	await withHeadphoneOperationTimeout('play', nodes.element.play());
 	mixerState.headphones.active = true;
+	_startHeadphoneLiveness(nodes.element);
 }
 
 /** Build the monitor graph once and hand it back so the engine can wire the
@@ -947,6 +1037,7 @@ function _detachHeadphoneElement(element: HTMLAudioElement): void {
 }
 
 function _disposeHeadphoneGraph(): void {
+	_stopHeadphoneLiveness();
 	const nodes = _headphoneNodes;
 	_headphoneNodes = null;
 	_outputContext = null;
@@ -1260,7 +1351,10 @@ export async function selectHeadphoneOutput(
 		});
 		if (plan.skip) {
 			const live = _headphoneNodes;
-			if (live !== null) _maybeCalibrateCueLatency(deviceId, previousId, live);
+			if (live !== null) {
+				if (mixerState.headphones.active) _startHeadphoneLiveness(live.element);
+				_maybeCalibrateCueLatency(deviceId, previousId, live);
+			}
 			return;
 		}
 		mixerState.headphones.selected_output_device_id = deviceId;
@@ -1313,6 +1407,7 @@ export async function selectHeadphoneOutput(
 		_detachHeadphoneElement(previous);
 		candidate = null;
 		_lastMonitorSource = monitorSource;
+		_startHeadphoneLiveness(nodes.element);
 		_maybeCalibrateCueLatency(deviceId, previousId, nodes);
 	} catch (error) {
 		if (candidate !== null) _detachHeadphoneElement(candidate);

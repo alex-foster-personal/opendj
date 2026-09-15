@@ -164,7 +164,10 @@ async def upload_attachment(
         # decode of an oversized image.
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
-            image = Image.open(io.BytesIO(data))
+            image = Image.open(
+                io.BytesIO(data),
+                formats=[_PIL_FORMAT_BY_CONTENT_TYPE[content_type]],
+            )
             decoded_format = image.format
             image.verify()
     except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:

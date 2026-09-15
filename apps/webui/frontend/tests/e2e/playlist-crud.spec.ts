@@ -70,7 +70,7 @@ test('playlist tree: create, duplicate, reload persistence, and delete', async (
 		expect(await _playlistNames(page)).toContain(baseName);
 
 		await _playlistRow(page, baseName).click({ button: 'right' });
-		await page.getByRole('menuitem', { name: 'Duplicate' }).click();
+		await page.getByRole('menuitem', { name: 'Duplicate', exact: true }).click();
 		await expect(_playlistRow(page, copyName)).toBeVisible();
 		expect(await _playlistNames(page)).toContain(copyName);
 

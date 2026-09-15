@@ -9,6 +9,7 @@
 	import {
 		assignMyTags,
 		deleteMyTag,
+		editSuiteConflictRows,
 		listMyTags,
 		renameMyTag,
 		type MyTagSummary
@@ -158,8 +159,15 @@
 			pushToast(`MyTags updated on ${res.applied_count} track(s)`, 'info');
 			onapplied();
 		} catch (exc) {
-			error = String(exc);
-			pushToast(`assign failed: ${String(exc)}`, 'error');
+			// STATE-09: same row-level 409 detail as bulk-edit/find-replace
+			// (STATE-07/08) - name which rows blocked the assign instead of a
+			// bare "conflict: Conflict".
+			const conflicts = editSuiteConflictRows(exc);
+			error =
+				conflicts !== null
+					? `${conflicts.length} of ${stableIds.length} track(s) changed elsewhere since this selection was made - reload and try again`
+					: String(exc);
+			pushToast(`assign failed: ${error}`, 'error');
 		} finally {
 			busy = false;
 		}

@@ -757,6 +757,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/availability/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Availability Probe */
+        post: operations["availability_probe_api_v1_availability_probe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/availability/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Availability Status */
+        get: operations["availability_status_api_v1_availability_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bench/kpi": {
         parameters: {
             query?: never;
@@ -1083,6 +1117,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cloudsync/identity-backlog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Identity Backlog
+         * @description Cheap, read-only count of the identity-hold sync backlog (CLOUDSYNC-16:
+         *     the maintainer's admin panel could say 'inconclusive' forever with no way to tell a
+         *     structural backlog from a transient hiccup). One indexed-ish table scan,
+         *     no file I/O, no digest walk.
+         */
+        get: operations["get_identity_backlog_api_v1_cloudsync_identity_backlog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cloudsync/machines": {
         parameters: {
             query?: never;
@@ -1245,6 +1302,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cloudsync/scheduler/resume-owed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Scheduler Owed
+         * @description Mark a deferred scheduler round owed and wake the in-process scheduler.
+         */
+        post: operations["resume_scheduler_owed_api_v1_cloudsync_scheduler_resume_owed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cloudsync/status": {
         parameters: {
             query?: never;
@@ -1311,7 +1388,7 @@ export interface paths {
         };
         /**
          * Next Command
-         * @description Let the sole open performance page claim its next agent order.
+         * @description Let a consumer claim its next command.
          */
         get: operations["next_command_api_v1_commands_next_get"];
         put?: never;
@@ -1333,7 +1410,7 @@ export interface paths {
         put?: never;
         /**
          * Complete Command
-         * @description Resolve an order with page-produced per-step statuses and mirror delta.
+         * @description Resolve a performance order or a shell command result.
          */
         post: operations["complete_command_api_v1_commands__order_id__result_post"];
         delete?: never;
@@ -1594,7 +1671,14 @@ export interface paths {
          *     did here so the pin itself shows progress: ``status`` moves
          *     open -> issued -> fixed -> merged, ``issue_url`` links the queue item, and
          *     ``agent_note`` is the one-paragraph reply the widget renders under the
-         *     original text. Every write is a partial update; unset fields are untouched.
+         *     original text. ``blocked`` is deliberately narrow: use it only when the maintainer
+         *     must supply credentials/auth, make a destructive-action decision, or choose
+         *     a genuine product fork. "I could not work out what you meant" is a question
+         *     in the note, never blocked. A blocked pin's note starts with one sentence
+         *     saying exactly what the maintainer needs, before any supporting detail. Its first
+         *     sentence is `auth: the maintainer must ...`, `destructive-action: the maintainer must ...`, or
+         *     `product-fork: the maintainer must ...`. Every write is a partial update; unset fields
+         *     are untouched.
          *
          *     Partial-fix convention (pin 58a16ac781db, follow-on to #907): when only
          *     PART of a pin's defect is fixed, do NOT invent a new ``status`` value
@@ -2287,6 +2371,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lifecycle/quit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request Shell Quit */
+        post: operations["request_shell_quit_api_v1_lifecycle_quit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/lyrics": {
         parameters: {
             query?: never;
@@ -2423,6 +2524,32 @@ export interface paths {
         get: operations["get_lyrics_summary_api_v1_lyrics_summary_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lyrics/verdicts/backfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Lyrics Verdicts Backfill
+         * @description Parity for ``python -m apps.lyrics verdicts backfill`` (LYR-06): fill
+         *     or refresh the stem-coverage-only verdict for every loadable bundle,
+         *     agent-native so the library-scale backfill is drivable without the CLI.
+         *
+         *     A track whose row already carries word-level data (``words_content_hash``)
+         *     is reported skipped, never overwritten - this endpoint only ever fills or
+         *     refreshes the coverage fields, same contract as the CLI.
+         */
+        post: operations["post_lyrics_verdicts_backfill_api_v1_lyrics_verdicts_backfill_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2758,6 +2885,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/performance/rescue-snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Rescue Snapshot */
+        post: operations["post_rescue_snapshot_api_v1_performance_rescue_snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/rescue-snapshots/index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rescue Snapshot Index */
+        get: operations["get_rescue_snapshot_index_api_v1_performance_rescue_snapshots_index_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/rescue-snapshots/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Latest Rescue Snapshot */
+        get: operations["get_latest_rescue_snapshot_api_v1_performance_rescue_snapshots_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/performance/telemetry/client-samples": {
         parameters: {
             query?: never;
@@ -3029,6 +3207,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playlists/{playlist_id}/rb-djay-diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Playlist Rb Djay Diff
+         * @description Return saved playlist-plan diff buckets for one playlist when computed.
+         */
+        get: operations["get_playlist_rb_djay_diff_api_v1_playlists__playlist_id__rb_djay_diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playlists/{playlist_id}/sets": {
         parameters: {
             query?: never;
@@ -3251,6 +3449,206 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rb-djay-sync/analysis/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rb Djay Sync Analysis Apply
+         * @description SYNC-05: dry-run or live analysis-field apply from analysis-diff.csv.
+         */
+        post: operations["rb_djay_sync_analysis_apply_api_v1_rb_djay_sync_analysis_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/cues/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rb Djay Sync Cues Apply
+         * @description SYNC-04: dry-run or scaffold live cue apply.
+         */
+        post: operations["rb_djay_sync_cues_apply_api_v1_rb_djay_sync_cues_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/cues/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rb Djay Sync Cues Plan
+         * @description SYNC-04: cue comparison CSV.
+         */
+        post: operations["rb_djay_sync_cues_plan_api_v1_rb_djay_sync_cues_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/djay/playlists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rb Djay Sync Djay Playlists
+         * @description SYNC-01: enumerate djay playlists and track UUID memberships.
+         */
+        get: operations["rb_djay_sync_djay_playlists_api_v1_rb_djay_sync_djay_playlists_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/match": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rb Djay Sync Match
+         * @description SYNC-02: build matches.csv from working-copy vendor DBs.
+         */
+        post: operations["rb_djay_sync_match_api_v1_rb_djay_sync_match_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/metadata/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rb Djay Sync Metadata Plan
+         * @description SYNC-05 + SYNC-06 (+ optional SYNC-04 cues) diff CSV generation.
+         */
+        post: operations["rb_djay_sync_metadata_plan_api_v1_rb_djay_sync_metadata_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/playlists/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rb Djay Sync Playlists Apply
+         * @description SYNC-03: dry-run or live apply of playlist-plan.json into djay.
+         */
+        post: operations["rb_djay_sync_playlists_apply_api_v1_rb_djay_sync_playlists_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/playlists/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rb Djay Sync Playlists Plan
+         * @description SYNC-03: compute playlist-plan.json and companion artefacts.
+         */
+        post: operations["rb_djay_sync_playlists_plan_api_v1_rb_djay_sync_playlists_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/ratings/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rb Djay Sync Ratings Apply
+         * @description SYNC-06: dry-run or live ratings apply from ratings-diff.csv.
+         */
+        post: operations["rb_djay_sync_ratings_apply_api_v1_rb_djay_sync_ratings_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rb-djay-sync/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rb Djay Sync Status
+         * @description SYNC-01..06 capability probe: DB paths, artefacts, fingerprint, writeback.
+         */
+        get: operations["rb_djay_sync_status_api_v1_rb_djay_sync_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reconcile/broken": {
         parameters: {
             query?: never;
@@ -3330,6 +3728,40 @@ export interface paths {
         put?: never;
         /** Apply Relocate */
         post: operations["apply_relocate_api_v1_relocate__stable_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rescue/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rescue Restore */
+        post: operations["rescue_restore_api_v1_rescue_restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rescue/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rescue Snapshots List */
+        get: operations["rescue_snapshots_list_api_v1_rescue_snapshots_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3613,6 +4045,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/shell/navigate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Shell Navigate */
+        post: operations["post_shell_navigate_api_v1_shell_navigate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shell/navigate/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ack Shell Navigate */
+        post: operations["ack_shell_navigate_api_v1_shell_navigate_ack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shell/navigate/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Shell Navigate Pending */
+        get: operations["get_shell_navigate_pending_api_v1_shell_navigate_pending_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/smartlists": {
         parameters: {
             query?: never;
@@ -3735,6 +4218,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stems/bulk-hydrate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk Hydrate Stems
+         * @description Agent-native parity for ``python -m apps.stems bulk-hydrate`` (ADR-0024).
+         *
+         *     Hydrates as many bundles as fit ``budget_bytes``, skipping the
+         *     reservation guard unless ``include_reserved`` is explicitly true.
+         */
+        post: operations["bulk_hydrate_stems_api_v1_stems_bulk_hydrate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stems/estimate": {
         parameters: {
             query?: never;
@@ -3800,6 +4306,26 @@ export interface paths {
          *     the identical flow (AGENT-NATIVE PARITY).
          */
         post: operations["generate_api_v1_stems_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stems/index/build": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Build Stem Index
+         * @description Agent-native parity for ``python -m apps.stems build-index`` (ADR-0024).
+         */
+        post: operations["build_stem_index_api_v1_stems_index_build_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4014,6 +4540,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/lyrics-asr/{stable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Asr Presign
+         * @description Mint a short-lived GET URL for one ASR transcript JSON object.
+         */
+        get: operations["get_lyrics_asr_presign_api_v1_sync_lyrics_asr__stable_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sync/pull": {
         parameters: {
             query?: never;
@@ -4086,6 +4632,51 @@ export interface paths {
          * @description Hub identity, current seq, known machines and synced row counts.
          */
         get: operations["status_api_v1_sync_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/stems/bundle-presign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Bundle Presign
+         * @description Mint short-lived GET URLs for every file in one indexed bundle.
+         */
+        get: operations["get_bundle_presign_api_v1_sync_stems_bundle_presign_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/stems/index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stem Index
+         * @description Return the published stem bundle index for an authenticated spoke.
+         *
+         *     ``request.app.state.stem_index_fetcher``, when set by the code that built
+         *     the app, replaces the real R2 index fetch with the callable's return
+         *     value. Production never sets it; only test app-builders do. The
+         *     credential check always runs first regardless.
+         */
+        get: operations["get_stem_index_api_v1_sync_stems_index_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4279,6 +4870,10 @@ export interface paths {
          *     The backend picks among ``track_locations`` plus the legacy
          *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
          *     Share-host requests use the share venue cap (lossy ceiling by default).
+         *
+         *     Before streaming, a subprocess probe opens the resolved path under
+         *     ``AUDIO_ACCESS_TIMEOUT_S`` so a kernel-blocked ``open()`` answers HTTP 503
+         *     with ``AUDIO_ACCESS_BLOCKED`` instead of hanging the ASGI worker (#2749).
          */
         get: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
         put?: never;
@@ -4297,6 +4892,10 @@ export interface paths {
          *     The backend picks among ``track_locations`` plus the legacy
          *     ``file_path`` / FolderPath. The frontend never sees the alternatives.
          *     Share-host requests use the share venue cap (lossy ceiling by default).
+         *
+         *     Before streaming, a subprocess probe opens the resolved path under
+         *     ``AUDIO_ACCESS_TIMEOUT_S`` so a kernel-blocked ``open()`` answers HTTP 503
+         *     with ``AUDIO_ACCESS_BLOCKED`` instead of hanging the ASGI worker (#2749).
          */
         head: operations["get_track_audio_api_v1_tracks__stable_id__audio_get"];
         patch?: never;
@@ -4529,10 +5128,62 @@ export interface paths {
         /**
          * Get Stem Manifest
          * @description Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.
+         *
+         *     Never blocks on R2: if the bundle is missing locally but the R2 index
+         *     has it, this ENQUEUES a background hydration and returns immediately
+         *     with ``hydrating=True`` (D2). A prior hydration attempt that already
+         *     failed is reported LOUD as HTTP 502, never silently folded into the
+         *     ordinary "no bundle" empty state.
          */
         get: operations["get_stem_manifest_api_v1_tracks__stable_id__stems_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/stems/deck-close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Stem Deck Closed
+         * @description Release one deck-open reference. See :func:`mark_stem_deck_open`.
+         */
+        post: operations["mark_stem_deck_closed_api_v1_tracks__stable_id__stems_deck_close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/stems/deck-open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Stem Deck Open
+         * @description A deck has this bundle open. Protects it from eviction until closed.
+         *
+         *     Agent-native parity for the deck-load lifecycle: there is no other
+         *     request boundary that tells the eviction path "a deck is playing this
+         *     right now, do not free its bundle regardless of recency" (D3). Refcounted
+         *     (:class:`apps.cloud.stem_hydration.OpenDeckRegistry`), so two open
+         *     references (e.g. two decks on the same track) both need closing.
+         */
+        post: operations["mark_stem_deck_open_api_v1_tracks__stable_id__stems_deck_open_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4548,7 +5199,14 @@ export interface paths {
         };
         /**
          * Get Stem File
-         * @description Stream one validated WAV stem from its already-verified file handle.
+         * @description Stream one validated stem part using the bundle's container media type.
+         *
+         *     Unlike the manifest route, this one DOES wait (bounded) for an in-flight
+         *     hydration: a part request means the caller already decided it wants
+         *     these bytes. A prior failure is surfaced immediately as HTTP 502; a
+         *     fresh attempt that does not finish within
+         *     :data:`STEM_PART_HYDRATE_WAIT_S` answers HTTP 503 so the caller can
+         *     retry rather than hang forever on this one request.
          */
         get: operations["get_stem_file_api_v1_tracks__stable_id__stems__part__get"];
         put?: never;
@@ -4634,6 +5292,23 @@ export interface paths {
         /** Put Ui Prefs */
         put: operations["put_ui_prefs_api_v1_ui_prefs_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/update/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Update Apply */
+        post: operations["update_apply_api_v1_update_apply_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4968,6 +5643,28 @@ export interface components {
             /** Stable B */
             stable_b: string;
         };
+        /** AnalysisApplyRequest */
+        AnalysisApplyRequest: {
+            /** Diff Csv */
+            diff_csv?: string | null;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+            /** Fields */
+            fields?: string[] | null;
+            /**
+             * I Understand The Risks
+             * @default false
+             */
+            i_understand_the_risks: boolean;
+            /**
+             * Live
+             * @default false
+             */
+            live: boolean;
+        };
         /** AnalysisOrderOut */
         AnalysisOrderOut: {
             /** Kind */
@@ -5101,6 +5798,17 @@ export interface components {
              */
             slot: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
         };
+        /** AppModeOut */
+        AppModeOut: {
+            /**
+             * Id
+             * @default performance
+             * @enum {string}
+             */
+            id: "performance" | "library-management" | "library" | "music-player";
+            /** Last Gig At */
+            last_gig_at?: string | null;
+        };
         /** AppPostureOut */
         AppPostureOut: {
             /** Label */
@@ -5124,6 +5832,11 @@ export interface components {
         ApplyIn: {
             /** Cluster Key */
             cluster_key: string;
+            /**
+             * Confirm Cue Loss
+             * @default false
+             */
+            confirm_cue_loss: boolean;
             /** Survivor */
             survivor: string;
         };
@@ -5341,6 +6054,79 @@ export interface components {
             genre?: string[];
             /** Rating */
             rating?: string[];
+        };
+        /** AvailabilityProbeIn */
+        AvailabilityProbeIn: {
+            /**
+             * Allow Mass Missing
+             * @default false
+             */
+            allow_mass_missing: boolean;
+            /**
+             * Full
+             * @default false
+             */
+            full: boolean;
+            /** Stable Ids */
+            stable_ids?: string[] | null;
+        };
+        /** AvailabilityProbeOut */
+        AvailabilityProbeOut: {
+            /**
+             * Accepted
+             * @default true
+             */
+            accepted: boolean;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "idle" | "queued" | "running" | "complete" | "refused" | "failed";
+        };
+        /** AvailabilityStatusOut */
+        AvailabilityStatusOut: {
+            /**
+             * Awaiting Volume
+             * @description Rows under an unmounted /Volumes path to re-check
+             */
+            awaiting_volume: number;
+            /**
+             * Complete
+             * @description True when no unknown/stale/awaiting_volume rows remain
+             */
+            complete: boolean;
+            /** Last Error */
+            last_error?: string | null;
+            /**
+             * Pending
+             * @description Tracks still needing a probe pass
+             */
+            pending: number;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "idle" | "queued" | "running" | "complete" | "refused" | "failed";
+            /**
+             * Present
+             * @description Current present count in track_availability
+             */
+            present: number;
+            /**
+             * Processed Total
+             * @description Rows classified across this worker lifetime
+             */
+            processed_total: number;
+            /**
+             * Stale
+             * @description Rows whose tracks.updated_at is newer than checked_at
+             */
+            stale: number;
+            /**
+             * Unknown
+             * @description Live tracks with no availability row
+             */
+            unknown: number;
         };
         /** BackfillBatchIn */
         BackfillBatchIn: {
@@ -6125,6 +6911,8 @@ export interface components {
             running: boolean;
             /** Signed In As */
             signed_in_as: string | null;
+            /** @description Present when the latest sync failed with SYNC_WIRE_VERSION: both wire versions and the install action for this machine. */
+            update_required?: components["schemas"]["UpdateRequiredOut"] | null;
         };
         /**
          * CloudTransferOut
@@ -6451,6 +7239,48 @@ export interface components {
              */
             mode: "observe" | "enforce";
         };
+        /** CuesApplyRequest */
+        CuesApplyRequest: {
+            /**
+             * Bulk
+             * @default false
+             */
+            bulk: boolean;
+            /**
+             * Cautious
+             * @default false
+             */
+            cautious: boolean;
+            /** Diff Csv */
+            diff_csv?: string | null;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+            /**
+             * I Understand The Risks
+             * @default false
+             */
+            i_understand_the_risks: boolean;
+            /**
+             * Live
+             * @default false
+             */
+            live: boolean;
+            /** Tracks */
+            tracks?: string[] | null;
+        };
+        /** CuesPlanRequest */
+        CuesPlanRequest: {
+            /** Matches Path */
+            matches_path?: string | null;
+            /**
+             * Min Confidence
+             * @default 0.7
+             */
+            min_confidence: number;
+        };
         /** DecideIn */
         DecideIn: {
             /**
@@ -6626,6 +7456,10 @@ export interface components {
             engine_version: string;
             /** Google Oauth Configured */
             google_oauth_configured: boolean;
+            /** Process Env Forbidden Keys */
+            process_env_forbidden_keys: string[];
+            /** Process Env Home Present */
+            process_env_home_present: boolean;
             state_db: components["schemas"]["HealthStateDb"];
             /**
              * Status
@@ -7504,6 +8338,14 @@ export interface components {
         HubStorageErrorResponse: {
             detail: components["schemas"]["HubStorageErrorBody"];
         };
+        /** IdentityBacklogOut */
+        IdentityBacklogOut: {
+            /**
+             * Unsyncable Inferred
+             * @description live 'tracks' rows held out of every sync digest for lacking BOTH a content_hash and a normalizable ISRC. Not a bug and not fixed by retrying: each row needs `python -m apps.shared.state.backfill_content_hash --live` once its audio is reachable, or an ISRC tag.
+             */
+            unsyncable_inferred: number;
+        };
         /** JobIn */
         JobIn: {
             /** External Ref */
@@ -7786,7 +8628,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "ok" | "error" | "inconclusive";
+            status: "ok" | "error" | "inconclusive" | "deferred";
         };
         /**
          * LevelCalibrationOut
@@ -7969,6 +8811,22 @@ export interface components {
             /** Unreachable */
             unreachable: number;
         };
+        /** LifecycleQuitIn */
+        LifecycleQuitIn: {
+            /**
+             * Force
+             * @description Must be true for agent and ship clean-quit paths.
+             */
+            force: boolean;
+        };
+        /** LifecycleQuitOut */
+        LifecycleQuitOut: {
+            /**
+             * Ok
+             * @default true
+             */
+            ok: boolean;
+        };
         /**
          * LocalDataOut
          * @description One store on this machine that holds something about the account.
@@ -8054,6 +8912,22 @@ export interface components {
             start_ms: number;
             /** Text */
             text: string;
+        };
+        /** LyricsAsrPresignResponse */
+        LyricsAsrPresignResponse: {
+            /** Content Hash */
+            content_hash: string;
+            /**
+             * Expires In Seconds
+             * @default 900
+             */
+            expires_in_seconds: number;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Stable Id */
+            stable_id: string;
+            /** Url */
+            url: string;
         };
         /**
          * LyricsCachedIdsOut
@@ -8236,6 +9110,67 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /**
+         * LyricsVerdictBackfillIn
+         * @description Parity for ``python -m apps.lyrics verdicts backfill``.
+         */
+        LyricsVerdictBackfillIn: {
+            /**
+             * Dry Run
+             * @description NO default on purpose, same reasoning as the purge lever: the caller states which one it wants
+             */
+            dry_run: boolean;
+            /**
+             * Include Reserved
+             * @description also process the 100 stable_ids reserved for in-app ordering QA (refused by default)
+             * @default false
+             */
+            include_reserved: boolean;
+            /**
+             * Limit
+             * @description max tracks to compute this call (null = no cap)
+             */
+            limit?: number | null;
+        };
+        /**
+         * LyricsVerdictBackfillOut
+         * @description :class:`apps.lyrics.library_verdicts.VerdictBackfillReport`.
+         */
+        LyricsVerdictBackfillOut: {
+            /**
+             * Candidates
+             * @description stable_ids with a bundle directory in either root
+             */
+            candidates: number;
+            /** Data Dir */
+            data_dir: string;
+            /** Dry Run */
+            dry_run: boolean;
+            /**
+             * Failed
+             * @description stable_id -> failure reason
+             */
+            failed: {
+                [key: string]: string;
+            };
+            /**
+             * Processed
+             * @description written (or, on a dry run, would be written)
+             */
+            processed: string[];
+            /**
+             * Reused Cache
+             * @description subset of processed whose coverage came from an existing from-stems vocal-cache entry instead of a fresh decode
+             */
+            reused_cache: string[];
+            /**
+             * Skipped
+             * @description reason -> stable_ids
+             */
+            skipped: {
+                [key: string]: string[];
+            };
+        };
         /** MachineIdIn */
         MachineIdIn: {
             /** Machine Id */
@@ -8300,6 +9235,16 @@ export interface components {
             stream_tracks: number;
             /** Unhydrated Pinned Count */
             unhydrated_pinned_count: number;
+        };
+        /** MatchRequest */
+        MatchRequest: {
+            /** Out Dir */
+            out_dir?: string | null;
+            /**
+             * Use Fingerprint
+             * @default false
+             */
+            use_fingerprint: boolean;
         };
         /** MeOut */
         MeOut: {
@@ -8432,6 +9377,27 @@ export interface components {
         MembershipTransferOut: {
             dest: components["schemas"]["PlaylistWriteOut"];
             source?: components["schemas"]["PlaylistWriteOut"] | null;
+        };
+        /** MetadataPlanRequest */
+        MetadataPlanRequest: {
+            /**
+             * Include Cues
+             * @default false
+             */
+            include_cues: boolean;
+            /** Matches Path */
+            matches_path?: string | null;
+            /**
+             * Min Confidence
+             * @default 0.7
+             */
+            min_confidence: number;
+            /**
+             * Prefer
+             * @default newest
+             * @enum {string}
+             */
+            prefer: "rekordbox" | "djay" | "newest";
         };
         /**
          * MetadataShareRequest
@@ -9158,6 +10124,38 @@ export interface components {
             /** Position */
             position: number;
         };
+        /** PlaylistApplyRequest */
+        PlaylistApplyRequest: {
+            /**
+             * Allow Broken
+             * @default false
+             */
+            allow_broken: boolean;
+            /**
+             * Bulk
+             * @default false
+             */
+            bulk: boolean;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+            /**
+             * I Understand The Risks
+             * @default false
+             */
+            i_understand_the_risks: boolean;
+            /**
+             * Live
+             * @default false
+             */
+            live: boolean;
+            /** Plan Path */
+            plan_path?: string | null;
+            /** Playlists */
+            playlists?: string[] | null;
+        };
         /** PlaylistBrokenSummary */
         PlaylistBrokenSummary: {
             /** Broken Count */
@@ -9269,6 +10267,18 @@ export interface components {
             mode: "pinned" | "cached" | "stream" | "excluded";
             /** Playlist Id */
             playlist_id: string;
+        };
+        /** PlaylistPlanRequest */
+        PlaylistPlanRequest: {
+            /** Matches Path */
+            matches_path?: string | null;
+            /**
+             * Max Ops
+             * @default 10000
+             */
+            max_ops: number;
+            /** Only Playlists */
+            only_playlists?: string[] | null;
         };
         /** PlaylistRenameIn */
         PlaylistRenameIn: {
@@ -9500,6 +10510,9 @@ export interface components {
          *     track anywhere in a small sample), which is an honest denominator, never
          *     a fabricated pass. ``remediation`` is null on a pass or a pending row and
          *     a real sentence on a fail.
+         *
+         *     ``user_*`` fields carry plain-language copy for the boot gate (issue
+         *     #2722). Admin/diagnostics views keep the technical ``label``/``detail``.
          */
         PreflightCheckOut: {
             /** Detail */
@@ -9515,6 +10528,12 @@ export interface components {
              * @enum {string}
              */
             status: "pass" | "fail" | "pending";
+            /** User Detail */
+            user_detail?: string | null;
+            /** User Label */
+            user_label?: string | null;
+            /** User Remediation */
+            user_remediation?: string | null;
         };
         /**
          * PreflightOut
@@ -9709,6 +10728,38 @@ export interface components {
             /** Si Sdr */
             si_sdr?: number | null;
         };
+        /** RatingsApplyRequest */
+        RatingsApplyRequest: {
+            /**
+             * Bulk
+             * @default false
+             */
+            bulk: boolean;
+            /**
+             * Cautious
+             * @default false
+             */
+            cautious: boolean;
+            /** Diff Csv */
+            diff_csv?: string | null;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+            /**
+             * I Understand The Risks
+             * @default false
+             */
+            i_understand_the_risks: boolean;
+            /**
+             * Live
+             * @default false
+             */
+            live: boolean;
+            /** Tracks */
+            tracks?: string[] | null;
+        };
         /** RatingsFile */
         RatingsFile: {
             /** Bytes */
@@ -9861,7 +10912,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "ok" | "error" | "inconclusive";
+            status: "ok" | "error" | "inconclusive" | "deferred";
         };
         /** ReconcileSummary */
         ReconcileSummary: {
@@ -10058,6 +11109,76 @@ export interface components {
             /** Triple Validated */
             triple_validated: boolean;
         };
+        /** RescueAppendOut */
+        RescueAppendOut: {
+            /** Bytes */
+            bytes: number;
+            /** Captured At Ms */
+            captured_at_ms: number;
+            /** Slot */
+            slot: number;
+        };
+        /** RescueDeckOutcomeOut */
+        RescueDeckOutcomeOut: {
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "resumed" | "paused" | "missing";
+            /** Stable Id */
+            stable_id?: string | null;
+        };
+        /** RescueRestoreIn */
+        RescueRestoreIn: {
+            /**
+             * Play
+             * @default false
+             */
+            play: boolean;
+            /** Snapshot Id */
+            snapshot_id?: string | null;
+        };
+        /** RescueRestoreOut */
+        RescueRestoreOut: {
+            /** Captured At Ms */
+            captured_at_ms: number;
+            /** Decks */
+            decks: {
+                [key: string]: components["schemas"]["RescueDeckOutcomeOut"];
+            };
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "layout" | "play";
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Snapshot Id */
+            snapshot_id: string;
+        };
+        /** RescueSnapshotMeta */
+        RescueSnapshotMeta: {
+            /** Age Ms */
+            age_ms: number;
+            /** Captured At Ms */
+            captured_at_ms: number;
+            /**
+             * Deck Count Loaded
+             * @description Decks with a non-empty stable_id at capture
+             */
+            deck_count_loaded: number;
+            /** Id */
+            id: string;
+            /** Playlist Id */
+            playlist_id?: string | null;
+        };
+        /** RescueSnapshotsOut */
+        RescueSnapshotsOut: {
+            /** Snapshots */
+            snapshots: components["schemas"]["RescueSnapshotMeta"][];
+        };
         /** RevokeOut */
         RevokeOut: {
             /** Changed */
@@ -10086,6 +11207,11 @@ export interface components {
             values: {
                 [key: string]: unknown;
             };
+        };
+        /** SchedulerResumeOut */
+        SchedulerResumeOut: {
+            /** Ok */
+            ok: boolean;
         };
         /**
          * SearchHit
@@ -10515,6 +11641,65 @@ export interface components {
             /** Wire Version */
             wire_version: number;
         };
+        /**
+         * StemBulkHydrateIn
+         * @description Agent-native parity body for ``python -m apps.stems bulk-hydrate``.
+         */
+        StemBulkHydrateIn: {
+            /** Budget Bytes */
+            budget_bytes: number;
+            /** Data Dir */
+            data_dir?: string | null;
+            /**
+             * Include Reserved
+             * @default false
+             */
+            include_reserved: boolean;
+            /** Playlist */
+            playlist?: string | null;
+            /**
+             * Refresh Index
+             * @default false
+             */
+            refresh_index: boolean;
+            /** Stable Ids */
+            stable_ids?: string[] | null;
+        };
+        /** StemBulkHydrateOut */
+        StemBulkHydrateOut: {
+            /** Bytes Fetched */
+            bytes_fetched: number;
+            /** Fetched */
+            fetched: components["schemas"]["StemBulkHydrateOutcomeOut"][];
+            /** Skipped */
+            skipped: components["schemas"]["StemBulkHydrateOutcomeOut"][];
+        };
+        /** StemBulkHydrateOutcomeOut */
+        StemBulkHydrateOutcomeOut: {
+            /**
+             * Bytes Fetched
+             * @default 0
+             */
+            bytes_fetched: number;
+            /** Reason */
+            reason?: string | null;
+            /** Stable Id */
+            stable_id: string;
+            /** Status */
+            status: string;
+        };
+        /** StemBundlePresignResponse */
+        StemBundlePresignResponse: {
+            /**
+             * Expires In Seconds
+             * @default 900
+             */
+            expires_in_seconds: number;
+            /** Files */
+            files: components["schemas"]["StemPresignFileOut"][];
+            /** Stable Id */
+            stable_id: string;
+        };
         /** StemHydrateIn */
         StemHydrateIn: {
             /** Data Dir */
@@ -10526,6 +11711,36 @@ export interface components {
             dry_run: boolean;
             /** Manifest Path */
             manifest_path: string;
+        };
+        /** StemIndexBuildIn */
+        StemIndexBuildIn: {
+            /** Data Dir */
+            data_dir?: string | null;
+            /** Journal Path */
+            journal_path?: string | null;
+            /**
+             * Publish
+             * @default false
+             */
+            publish: boolean;
+        };
+        /** StemIndexBuildOut */
+        StemIndexBuildOut: {
+            /** Bundles */
+            bundles: number;
+            /** Files */
+            files: number;
+            /** Published */
+            published: boolean;
+        };
+        /** StemIndexResponse */
+        StemIndexResponse: {
+            /** Index */
+            index: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
         };
         /**
          * StemManifestOut
@@ -10570,6 +11785,17 @@ export interface components {
             /** Media Type */
             media_type: string;
         };
+        /** StemPresignFileOut */
+        StemPresignFileOut: {
+            /** Content Hash */
+            content_hash: string;
+            /** Filename */
+            filename: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Url */
+            url: string;
+        };
         /** StemPushMissingIn */
         StemPushMissingIn: {
             /** Data Dir */
@@ -10604,9 +11830,14 @@ export interface components {
             /**
              * Code
              * @default STEM_BUNDLE_NOT_FOUND
-             * @constant
+             * @enum {string}
              */
-            code: "STEM_BUNDLE_NOT_FOUND";
+            code: "STEM_BUNDLE_NOT_FOUND" | "STEM_BUNDLE_HYDRATING";
+            /**
+             * Hydrating
+             * @default false
+             */
+            hydrating: boolean;
             /** Message */
             message: string;
             /** Stable Id */
@@ -10846,6 +12077,12 @@ export interface components {
         };
         /** SyncRunIn */
         SyncRunIn: {
+            /**
+             * Force
+             * @description Bypass Gig posture and playing-deck gates for this round only.
+             * @default false
+             */
+            force: boolean;
             /**
              * Hub Url
              * @description the hub base URL, e.g. http://hub.tailnet:8686 (CLI --hub)
@@ -11477,17 +12714,43 @@ export interface components {
         };
         /** UiPrefsOut */
         UiPrefsOut: {
+            app_mode?: components["schemas"]["AppModeOut"];
             /**
              * App Posture
              * @default prep
              * @enum {string}
              */
             app_posture: "prep" | "gig";
+            /**
+             * Auto Play Enabled
+             * @default true
+             */
+            auto_play_enabled: boolean;
+            /**
+             * Auto Play Enforce Order
+             * @default false
+             */
+            auto_play_enforce_order: boolean;
+            /**
+             * Auto Play Maximize Reach
+             * @default true
+             */
+            auto_play_maximize_reach: boolean;
             auto_sync?: components["schemas"]["AutoSyncOut"];
+            /**
+             * Beat Sync Max
+             * @default true
+             */
+            beat_sync_max: boolean;
             /** Confirm */
             confirm?: {
                 [key: string]: unknown;
             };
+            /**
+             * Hide Broken Links
+             * @default false
+             */
+            hide_broken_links: boolean;
             /**
              * Hide Todo Settings
              * @default false
@@ -11499,6 +12762,12 @@ export interface components {
              */
             jog_radial_waveform: boolean;
             level_calibration?: components["schemas"]["LevelCalibrationOut"];
+            /**
+             * Library Density
+             * @default compact
+             * @enum {string}
+             */
+            library_density: "compact" | "cosy";
             /**
              * Lyrics Deck Line
              * @default true
@@ -11531,11 +12800,26 @@ export interface components {
              */
             lyrics_waveform_overlay: boolean;
             /**
+             * Midi Enabled
+             * @default false
+             */
+            midi_enabled: boolean;
+            /**
+             * Next Only Filter
+             * @default false
+             */
+            next_only_filter: boolean;
+            /**
              * Perf Tier
              * @default auto
              * @enum {string}
              */
             perf_tier: "auto" | "low" | "standard" | "high";
+            /**
+             * Remixes Filter
+             * @default false
+             */
+            remixes_filter: boolean;
             /**
              * Show Agent Pins
              * @default true
@@ -11552,21 +12836,40 @@ export interface components {
              * @enum {string}
              */
             theme: "dark" | "light";
+            /**
+             * Vocals Filter
+             * @default false
+             */
+            vocals_filter: boolean;
+            wheel_sensitivity?: components["schemas"]["WheelSensitivityOut"];
         };
         /** UiPrefsPatch */
         UiPrefsPatch: {
+            app_mode?: components["schemas"]["AppModeOut"] | null;
             /** App Posture */
             app_posture?: ("prep" | "gig") | null;
+            /** Auto Play Enabled */
+            auto_play_enabled?: boolean | null;
+            /** Auto Play Enforce Order */
+            auto_play_enforce_order?: boolean | null;
+            /** Auto Play Maximize Reach */
+            auto_play_maximize_reach?: boolean | null;
             auto_sync?: components["schemas"]["AutoSyncOut"] | null;
+            /** Beat Sync Max */
+            beat_sync_max?: boolean | null;
             /** Confirm */
             confirm?: {
                 [key: string]: unknown;
             } | null;
+            /** Hide Broken Links */
+            hide_broken_links?: boolean | null;
             /** Hide Todo Settings */
             hide_todo_settings?: boolean | null;
             /** Jog Radial Waveform */
             jog_radial_waveform?: boolean | null;
             level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
+            /** Library Density */
+            library_density?: ("compact" | "cosy") | null;
             /** Lyrics Deck Line */
             lyrics_deck_line?: boolean | null;
             /** Lyrics Global */
@@ -11579,14 +12882,23 @@ export interface components {
             lyrics_load_strategy?: ("in-view" | "hover" | "off") | null;
             /** Lyrics Waveform Overlay */
             lyrics_waveform_overlay?: boolean | null;
+            /** Midi Enabled */
+            midi_enabled?: boolean | null;
+            /** Next Only Filter */
+            next_only_filter?: boolean | null;
             /** Perf Tier */
             perf_tier?: ("auto" | "low" | "standard" | "high") | null;
+            /** Remixes Filter */
+            remixes_filter?: boolean | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
             /** Technically Working Animate */
             technically_working_animate?: boolean | null;
             /** Theme */
             theme?: ("dark" | "light") | null;
+            /** Vocals Filter */
+            vocals_filter?: boolean | null;
+            wheel_sensitivity?: components["schemas"]["WheelSensitivityOut"] | null;
         };
         /** UndoRecordOut */
         UndoRecordOut: {
@@ -11609,6 +12921,28 @@ export interface components {
             revision: string;
             /** Survivor */
             survivor: string;
+        };
+        /** UpdateApplyAccepted */
+        UpdateApplyAccepted: {
+            /**
+             * Accepted
+             * @default true
+             */
+            accepted: boolean;
+            /** Available Version */
+            available_version: string;
+            /** Command Id */
+            command_id: string;
+        };
+        /** UpdateApplyRefused */
+        UpdateApplyRefused: {
+            /** Detail */
+            detail: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "update-available" | "up-to-date" | "ahead-of-channel" | "endpoint-unreachable" | "endpoint-refused" | "manifest-malformed" | "platform-unsupported" | "identity-unavailable";
         };
         /**
          * UpdateCheckOut
@@ -11653,6 +12987,20 @@ export interface components {
              * @enum {string}
              */
             status: "update-available" | "up-to-date" | "ahead-of-channel" | "endpoint-unreachable" | "endpoint-refused" | "manifest-malformed" | "platform-unsupported" | "identity-unavailable";
+        };
+        /** UpdateRequiredOut */
+        UpdateRequiredOut: {
+            /** Action */
+            action: string;
+            /**
+             * Code
+             * @constant
+             */
+            code: "SYNC_WIRE_VERSION";
+            /** Local Wire Version */
+            local_wire_version: number;
+            /** Peer Wire Version */
+            peer_wire_version: number;
         };
         /** UploadFileResult */
         UploadFileResult: {
@@ -11880,6 +13228,19 @@ export interface components {
             };
             /** Transcript */
             transcript: string;
+        };
+        /** WheelSensitivityOut */
+        WheelSensitivityOut: {
+            /**
+             * Mouse
+             * @default 1
+             */
+            mouse: number;
+            /**
+             * Trackpad
+             * @default 0.3333333333333333
+             */
+            trackpad: number;
         };
         /** WorktreePortsOut */
         WorktreePortsOut: {
@@ -13411,6 +14772,59 @@ export interface operations {
             };
         };
     };
+    availability_probe_api_v1_availability_probe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AvailabilityProbeIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailabilityProbeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    availability_status_api_v1_availability_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailabilityStatusOut"];
+                };
+            };
+        };
+    };
     get_kpi_ledger_api_v1_bench_kpi_get: {
         parameters: {
             query?: never;
@@ -14118,6 +15532,26 @@ export interface operations {
             };
         };
     };
+    get_identity_backlog_api_v1_cloudsync_identity_backlog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityBacklogOut"];
+                };
+            };
+        };
+    };
     list_machines_api_v1_cloudsync_machines_get: {
         parameters: {
             query?: never;
@@ -14480,6 +15914,35 @@ export interface operations {
             };
         };
     };
+    resume_scheduler_owed_api_v1_cloudsync_scheduler_resume_owed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchedulerResumeOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+        };
+    };
     get_status_api_v1_cloudsync_status_get: {
         parameters: {
             query?: never;
@@ -14538,7 +16001,7 @@ export interface operations {
                     "application/json": components["schemas"]["OpsErrorResponse"];
                 };
             };
-            /** @description CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error. */
+            /** @description CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled (force=true does not bypass this). CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync before any hub I/O when force=false; NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14611,7 +16074,10 @@ export interface operations {
     };
     next_command_api_v1_commands_next_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description performance: AGENT-03 orders for the open /performance page; shell: desktop-shell commands such as apply-update */
+                consumer?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -14625,6 +16091,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -16328,6 +17803,48 @@ export interface operations {
             };
         };
     };
+    request_shell_quit_api_v1_lifecycle_quit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LifecycleQuitIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifecycleQuitOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_lyric_verdicts_api_v1_lyrics_get: {
         parameters: {
             query?: {
@@ -16553,6 +18070,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KaraokeSummaryOut"];
+                };
+            };
+        };
+    };
+    post_lyrics_verdicts_backfill_api_v1_lyrics_verdicts_backfill_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LyricsVerdictBackfillIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsVerdictBackfillOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -17012,6 +18562,85 @@ export interface operations {
         };
     };
     post_headphone_output_select_api_v1_performance_headphones_outputs_select_post: _HeadphoneJsonPost;
+    post_rescue_snapshot_api_v1_performance_rescue_snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RescueAppendOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rescue_snapshot_index_api_v1_performance_rescue_snapshots_index_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_latest_rescue_snapshot_api_v1_performance_rescue_snapshots_latest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     latest_client_performance_sample_api_v1_performance_telemetry_client_samples_get: {
         parameters: {
             query?: never;
@@ -17566,6 +19195,39 @@ export interface operations {
             };
         };
     };
+    get_playlist_rb_djay_diff_api_v1_playlists__playlist_id__rb_djay_diff_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_playlist_sets: {
         parameters: {
             query?: never;
@@ -18028,6 +19690,330 @@ export interface operations {
             };
         };
     };
+    rb_djay_sync_analysis_apply_api_v1_rb_djay_sync_analysis_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalysisApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_cues_apply_api_v1_rb_djay_sync_cues_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CuesApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_cues_plan_api_v1_rb_djay_sync_cues_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CuesPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_djay_playlists_api_v1_rb_djay_sync_djay_playlists_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    rb_djay_sync_match_api_v1_rb_djay_sync_match_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_metadata_plan_api_v1_rb_djay_sync_metadata_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MetadataPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_playlists_apply_api_v1_rb_djay_sync_playlists_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_playlists_plan_api_v1_rb_djay_sync_playlists_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_ratings_apply_api_v1_rb_djay_sync_ratings_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RatingsApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rb_djay_sync_status_api_v1_rb_djay_sync_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     list_broken_tracks_api_v1_reconcile_broken_get: {
         parameters: {
             query?: {
@@ -18167,6 +20153,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rescue_restore_api_v1_rescue_restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RescueRestoreIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RescueRestoreOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rescue_snapshots_list_api_v1_rescue_snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RescueSnapshotsOut"];
                 };
             };
         };
@@ -18548,6 +20587,102 @@ export interface operations {
             };
         };
     };
+    post_shell_navigate_api_v1_shell_navigate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ack_shell_navigate_api_v1_shell_navigate_ack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_shell_navigate_pending_api_v1_shell_navigate_pending_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     list_smartlists_api_v1_smartlists_get: {
         parameters: {
             query?: {
@@ -18914,6 +21049,53 @@ export interface operations {
             };
         };
     };
+    bulk_hydrate_stems_api_v1_stems_bulk_hydrate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StemBulkHydrateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemBulkHydrateOut"];
+                };
+            };
+            /** @description Invalid request, missing R2 credentials, or no published stem bundle index in R2 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Local stem bundle index cache is present but unreadable (STEM_INDEX_CORRUPT) */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     estimate_api_v1_stems_estimate_get: {
         parameters: {
             query: {
@@ -19006,6 +21188,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    build_stem_index_api_v1_stems_index_build_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StemIndexBuildIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemIndexBuildOut"];
                 };
             };
             /** @description Validation Error */
@@ -19142,6 +21357,13 @@ export interface operations {
                     };
                 };
             };
+            /** @description MDT_EXTERNAL_STEM_ROOTS entry does not exist */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -19150,6 +21372,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description MDT_EXTERNAL_STEM_ROOTS not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -19198,6 +21427,13 @@ export interface operations {
                         [key: string]: string;
                     };
                 };
+            };
+            /** @description Invalid or missing manifest_path, corrupt manifest, or hydrate refused */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -19366,6 +21602,68 @@ export interface operations {
                 };
             };
             /** @description hello refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_lyrics_asr_presign_api_v1_sync_lyrics_asr__stable_id__get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsAsrPresignResponse"];
+                };
+            };
+            /** @description lyrics-asr/presign refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description LYRICS_ASR_NOT_FOUND when the transcript object is absent from R2 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description LYRICS_ASR_PRESIGN_FAILED when presigning or HEAD failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description lyrics-asr/presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -19551,6 +21849,114 @@ export interface operations {
                 };
             };
             /** @description status refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_bundle_presign_api_v1_sync_stems_bundle_presign_get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+                /** @description track stable_id */
+                stable_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemBundlePresignResponse"];
+                };
+            };
+            /** @description stems/bundle-presign refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description STEM_BUNDLE_NOT_INDEXED when the stable_id is absent from the published index */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description STEM_BUNDLE_PRESIGN_FAILED when presigning or HEAD failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description stems/bundle-presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_stem_index_api_v1_sync_stems_index_get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemIndexResponse"];
+                };
+            };
+            /** @description stems/index refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description stems/index refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -19856,6 +22262,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description AUDIO_ACCESS_BLOCKED: opening the resolved library-media path did not return within AUDIO_ACCESS_TIMEOUT_S (kernel-blocked open, e.g. FIFO with no writer or macOS Media Library denial) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     get_track_audio_api_v1_tracks__stable_id__audio_get: {
@@ -19884,6 +22297,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description AUDIO_ACCESS_BLOCKED: opening the resolved library-media path did not return within AUDIO_ACCESS_TIMEOUT_S (kernel-blocked open, e.g. FIFO with no writer or macOS Media Library denial) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -20335,6 +22755,79 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as hub unreachable or HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mark_stem_deck_closed_api_v1_tracks__stable_id__stems_deck_close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_stem_deck_open_api_v1_tracks__stable_id__stems_deck_open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     get_stem_file_api_v1_tracks__stable_id__stems__part__get: {
@@ -20364,6 +22857,20 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as hub unreachable or HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_UNREACHABLE when the configured hub cannot be reached, STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -20507,6 +23014,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_apply_api_v1_update_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateApplyAccepted"];
+                };
+            };
+            /** @description apply refused; no shell command enqueued */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateApplyRefused"];
                 };
             };
         };

@@ -11,10 +11,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.adapters.rekordbox import config as rb_config
+from apps.cloud.stem_index import save_cached_index
 from apps.lyrics.cache import LyricLine, Lyrics, cache_path, write
 from apps.shared.state import db as state_db
 from apps.webui.server.app import create_app
 from apps.webui.server.sqlite_backend import SqliteBackend
+from tests.cloudsync.conftest import InMemoryAssetS3
 
 
 @pytest.fixture
@@ -37,6 +39,44 @@ def flags_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Te
     )
     with TestClient(app) as client:
         yield client
+
+
+@pytest.fixture
+def hydration_flags_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[TestClient]:
+    """Like flags_client but with stem_hydration_data_dir wired on app.state."""
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    state_db_path = state_dir / "state.db"
+    connection = state_db.open_rw(state_db_path)
+    connection.close()
+    data_dir = tmp_path / "data"
+    monkeypatch.setattr(rb_config, "STATE_DB", state_db_path)
+    monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", tmp_path / "absent.db")
+    app = create_app(
+        backend=SqliteBackend(state_db_path),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        state_db_path=str(state_db_path),
+        mount_frontend=False,
+    )
+    app.state.stem_hydration_data_dir = data_dir
+    with TestClient(app) as client:
+        yield client
+
+
+def _insert_track(client: TestClient, tmp_path: Path, stable_id: str) -> None:
+    state_dir = tmp_path / "state"
+    state_db_path = state_dir / "state.db"
+    connection = state_db.open_rw(state_db_path)
+    connection.execute(
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (stable_id, "inferred", "Test", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+    )
+    connection.commit()
+    connection.close()
 
 
 def test_track_out_optional_resource_flags_on_empty_track(
@@ -95,6 +135,40 @@ def test_track_out_lyrics_available_when_cache_file_exists(
     )
 
     response = flags_client.get("/api/v1/tracks/track-with-lyrics")
+
+    assert response.status_code == 200
+    assert response.json()["lyrics_available"] is True
+
+
+def test_track_out_lyrics_available_for_asr_cache(
+    flags_client: TestClient, tmp_path: Path
+) -> None:
+    state_dir = tmp_path / "state"
+    state_db_path = state_dir / "state.db"
+    connection = state_db.open_rw(state_db_path)
+    connection.execute(
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (
+            "track-with-asr-lyrics",
+            "inferred",
+            "ASR Lyrics",
+            "2026-01-01T00:00:00Z",
+            "2026-01-01T00:00:00Z",
+        ),
+    )
+    connection.commit()
+    connection.close()
+    write(
+        cache_path(tmp_path, "track-with-asr-lyrics"),
+        Lyrics(
+            stable_id="track-with-asr-lyrics",
+            source="asr",
+            lines=(LyricLine(start_ms=500, text="hello world"),),
+        ),
+    )
+
+    response = flags_client.get("/api/v1/tracks/track-with-asr-lyrics")
 
     assert response.status_code == 200
     assert response.json()["lyrics_available"] is True
@@ -184,3 +258,112 @@ def test_track_out_artwork_available_agrees_with_artwork_route(
         assert artwork_resp.status_code == 503
         detail = artwork_resp.json()["detail"]
         assert detail["code"] == "ARTWORK_READER_UNAVAILABLE"
+
+
+@pytest.mark.requirement("STEM-25")
+def test_stems_available_true_when_indexed_but_not_local(
+    hydration_flags_client: TestClient, tmp_path: Path
+) -> None:
+    """A track with no local bundle but a cached R2 index entry reports
+    stems_available=True so the frontend's probe issues GET /stems.
+
+    [if] a track has no bundle but a cached index entry [then] stems_available is True, [else stop].
+    """
+    from tests.webui.test_stems_hydration import _cfg, _seed_bundle
+
+    stable_id = "indexed-not-local"
+    data_dir = tmp_path / "data"
+    cfg = _cfg()
+    s3 = InMemoryAssetS3()
+    entry = _seed_bundle(s3, cfg, stable_id)
+    _insert_track(hydration_flags_client, tmp_path, stable_id)
+    save_cached_index(data_dir, {stable_id: entry})
+    hydration_flags_client.app.state.stem_hydration_cfg = cfg
+    hydration_flags_client.app.state.stem_hydration_s3 = s3
+    hydration_flags_client.app.state.stems_dir = tmp_path / "stems"
+
+    track_resp = hydration_flags_client.get(f"/api/v1/tracks/{stable_id}")
+    assert track_resp.status_code == 200
+    assert track_resp.json()["stems_available"] is True
+
+    stems_resp = hydration_flags_client.get(f"/api/v1/tracks/{stable_id}/stems")
+    assert stems_resp.status_code == 200
+    assert stems_resp.json().get("hydrating") is True
+
+
+@pytest.mark.requirement("STEM-25")
+def test_stems_available_false_when_hydration_disabled(
+    flags_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] a track is indexed, hydration unbound [then] stems_available is False, [else stop]."""
+    stable_id = "indexed-no-hydration"
+    data_dir = tmp_path / "data"
+    _insert_track(flags_client, tmp_path, stable_id)
+    save_cached_index(
+        data_dir,
+        {stable_id: {"manifest.json": "a" * 64, "vocals.wav": "b" * 64}},
+    )
+
+    response = flags_client.get(f"/api/v1/tracks/{stable_id}")
+    assert response.status_code == 200
+    assert response.json()["stems_available"] is False
+
+
+@pytest.mark.requirement("STEM-25")
+def test_stems_available_false_when_not_in_index(
+    hydration_flags_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] a track has no bundle, no index entry [then] stems_available is False, [else stop]."""
+    stable_id = "not-in-index"
+    data_dir = tmp_path / "data"
+    _insert_track(hydration_flags_client, tmp_path, stable_id)
+    save_cached_index(data_dir, {"other-track": {"manifest.json": "a" * 64}})
+
+    response = hydration_flags_client.get(f"/api/v1/tracks/{stable_id}")
+    assert response.status_code == 200
+    assert response.json()["stems_available"] is False
+
+
+@pytest.mark.requirement("STEM-25")
+def test_stems_available_true_from_local_summary_without_hydration(
+    flags_client: TestClient, tmp_path: Path
+) -> None:
+    """Local bundle path is unaffected when hydration is not wired.
+
+    [if] a local bundle exists, hydration unwired [then] stems_available still True, [else stop].
+    """
+    import json
+
+    stable_id = "local-bundle-track"
+    stems_dir = tmp_path / "stems"
+    bundle_dir = stems_dir / stable_id
+    bundle_dir.mkdir(parents=True)
+    manifest = {
+        "schema_version": 1,
+        "stable_id": stable_id,
+        "model": {"name": "htdemucs", "version": "4.0.1"},
+        "source": {"path": "/music/x.wav", "sha256": "a" * 64},
+        "files": {
+            "vocals": "vocals.wav", "drums": "drums.wav",
+            "bass": "bass.wav", "other": "other.wav",
+        },
+    }
+    (bundle_dir / "manifest.json").write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+    for part in ("vocals", "drums", "bass", "other"):
+        _write_wav(bundle_dir / f"{part}.wav")
+
+    state_dir = tmp_path / "state"
+    state_db_path = state_dir / "state.db"
+    connection = state_db.open_rw(state_db_path)
+    connection.execute(
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (stable_id, "inferred", "Local", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+    )
+    connection.commit()
+    connection.close()
+
+    flags_client.app.state.stems_dir = stems_dir
+    response = flags_client.get(f"/api/v1/tracks/{stable_id}")
+    assert response.status_code == 200
+    assert response.json()["stems_available"] is True

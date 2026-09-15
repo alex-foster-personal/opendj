@@ -517,6 +517,7 @@ IGNORED_PATHS: tuple[IgnoredPath, ...] = (
         ".cursor/**/cache/",
         ".cursor/**/*.log",
         "/runs/",
+        "/.sweep-*",
         "/wt/",
         "/zTasks.md",
         "/.cccron/",

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- TEMPLATE, not a loadable plist. `just cloudsync-hub-start` renders it with
+     `python -m apps.sync_hub.hub_deploy render - -kind launchd` into
+     ~/Library/LaunchAgents/com.opendj.hub.plist. launchd expands nothing at
+     load time (not ~ and not $HOME), so every path is made absolute at render
+     time from apps/sync_hub/hub_deploy.py, the same hub_serve_argv + HUB_ENV
+     that tests/cloudsync/test_hub_deploy.py boots.
+
+     Bind is always 127.0.0.1; tailnet exposure is `tailscale serve`.
+     Runbook: docs/cloudsync/hub-runbook.md -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.opendj.hub</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/uv</string>
+		<string>run</string>
+		<string>--no-sync</string>
+		<string>python</string>
+		<string>-m</string>
+		<string>apps.engine_core</string>
+		<string>serve</string>
+		<string>--data-dir</string>
+		<string>/golden/opendj-hub</string>
+		<string>--host</string>
+		<string>127.0.0.1</string>
+		<string>--port</string>
+		<string>8870</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/golden/music-dj-tools</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>MDT_IS_HUB</key>
+		<string>1</string>
+		<key>MDT_LIBRARY_MODE</key>
+		<string>local</string>
+		<key>MUSIC_DJ_AUTO_ANALYZE</key>
+		<string>off</string>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>/golden/opendj-hub/logs/hub.launchd.log</string>
+	<key>StandardErrorPath</key>
+	<string>/golden/opendj-hub/logs/hub.launchd.log</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<!-- Restart only after a NON-zero exit. A clean stop stays stopped. -->
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>

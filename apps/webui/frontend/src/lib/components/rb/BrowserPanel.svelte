@@ -48,6 +48,7 @@
 		libraryHealthDot as _computeLibraryHealthDot,
 		type LibraryHealthDot,
 		completeLibraryUsable,
+		recordOpenToLibraryRows,
 		formatReplaceStateUrl,
 		addToPlaylistToastMessage,
 		appendTracksToPlaylist,
@@ -124,7 +125,12 @@
 		replacePlaylistTracks
 	} from '$lib/rb/playlist-write';
 	import {
-		hydrateConfirmPrefsFromDisk,
+		bootTracksPrefetch,
+		canBootAllTracksEarly,
+		fetchBootTracksFirstPage,
+		LIBRARY_BOOT_PAGE_SIZE,
+	} from '$lib/rb/library-boot-hydration';
+	import {
 		rememberSpotifyRecent,
 		setConfirmPref,
 		setHideBrokenLinks,
@@ -216,7 +222,7 @@
 	// playlists were never fetch-capped (getPlaylistHydrated already
 	// returns the full membership in one call), only client-sliced - that
 	// slice is gone too (see _fetchPlaylistRows).
-	const PAGE_SIZE = 500;
+	const PAGE_SIZE = LIBRARY_BOOT_PAGE_SIZE;
 	// Whole-collection FTS5 search stays hard-capped (unrelated to the
 	// fetch-cap removal above): a global text query over the whole library
 	// is a separate, ranked result set, not a browsable pane listing.
@@ -817,7 +823,6 @@
 		applyShortViewport();
 		shortViewportMq.addEventListener('change', applyShortViewport);
 		void _init();
-		void hydrateConfirmPrefsFromDisk();
 		const blankSweepTimer = setInterval(
 			() => void _sweepBlankPlaylists(),
 			BLANK_PLAYLIST_GRACE_MS
@@ -1010,30 +1015,42 @@
 		playlistsError = null;
 		const bootHealthEpoch = _healthWriteEpoch;
 		const bootPlaylistsEpoch = _playlistsWriteEpoch;
+		const bootAllTracksEarly = canBootAllTracksEarly({
+			remembered: uiPrefs.last_playlist,
+			url_playlist_id: urlPlaylistId,
+			source,
+			spotify_selected_id: spotifySelectedId
+		});
+		let bootPaneRestored = false;
+		const healthPromise = getHealthAtBoot(getHealth);
+		const playlistsPromise = listPlaylistsHydrated();
 		try {
-			const [healthRes, lists] = await Promise.all([
-				getHealthAtBoot(getHealth),
-				listPlaylistsHydrated()
-			]);
-			libraryHealthError = null;
-			// A concurrent _refreshLibraryRowsOnce call (a library-change event, or
-			// the bus's first-ever open) can write a fresher allTracksCount and
-			// playlists while this Promise.all is still in flight. Applying this
-			// boot snapshot unconditionally would clobber that fresher data with
-			// older data (PR #1656 review round 9, P2 BLOCKING) - see
-			// reconcileBootSnapshot's doc comment. Each field is reconciled
-			// against its OWN write epoch: _refreshLibraryRowsOnce writes
-			// playlists (via _refreshPlaylists) and allTracksCount (via the
-			// health re-read) at different times within one call, so a
-			// playlists-only write in between must not discard this boot
-			// read's still-uncontested health value, and vice versa (PR #1656
-			// review round 11, P2 BLOCKING).
-			allTracksCount = reconcileBootSnapshot({
-				bootEpoch: bootHealthEpoch,
-				currentEpoch: _healthWriteEpoch,
-				bootValue: healthRes.health.state_db.tracks,
-				currentValue: allTracksCount
-			});
+			if (bootAllTracksEarly) {
+				await bootTracksPrefetch().prefsPromise.catch(() => {});
+				const healthRes = await healthPromise;
+				libraryHealthError = null;
+				allTracksCount = reconcileBootSnapshot({
+					bootEpoch: bootHealthEpoch,
+					currentEpoch: _healthWriteEpoch,
+					bootValue: healthRes.health.state_db.tracks,
+					currentValue: allTracksCount
+				});
+				if (!(source === 'spotify' && spotifySelectedId !== null)) {
+					await _restoreBootPane();
+					bootPaneRestored = true;
+				}
+			}
+			const lists = await playlistsPromise;
+			if (!bootAllTracksEarly) {
+				const healthRes = await healthPromise;
+				libraryHealthError = null;
+				allTracksCount = reconcileBootSnapshot({
+					bootEpoch: bootHealthEpoch,
+					currentEpoch: _healthWriteEpoch,
+					bootValue: healthRes.health.state_db.tracks,
+					currentValue: allTracksCount
+				});
+			}
 			playlists = reconcileBootSnapshot({
 				bootEpoch: bootPlaylistsEpoch,
 				currentEpoch: _playlistsWriteEpoch,
@@ -1055,7 +1072,7 @@
 				} else {
 					_selectSpotifyPlaylist(selected, false);
 				}
-			} else {
+			} else if (!bootPaneRestored) {
 				await _restoreBootPane();
 			}
 		} catch (exc) {
@@ -1775,10 +1792,13 @@
 				await fillAllTracksPane({
 					pane: p,
 					seq,
-					fetchPage: (cursor) => listTracksHydrated({ limit: PAGE_SIZE, cursor }),
+					fetchPage: (cursor) => fetchBootTracksFirstPage(cursor),
 					mapRow: (t, order) => _rowFromListWire(t, order),
 					progressTotal: allTracksNonBrokenCount,
-					onFirstPaint: () => completeLibraryUsable({ source: 'all-tracks' }),
+					onFirstPaint: () => {
+						recordOpenToLibraryRows({ source: 'all-tracks' });
+						completeLibraryUsable({ source: 'all-tracks' });
+					},
 					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
 					onFillError: (error) => pushToast(`playlist load failed: ${error}`, 'error')
 				});
@@ -1792,7 +1812,10 @@
 						listTracksHydrated({ limit: PAGE_SIZE, cursor, tag: node.name }),
 					mapRow: (t, order) => _rowFromListWire(t, order),
 					progressTotal: node.track_count,
-					onFirstPaint: () => completeLibraryUsable({ source: 'all-tracks' }),
+					onFirstPaint: () => {
+						recordOpenToLibraryRows({ source: 'all-tracks' });
+						completeLibraryUsable({ source: 'all-tracks' });
+					},
 					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
 					onFillError: (error) => pushToast(`taglist load failed: ${error}`, 'error')
 				});
@@ -1805,6 +1828,10 @@
 						? await _fetchSmartlistRows(node.playlist_id)
 						: await _fetchPlaylistRows(node.playlist_id);
 			p.completeLoad(seq, result.rows, result.truncated, result.etag);
+			if (node.kind === 'playlist' || node.kind === 'smartlist') {
+				recordOpenToLibraryRows({ source: 'playlist' });
+				completeLibraryUsable({ source: 'playlist' });
+			}
 		} catch (exc) {
 			if (p.failLoad(seq, String(exc))) {
 				pushToast(`playlist load failed: ${String(exc)}`, 'error');
@@ -2851,6 +2878,19 @@
 			pushToast(`playlist update failed: ${String(exc)}`, 'error');
 			return;
 		}
+		// FLOW-06: every other membership mutation in this file confirms with a
+		// toast; this one silently succeeded, indistinguishable from a no-op.
+		pushToast(`Removed "${row.title ?? row.stable_id}" from playlist`, 'info');
+		const node = _currentNode(p);
+		if (node !== null) await _loadPane(p, node);
+	}
+
+	// FLOW-07: relocate rewrites the track's own path, not a playlist
+	// membership, so a plain pane reload (same call every membership
+	// mutation above already makes) is enough to pick up the fresh
+	// file_exists / mostly_broken state - no separate refetch needed.
+	async function _reloadActivePane(): Promise<void> {
+		const p = pane;
 		const node = _currentNode(p);
 		if (node !== null) await _loadPane(p, node);
 	}
@@ -2959,6 +2999,9 @@
 		}
 		try {
 			await movePlaylistItems(id, p.etag, body);
+			// FLOW-06: silent on success today, so a drag-reorder looked identical
+			// to a dropped/ignored gesture until the row visibly re-sorted.
+			pushToast(count === 1 ? 'Moved track' : `Moved ${count} tracks`, 'info');
 		} catch (exc) {
 			if (exc instanceof PlaylistConflictError) {
 				pushToast('playlist changed elsewhere - reloaded with the latest version', 'error');
@@ -3262,6 +3305,7 @@
 			onlyricsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'lyrics', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
 			onopeneditmodal={(kind) => void openEditModal(kind)}
 			onremovefromlibrary={(ids) => void removeFromLibraryUi(ids)}
+			onrelocated={() => void _reloadActivePane()}
 			onaddtoplaylist={(ids) => openAddToPlaylistPicker(ids)}
 			ongenrefilter={genreFilter}
 			{genreFilterUntil}

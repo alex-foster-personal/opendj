@@ -7,11 +7,13 @@
 	import ProvenanceTooltip from '$lib/components/ProvenanceTooltip.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import QualityBadge from '$lib/components/rb/QualityBadge.svelte';
+	import LineLyricsPanel from '$lib/components/LineLyricsPanel.svelte';
 	import LyricsPanel from '$lib/components/LyricsPanel.svelte';
 	import { fetchRbMeta, RbApiError } from '$lib/rb/api-rb';
 	import { lyricEntry, loadLyrics } from '$lib/lyrics/lyrics-cache.svelte';
 	import { openStage } from '$lib/lyrics/stage-store.svelte';
 	import type { TrackQuality } from '$lib/rb/library-types';
+	import TrackActions from '$lib/components/TrackActions.svelte';
 
 	let track = $state<Track | null>(null);
 	let etag = $state<string>('');
@@ -121,10 +123,11 @@
 			Stage
 		</button>
 	{/if}
+	<LineLyricsPanel stableId={track.stable_id} />
 	<LyricsPanel stableId={track.stable_id} />
 
-	<h3>Actions (coming in Phase 17)</h3>
-	<p style="color: var(--muted);">Open in Rekordbox · Open in djay · Show in Finder</p>
+	<h3>Actions</h3>
+	<TrackActions stableId={track.stable_id} />
 
 	{#if conflictServer}
 		<ConflictDialog

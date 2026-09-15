@@ -34,7 +34,7 @@ CREATE TABLE smartlists (
 
 @pytest.mark.requirement("LIBMX-02")
 def test_delete_on_unmigrated_table_tombstones(tmp_path: Path):
-    """[if] smartlists lacks deleted_at [then] DELETE migrates and tombstones."""
+    """[if] smartlists lacks deleted_at [then] DELETE migrates and tombstones, [else stop]."""
     db_path = tmp_path / "legacy.db"
     conn = sqlite3.connect(str(db_path))
     try:
@@ -82,7 +82,7 @@ def test_delete_on_unmigrated_table_tombstones(tmp_path: Path):
 
 @pytest.mark.requirement("LIBMX-02")
 def test_ensure_phase08_adds_deleted_at_idempotent(tmp_path: Path):
-    """[if] ensure_phase08_tables runs twice [then] deleted_at exists once."""
+    """[if] ensure_phase08_tables runs twice [then] deleted_at exists once, [else stop]."""
     db_path = tmp_path / "phase08.db"
     conn = sqlite3.connect(str(db_path))
     try:

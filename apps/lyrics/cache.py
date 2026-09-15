@@ -109,6 +109,8 @@ def _parse_line(value: Any, index: int, previous_ms: int, path: Path) -> LyricLi
     start_ms, text = value.get("start_ms"), value.get("text")
     if not isinstance(start_ms, int) or isinstance(start_ms, bool) or start_ms < 0:
         raise ValueError(f"lyrics-cache entry {path} has invalid line {index}")
-    if start_ms <= previous_ms or not isinstance(text, str) or not text.strip():
+    # Equal stamps are valid LRC (two lines sung at once); only a line that
+    # starts BEFORE the previous one is out of order.
+    if start_ms < previous_ms or not isinstance(text, str) or not text.strip():
         raise ValueError(f"lyrics-cache entry {path} has invalid line {index}")
     return LyricLine(start_ms=start_ms, text=text)

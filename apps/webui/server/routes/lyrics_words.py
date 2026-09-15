@@ -39,7 +39,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from apps.cloud.eviction import HydrationError
-from apps.lyrics import artifacts, karaoke_cache, sources_config, store
+from apps.lyrics import artifacts, karaoke_cache, library_verdicts, sources_config, store
 from apps.lyrics import jobs as lyric_jobs
 from apps.lyrics import lines as lyric_lines
 from apps.lyrics import purge as lyric_purge
@@ -60,10 +60,14 @@ from .lyrics_words_models import (
     LyricsKpiOut,
     LyricsPurgeIn,
     LyricsPurgeOut,
+    LyricsVerdictBackfillIn,
+    LyricsVerdictBackfillOut,
     OverrideIn,
 )
 
 router = APIRouter(tags=["lyrics"])
+
+_SQLITE_MAX_SIGNED_INT = 9223372036854775807  # 2**63 - 1
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[4]
 #: Module-level so a test can point it at a tmp ledger.
@@ -292,7 +296,7 @@ def get_lyrics_summary(
 @router.get("/lyrics", response_model=list[CoverageVerdictOut])
 def list_lyric_verdicts(
     limit: int = Query(default=100, ge=1, le=1000),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=_SQLITE_MAX_SIGNED_INT),
     verdict: str | None = Query(default=None, description="filter by effective verdict"),
     order: str = Query(default="suspect", description="suspect|coverage|recent"),
     conn: sqlite3.Connection = Depends(get_lyrics_read_conn),  # noqa: B008
@@ -458,6 +462,33 @@ def post_lyrics_purge(
     except store.LyricStoreError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return LyricsPurgeOut(**report.__dict__)
+
+
+@router.post("/lyrics/verdicts/backfill", response_model=LyricsVerdictBackfillOut)
+def post_lyrics_verdicts_backfill(
+    request: Request,
+    body: LyricsVerdictBackfillIn,
+    conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),  # noqa: B008
+) -> LyricsVerdictBackfillOut:
+    """Parity for ``python -m apps.lyrics verdicts backfill`` (LYR-06): fill
+    or refresh the stem-coverage-only verdict for every loadable bundle,
+    agent-native so the library-scale backfill is drivable without the CLI.
+
+    A track whose row already carries word-level data (``words_content_hash``)
+    is reported skipped, never overwritten - this endpoint only ever fills or
+    refreshes the coverage fields, same contract as the CLI.
+    """
+    try:
+        report = library_verdicts.backfill_verdicts(
+            conn,
+            data_dir=_data_dir(request),
+            dry_run=body.dry_run,
+            limit=body.limit,
+            include_reserved=body.include_reserved,
+        )
+    except (store.LyricStoreError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return LyricsVerdictBackfillOut(**library_verdicts.report_to_dict(report))
 
 
 @router.get("/bench/lyrics-kpi", response_model=LyricsKpiOut)

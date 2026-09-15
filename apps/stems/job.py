@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +64,8 @@ there is more than one and a UI can group by the part before the dot."""
 
 WORKER_SCRIPT: str = "scripts/stems_modal_worker.py"
 LOCAL_WORKER_SCRIPT: str = "scripts/stems_local_worker.py"
+HYDRATE_WORKER_SCRIPT: str = "scripts/stems_hydrate_worker.py"
+R2_FIRST_WORKER_SCRIPT: str = "scripts/stems_r2_first_worker.py"
 
 SCOPE_PENDING: str = "pending"
 """The only scope: every library row with audio on disk and no bundle yet.
@@ -245,11 +248,41 @@ def resolve_transport() -> str:
     return raw
 
 
+def _resolve_data_dir(data_dir: Path | None) -> Path:
+    if data_dir is not None:
+        return data_dir
+    from apps.shared.platform_paths import DATA_DIR
+
+    return DATA_DIR
+
+
+def _r2_first_argv(
+    stable_ids: list[str] | None,
+    *,
+    tier: str,
+    data_dir: Path | None,
+    executor: str,
+) -> list[str]:
+    root = _resolve_data_dir(data_dir)
+    argv: list[str] = [sys.executable, R2_FIRST_WORKER_SCRIPT, "--data-dir", str(root)]
+    if stable_ids is None:
+        argv += ["--scope", SCOPE_PENDING]
+    else:
+        for stable_id in stable_ids:
+            argv += ["--stable-id", stable_id]
+    argv += ["--tier", tier, "--executor", executor]
+    return argv
+
+
 def build_argv(payload: dict[str, Any]) -> list[str]:
+    from apps.cloud.stem_source import resolve_stem_hydration_source
     from apps.stems.local_gate import local_stems_gate
     from apps.stems.routing import EXECUTOR_LOCAL
 
     stable_ids, tier, data_dir, executor = parse_payload(payload)
+    root = _resolve_data_dir(data_dir)
+    if resolve_stem_hydration_source(root) is not None:
+        return _r2_first_argv(stable_ids, tier=tier, data_dir=data_dir, executor=executor)
     if shutil.which(UV_BIN) is None:
         raise StemsJobPayloadError(
             f"{UV_BIN!r} is not on PATH, and the stems worker needs uv. "
@@ -347,6 +380,8 @@ def stems_root(data_dir: Path | None) -> Path:
 
 
 __all__ = [
+    "HYDRATE_WORKER_SCRIPT",
+    "R2_FIRST_WORKER_SCRIPT",
     "JOB_KIND",
     "LIBRARY_KIND",
     "MODAL_TIER_KEYS",

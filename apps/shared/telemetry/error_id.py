@@ -21,7 +21,9 @@ _UUID_RE = re.compile(
     re.IGNORECASE,
 )
 _HEX_RE = re.compile(r"\b[0-9a-f]{8,}\b", re.IGNORECASE)
-_NUM_RE = re.compile(r"\b\d+\b")
+#: No word boundaries: "2919ms", "7.5ms" and "t-3" must collapse too. With
+#: ``\b\d+\b`` one audio stall split into 51 ids on the Air (Sun 13 Sep 2026).
+_NUM_RE = re.compile(r"\d+(?:\.\d+)?")
 _WS_RE = re.compile(r"\s+")
 
 #: One placeholder so a uuid, a sha, and an integer collapse to the same class.

@@ -131,9 +131,31 @@ function byId(id) {
 	return el;
 }
 
+function showFatal(supervisor) {
+	byId('root').dataset.state = 'fatal';
+	byId('checking-view').hidden = true;
+	byId('unreachable-view').hidden = true;
+	byId('fatal-view').hidden = false;
+	const exitCode = supervisor?.exit_code ?? '(unknown)';
+	const pid = supervisor?.lock_pid ?? '(unknown)';
+	const port = supervisor?.lock_port ?? '(unknown)';
+	byId('fatal-exit').textContent = String(exitCode);
+	byId('fatal-pid').textContent = String(pid);
+	byId('fatal-port').textContent = String(port);
+}
+
+function requestRelaunch(healthPort) {
+	if (!healthPort) {
+		return;
+	}
+	const url = `http://127.0.0.1:${healthPort}/api/v1/relaunch`;
+	void fetch(url, { method: 'POST', mode: 'no-cors', cache: 'no-store' });
+}
+
 function showUnreachable(result, attempts) {
 	byId('root').dataset.state = 'unreachable';
 	byId('checking-view').hidden = true;
+	byId('fatal-view').hidden = true;
 	byId('unreachable-view').hidden = false;
 	byId('probe-url').textContent = result.url;
 	byId('probe-url-echo').textContent = result.url;
@@ -179,7 +201,7 @@ export function startBootstrap({
 		if (result.reachable) {
 			stopped = true;
 			countdown.textContent = 'Engine found. Opening Open DJ.';
-			navigate(`${origin}/`);
+			navigate(`${origin}/performance`);
 			return;
 		}
 		showUnreachable(result, attempts);
@@ -209,12 +231,36 @@ export function startBootstrap({
 	};
 }
 
+function parseFatalQuery(search) {
+	const params = new URLSearchParams(search);
+	if (params.get('fatal') !== '1') {
+		return null;
+	}
+	return {
+		exit_code: Number(params.get('exit') ?? -1),
+		lock_pid: Number(params.get('pid') ?? 0),
+		lock_port: Number(params.get('port') ?? 0),
+		health_port: globalThis.__OPENDJ_ENGINE_SUPERVISOR__?.health_port ?? null
+	};
+}
+
 // Auto-start only in a real page, never when imported by a test runner.
 if (typeof document !== 'undefined' && document.getElementById('root') !== null) {
-	startBootstrap({
-		origin: resolveEngineOrigin(
-			globalThis.location?.search ?? '',
-			globalThis.OPENDJ_ENGINE_ORIGIN
-		)
-	});
+	const search = globalThis.location?.search ?? '';
+	const fatal = parseFatalQuery(search);
+	if (fatal !== null) {
+		showFatal(fatal);
+		byId('relaunch').addEventListener('click', () => {
+			requestRelaunch(fatal.health_port);
+		});
+	} else if (globalThis.__OPENDJ_ENGINE_SUPERVISOR__?.engine === 'dead') {
+		showFatal(globalThis.__OPENDJ_ENGINE_SUPERVISOR__);
+		byId('relaunch').addEventListener('click', () => {
+			requestRelaunch(globalThis.__OPENDJ_ENGINE_SUPERVISOR__?.health_port);
+		});
+	} else {
+		startBootstrap({
+			origin: resolveEngineOrigin(search, globalThis.OPENDJ_ENGINE_ORIGIN)
+		});
+	}
 }

@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+// requirement: CSSTATUS-04
+// [if] the CloudSync chip is healthy on first load [then] it is not in error state and keeps its navigable title, [else stop]
 test('at 900px the CloudSync chip is a single-line link to /cloudsync', async ({ page }) => {
 	await page.setViewportSize({ width: 900, height: 700 });
 	await page.goto('/');
@@ -16,6 +18,8 @@ test('at 900px the CloudSync chip is a single-line link to /cloudsync', async ({
 
 	await expect(chip).toHaveAttribute('title', /CloudSync/);
 	await expect(chip).toHaveAttribute('title', /Click to open CloudSync\./);
+	await expect(chip).not.toHaveClass(/error/);
+	await expect(chip.locator('.chip-label-short')).not.toHaveText('err');
 
 	await chip.click();
 	await expect(page).toHaveURL(/\/cloudsync/);

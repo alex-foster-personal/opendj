@@ -42,6 +42,7 @@ from pathlib import Path
 from apps.lyrics.annotations import load_annotations, validate_against_songs
 from apps.lyrics.cli_pipeline import PIPELINE_COMMANDS, add_pipeline_commands, cmd_pipeline
 from apps.lyrics.cli_storage import STORAGE_COMMANDS, add_storage_commands, cmd_storage
+from apps.lyrics.cli_verdicts import VERDICTS_COMMANDS, add_verdicts_commands, cmd_verdicts
 from apps.lyrics.crosscheck import (
     WITNESS_LOCAL_WINDOW_S,
     crosscheck,
@@ -76,6 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="command", required=True)
     add_storage_commands(subcommands)
     add_pipeline_commands(subcommands)
+    add_verdicts_commands(subcommands)
 
     fetch = subcommands.add_parser("fetch", help="fetch and cache line-synced lyrics")
     fetch.add_argument("track", help="stable track id")
@@ -177,20 +179,36 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _cmd_fetch(data_dir: Path, track: str) -> int:
-    lyrics = LyricsService(data_dir).fetch_stable_id(track)
-    print(
-        json.dumps(
-            {
-                "stable_id": lyrics.stable_id,
-                "source": lyrics.source,
-                "lines": [
-                    {"start_ms": line.start_ms, "text": line.text} for line in lyrics.lines
-                ],
-            },
-            ensure_ascii=False,
+    from apps.lyrics.asr_source import LyricsAsrFetchError
+
+    service = LyricsService(data_dir)
+    try:
+        result = service.fetch_or_resolve_stable_id(track)
+    except LyricsAsrFetchError as exc:
+        print(exc.message, file=sys.stderr)
+        return 1
+    if result.outcome == "cached" and result.lyrics is not None:
+        lyrics = result.lyrics
+        print(
+            json.dumps(
+                {
+                    "stable_id": lyrics.stable_id,
+                    "source": lyrics.source,
+                    "lines": [
+                        {"start_ms": line.start_ms, "text": line.text}
+                        for line in lyrics.lines
+                    ],
+                },
+                ensure_ascii=False,
+            )
         )
-    )
-    return 0
+        return 0
+    if result.outcome == "instrumental":
+        print("instrumental: ASR transcript has zero words", file=sys.stderr)
+        return 1
+    message = result.hub_message or "no lyrics source available"
+    print(message, file=sys.stderr)
+    return 1
 
 
 def _cmd_index(args: argparse.Namespace) -> int:
@@ -532,7 +550,7 @@ def _print_witness_table(
 #-----------------------------------------------------------------------------
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0911 - one return per subcommand family, explicit elif house style
     args = build_parser().parse_args(argv)
     if args.command == "fetch":
         return _cmd_fetch(args.data_dir, args.track)
@@ -559,6 +577,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cmd_storage(args)
     elif args.command in PIPELINE_COMMANDS:
         return cmd_pipeline(args)
+    elif args.command in VERDICTS_COMMANDS:
+        return cmd_verdicts(args)
     else:
         raise AssertionError(f"unhandled command {args.command!r}")
 

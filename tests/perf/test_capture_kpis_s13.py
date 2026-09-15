@@ -414,7 +414,7 @@ def _historical_s13_row() -> dict:
 def test_append_ledger_rows_preserves_fixture_indent(
     tmp_path: Path, indent_width: int
 ) -> None:
-    """[if] append_ledger_rows appends N rows [then] git diff shows zero deleted lines."""
+    """[if] append_ledger_rows appends rows [then] git diff shows no deleted lines, [else stop]."""
     historical = _historical_s13_row()
     ledger = tmp_path / "kpi-ledger.json"
     orig_payload = {"schema_version": 2, "entries": [historical]}
@@ -445,7 +445,7 @@ def test_append_ledger_rows_preserves_fixture_indent(
 
 @pytest.mark.requirement("PERF-KPI-S13")
 def test_append_ledger_rows_rejects_unindented_ledger(tmp_path: Path) -> None:
-    """[if] the ledger is not pretty-printed [then] append fails instead of rewriting it."""
+    """[if] the ledger is not pretty-printed [then] append fails, never rewrites it, [else stop]."""
     ledger = tmp_path / "kpi-ledger.json"
     ledger.write_text('{"schema_version":1,"entries":[]}\n', encoding="utf-8")
     with pytest.raises(ValueError, match="cannot infer JSON indent"):

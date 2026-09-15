@@ -1,6 +1,13 @@
-<!-- PERF-UI-02 (issue #2406): compact escape hatch when /performance bypasses the app shell. -->
+<!-- PERF-UI-02 (issue #2406): compact escape hatch when /performance bypasses the app shell.
+     NAV-01: the hatch originally carried only Library + Admin, so every
+     library-hygiene tool (missing tracks, duplicate review, smartlists) was
+     unreachable from the one screen a DJ actually uses without already
+     knowing the bare URL. Extended, not rebuilt: same nav, more links. -->
 <nav aria-label="App navigation" data-testid="performance-app-nav" class="performance-app-nav">
 	<a href="/" data-testid="performance-nav-library" title="Library">Library</a>
+	<a href="/reconcile" data-testid="performance-nav-reconcile" title="Missing tracks">Missing</a>
+	<a href="/dedup" data-testid="performance-nav-dedup" title="Duplicate review">Dedup</a>
+	<a href="/smartlists" data-testid="performance-nav-smartlists" title="Smartlists">Smartlists</a>
 	<a href="/admin" data-testid="performance-nav-admin" title="Admin">Admin</a>
 </nav>
 

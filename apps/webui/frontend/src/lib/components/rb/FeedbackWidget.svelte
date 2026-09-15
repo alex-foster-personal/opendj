@@ -304,10 +304,10 @@
 	// ----- pin body -------------------------------------------------------
 	function openPin(pin: FeedbackPin): void {
 		openPinId = pin.id;
-		_writeSeen(markPinSeen(pinSeen, pin));
 	}
 
 	function closePin(): void {
+		if (bodyPin !== null) _writeSeen(markPinSeen(pinSeen, bodyPin));
 		openPinId = null;
 	}
 
