@@ -4,6 +4,7 @@ import {
 	advanceBeatStamp,
 	msToBeatPosition
 } from '../../src/lib/rb/performance-rescue-math';
+import type { PerformanceBrowserIpc } from '../../src/lib/rb/performance-ipc.svelte';
 import { FIXTURE_MANIFEST_PATH } from './playwright.performance.config';
 
 const FIXTURE_MODE = process.env.PERFORMANCE_E2E_FIXTURE !== '0';
@@ -41,7 +42,9 @@ async function dispatch(
 	}, command);
 }
 
-async function query(page: import('@playwright/test').Page): Promise<any> {
+type PerformanceQueryResult = Awaited<ReturnType<PerformanceBrowserIpc['query']>>;
+
+async function query(page: import('@playwright/test').Page): Promise<PerformanceQueryResult> {
 	return page.evaluate(async () => {
 		const ipc = window.musicDjToolsPerformance;
 		if (ipc === undefined) throw new Error('performance IPC is not installed');
@@ -90,7 +93,7 @@ test.describe('RESCUE-02/03 playback restore', () => {
 				headphones: before.mixer.headphones
 			},
 			decks: Object.fromEntries(
-				[1, 2, 3, 4].map((deckId) => {
+				([1, 2, 3, 4] as const).map((deckId) => {
 					const deck = before.decks[deckId];
 					const playing = deckIds.includes(deckId as 1 | 3 | 4);
 					return [
@@ -199,7 +202,7 @@ test.describe('RESCUE-02/03 playback restore', () => {
 		await page.reload();
 		await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 		const state = await query(page);
-		expect([1, 2, 3, 4].every((deckId) => state.decks[deckId].playing === false)).toBe(true);
+		expect(([1, 2, 3, 4] as const).every((deckId) => state.decks[deckId].playing === false)).toBe(true);
 	});
 });
 
