@@ -15,10 +15,12 @@ outside the DB (ADR 05 section 1).
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import stat
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from apps.sync_hub.machine_credentials import CREDENTIAL_PREFIX
@@ -27,14 +29,32 @@ log = logging.getLogger("apps.sync_hub.client")
 
 CREDENTIAL_FILENAME: str = "sync-credential"
 CREDENTIAL_FILE_MODE: int = 0o600
+NOTICE_FILENAME: str = "state/cloudsync-credential-notice.json"
+REENROLL_ACTION: str = (
+    "Re-enroll to collect a sync credential (python -m apps.sync_hub enroll)"
+)
+
+#: In-process dedup for ``log_hub_verdict`` within one process lifetime.
+_warned_verdicts: set[tuple[str, str]] = set()
 
 
 class SpokeCredentialError(RuntimeError):
     """The credential file exists but cannot be trusted or used."""
 
 
+@dataclass(frozen=True)
+class CredentialNotice:
+    verdict: str
+    action: str
+    hub_machine_id: str
+
+
 def credential_path(data_dir: Path) -> Path:
     return Path(data_dir) / CREDENTIAL_FILENAME
+
+
+def _notice_path(data_dir: Path) -> Path:
+    return Path(data_dir) / NOTICE_FILENAME
 
 
 def write_credential(data_dir: Path, token: str) -> Path:
@@ -94,6 +114,19 @@ def read_credential(data_dir: Path) -> str | None:
     return token
 
 
+def _persist_notice(data_dir: Path, hub_machine_id: str, verdict: str) -> None:
+    path = _notice_path(data_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "hub_machine_id": hub_machine_id,
+        "verdict": verdict,
+        "action": REENROLL_ACTION,
+    }
+    temp = path.with_suffix(".tmp")
+    temp.write_text(json.dumps(payload), encoding="utf-8")
+    temp.replace(path)
+
+
 def log_hub_verdict(hub_machine_id: str, verdict: object) -> None:
     """Warn when the hub's ``hello`` says it would not accept our credential.
 
@@ -103,21 +136,79 @@ def log_hub_verdict(hub_machine_id: str, verdict: object) -> None:
     """
     if verdict is None or verdict == "valid":
         return
+    verdict_s = str(verdict)
+    key = (hub_machine_id, verdict_s)
+    if key in _warned_verdicts:
+        log.debug(
+            "hub %s still reads this machine's sync credential as %s",
+            hub_machine_id,
+            verdict_s,
+        )
+        return
+    _warned_verdicts.add(key)
     log.warning(
         "hub %s reads this machine's sync credential as %s; it syncs today "
-        "only because the hub runs in observe mode. Re-enroll with a fresh "
-        "grant (python -m apps.sync_hub enroll) to collect a credential.",
+        "only because the hub runs in observe mode. %s.",
         hub_machine_id,
-        verdict,
+        verdict_s,
+        REENROLL_ACTION,
+    )
+
+
+def record_credential_notice(data_dir: Path, hub_machine_id: str, verdict: object) -> None:
+    """Persist one re-enroll notice for status until the verdict changes."""
+    if verdict is None or verdict == "valid":
+        return
+    verdict_s = str(verdict)
+    path = _notice_path(data_dir)
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            existing = None
+        if (
+            isinstance(existing, dict)
+            and existing.get("hub_machine_id") == hub_machine_id
+            and existing.get("verdict") == verdict_s
+        ):
+            return
+    _persist_notice(data_dir, hub_machine_id, verdict_s)
+
+
+def credential_notice(data_dir: Path) -> CredentialNotice | None:
+    path = _notice_path(data_dir)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    hub_machine_id = payload.get("hub_machine_id")
+    verdict = payload.get("verdict")
+    action = payload.get("action")
+    if not isinstance(hub_machine_id, str) or not isinstance(verdict, str):
+        return None
+    if verdict not in ("missing", "invalid", "revoked", "unowned"):
+        return None
+    return CredentialNotice(
+        verdict=verdict,
+        action=str(action) if isinstance(action, str) else REENROLL_ACTION,
+        hub_machine_id=hub_machine_id,
     )
 
 
 __all__ = [
     "CREDENTIAL_FILENAME",
     "CREDENTIAL_FILE_MODE",
+    "CredentialNotice",
+    "REENROLL_ACTION",
     "SpokeCredentialError",
+    "credential_notice",
     "credential_path",
     "log_hub_verdict",
     "read_credential",
+    "record_credential_notice",
     "write_credential",
 ]

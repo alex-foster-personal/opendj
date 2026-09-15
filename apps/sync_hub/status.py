@@ -27,7 +27,9 @@ from typing import Any, Literal
 
 from apps.shared.state import sync_stamp
 from apps.sync_hub import config as sync_config
+from apps.sync_hub import digest_diff
 from apps.sync_hub import heartbeat as sync_heartbeat
+from apps.sync_hub import spoke_credential
 from apps.sync_hub.wire_version import UpdateRequiredState, parse_update_required
 
 SCHEDULER_ENV: str = sync_config.SCHEDULER_ENV
@@ -115,6 +117,8 @@ class CloudSyncStatus:
     endpoint: str | None
     recent_results: tuple[SyncResult, ...]
     update_required: UpdateRequiredState | None
+    digest_diff: tuple[dict[str, str], ...] | None = None
+    credential_notice: dict[str, str] | None = None
 
     def to_wire(self) -> dict[str, Any]:
         wire: dict[str, Any] = {
@@ -137,6 +141,10 @@ class CloudSyncStatus:
             wire["update_required"] = asdict(self.update_required)
         else:
             wire["update_required"] = None
+        wire["digest_diff"] = (
+            None if self.digest_diff is None else [dict(row) for row in self.digest_diff]
+        )
+        wire["credential_notice"] = self.credential_notice
         return wire
 
 
@@ -266,6 +274,21 @@ def read_status(
         if latest is None or latest.status != "error"
         else parse_update_required(latest.message)
     )
+    digest_samples = None
+    if latest is not None and latest.status == "error":
+        parsed = digest_diff.parse_digest_samples(latest.message)
+        if parsed is not None:
+            digest_samples = tuple(parsed)
+    notice = spoke_credential.credential_notice(Path(data_dir))
+    credential_notice_wire = (
+        None
+        if notice is None
+        else {
+            "verdict": notice.verdict,
+            "action": notice.action,
+            "hub_machine_id": notice.hub_machine_id,
+        }
+    )
     return CloudSyncStatus(
         enabled=effective.configured and running,
         configured=effective.configured,
@@ -285,6 +308,8 @@ def read_status(
         endpoint=effective.hub_url,
         recent_results=results,
         update_required=update_required,
+        digest_diff=digest_samples,
+        credential_notice=credential_notice_wire,
     )
 
 

@@ -524,6 +524,19 @@ export function plainSyncFailureCause(rawMessage: string): string {
 	if (msg.includes('connection refused')) {
 		return 'could not reach the hub machine (connection refused)';
 	}
+	if (msg.includes('http 502')) {
+		const elapsed = msg.match(/after (\d+(?:\.\d+)?)s/);
+		if (elapsed !== null) {
+			return `the hub or proxy closed the connection (502, after ${Math.round(Number(elapsed[1]))}s)`;
+		}
+		return 'the hub or proxy closed the connection (502; may be Tailscale serve or client timeout)';
+	}
+	if (msg.includes('client timeout after')) {
+		const elapsed = msg.match(/client timeout after (\d+(?:\.\d+)?)s/);
+		if (elapsed !== null) {
+			return `the hub did not respond in time (timeout after ${Math.round(Number(elapsed[1]))}s)`;
+		}
+	}
 	if (msg.includes('timed out') || msg.includes('timeout')) {
 		return 'the hub did not respond in time (timeout)';
 	}
@@ -576,6 +589,24 @@ export function statusHeadline(status: CloudSyncStatus | null): StatusHeadline {
 	// right now, and CSSTATUS-05 requires the "In sync" headline for every
 	// recorded ok result even with a stale heartbeat (Sol review, PR #2604).
 	if (status.last_result?.status === 'error') {
+		if (
+			status.digest_diff !== null &&
+			status.digest_diff !== undefined &&
+			status.digest_diff.length > 0
+		) {
+			const first = status.digest_diff[0];
+			const sample = `${first.table}/${first.stable_id} (${first.newer_side} newer)`;
+			return {
+				tone: 'error',
+				text: `Library metadata disagrees with the hub: ${sample}. See Technical detail for the full message.`
+			};
+		}
+		if (status.credential_notice !== null && status.credential_notice !== undefined) {
+			return {
+				tone: 'warn',
+				text: `${status.credential_notice.action}.`
+			};
+		}
 		return {
 			tone: 'error',
 			text: `Not synced: ${plainSyncFailureCause(status.last_result.message)}. Check the hub URL below and that the hub machine is running, then try Sync now again.`

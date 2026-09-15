@@ -430,6 +430,10 @@ test('plainSyncFailureCause names common transport failures and never invents un
 	);
 	assert.match(view.plainSyncFailureCause('401 Unauthorized'), /rejected the sign-in/);
 	assert.match(view.plainSyncFailureCause('some brand new exception text'), /last sync attempt failed/);
+	assert.match(
+		view.plainSyncFailureCause('POST https://hub:8870/api/v1/sync/push -> HTTP 502:  (after 45.0s)'),
+		/502, after 45s/
+	);
 });
 
 test('statusHeadline leads with a plain sentence and a next step for every state', () => {

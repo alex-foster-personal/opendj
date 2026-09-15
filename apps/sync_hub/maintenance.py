@@ -100,7 +100,7 @@ from apps.sync_hub import (
     sync_set,
 )
 from apps.sync_hub import status as sync_status
-from apps.sync_hub.transport import SyncTransportError
+from apps.sync_hub.transport import SyncTransportError, classify_transport_failure
 
 #: Exit code for a sync that COMPLETED without verifying agreement (round 5
 #: gate T8). Distinct from 1: a caller must be able to tell "the merge is
@@ -127,6 +127,12 @@ def _sync_error_message(exc: Exception) -> str:
         text = str(exc)
         if capabilities.HASH_PENDING_V1 in text or "hash_pending" in text:
             return capabilities.hash_pending_upgrade_message()
+    if isinstance(exc, SyncTransportError):
+        classified = classify_transport_failure(str(exc))
+        if classified is not None:
+            return f"{classified.headline}: {exc}"
+    if isinstance(exc, client.SyncDigestMismatch):
+        return str(exc)
     return str(exc)
 
 

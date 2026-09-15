@@ -256,6 +256,20 @@ class StatusResponse(BaseModel):
     entitlement_provider: str | None
 
 
+class SyncRowSampleModel(BaseModel):
+    """One sync-eligible row for digest diff (CSSTATUS-09)."""
+
+    pk: list[str] = Field(min_length=1)
+    canonical_hex: str = Field(min_length=64, max_length=64)
+    updated_at: str | None = None
+    origin_device_id: str | None = None
+
+
+class RowsResponse(BaseModel):
+    rows: list[SyncRowSampleModel]
+    next_cursor: str | None = None
+
+
 class DigestResponse(BaseModel):
     tables: dict[str, str]
     overall: str
@@ -276,6 +290,8 @@ class DigestResponse(BaseModel):
 __all__ = [
     "SYNC_VERSION_RESPONSES",
     "DigestResponse",
+    "RowsResponse",
+    "SyncRowSampleModel",
     "EnrollRequest",
     "HashPendingResponse",
     "HelloRequest",

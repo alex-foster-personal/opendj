@@ -8,6 +8,7 @@ Mounted by the webui at ``/api/v1/sync/*``:
     GET  /api/v1/sync/pull     one chunk of the rows accepted after ``since_seq``
     GET  /api/v1/sync/status   hub identity, seq, fleet, row counts
     GET  /api/v1/sync/digest   per-table digests for the post-sync compare
+    GET  /api/v1/sync/rows     paginated sync-eligible canonical rows for diff
 
 Machines authenticate with a per-machine sync credential (plan X5), minted by
 ``/enroll`` (ADR 12) and checked on ``hello``, ``push``, ``pull``, ``status``
@@ -59,6 +60,7 @@ from apps.shared.state import machine_identity
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import (
     capabilities,
+    digest_diff,
     engine,
     enrollment,
     entitlement_gate,
@@ -83,7 +85,9 @@ from apps.sync_hub.service_models import (
     PushRequest,
     PushResponse,
     RowModel,
+    RowsResponse,
     StatusResponse,
+    SyncRowSampleModel,
 )
 from apps.sync_hub.service_lyrics_asr_assets import router as lyrics_asr_assets_router
 from apps.sync_hub.service_stem_assets import router as stem_assets_router
@@ -646,6 +650,48 @@ def digest(
         )
 
 
+@router.get("/rows", response_model=RowsResponse, responses=_auth("rows"))
+def rows(
+    request: Request,
+    machine_id: str = Query(min_length=1, description="the calling spoke"),
+    table: str = Query(min_length=1, description="sync-set table name"),
+    limit: int = Query(500, ge=1, le=5000),
+    cursor: str | None = Query(default=None),
+    capabilities_: list[str] = _CAPABILITIES_QUERY,
+) -> RowsResponse:
+    """Paginated sync-eligible canonical rows for post-sync diff (CSSTATUS-09)."""
+    if table not in protocol.DIGEST_TABLES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "SYNC_PROTOCOL",
+                "message": f"table {table!r} is not in the sync digest set",
+            },
+        )
+    with _hub_conn(request) as conn:
+        _require_credential(request, conn, machine_id, "rows")
+        _require_registered(conn, machine_id)
+        try:
+            with _transaction(conn):
+                page, next_cursor = digest_diff.hub_sync_row_page(
+                    conn, table, cursor=cursor, limit=limit
+                )
+        except protocol.SyncProtocolError as exc:
+            raise _protocol_error(exc) from exc
+        return RowsResponse(
+            rows=[
+                SyncRowSampleModel(
+                    pk=list(sample.pk),
+                    canonical_hex=sample.canonical_hex,
+                    updated_at=sample.updated_at,
+                    origin_device_id=sample.origin_device_id,
+                )
+                for sample in page
+            ],
+            next_cursor=next_cursor,
+        )
+
+
 @router.get(
     "/hash-pending",
     response_model=HashPendingResponse,
@@ -693,6 +739,8 @@ __all__ = [
     "PushRequest",
     "PushResponse",
     "RowModel",
+    "RowsResponse",
     "StatusResponse",
+    "SyncRowSampleModel",
     "router",
 ]
