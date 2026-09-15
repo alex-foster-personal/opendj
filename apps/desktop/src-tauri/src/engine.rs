@@ -108,6 +108,28 @@ impl Engine {
         format!("http://127.0.0.1:{}", self.port)
     }
 
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    pub fn pid(&self) -> u32 {
+        self.child.id()
+    }
+
+    pub fn is_log_failed(&self) -> bool {
+        self.log_failure().is_some()
+    }
+
+    /// Non-blocking reap. Returns the exit status when the child has exited.
+    pub fn try_reap(&mut self) -> Option<std::process::ExitStatus> {
+        self.child.try_wait().ok().flatten()
+    }
+
+    /// Block until the child is reaped.
+    pub fn wait_reap(&mut self) -> std::process::ExitStatus {
+        self.child.wait().expect("wait for engine child")
+    }
+
     /// Wait for the engine to answer its own health route.
     ///
     /// Polling health rather than trusting the spawn is the whole point: a
