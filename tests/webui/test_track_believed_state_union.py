@@ -1,4 +1,7 @@
-"""Track rows union active transfers with stale locations (CLOUDSYNC-10)."""
+"""Track rows union active transfers with stale locations (CLOUDSYNC-10).
+
+[if] track rows union active transfers with stale locations [then] missing files stay unavailable while transfers are active, [else stop].
+"""
 from __future__ import annotations
 
 import os
