@@ -341,7 +341,7 @@ def test_the_real_client_still_pulls_under_read_only_with_a_pending_edit(
     assert "t-other" in _local_track_ids(enroll_spoke_dir)  # pulled through the real client
     assert "t-pending" in _local_track_ids(enroll_spoke_dir)  # the edit is kept locally
     assert _hub_track_ids(hosted_hub.hub_dir) == ["t-before", "t-other"]
-    assert maintenance._report_sync(result) == maintenance.EXIT_PUSH_REFUSED
+    assert maintenance._report_sync(result, enroll_spoke_dir) == maintenance.EXIT_PUSH_REFUSED
     journal = sync_status.read_results(enroll_spoke_dir)[0]
     assert journal.status == "error" and NOT_IN_PLAN_CODE in journal.message
 
