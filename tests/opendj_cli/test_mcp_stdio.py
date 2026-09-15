@@ -84,6 +84,20 @@ def test_command_master_mute_returns_mirror_delta(engine: Engine) -> None:
     assert payload["mirror_delta"].get("changed")
 
 
+@pytest.mark.requirement("UXR-01")
+def test_command_master_mute_persists_to_ui_prefs(engine: Engine, tmp_path: Path) -> None:
+    """[if] MCP command master_mute [then] app_state ui-prefs shows master_muted, [else stop]."""
+    engine.app.state.data_dir = tmp_path / "data"
+    engine.page().start()
+    call_tool(
+        engine,
+        "command",
+        {"order": {"single": {"type": "master_mute", "muted": True}}},
+    )
+    payload = call_tool(engine, "app_state", {"path": "/api/v1/ui-prefs"})
+    assert payload["master_muted"] is True
+
+
 @pytest.mark.requirement("AGENT-11")
 def test_status_engine_down(tmp_path: Any) -> None:
     """[if] no engine is running [then] status is isError with engine_not_running, [else stop]."""
