@@ -19,6 +19,7 @@ from apps.opendj_cli.origin import EngineOrigin, unreachable
 
 MIRROR_PATH = "/api/v1/state/ui-mirror"
 COMMANDS_PATH = "/api/v1/commands"
+UI_PREFS_PATH = "/api/v1/ui-prefs"
 
 # A page claims an order within one poll tick (50 ms) and a ramp completes in
 # its own declared duration, so this only fires on a wedged page or a wedged
@@ -64,6 +65,12 @@ class EngineClient:
                 if response.status_code == 200:
                     return self._document(response)
             raise NoPerformancePage(no_performance_page_message(self.origin))
+        self._require_ok(response)
+        return self._document(response)
+
+    def ui_prefs(self) -> dict[str, Any]:
+        """Disk-backed ui prefs (includes persisted master_muted)."""
+        response = self._request("GET", UI_PREFS_PATH, timeout=MIRROR_TIMEOUT_S)
         self._require_ok(response)
         return self._document(response)
 

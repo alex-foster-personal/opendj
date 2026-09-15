@@ -82,6 +82,7 @@ jobs:
       # SHA-pinned to the v4 tag commit (matches ci.yml and docs.yml).
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
+          persist-credentials: false
           fetch-depth: 1
           # false on purpose: the next step cleans all but the dependency trees.
           clean: false
@@ -98,12 +99,18 @@ jobs:
           OPENDJ_TELEMETRY: "0"
           OPENDJ_HOST_LABEL: github-actions
           OPENDJ_BUILD_SHA: ${{ github.event.workflow_run.head_sha }}
+          # workflow_run fields reach the shell through env, never inline
+          # (zizmor template-injection): a workflow name is attacker-shaped text.
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           set -euo pipefail
           mkdir -p "$HOME/jobs/logs"
           python3 -m scripts.post_build_failure \
             --kind build \
-            --source-site "build:${{ github.event.workflow_run.name }}" \
-            --sha "${{ github.event.workflow_run.head_sha }}" \
+            --source-site "build:${WORKFLOW_NAME}" \
+            --sha "${OPENDJ_BUILD_SHA}" \
             --host "github-actions" \
-            --message "CI failed workflow=${{ github.event.workflow_run.name }} run=${{ github.event.workflow_run.id }} conclusion=${{ github.event.workflow_run.conclusion }} url=${{ github.event.workflow_run.html_url }} sha=${{ github.event.workflow_run.head_sha }}"
+            --message "CI failed workflow=${WORKFLOW_NAME} run=${RUN_ID} conclusion=${RUN_CONCLUSION} url=${RUN_URL} sha=${OPENDJ_BUILD_SHA}"

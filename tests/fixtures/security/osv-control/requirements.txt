@@ -1,0 +1,4 @@
+# osv-scanner positive control. NOT an install manifest: nothing installs from this file.
+# scripts/security/scan_deps.sh scans it and fails as UNKNOWN unless it reports a finding.
+# jinja2 2.10 carries published advisories (e.g. GHSA-462w-v97r-4m45 / CVE-2019-10906).
+jinja2==2.10

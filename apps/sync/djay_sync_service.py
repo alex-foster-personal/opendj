@@ -473,7 +473,7 @@ def run_cues_apply(
             ),
         }
     try:
-        require_writeback_enabled(HTTP_CUES_APPLY_SURFACE)
+        require_writeback_enabled("http.rb_djay_sync.cues.apply")
     except RekordboxWritebackDisabled as exc:
         raise RbDjaySyncError(exc.message, code="WRITEBACK_DISABLED") from exc
     only_tracks = set(tracks) if tracks else None
@@ -517,7 +517,7 @@ def run_analysis_apply(
             "summary": _summarise_csv_rows(rows),
         }
     try:
-        require_writeback_enabled(HTTP_ANALYSIS_APPLY_SURFACE)
+        require_writeback_enabled("http.rb_djay_sync.analysis.apply")
     except RekordboxWritebackDisabled as exc:
         raise RbDjaySyncError(exc.message, code="WRITEBACK_DISABLED") from exc
     field_set = set(fields) if fields else None
@@ -561,7 +561,7 @@ def run_ratings_apply(
             "summary": dict(Counter(r.get("resolution", "") for r in rows)),
         }
     try:
-        require_writeback_enabled(HTTP_RATINGS_APPLY_SURFACE)
+        require_writeback_enabled("http.rb_djay_sync.ratings.apply")
     except RekordboxWritebackDisabled as exc:
         raise RbDjaySyncError(exc.message, code="WRITEBACK_DISABLED") from exc
     only_tracks = set(tracks) if tracks else None

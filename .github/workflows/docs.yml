@@ -24,10 +24,9 @@ on:
       - "requirements-docs.txt"
       - ".github/workflows/docs.yml"
 
+# Pages publishing rights live on the deploy job only (zizmor excessive-permissions).
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: docs-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'shared' }}
@@ -145,6 +144,7 @@ jobs:
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
+          persist-credentials: false
           # false on purpose: the next step cleans all but the dependency trees.
           clean: false
 
@@ -172,6 +172,9 @@ jobs:
 
   deploy:
     needs: build
+    permissions:
+      pages: write
+      id-token: write
     # Deploy is best-effort: GitHub Pages may not be enabled at the repo level
     # yet (actions/deploy-pages returns 404 until Settings -> Pages is turned on).
     # Strict mkdocs build above is the CI gate; deploy failing must not block

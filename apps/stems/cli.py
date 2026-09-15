@@ -482,7 +482,7 @@ def cmd_cancel(args: argparse.Namespace) -> int:
 
 
 def _default_journal_path(data_dir: Path) -> Path:
-    """Same fixed path ``scripts/local_stems_to_r2.py`` journals to."""
+    """Same fixed path ``apps.stems.r2_migration`` journals to."""
     return Path(data_dir) / "state" / "stem-r2-migration.jsonl"
 
 
@@ -534,27 +534,39 @@ def cmd_bulk_hydrate(args: argparse.Namespace) -> int:
         raise SystemExit(
             "error: bulk-hydrate needs cloud mode with R2 credentials or a configured hub"
         )
+    from apps.cloud.stem_source import StemSourceError, hub_transport_failure_kind
+
     index = stem_index.load_cached_index(args.data_dir)
     if args.refresh_index or not index:
-        source.refresh_index(args.data_dir, force=args.refresh_index or not index)
+        try:
+            source.refresh_index(args.data_dir, force=args.refresh_index or not index)
+        except StemSourceError as exc:
+            if hub_transport_failure_kind(exc) == "unreachable":
+                raise SystemExit(f"error: SYNC_HUB_UNREACHABLE: {exc.message}") from exc
+            raise SystemExit(f"error: {exc.code}: {exc.message}") from exc
         index = stem_index.load_cached_index(args.data_dir)
     if not index:
         raise SystemExit(
             "error: no stem bundle index published in R2 "
             "(run build-index --publish after the push rail has journaled bundles)"
         )
-    report = stem_hydration.bulk_hydrate(
-        stable_ids,
-        data_dir=args.data_dir,
-        source=source,
-        index=index,
-        byte_budget=args.budget_bytes,
-        include_reserved=args.include_reserved,
-        # Without this, hydrate_one falls back to the fixed DEFAULT_STEMS_DIR
-        # regardless of --data-dir, which would write into the production
-        # stems path from a run against a throwaway data dir.
-        stems_dir=stems_dir(args.data_dir),
-    )
+    try:
+        report = stem_hydration.bulk_hydrate(
+            stable_ids,
+            data_dir=args.data_dir,
+            source=source,
+            index=index,
+            byte_budget=args.budget_bytes,
+            include_reserved=args.include_reserved,
+            # Without this, hydrate_one falls back to the fixed DEFAULT_STEMS_DIR
+            # regardless of --data-dir, which would write into the production
+            # stems path from a run against a throwaway data dir.
+            stems_dir=stems_dir(args.data_dir),
+        )
+    except StemSourceError as exc:
+        if hub_transport_failure_kind(exc) == "unreachable":
+            raise SystemExit(f"error: SYNC_HUB_UNREACHABLE: {exc.message}") from exc
+        raise SystemExit(f"error: {exc.code}: {exc.message}") from exc
     if args.json:
         print(
             json.dumps(

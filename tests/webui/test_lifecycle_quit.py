@@ -1,4 +1,7 @@
-"""POST /api/v1/lifecycle/quit (INSTALL-21, OPS-07)."""
+"""[if] lifecycle quit is posted [then] the desktop shell receives a quit signal, [else stop].
+
+POST /api/v1/lifecycle/quit (INSTALL-21, OPS-07).
+"""
 
 from __future__ import annotations
 

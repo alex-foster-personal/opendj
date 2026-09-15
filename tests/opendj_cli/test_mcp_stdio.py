@@ -84,6 +84,20 @@ def test_command_master_mute_returns_mirror_delta(engine: Engine) -> None:
     assert payload["mirror_delta"].get("changed")
 
 
+@pytest.mark.requirement("UXR-01")
+def test_command_master_mute_persists_to_ui_prefs(engine: Engine, tmp_path: Path) -> None:
+    """[if] MCP command master_mute [then] app_state ui-prefs shows master_muted, [else stop]."""
+    engine.app.state.data_dir = tmp_path / "data"
+    engine.page().start()
+    call_tool(
+        engine,
+        "command",
+        {"order": {"single": {"type": "master_mute", "muted": True}}},
+    )
+    payload = call_tool(engine, "app_state", {"path": "/api/v1/ui-prefs"})
+    assert payload["master_muted"] is True
+
+
 @pytest.mark.requirement("AGENT-11")
 def test_status_engine_down(tmp_path: Any) -> None:
     """[if] no engine is running [then] status is isError with engine_not_running, [else stop]."""
@@ -127,8 +141,7 @@ def test_library_ui_prefs_topbar_round_trip(engine: Engine) -> None:
         {"method": "GET", "path": "/api/v1/ui-prefs"},
     )
     assert get["status_code"] == 200
-    body = json.loads(get["body"])
-    assert body["auto_play_enforce_order"] is True
+    assert get["body"]["auto_play_enforce_order"] is True
 
 
 @pytest.mark.requirement("AGENT-05")
@@ -150,8 +163,7 @@ def test_library_ui_prefs_library_browser_round_trip(engine: Engine) -> None:
         {"method": "GET", "path": "/api/v1/ui-prefs"},
     )
     assert get["status_code"] == 200
-    body = json.loads(get["body"])
-    assert body["remixes_filter"] is True
+    assert get["body"]["remixes_filter"] is True
 
 
 @pytest.mark.requirement("AGENT-11")
@@ -173,7 +185,7 @@ def test_library_writeback_blocked(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_library_delete_blocked_without_destructive(engine: Engine) -> None:
-    """[if] DELETE lacks the destructive flag [then] isError names destructive_blocked."""
+    """[if] DELETE lacks the destructive flag [then] isError names destructive_blocked, [else stop]."""
     engine.page().start()
     result = call_tool_result(
         engine,
@@ -330,8 +342,7 @@ def test_status_stale_lock_port(tmp_path: Any) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_home_empty_tmp_dir_is_error_for_four_tools(tmp_path: Any) -> None:
-    """[if] HOME has no engine lock [then] status/command/library/open_route each
-    surface isError True with their error code readable in the text, [else stop].
+    """[if] HOME has no engine lock [then] status/command/library/open_route each surface isError True with their error code readable in the text, [else stop].
 
     Issue #2895 acceptance: drive real stdio, no mocking. HOME points at an
     empty temp dir so ``resolve_origin`` naturally finds no lock file.
@@ -363,8 +374,7 @@ def test_home_empty_tmp_dir_is_error_for_four_tools(tmp_path: Any) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_command_safety_refusal_is_error(engine: Engine) -> None:
-    """[if] command runs with neither order nor verb [then] isError names usage
-    (a SafetyRefusal), [else stop]."""
+    """[if] command runs with neither order nor verb [then] isError names usage (a SafetyRefusal), [else stop]."""
     engine.page().start()
     result = call_tool_result(engine, "command", {})
     assert result.is_error is True
@@ -374,8 +384,7 @@ def test_command_safety_refusal_is_error(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_command_order_failed_is_error(engine: Engine) -> None:
-    """[if] the engine route rejects a malformed order body [then] isError names
-    order_failed, [else stop]."""
+    """[if] the engine route rejects a malformed order body [then] isError names order_failed, [else stop]."""
     engine.page().start()
     result = call_tool_result(engine, "command", {"order": {"sequence": []}})
     assert result.is_error is True
@@ -385,8 +394,7 @@ def test_command_order_failed_is_error(engine: Engine) -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_no_unconverted_error_document_returns() -> None:
-    """[if] mcp_server.py is scanned for a bare error-document return [then] none
-    remain, proven by a control literal that DOES trip the pattern, [else stop].
+    """[if] mcp_server.py is scanned for a bare error-document return [then] none remain, proven by a control literal that DOES trip the pattern, [else stop].
 
     Guards the class fix in issue #2895: the next error path added to
     mcp_server.py cannot silently regress to isError:false.
@@ -400,3 +408,88 @@ def test_no_unconverted_error_document_returns() -> None:
     source = source_path.read_text(encoding="utf-8")
     matches = pattern.findall(source)
     assert matches == [], f"unconverted error-document return(s) in mcp_server.py: {matches}"
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_library_get_tracks_default_page_is_bounded(big_library_engine: Engine) -> None:
+    """[if] library GETs /tracks with no limit against an 8500-track library
+    [then] the wire result stays comfortably under the 25k-token MCP budget
+    and says how to page the rest, [else stop]."""
+    result = call_tool_result(
+        big_library_engine, "library", {"method": "GET", "path": "/api/v1/tracks"}
+    )
+    assert result.is_error is not True
+    texts = [block.text for block in result.content if block.type == "text"]
+    estimated_tokens = sum(len(t) for t in texts) // 4
+    assert estimated_tokens < 22_000, (
+        f"library GET /tracks default page was ~{estimated_tokens} tokens, "
+        "not comfortably under the 25k-token MCP budget"
+    )
+
+    payload = result.structured_content
+    assert isinstance(payload, dict)
+    body = payload["body"]
+    assert isinstance(body, dict), "body must be an embedded object, not a re-encoded string"
+    assert isinstance(body["items"], list)
+    assert len(body["items"]) >= 20, (
+        f"bounded page returned only {len(body['items'])} items; a page this thin "
+        "(near the auto-shrink floor) technically satisfies '> 0' but is not a "
+        "usably-sized page for an agent reading the library"
+    )
+    assert body["next_cursor"], "a bounded page short of an 8500-track library must still page"
+    assert "cursor" in payload.get("mcp_note", ""), "must say how to get the rest"
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_library_get_tracks_over_limit_still_refuses_readably(big_library_engine: Engine) -> None:
+    """[if] library GETs /tracks?limit=100000 [then] the engine still refuses
+    (422) and the body is a readable object, not an escaped JSON string,
+    [else stop]."""
+    payload = call_tool(
+        big_library_engine,
+        "library",
+        {"method": "GET", "path": "/api/v1/tracks?limit=100000"},
+    )
+    assert payload["status_code"] == 422
+    assert isinstance(payload["body"], dict), "422 body must not be a re-encoded string"
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_library_get_tracks_fields_projects_compact_rows(big_library_engine: Engine) -> None:
+    """[if] library GETs /tracks?fields=stable_id,title,artist,bpm,key [then]
+    every row is projected to just those keys, [else stop]."""
+    payload = call_tool(
+        big_library_engine,
+        "library",
+        {
+            "method": "GET",
+            "path": "/api/v1/tracks?limit=5&fields=stable_id,title,artist,bpm,key",
+        },
+    )
+    assert payload["status_code"] == 200
+    items = payload["body"]["items"]
+    assert len(items) == 5
+    for item in items:
+        assert set(item.keys()) == {"stable_id", "title", "artist", "bpm", "key"}
+
+
+@pytest.mark.requirement("AGENT-11")
+def test_library_get_tracks_bounded_page_pages_with_a_real_cursor(
+    big_library_engine: Engine,
+) -> None:
+    """[if] the auto-limited page's next_cursor is paged again [then] it
+    returns fresh, distinct tracks: a real engine page, never a client-side
+    truncated slice of the first, [else stop]."""
+    first = call_tool(big_library_engine, "library", {"method": "GET", "path": "/api/v1/tracks"})
+    first_ids = {item["stable_id"] for item in first["body"]["items"]}
+    cursor = first["body"]["next_cursor"]
+    assert cursor
+
+    second = call_tool(
+        big_library_engine,
+        "library",
+        {"method": "GET", "path": f"/api/v1/tracks?cursor={cursor}"},
+    )
+    second_ids = {item["stable_id"] for item in second["body"]["items"]}
+    assert second_ids, "the next page must not be empty"
+    assert first_ids.isdisjoint(second_ids)

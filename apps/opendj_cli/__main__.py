@@ -225,12 +225,17 @@ def _run_state(args: argparse.Namespace, origin: EngineOrigin) -> int:
     client = EngineClient(origin=origin, timeout_s=args.timeout)
     try:
         mirror = client.mirror()
+        prefs = client.ui_prefs()
     except _REFUSALS as error:
         return _refusal(args, error)
+    payload = {
+        **mirror,
+        "persisted": {"master_muted": prefs["master_muted"]},
+    }
     if args.json:
-        print(json.dumps(mirror, indent=2, sort_keys=True))
+        print(json.dumps(payload, indent=2, sort_keys=True))
     else:
-        print(_state_text(mirror))
+        print(_state_text(mirror, prefs))
     return EXIT_CONFIRMED
 
 
@@ -555,7 +560,7 @@ def _dispatch_text(document: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _state_text(mirror: dict[str, Any]) -> str:
+def _state_text(mirror: dict[str, Any], prefs: dict[str, Any] | None = None) -> str:
     lines = [
         f"context: {mirror.get('context_state', 'absent')}",
         f"open: {mirror.get('client_open', 'absent')}",
@@ -566,6 +571,8 @@ def _state_text(mirror: dict[str, Any]) -> str:
             f"master: muted={master.get('muted', 'absent')} "
             f"level={master.get('level', 'absent')} rms={master.get('rms', 'absent')}"
         )
+    if prefs is not None:
+        lines.append(f"persisted: master_muted={prefs.get('master_muted', 'absent')}")
     mixer = mirror.get("mixer")
     if isinstance(mixer, dict):
         lines.append(f"crossfader: {mixer.get('crossfader', 'absent')}")

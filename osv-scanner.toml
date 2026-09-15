@@ -1,0 +1,338 @@
+# osv-scanner configuration. Spec: docs/security/dependency-scanning.md
+#
+# Every IgnoredVulns entry needs `reason` AND `ignoreUntil`, at most 90 days out
+# (scripts/security/secscan.py osv-lint-config fails the scan otherwise).
+# Priorities follow docs/security/security.md#patch-priority:
+#   P1 -> 30 days (Wed 14 Oct 2026)    P2 / P3 -> 90 days (Sun 13 Dec 2026)
+# Baseline measured Mon 14 Sep 2026 on main e869c78b3 with osv-scanner 2.6.0.
+# An expired entry stops ignoring, so the daily scan reopens its issue by itself.
+
+# ----- P1: rustls, Tauri shell TLS (30 days) ----------------------------------------------------
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0285"
+ignoreUntil = 2026-10-14
+reason = "P1 rustls 0.23.43 (apps/desktop/src-tauri): TLS 1.3 handshake messages accepted across encryption levels. Fix: cargo update -p rustls (0.23.45)."
+
+# ----- P1: cryptography, runtime dependency (30 days) --------------------------------------------
+[[IgnoredVulns]]
+id = "GHSA-g6cj-pr64-35w5"
+ignoreUntil = 2026-10-14
+reason = "P1 cryptography 46.0.7 (uv.lock, runtime). Fixed in 50.0.0; pyproject caps cryptography<47, so the fix needs the cap lifted and tested. Found by re-measure, not in the Mon 14 Sep patch list."
+
+[[IgnoredVulns]]
+id = "GHSA-jwv3-5hgf-82ww"
+ignoreUntil = 2026-10-14
+reason = "P1 cryptography 46.0.7 (uv.lock, runtime). Fixed in 49.0.0; blocked by the pyproject cap cryptography<47."
+
+[[IgnoredVulns]]
+id = "GHSA-m2h6-j472-rp4c"
+ignoreUntil = 2026-10-14
+reason = "P1 cryptography 46.0.7 (uv.lock, runtime). Fixed in 49.0.0; blocked by the pyproject cap cryptography<47."
+
+[[IgnoredVulns]]
+id = "GHSA-537c-gmf6-5ccf"
+ignoreUntil = 2026-10-14
+reason = "P1 cryptography 46.0.7 (uv.lock, runtime). Fixed in 48.0.1; blocked by the pyproject cap cryptography<47."
+
+# ----- P1: msgpack (30 days) -------------------------------------------------------------------------
+[[IgnoredVulns]]
+id = "GHSA-6v7p-g79w-8964"
+ignoreUntil = 2026-10-14
+reason = "P1 msgpack 1.1.2 (uv.lock, transitive): OOB read on Unpacker reuse. Fix: 1.2.1."
+
+# ----- P1: python-multipart floor in requirements.txt (30 days) ---------------------------------
+# requirements.txt pins `python-multipart>=0.0.9`; osv reads the floor. CI pip-installs this
+# file, so the floor is what an old resolver or cache could still select. Fix: raise the floor
+# to >=0.0.31 or generate requirements.txt from uv.lock (rollout PR 5).
+[[IgnoredVulns]]
+id = "GHSA-59g5-xgcq-4qw3"
+ignoreUntil = 2026-10-14
+reason = "P1 python-multipart floor 0.0.9 in requirements.txt (fixed 0.0.18). Raise the floor or install from uv.lock."
+
+[[IgnoredVulns]]
+id = "GHSA-wp53-j4wj-2cfg"
+ignoreUntil = 2026-10-14
+reason = "P1 python-multipart floor 0.0.9 in requirements.txt (fixed 0.0.22). Raise the floor or install from uv.lock."
+
+[[IgnoredVulns]]
+id = "GHSA-5rvq-cxj2-64vf"
+ignoreUntil = 2026-10-14
+reason = "P1 python-multipart floor 0.0.9 in requirements.txt (fixed 0.0.30). Raise the floor or install from uv.lock."
+
+[[IgnoredVulns]]
+id = "GHSA-6jv3-5f52-599m"
+ignoreUntil = 2026-10-14
+reason = "P1 python-multipart floor 0.0.9 in requirements.txt (fixed 0.0.30). Raise the floor or install from uv.lock."
+
+[[IgnoredVulns]]
+id = "GHSA-mj87-hwqh-73pj"
+ignoreUntil = 2026-10-14
+reason = "P1 python-multipart floor 0.0.9 in requirements.txt (fixed 0.0.26). Raise the floor or install from uv.lock."
+
+[[IgnoredVulns]]
+id = "GHSA-pp6c-gr5w-3c5g"
+ignoreUntil = 2026-10-14
+reason = "P1 python-multipart floor 0.0.9 in requirements.txt (fixed 0.0.27). Raise the floor or install from uv.lock."
+
+[[IgnoredVulns]]
+id = "GHSA-v9pg-7xvm-68hf"
+ignoreUntil = 2026-10-14
+reason = "P1 python-multipart floor 0.0.9 in requirements.txt (fixed 0.0.31). Raise the floor or install from uv.lock."
+
+[[IgnoredVulns]]
+id = "GHSA-vffw-93wf-4j4q"
+ignoreUntil = 2026-10-14
+reason = "P1 python-multipart floor 0.0.9 in requirements.txt (fixed 0.0.30). Raise the floor or install from uv.lock."
+
+# ----- P1: webui dev servers, Vite / esbuild chain (30 days) ------------------------------------------
+# Dev-only (devDependencies), but dev servers run on machines that also browse the web.
+[[IgnoredVulns]]
+id = "GHSA-4w7w-66w2-5vf9"
+ignoreUntil = 2026-10-14
+reason = "P1 vite 5.4.21 (webui devDependency). Fixed only in vite 6.4.2+: a major bump."
+
+[[IgnoredVulns]]
+id = "GHSA-fx2h-pf6j-xcff"
+ignoreUntil = 2026-10-14
+reason = "P1 vite 5.4.21 (webui devDependency). Fixed only in vite 6.4.3+: a major bump."
+
+[[IgnoredVulns]]
+id = "GHSA-v6wh-96g9-6wx3"
+ignoreUntil = 2026-10-14
+reason = "P1 vite 5.4.21 (webui devDependency). Fixed only in vite 6.4.3+: a major bump."
+
+[[IgnoredVulns]]
+id = "GHSA-67mh-4wv8-2f99"
+ignoreUntil = 2026-10-14
+reason = "P1 esbuild 0.21.5 (webui devDependency): any website can send requests to the dev server. Fixed in 0.25.0."
+
+[[IgnoredVulns]]
+id = "GHSA-29g2-3rmr-qm68"
+ignoreUntil = 2026-10-14
+reason = "P1 @sveltejs/kit 2.70.1 (webui devDependency, build toolchain). Fixed in 2.70.2."
+
+[[IgnoredVulns]]
+id = "GHSA-pxg6-pf52-xh8x"
+ignoreUntil = 2026-10-14
+reason = "P1 cookie 0.6.0 (webui dev chain, via @sveltejs/kit). Fixed in 0.7.0."
+
+[[IgnoredVulns]]
+id = "GHSA-2v37-7h3g-55p8"
+ignoreUntil = 2026-10-14
+reason = "P1 nanoid 3.3.16 (webui dev chain). Fixed in 3.3.18."
+
+[[IgnoredVulns]]
+id = "GHSA-fxqj-rqcc-2cmp"
+ignoreUntil = 2026-10-14
+reason = "P1 postcss 8.5.20 (webui dev chain). Fixed in 8.5.23."
+
+[[IgnoredVulns]]
+id = "GHSA-mh99-v99m-4gvg"
+ignoreUntil = 2026-10-14
+reason = "P1 brace-expansion 2.1.2 (webui dev chain). Fixed in 2.1.3."
+
+[[IgnoredVulns]]
+id = "GHSA-rgw5-rvv9-x895"
+ignoreUntil = 2026-10-14
+reason = "P1 brace-expansion 2.1.2 (webui dev chain). Fixed in 2.1.4."
+
+[[IgnoredVulns]]
+id = "GHSA-2883-xcg3-v3hh"
+ignoreUntil = 2026-10-14
+reason = "P1 js-yaml 4.2.0 (webui dev chain) and 4.3.1 (desktop dev chain). Fixed in 4.3.2."
+
+[[IgnoredVulns]]
+id = "GHSA-52cp-r559-cp3m"
+ignoreUntil = 2026-10-14
+reason = "P1 js-yaml 4.2.0 (webui dev chain). Fixed in 4.3.0."
+
+[[IgnoredVulns]]
+id = "GHSA-5p4m-2wfm-xmqj"
+ignoreUntil = 2026-10-14
+reason = "P1 js-yaml 4.2.0 (webui dev chain). Fixed in 4.3.1."
+
+# ----- P2: requirements.txt resolves h11 / idna / tqdm at old floors (90 days) ------------------------
+[[IgnoredVulns]]
+id = "GHSA-vqfr-h8mv-ghfj"
+ignoreUntil = 2026-12-13
+reason = "P2 h11 0.9.0 as osv resolves requirements.txt (fixed 0.16.0); uv.lock is not affected. Install CI from uv.lock (rollout PR 5)."
+
+[[IgnoredVulns]]
+id = "GHSA-65pc-fj4g-8rjx"
+ignoreUntil = 2026-12-13
+reason = "P2 idna 3.9.0 as osv resolves requirements.txt (fixed 3.15); uv.lock is not affected. Install CI from uv.lock (rollout PR 5)."
+
+[[IgnoredVulns]]
+id = "GHSA-r7q7-xcjw-qx8q"
+ignoreUntil = 2026-12-13
+reason = "P2 tqdm 4.9.0 as osv resolves requirements.txt (fixed 4.11.2); uv.lock is not affected. Install CI from uv.lock (rollout PR 5)."
+
+[[IgnoredVulns]]
+id = "GHSA-g7vv-2v7x-gj9p"
+ignoreUntil = 2026-12-13
+reason = "P2 tqdm 4.9.0 as osv resolves requirements.txt (fixed 4.66.3); uv.lock is not affected. Install CI from uv.lock (rollout PR 5)."
+
+# ----- P2: pyo3, native waveform module (90 days) --------------------------------------------------
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0176"
+ignoreUntil = 2026-12-13
+reason = "P2 pyo3 0.25.1 (native waveform): OOB read. Input is first-party audio. Fix: 0.29 (breaking API)."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0177"
+ignoreUntil = 2026-12-13
+reason = "P2 pyo3 0.25.1 (native waveform): missing Sync bound. Fix: 0.29 (breaking API)."
+
+# ----- P2: Python dev-only (90 days) ---------------------------------------------------------------------
+[[IgnoredVulns]]
+id = "GHSA-6w46-j5rx-g56g"
+ignoreUntil = 2026-12-13
+reason = "P2 pytest 8.4.2 (dev only): tmpdir handling. Fixed in 9.0.3; pyproject caps pytest<9."
+
+[[IgnoredVulns]]
+id = "GHSA-7mj9-2mp8-4m2p"
+ignoreUntil = 2026-12-13
+reason = "P2 httpx2 / httpcore2 2.7.0 (dev only). Fixed in 2.10.0."
+
+[[IgnoredVulns]]
+id = "GHSA-8xx6-hgc6-gc2m"
+ignoreUntil = 2026-12-13
+reason = "P2 httpx2 2.7.0 (dev only). Fixed in 2.12.0."
+
+[[IgnoredVulns]]
+id = "GHSA-f2fp-rgf2-35cp"
+ignoreUntil = 2026-12-13
+reason = "P2 httpx2 2.7.0 (dev only). Fixed in 2.10.0."
+
+[[IgnoredVulns]]
+id = "GHSA-h4x7-gw46-3wm6"
+ignoreUntil = 2026-12-13
+reason = "P2 httpx2 2.7.0 (dev only). Fixed in 2.11.0."
+
+[[IgnoredVulns]]
+id = "GHSA-pf96-p4fj-6566"
+ignoreUntil = 2026-12-13
+reason = "P2 httpx2 2.7.0 (dev only). Fixed in 2.11.0."
+
+# ----- P2: desktop dev deps, wdio test chain (90 days) ----------------------------------------------
+[[IgnoredVulns]]
+id = "GHSA-ggr8-5vv4-36mx"
+ignoreUntil = 2026-12-13
+reason = "P2 deepmerge-ts 7.1.6 (desktop dev, wdio). Fixed in 8.0.0."
+
+[[IgnoredVulns]]
+id = "GHSA-7pqw-9j4j-h8q3"
+ignoreUntil = 2026-12-13
+reason = "P2 extract-zip 2.0.1 (desktop dev, wdio). No fixed version published; replace the dependency path."
+
+[[IgnoredVulns]]
+id = "GHSA-jmr9-qjv8-65gv"
+ignoreUntil = 2026-12-13
+reason = "P2 extract-zip 2.0.1 (desktop dev, wdio). No fixed version published; replace the dependency path."
+
+[[IgnoredVulns]]
+id = "GHSA-5jgf-p345-68v8"
+ignoreUntil = 2026-12-13
+reason = "P2 fast-uri 3.1.5 (desktop dev). Fixed in 3.1.6."
+
+[[IgnoredVulns]]
+id = "GHSA-f65p-4m7j-42xc"
+ignoreUntil = 2026-12-13
+reason = "P2 fast-uri 3.1.5 (desktop dev). Fixed in 3.1.6."
+
+[[IgnoredVulns]]
+id = "GHSA-fph4-wmhf-6fwf"
+ignoreUntil = 2026-12-13
+reason = "P2 fast-uri 3.1.5 (desktop dev). Fixed in 3.1.6."
+
+[[IgnoredVulns]]
+id = "GHSA-jqff-g426-hqxp"
+ignoreUntil = 2026-12-13
+reason = "P2 fast-uri 3.1.5 (desktop dev). Fixed in 3.1.6."
+
+[[IgnoredVulns]]
+id = "GHSA-crvj-82cr-hjcx"
+ignoreUntil = 2026-12-13
+reason = "P2 hono 4.13.3 (desktop dev). Fixed in 4.13.5."
+
+[[IgnoredVulns]]
+id = "GHSA-g6gw-c38x-mqfc"
+ignoreUntil = 2026-12-13
+reason = "P2 hono 4.13.3 (desktop dev). Fixed in 4.13.5."
+
+[[IgnoredVulns]]
+id = "GHSA-gqvv-2mrq-wpjv"
+ignoreUntil = 2026-12-13
+reason = "P2 hono 4.13.3 (desktop dev). Fixed in 4.13.5."
+
+[[IgnoredVulns]]
+id = "GHSA-4mjr-xmp4-gh2g"
+ignoreUntil = 2026-12-13
+reason = "P2 qs 6.15.3 (desktop dev). Fixed in 6.16.0."
+
+[[IgnoredVulns]]
+id = "GHSA-x5fp-wj9c-mxmx"
+ignoreUntil = 2026-12-13
+reason = "P2 qs 6.15.3 (desktop dev). Fixed in 6.16.0."
+
+[[IgnoredVulns]]
+id = "GHSA-5c6j-r48x-rmvq"
+ignoreUntil = 2026-12-13
+reason = "P2 serialize-javascript 6.0.2 (desktop dev). Fixed in 7.0.3."
+
+[[IgnoredVulns]]
+id = "GHSA-qj8w-gfj5-8c6v"
+ignoreUntil = 2026-12-13
+reason = "P2 serialize-javascript 6.0.2 (desktop dev). Fixed in 7.0.5."
+
+[[IgnoredVulns]]
+id = "GHSA-rgj7-g3m4-5g8c"
+ignoreUntil = 2026-12-13
+reason = "P2 sharp 0.35.3 (desktop dev). Fixed in 0.35.4."
+
+# ----- P3: unmaintained / unsound notices, transitive via Tauri / GTK (90 days) ---------------------
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0429"
+ignoreUntil = 2026-12-13
+reason = "P3 glib 0.18.5 (Tauri via GTK): unsound VariantStrIter. Fixed in glib 0.20; recheck on the next Tauri upgrade."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0370"
+ignoreUntil = 2026-12-13
+reason = "P3 proc-macro-error 1.0.4: unmaintained notice, build-time only; recheck on the next Tauri upgrade."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0081"
+ignoreUntil = 2026-12-13
+reason = "P3 unic-char-property 0.9.0: unmaintained notice, transitive via Tauri; recheck on the next Tauri upgrade."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0075"
+ignoreUntil = 2026-12-13
+reason = "P3 unic-char-range 0.9.0: unmaintained notice, transitive via Tauri; recheck on the next Tauri upgrade."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0080"
+ignoreUntil = 2026-12-13
+reason = "P3 unic-common 0.9.0: unmaintained notice, transitive via Tauri; recheck on the next Tauri upgrade."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0100"
+ignoreUntil = 2026-12-13
+reason = "P3 unic-ucd-ident 0.9.0: unmaintained notice, transitive via Tauri; recheck on the next Tauri upgrade."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0098"
+ignoreUntil = 2026-12-13
+reason = "P3 unic-ucd-version 0.9.0: unmaintained notice, transitive via Tauri; recheck on the next Tauri upgrade."
+
+# ----- P1: vitest, launcher dev server (30 days) -------------------------------------------------
+[[IgnoredVulns]]
+id = "GHSA-5xrq-8626-4rwp"
+ignoreUntil = 2026-10-14
+reason = "P1 vitest 2.1.9 (apps/launcher/pnpm-lock.yaml, devDependency): arbitrary file read and execute while the Vitest UI server listens. Dev-only, never shipped. Fix: bump vitest to 3.2.6 or later."
+
+[[IgnoredVulns]]
+id = "GHSA-82fw-gwwq-j7x9"
+ignoreUntil = 2026-10-14
+reason = "P1 vitest / @vitest/mocker 2.1.9 (apps/launcher/pnpm-lock.yaml, devDependency): path traversal via @vitest/mocker. Dev-only. Fix: bump vitest to 4.1.11 or later."

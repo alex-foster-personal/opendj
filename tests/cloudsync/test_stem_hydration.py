@@ -40,7 +40,11 @@ from apps.cloud.stem_hydration import (
     hydrate_one,
     load_reserved_ids,
 )
-from apps.cloud.stem_source import DirectR2Source
+from apps.cloud.stem_source import (
+    STEM_HUB_INDEX_FAILED,
+    DirectR2Source,
+    StemSourceError,
+)
 from apps.stems.artifacts import load_stem_bundle
 from tests.cloudsync.conftest import InMemoryAssetS3
 
@@ -416,6 +420,71 @@ def test_bulk_hydrate_skips_oversized_bundle_before_download(
     assert report.skipped[0].reason is not None
     assert "byte_budget" in report.skipped[0].reason
     assert not (stems_dir / "big-track").exists()
+
+
+class _FailOnSecondPresignSource:
+    """Hub source that fails presign on the second bundle's size probe."""
+
+    mode = "hub_presigned"
+
+    def __init__(self, cfg: CloudConfig, s3: InMemoryAssetS3) -> None:
+        self._direct = DirectR2Source(cfg=cfg, s3=s3)
+        self._presign_calls = 0
+
+    def refresh_index(self, data_dir: Path, *, force: bool = False) -> bool:
+        return False
+
+    def refresh_error(self, data_dir: Path) -> str | None:
+        return None
+
+    def bundle_remote_size(
+        self, file_hashes: dict[str, str], *, stable_id: str | None = None
+    ) -> int | None:
+        self._presign_calls += 1
+        if self._presign_calls >= 2:
+            raise StemSourceError(
+                STEM_HUB_INDEX_FAILED,
+                "bundle presign: hub answered HTTP 503 (down)",
+            )
+        return self._direct.bundle_remote_size(file_hashes, stable_id=stable_id)
+
+    def fetch_bundle_files(
+        self,
+        *,
+        stable_id: str,
+        file_hashes: dict[str, str],
+        tmp_dir: Path,
+    ) -> int:
+        return self._direct.fetch_bundle_files(
+            stable_id=stable_id,
+            file_hashes=file_hashes,
+            tmp_dir=tmp_dir,
+        )
+
+
+@pytest.mark.requirement("STEM-35")
+def test_bulk_hydrate_marks_remainder_hub_error_after_hub_5xx(
+    tmp_path: Path, fake_s3, cfg: CloudConfig
+) -> None:
+    """[if] hub 5xx mid bulk pass [then] remainder rows are hub_error, [else stop]."""
+    data_dir = tmp_path / "data"
+    stems_dir = tmp_path / "stems"
+    stable_ids = ["first-track", "second-track", "third-track"]
+    index = {stable_id: _seed_bundle(fake_s3, cfg, stable_id) for stable_id in stable_ids}
+    source = _FailOnSecondPresignSource(cfg, fake_s3)
+
+    report = bulk_hydrate(
+        stable_ids,
+        data_dir=data_dir,
+        source=source,
+        index=index,
+        byte_budget=10**9,
+        stems_dir=stems_dir,
+    )
+    assert report.bytes_fetched > 0
+    assert report.fetched[0].stable_id == "first-track"
+    assert {row.stable_id for row in report.skipped} == {"second-track", "third-track"}
+    assert all(row.status == "hub_error" for row in report.skipped)
 
 
 @pytest.mark.requirement("STEM-21")

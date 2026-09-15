@@ -35,7 +35,6 @@
 	import { installBootLandingRedirect } from '$lib/rb/boot-landing';
 	import { readBootStampMirror, touchLastGigAt } from '$lib/rb/last-gig-stamp';
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
-	import { startLibraryBootHydration } from '$lib/rb/library-boot-hydration';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { startAppInstruments } from '$lib/rb/app-init';
 	import { installShellCommandPoll } from '$lib/rb/shell-commands';
@@ -47,10 +46,6 @@
 	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
 	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
 	import PerformanceAppNav from '$lib/components/PerformanceAppNav.svelte';
-
-	if (typeof window !== 'undefined') {
-		startLibraryBootHydration();
-	}
 
 	let { children } = $props();
 

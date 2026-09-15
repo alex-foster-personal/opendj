@@ -22,6 +22,7 @@ import {
 	hydrateWheelSensitivityFromDisk,
 	type WheelSensitivityDisk
 } from './wheel-adjust';
+import { setMasterMuted } from '../player/master-mute.svelte';
 import type { AppModePrefs, AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
 
 export type UiTheme = 'dark' | 'light';
@@ -94,6 +95,7 @@ export type DiskPrefsPatch = {
 	auto_play_enabled?: boolean;
 	auto_play_enforce_order?: boolean;
 	auto_play_maximize_reach?: boolean;
+	master_muted?: boolean;
 	hide_broken_links?: boolean;
 	library_density?: LibraryDensity;
 	next_only_filter?: boolean;
@@ -258,6 +260,9 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			}
 			hydrateWheelSensitivityFromDisk(body);
 			hydrateMidiEnabledFromDisk(body);
+			if (typeof body.master_muted === 'boolean') {
+				setMasterMuted(body.master_muted);
+			}
 			const lastGigAt = body.app_mode?.last_gig_at;
 			if (typeof lastGigAt === 'string') {
 				writeBootStampMirror(lastGigAt);

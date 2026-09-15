@@ -100,9 +100,16 @@ exactly {run_id} -- that literal string, not the placeholder shown here:
 
 The diff follows.
 {truncation}
+{withheld}
 
 {diff}
 """
+
+
+def withheld_prompt_line(dropped: list[str]) -> str:
+    if not dropped:
+        return ""
+    return f"generated data withheld: {', '.join(dropped)}"
 
 
 def build_prompt(
@@ -114,6 +121,7 @@ def build_prompt(
     max_diff_bytes: int,
     max_findings: int,
     fence: Fence,
+    withheld: list[str],
 ) -> tuple[str, bool]:
     """The prompt, and whether the diff had to be truncated to fit.
 
@@ -135,6 +143,7 @@ def build_prompt(
         if truncated
         else ""
     )
+    withheld_line = withheld_prompt_line(withheld)
     return (
         PROMPT.format(
             max_findings=max_findings,
@@ -146,6 +155,7 @@ def build_prompt(
             run_id=run_id,
             placeholder=RUN_ID_PLACEHOLDER,
             truncation=note,
+            withheld=withheld_line,
             diff=body,
         ),
         truncated,

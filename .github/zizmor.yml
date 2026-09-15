@@ -1,0 +1,24 @@
+# zizmor configuration. Spec: docs/security/ci-supply-chain.md
+#
+# Every suppression pins file:line, so a moved or new finding reappears and the
+# workflows scan goes red (fails safe). Each carries a reason and a review date.
+# Audited Tue 15 Sep 2026 with zizmor 1.30.1. Review by Sun 13 Dec 2026.
+rules:
+  dangerous-triggers:
+    ignore:
+      # workflow_run by design. These run the default branch's workflow code, never
+      # check out the triggering run's head, and read its metadata only through env:
+      # (error-sink checks out the default branch explicitly).
+      - ci-cost-guard.yml:3
+      - error-sink.yml:8
+      - stable-evidence.yml:9
+      - trunk-job-verdict.yml:24
+      - trunk-red-alarm.yml:16
+  artipacked:
+    ignore:
+      # These checkouts keep credentials because a later step runs git fetch (ci
+      # affected-canary, periodic-checks preview-drift) or git fetch + push
+      # (debt-index-regen). None of these jobs uploads the checkout as an artifact.
+      - ci.yml:798
+      - debt-index-regen.yml:91
+      - periodic-checks.yml:804
