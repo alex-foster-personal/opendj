@@ -9,8 +9,8 @@ from unittest.mock import patch
 
 import pytest
 
-from scripts import review_coverage
-from scripts.review_claude import CLAUDE, marker as claude_marker
+from scripts import review_coverage, review_coverage_carry
+from scripts.review_claude import marker as claude_marker
 from scripts.review_coverage_carry import debt_file_path
 
 _PR = "2871"
@@ -63,6 +63,7 @@ def test_triage_prints_carry_proof(repo: Path, monkeypatch: pytest.MonkeyPatch) 
     reviews = [_claude_review_at(reviewed)]
 
     monkeypatch.setattr(review_coverage, "CHECKOUT_ROOT", repo)
+    monkeypatch.setattr(review_coverage_carry, "diff_of", lambda pr: "")
     monkeypatch.setattr(review_coverage, "_head_sha", lambda pr: head)
     monkeypatch.setattr(review_coverage, "_checks", lambda pr: [])
     monkeypatch.setattr(

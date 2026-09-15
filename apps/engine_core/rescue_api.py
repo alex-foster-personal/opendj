@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, status
 
 from apps.engine_core.config import EngineConfig
 from apps.engine_core.rescue.models import (
@@ -75,6 +75,11 @@ def add_rescue_routes(app: FastAPI) -> None:
         response_model=RescueRestoreOut,
         tags=["performance"],
         name="rescue_restore",
+        responses={
+            status.HTTP_503_SERVICE_UNAVAILABLE: {
+                "description": "library unreadable (state/state.db missing, locked, or corrupt)"
+            }
+        },
     )
     def restore_rescue_snapshot(
         body: RescueRestoreIn, request: Request
@@ -92,13 +97,16 @@ def add_rescue_routes(app: FastAPI) -> None:
         except RescueRestoreError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
         cfg = request.app.state.engine_cfg
-        # None means the library could not be read, so every track is treated
-        # as loadable. An EMPTY set is an answer, not an unknown: a library
-        # whose tracks are all soft-deleted has nothing to reload.
+        present_stable_ids = _present_stable_ids(cfg.data_dir)
+        if present_stable_ids is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="library_unreadable: cannot read state/state.db",
+            )
         raw_outcomes = compute_deck_outcomes(
             entry.payload,
             mode=mode,
-            present_stable_ids=_present_stable_ids(cfg.data_dir),
+            present_stable_ids=present_stable_ids,
         )
         return RescueRestoreOut(
             snapshot_id=entry.id,
