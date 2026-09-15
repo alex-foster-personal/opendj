@@ -1,5 +1,7 @@
 """POST /ingest/upload TAG_READER_UNAVAILABLE 503, proved WITHOUT mutagen.
 
+[if] mutagen is absent [then] upload answers 503 TAG_READER_UNAVAILABLE and no .part stays, [else stop].
+
 Regression one-liners:
   - if mutagen-less upload returns 500 then broken
   - if mutagen-less upload leaves a .part hold file then broken
