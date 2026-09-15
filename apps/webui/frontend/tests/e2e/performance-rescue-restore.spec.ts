@@ -155,7 +155,8 @@ test.describe('RESCUE-02/03 playback restore', () => {
 
 		const perfRows = await page.evaluate(() => {
 			const read = (window as Window & { __mdtPerfLog?: () => readonly PerfEventRow[] }).__mdtPerfLog;
-			return read?.() ?? [];
+			if (read === undefined) throw new Error('performance timing log is not installed');
+			return read();
 		});
 		const scheduleRows = perfRows.filter(
 			(row) => row.kind === 'transport-schedule' && deckIds.includes(row.deck as 1 | 3 | 4)
