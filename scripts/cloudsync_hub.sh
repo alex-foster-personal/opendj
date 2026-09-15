@@ -16,6 +16,7 @@
 #   OPENDJ_HUB_BACKUP_R2   1 = upload each backup to R2 via doppler (general/dev_personal)
 #   OPENDJ_HUB_SERVE_R2    1 = wrap the serve unit in doppler for R2 stem presign creds
 #   OPENDJ_HUB_SERVE_DOPPLER_CONFIG  Doppler config name (required when serve R2 is on)
+#   OPENDJ_HUB_ALLOWED_HOSTS  comma-separated MagicDNS hostname(s) for tailnet spokes
 #   OPENDJ_HUB_SERVICE_MANAGER  systemd | launchd; default: by uname (Linux | Darwin)
 #
 # Must run under bash 3.2 (stock macOS /bin/bash): under `set -u` it treats an
@@ -43,6 +44,7 @@ HUB_BACKUP_KEEP="${OPENDJ_HUB_BACKUP_KEEP:-$(cfg_value BACKUP_KEEP)}"
 HUB_BACKUP_R2="${OPENDJ_HUB_BACKUP_R2:-0}"
 HUB_SERVE_R2="${OPENDJ_HUB_SERVE_R2:-0}"
 HUB_SERVE_DOPPLER_CONFIG="${OPENDJ_HUB_SERVE_DOPPLER_CONFIG:-}"
+HUB_ALLOWED_HOSTS="${OPENDJ_HUB_ALLOWED_HOSTS:-}"
 HUB_URL="http://127.0.0.1:${HUB_PORT}"
 DOPPLER_PROJECT="general"
 DOPPLER_CONFIG="dev_personal"
@@ -66,6 +68,7 @@ print_config() {
   echo "[INFO] manager=${SERVICE_MANAGER} data_dir=${HUB_DATA_DIR} url=${HUB_URL}"
   echo "[INFO] backups=${HUB_BACKUP_DIR} keep=${HUB_BACKUP_KEEP} r2=${HUB_BACKUP_R2}"
   echo "[INFO] serve_r2=${HUB_SERVE_R2} serve_doppler_config=${HUB_SERVE_DOPPLER_CONFIG}"
+  echo "[INFO] allowed_hosts=${HUB_ALLOWED_HOSTS:-<unset>}"
 }
 
 unit_dir() {
@@ -110,10 +113,15 @@ render_units() {
   if [[ "${HUB_SERVE_R2}" == "1" ]]; then
     serve_r2_args=(--serve-r2 --doppler "$(command -v doppler)" --serve-doppler-config "${HUB_SERVE_DOPPLER_CONFIG}")
   fi
+  local allowed_hosts_args=()
+  if [[ -n "${HUB_ALLOWED_HOSTS}" ]]; then
+    allowed_hosts_args=(--allowed-hosts "${HUB_ALLOWED_HOSTS}")
+  fi
   hub_py render --kind "${SERVICE_MANAGER}" --out-dir "$(unit_dir)" --repo-root "${REPO_ROOT}" \
     --uv "${UV_BIN}" --data-dir "${HUB_DATA_DIR}" --port "${HUB_PORT}" \
     --backup-dest "${HUB_BACKUP_DIR}" --keep "${HUB_BACKUP_KEEP}" \
-    ${r2_args[@]+"${r2_args[@]}"} ${serve_r2_args[@]+"${serve_r2_args[@]}"}
+    ${r2_args[@]+"${r2_args[@]}"} ${serve_r2_args[@]+"${serve_r2_args[@]}"} \
+    ${allowed_hosts_args[@]+"${allowed_hosts_args[@]}"}
 }
 
 wait_for_hub() {
@@ -130,6 +138,9 @@ wait_for_hub() {
 
 cmd_start() {
   print_config
+  if [[ -z "${HUB_ALLOWED_HOSTS}" ]]; then
+    echo "[WARN] OPENDJ_HUB_ALLOWED_HOSTS is unset: tailnet spokes via tailscale serve will get 403 HOST_NOT_ALLOWED until you set it to the hub MagicDNS name and re-run start"
+  fi
   validate_serve_r2
   mkdir -p "${HUB_DATA_DIR}"
   MDT_IS_HUB=1 hub_py init --data-dir "${HUB_DATA_DIR}"
@@ -188,7 +199,11 @@ cmd_status() {
     state="$(launchctl print "gui/$(id -u)/com.opendj.hub" 2> /dev/null | awk '/^\tstate =/ {print $3}' || true)"
     echo "[INFO] launchd: ${state:-not loaded}"
   fi
-  hub_py status --data-dir "${HUB_DATA_DIR}" --url "${HUB_URL}"
+  local status_args=(status --data-dir "${HUB_DATA_DIR}" --url "${HUB_URL}")
+  if [[ -n "${HUB_ALLOWED_HOSTS}" ]]; then
+    status_args+=(--allowed-hosts "${HUB_ALLOWED_HOSTS}")
+  fi
+  hub_py "${status_args[@]}"
 }
 
 cmd_backup() {
