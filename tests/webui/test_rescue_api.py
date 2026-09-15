@@ -8,7 +8,7 @@
 [if] a deck's track is soft-deleted in the library [then] restore reports it missing, [else stop].
 [if] a deck's track is live in the library [then] a play restore still resumes it, [else stop].
 [if] every library track is soft-deleted [then] restore reports the deck missing, [else stop].
-[if] the library cannot be read [then] it reads as unknown, never as empty, [else stop].
+[if] the library cannot be read [then] restore fails with 503, never loadable decks, [else stop].
 """
 
 from __future__ import annotations
@@ -39,8 +39,15 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
+def _ensure_library_schema(data_dir: Path) -> None:
+    """Apply state migrations before the engine opens a read-only library probe."""
+    conn = state_db.open_rw(data_dir / "state" / "state.db")
+    conn.close()
+
+
 @pytest.fixture
 def client(data_dir: Path) -> TestClient:
+    _ensure_library_schema(data_dir)
     app = create_app(EngineConfig(data_dir=data_dir, host="127.0.0.1", port=8787))
     with TestClient(app, base_url="http://127.0.0.1") as test_client:
         test_client.data_dir = data_dir  # type: ignore[attr-defined]
@@ -205,6 +212,8 @@ def _restore_with_library(data_dir: Path, *, library: dict[str, bool]) -> dict:
     deck 1 holds "a" * 40."""
     # Seed the library before the engine starts: its lifespan creates the state
     # schema, and a writer racing that creation sees a half-built database.
+    if not library:
+        _ensure_library_schema(data_dir)
     for stable_id, deleted in library.items():
         _seed_library_track(data_dir, stable_id, deleted=deleted)
     _seed_snapshot(data_dir, age_ms=5 * 60 * 1000, deck1_playing=True)
@@ -242,6 +251,8 @@ def test_a_library_of_only_tombstones_restores_the_deck_missing(data_dir: Path) 
 def test_an_unreadable_library_is_unknown_and_an_all_deleted_one_is_empty(
     tmp_path: Path, data_dir: Path
 ) -> None:
+    # Route behavior for unreadable library is tested in
+    # test_unreadable_library_restore_fails_with_503.
     assert _present_stable_ids(tmp_path / "no-such-data-dir") is None, (
         "if a missing library reads as empty, then every deck restores missing"
     )
@@ -249,3 +260,18 @@ def test_an_unreadable_library_is_unknown_and_an_all_deleted_one_is_empty(
     assert _present_stable_ids(data_dir) == set(), (
         "if an all-deleted library reads as unknown, then deleted tracks reload"
     )
+
+
+def test_unreadable_library_restore_fails_with_503(data_dir: Path) -> None:
+    _seed_snapshot(data_dir, age_ms=5 * 60 * 1000, deck1_playing=True)
+    (data_dir / "state" / "state.db").write_bytes(b"not-a-sqlite-db")
+    app = create_app(EngineConfig(data_dir=data_dir, host="127.0.0.1", port=8787))
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        response = client.post(RESTORE_PATH, json={"play": True})
+    assert response.status_code == 503
+    assert "library_unreadable" in response.json()["detail"].lower()
+
+
+def test_restore_with_empty_library_reports_missing(data_dir: Path) -> None:
+    body = _restore_with_library(data_dir, library={})
+    assert body["decks"]["1"]["outcome"] == "missing"

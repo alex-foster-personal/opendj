@@ -61,7 +61,11 @@ def compute_deck_outcomes(
     """Plan per-deck outcomes for a restore response.
 
     ``present_stable_ids`` when supplied marks tracks absent from the library as
-    ``missing``; when omitted every non-empty stable_id is treated as loadable.
+    ``missing``. Production callers must pass the set returned by
+    ``_present_stable_ids`` (including an empty set when every track is
+    soft-deleted); ``None`` means unreadable and must be rejected before calling
+    this helper. When omitted, every non-empty stable_id is treated as loadable
+    (tests only).
     """
     outcomes: dict[str, dict[str, str | None]] = {}
     for deck_id in ("1", "2", "3", "4"):
