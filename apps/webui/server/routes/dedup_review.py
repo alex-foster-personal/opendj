@@ -36,6 +36,8 @@ from ..dedup_review_ops import (
     cluster_member_ids,
     cluster_needs_manual_review,
     conflict,
+    cue_loss_confirmation_required,
+    cue_loss_report,
     decision_store_error,
     dedup_db_path,
     drop_apply_journal,
@@ -143,6 +145,7 @@ class ApplyIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     cluster_key: str
     survivor: str
+    confirm_cue_loss: bool = False
 
 
 class DecisionRecordOut(BaseModel):
@@ -379,6 +382,10 @@ def post_dedup_apply(
         stale_message="cluster membership changed; refresh before applying a merge",
         read_store=read_store_or_http,
     )
+    if not body.confirm_cue_loss:
+        cue_loss = cue_loss_report(member_ids, body.survivor)
+        if cue_loss:
+            raise cue_loss_confirmation_required(cue_loss)
     with decision_file_lock():
         snap, current_revision = read_store_or_http()
         if if_match != current_revision:
