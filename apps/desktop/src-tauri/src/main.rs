@@ -95,14 +95,19 @@ fn parse_diagnostic_flag<'a>(args: impl Iterator<Item = &'a str>) -> Option<Diag
 
 /// Print usage or version for a diagnostic flag and report the process exit
 /// code, or `None` when the caller should proceed to launch the app.
-fn handle_diagnostic_flags<'a>(args: impl Iterator<Item = &'a str>) -> Option<i32> {
+///
+/// `app_version` MUST come from `tauri.conf.json` (via `Context::package_info`),
+/// not `CARGO_PKG_VERSION`: INSTALL-07 defines `app_version` as the semver the
+/// updater compares, and `Cargo.toml`'s version is a separate, driftable
+/// number (0.1.0 there vs. 0.1.1 in `tauri.conf.json` at time of writing).
+fn handle_diagnostic_flags<'a>(args: impl Iterator<Item = &'a str>, app_version: &str) -> Option<i32> {
     match parse_diagnostic_flag(args)? {
         DiagnosticFlag::Help => {
             print!("{USAGE}");
             Some(0)
         }
         DiagnosticFlag::Version => {
-            println!("opendj-desktop {}", env!("CARGO_PKG_VERSION"));
+            println!("opendj-desktop {app_version}");
             Some(0)
         }
     }
@@ -427,8 +432,13 @@ fn fail_visibly(error: &engine::EngineError) -> ! {
 }
 
 fn main() {
+    // Generated once and reused for `.build()` below: the macro only reads
+    // `tauri.conf.json` at compile time, so calling it here to read the
+    // version has no side effect (no window, no plugin, no data dir touched).
+    let context = tauri::generate_context!();
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if let Some(code) = handle_diagnostic_flags(args.iter().map(String::as_str)) {
+    let app_version = context.package_info().version.to_string();
+    if let Some(code) = handle_diagnostic_flags(args.iter().map(String::as_str), &app_version) {
         std::process::exit(code);
     }
 
@@ -564,7 +574,7 @@ fn main() {
 
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building Open DJ desktop shell");
 
     app.run(|handle, event| {
@@ -674,11 +684,16 @@ mod tests {
 
     #[test]
     fn handle_diagnostic_flags_reports_exit_zero_for_help() {
-        assert_eq!(handle_diagnostic_flags(["--help"].into_iter()), Some(0));
+        assert_eq!(handle_diagnostic_flags(["--help"].into_iter(), "0.1.1"), Some(0));
+    }
+
+    #[test]
+    fn handle_diagnostic_flags_reports_exit_zero_for_version() {
+        assert_eq!(handle_diagnostic_flags(["--version"].into_iter(), "0.1.1"), Some(0));
     }
 
     #[test]
     fn handle_diagnostic_flags_returns_none_for_a_normal_launch() {
-        assert_eq!(handle_diagnostic_flags(std::iter::empty()), None);
+        assert_eq!(handle_diagnostic_flags(std::iter::empty(), "0.1.1"), None);
     }
 }
