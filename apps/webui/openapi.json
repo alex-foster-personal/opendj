@@ -31730,7 +31730,7 @@
     },
     "/api/v1/sync/stems/index": {
       "get": {
-        "description": "Return the published stem bundle index for an authenticated spoke.",
+        "description": "Return the published stem bundle index for an authenticated spoke.\n\n``request.app.state.stem_index_fetcher``, when set by the code that built\nthe app, replaces the real R2 index fetch with the callable's return\nvalue. Production never sets it; only test app-builders do. The\ncredential check always runs first regardless.",
         "operationId": "get_stem_index_api_v1_sync_stems_index_get",
         "parameters": [
           {

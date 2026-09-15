@@ -4582,6 +4582,11 @@ export interface paths {
         /**
          * Get Stem Index
          * @description Return the published stem bundle index for an authenticated spoke.
+         *
+         *     ``request.app.state.stem_index_fetcher``, when set by the code that built
+         *     the app, replaces the real R2 index fetch with the callable's return
+         *     value. Production never sets it; only test app-builders do. The
+         *     credential check always runs first regardless.
          */
         get: operations["get_stem_index_api_v1_sync_stems_index_get"];
         put?: never;
