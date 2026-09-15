@@ -15,6 +15,8 @@
 	import SignInOverlay from '$lib/components/account/SignInOverlay.svelte';
 	import HotkeysOverlay from '$lib/components/rb/hotkeys/HotkeysOverlay.svelte';
 	import { installHotkeysOverlayHotkeys } from '$lib/components/rb/hotkeys/install-hotkeys-overlay';
+	import QuitConfirmOverlay from '$lib/components/shell/QuitConfirmOverlay.svelte';
+	import { installQuitGate } from '$lib/shell/quit-gate';
 	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
 	import {
 		LIBRARY_ATTACHED_CHECK_ID,
@@ -160,6 +162,7 @@
 		refreshHealth();
 		const uninstallSettings = installSettingsHotkeys();
 		const uninstallHotkeysOverlay = installHotkeysOverlayHotkeys();
+		const uninstallQuitGate = installQuitGate();
 		// Page-lifetime instruments: usage heartbeat + the DevTools perf log
 		// globals the e2e latency floor reads. See $lib/rb/app-init.
 		const stopInstruments = startAppInstruments();
@@ -169,6 +172,7 @@
 		return () => {
 			uninstallSettings();
 			uninstallHotkeysOverlay();
+			uninstallQuitGate();
 			stopInstruments();
 			uninstallShellNavigation();
 			uninstallShellCommands();
@@ -291,6 +295,7 @@
      for the same reason SettingsOverlay is: /performance bypasses the app
      shell, and the cheatsheet has to work there too. -->
 <HotkeysOverlay />
+<QuitConfirmOverlay />
 
 <ToastStack items={toasts} />
 <BrandLaunch />

@@ -8585,6 +8585,31 @@
         "title": "LibraryReadinessOut",
         "type": "object"
       },
+      "LifecycleQuitIn": {
+        "properties": {
+          "force": {
+            "description": "Must be true for agent and ship clean-quit paths.",
+            "title": "Force",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "force"
+        ],
+        "title": "LifecycleQuitIn",
+        "type": "object"
+      },
+      "LifecycleQuitOut": {
+        "properties": {
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "title": "LifecycleQuitOut",
+        "type": "object"
+      },
       "LocalDataOut": {
         "description": "One store on this machine that holds something about the account.",
         "properties": {
@@ -26257,6 +26282,57 @@
         "summary": "Get Library Wheel Axes",
         "tags": [
           "library"
+        ]
+      }
+    },
+    "/api/v1/lifecycle/quit": {
+      "post": {
+        "operationId": "request_shell_quit_api_v1_lifecycle_quit_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LifecycleQuitIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleQuitOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Shell Quit",
+        "tags": [
+          "lifecycle"
         ]
       }
     },

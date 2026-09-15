@@ -2371,6 +2371,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lifecycle/quit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request Shell Quit */
+        post: operations["request_shell_quit_api_v1_lifecycle_quit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/lyrics": {
         parameters: {
             query?: never;
@@ -8793,6 +8810,22 @@ export interface components {
             total_tracks: number;
             /** Unreachable */
             unreachable: number;
+        };
+        /** LifecycleQuitIn */
+        LifecycleQuitIn: {
+            /**
+             * Force
+             * @description Must be true for agent and ship clean-quit paths.
+             */
+            force: boolean;
+        };
+        /** LifecycleQuitOut */
+        LifecycleQuitOut: {
+            /**
+             * Ok
+             * @default true
+             */
+            ok: boolean;
         };
         /**
          * LocalDataOut
@@ -17766,6 +17799,48 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
+                };
+            };
+        };
+    };
+    request_shell_quit_api_v1_lifecycle_quit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LifecycleQuitIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifecycleQuitOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
