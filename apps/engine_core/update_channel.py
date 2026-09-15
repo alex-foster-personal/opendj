@@ -119,6 +119,10 @@ UPDATE_APPLY_STATUS_PATH: str = "/api/v1/update/apply/{command_id}"
 #: How often the apply CLI polls command status before checking build-info.
 APPLY_STATUS_POLL_INTERVAL_S: float = 1.0
 
+#: After the shell claims apply and the old engine dies, poll the relaunched
+#: engine's build-info for this long before giving up.
+RELAUNCH_BUILD_INFO_TIMEOUT_S: float = 120.0
+
 #: The error code a caller branches on when the channel could not answer.
 CODE_UPDATE_CHECK_FAILED: str = "update_check_failed"
 
@@ -710,13 +714,52 @@ def _build_identity_slice(body: dict[str, object]) -> dict[str, str | None]:
     }
 
 
-def _identity_changed(
+def _version_higher(
     before: dict[str, str | None], after: dict[str, str | None]
 ) -> bool:
-    return (
-        before.get("app_version") != after.get("app_version")
-        or before.get("git_sha_full") != after.get("git_sha_full")
-    )
+    """True when after.app_version parses and is strictly greater than before."""
+    before_ver = before.get("app_version")
+    after_ver = after.get("app_version")
+    if not isinstance(before_ver, str) or not isinstance(after_ver, str):
+        return False
+    try:
+        here = parse_version(before_ver, "pre-apply app_version")
+        there = parse_version(after_ver, "post-apply app_version")
+    except UpdateCheckError:
+        return False
+    return there > here
+
+
+def _wait_for_higher_build_info(
+    client: httpx.Client,
+    before: dict[str, str | None],
+    deadline: float,
+) -> dict[str, str | None]:
+    """Poll resolve_origin() + GET /build-info until higher version or deadline."""
+    backoff = 1.0
+    after = before
+    while time.monotonic() < deadline:
+        poll_base = ""
+        try:
+            poll_base = resolve_origin().base_url.rstrip("/")
+        except EngineNotRunning:
+            pass
+        if poll_base:
+            try:
+                after_resp = client.get(
+                    f"{poll_base}{BUILD_INFO_PATH}", timeout=REQUEST_TIMEOUT_S
+                )
+            except httpx.HTTPError:
+                time.sleep(backoff)
+                backoff = min(backoff * 1.5, 10.0)
+                continue
+            if after_resp.status_code == 200:
+                after = _build_identity_slice(after_resp.json())
+                if _version_higher(before, after):
+                    break
+        time.sleep(backoff)
+        backoff = min(backoff * 1.5, 10.0)
+    return after
 
 
 def _apply_via_engine(origin: str, timeout_s: float) -> int:
@@ -770,6 +813,8 @@ def _apply_via_engine(origin: str, timeout_s: float) -> int:
             file=sys.stderr,
         )
 
+        seen_claimed = False
+        state: object = None
         while True:
             try:
                 status_resp = client.get(
@@ -777,6 +822,8 @@ def _apply_via_engine(origin: str, timeout_s: float) -> int:
                     timeout=REQUEST_TIMEOUT_S,
                 )
             except httpx.HTTPError as exc:
+                if seen_claimed:
+                    break
                 print(
                     json.dumps(
                         {
@@ -790,6 +837,8 @@ def _apply_via_engine(origin: str, timeout_s: float) -> int:
                 )
                 return 2
             if status_resp.status_code == 404:
+                if seen_claimed:
+                    break
                 print(status_resp.text)
                 return 2
             if status_resp.status_code != 200:
@@ -797,6 +846,8 @@ def _apply_via_engine(origin: str, timeout_s: float) -> int:
                 return 2
             status_body = status_resp.json()
             state = status_body.get("state")
+            if state in ("claimed", "succeeded"):
+                seen_claimed = True
             if state == "failed":
                 print(json.dumps(status_body, indent=2))
                 return 3
@@ -804,34 +855,21 @@ def _apply_via_engine(origin: str, timeout_s: float) -> int:
                 break
             time.sleep(APPLY_STATUS_POLL_INTERVAL_S)
 
-        deadline = time.monotonic() + timeout_s
-        backoff = 1.0
-        after = before
-        while time.monotonic() < deadline:
-            poll_base = base
-            try:
-                poll_base = resolve_origin().base_url
-            except EngineNotRunning:
-                pass
-            try:
-                after_resp = client.get(
-                    f"{poll_base}{BUILD_INFO_PATH}", timeout=REQUEST_TIMEOUT_S
-                )
-            except httpx.HTTPError:
-                time.sleep(backoff)
-                backoff = min(backoff * 1.5, 10.0)
-                continue
-            if after_resp.status_code == 200:
-                after = _build_identity_slice(after_resp.json())
-                if _identity_changed(before, after):
-                    break
-            time.sleep(backoff)
-            backoff = min(backoff * 1.5, 10.0)
+        if seen_claimed and state != "succeeded":
+            print(
+                "[APPLY] engine relaunch detected; polling build-info via lock file",
+                file=sys.stderr,
+            )
+            deadline = time.monotonic() + RELAUNCH_BUILD_INFO_TIMEOUT_S
+        else:
+            deadline = time.monotonic() + timeout_s
 
-    changed = _identity_changed(before, after)
-    summary = {"before": before, "after": after, "changed": changed}
+        after = _wait_for_higher_build_info(client, before, deadline)
+
+    higher = _version_higher(before, after)
+    summary = {"before": before, "after": after, "changed": higher}
     print(json.dumps(summary, indent=2))
-    return 0 if changed else 2
+    return 0 if higher else 3
 
 
 if __name__ == "__main__":
