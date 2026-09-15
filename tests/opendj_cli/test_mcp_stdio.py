@@ -412,7 +412,8 @@ def test_no_unconverted_error_document_returns() -> None:
 
 @pytest.mark.requirement("AGENT-11")
 def test_library_get_tracks_default_page_is_bounded(big_library_engine: Engine) -> None:
-    """[if] library GETs /tracks with no limit against an 8500-track library
+    """[if] library GETs /tracks with no limit [then] the page stays under the MCP budget, [else stop].
+    [if] library GETs /tracks with no limit against an 8500-track library
     [then] the wire result stays comfortably under the 25k-token MCP budget
     and says how to page the rest, [else stop]."""
     result = call_tool_result(
@@ -442,7 +443,8 @@ def test_library_get_tracks_default_page_is_bounded(big_library_engine: Engine) 
 
 @pytest.mark.requirement("AGENT-11")
 def test_library_get_tracks_over_limit_still_refuses_readably(big_library_engine: Engine) -> None:
-    """[if] library GETs /tracks?limit=100000 [then] the engine still refuses
+    """[if] library GETs /tracks over the limit [then] it refuses with a readable message, [else stop].
+    [if] library GETs /tracks?limit=100000 [then] the engine still refuses
     (422) and the body is a readable object, not an escaped JSON string,
     [else stop]."""
     payload = call_tool(
@@ -456,7 +458,8 @@ def test_library_get_tracks_over_limit_still_refuses_readably(big_library_engine
 
 @pytest.mark.requirement("AGENT-11")
 def test_library_get_tracks_fields_projects_compact_rows(big_library_engine: Engine) -> None:
-    """[if] library GETs /tracks?fields=stable_id,title,artist,bpm,key [then]
+    """[if] library GETs /tracks with fields [then] rows carry only those fields, [else stop].
+    [if] library GETs /tracks?fields=stable_id,title,artist,bpm,key [then]
     every row is projected to just those keys, [else stop]."""
     payload = call_tool(
         big_library_engine,
@@ -477,7 +480,8 @@ def test_library_get_tracks_fields_projects_compact_rows(big_library_engine: Eng
 def test_library_get_tracks_bounded_page_pages_with_a_real_cursor(
     big_library_engine: Engine,
 ) -> None:
-    """[if] the auto-limited page's next_cursor is paged again [then] it
+    """[if] a bounded page returns a cursor [then] the next call pages with it, [else stop].
+    [if] the auto-limited page's next_cursor is paged again [then] it
     returns fresh, distinct tracks: a real engine page, never a client-side
     truncated slice of the first, [else stop]."""
     first = call_tool(big_library_engine, "library", {"method": "GET", "path": "/api/v1/tracks"})
